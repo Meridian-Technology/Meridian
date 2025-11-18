@@ -11,6 +11,22 @@ const FormResponses = ({ currentFormResponses}) => {
     const [viewingResponseList, setViewingResponseList] = useState(true); // true = list view, false = detail view
     const [selectedResponseIndex, setSelectedResponseIndex] = useState(0);
 
+    // Calculate statistics
+    const numberOfResponses = currentFormResponses?.length || 0;
+    const uniqueRespondents = currentFormResponses ? new Set(
+        currentFormResponses
+            .map(response => response.submittedBy?._id || response.submittedBy?.email || response.submittedBy?.name)
+            .filter(Boolean)
+    ).size : 0;
+    
+    const mostRecentResponse = currentFormResponses && currentFormResponses.length > 0
+        ? currentFormResponses.reduce((latest, current) => {
+            const latestDate = new Date(latest.submittedAt);
+            const currentDate = new Date(current.submittedAt);
+            return currentDate > latestDate ? current : latest;
+          })
+        : null;
+
     {/* Form Responses Viewer Popup */}
     console.log(currentFormResponses);
     return (<>
@@ -23,6 +39,37 @@ const FormResponses = ({ currentFormResponses}) => {
                     Back
                 </button>
                 <h1>Form Responses</h1>
+                
+                {/* Statistics Section */}
+                <div className="responses-statistics">
+                    <div className="stat-item">
+                        <Icon icon="mdi:file-document-multiple" className="stat-icon" />
+                        <div className="stat-content">
+                            <span className="stat-label">Total Responses</span>
+                            <span className="stat-value">{numberOfResponses}</span>
+                        </div>
+                    </div>
+                    <div className="stat-item">
+                        <Icon icon="mdi:account-group" className="stat-icon" />
+                        <div className="stat-content">
+                            <span className="stat-label">Unique Respondents</span>
+                            <span className="stat-value">{uniqueRespondents}</span>
+                        </div>
+                    </div>
+                    <div className="stat-item">
+                        <Icon icon="mdi:clock-check-outline" className="stat-icon" />
+                        <div className="stat-content">
+                            <span className="stat-label">Last Entry</span>
+                            <span className="stat-value">
+                                {mostRecentResponse 
+                                    ? new Date(mostRecentResponse.submittedAt).toLocaleString()
+                                    : 'N/A'
+                                }
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="responses-list-header">
                     <h3>Form Submissions ({currentFormResponses.length})</h3>
                 </div>
