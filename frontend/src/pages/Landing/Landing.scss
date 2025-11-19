@@ -2531,6 +2531,16 @@
   }
 }
 
+@media (max-height: 768px) {
+  .landing {
+    .hero {
+      &__visual {
+        height: 450px;
+      }
+    }
+  }
+}
+
 // @media (prefers-color-scheme: dark) {
 //   .landing {
 //     color: #f5f5f5;

@@ -1,15 +1,6 @@
-.settings-right .profile input:not(.slider){
-    border: none;
-    border-radius: 6px;
-    background-color:var(--light);
-    padding: 5px;
-    font-family: 'Inter';
-    font-size: 13px;
-    color: var(--text);
-    font-weight: 600;
-}
-
-.settings-right{
+.settings-right{  
+    position: relative; 
+    padding: 0px; 
     .profile{
         .name-settings{
             .picture-container{

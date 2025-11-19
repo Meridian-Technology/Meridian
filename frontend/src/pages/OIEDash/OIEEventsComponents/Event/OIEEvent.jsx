@@ -131,6 +131,13 @@ function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showE
                         <Icon icon="material-symbols:expand-content-rounded" />
                         <p>details</p>
                     </button>
+                    
+                }
+                {
+                <button className="button" >
+                    <Icon icon="heroicons:arrow-top-right-on-square-20-solid" />
+                    <a href={`/event/${event._id}`} target="_blank" rel="noopener noreferrer"><p>go</p></a>      
+                </button>
                 }
                 {
                     manage &&

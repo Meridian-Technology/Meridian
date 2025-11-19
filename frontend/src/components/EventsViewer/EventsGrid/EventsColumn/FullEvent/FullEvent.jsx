@@ -101,6 +101,7 @@ function FullEvent({ event }){
                         </div>
                     }
                 <RSVPSection event={event} />
+                <a href={`/event/${event._id}`} target="_blank" rel="noopener noreferrer"> <p>Full Event Page</p></a>      
             </div>
             <img src={StarGradient} alt="" className="gradient" />
         </div>

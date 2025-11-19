@@ -27,8 +27,8 @@
         display: flex;
         flex-direction: column;
         justify-content: flex-start;
-        width: 230px;
-        height: 100%;
+        // width: 230px;
+        // height: 100%;
         border-right: 1px solid var(--lightborder);
         position: relative;
 
@@ -109,7 +109,6 @@
         width: 70%;
         height: 100%;
         box-sizing: border-box;
-        padding: 24px;
         width: calc(100% - 230px);
         overflow-y: scroll;
 
@@ -129,6 +128,7 @@
             font-size: 14px;
             color: var(--text);
             align-items: flex-start;
+            padding: 12px 40px;
 
             button {
                 cursor: pointer;

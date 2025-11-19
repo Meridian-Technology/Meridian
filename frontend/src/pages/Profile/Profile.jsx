@@ -11,7 +11,7 @@ function Profile(){
 
     return (
         <div className="profile">
-            <Header/>
+            {/* <Header/> */}
             {user &&   
                 <div className="content-container">
                     <div className="profile-card">
@@ -19,7 +19,9 @@ function Profile(){
                     </div>
                 </div>
             }
-            <Footer/>
+            <div className="footer">
+                <Footer/>
+            </div>
         </div>
     )
 }

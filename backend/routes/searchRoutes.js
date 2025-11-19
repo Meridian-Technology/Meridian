@@ -230,11 +230,26 @@ router.get('/all-purpose-search', verifyTokenOptional, async (req, res) => {
     const { Classroom, User, Schedule, Search } = getModels(req, 'Classroom', 'User', 'Schedule', 'Search');
     const query = req.query.query;
     const attributes = req.query.attributes ? req.query.attributes : []; // Ensure attributes is an array
-    const timePeriod = req.query.timePeriod ? JSON.parse(req.query.timePeriod) : null; // might be null
     const sort = req.query.sort;
     const returnIds = req.query.returnIds || false; // Return room IDs instead of names
     const userId = req.user ? req.user.userId : null;
     let user;
+
+    // Handle timePeriod - it might already be an object (from Express query parsing) or a JSON string
+    let timePeriod = null;
+    if (req.query.timePeriod) {
+        if (typeof req.query.timePeriod === 'string') {
+            try {
+                timePeriod = JSON.parse(req.query.timePeriod);
+            } catch (e) {
+                console.error('Error parsing timePeriod:', e);
+                timePeriod = null;
+            }
+        } else {
+            // Already an object from Express query parsing
+            timePeriod = req.query.timePeriod;
+        }
+    }
     
     console.log(`GET: /all-purpose-search?query=${query}&attributes=${attributes}&sort=${sort}&time=${timePeriod}`);
     console.log(JSON.stringify(req.query));
