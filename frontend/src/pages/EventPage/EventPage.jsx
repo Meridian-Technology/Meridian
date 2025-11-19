@@ -13,6 +13,7 @@ import RSVPSection from '../../components/RSVPSection/RSVPSection';
 import EventsByCreator from '../../components/EventsByCreator/EventsByCreator';
 import Logo from '../../assets/Brand Image/BEACON.svg';
 import EventAnalytics from '../../components/EventAnalytics/EventAnalytics';
+import AgendaEditor from '../../components/AgendaEditor/AgendaEditor';
 
 function EventPage() {
     const { eventId } = useParams();
@@ -22,7 +23,7 @@ function EventPage() {
     const [activeTab, setActiveTab] = useState('details');
     
     // Fetch event data
-    const { data: eventData, loading: eventLoading, error: eventError } = useFetch(
+    const { data: eventData, loading: eventLoading, error: eventError, refetch: refetchEvent } = useFetch(
         eventId ? `/get-event/${eventId}` : null
     );
 
@@ -153,6 +154,12 @@ function EventPage() {
                         </div>
                     )}
                     <RSVPSection event={eventData.event} />
+                    
+                    {/* Agenda Editor */}
+                    <AgendaEditor event={eventData.event} onUpdate={(updatedEvent) => {
+                        // Refetch event data to show updated agenda
+                        refetchEvent();
+                    }} />
                     
                     {/* Analytics Tab for Admin Users */}
                     {user && user.roles && user.roles.includes('admin') && (
