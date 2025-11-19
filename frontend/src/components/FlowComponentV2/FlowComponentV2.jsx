@@ -24,7 +24,8 @@ const FlowComponentV2 = ({
     onClose = null, // Function to handle closing the flow
     formConfig = null, // Form configuration for dynamic validation
     getMissingFields = null, // Function to get missing fields
-    hostSelector = null // Component to render in sidebar (e.g., host selector)
+    hostSelector = null, // Component to render in sidebar (e.g., host selector),
+    logo = null // Logo to display in the header
 }) => {
     const [currentStep, setCurrentStep] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -165,7 +166,9 @@ const FlowComponentV2 = ({
                         <div className="row">
                             {/* <Logo size={25} /> */}
                             {/* Error: won't let me use any of hte logos for some reason so leavin this as a place holder for now */}
-                            <div className="testLogoTwo">(Z)</div>
+                            <div className="testLogoTwo">{
+                                logo ? <img src={logo} alt="logo" /> : null
+                            }</div>
                             <h1>{headerTitle}</h1>
                         </div>
                         <p>{headerSubtitle}</p>

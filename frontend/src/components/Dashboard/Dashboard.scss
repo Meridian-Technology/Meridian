@@ -346,6 +346,11 @@
                     box-sizing: border-box;
                 }
             }
+
+            .event-workspace--overlay {
+                height: 100%;
+                width: 100%;
+            }
         }
 
         .dash-content{

@@ -5,6 +5,7 @@ import apiRequest from '../../utils/postRequest';
 import DynamicStep from '../../components/DynamicStep/DynamicStep';
 import { useFetch } from '../../hooks/useFetch';
 import './CreateEventV2.scss';
+import logo from '../../assets/Brand Image/Globe.svg';
 
 import { useNotification } from '../../NotificationContext';
 import useAuth from '../../hooks/useAuth';
@@ -413,6 +414,7 @@ const CreateEventV2 = () => {
                     />
                 )
             }
+            logo={logo}
         />
     );
 };
