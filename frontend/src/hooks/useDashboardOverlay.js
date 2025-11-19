@@ -54,9 +54,23 @@ export const useDashboardOverlay = () => {
         });
     };
 
+    /**
+     * Show an EventWorkspace overlay
+     * @param {string} eventId - The event ID to display workspace for
+     */
+    const showEventWorkspace = (eventId) => {
+        // Import EventWorkspace dynamically to avoid circular dependencies
+        import('../pages/EventWorkspace/EventWorkspace').then(({ default: EventWorkspace }) => {
+            showOverlay(
+                <EventWorkspace eventId={eventId} onClose={hide} />
+            );
+        });
+    };
+
     return {
         showOverlay: show,
         hideOverlay: hide,
-        showEventViewer
+        showEventViewer,
+        showEventWorkspace
     };
 };
