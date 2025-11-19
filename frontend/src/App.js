@@ -46,6 +46,7 @@ import axios from 'axios';
 import CreateEvent from './pages/CreateEventV2/CreateEventV2';
 import EventsDash from './pages/EventsDash/EventsDash';
 import EventPage from './pages/EventPage/EventPage';
+import EventWorkspace from './pages/EventWorkspace/EventWorkspace';
 import SubSidebarExample from './components/Dashboard/SubSidebarExample';
 import RebrandingNotice from './components/RebrandingNotice/RebrandingNotice';
 import Beacon from './pages/FeatureAdmin/Beacon/Beacon';
@@ -172,6 +173,7 @@ function App() {
                                             </Route>
                                             <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsDash/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
+                                            <Route path="/event/:eventId/workspace" element={<AnimatedPageWrapper><EventWorkspace/></AnimatedPageWrapper>}/>
 
                                             {/* oie routes */}
                                             <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'oie']}/> }>
