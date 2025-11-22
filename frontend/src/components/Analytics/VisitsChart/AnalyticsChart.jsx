@@ -215,7 +215,7 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
               pointBackgroundColor: `rgba(${r}, ${g}, ${b}, 1)`,
               pointBorderColor: '#fff',
               tension: 0.3,
-              borderWidth: 4,
+              borderWidth: 3,
               pointRadius: 0,
               pointHoverRadius: 6,
               hitRadius: 20,
@@ -268,19 +268,19 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
       <div className="visit-chart">
           <div className="header">
               <div className="header-content">
-                  <img src={Stats} alt="Stats" />
+                  {/* <img src={Stats} alt="Stats" /> */}
                   <h2>{heading}</h2>
               </div>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }} />
           </div>
           <div className="row">
               <h3>
-                {totalCount} {endpoint}
-                {previousPeriodMode && previousPeriodMode !== 'none' && previousTotalCount > 0 && (
+                {totalCount}
+                {/* {previousPeriodMode && previousPeriodMode !== 'none' && previousTotalCount > 0 && (
                   <span style={{ marginLeft: 12, fontSize: '0.7em', color: '#666', fontWeight: 'normal' }}>
                     ({previousTotalCount} {previousPeriodMode === 'lastYear' ? 'last year' : 'previous'})
                   </span>
-                )}
+                )} */}
               </h3>
           </div>
           <div className="chart-container">
@@ -391,7 +391,7 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
                       },
                       tooltip: {
                         enabled: true, // Ensure the tooltip is enabled
-                        backgroundColor: 'white', // Background color of the tooltip
+                        backgroundColor: 'rgba(255, 255, 255, 0.6)', // Background color of the tooltip
                         titleColor: '#414141', // Color of the tooltip title
                         bodyColor: '#414141', // Color of the tooltip body text
                         borderColor: 'white', // Border color around the tooltip

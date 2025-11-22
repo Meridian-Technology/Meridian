@@ -1,27 +1,12 @@
 .org-overview {
-    padding: 20px;
 
-    .header {
-        margin-bottom: 30px;
-        text-align: center;
-
-        h1 {
-            font-size: 25px;
-            font-weight: bold;
-            color: var(--text);
-            margin-bottom: 10px;
-        }
-
-        p {
-            font-size: 15px;
-            color: var(--light-text);
-        }
-    }
 
     .content {
         display: flex;
         flex-direction: column;
         gap: 30px;
+        padding: 0 40px 20px 40px;
+        box-sizing: border-box;
     }
 
     .analytics-overview {

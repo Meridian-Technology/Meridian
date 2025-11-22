@@ -66,7 +66,7 @@ function Atlas() {
             logo={AtlasLogo}
             enableSubSidebar={true}
             primaryColor='#4DAA57'
-            secondaryColor='#E9EEDF6EEEFE'
+            secondaryColor='#EDF6EE'
             onBack={()=>navigate('/root-dashboard')}
         />
     );

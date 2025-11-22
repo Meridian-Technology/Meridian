@@ -23,8 +23,8 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--primary-light, #e0e7ff);
-        color: var(--primary, #6366f1);
+        background: var(--secondary-color, #e0e7ff);
+        color: var(--primary-color, #6366f1);
         flex-shrink: 0;
 
         svg {

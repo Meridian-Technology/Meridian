@@ -11,12 +11,7 @@ const Compass = () => {
     const navigate = useNavigate();
     const menuItems = [
         {
-            label: 'Home',
-            icon: 'material-symbols:home-outline',
-            element: <Home />
-        },
-        {
-            label: 'Space Analytics',
+            label: 'Overview',
             icon: 'mdi:chart-box',
             element: <SpaceAnalytics />
         },

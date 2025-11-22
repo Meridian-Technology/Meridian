@@ -4,6 +4,7 @@ import apiRequest from '../../../utils/postRequest';
 import deleteRequest from '../../../utils/deleteRequest';
 import Popup from '../../../components/Popup/Popup';
 import { useFetch } from '../../../hooks/useFetch';
+import { useGradient } from '../../../hooks/useGradient';
 
 function RoomManager(){
   const [rooms, setRooms] = useState([]);
@@ -14,6 +15,8 @@ function RoomManager(){
   const [limit, setLimit] = useState(20);
   const [pagination, setPagination] = useState({ total: 0, totalPages: 0, currentPage: 1 });
   const [isSearching, setIsSearching] = useState(false);
+  const { AdminGrad } = useGradient();
+
 
   const [form, setForm] = useState({ name: '', image: '', attributes: '' });
   const [formErrors, setFormErrors] = useState({});
@@ -179,6 +182,7 @@ function RoomManager(){
       <header className="header">
           <h1>Room Manager</h1>
           <p>Manage campus rooms for events and study spaces.</p>
+          <img src={AdminGrad} alt="" />
       </header>
 
       <div className="content">

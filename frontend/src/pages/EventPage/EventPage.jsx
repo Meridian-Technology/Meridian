@@ -155,11 +155,11 @@ function EventPage() {
                     )}
                     <RSVPSection event={eventData.event} />
                     
-                    {/* Agenda Editor */}
+                    {/* Agenda Editor
                     <AgendaEditor event={eventData.event} onUpdate={(updatedEvent) => {
                         // Refetch event data to show updated agenda
                         refetchEvent();
-                    }} />
+                    }} /> */}
                     
                     {/* Analytics Tab for Admin Users */}
                     {user && user.roles && user.roles.includes('admin') && (

@@ -931,7 +931,7 @@ function FormConfig({ config, onChange }) {
                                                 handleDeleteStep(step.id);
                                             }}
                                         >
-                                            <Icon icon="mdi:delete" />
+                                            remove
                                         </button>
                                     </div>
                                 </div>

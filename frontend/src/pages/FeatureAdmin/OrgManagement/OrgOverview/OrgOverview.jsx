@@ -4,6 +4,7 @@ import { useGradient } from '../../../../hooks/useGradient';
 import { Icon } from '@iconify-icon/react';
 import MetricCard from '../../../../components/MetricCard';
 import './OrgOverview.scss';
+import KpiCard from '../../../../components/Analytics/Dashboard/KpiCard';
 
 function OrgOverview() {
     const { data: analytics, loading, error } = useFetch('/org-management/analytics?timeRange=30d');
@@ -59,34 +60,34 @@ function OrgOverview() {
             <div className="content">
                 {/* Quick Stats */}
                 <div className="analytics-overview">
-                    <MetricCard
+                    <KpiCard
                         icon="mdi:account-group"
                         title="Total Organizations"
                         value={data?.overview?.totalOrgs || 0}
-                        label="All registered organizations"
+                        subtitle="All registered organizations"
                         color="var(--primary-color)"
                         size="small"
                     />
 
-                    <MetricCard
+                    <KpiCard
                         icon="mdi:shield-check"
                         title="Verified Organizations"
                         value={data?.overview?.verifiedOrgs || 0}
-                        label="Successfully verified"
+                        subtitle="Successfully verified"
                         color="var(--primary-color)"
                         size="small"
                     />
 
-                    <MetricCard
+                    <KpiCard
                         icon="mdi:account-multiple"
                         title="Total Members"
                         value={data?.overview?.totalMembers || 0}
-                        label="Across all organizations"
+                        subtitle="Across all organizations"
                         color="var(--primary-color)"
                         size="small"
                     />
 
-                    <MetricCard
+                    <KpiCard
                         icon="mdi:calendar"
                         title="Events This Month"
                         value={data?.overview?.totalEvents || 0}
