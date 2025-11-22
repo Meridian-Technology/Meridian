@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFetch } from '../../../../hooks/useFetch';
 import { useGradient } from '../../../../hooks/useGradient';
 import apiRequest from '../../../../utils/postRequest';
@@ -16,6 +16,10 @@ function OrgList() {
     const { data: orgs, loading, error, refetch } = useFetch(
         `/org-management/organizations?${new URLSearchParams(filters).toString()}`
     );
+
+    useEffect(()=>{
+        console.log(filters);
+    }, [filters])
 
     const handleExport = async (format = 'json') => {
         try {
@@ -81,7 +85,7 @@ function OrgList() {
             <div className="content">
                 {/* Filters and Actions */}
                 <div className="toolbar">
-                    <div className="filters">
+                    <div className="org-filters">
                         <div className="search-box">
                             <Icon icon="mdi:magnify" />
                             <input

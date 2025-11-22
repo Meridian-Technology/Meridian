@@ -1,6 +1,7 @@
 import React from 'react';
 import './SystemSettings.scss';
 import SlideSwitch from '../../../../../components/SlideSwitch/SlideSwitch';
+import SettingsList from '../../../../../components/SettingsList/SettingsList';
 
 const SystemSettings = ({ config, onChange }) => {
 
@@ -48,82 +49,66 @@ const SystemSettings = ({ config, onChange }) => {
         handleChange('systemRestrictions', 'blackoutDates', newDates);
     };
 
+    const defaultEventSettingsItems = [
+        {
+            title: 'RSVP Enabled by Default',
+            subtitle: 'Enable RSVP functionality for all events by default',
+            action:
+                <SlideSwitch
+                    checked={config.defaultEventSettings.rsvpEnabled}
+                    onChange={(e) => handleChange('defaultEventSettings', 'rsvpEnabled', e.target.checked)}
+                />
+            
+        },
+        {
+            title: "RSVP Required by Default",
+            subtitle: "Require RSVP for all events by default",
+            action:
+                <SlideSwitch
+                    checked={config.defaultEventSettings.rsvpRequired}
+                    onChange={(e) => handleChange('defaultEventSettings', 'rsvpRequired', e.target.checked)}
+                />
+        },
+        {
+            title: "Approval Required by Default",
+            subtitle: "Require approval for all events by default",
+            action:
+                <SlideSwitch
+                    checked={config.defaultEventSettings.approvalRequired}
+                    onChange={(e) => handleChange('defaultEventSettings', 'approvalRequired', e.target.checked)}
+                />
+        },
+        {
+            title: "Default Visibility",
+            subtitle: "Set the default visibility level for new events",
+            action:
+                <select
+                value={config.defaultEventSettings.visibility}
+                onChange={(e) => handleChange('defaultEventSettings', 'visibility', e.target.value)}
+                >
+                    <option value="public">Public</option>
+                    <option value="campus">Campus Only</option>
+                    <option value="private">Private</option>
+                </select>
+        },
+        {
+            title: "Default Max Attendees",
+            subtitle: "Set the default maximum number of attendees for events",
+            action:
+                <input
+                    type="number"
+                    value={config.defaultEventSettings.maxAttendees || ''}
+                    onChange={(e) => handleChange('defaultEventSettings', 'maxAttendees', e.target.value ? parseInt(e.target.value) : null)}
+                    placeholder="No limit"
+                />
+        },
+    ]
+
     return (
         <div className="system-settings">
             <div className="settings-container">
                 <h1>Default Event Settings</h1>
-                <div className="settings-list">
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>RSVP Enabled by Default</h4>
-                            <p>Enable RSVP functionality for all events by default</p>
-                        </div>
-                        <div className="action">
-                            <SlideSwitch
-                                checked={config.defaultEventSettings.rsvpEnabled}
-                                onChange={(e) => handleChange('defaultEventSettings', 'rsvpEnabled', e.target.checked)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>RSVP Required by Default</h4>
-                            <p>Require RSVP for all events by default</p>
-                        </div>
-                        <div className="action">
-                            <SlideSwitch
-                                checked={config.defaultEventSettings.rsvpRequired}
-                                onChange={(e) => handleChange('defaultEventSettings', 'rsvpRequired', e.target.checked)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Approval Required by Default</h4>
-                            <p>Require approval for all events by default</p>
-                        </div>
-                        <div className="action">
-                            <SlideSwitch
-                                checked={config.defaultEventSettings.approvalRequired}
-                                onChange={(e) => handleChange('defaultEventSettings', 'approvalRequired', e.target.checked)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Default Visibility</h4>
-                            <p>Set the default visibility level for new events</p>
-                        </div>
-                        <div className="action">
-                            <select
-                                value={config.defaultEventSettings.visibility}
-                                onChange={(e) => handleChange('defaultEventSettings', 'visibility', e.target.value)}
-                            >
-                                <option value="public">Public</option>
-                                <option value="campus">Campus Only</option>
-                                <option value="private">Private</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Default Max Attendees</h4>
-                            <p>Set the default maximum number of attendees for events</p>
-                        </div>
-                        <div className="action">
-                            <input
-                                type="number"
-                                value={config.defaultEventSettings.maxAttendees || ''}
-                                onChange={(e) => handleChange('defaultEventSettings', 'maxAttendees', e.target.value ? parseInt(e.target.value) : null)}
-                                placeholder="No limit"
-                            />
-                        </div>
-                    </div>
-                </div>
+                <SettingsList items={defaultEventSettingsItems}/>
             </div>
 
             <div className="settings-container">

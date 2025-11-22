@@ -1,29 +1,13 @@
 .verification-requests {
-    padding: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
 
-    .header {
-        margin-bottom: 30px;
-        text-align: center;
-
-        h1 {
-            font-size: 25px;
-            font-weight: bold;
-            color: var(--text);
-            margin-bottom: 10px;
-        }
-
-        p {
-            font-size: 15px;
-            color: var(--light-text);
-        }
-    }
 
     .content {
         display: flex;
         flex-direction: column;
         gap: 24px;
+        padding: 0 40px 20px 40px;
+        box-sizing: border-box;
+
     }
 
     .filters {

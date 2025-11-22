@@ -98,21 +98,24 @@ function OrgOverview() {
                 </div>
 
                 {/* Verification Requests Summary */}
-                <div className="section">
-                    <h2>Verification Requests</h2>
-                    <div className="requests-summary">
-                        {data?.verificationRequests && Object.entries(data.verificationRequests).map(([status, count]) => (
-                            <div key={status} className="request-status" style={{ borderColor: getStatusColor(status) }}>
-                                <div className="status-indicator" style={{ backgroundColor: getStatusColor(status) }}></div>
-                                <div className="status-content">
-                                    <h4>{count}</h4>
-                                    <p>{status.charAt(0).toUpperCase() + status.slice(1)}</p>
+                {data?.verificationRequests.length > 0 &&
+                    <div className="section">
+                        <h2>Verification Requests</h2>
+                        <div className="requests-summary">
+                            { Object.entries(data.verificationRequests).map(([status, count]) => (
+                                <div key={status} className="request-status" style={{ borderColor: getStatusColor(status) }}>
+                                    <div className="status-indicator" style={{ backgroundColor: getStatusColor(status) }}></div>
+                                    <div className="status-content">
+                                        <h4>{count}</h4>
+                                        <p>{status.charAt(0).toUpperCase() + status.slice(1)}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </div>
-                </div>
+                }
 
+                <div className="section-container">
                 {/* Top Organizations */}
                 <div className="section">
                     <h2>Top Organizations by Members</h2>
@@ -128,53 +131,59 @@ function OrgOverview() {
                         ))}
                     </div>
                 </div>
-
-                {/* Quick Actions */}
-                <div className="section">
-                    <h2>Quick Actions</h2>
-                    <div className="quick-actions">
-                        <button className="action-btn primary">
-                            <Icon icon="mdi:shield-check" />
-                            <span>Review Pending Requests</span>
-                        </button>
-                        <button className="action-btn secondary">
-                            <Icon icon="mdi:account-plus" />
-                            <span>Add New Organization</span>
-                        </button>
-                        <button className="action-btn secondary">
-                            <Icon icon="mdi:download" />
-                            <span>Export Data</span>
-                        </button>
-                        <button className="action-btn secondary">
-                            <Icon icon="mdi:cog" />
-                            <span>Manage Settings</span>
-                        </button>
-                    </div>
-                </div>
-
-                {/* System Status */}
-                <div className="section">
-                    <h2>System Status</h2>
-                    <div className="system-status">
-                        <div className="status-item">
-                            <div className="status-indicator online"></div>
-                            <span>Verification System</span>
-                            <span className="status-text">Online</span>
-                        </div>
-                        <div className="status-item">
-                            <div className="status-indicator online"></div>
-                            <span>Auto-Approval</span>
-                            <span className="status-text">
-                                {config?.data?.autoApproveNewOrgs ? 'Enabled' : 'Disabled'}
-                            </span>
-                        </div>
-                        <div className="status-item">
-                            <div className="status-indicator online"></div>
-                            <span>Notifications</span>
-                            <span className="status-text">Active</span>
+                <div className="section-list">
+                    {/* Quick Actions */}
+                    <div className="section">
+                        <h2>Quick Actions</h2>
+                        <div className="quick-actions">
+                            <button className="action-btn primary">
+                                <Icon icon="mdi:shield-check" />
+                                <span>Review Pending Requests</span>
+                            </button>
+                            <button className="action-btn secondary">
+                                <Icon icon="mdi:account-plus" />
+                                <span>Add New Organization</span>
+                            </button>
+                            <button className="action-btn secondary">
+                                <Icon icon="mdi:download" />
+                                <span>Export Data</span>
+                            </button>
+                            <button className="action-btn secondary">
+                                <Icon icon="mdi:cog" />
+                                <span>Manage Settings</span>
+                            </button>
                         </div>
                     </div>
+
+                    {/* System Status */}
+                    <div className="section">
+                        <h2>System Status</h2>
+                        <div className="system-status">
+                            <div className="status-item">
+                                <div className="status-indicator online"></div>
+                                <span>Verification System</span>
+                                <span className="status-text">Online</span>
+                            </div>
+                            <div className="status-item">
+                                <div className="status-indicator online"></div>
+                                <span>Auto-Approval</span>
+                                <span className="status-text">
+                                    {config?.data?.autoApproveNewOrgs ? 'Enabled' : 'Disabled'}
+                                </span>
+                            </div>
+                            <div className="status-item">
+                                <div className="status-indicator online"></div>
+                                <span>Notifications</span>
+                                <span className="status-text">Active</span>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
+
+                </div>
+
+
             </div>
         </div>
     );

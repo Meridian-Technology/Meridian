@@ -426,10 +426,12 @@ router.get('/organizations', verifyToken, authorizeRoles('admin', 'root'), async
         }
         
         if (status) filter.status = status;
-        if (verified !== undefined) filter.verified = verified === 'true';
+        if (verified !== '') filter.verified = verified === 'true';
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
+
+        console.log(filter);
 
         const orgs = await Org.find(filter)
             .sort(sort)
