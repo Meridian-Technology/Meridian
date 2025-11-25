@@ -220,14 +220,14 @@
       color: var(--text);
       border-bottom: 3px solid var(--text);
       background: transparent;
-      font-weight: 600;
+    //   font-weight: 600;
     }
     
     &--active {
       color: var(--text);
       border-bottom: 3px solid var(--text);
       background: transparent;
-      font-weight: 600;
+    //   font-weight: 600;
     }
 
     // Disabled state
@@ -257,7 +257,7 @@
 
     // Style variants - only apply when NOT active
     &--default:not(.tabbed-container__tab--active) {
-      border-bottom: 2px solid transparent !important;
+      border-bottom: 3px solid transparent !important;
     }
 
     &--pills {
@@ -358,7 +358,7 @@
   // Content area
   &__content {
     flex: 1;
-    padding: 20px;
+    // padding: 20px;
     background: transparent;
     overflow: auto;
     position: relative;

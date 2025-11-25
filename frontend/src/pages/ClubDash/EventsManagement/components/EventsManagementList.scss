@@ -1,7 +1,8 @@
 .events-management-list {
     height: 100%;
     overflow-y: auto;
-
+    padding:20px;
+    box-sizing: border-box;
 
     &.loading {
         display: flex;

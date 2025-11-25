@@ -12,7 +12,6 @@ import Roles from './Roles/Roles';
 import Testing from './Testing/Testing';
 
 import {useFetch} from '../../hooks/useFetch';
-import { use } from 'react';
 import OrgDropdown from './OrgDropdown/OrgDropdown';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import orgLogo from '../../assets/Brand Image/ATLAS.svg';
@@ -51,12 +50,6 @@ function ClubDash(){
     const meetings = useFetch(`/get-meetings/${clubId}`);
 
     const location = useLocation();
-
-    
-
-
-
-    
 
 
     useEffect(()=>{

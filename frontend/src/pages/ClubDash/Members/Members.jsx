@@ -13,6 +13,7 @@ import { getOrgRoleColor } from '../../../utils/orgUtils';
 import Select from '../../../components/Select/Select'; 
 import MemberApplicationsViewer from './MemberApplicationsViewer/MemberApplicationsViewer';
 import TabbedContainer, { CommonTabConfigs } from '../../../components/TabbedContainer';
+
 function Members({ expandedClass, org }) {
     const { user } = useAuth();
     const { addNotification } = useNotification();
@@ -379,36 +380,7 @@ function Members({ expandedClass, org }) {
             'attendence record',
             'Attendence Record',
             'mdi:file-document-multiple',
-            <div className="applications-tab">
-                <div className="applications-content">
-                    <div className="applications-header">
-                        <h3>Member Applications</h3>
-                        <p>Review and manage pending applications for membership</p>
-                    </div>
-                    
-                    <div className="applications-actions">
-                        <button 
-                            className="view-applications-btn"
-                            onClick={() => setShowApplicationsViewer(true)}
-                        >
-                            <Icon icon="mdi:file-document-multiple" />
-                            View All Applications ({applications.length})
-                        </button>
-                    </div>
-                    
-                    {applications.length === 0 ? (
-                        <div className="no-applications">
-                            <Icon icon="mdi:file-document-outline" className="no-applications-icon" />
-                            <p>No pending applications</p>
-                        </div>
-                    ) : (
-                        <div className="applications-summary">
-                            <p>You have {applications.length} pending application{applications.length !== 1 ? 's' : ''} to review.</p>
-                            <p>Click the button above to view and manage all applications.</p>
-                        </div>
-                    )}
-                </div>
-            </div>,
+            <></>,
             applications.length.toString(),
             'warning'
         ),
@@ -417,60 +389,7 @@ function Members({ expandedClass, org }) {
             'applications',
             'Applications',
             'mdi:shield-account',
-            <div className="roles-tab">
-                <div className="roles-content">
-                    <div className="roles-header">
-                        <h3>Organization Roles</h3>
-                        <p>Manage roles and permissions for {org?.org_name}</p>
-                    </div>
-                    
-                    <div className="roles-list">
-                        {roles.length === 0 ? (
-                            <div className="no-roles">
-                                <Icon icon="mdi:shield-outline" className="no-roles-icon" />
-                                <p>No roles configured</p>
-                            </div>
-                        ) : (
-                            <div className="roles-grid">
-                                {roles.map(role => (
-                                    <div key={role.name} className="role-card">
-                                        <div className="role-header">
-                                            <h4>{role.displayName}</h4>
-                                            <span 
-                                                className="role-badge"
-                                                style={{ 
-                                                    backgroundColor: getOrgRoleColor(role.name, 0.1), 
-                                                    color: getOrgRoleColor(role.name, 1) 
-                                                }}
-                                            >
-                                                {role.name}
-                                            </span>
-                                        </div>
-                                        <div className="role-permissions">
-                                            <h5>Permissions:</h5>
-                                            <ul>
-                                                {role.permissions && role.permissions.length > 0 ? (
-                                                    role.permissions.map((permission, index) => (
-                                                        <li key={index}>{permission}</li>
-                                                    ))
-                                                ) : (
-                                                    <li>No specific permissions</li>
-                                                )}
-                                            </ul>
-                                        </div>
-                                        {role.canManageMembers && (
-                                            <div className="role-special">
-                                                <Icon icon="mdi:account-cog" />
-                                                <span>Can manage members</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <MemberApplicationsViewer org={org} />
         )
     ];
 
@@ -479,7 +398,7 @@ function Members({ expandedClass, org }) {
         <header className="header">
             <h1>Member Management</h1>
             <p>Manage members and assign roles for {org?.org_name}</p>
-            <img src={OrgGrad} alt="" />
+            <img src={AtlasMain} alt="" />
         </header>
     );
 
@@ -501,7 +420,7 @@ function Members({ expandedClass, org }) {
                     <header className="header">
                         <h1>Member Management</h1>
                         <p>Manage members and assign roles for {org.org_name}</p>
-                        <img src={OrgGrad} alt="" />
+                        <img src={AtlasMain} alt="" />
                     </header>
 
                     <div className="permission-warning">

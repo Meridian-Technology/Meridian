@@ -12,7 +12,7 @@
     width: 100%;
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     padding: 15px 20px;
     box-sizing: border-box;
     gap: 32px;
@@ -33,6 +33,7 @@
       justify-content: center;
       flex-grow: 1;
       min-width: 0;
+      min-height:100%;
 
       h4 {
         color: var(--text);
