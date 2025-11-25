@@ -7,6 +7,8 @@ import { useDashboardOverlay } from '../../../hooks/useDashboardOverlay';
 import EventViewer from '../../../components/EventViewer';
 import './EventsManagement.scss';
 import { useGradient } from '../../../hooks/useGradient';
+import OrgGrad from '../../../assets/Gradients/OrgGrad.png';
+import TabbedContainer from '../../../components/TabbedContainer';
 
 // Import sub-components
 import EventsOverview from './components/EventsOverview';
@@ -31,13 +33,13 @@ function EventsManagement({ orgId, expandedClass }) {
         {
             id: 'overview',
             label: 'Overview',
-            icon: 'mingcute:chart-fill',
+            icon: 'mingcute:chart-bar-fill',
             description: 'Event statistics and quick actions'
         },
         {
             id: 'analytics',
             label: 'Analytics',
-            icon: 'mingcute:analytics-fill',
+            icon: 'mingcute:department-fill',
             description: 'Detailed analytics and insights'
         },
         {
@@ -49,7 +51,7 @@ function EventsManagement({ orgId, expandedClass }) {
         {
             id: 'templates',
             label: 'Templates',
-            icon: 'mingcute:file-template-fill',
+            icon: 'mingcute:file-line',
             description: 'Create and manage event templates'
         }
     ];
@@ -150,8 +152,8 @@ function EventsManagement({ orgId, expandedClass }) {
                     <p>Refresh</p>
                 </button>
             </div>
-            
-                <div className="events-management-tabs">
+
+                {/* <div className="events-management-tabs">
                     <div className="tab-navigation">
                         {tabs.map(tab => (
                             <button
@@ -164,11 +166,11 @@ function EventsManagement({ orgId, expandedClass }) {
                             </button>
                         ))}
                     </div>
-                </div>
+                </div> */}
 
-                <div className="events-management-content">
+                {/* <div className="events-management-content">
                     {renderTabContent()}
-                </div>
+                </div> */}
 
                 {/* Bulk Operations Panel */}
                 {selectedEvents.length > 0 && (
@@ -179,7 +181,20 @@ function EventsManagement({ orgId, expandedClass }) {
                         onSuccess={handleRefresh}
                     />
                 )}
+
             </container>
+            <TabbedContainer
+                    tabs={tabs}
+                    defaultTab="overview"
+                    tabStyle="default"
+                    size="medium"
+                    animated={true}
+                    showTabIcons={true}
+                    showTabLabels={true}
+                    fullWidth={false}
+                    scrollable={false}
+                    className="events-management-tabs"
+                />
         </div>
     );
 }
