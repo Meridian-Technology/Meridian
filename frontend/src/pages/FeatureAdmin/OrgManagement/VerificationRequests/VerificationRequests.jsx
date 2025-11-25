@@ -21,13 +21,20 @@ function VerificationRequests() {
     });
     const { AtlasMain } = useGradient();
 
+    const queryParams = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+        if (value !== '' && value !== null && value !== undefined) {
+            queryParams.append(key, value);
+        }
+    });
+    
     const { data: requests, loading, error, refetch } = useFetch(
-        `/org-management/verification-requests?${new URLSearchParams(filters).toString()}`
+        `/org-management/verification-requests?${queryParams.toString()}`
     );
 
-    // Fetch verification types configuration
+    // Fetch verification tiers configuration
     const { data: configData } = useFetch('/org-management/config');
-    const verificationTypes = configData?.verificationStatusTypes || {};
+    const verificationTiers = configData?.data?.verificationTiers || {};
 
     const getStatusColor = (status) => {
         switch (status) {
@@ -64,8 +71,8 @@ function VerificationRequests() {
     };
 
     const getVerificationTypeLabel = (type) => {
-        if (verificationTypes[type]) {
-            return verificationTypes[type].name;
+        if (verificationTiers[type]) {
+            return verificationTiers[type].name;
         }
         return type;
     };

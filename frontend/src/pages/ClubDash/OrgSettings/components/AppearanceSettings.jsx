@@ -5,6 +5,7 @@ import './AppearanceSettings.scss';
 import { useGradient } from '../../../../hooks/useGradient';
 import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
 import useUnsavedChanges from '../../../../hooks/useUnsavedChanges';
+import SettingsList from '../../../../components/SettingsList/SettingsList';
 
 const AppearanceSettings = ({ org, expandedClass }) => {
     const [formData, setFormData] = useState({
@@ -116,6 +117,29 @@ const AppearanceSettings = ({ org, expandedClass }) => {
         );
     }
 
+    const appearanceSettingsItems = [
+        {
+            title: 'Profile Picture',
+            subtitle: 'Upload an image that represents your organization',
+            action: (
+                <div className="form-group">
+                    <div className="current-image">
+                        <img 
+                            src={imagePreview || '/Logo.svg'} 
+                            alt="Organization profile" 
+                        />
+                    </div>
+                    <ImageUpload
+                        onFileSelect={handleFileSelect}
+                        uploadText="Upload new profile picture"
+                        maxSize={5}
+                        showPrompt={true}
+                    />
+                </div>
+            )
+        }
+    ];
+
     return (
         <div className="dash settings-section">
             <UnsavedChangesBanner
@@ -131,21 +155,7 @@ const AppearanceSettings = ({ org, expandedClass }) => {
                 <img src={AtlasMain} alt="" />
             </header>
             <div className="settings-content">
-                <div className="form-group">
-                    <label>Profile Picture</label>
-                    <div className="current-image">
-                        <img 
-                            src={imagePreview || '/Logo.svg'} 
-                            alt="Organization profile" 
-                        />
-                    </div>
-                    <ImageUpload
-                        onFileSelect={handleFileSelect}
-                        uploadText="Upload new profile picture"
-                        maxSize={5}
-                        showPrompt={true}
-                    />
-                </div>
+                <SettingsList items={appearanceSettingsItems} />
             </div>
         </div>
     );

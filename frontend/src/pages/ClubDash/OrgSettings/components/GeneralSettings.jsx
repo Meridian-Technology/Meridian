@@ -3,6 +3,7 @@ import { useOrgPermissions, useOrgSave } from './settingsHelpers';
 import { useGradient } from '../../../../hooks/useGradient';
 import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
 import useUnsavedChanges from '../../../../hooks/useUnsavedChanges';
+import SettingsList from '../../../../components/SettingsList/SettingsList';
 
 const GeneralSettings = ({ org, expandedClass }) => {
     const [formData, setFormData] = useState({
@@ -107,6 +108,62 @@ const GeneralSettings = ({ org, expandedClass }) => {
         );
     }
 
+    const generalSettingsItems = [
+        {
+            title: 'Organization Name',
+            subtitle: 'The name of your organization',
+            action: (
+                <div className="form-group">
+                    <input
+                        type="text"
+                        id="org_name"
+                        name="org_name"
+                        value={formData.org_name}
+                        onChange={handleInputChange}
+                        disabled={!canManageSettings}
+                        placeholder="Enter organization name"
+                    />
+                </div>
+            )
+        },
+        {
+            title: 'Description',
+            subtitle: 'A brief description of your organization',
+            action: (
+                <div className="form-group">
+                    <textarea
+                        id="org_description"
+                        name="org_description"
+                        value={formData.org_description}
+                        onChange={handleInputChange}
+                        disabled={!canManageSettings}
+                        placeholder="Describe your organization"
+                        rows={4}
+                        maxLength={500}
+                    />
+                    <span className="char-count">{formData.org_description.length}/500</span>
+                </div>
+            )
+        },
+        {
+            title: 'Weekly Meeting Time',
+            subtitle: 'The time of your weekly meeting',
+            action: (
+                <div className="form-group">
+                    <input
+                        type="text"
+                        id="weekly_meeting"
+                        name="weekly_meeting"
+                        value={formData.weekly_meeting}
+                        onChange={handleInputChange}
+                        disabled={!canManageSettings}
+                        placeholder="e.g., Every Monday at 6 PM"
+                    />
+                </div>
+            )
+        }
+    ];
+
     return (
         <div className="dash settings-section">
             <UnsavedChangesBanner
@@ -122,56 +179,7 @@ const GeneralSettings = ({ org, expandedClass }) => {
                 <img src={AtlasMain} alt="" />
             </header>
             <div className="settings-content">
-                
-                <div className="settings-child">
-                    <label htmlFor="org_name">
-                        <h4>Organization Name</h4>
-                        <p>The name of your organization</p>
-                    </label>
-                    <input
-                        type="text"
-                        id="org_name"
-                        name="org_name"
-                        value={formData.org_name}
-                        onChange={handleInputChange}
-                        disabled={!canManageSettings}
-                        placeholder="Enter organization name"
-                    />
-                </div>
-
-                <div className="form-group settings-child">
-                    <label htmlFor="org_description">
-                        <h4>Description</h4>
-                        <p>A brief description of your organization</p>
-                    </label>
-                    <textarea
-                        id="org_description"
-                        name="org_description"
-                        value={formData.org_description}
-                        onChange={handleInputChange}
-                        disabled={!canManageSettings}
-                        placeholder="Describe your organization"
-                        rows={4}
-                        maxLength={500}
-                    />
-                    <span className="char-count">{formData.org_description.length}/500</span>
-                </div>
-
-                <div className="settings-child">
-                    <label htmlFor="weekly_meeting">
-                        <h4>Weekly Meeting Time</h4>
-                        <p>The time of your weekly meeting</p>
-                    </label>
-                    <input
-                        type="text"
-                        id="weekly_meeting"
-                        name="weekly_meeting"
-                        value={formData.weekly_meeting}
-                        onChange={handleInputChange}
-                        disabled={!canManageSettings}
-                        placeholder="e.g., Every Monday at 6 PM"
-                    />
-                </div>
+                <SettingsList items={generalSettingsItems} />
             </div>
         </div>
     );

@@ -104,6 +104,169 @@ const SystemSettings = ({ config, onChange }) => {
         },
     ]
 
+    const notificationSettingsItems = [
+        {
+            title: 'Default Notification Channels',
+            subtitle: 'Select which channels to use for notifications by default',
+            action:
+                <div className="checkbox-group">
+                    {['email', 'push', 'sms', 'in_app'].map(channel => (
+                        <label key={channel} className="checkbox-label">
+                            <input
+                                type="checkbox"
+                                checked={config.notificationSettings.defaultChannels?.includes(channel) || false}
+                                onChange={() => handleArrayChange('notificationSettings', 'defaultChannels', channel)}
+                            />
+                            <span className="checkmark"></span>
+                            {channel.charAt(0).toUpperCase() + channel.slice(1).replace('_', ' ')}
+                        </label>
+                    ))}
+                </div>
+        },
+        {
+            title: 'Reminder Intervals',
+            subtitle: 'Set reminder intervals in hours before an event',
+            action:
+                <div className="array-input">
+                    {config.notificationSettings.reminderIntervals?.map((interval, index) => (
+                        <div key={index} className="array-item">
+                            <input
+                                type="number"
+                                value={interval}
+                                onChange={(e) => {
+                                    const newIntervals = [...config.notificationSettings.reminderIntervals];
+                                    newIntervals[index] = parseInt(e.target.value);
+                                    handleChange('notificationSettings', 'reminderIntervals', newIntervals);
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const newIntervals = config.notificationSettings.reminderIntervals.filter((_, i) => i !== index);
+                                    handleChange('notificationSettings', 'reminderIntervals', newIntervals);
+                                }}
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    ))}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const newIntervals = [...(config.notificationSettings.reminderIntervals || []), 24];
+                            handleChange('notificationSettings', 'reminderIntervals', newIntervals);
+                        }}
+                    >
+                        Add Interval
+                    </button>
+                </div>
+        },
+        {
+            title: 'Escalation Timeout',
+            subtitle: 'Hours before escalating notifications',
+            action:
+                <input
+                    type="number"
+                    value={config.notificationSettings.escalationTimeouts}
+                    onChange={(e) => handleChange('notificationSettings', 'escalationTimeouts', parseInt(e.target.value))}
+                />
+        },
+        {
+            title: 'Batch Notification Limit',
+            subtitle: 'Maximum number of notifications to send in a batch',
+            action:
+                <input
+                    type="number"
+                    value={config.notificationSettings.batchNotificationLimit}
+                    onChange={(e) => handleChange('notificationSettings', 'batchNotificationLimit', parseInt(e.target.value))}
+                />
+        }
+    ];
+
+    const systemRestrictionsItems = [
+        {
+            title: 'Max Events Per User',
+            subtitle: 'Maximum number of events a single user can create',
+            action:
+                <input
+                    type="number"
+                    value={config.systemRestrictions.maxEventsPerUser}
+                    onChange={(e) => handleChange('systemRestrictions', 'maxEventsPerUser', parseInt(e.target.value))}
+                />
+        },
+        {
+            title: 'Max Events Per Organization',
+            subtitle: 'Maximum number of events an organization can create',
+            action:
+                <input
+                    type="number"
+                    value={config.systemRestrictions.maxEventsPerOrg}
+                    onChange={(e) => handleChange('systemRestrictions', 'maxEventsPerOrg', parseInt(e.target.value))}
+                />
+        },
+        {
+            title: 'Advance Booking Limit',
+            subtitle: 'Maximum days in advance events can be booked',
+            action:
+                <input
+                    type="number"
+                    value={config.systemRestrictions.advanceBookingLimit}
+                    onChange={(e) => handleChange('systemRestrictions', 'advanceBookingLimit', parseInt(e.target.value))}
+                />
+        },
+        {
+            title: 'Minimum Booking Advance',
+            subtitle: 'Minimum hours in advance events must be booked',
+            action:
+                <input
+                    type="number"
+                    value={config.systemRestrictions.minBookingAdvance}
+                    onChange={(e) => handleChange('systemRestrictions', 'minBookingAdvance', parseInt(e.target.value))}
+                />
+        },
+        {
+            title: 'Blackout Dates',
+            subtitle: 'Dates when events cannot be created',
+            action:
+                <div className="blackout-dates">
+                    {config.systemRestrictions.blackoutDates?.map((date, index) => (
+                        <div key={index} className="blackout-date-item">
+                            <input
+                                type="date"
+                                value={date.start}
+                                onChange={(e) => handleBlackoutDateChange(index, 'start', e.target.value)}
+                            />
+                            <span>to</span>
+                            <input
+                                type="date"
+                                value={date.end}
+                                onChange={(e) => handleBlackoutDateChange(index, 'end', e.target.value)}
+                            />
+                            <input
+                                type="text"
+                                placeholder="Reason"
+                                value={date.reason}
+                                onChange={(e) => handleBlackoutDateChange(index, 'reason', e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => handleBlackoutDateRemove(index)}
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    ))}
+                    <button
+                        type="button"
+                        onClick={handleBlackoutDateAdd}
+                        className="add-blackout-btn"
+                    >
+                        Add Blackout Date
+                    </button>
+                </div>
+        }
+    ];
+
     return (
         <div className="system-settings">
             <div className="settings-container">
@@ -113,205 +276,12 @@ const SystemSettings = ({ config, onChange }) => {
 
             <div className="settings-container">
                 <h1>Notification Settings</h1>
-                <div className="settings-list">
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Default Notification Channels</h4>
-                            <p>Select which channels to use for notifications by default</p>
-                        </div>
-                        <div className="action">
-                            <div className="checkbox-group">
-                                {['email', 'push', 'sms', 'in_app'].map(channel => (
-                                    <label key={channel} className="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            checked={config.notificationSettings.defaultChannels?.includes(channel) || false}
-                                            onChange={() => handleArrayChange('notificationSettings', 'defaultChannels', channel)}
-                                        />
-                                        <span className="checkmark"></span>
-                                        {channel.charAt(0).toUpperCase() + channel.slice(1).replace('_', ' ')}
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Reminder Intervals</h4>
-                            <p>Set reminder intervals in hours before an event</p>
-                        </div>
-                        <div className="action">
-                            <div className="array-input">
-                                {config.notificationSettings.reminderIntervals?.map((interval, index) => (
-                                    <div key={index} className="array-item">
-                                        <input
-                                            type="number"
-                                            value={interval}
-                                            onChange={(e) => {
-                                                const newIntervals = [...config.notificationSettings.reminderIntervals];
-                                                newIntervals[index] = parseInt(e.target.value);
-                                                handleChange('notificationSettings', 'reminderIntervals', newIntervals);
-                                            }}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const newIntervals = config.notificationSettings.reminderIntervals.filter((_, i) => i !== index);
-                                                handleChange('notificationSettings', 'reminderIntervals', newIntervals);
-                                            }}
-                                        >
-                                            Remove
-                                        </button>
-                                    </div>
-                                ))}
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const newIntervals = [...(config.notificationSettings.reminderIntervals || []), 24];
-                                        handleChange('notificationSettings', 'reminderIntervals', newIntervals);
-                                    }}
-                                >
-                                    Add Interval
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Escalation Timeout</h4>
-                            <p>Hours before escalating notifications</p>
-                        </div>
-                        <div className="action">
-                            <input
-                                type="number"
-                                value={config.notificationSettings.escalationTimeouts}
-                                onChange={(e) => handleChange('notificationSettings', 'escalationTimeouts', parseInt(e.target.value))}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Batch Notification Limit</h4>
-                            <p>Maximum number of notifications to send in a batch</p>
-                        </div>
-                        <div className="action">
-                            <input
-                                type="number"
-                                value={config.notificationSettings.batchNotificationLimit}
-                                onChange={(e) => handleChange('notificationSettings', 'batchNotificationLimit', parseInt(e.target.value))}
-                            />
-                        </div>
-                    </div>
-                </div>
+                <SettingsList items={notificationSettingsItems}/>
             </div>
 
             <div className="settings-container">
                 <h1>System Restrictions</h1>
-                <div className="settings-list">
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Max Events Per User</h4>
-                            <p>Maximum number of events a single user can create</p>
-                        </div>
-                        <div className="action">
-                            <input
-                                type="number"
-                                value={config.systemRestrictions.maxEventsPerUser}
-                                onChange={(e) => handleChange('systemRestrictions', 'maxEventsPerUser', parseInt(e.target.value))}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Max Events Per Organization</h4>
-                            <p>Maximum number of events an organization can create</p>
-                        </div>
-                        <div className="action">
-                            <input
-                                type="number"
-                                value={config.systemRestrictions.maxEventsPerOrg}
-                                onChange={(e) => handleChange('systemRestrictions', 'maxEventsPerOrg', parseInt(e.target.value))}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Advance Booking Limit</h4>
-                            <p>Maximum days in advance events can be booked</p>
-                        </div>
-                        <div className="action">
-                            <input
-                                type="number"
-                                value={config.systemRestrictions.advanceBookingLimit}
-                                onChange={(e) => handleChange('systemRestrictions', 'advanceBookingLimit', parseInt(e.target.value))}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Minimum Booking Advance</h4>
-                            <p>Minimum hours in advance events must be booked</p>
-                        </div>
-                        <div className="action">
-                            <input
-                                type="number"
-                                value={config.systemRestrictions.minBookingAdvance}
-                                onChange={(e) => handleChange('systemRestrictions', 'minBookingAdvance', parseInt(e.target.value))}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Blackout Dates</h4>
-                            <p>Dates when events cannot be created</p>
-                        </div>
-                        <div className="action">
-                            <div className="blackout-dates">
-                                {config.systemRestrictions.blackoutDates?.map((date, index) => (
-                                    <div key={index} className="blackout-date-item">
-                                        <input
-                                            type="date"
-                                            value={date.start}
-                                            onChange={(e) => handleBlackoutDateChange(index, 'start', e.target.value)}
-                                        />
-                                        <span>to</span>
-                                        <input
-                                            type="date"
-                                            value={date.end}
-                                            onChange={(e) => handleBlackoutDateChange(index, 'end', e.target.value)}
-                                        />
-                                        <input
-                                            type="text"
-                                            placeholder="Reason"
-                                            value={date.reason}
-                                            onChange={(e) => handleBlackoutDateChange(index, 'reason', e.target.value)}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => handleBlackoutDateRemove(index)}
-                                        >
-                                            Remove
-                                        </button>
-                                    </div>
-                                ))}
-                                <button
-                                    type="button"
-                                    onClick={handleBlackoutDateAdd}
-                                    className="add-blackout-btn"
-                                >
-                                    Add Blackout Date
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <SettingsList items={systemRestrictionsItems}/>
             </div>
         </div>
     );

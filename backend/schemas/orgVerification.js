@@ -18,7 +18,7 @@ const verificationRequestSchema = new mongoose.Schema({
     },
     verificationType: {
         type: String,
-        enum: ['basic', 'premium', 'gold', 'platinum', 'official', 'academic', 'cultural', 'sports', 'professional'],
+        // Enum removed - validation happens against orgManagementConfig.verificationTiers
         default: 'basic'
     },
     requestType: {

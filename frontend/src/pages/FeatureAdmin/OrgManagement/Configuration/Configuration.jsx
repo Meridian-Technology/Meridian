@@ -10,6 +10,8 @@ import './Configuration.scss';
 function Configuration({ section = 'general' }) {
     const { data: config, loading, error, refetch } = useFetch('/org-management/config');
     const [localConfig, setLocalConfig] = useState(null);
+    const [selectedTypeKey, setSelectedTypeKey] = useState(null);
+    const [benefitDraft, setBenefitDraft] = useState('');
     const originalDataRef = useRef(null);
     const { AtlasMain } = useGradient();
 
@@ -20,6 +22,15 @@ function Configuration({ section = 'general' }) {
             originalDataRef.current = JSON.parse(JSON.stringify(config.data));
         }
     }, [config]);
+
+    React.useEffect(() => {
+        if (!localConfig?.verificationTiers) return;
+        const entries = Object.keys(localConfig.verificationTiers);
+        if (!entries.length) return;
+        if (!selectedTypeKey || !localConfig.verificationTiers[selectedTypeKey]) {
+            setSelectedTypeKey(entries[0]);
+        }
+    }, [localConfig, selectedTypeKey]);
 
     // Original data for comparison
     const originalData = config?.data ? JSON.parse(JSON.stringify(config.data)) : null;
@@ -98,14 +109,14 @@ function Configuration({ section = 'general' }) {
         if (!localConfig) return;
         
         const newConfig = { ...localConfig };
-        if (!newConfig.verificationStatusTypes) {
-            newConfig.verificationStatusTypes = {};
+        if (!newConfig.verificationTiers) {
+            newConfig.verificationTiers = {};
         }
-        if (!newConfig.verificationStatusTypes[typeKey]) {
-            newConfig.verificationStatusTypes[typeKey] = {};
+        if (!newConfig.verificationTiers[typeKey]) {
+            newConfig.verificationTiers[typeKey] = {};
         }
         
-        newConfig.verificationStatusTypes[typeKey][field] = value;
+        newConfig.verificationTiers[typeKey][field] = value;
         setLocalConfig(newConfig);
     };
 
@@ -113,17 +124,17 @@ function Configuration({ section = 'general' }) {
         if (!localConfig) return;
         
         const newConfig = { ...localConfig };
-        if (!newConfig.verificationStatusTypes) {
-            newConfig.verificationStatusTypes = {};
+        if (!newConfig.verificationTiers) {
+            newConfig.verificationTiers = {};
         }
-        if (!newConfig.verificationStatusTypes[typeKey]) {
-            newConfig.verificationStatusTypes[typeKey] = {};
+        if (!newConfig.verificationTiers[typeKey]) {
+            newConfig.verificationTiers[typeKey] = {};
         }
-        if (!newConfig.verificationStatusTypes[typeKey].requirements) {
-            newConfig.verificationStatusTypes[typeKey].requirements = {};
+        if (!newConfig.verificationTiers[typeKey].requirements) {
+            newConfig.verificationTiers[typeKey].requirements = {};
         }
         
-        newConfig.verificationStatusTypes[typeKey].requirements[requirement] = value;
+        newConfig.verificationTiers[typeKey].requirements[requirement] = value;
         setLocalConfig(newConfig);
     };
 
@@ -131,21 +142,21 @@ function Configuration({ section = 'general' }) {
         if (!localConfig) return;
         
         const newConfig = { ...localConfig };
-        if (!newConfig.verificationStatusTypes) {
-            newConfig.verificationStatusTypes = {};
+        if (!newConfig.verificationTiers) {
+            newConfig.verificationTiers = {};
         }
         
         // Generate a unique key for the new verification type
         const baseKey = 'new_verification_type';
         let key = baseKey;
         let counter = 1;
-        while (newConfig.verificationStatusTypes[key]) {
+        while (newConfig.verificationTiers[key]) {
             key = `${baseKey}_${counter}`;
             counter++;
         }
         
         // Add default verification type
-        newConfig.verificationStatusTypes[key] = {
+        newConfig.verificationTiers[key] = {
             name: 'New Verification Type',
             description: 'Description for the new verification type',
             color: '#4caf50',
@@ -170,7 +181,7 @@ function Configuration({ section = 'general' }) {
         }
         
         // Show confirmation dialog
-        const verificationTypeName = localConfig.verificationStatusTypes[typeKey]?.name || typeKey;
+        const verificationTypeName = localConfig.verificationTiers[typeKey]?.name || typeKey;
         const confirmed = window.confirm(
             `Are you sure you want to remove the verification type "${verificationTypeName}"?\n\n` +
             'This action cannot be undone and may affect existing organizations using this verification type.'
@@ -179,8 +190,8 @@ function Configuration({ section = 'general' }) {
         if (!confirmed) return;
         
         const newConfig = { ...localConfig };
-        if (newConfig.verificationStatusTypes && newConfig.verificationStatusTypes[typeKey]) {
-            delete newConfig.verificationStatusTypes[typeKey];
+        if (newConfig.verificationTiers && newConfig.verificationTiers[typeKey]) {
+            delete newConfig.verificationTiers[typeKey];
             
             // If this was the default verification type, reset to basic
             if (newConfig.defaultVerificationType === typeKey) {
@@ -207,18 +218,18 @@ function Configuration({ section = 'general' }) {
         }
         
         // Check if new key already exists
-        if (localConfig.verificationStatusTypes[newKey] && newKey !== oldKey) {
+        if (localConfig.verificationTiers[newKey] && newKey !== oldKey) {
             alert('A verification type with this key already exists.');
             return;
         }
         
         const newConfig = { ...localConfig };
-        if (newConfig.verificationStatusTypes && newConfig.verificationStatusTypes[oldKey]) {
+        if (newConfig.verificationTiers && newConfig.verificationTiers[oldKey]) {
             // Copy the verification type to the new key
-            newConfig.verificationStatusTypes[newKey] = { ...newConfig.verificationStatusTypes[oldKey] };
+            newConfig.verificationTiers[newKey] = { ...newConfig.verificationTiers[oldKey] };
             
             // Remove the old key
-            delete newConfig.verificationStatusTypes[oldKey];
+            delete newConfig.verificationTiers[oldKey];
             
             // Update default verification type if it was the renamed one
             if (newConfig.defaultVerificationType === oldKey) {
@@ -227,6 +238,45 @@ function Configuration({ section = 'general' }) {
             
             setLocalConfig(newConfig);
         }
+    };
+
+    const duplicateVerificationType = (typeKey) => {
+        if (!localConfig?.verificationTiers?.[typeKey]) return;
+        const newConfig = { ...localConfig, verificationTiers: { ...localConfig.verificationTiers } };
+        const baseKey = `${typeKey}_copy`;
+        let duplicateKey = baseKey;
+        let counter = 1;
+        while (newConfig.verificationTiers[duplicateKey]) {
+            duplicateKey = `${baseKey}_${counter}`;
+            counter += 1;
+        }
+        newConfig.verificationTiers[duplicateKey] = {
+            ...JSON.parse(JSON.stringify(newConfig.verificationTiers[typeKey])),
+            name: `${newConfig.verificationTiers[typeKey].name} Copy`
+        };
+        setLocalConfig(newConfig);
+        setSelectedTypeKey(duplicateKey);
+    };
+
+    const setDefaultVerificationType = (typeKey) => {
+        updateConfig('defaultVerificationType', typeKey);
+    };
+
+    const handleAddBenefit = (typeKey) => {
+        const draft = benefitDraft.trim();
+        if (!draft) return;
+        const currentBenefits = localConfig?.verificationTiers?.[typeKey]?.benefits || [];
+        if (currentBenefits.includes(draft)) {
+            setBenefitDraft('');
+            return;
+        }
+        updateVerificationType(typeKey, 'benefits', [...currentBenefits, draft]);
+        setBenefitDraft('');
+    };
+
+    const handleRemoveBenefit = (typeKey, benefit) => {
+        const benefits = localConfig?.verificationTiers?.[typeKey]?.benefits || [];
+        updateVerificationType(typeKey, 'benefits', benefits.filter((item) => item !== benefit));
     };
 
     if (loading) {
@@ -313,165 +363,268 @@ function Configuration({ section = 'general' }) {
         </div>
     );
 
-    const renderVerificationTypes = () => (
-        <div className="config-sections">
-            {/* Verification Types Management */}
-            <div className="config-section">
-                <h2>
-                    <Icon icon="mdi:shield-star" />
-                    Verification Types Management
-                </h2>
-                
-                <div className="config-group">
-                    <div className="config-item">
-                        <label>Enable Custom Verification Types</label>
-                        <input
-                            type="checkbox"
-                            checked={localConfig.enableCustomVerificationTypes}
-                            onChange={(e) => updateConfig('enableCustomVerificationTypes', e.target.checked)}
-                        />
-                        <p>Allow organizations to request different verification levels</p>
-                    </div>
+    const renderVerificationTypes = () => {
+        const verificationTypes = localConfig.verificationTiers || {};
+        const verificationEntries = Object.entries(verificationTypes);
+        const selectedType = selectedTypeKey ? verificationTypes[selectedTypeKey] : null;
 
-                    <div className="config-item">
-                        <label>Default Verification Type</label>
-                        <select
-                            value={localConfig.defaultVerificationType}
-                            onChange={(e) => updateConfig('defaultVerificationType', e.target.value)}
-                        >
-                            {Object.entries(localConfig.verificationStatusTypes || {}).map(([key, config]) => (
-                                <option key={key} value={key}>
-                                    {config.name}
-                                </option>
-                            ))}
-                        </select>
-                        <p>Default verification type for new organizations</p>
-                    </div>
+        return (
+            <div className="config-sections">
+                <div className="config-section verification-types-section">
+                    <h2>
+                        <Icon icon="mdi:shield-star" />
+                        Verification Types Management
+                    </h2>
 
-                    <div className="config-item">
-                        <label>Auto-upgrade Threshold (days)</label>
-                        <input
-                            type="number"
-                            value={localConfig.autoUpgradeThreshold}
-                            onChange={(e) => updateConfig('autoUpgradeThreshold', parseInt(e.target.value))}
-                            min="0"
-                        />
-                        <p>Days after which organizations can request status upgrades</p>
-                    </div>
-                </div>
-
-                {/* Verification Types Editor */}
-                <div className="config-group">
-                    <div className="verification-types-header">
-                        <div>
-                            <h3>Verification Types</h3>
-                            <p>Configure individual verification types and their requirements</p>
+                    <div className="config-group">
+                        <div className="config-item">
+                            <label>Enable Custom Verification Types</label>
+                            <input
+                                type="checkbox"
+                                checked={localConfig.enableCustomVerificationTypes}
+                                onChange={(e) => updateConfig('enableCustomVerificationTypes', e.target.checked)}
+                            />
+                            <p>Allow organizations to request different verification levels</p>
                         </div>
-                        <button 
-                            className="add-verification-type-btn"
-                            onClick={addVerificationType}
-                        >
-                            <Icon icon="mdi:plus" />
-                            Add Verification Type
-                        </button>
+
+                        <div className="config-item inline">
+                            <div>
+                                <label>Auto-upgrade Threshold (days)</label>
+                                <input
+                                    type="number"
+                                    value={localConfig.autoUpgradeThreshold}
+                                    onChange={(e) => updateConfig('autoUpgradeThreshold', parseInt(e.target.value) || 0)}
+                                    min="0"
+                                />
+                                <p>Days before an org can request a higher tier</p>
+                            </div>
+                            <div className="summary-pills">
+                                <span className="pill">
+                                    <Icon icon="mdi:layers" />
+                                    {verificationEntries.length} tiers
+                                </span>
+                                <span className="pill default">
+                                    <Icon icon="mdi:star" />
+                                    Default: {localConfig.defaultVerificationType}
+                                </span>
+                            </div>
+                        </div>
                     </div>
-                    
-                    {Object.entries(localConfig.verificationStatusTypes || {}).map(([key, config]) => (
-                        <div key={key} className="verification-type-editor">
-                            <div className="type-header">
-                                <div className="type-info">
-                                    <h4>{config.name}</h4>
-                                    <span className="type-key">({key})</span>
+
+                    <div className="verification-types-layout">
+                        <div className="verification-type-list">
+                            <div className="verification-list-header">
+                                <div>
+                                    <h3>Tiers</h3>
+                                    <p>Select a tier to edit its settings</p>
                                 </div>
-                                <button 
-                                    className="remove-verification-type-btn"
-                                    onClick={() => removeVerificationType(key)}
-                                    title={key === 'basic' ? 'Cannot remove basic verification type' : 'Remove verification type'}
-                                    disabled={key === 'basic'}
-                                >
-                                    <Icon icon="mdi:delete" />
+                                <button className="add-verification-type-btn" onClick={addVerificationType}>
+                                    <Icon icon="mdi:plus" />
+                                    New Tier
                                 </button>
                             </div>
-                            
-                            <div className="type-fields">
-                                <div className="form-group">
-                                    <label>Key (Internal ID):</label>
-                                    <input
-                                        type="text"
-                                        value={key}
-                                        onChange={(e) => renameVerificationType(key, e.target.value)}
-                                        disabled={key === 'basic'}
-                                        placeholder="verification_type_key"
-                                    />
-                                    <small>Only lowercase letters, numbers, and underscores. Cannot be changed for 'basic' type.</small>
-                                </div>
-                                
-                                <div className="form-group">
-                                    <label>Display Name:</label>
-                                    <input
-                                        type="text"
-                                        value={config.name}
-                                        onChange={(e) => updateVerificationType(key, 'name', e.target.value)}
-                                    />
-                                </div>
-                                
-                                <div className="form-group">
-                                    <label>Description:</label>
-                                    <textarea
-                                        value={config.description}
-                                        onChange={(e) => updateVerificationType(key, 'description', e.target.value)}
-                                        rows={2}
-                                    />
-                                </div>
-                                
-                                <div className="form-group">
-                                    <label>Color:</label>
-                                    <input
-                                        type="color"
-                                        value={config.color}
-                                        onChange={(e) => updateVerificationType(key, 'color', e.target.value)}
-                                    />
-                                </div>
-                                
-                                <div className="form-group">
-                                    <label>Icon:</label>
-                                    <input
-                                        type="text"
-                                        value={config.icon}
-                                        onChange={(e) => updateVerificationType(key, 'icon', e.target.value)}
-                                        placeholder="mdi:icon-name"
-                                    />
-                                </div>
-                                
-                                <div className="requirements-section">
-                                    <h5>Requirements</h5>
-                                    <div className="form-group">
-                                        <label>Minimum Members:</label>
-                                        <input
-                                            type="number"
-                                            value={config.requirements?.minMembers || 0}
-                                            onChange={(e) => updateVerificationTypeRequirement(key, 'minMembers', parseInt(e.target.value))}
-                                            min="0"
-                                        />
-                                    </div>
-                                    
-                                    <div className="form-group">
-                                        <label>Minimum Age (days):</label>
-                                        <input
-                                            type="number"
-                                            value={config.requirements?.minAge || 0}
-                                            onChange={(e) => updateVerificationTypeRequirement(key, 'minAge', parseInt(e.target.value))}
-                                            min="0"
-                                        />
-                                    </div>
-                                </div>
+                            <div className="verification-type-list-cards">
+                                {verificationEntries.map(([key, type]) => (
+                                    <button
+                                        key={key}
+                                        className={`verification-type-card ${selectedTypeKey === key ? 'active' : ''}`}
+                                        onClick={() => setSelectedTypeKey(key)}
+                                    >
+                                        <div className="card-header">
+                                            <div className="card-title">
+                                                <span className="color-indicator" style={{ backgroundColor: type.color }} />
+                                                <div>
+                                                    <h4>{type.name}</h4>
+                                                    <small>{key}</small>
+                                                </div>
+                                            </div>
+                                            {localConfig.defaultVerificationType === key && (
+                                                <span className="status-pill">Default</span>
+                                            )}
+                                        </div>
+                                        <p>{type.description}</p>
+                                        <div className="card-meta">
+                                            <span>
+                                                <Icon icon="mdi:account-group" />
+                                                {type.requirements?.minMembers || 0} members
+                                            </span>
+                                            <span>
+                                                <Icon icon="mdi:calendar-clock" />
+                                                {type.requirements?.minAge || 0} days
+                                            </span>
+                                        </div>
+                                    </button>
+                                ))}
                             </div>
                         </div>
-                    ))}
+
+                        <div className="verification-type-details">
+                            {selectedType ? (
+                                <>
+                                    <div className="details-header">
+                                        <div>
+                                            <h3>Edit {selectedType.name}</h3>
+                                            <p>Update the rules, requirements, and benefits for this tier</p>
+                                        </div>
+                                        <div className="details-actions">
+                                            <button
+                                                className="ghost-btn"
+                                                onClick={() => duplicateVerificationType(selectedTypeKey)}
+                                            >
+                                                <Icon icon="mdi:content-copy" />
+                                                Duplicate
+                                            </button>
+                                            <button
+                                                className="ghost-btn"
+                                                onClick={() => setDefaultVerificationType(selectedTypeKey)}
+                                                disabled={localConfig.defaultVerificationType === selectedTypeKey}
+                                            >
+                                                <Icon icon="mdi:star-outline" />
+                                                Set Default
+                                            </button>
+                                            <button
+                                                className="remove-verification-type-btn"
+                                                onClick={() => removeVerificationType(selectedTypeKey)}
+                                                disabled={selectedTypeKey === 'basic'}
+                                            >
+                                                <Icon icon="mdi:delete" />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="details-grid">
+                                        <div className="panel">
+                                            <h4>Identity</h4>
+                                            <div className="form-group inline-group">
+                                                <label>Display Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={selectedType.name}
+                                                    onChange={(e) => updateVerificationType(selectedTypeKey, 'name', e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="form-group inline-group">
+                                                <label>Internal Key</label>
+                                                <input
+                                                    type="text"
+                                                    value={selectedTypeKey}
+                                                    onChange={(e) => renameVerificationType(selectedTypeKey, e.target.value)}
+                                                    disabled={selectedTypeKey === 'basic'}
+                                                />
+                                            </div>
+                                            <div className="form-group">
+                                                <label>Description</label>
+                                                <textarea
+                                                    rows={3}
+                                                    value={selectedType.description}
+                                                    onChange={(e) => updateVerificationType(selectedTypeKey, 'description', e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="visual-pickers">
+                                                <label className="color-picker">
+                                                    Accent Color
+                                                    <input
+                                                        type="color"
+                                                        value={selectedType.color}
+                                                        onChange={(e) => updateVerificationType(selectedTypeKey, 'color', e.target.value)}
+                                                    />
+                                                </label>
+                                                <div className="form-group">
+                                                    <label>Icon</label>
+                                                    <input
+                                                        type="text"
+                                                        value={selectedType.icon}
+                                                        onChange={(e) => updateVerificationType(selectedTypeKey, 'icon', e.target.value)}
+                                                        placeholder="mdi:shield-check"
+                                                    />
+                                                    <small>Material Design icon identifier</small>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="panel">
+                                            <h4>Requirements</h4>
+                                            <div className="requirements-grid">
+                                                <div className="form-group">
+                                                    <label>Minimum Members</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        value={selectedType.requirements?.minMembers || 0}
+                                                        onChange={(e) =>
+                                                            updateVerificationTypeRequirement(
+                                                                selectedTypeKey,
+                                                                'minMembers',
+                                                                parseInt(e.target.value) || 0
+                                                            )
+                                                        }
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label>Minimum Age (days)</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        value={selectedType.requirements?.minAge || 0}
+                                                        onChange={(e) =>
+                                                            updateVerificationTypeRequirement(
+                                                                selectedTypeKey,
+                                                                'minAge',
+                                                                parseInt(e.target.value) || 0
+                                                            )
+                                                        }
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="panel">
+                                            <h4>Benefits</h4>
+                                            <div className="benefit-chips">
+                                                {(selectedType.benefits || []).map((benefit) => (
+                                                    <span key={benefit} className="chip" onClick={() => handleRemoveBenefit(selectedTypeKey, benefit)}>
+                                                        {benefit}
+                                                        <Icon icon="mdi:close" />
+                                                    </span>
+                                                ))}
+                                                {!selectedType.benefits?.length && (
+                                                    <p className="empty">No benefits specified for this tier yet.</p>
+                                                )}
+                                            </div>
+                                            <div className="benefit-input">
+                                                <input
+                                                    type="text"
+                                                    value={benefitDraft}
+                                                    placeholder="Add benefit and press Enter"
+                                                    onChange={(e) => setBenefitDraft(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            handleAddBenefit(selectedTypeKey);
+                                                        }
+                                                    }}
+                                                />
+                                                <button onClick={() => handleAddBenefit(selectedTypeKey)}>
+                                                    <Icon icon="mdi:plus" />
+                                                    Add
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="empty-state">
+                                    <Icon icon="mdi:shield-alert" />
+                                    <h4>Select a verification tier</h4>
+                                    <p>Choose a tier from the list to view and edit its configuration.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderReviewWorkflow = () => (
         <div className="config-sections">
