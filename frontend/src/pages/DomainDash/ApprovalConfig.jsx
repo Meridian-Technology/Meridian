@@ -76,7 +76,7 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
 
         try {
             // Update the stakeholder role with new condition groups
-            const response = await postRequest(`/api/event-system-config/stakeholder-roles/${stakeholderRole._id}`, {
+            const response = await postRequest(`/api/stakeholder-roles/${stakeholderRole._id}`, {
                 conditionGroups: pendingChanges.conditionGroups || selectedStep.conditionGroups,
                 groupLogicalOperators: pendingChanges.groupLogicalOperators || selectedStep.groupLogicalOperators
             }, {

@@ -203,6 +203,40 @@ const OrgSchema= new Schema({
                 default: true
             }
         }
+    },
+    // Message/announcement settings
+    messageSettings: {
+        enabled: {
+            type: Boolean,
+            default: true
+        },
+        visibility: {
+            type: String,
+            enum: ['members_only', 'members_and_followers', 'public'],
+            default: 'members_and_followers'
+        },
+        postingPermissions: {
+            type: [String], // Role names that can post
+            default: ['owner', 'admin', 'officer']
+        },
+        allowReplies: {
+            type: Boolean,
+            default: true
+        },
+        allowLikes: {
+            type: Boolean,
+            default: true
+        },
+        requireApproval: {
+            type: Boolean,
+            default: false
+        },
+        characterLimit: {
+            type: Number,
+            default: 500,
+            min: 100,
+            max: 2000
+        }
     }
 });
 

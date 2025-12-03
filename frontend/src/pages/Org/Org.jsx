@@ -8,6 +8,7 @@ import FormViewer from '../../components/FormViewer/FormViewer';
 import Header from '../../components/Header/Header';
 import Popup from '../../components/Popup/Popup';
 import OrgEvents from '../../components/OrgEvents/OrgEvents';
+import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
 import apiRequest from '../../utils/postRequest';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import useAuth from '../../hooks/useAuth';
@@ -61,7 +62,6 @@ const Org = ({ orgData, refetch }) => {
             <Popup isOpen={showForm} onClose={() => setShowForm(false)}>
                 <FormViewer form={overview.memberForm} onSubmit={handleFormSubmit} /> 
             </Popup>
-            <Header />
             <div className='org-content'>
                 <div className="top-header-box">
                     <div className="org-logo">
@@ -143,13 +143,13 @@ const Org = ({ orgData, refetch }) => {
                         <div className="header-option">
                             <h2 className={activeTab === 'members' ? 'active' : ''} onClick={() => setActiveTab('members')}>Members</h2>
                         </div>
+                        <div className="header-option">
+                            <h2 className={activeTab === 'announcements' ? 'active' : ''} onClick={() => setActiveTab('announcements')}>Announcements</h2>
+                        </div>
                     </div>
                 </div>
                 {
-                    activeTab === 'home' ? (
-                        <div className="home-content">
-                        </div>
-                    ) : activeTab === 'events' ? (
+                    activeTab === 'events' ? (
                         <div className="events-content">
                             <h1>Upcoming Events for {overview.org_name}</h1>
                             <OrgEvents orgId={overview?._id} />
@@ -157,6 +157,10 @@ const Org = ({ orgData, refetch }) => {
                     ) : activeTab === 'members' ? (
                         <div className="members-content">
                             <h1>Members</h1>
+                        </div>
+                    ) : activeTab === 'home' ? (
+                        <div className="announcements-content">
+                            <OrgMessageFeed orgId={overview._id} orgData={orgData} />
                         </div>
                     ) : null
                 }

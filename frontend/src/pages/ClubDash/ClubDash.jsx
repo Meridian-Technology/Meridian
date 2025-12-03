@@ -19,6 +19,8 @@ import apiRequest from '../../utils/postRequest';
 import { useLocation } from 'react-router-dom';
 import EventsPanel from './EventsPanel/EventsPanel';
 import EventsManagement from './EventsManagement/EventsManagement';
+import ClubAnnouncements from './ClubAnnouncements/ClubAnnouncements';
+import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
 import { 
     GeneralSettings, 
     AppearanceSettings, 
@@ -196,6 +198,12 @@ function ClubDash(){
             icon: 'mingcute:calendar-fill', 
             key: 'events',
             element: <EventsManagement expandedClass={expandedClass} orgId={clubId}/>
+        },
+        { 
+            label: 'Announcements', 
+            icon: 'mdi:message-text', 
+            key: 'announcements',
+            element: <ClubAnnouncements orgData={orgData} expandedClass={expandedClass}/>
         },
         { 
             label: 'Members', 

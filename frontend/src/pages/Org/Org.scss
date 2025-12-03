@@ -1,19 +1,13 @@
 .org-page {
     font-family: satoshi;
-    max-height:100vh;
-    min-height: 100vh;
-    overflow-y: hidden;
+    overflow-y: auto;
     .org-content{
         display: flex;
         flex-direction: column;
         align-items: center;
         width: 100%;
-        height: 100%;
-        max-height: calc(100% - 80px);
-        max-width: 1400px;
-        padding: 0 100px;
+        padding: 20px 40px;
         box-sizing: border-box;
-        overflow-y: auto;
     }
     
     
@@ -173,10 +167,6 @@
         max-width: 1400px;
     }
     
-    .upcoming{
-        // height: 100px;
-        // width: 100px;
-    }
     
     // .meeting-schedule{
     //     display: flex;
@@ -276,7 +266,8 @@
     }
     
     .home-content,
-    .members-content {
+    .members-content,
+    .announcements-content {
         display: flex;
         flex-direction: column;
         width: 100%;

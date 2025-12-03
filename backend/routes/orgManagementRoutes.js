@@ -268,20 +268,53 @@ router.put('/config', verifyToken, authorizeRoles('admin', 'root'), async (req, 
     const updates = req.body;
 
     try {
-        let config = await OrgManagementConfig.findOne();
-        
-        if (!config) {
-            config = new OrgManagementConfig();
-        }
+        console.log('incoming updates:', JSON.stringify(updates, null, 2));
 
-        // Update config fields
+        // Build $set object for nested updates
+        const $set = {};
+        
+        // Process updates and convert to dot notation for $set
         Object.keys(updates).forEach(key => {
-            if (config.schema.paths[key]) {
-                config[key] = updates[key];
+            // Skip special fields
+            if (key === '_id' || key === '__v' || key === 'createdAt' || key === 'updatedAt') {
+                return;
+            }
+
+            // Check if this is a nested object
+            if (typeof updates[key] === 'object' && updates[key] !== null && !Array.isArray(updates[key])) {
+                // For nested objects, iterate through each property
+                Object.keys(updates[key]).forEach(nestedKey => {
+                    // Handle deeply nested objects (like notificationSettings)
+                    if (typeof updates[key][nestedKey] === 'object' && updates[key][nestedKey] !== null && !Array.isArray(updates[key][nestedKey])) {
+                        Object.keys(updates[key][nestedKey]).forEach(deepKey => {
+                            const dotPath = `${key}.${nestedKey}.${deepKey}`;
+                            $set[dotPath] = updates[key][nestedKey][deepKey];
+                            console.log(`Setting ${dotPath} = ${updates[key][nestedKey][deepKey]}`);
+                        });
+                    } else {
+                        // Use dot notation for primitive values
+                        const dotPath = `${key}.${nestedKey}`;
+                        $set[dotPath] = updates[key][nestedKey];
+                        console.log(`Setting ${dotPath} = ${updates[key][nestedKey]}`);
+                    }
+                });
+            } else {
+                // Direct assignment for primitive values or arrays
+                $set[key] = updates[key];
+                console.log(`Setting ${key} = ${updates[key]}`);
             }
         });
 
-        await config.save();
+        console.log('$set object:', JSON.stringify($set, null, 2));
+
+        // Use findOneAndUpdate with $set for proper nested updates
+        const config = await OrgManagementConfig.findOneAndUpdate(
+            {},
+            { $set: $set },
+            { new: true, upsert: true, runValidators: true }
+        );
+
+        console.log('config after updates:', JSON.stringify(config.toObject(), null, 2));
 
         console.log(`PUT: /org-management/config - Configuration updated`);
         res.status(200).json({

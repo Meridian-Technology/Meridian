@@ -54,6 +54,11 @@ function Atlas() {
                     label: 'Organization Policies',
                     icon: 'mdi:policy',
                     element: <Configuration section="policies" />
+                },
+                {
+                    label: 'Messaging Configuration',
+                    icon: 'mdi:message-text',
+                    element: <Configuration section="messaging" />
                 }
             ]
         }

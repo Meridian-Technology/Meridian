@@ -20,7 +20,7 @@ const visitSchema = require('../schemas/visit');
 const orgMemberApplicationSchema = require('../schemas/orgMemberApplication');
 const samlConfigSchema = require('../schemas/samlConfig');
 const notificationSchema = require('../schemas/notification');
-
+const orgMessageSchema = require('../schemas/orgMessage');
 // Study Sessions
 const studySessionSchema = require('../schemas/studySession');
 const availabilityPollSchema = require('../schemas/availabilityPoll');
@@ -77,7 +77,7 @@ const getModels = (req, ...names) => {
         OrgMemberApplication: req.db.model('OrgMemberApplication', orgMemberApplicationSchema, 'orgMemberApplications'),
         SAMLConfig: req.db.model('SAMLConfig', samlConfigSchema, 'samlConfigs'),
         Notification: req.db.model('Notification', notificationSchema, 'notifications'),
-
+        OrgMessage: req.db.model('OrgMessage', orgMessageSchema, 'orgMessages'),
         EventAnalytics: req.db.model('EventAnalytics', eventAnalyticsSchema, 'eventAnalytics'),
 
         // Study Sessions

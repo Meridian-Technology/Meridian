@@ -295,6 +295,63 @@ const orgManagementConfigSchema = new mongoose.Schema({
             type: Boolean,
             default: false
         }
+    },
+    
+    // Messaging/announcement system configuration
+    messaging: {
+        enabled: {
+            type: Boolean,
+            default: true
+        },
+        defaultCharacterLimit: {
+            type: Number,
+            default: 500,
+            min: 100,
+            max: 2000
+        },
+        maxCharacterLimit: {
+            type: Number,
+            default: 2000
+        },
+        minCharacterLimit: {
+            type: Number,
+            default: 100
+        },
+        defaultVisibility: {
+            type: String,
+            enum: ['members_only', 'members_and_followers', 'public'],
+            default: 'members_and_followers'
+        },
+        moderationEnabled: {
+            type: Boolean,
+            default: false
+        },
+        requireProfanityFilter: {
+            type: Boolean,
+            default: true
+        },
+        allowEventMentions: {
+            type: Boolean,
+            default: true
+        },
+        allowLinks: {
+            type: Boolean,
+            default: true
+        },
+        notificationSettings: {
+            notifyOnNewMessage: {
+                type: Boolean,
+                default: true
+            },
+            notifyOnMention: {
+                type: Boolean,
+                default: true
+            },
+            notifyOnReply: {
+                type: Boolean,
+                default: true
+            }
+        }
     }
 }, { timestamps: true });
 

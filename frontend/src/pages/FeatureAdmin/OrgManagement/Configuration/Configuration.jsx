@@ -12,6 +12,7 @@ function Configuration({ section = 'general' }) {
     const [localConfig, setLocalConfig] = useState(null);
     const [selectedTypeKey, setSelectedTypeKey] = useState(null);
     const [benefitDraft, setBenefitDraft] = useState('');
+    const [inputValues, setInputValues] = useState({});
     const originalDataRef = useRef(null);
     const { AtlasMain } = useGradient();
 
@@ -20,6 +21,8 @@ function Configuration({ section = 'general' }) {
             setLocalConfig(config.data);
             // Always update original data ref when config changes (including after refetch)
             originalDataRef.current = JSON.parse(JSON.stringify(config.data));
+            // Reset input values when config changes
+            setInputValues({});
         }
     }, [config]);
 
@@ -84,6 +87,8 @@ function Configuration({ section = 'general' }) {
                 return renderReviewWorkflow();
             case 'policies':
                 return renderPolicies();
+            case 'messaging':
+                return renderMessaging();
             case 'general':
             default:
                 return renderGeneral();
@@ -94,13 +99,18 @@ function Configuration({ section = 'general' }) {
         if (!localConfig) return;
         
         const keys = path.split('.');
-        const newConfig = { ...localConfig };
+        const newConfig = JSON.parse(JSON.stringify(localConfig)); // Deep clone
         let current = newConfig;
         
+        // Navigate to the parent object, creating nested objects if they don't exist
         for (let i = 0; i < keys.length - 1; i++) {
+            if (!current[keys[i]]) {
+                current[keys[i]] = {};
+            }
             current = current[keys[i]];
         }
         
+        // Set the value
         current[keys[keys.length - 1]] = value;
         setLocalConfig(newConfig);
     };
@@ -729,6 +739,267 @@ function Configuration({ section = 'general' }) {
         </div>
     );
 
+    const renderMessaging = () => (
+        <div className="config-sections">
+            <div className="config-section">
+                <h2>
+                    <Icon icon="mdi:message-text" />
+                    Messaging System Configuration
+                </h2>
+                
+                <div className="config-group">
+                    <div className="config-item">
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={localConfig.messaging?.enabled !== false}
+                                onChange={(e) => updateConfig('messaging.enabled', e.target.checked)}
+                            />
+                            Enable Messaging System
+                        </label>
+                        <p>Allow organizations to post messages and announcements</p>
+                    </div>
+
+                    <div className="config-item">
+                        <label>Default Character Limit</label>
+                        <input
+                            type="number"
+                            value={inputValues['messaging.defaultCharacterLimit'] !== undefined 
+                                ? inputValues['messaging.defaultCharacterLimit'] 
+                                : (localConfig.messaging?.defaultCharacterLimit ?? 500)}
+                            onChange={(e) => {
+                                const inputVal = e.target.value;
+                                setInputValues(prev => ({ ...prev, 'messaging.defaultCharacterLimit': inputVal }));
+                                if (inputVal !== '') {
+                                    const numVal = parseInt(inputVal, 10);
+                                    if (!isNaN(numVal) && numVal >= 0) {
+                                        updateConfig('messaging.defaultCharacterLimit', numVal);
+                                    }
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const inputVal = e.target.value;
+                                if (inputVal === '') {
+                                    // Reset to current config value
+                                    setInputValues(prev => {
+                                        const newVals = { ...prev };
+                                        delete newVals['messaging.defaultCharacterLimit'];
+                                        return newVals;
+                                    });
+                                } else {
+                                    const numVal = parseInt(inputVal, 10);
+                                    if (!isNaN(numVal) && numVal >= 0) {
+                                        updateConfig('messaging.defaultCharacterLimit', numVal);
+                                        setInputValues(prev => {
+                                            const newVals = { ...prev };
+                                            delete newVals['messaging.defaultCharacterLimit'];
+                                            return newVals;
+                                        });
+                                    }
+                                }
+                            }}
+                            min={localConfig.messaging?.minCharacterLimit ?? 100}
+                            max={localConfig.messaging?.maxCharacterLimit ?? 2000}
+                        />
+                        <p>Default character limit for messages (between {localConfig.messaging?.minCharacterLimit ?? 100} and {localConfig.messaging?.maxCharacterLimit ?? 2000})</p>
+                    </div>
+
+                    <div className="config-item">
+                        <label>Minimum Character Limit</label>
+                        <input
+                            type="number"
+                            value={inputValues['messaging.minCharacterLimit'] !== undefined 
+                                ? inputValues['messaging.minCharacterLimit'] 
+                                : (localConfig.messaging?.minCharacterLimit ?? 100)}
+                            onChange={(e) => {
+                                const inputVal = e.target.value;
+                                setInputValues(prev => ({ ...prev, 'messaging.minCharacterLimit': inputVal }));
+                                if (inputVal !== '') {
+                                    const numVal = parseInt(inputVal, 10);
+                                    if (!isNaN(numVal) && numVal >= 1) {
+                                        updateConfig('messaging.minCharacterLimit', numVal);
+                                    }
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const inputVal = e.target.value;
+                                if (inputVal === '') {
+                                    // Reset to current config value
+                                    setInputValues(prev => {
+                                        const newVals = { ...prev };
+                                        delete newVals['messaging.minCharacterLimit'];
+                                        return newVals;
+                                    });
+                                } else {
+                                    const numVal = parseInt(inputVal, 10);
+                                    if (!isNaN(numVal) && numVal >= 1) {
+                                        updateConfig('messaging.minCharacterLimit', numVal);
+                                        setInputValues(prev => {
+                                            const newVals = { ...prev };
+                                            delete newVals['messaging.minCharacterLimit'];
+                                            return newVals;
+                                        });
+                                    }
+                                }
+                            }}
+                            min="1"
+                        />
+                        <p>Minimum characters required for a message</p>
+                    </div>
+
+                    <div className="config-item">
+                        <label>Maximum Character Limit</label>
+                        <input
+                            type="number"
+                            value={inputValues['messaging.maxCharacterLimit'] !== undefined 
+                                ? inputValues['messaging.maxCharacterLimit'] 
+                                : (localConfig.messaging?.maxCharacterLimit ?? 2000)}
+                            onChange={(e) => {
+                                const inputVal = e.target.value;
+                                setInputValues(prev => ({ ...prev, 'messaging.maxCharacterLimit': inputVal }));
+                                if (inputVal !== '') {
+                                    const numVal = parseInt(inputVal, 10);
+                                    if (!isNaN(numVal) && numVal >= 100) {
+                                        updateConfig('messaging.maxCharacterLimit', numVal);
+                                    }
+                                }
+                            }}
+                            onBlur={(e) => {
+                                const inputVal = e.target.value;
+                                if (inputVal === '') {
+                                    // Reset to current config value
+                                    setInputValues(prev => {
+                                        const newVals = { ...prev };
+                                        delete newVals['messaging.maxCharacterLimit'];
+                                        return newVals;
+                                    });
+                                } else {
+                                    const numVal = parseInt(inputVal, 10);
+                                    if (!isNaN(numVal) && numVal >= 100) {
+                                        updateConfig('messaging.maxCharacterLimit', numVal);
+                                        setInputValues(prev => {
+                                            const newVals = { ...prev };
+                                            delete newVals['messaging.maxCharacterLimit'];
+                                            return newVals;
+                                        });
+                                    }
+                                }
+                            }}
+                            min="100"
+                        />
+                        <p>Maximum characters allowed for a message</p>
+                    </div>
+
+                    <div className="config-item">
+                        <label>Default Visibility</label>
+                        <select
+                            value={localConfig.messaging?.defaultVisibility || 'members_and_followers'}
+                            onChange={(e) => updateConfig('messaging.defaultVisibility', e.target.value)}
+                        >
+                            <option value="members_only">Members Only</option>
+                            <option value="members_and_followers">Members and Followers</option>
+                            <option value="public">Public</option>
+                        </select>
+                        <p>Default visibility setting for new messages</p>
+                    </div>
+
+                    <div className="config-item">
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={localConfig.messaging?.moderationEnabled || false}
+                                onChange={(e) => updateConfig('messaging.moderationEnabled', e.target.checked)}
+                            />
+                            Enable Moderation
+                        </label>
+                        <p>Require messages to be approved before being visible</p>
+                    </div>
+
+                    <div className="config-item">
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={localConfig.messaging?.requireProfanityFilter !== false}
+                                onChange={(e) => updateConfig('messaging.requireProfanityFilter', e.target.checked)}
+                            />
+                            Require Profanity Filter
+                        </label>
+                        <p>Automatically filter profanity from messages</p>
+                    </div>
+
+                    <div className="config-item">
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={localConfig.messaging?.allowEventMentions !== false}
+                                onChange={(e) => updateConfig('messaging.allowEventMentions', e.target.checked)}
+                            />
+                            Allow Event Mentions
+                        </label>
+                        <p>Allow organizations to mention events in messages</p>
+                    </div>
+
+                    <div className="config-item">
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={localConfig.messaging?.allowLinks !== false}
+                                onChange={(e) => updateConfig('messaging.allowLinks', e.target.checked)}
+                            />
+                            Allow Links
+                        </label>
+                        <p>Allow URLs in messages</p>
+                    </div>
+                </div>
+
+                <div className="config-section">
+                    <h3>
+                        <Icon icon="mdi:bell" />
+                        Notification Settings
+                    </h3>
+                    
+                    <div className="config-group">
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={localConfig.messaging?.notificationSettings?.notifyOnNewMessage !== false}
+                                    onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnNewMessage', e.target.checked)}
+                                />
+                                Notify on New Messages
+                            </label>
+                            <p>Send notifications when organizations post new messages</p>
+                        </div>
+
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={localConfig.messaging?.notificationSettings?.notifyOnMention !== false}
+                                    onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnMention', e.target.checked)}
+                                />
+                                Notify on Event Mentions
+                            </label>
+                            <p>Send notifications when events are mentioned in messages</p>
+                        </div>
+
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={localConfig.messaging?.notificationSettings?.notifyOnReply !== false}
+                                    onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnReply', e.target.checked)}
+                                />
+                                Notify on Replies
+                            </label>
+                            <p>Send notifications when messages receive replies</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="configuration dash">
             <UnsavedChangesBanner
@@ -742,7 +1013,8 @@ function Configuration({ section = 'general' }) {
                 <h1>{section === 'general' ? 'General Configuration' : 
                      section === 'verification-types' ? 'Verification Types' :
                      section === 'review-workflow' ? 'Review Workflow' :
-                     section === 'policies' ? 'Organization Policies' : 'Configuration'}</h1>
+                     section === 'policies' ? 'Organization Policies' :
+                     section === 'messaging' ? 'Messaging Configuration' : 'Configuration'}</h1>
                 <p>Manage organization management system settings</p>
                 <img src={AtlasMain} alt="Configuration Grad" />
             </header>

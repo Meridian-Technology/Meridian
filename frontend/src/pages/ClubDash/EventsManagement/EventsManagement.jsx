@@ -51,21 +51,21 @@ function EventsManagement({ orgId, expandedClass }) {
     };
 
     const tabs = [
+        // {
+        //     id: 'overview',
+        //     label: 'Overview',
+        //     icon: 'mingcute:chart-bar-fill',
+        //     description: 'Event statistics and quick actions',
+        //     content: <EventsOverview
+        //                 orgId={orgData?.org?.overview?._id}
+        //                 orgName={orgData?.org?.overview?.org_name}
+        //                 refreshTrigger={refreshTrigger}
+        //                 onRefresh={handleRefresh}
+        //             />
+        // },
         {
             id: 'overview',
             label: 'Overview',
-            icon: 'mingcute:chart-bar-fill',
-            description: 'Event statistics and quick actions',
-            content: <EventsOverview
-                        orgId={orgData?.org?.overview?._id}
-                        orgName={orgData?.org?.overview?.org_name}
-                        refreshTrigger={refreshTrigger}
-                        onRefresh={handleRefresh}
-                    />
-        },
-        {
-            id: 'analytics',
-            label: 'Analytics',
             icon: 'mingcute:department-fill',
             description: 'Detailed analytics and insights',
             content: <EventsAnalytics

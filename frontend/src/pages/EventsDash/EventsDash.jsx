@@ -185,7 +185,7 @@ function EventsDash({}){
             });
             
             // Add Analytics tab for admin users
-            if (user.roles && user.roles.includes('admin')) {
+            if (true) {
                 // items.push({
                 //     label: 'Analytics', 
                 //     icon: 'mingcute:chart-fill',
