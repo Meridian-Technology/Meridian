@@ -3,6 +3,7 @@ import './ClubForms.scss';
 import { useFetch } from '../../../hooks/useFetch';
 import OrgGrad from '../../../assets/Gradients/OrgGrad.png';
 import FormBuilder from '../../../components/FormBuilder/FormBuilder';
+import FormConfigMenu from '../../../components/FormBuilder/FormConfigMenu';
 import FormViewer from '../../../components/FormViewer/FormViewer';
 import FormResponseViewer from '../../../components/FormResponseViewer/FormResponseViewer';
 import Popup from '../../../components/Popup/Popup';
@@ -140,6 +141,7 @@ const ClubForms = ({ org }) => {
                         questions: []
                     }}
                     onSave={handleFormSave}
+                    menuComponent={<FormConfigMenu />}
                 />
             </Popup>
 
@@ -161,6 +163,7 @@ const ClubForms = ({ org }) => {
                             <FormBuilder
                                 initialForm={currentForm}
                                 onSave={handleFormUpdate}
+                                menuComponent={<FormConfigMenu />}
                             />
                         ) : (
                             <div className="form-viewer">

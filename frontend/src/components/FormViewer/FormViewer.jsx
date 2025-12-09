@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import './FormViewer.scss';
 import './Question.scss'
+import { Icon } from '@iconify-icon/react';
+import useAuth from '../../hooks/useAuth';
 
-const FormViewer = ({ form, onSubmit, handleClose}) => {
+const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAuthenticated, formConfig}) => {
   const [responses, setResponses] = useState({});
+  const { isAuthenticated: authStatus, isAuthenticating } = useAuth();
 
   const handleResponseChange = (questionId, value) => {
     setResponses(prev => ({
@@ -116,15 +119,109 @@ const FormViewer = ({ form, onSubmit, handleClose}) => {
     }
   };
 
+  // Determine which scenario to show
+  const showScenario = () => {
+    if (!form || !formConfig) {
+      return 'form'; // Show form if data not loaded yet
+    }
+    
+    // Check if form is not accepting responses
+    if (formConfig.acceptingResponses === false) {
+      return 'closed';
+    }
+    
+    // Check if authentication is required but user is not authenticated
+    if (formConfig.requireAuth && !authStatus && !isAuthenticating) {
+      return 'login_required';
+    }
+    
+    // Check if user has already submitted (and multiple responses not allowed)
+    if (hasSubmitted && formConfig.allowMultipleResponses === false) {
+      return 'already_submitted';
+    }
+    
+    return 'form';
+  };
+
+  const scenario = showScenario();
+
+  // Default gradient colors (can be customized via formConfig.headerColor)
+  const headerGradient = (formConfig && formConfig.headerColor) || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+
+  if (scenario === 'closed') {
+    return (
+      <div className="form-viewer">
+        <div className="form-header" style={{ background: headerGradient }}>
+          <h1>{form?.title || 'Form'}</h1>
+          {form?.description && <p>{form.description}</p>}
+        </div>
+        <div className="form-scenario-screen">
+          <Icon icon="mdi:lock-outline" className="scenario-icon" />
+          <h2>Form Closed</h2>
+          <p>This form is no longer accepting responses.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === 'login_required') {
+    return (
+      <div className="form-viewer">
+        <div className="form-header" style={{ background: headerGradient }}>
+          <h1>{form?.title || 'Form'}</h1>
+          {form?.description && <p>{form.description}</p>}
+        </div>
+        <div className="form-scenario-screen">
+          <Icon icon="mdi:account-lock-outline" className="scenario-icon" />
+          <h2>Login Required</h2>
+          <p>You need to be logged in to respond to this form.</p>
+          <a href="/login" className="login-button">Go to Login</a>
+        </div>
+      </div>
+    );
+  }
+
+  if (scenario === 'already_submitted') {
+    return (
+      <div className="form-viewer">
+        <div className="form-header" style={{ background: headerGradient }}>
+          <h1>{form?.title || 'Form'}</h1>
+          {form?.description && <p>{form.description}</p>}
+        </div>
+        <div className="form-scenario-screen">
+          <Icon icon="mdi:check-circle-outline" className="scenario-icon success" />
+          <h2>Already Submitted</h2>
+          <p>You have already submitted a response to this form.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!form) {
+    return (
+      <div className="form-viewer">
+        <div className="form-scenario-screen">
+          <p>Loading form...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="form-viewer">
-      <div className="form-header">
+      <div className="form-header" style={{ background: headerGradient }}>
         <h1>{form.title}</h1>
         {form.description && <p>{form.description}</p>}
+        {ownerInfo && (
+          <div className="form-owner">
+            <Icon icon="mdi:account-circle" className="owner-icon" />
+            <span>Created by {ownerInfo.name}</span>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit}>
-        {form.questions.map((question) => (
+        {form.questions && form.questions.map((question) => (
           <div key={question._id} className="question-container">
             <div className="question-header">
               <h3>{question.question}</h3>

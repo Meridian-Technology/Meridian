@@ -10,11 +10,43 @@ const getModels = require("../services/getModelService.js");
 
 router.get("/get-form-by-id/:id", verifyTokenOptional, async (req, res) => {
     try{
-        const { Form } = getModels(req, "Form");
+        const { Form, FormResponse, User, Org } = getModels(req, "Form", "FormResponse", "User", "Org");
         const formId = req.params.id;
-        const form = await Form.findById(formId);
+        const userId = req.user?.userId;
+        
+        const form = await Form.findById(formId)
+            .populate('createdBy', 'name email')
+            .lean();
+            
         if(!form) return res.status(404).json({ success: false, message: "Form not found" });
-        res.status(200).json({ success: true, form: form });
+        
+        // Get form owner info
+        let ownerInfo = null;
+        if (form.formOwnerType === 'Org') {
+            const org = await Org.findById(form.formOwner).select('org_name').lean();
+            ownerInfo = org ? { name: org.org_name, type: 'Org' } : null;
+        } else if (form.formOwnerType === 'User') {
+            const user = await User.findById(form.formOwner).select('name email').lean();
+            ownerInfo = user ? { name: user.name || user.email, email: user.email, type: 'User' } : null;
+        }
+        
+        // Check if user has already submitted (if allowMultipleResponses is false and user is authenticated)
+        let hasSubmitted = false;
+        if (userId && !form.allowMultipleResponses) {
+            const existingResponse = await FormResponse.findOne({
+                form: formId,
+                submittedBy: userId
+            }).lean();
+            hasSubmitted = !!existingResponse;
+        }
+        
+        res.status(200).json({ 
+            success: true, 
+            form: form,
+            ownerInfo: ownerInfo,
+            hasSubmitted: hasSubmitted,
+            isAuthenticated: !!userId
+        });
     } catch(error){
         console.log(error);
         res.status(500).json({ success: false, message: "Internal server error" });
@@ -43,6 +75,36 @@ router.post("/submit-form-response", verifyToken, async (req, res) => {
         const form = await Form.findById(formId);
         if (!form) {
             return res.status(404).json({ success: false, message: "Form not found" });
+        }
+
+        // Check if form is accepting responses
+        if (form.acceptingResponses === false) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "This form is no longer accepting responses" 
+            });
+        }
+
+        // Check if authentication is required
+        if (form.requireAuth && !userId) {
+            return res.status(401).json({ 
+                success: false, 
+                message: "Authentication required to submit this form" 
+            });
+        }
+
+        // Check if user has already submitted (if multiple responses not allowed)
+        if (!form.allowMultipleResponses && userId) {
+            const existingResponse = await FormResponse.findOne({
+                form: formId,
+                submittedBy: userId
+            });
+            if (existingResponse) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: "You have already submitted a response to this form" 
+                });
+            }
         }
 
         console.log("Form found:", form.title, "Questions:", form.questions.length);
