@@ -1,11 +1,14 @@
 .form-viewer {
   max-width: 800px;
+  width: 100%;
   margin: 0 auto;
   padding: 0;
   background-color: var(--background);
   border-radius: 15px;
   overflow-x: hidden;
+  overflow-y: visible;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
 
   .form-header {
     padding: 40px 30px;
@@ -47,6 +50,7 @@
 
   .form-scenario-screen {
     padding: 60px 30px;
+    padding-bottom: 80px;
     text-align: center;
     background-color: var(--background);
     min-height: 400px;
@@ -54,6 +58,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
 
     .scenario-icon {
       font-size: 80px;
@@ -97,9 +102,11 @@
   
   form {
     padding: 30px;
+    padding-bottom: 40px;
     display: flex;
     flex-direction: column;
     gap: 15px;
+    box-sizing: border-box;
   }
 
   .submit-button {
