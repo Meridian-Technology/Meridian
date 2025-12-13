@@ -349,7 +349,8 @@
         padding: 20px;
         background: #f8f9fa;
         border-radius: 12px;
-        max-height: 90vh;
+        min-height: calc(100vh - 80px);
+        max-height: calc(100vh - 40px);
         display: flex;
         flex-direction: column;
         overflow: hidden;
