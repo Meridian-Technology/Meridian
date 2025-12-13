@@ -1,11 +1,11 @@
 .form-page{
-    max-height:100vh;
-    overflow:auto;
+    min-height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     padding: 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    min-height: 100vh;
     background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
 
     .loading-container,

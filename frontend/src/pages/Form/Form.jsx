@@ -12,6 +12,18 @@ function Form() {
 
     const { data: formData, loading: formLoading, error: formError } = useFetch(`/get-form-by-id/${id}`);
 
+    // Extract form config and metadata from response
+    const form = formData?.form;
+    const ownerInfo = formData?.ownerInfo;
+    const hasSubmitted = formData?.hasSubmitted || false;
+    const isAuthenticated = formData?.isAuthenticated || false;
+    const formConfig = form ? {
+        allowMultipleResponses: form.allowMultipleResponses !== false, // default true
+        requireAuth: form.requireAuth !== false, // default true
+        acceptingResponses: form.acceptingResponses !== false, // default true
+        headerColor: form.headerColor
+    } : null;
+
     const handleFormSubmit = async (responses) => {
         try {
             setSubmitStatus(null);
@@ -75,8 +87,12 @@ function Form() {
             )}
             {!isSubmitted ? (
                 <FormViewer 
-                    form={formData.form} 
+                    form={form} 
                     onSubmit={handleFormSubmit}
+                    ownerInfo={ownerInfo}
+                    hasSubmitted={hasSubmitted}
+                    isAuthenticated={isAuthenticated}
+                    formConfig={formConfig}
                 />
             ) : (
                 <div className="form-submitted">

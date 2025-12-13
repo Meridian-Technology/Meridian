@@ -5,6 +5,8 @@
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  box-sizing: border-box;
 
   .form-header {
     border-bottom: 2px solid #f0f0f0;
@@ -39,14 +41,20 @@
   }
 
   .questions-answers {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+    
     .question-answer-container {
-      margin-bottom: 25px;
+      margin-bottom: 0;
       padding: 24px;
       border: 1px solid #e8e8e8;
       border-radius: 10px;
       background: linear-gradient(to bottom, #ffffff 0%, #f9fafb 100%);
       transition: all 0.3s ease;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      box-sizing: border-box;
+      flex-shrink: 0;
 
       &:hover {
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
