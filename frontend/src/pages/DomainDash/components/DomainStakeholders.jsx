@@ -98,12 +98,8 @@ function DomainStakeholders() {
                                 <p className="role-description">{role.description || 'No description provided'}</p>
                                 <div className="role-meta">
                                     <div className="assignee-info">
-                                        <Icon icon={role.currentAssignee?.userId ? 'mdi:account-check' : 'mdi:account-off'} />
-                                        <span>{role.currentAssignee?.userId ? 'Assigned' : 'Unassigned'}</span>
-                                    </div>
-                                    <div className="backup-count">
                                         <Icon icon="mdi:account-multiple" />
-                                        <span>{role.backupAssignees?.length || 0} backup(s)</span>
+                                        <span>{role.members?.filter(m => m.isActive).length || 0} member(s)</span>
                                     </div>
                                 </div>
                             </div>

@@ -43,14 +43,14 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
 
     useEffect(() => {
         if (stakeholderRole) {
-            // Create a mock step object from the stakeholder role for compatibility
-            const mockStep = {
+            // Create a step object from the stakeholder role
+            const step = {
                 role: stakeholderRole.stakeholderName,
                 stakeholderRoleId: stakeholderRole._id,
                 conditionGroups: stakeholderRole.conditionGroups || [],
                 groupLogicalOperators: stakeholderRole.groupLogicalOperators || []
             };
-            setSelectedStep(mockStep);
+            setSelectedStep(step);
         }
     }, [stakeholderRole]);
 
@@ -77,8 +77,8 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
         try {
             // Update the stakeholder role with new condition groups
             const response = await postRequest(`/api/stakeholder-roles/${stakeholderRole._id}`, {
-                conditionGroups: pendingChanges.conditionGroups || selectedStep.conditionGroups,
-                groupLogicalOperators: pendingChanges.groupLogicalOperators || selectedStep.groupLogicalOperators
+                conditionGroups: pendingChanges.conditionGroups || selectedStep.conditionGroups || [],
+                groupLogicalOperators: pendingChanges.groupLogicalOperators || selectedStep.groupLogicalOperators || []
             }, {
                 method: 'PUT'
             });

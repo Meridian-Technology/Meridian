@@ -6,7 +6,6 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import {useFetch} from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import Popup from '../../../components/Popup/Popup';
-import NewApproval from './NewApproval/NewApproval';
 import NewDomain from './NewDomain/NewDomain';
 import NewStakeholderRole from './NewStakeholderRole/NewStakeholderRole';
 import FlowCard from './FlowCard/FlowCard';
@@ -164,13 +163,7 @@ function ManageFlow(){
                             domainsData.refetch();
                         }}
                     />
-                ) : (
-                    <NewApproval 
-                        handleClose={() => setPopupOpen(false)} 
-                        refetch={approvalGroupsData.refetch}
-                        refetchFlow={approvalFlowData.refetch}
-                    />
-                )}
+                ) : null}
             </Popup>
             
             <header className="header">

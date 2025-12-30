@@ -5,6 +5,7 @@ import {Icon} from '@iconify-icon/react';
 
 import GradientButtonCover from '../../../../assets/GradientButtonCover.png';
 import FullEvent from '../../../../components/EventsViewer/EventsGrid/EventsColumn/FullEvent/FullEvent';
+import ApprovalPreview from '../../../../components/ApprovalPreview/ApprovalPreview';
 function Review({ formData, setFormData, onComplete }){
 
     const [checked, setChecked] = useState([]);
@@ -139,6 +140,10 @@ function Review({ formData, setFormData, onComplete }){
                             <label htmlFor="none">None of the above</label>
                         </div>
                     </div>
+                </div>
+
+                <div className="approval-preview-section">
+                    <ApprovalPreview formData={formData} />
                 </div>
 
             </div>

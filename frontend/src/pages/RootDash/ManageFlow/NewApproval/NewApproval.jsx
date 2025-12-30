@@ -52,23 +52,29 @@ function NewApproval({refetch, handleClose, refetchFlow}){
         
         try {
             // Create a new stakeholder role using the new system
-            const response = await postRequest('/api/event-system-config/stakeholder-role', {
+            const response = await postRequest('/api/stakeholder-role', {
                 stakeholderId: approvalName.toLowerCase().replace(/\s+/g, '_'),
-                displayName: approvalName,
+                stakeholderName: approvalName,
+                stakeholderType: 'approver',
                 description: approvalDescription,
                 isActive: true,
-                currentAssignee: selectedOwner ? {
+                members: selectedOwner ? [{
                     userId: selectedOwner._id,
                     assignedAt: new Date()
                     // assignedBy will be set by the backend
-                } : null,
-                backupAssignees: [],
-                settings: {
-                    escalationTimeout: 72,
-                    requireAllMembers: false,
-                    requireAnyMember: true,
-                    maxApprovers: null
-                }
+                }] : [],
+                approvalConfig: {
+                    requiredApprovals: 1,
+                    totalMembers: selectedOwner ? 1 : 0,
+                    allowSelfApproval: false,
+                    requireAllMembers: false
+                },
+                escalationRules: {
+                    timeout: 72,
+                    autoEscalate: true
+                },
+                conditionGroups: [],
+                groupLogicalOperators: []
             });
             
             if (response.success) {

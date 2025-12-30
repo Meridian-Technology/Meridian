@@ -16,8 +16,7 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
         description: '',
         permissions: [],
         requirements: [],
-        primaryMembers: [],
-        backupAssignees: [],
+        members: [],
         approvalConfig: {
             requiredApprovals: 1,
             totalMembers: 0,
@@ -25,10 +24,11 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
             requireAllMembers: false
         },
         escalationRules: {
-            enabled: true,
-            timeoutHours: 72,
+            timeout: 72,
             autoEscalate: true
         },
+        conditionGroups: [],
+        groupLogicalOperators: [],
         isActive: true
     });
 
@@ -85,16 +85,16 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
             newErrors.permissions = 'At least one permission is required';
         }
 
-        if (stakeholderData.primaryMembers.length === 0) {
-            newErrors.primaryMembers = 'At least one primary member is required';
+        if (stakeholderData.members.length === 0) {
+            newErrors.members = 'At least one member is required';
         }
 
-        if (stakeholderData.approvalConfig.requiredApprovals > stakeholderData.primaryMembers.length) {
-            newErrors.requiredApprovals = 'Required approvals cannot exceed number of primary members';
+        if (stakeholderData.approvalConfig.requiredApprovals > stakeholderData.members.length) {
+            newErrors.requiredApprovals = 'Required approvals cannot exceed number of members';
         }
 
-        if (stakeholderData.escalationRules.timeoutHours < 1) {
-            newErrors.timeoutHours = 'Timeout must be at least 1 hour';
+        if (stakeholderData.escalationRules.timeout < 1) {
+            newErrors.timeout = 'Timeout must be at least 1 hour';
         }
 
         setErrors(newErrors);
@@ -154,52 +154,30 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
         }));
     };
 
-    const handlePrimaryMemberAdd = (user) => {
+    const handleMemberAdd = (user) => {
         setStakeholderData(prev => ({
             ...prev,
-            primaryMembers: [...prev.primaryMembers, {
+            members: [...prev.members, {
                 userId: user._id,
                 assignedAt: new Date()
                 // assignedBy will be set by the backend
             }],
             approvalConfig: {
                 ...prev.approvalConfig,
-                totalMembers: prev.primaryMembers.length + 1
+                totalMembers: prev.members.length + 1
             }
         }));
     };
 
-    const handlePrimaryMemberRemove = (index) => {
+    const handleMemberRemove = (index) => {
         setStakeholderData(prev => ({
             ...prev,
-            primaryMembers: prev.primaryMembers.filter((_, i) => i !== index),
+            members: prev.members.filter((_, i) => i !== index),
             approvalConfig: {
                 ...prev.approvalConfig,
-                totalMembers: prev.primaryMembers.length - 1,
-                requiredApprovals: Math.min(prev.approvalConfig.requiredApprovals, prev.primaryMembers.length - 1)
+                totalMembers: prev.members.length - 1,
+                requiredApprovals: Math.min(prev.approvalConfig.requiredApprovals, prev.members.length - 1)
             }
-        }));
-    };
-
-    const handleBackupAssigneeAdd = (user) => {
-        const newBackup = {
-            userId: user._id,
-            priority: stakeholderData.backupAssignees.length + 1,
-            assignedAt: new Date(),
-            isActive: true
-            // assignedBy will be set by the backend
-        };
-        
-        setStakeholderData(prev => ({
-            ...prev,
-            backupAssignees: [...prev.backupAssignees, newBackup]
-        }));
-    };
-
-    const handleBackupAssigneeRemove = (index) => {
-        setStakeholderData(prev => ({
-            ...prev,
-            backupAssignees: prev.backupAssignees.filter((_, i) => i !== index)
         }));
     };
 
@@ -236,8 +214,7 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                     description: '',
                     permissions: [],
                     requirements: [],
-                    primaryMembers: [],
-                    backupAssignees: [],
+                    members: [],
                     approvalConfig: {
                         requiredApprovals: 1,
                         totalMembers: 0,
@@ -245,10 +222,11 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                         requireAllMembers: false
                     },
                     escalationRules: {
-                        enabled: true,
-                        timeoutHours: 72,
+                        timeout: 72,
                         autoEscalate: true
                     },
+                    conditionGroups: [],
+                    groupLogicalOperators: [],
                     isActive: true
                 });
                 setErrors({});
@@ -434,15 +412,15 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                     </div>
                 </div>
 
-                {/* Primary Members */}
+                {/* Members */}
                 <div className="section">
-                    <h3>Primary Members *</h3>
-                    <p className="section-description">Add multiple primary members who can approve events. Configure how many approvals are required.</p>
+                    <h3>Members *</h3>
+                    <p className="section-description">Add members who can approve events. Configure how many approvals are required.</p>
                     
-                    {stakeholderData.primaryMembers.length > 0 && (
-                        <div className="primary-members">
-                            {stakeholderData.primaryMembers.map((member, index) => (
-                                <div key={index} className="primary-member">
+                    {stakeholderData.members.length > 0 && (
+                        <div className="members">
+                            {stakeholderData.members.map((member, index) => (
+                                <div key={index} className="member">
                                     <div className="user-info">
                                         <span className="member-number">#{index + 1}</span>
                                         <span className="user-name">{member.userId?.name || 'User'}</span>
@@ -451,7 +429,7 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                                     <button 
                                         type="button" 
                                         className="remove-member" 
-                                        onClick={() => handlePrimaryMemberRemove(index)}
+                                        onClick={() => handleMemberRemove(index)}
                                     >
                                         Remove
                                     </button>
@@ -461,14 +439,14 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                     )}
                     
                     <UserSearch 
-                        onUserSelect={handlePrimaryMemberAdd}
-                        placeholder="Search for primary members by name or username"
-                        excludeIds={stakeholderData.primaryMembers.map(m => m.userId)}
+                        onUserSelect={handleMemberAdd}
+                        placeholder="Search for members by name or username"
+                        excludeIds={stakeholderData.members.map(m => m.userId)}
                     />
-                    {errors.primaryMembers && <span className="error">{errors.primaryMembers}</span>}
+                    {errors.members && <span className="error">{errors.members}</span>}
                     
                     {/* Approval Configuration */}
-                    {stakeholderData.primaryMembers.length > 0 && (
+                    {stakeholderData.members.length > 0 && (
                         <div className="approval-config">
                             <h4>Approval Configuration</h4>
                             
@@ -482,10 +460,10 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                                     value={stakeholderData.approvalConfig.requiredApprovals} 
                                     onChange={(e) => handleApprovalConfigChange('requiredApprovals', parseInt(e.target.value))}
                                     min="1"
-                                    max={stakeholderData.primaryMembers.length}
+                                    max={stakeholderData.members.length}
                                 />
                                 <span className="field-help">
-                                    Out of {stakeholderData.primaryMembers.length} primary members
+                                    Out of {stakeholderData.members.length} members
                                 </span>
                                 {errors.requiredApprovals && <span className="error">{errors.requiredApprovals}</span>}
                             </div>
@@ -515,84 +493,33 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                     )}
                 </div>
 
-                {/* Backup Assignees */}
-                <div className="section">
-                    <h3>Backup Assignees</h3>
-                    <p className="section-description">Add backup assignees who can step in when primary members are unavailable.</p>
-                    
-                    {stakeholderData.backupAssignees.length > 0 && (
-                        <div className="backup-assignees">
-                            {stakeholderData.backupAssignees.map((backup, index) => (
-                                <div key={index} className="backup-assignee">
-                                    <div className="user-info">
-                                        <span className="priority">#{backup.priority}</span>
-                                        <span className="user-name">{backup.userId?.name || 'User'}</span>
-                                        <span className="user-email">{backup.userId?.email || 'email@example.com'}</span>
-                                    </div>
-                                    <button 
-                                        type="button" 
-                                        className="remove-backup" 
-                                        onClick={() => handleBackupAssigneeRemove(index)}
-                                    >
-                                        Remove
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    
-                    <UserSearch 
-                        onUserSelect={handleBackupAssigneeAdd}
-                        placeholder="Search for backup assignees by name or username"
-                        excludeIds={[
-                            ...stakeholderData.primaryMembers.map(m => m.userId),
-                            ...stakeholderData.backupAssignees.map(b => b.userId)
-                        ]}
-                    />
-                </div>
-
                 {/* Escalation Rules */}
                 <div className="section">
                     <h3>Escalation Rules</h3>
                     <div className="field">
+                        <label htmlFor="timeout">Timeout (hours)</label>
+                        <input 
+                            type="number" 
+                            name="timeout" 
+                            id="timeout" 
+                            className="short" 
+                            value={stakeholderData.escalationRules.timeout} 
+                            onChange={(e) => handleNestedInputChange('escalationRules', 'timeout', parseInt(e.target.value))}
+                            min="1"
+                        />
+                        {errors.timeout && <span className="error">{errors.timeout}</span>}
+                    </div>
+                    
+                    <div className="field">
                         <label className="checkbox-label">
                             <input 
                                 type="checkbox" 
-                                checked={stakeholderData.escalationRules.enabled}
-                                onChange={(e) => handleNestedInputChange('escalationRules', 'enabled', e.target.checked)}
+                                checked={stakeholderData.escalationRules.autoEscalate}
+                                onChange={(e) => handleNestedInputChange('escalationRules', 'autoEscalate', e.target.checked)}
                             />
-                            <span>Enable escalation rules</span>
+                            <span>Auto-escalate when timeout is reached</span>
                         </label>
                     </div>
-                    
-                    {stakeholderData.escalationRules.enabled && (
-                        <>
-                            <div className="field">
-                                <label htmlFor="timeout-hours">Timeout (hours)</label>
-                                <input 
-                                    type="number" 
-                                    name="timeout-hours" 
-                                    id="timeout-hours" 
-                                    className="short" 
-                                    value={stakeholderData.escalationRules.timeoutHours} 
-                                    onChange={(e) => handleNestedInputChange('escalationRules', 'timeoutHours', parseInt(e.target.value))}
-                                    min="1"
-                                />
-                                {errors.timeoutHours && <span className="error">{errors.timeoutHours}</span>}
-                            </div>
-                            
-                            <div className="field">
-                                <label className="checkbox-label">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={stakeholderData.escalationRules.autoEscalate}
-                                        onChange={(e) => handleNestedInputChange('escalationRules', 'autoEscalate', e.target.checked)}
-                                    />
-                                    <span>Auto-escalate when timeout is reached</span>
-                                </label>
-                            </div>
-                        </>
-                    )}
                 </div>
 
                 {/* Status */}

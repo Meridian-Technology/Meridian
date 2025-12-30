@@ -12,7 +12,7 @@ function StakeholdersTab({
         total + (domain.stakeholderRoles?.length || 0), 0) || 0;
     
     const assignedRoles = domainsData.data?.data?.reduce((total, domain) => 
-        total + (domain.stakeholderRoles?.filter(role => role.currentAssignee?.userId).length || 0), 0) || 0;
+        total + (domain.stakeholderRoles?.filter(role => role.members?.some(m => m.isActive)).length || 0), 0) || 0;
     
     const approverRoles = domainsData.data?.data?.reduce((total, domain) => 
         total + (domain.stakeholderRoles?.filter(role => role.stakeholderType === 'approver').length || 0), 0) || 0;
@@ -128,16 +128,17 @@ function StakeholdersTab({
                                                     <div className="role-details">
                                                         <div className="role-assignment">
                                                             <div className="assignment-info">
-                                                                <Icon icon="mdi:account" />
+                                                                <Icon icon="mdi:account-multiple" />
                                                                 <span>
-                                                                    {role.currentAssignee?.userId ? 'Assigned' : 'Unassigned'}
+                                                                    {role.members?.filter(m => m.isActive).length || 0} member(s)
                                                                 </span>
                                                             </div>
-                                                            {role.currentAssignee?.userId && (
+                                                            {role.members && role.members.filter(m => m.isActive).length > 0 && (
                                                                 <div className="assignee-info">
-                                                                    <span className="assignee-name">Assigned to user</span>
-                                                                    <span className="assignment-date">
-                                                                        {new Date(role.currentAssignee.assignedAt).toLocaleDateString()}
+                                                                    <span className="assignee-name">
+                                                                        {role.members.filter(m => m.isActive).length === 1 
+                                                                            ? '1 active member' 
+                                                                            : `${role.members.filter(m => m.isActive).length} active members`}
                                                                     </span>
                                                                 </div>
                                                             )}

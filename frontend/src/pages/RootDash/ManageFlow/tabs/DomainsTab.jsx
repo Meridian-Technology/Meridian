@@ -161,9 +161,9 @@ function DomainsTab({
                                                                 <Icon icon={`mdi:${role.stakeholderType === 'approver' ? 'shield-check' : role.stakeholderType === 'acknowledger' ? 'check-circle' : 'bell'}`} />
                                                                 {role.stakeholderType}
                                                             </span>
-                                                            <span className={`assignee-status ${role.currentAssignee?.userId ? 'assigned' : 'unassigned'}`}>
-                                                                <Icon icon={role.currentAssignee?.userId ? 'mdi:account-check' : 'mdi:account-off'} />
-                                                                {role.currentAssignee?.userId ? 'Assigned' : 'Unassigned'}
+                                                            <span className={`assignee-status ${role.members?.some(m => m.isActive) ? 'assigned' : 'unassigned'}`}>
+                                                                <Icon icon={role.members?.some(m => m.isActive) ? 'mdi:account-check' : 'mdi:account-off'} />
+                                                                {role.members?.filter(m => m.isActive).length || 0} member(s)
                                                             </span>
                                                         </div>
                                                     </div>
