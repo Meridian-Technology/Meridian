@@ -60,10 +60,10 @@ function Contact() {
             if (response.data.success) {
                 addNotification({
                     title: 'Success',
-                    message: 'Thank you for contacting us! We\'ll get back to you soon.',
+                    message: 'Thank you for contacting us! Please schedule a time for your demo.',
                     type: 'success'
                 });
-                navigate('/');
+                navigate('/booking');
             } else {
                 addNotification({
                     title: 'Error',
