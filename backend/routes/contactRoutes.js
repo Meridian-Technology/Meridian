@@ -72,7 +72,7 @@ ${message}
 
         // Send email using Resend API (https://resend.com/docs/api-reference/emails/send-email)
         const { data, error } = await resend.emails.send({
-            from: 'Meridian Contact Form <support@study-compass.com>',
+            from: 'Meridian Contact Form <support@meridian.study>',
             to: ['raven@meridian.study', 'james@meridian.study'],
             replyTo: email,
             subject: `${organization} Demo Request`,
