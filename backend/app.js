@@ -127,6 +127,7 @@ const inngestServe = require('./inngest/serve.js');
 const studySessionRoutes = require('./routes/studySessionRoutes.js');
 const availabilityPollRoutes = require('./routes/availabilityPollRoutes.js');
 const feedbackRoutes = require('./routes/feedbackRoutes.js');
+const contactRoutes = require('./routes/contactRoutes.js');
 
 app.use(authRoutes);
 app.use('/auth/saml', samlRoutes);
@@ -151,6 +152,7 @@ app.use(adminRoutes);
 
 app.use('/notifications', notificationRoutes);
 app.use('/api/qr', qrRoutes);
+app.use(contactRoutes);
 
 // Inngest serve handler - this handles all Inngest function execution
 app.use('/api/inngest', inngestServe);
