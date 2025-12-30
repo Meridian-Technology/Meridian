@@ -507,7 +507,7 @@ router.post('/forgot-password', async (req, res) => {
         }));
 
         const { data, error } = await resend.emails.send({
-            from: "Merid Support <support@meridian.study>",
+            from: "Meridian Support <support@meridian.study>",
             to: [email],
             subject: "Password Reset Code",
             html: emailHTML,
