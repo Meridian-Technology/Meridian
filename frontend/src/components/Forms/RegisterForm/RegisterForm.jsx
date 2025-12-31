@@ -20,7 +20,6 @@ function RegisterForm() {
     const [loadContent, setLoadContent] = useState(false);
     const [errorText, setErrorText] = useState("");
     const [email, setEmail] = useState(false);
-    const [isAppleLoginInProgress, setIsAppleLoginInProgress] = useState(false);
 
     const googleLogo = generalIcons.google;
 
@@ -129,45 +128,25 @@ function RegisterForm() {
             window.AppleID.auth.init({
                 clientId: 'com.meridian.auth',
                 scope: 'name email',
-                redirectURI: window.location.origin + '/apple-login',
-                usePopup: false
+                redirectURI: window.location.origin + '/auth/apple/callback',
+                usePopup: false // Use redirect mode
             });
         }
     }, []);
 
-    const handleAppleSignIn = async () => {
+    const handleAppleSignIn = () => {
         if (!window.AppleID) {
             failed("Apple Sign In is not available. Please check your browser compatibility.");
             return;
         }
 
-        try {
-            setIsAppleLoginInProgress(true);
-            const response = await window.AppleID.auth.signIn();
-            
-            if (response && response.id_token) {
-                // Extract user info if provided (only on first sign-in)
-                const user = response.user || null;
-                
-                await appleLogin(response.id_token, user);
-                console.log("Apple registration successful");
-                navigate('/events-dashboard', { replace: true });
-            } else {
-                throw new Error("No ID token received from Apple");
-            }
-        } catch (error) {
-            setIsAppleLoginInProgress(false);
-            if (error.error === 'popup_closed_by_user') {
-                // User cancelled, don't show error
-                return;
-            }
-            console.error("Apple registration failed:", error);
-            if (error.response && error.response.status === 409) {
-                failed("Email already exists");
-            } else {
-                failed("Apple registration failed. Please try again");
-            }
-        }
+        // Store redirect path in state for callback to use
+        const redirectState = JSON.stringify({ redirect: '/events-dashboard' });
+        
+        // Initiate Apple Sign In - will redirect to callback URL
+        window.AppleID.auth.signIn({
+            state: redirectState
+        });
     };
 
     function failed(message){
@@ -196,7 +175,6 @@ function RegisterForm() {
                 type="button" 
                 className="button apple" 
                 onClick={handleAppleSignIn}
-                disabled={isAppleLoginInProgress}
             >
                 Continue with Apple
                 <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: '8px' }}>

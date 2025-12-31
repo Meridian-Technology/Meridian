@@ -26,7 +26,6 @@ function LoginForm() {
     const location = useLocation();
     const redirectPathRef = useRef(null);
     const [isGoogleLoginInProgress, setIsGoogleLoginInProgress] = useState(false);
-    const [isAppleLoginInProgress, setIsAppleLoginInProgress] = useState(false);
     
     const googleLogo = generalIcons.google;
     
@@ -49,12 +48,12 @@ function LoginForm() {
     const samlEnabled = isSAMLEnabled();
 
     useEffect(() => {
-      if (isAuthenticated && !isGoogleLoginInProgress && !isAppleLoginInProgress){
+      if (isAuthenticated && !isGoogleLoginInProgress){
         console.log("logged in already");
         console.log("auto-redirecting to:", from);
         navigate(from, { replace: true })
       }
-    },[isAuthenticated, navigate, from, isGoogleLoginInProgress, isAppleLoginInProgress]);
+    },[isAuthenticated, navigate, from, isGoogleLoginInProgress]);
 
     useEffect(() => {
         // const token = localStorage.getItem('token'); // or sessionStorage
@@ -146,45 +145,25 @@ function LoginForm() {
             window.AppleID.auth.init({
                 clientId: 'com.meridian.auth',
                 scope: 'name email',
-                redirectURI: 'https://meridian.study/login',
-                usePopup: false
+                redirectURI: window.location.origin + '/auth/apple/callback',
+                usePopup: false // Use redirect mode
             });
         }
     }, []);
 
-    const handleAppleSignIn = async () => {
+    const handleAppleSignIn = () => {
         if (!window.AppleID) {
             failed("Apple Sign In is not available. Please check your browser compatibility.");
             return;
         }
 
-        try {
-            setIsAppleLoginInProgress(true);
-            const response = await window.AppleID.auth.signIn();
-            
-            if (response && response.id_token) {
-                // Extract user info if provided (only on first sign-in)
-                const user = response.user || null;
-                
-                await appleLogin(response.id_token, user);
-                console.log("Apple login successful, redirecting to:", redirectPathRef.current || from);
-                navigate(redirectPathRef.current || from, { replace: true });
-            } else {
-                throw new Error("No ID token received from Apple");
-            }
-        } catch (error) {
-            setIsAppleLoginInProgress(false);
-            if (error.error === 'popup_closed_by_user') {
-                // User cancelled, don't show error
-                return;
-            }
-            console.error("Apple login failed:", error);
-            if (error.response && error.response.status === 409) {
-                failed("Email already exists");
-            } else {
-                failed("Apple login failed. Please try again");
-            }
-        }
+        // Store redirect path in state for callback to use
+        const redirectState = JSON.stringify({ redirect: redirectPathRef.current || from });
+        
+        // Initiate Apple Sign In - will redirect to callback URL
+        window.AppleID.auth.signIn({
+            state: redirectState
+        });
     };
 
     function failed(message){
@@ -230,7 +209,6 @@ function LoginForm() {
             type="button" 
             className="button apple" 
             onClick={handleAppleSignIn}
-            disabled={isAppleLoginInProgress}
         >
             <Icon icon="mdi:apple" />
             Continue with Apple
