@@ -281,12 +281,12 @@ async function authenticateWithApple(idToken, user, req) {
                 await existingUser.save();
                 
                 // Fetch the user again with populated fields
-                const user = await User.findById(existingUser._id)
+                const userDoc = await User.findById(existingUser._id)
                     .select('-password -googleId -appleId -refreshToken')
                     .lean()
                     .populate('clubAssociations');
                 
-                return { user };
+                return { user: userDoc };
             }
         }
 
@@ -309,12 +309,12 @@ async function authenticateWithApple(idToken, user, req) {
         sendDiscordMessage(`New user registered`, `user ${newUser.username} registered via Apple Sign In`, "newUser");
 
         // Fetch the user again with populated fields
-        const user = await User.findById(newUser._id)
+        const userDoc = await User.findById(newUser._id)
             .select('-password -googleId -appleId -refreshToken')
             .lean()
             .populate('clubAssociations');
 
-        return { user };
+        return { user: userDoc };
     } catch (error) {
         console.error('Apple Sign In error:', error);
         if (error.message && error.message.includes('TokenExpiredError')) {
