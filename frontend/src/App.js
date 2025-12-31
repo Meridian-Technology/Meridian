@@ -33,6 +33,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import PrivacyPolicy from './pages/PrivacyPolicy/PrivacyPolicy';
 import SAMLCallback from './components/SAMLCallback/SAMLCallback';
+import AppleCallback from './components/AppleCallback/AppleCallback';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
 import { CacheProvider } from './CacheContext';
@@ -141,6 +142,7 @@ function App() {
                                             <Route path="/forgot-password" element={<AnimatedPageWrapper><ForgotPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/reset-password" element={<AnimatedPageWrapper><ResetPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>
+                                            <Route path="/auth/apple/callback" element={<AppleCallback />}/>
                                             <Route path="*" element={<Error />}/>
                                             <Route path="/error/:errorCode" element={<Error />}/>
                                             <Route path="/landing" element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>}/>
