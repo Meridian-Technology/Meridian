@@ -38,9 +38,9 @@ function FullEvent({ event }){
         if(event.hostingType === "User"){
             hostingImage = event.hostingId.image ? event.hostingId.image : defaultAvatar;
             hostingName = event.hostingId.name;
-            if(event.hostingId.roles.includes("developer")){
+            if(event?.hostingId?.roles?.includes("developer")){
                 level = "Developer";
-            } else if(event.hostingId.roles.includes("oie")){
+            } else if(event?.hostingId?.roles?.includes("oie")){
                 level = "Faculty";
             } else {
                 level = "Student";
