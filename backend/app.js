@@ -167,6 +167,7 @@ app.use('/availability-polls', availabilityPollRoutes);
 
 app.use('/feedback', feedbackRoutes);
 
+
 // Serve static files from the React app in production
 if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, '../frontend/build')));
