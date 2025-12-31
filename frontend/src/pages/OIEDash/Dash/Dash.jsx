@@ -72,9 +72,9 @@ function Dash({expandedClass, change, name}){
                 <img src={OIEGradient} alt="" />
                 <h1>Event Approval Dashboard</h1>
             </header> */}
-            <div className="header">
+            <header className="header">
                 <h1>{name} Dashboard</h1>
-            </div>
+            </header>
             <div className="needs-approval">
                 <div className="approval-header">
                     <h1>events pending approval</h1>

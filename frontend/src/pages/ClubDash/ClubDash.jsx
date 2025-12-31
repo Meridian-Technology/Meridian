@@ -12,7 +12,6 @@ import Roles from './Roles/Roles';
 import Testing from './Testing/Testing';
 
 import {useFetch} from '../../hooks/useFetch';
-import { use } from 'react';
 import OrgDropdown from './OrgDropdown/OrgDropdown';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import orgLogo from '../../assets/Brand Image/ATLAS.svg';
@@ -20,6 +19,8 @@ import apiRequest from '../../utils/postRequest';
 import { useLocation } from 'react-router-dom';
 import EventsPanel from './EventsPanel/EventsPanel';
 import EventsManagement from './EventsManagement/EventsManagement';
+import ClubAnnouncements from './ClubAnnouncements/ClubAnnouncements';
+import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
 import { 
     GeneralSettings, 
     AppearanceSettings, 
@@ -51,12 +52,6 @@ function ClubDash(){
     const meetings = useFetch(`/get-meetings/${clubId}`);
 
     const location = useLocation();
-
-    
-
-
-
-    
 
 
     useEffect(()=>{
@@ -203,6 +198,12 @@ function ClubDash(){
             icon: 'mingcute:calendar-fill', 
             key: 'events',
             element: <EventsManagement expandedClass={expandedClass} orgId={clubId}/>
+        },
+        { 
+            label: 'Announcements', 
+            icon: 'mdi:message-text', 
+            key: 'announcements',
+            element: <ClubAnnouncements orgData={orgData} expandedClass={expandedClass}/>
         },
         { 
             label: 'Members', 

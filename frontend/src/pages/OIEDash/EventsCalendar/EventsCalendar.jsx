@@ -7,13 +7,16 @@ import Day from './Day/Day';
 import Filter from '../../../components/Filter/Filter';
 
 
-function EventsCalendar({expandedClass}){
+function EventsCalendar({expandedClass, allowCrossDaySelection = true, timeIncrement = 15}){
     const [view, setView] = useState(0); //0: month, 1: week:, 2: day, 3: list
     const [contentHeight, setContentHeight] = useState(100);
     const [start, setStart] = useState("2025-2-2");
     const [selected, setSelected] = useState("2025-2-5");
     const contentRef = useRef(null);
     const [filter, setFilter] = useState({type: "all"});
+
+    // look into this blocking system, could likely be optimized using shared logic with true events.
+    const blockedEvents = [];
 
     useEffect(() => {
         if(contentRef.current){
@@ -43,13 +46,13 @@ function EventsCalendar({expandedClass}){
 
             <div className="content" ref={contentRef}>
                 {
-                    view === 0 && <Month height={`${contentHeight}px`} changeToWeek={changeToWeek} view={view} setView={setView} filter={filter}/>
+                    view === 0 && <Month height={`${contentHeight}px`} changeToWeek={changeToWeek} view={view} setView={setView} filter={filter} blockedEvents={blockedEvents}/>
                 }
                 {
-                    view === 1 && <Week height={`${contentHeight}px`} changeToDay={changeToDay} start={start} filter={filter} view={view} setView={setView}/>
+                    view === 1 && <Week height={`${contentHeight}px`} changeToDay={changeToDay} start={start} filter={filter} view={view} setView={setView} allowCrossDaySelection={allowCrossDaySelection} timeIncrement={timeIncrement}/>
                 }
                 {
-                    view === 2 && <Day height={`${contentHeight}px`} start={selected} filter={filter} view={view} setView={setView}/>
+                    view === 2 && <Day height={`${contentHeight}px`} start={selected} filter={filter} view={view} setView={setView} blockedEvents={blockedEvents}/>
                 }
 
             </div>

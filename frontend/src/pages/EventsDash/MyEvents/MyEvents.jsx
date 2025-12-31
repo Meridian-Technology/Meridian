@@ -93,7 +93,7 @@ function MyEvents({ onRoomNavigation }){
 
     const handleNavigateToFriends = () => {
         if (isAuthenticated) {
-            navigate('/events-dashboard?page=4'); // Navigate to Friends tab
+            navigate('/events-dashboard?page=3'); // Navigate to Friends tab
         }
     };
 

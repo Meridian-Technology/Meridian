@@ -7,6 +7,7 @@ import { useNotification } from '../../NotificationContext';
 import RSVPSection from '../RSVPSection/RSVPSection';
 import EventsByCreator from '../EventsByCreator/EventsByCreator';
 import EventAnalytics from '../EventAnalytics/EventAnalytics';
+import AgendaEditor from '../AgendaEditor/AgendaEditor';
 import './EventViewer.scss';
 
 function EventViewer({ 
@@ -138,6 +139,14 @@ function EventViewer({
                     )}
                     
                     <RSVPSection event={event} />
+                    
+                    {/* Agenda Editor */}
+                    <AgendaEditor event={event} onUpdate={(updatedEvent) => {
+                        // Update event if parent component handles it
+                        if (onBack) {
+                            // Force refresh by navigating away and back, or parent can handle
+                        }
+                    }} />
                     
                     {/* Analytics Tab for Admin Users */}
                     {showAnalytics && user && user.roles && user.roles.includes('admin') && (

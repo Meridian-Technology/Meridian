@@ -1,0 +1,238 @@
+.review-step {
+    .form-section {
+        h3 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin: 0 0 8px 0;
+        }
+
+        p {
+            font-size: 16px;
+            color: #6b7280;
+            margin: 0 0 32px 0;
+            line-height: 1.5;
+        }
+
+        .review-sections {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .review-section {
+            background: white;
+            border: 2px solid #f3f4f6;
+            border-radius: 16px;
+            padding: 24px;
+
+            .section-header {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 20px;
+                padding-bottom: 12px;
+                border-bottom: 1px solid #e5e7eb;
+
+                iconify-icon {
+                    font-size: 24px;
+                    color: #6d8efa;
+                }
+
+                h4 {
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: #374151;
+                    margin: 0;
+                }
+            }
+
+            .review-items {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+
+                .review-item {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+
+                    @media (min-width: 768px) {
+                        flex-direction: row;
+                        align-items: flex-start;
+                    }
+
+                    .label {
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: #6b7280;
+                        min-width: 140px;
+                        flex-shrink: 0;
+                    }
+
+                    .value {
+                        font-size: 15px;
+                        color: #374151;
+                        flex: 1;
+
+                        &.description {
+                            line-height: 1.5;
+                        }
+
+                        &.visibility {
+                            .visibility-badge {
+                                display: inline-block;
+                                padding: 4px 12px;
+                                border-radius: 20px;
+                                font-size: 13px;
+                                font-weight: 600;
+
+                                &.public {
+                                    background: #dcfce7;
+                                    color: #166534;
+                                    border: 1px solid #bbf7d0;
+                                }
+
+                                &.private {
+                                    background: #fef3c7;
+                                    color: #92400e;
+                                    border: 1px solid #fde68a;
+                                }
+                            }
+                        }
+
+                        &.tags {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 8px;
+
+                            .tag {
+                                background: #eff6ff;
+                                color: #1d4ed8;
+                                padding: 4px 10px;
+                                border-radius: 16px;
+                                font-size: 13px;
+                                font-weight: 500;
+                                border: 1px solid #bfdbfe;
+                            }
+                        }
+
+                        &.timeslots-list {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 8px;
+
+                            .timeslot-review-item {
+                                display: flex;
+                                align-items: center;
+                                gap: 8px;
+                                background: #f0f9ff;
+                                border: 1px solid #bae6fd;
+                                border-radius: 8px;
+                                padding: 10px 12px;
+                                font-size: 14px;
+                                color: #0c4a6e;
+                                font-weight: 500;
+
+                                iconify-icon {
+                                    color: #0284c7;
+                                    font-size: 16px;
+                                    flex-shrink: 0;
+                                }
+                            }
+
+                            .no-timeslots {
+                                color: #ef4444;
+                                font-style: italic;
+                                font-size: 14px;
+                            }
+                        }
+                    }
+
+                    .invited-users {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 12px;
+
+                        .invited-user {
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                            background: rgba(109, 142, 250, 0.05);
+                            border: 1px solid rgba(109, 142, 250, 0.2);
+                            border-radius: 8px;
+                            padding: 8px 12px;
+                            font-size: 14px;
+                            color: #374151;
+
+                                                    .user-avatar {
+                            width: 24px;
+                            height: 24px;
+                            border-radius: 50%;
+                            overflow: hidden;
+                            position: relative;
+                            flex-shrink: 0;
+
+                            img {
+                                width: 100%;
+                                height: 100%;
+                                object-fit: cover;
+                            }
+
+                            .avatar-fallback {
+                                width: 100%;
+                                height: 100%;
+                                background: var(--primary-color, #6d8efa);
+                                color: white;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                font-weight: 600;
+                                font-size: 10px;
+                                position: absolute;
+                                top: 0;
+                                left: 0;
+                            }
+                        }
+                        }
+                    }
+                }
+            }
+        }
+
+        .creation-notice {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            gap: 16px;
+
+            iconify-icon {
+                color: #0284c7;
+                font-size: 24px;
+                flex-shrink: 0;
+                margin-top: 2px;
+            }
+
+            div {
+                flex: 1;
+
+                strong {
+                    color: #0c4a6e;
+                    font-size: 16px;
+                    display: block;
+                    margin-bottom: 8px;
+                }
+
+                p {
+                    color: #0369a1;
+                    font-size: 14px;
+                    line-height: 1.5;
+                    margin: 0;
+                }
+            }
+        }
+    }
+}

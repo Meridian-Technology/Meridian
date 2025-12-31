@@ -2,10 +2,11 @@ import EventsManager from '../../../components/EventsManager/EventsManager';
 import { useState } from 'react';
 import { useFetch } from '../../../hooks/useFetch';
 import './EventsPanel.scss';
-import OrgGrad from '../../../assets/Gradients/OrgGrad.png';
+import { useGradient } from '../../../hooks/useGradient';
 
 function EventsPanel({orgId}){
 
+    const {AtlasMain} = useGradient();
     const [fetchType, setFetchType] = useState('future');
     const [sort, setSort] = useState('desc');
     const myEvents = useFetch(`/get-my-events?orgId=${orgId}&type=${fetchType}&sort=${sort}`);
@@ -35,7 +36,7 @@ function EventsPanel({orgId}){
             <header className="header">
                 <h1>Events</h1>
                 <p>manage your events</p>
-                <img src={OrgGrad} alt="" />
+                <img src={AtlasMain} alt="" />
             </header>
                 <EventsManager events={myEvents.data?.events} refetch={myEvents.refetch} selectorItems={selectorItems} handleTabChange={handleFetchTypeChange} fetchType={fetchType} />
         </div>

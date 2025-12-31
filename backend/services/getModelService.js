@@ -20,7 +20,16 @@ const visitSchema = require('../schemas/visit');
 const orgMemberApplicationSchema = require('../schemas/orgMemberApplication');
 const samlConfigSchema = require('../schemas/samlConfig');
 const notificationSchema = require('../schemas/notification');
+const orgMessageSchema = require('../schemas/orgMessage');
+const contactRequestSchema = require('../schemas/contactRequest');
+// Study Sessions
+const studySessionSchema = require('../schemas/studySession');
+const availabilityPollSchema = require('../schemas/availabilityPoll');
 
+// Universal Feedback System
+const universalFeedbackSchema = require('../schemas/universalFeedback');
+const feedbackConfigSchema = require('../schemas/feedbackConfig');
+const systemVersionSchema = require('../schemas/systemVersion');
 
 //events
 const rssFeedSchema = require('../events/schemas/rssFeed');
@@ -31,7 +40,11 @@ const formSchema = require('../events/schemas/form');
 const formResponseSchema = require('../events/schemas/formResponse');
 const orgVerificationSchema = require('../schemas/orgVerification');
 const orgManagementConfigSchema = require('../schemas/orgManagementConfig');
-const eventAnalyticsSchema = require('../schemas/eventAnalytics');
+const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
+const eventSystemConfigSchema = require('../events/schemas/eventSystemConfig');
+const stakeholderRoleSchema = require('../events/schemas/stakeholderRole');
+const domainSchema = require('../events/schemas/domain');
+
 
 
 const getModels = (req, ...names) => {
@@ -66,7 +79,23 @@ const getModels = (req, ...names) => {
         OrgMemberApplication: req.db.model('OrgMemberApplication', orgMemberApplicationSchema, 'orgMemberApplications'),
         SAMLConfig: req.db.model('SAMLConfig', samlConfigSchema, 'samlConfigs'),
         Notification: req.db.model('Notification', notificationSchema, 'notifications'),
-        EventAnalytics: req.db.model('EventAnalytics', eventAnalyticsSchema, 'eventAnalytics')
+        OrgMessage: req.db.model('OrgMessage', orgMessageSchema, 'orgMessages'),
+        EventAnalytics: req.db.model('EventAnalytics', eventAnalyticsSchema, 'eventAnalytics'),
+
+        // Study Sessions
+        StudySession: req.db.model('StudySession', studySessionSchema, 'studySessions'),
+        AvailabilityPoll: req.db.model('AvailabilityPoll', availabilityPollSchema, 'availabilityPolls'),
+
+        // Universal Feedback System
+        UniversalFeedback: req.db.model('UniversalFeedback', universalFeedbackSchema, 'universalFeedback'),
+        FeedbackConfig: req.db.model('FeedbackConfig', feedbackConfigSchema, 'feedbackConfigs'),
+        SystemVersion: req.db.model('SystemVersion', systemVersionSchema, 'systemVersions'),
+
+        EventAnalytics: req.db.model('EventAnalytics', eventAnalyticsSchema, 'eventAnalytics'),
+        EventSystemConfig: req.db.model('EventSystemConfig', eventSystemConfigSchema, 'eventSystemConfigs'),
+        StakeholderRole: req.db.model('StakeholderRole', stakeholderRoleSchema, 'stakeholderRoles'),
+        Domain: req.db.model('Domain', domainSchema, 'domains'),
+        ContactRequest: req.db.model('ContactRequest', contactRequestSchema, 'contactRequests'),
     };
 
     return names.reduce((acc, name) => {

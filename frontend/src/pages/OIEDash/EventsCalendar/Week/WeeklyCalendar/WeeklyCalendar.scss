@@ -9,22 +9,22 @@
     --header-selected: #fef0ef;
     --body-selected: #fbeceb;
     --selected-overlay: rgba(250, 117, 109, 0.07);
-    width:100%;
+    width: 100%;
     display: flex;
     flex-direction: column;
     height: 100vh;
     overflow-y: auto;
-    border-radius: 10px;
+    border-radius: 0;
     position: relative;
 
     .calendar-header {
         display: flex;
         position: sticky;
         top: 0;
-        z-index: 2;
+        z-index: 100; // ensure header is always above selection overlays
         border: none;
         background-color: var(--background);
-        z-index: 5;
+        z-index: 100;
     }
 
     .time-header {
@@ -66,6 +66,10 @@
 
     .half-hour-line {
         border-top: 1px dashed #f0f0f0;
+    }
+
+    .increment-line {
+        border-top: 1px dotted #e0e0e0;
     }
 
     .day-header {
@@ -136,6 +140,9 @@
         position: relative;
         min-height: 1440px;
         /* 24 hours * 60 minutes */
+        cursor: default;
+        -webkit-user-select: none; /* prevent text selection while dragging */
+        user-select: none;
     }
 
     .time-column {
@@ -154,12 +161,15 @@
         transform: translateY(-50%);
         background: white;
         padding-right: 5px;
+        -webkit-user-select: none;
+        user-select: none;
     }
 
     .days-container {
         display: flex;
         flex: 1;
-
+        -webkit-user-select: none;
+        user-select: none;
     }
 
     .day-column {
@@ -167,6 +177,9 @@
         border-right: 1px solid #eee;
         position: relative;
         background-color: var(--bounding-color);
+        cursor: default;
+        -webkit-user-select: none;
+        user-select: none;
 
         .current-day-time-line{
             position: absolute;
@@ -214,8 +227,115 @@
         padding: 0;
         background-color: transparent;
         opacity: 1;
+        cursor: default;
+        -webkit-user-select: none;
+        user-select: none;
         &:hover {
             z-index: 5;
+        }
+
+        &.user-selection {
+            z-index: 6;
+            background-color: rgba(74, 144, 226, 0.2);
+            border: 2px solid rgba(74, 144, 226, 0.8);
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(74, 144, 226, 0.2);
+            cursor: grab;
+            
+            &:hover {
+                z-index: 7;
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3) !important;
+            }
+
+            &.active {
+                z-index: 8;
+                box-shadow: 0 4px 16px rgba(74, 144, 226, 0.4) !important;
+                border-width: 3px !important;
+                background-color: rgba(74, 144, 226, 0.4);
+                border-color: #4a90e2;
+            }
+
+            &.manipulating {
+                z-index: 9;
+                box-shadow: 0 6px 20px rgba(74, 144, 226, 0.5) !important;
+                transform: scale(1.02);
+                cursor: grabbing;
+            }
+
+            .resize-handle {
+                opacity: 0;
+                transition: opacity 0.2s ease;
+                position: absolute;
+                left: 0;
+                right: 0;
+                height: 8px;
+                background-color: transparent;
+                cursor: ns-resize;
+
+                &:hover {
+                    opacity: 0.3;
+                    background-color: rgba(74, 144, 226, 0.5);
+                }
+            }
+
+            &:hover .resize-handle {
+                opacity: 0.2;
+            }
+
+            .selection-delete-button {
+                position: absolute;
+                bottom: 6px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 20px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid transparent;
+                outline: none;
+                background-color: transparent;
+                color: #4a90e2;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: Inter, sans-serif;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 101;
+                opacity: 1;
+                transition: transform 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+                box-shadow: none;
+                backdrop-filter: none;
+                
+                &:hover {
+                    opacity: 1 !important;
+                    transform: translateX(-50%) scale(1.5) !important;
+                    color: var(--red) !important;
+                    border-color: transparent !important;
+                }
+            }
+
+            .resize-handle-top { top: 0; }
+            .resize-handle-bottom { bottom: 0; }
+
+            .selection-content {
+                padding: 4px 8px;
+                color: #4a90e2;
+                font-size: 12px;
+                font-weight: 600;
+                font-family: Inter, sans-serif;
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+
+            .selection-time {
+                font-size: 10px;
+                font-weight: 400;
+                opacity: 0.8;
+            }
         }
     }
 
@@ -228,6 +348,61 @@
         height: 10px;
         border-radius: 10px;
         background-color: transparent;
+    }
+
+    // Drag selection styles
+    .drag-selection-controls {
+        .drag-selection-toggle {
+            transition: all 0.2s ease;
+            font-weight: 500;
+            
+            &:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+            
+            &.active {
+                box-shadow: 0 2px 8px rgba(74, 144, 226, 0.3);
+            }
+        }
+    }
+
+    .drag-selection-overlay {
+        border-radius: 4px;
+        transition: all 0.1s ease;
+        box-shadow: 0 2px 8px rgba(74, 144, 226, 0.2);
+
+        &.drag-preview {
+            animation: pulse 1s infinite;
+            box-shadow: 0 4px 16px rgba(74, 144, 226, 0.4);
+            
+            @keyframes pulse {
+                0%, 100% { opacity: 0.8; }
+                50% { opacity: 1; }
+            }
+        }
+
+        &.creating {
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(74, 144, 226, 0.3);
+        }
+    }
+
+    .day-column.selection-mode {
+        position: relative;
+        
+        &::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, transparent 48%, rgba(74, 144, 226, 0.1) 49%, rgba(74, 144, 226, 0.1) 51%, transparent 52%);
+            background-size: 10px 10px;
+            pointer-events: none;
+            z-index: 1;
+        }
     }
 
     //scrollbar
@@ -261,16 +436,6 @@
         }
         .time-label{
             font-size: 0.5em;
-        }
-        .day-header{
-            .current-day{
-
-            }
-        }
-        .calendar-body{
-            .days-container{
-                .day-column{}
-            }
         }
     }
 }

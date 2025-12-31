@@ -9,6 +9,7 @@ import RoomManager from './RoomManager/RoomManager';
 import eventsLogo from '../../assets/Brand Image/EventsLogo.svg';
 
 function RootDash(){
+    const navigate = useNavigate();
     const menuItems = [
         { 
             label: 'Dashboard', 
@@ -33,7 +34,7 @@ function RootDash(){
     ];
 
     return (
-        <Dashboard menuItems={menuItems} additionalClass='root-dash' logo={eventsLogo}>
+        <Dashboard menuItems={menuItems} additionalClass='root-dash' logo={eventsLogo} onBack={()=>navigate('/events-dashboard')}>
         </Dashboard>
     )
 }

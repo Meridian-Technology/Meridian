@@ -4,7 +4,7 @@ import { useNotification } from '../../../NotificationContext';
 import useAuth from '../../../hooks/useAuth';
 import { useFetch } from '../../../hooks/useFetch';
 import apiRequest from '../../../utils/postRequest';
-import OrgGrad from '../../../assets/Gradients/OrgGrad.png';
+import { useGradient } from '../../../hooks/useGradient';
 import { Icon } from '@iconify-icon/react';
 import Popup from '../../../components/Popup/Popup';
 import Modal from '../../../components/Modal/Modal';
@@ -12,10 +12,12 @@ import AddMemberForm from '../../../components/AddMemberForm';
 import { getOrgRoleColor } from '../../../utils/orgUtils';
 import Select from '../../../components/Select/Select'; 
 import MemberApplicationsViewer from './MemberApplicationsViewer/MemberApplicationsViewer';
+import TabbedContainer, { CommonTabConfigs } from '../../../components/TabbedContainer';
 
 function Members({ expandedClass, org }) {
     const { user } = useAuth();
     const { addNotification } = useNotification();
+    const {AtlasMain} = useGradient();
     const [roles, setRoles] = useState([]);
     const [canManageMembers, setCanManageMembers] = useState(false);
     const [userRole, setUserRole] = useState(null);
@@ -224,65 +226,13 @@ function Members({ expandedClass, org }) {
         return roleColors[roleName] || '#6b7280';
     };
 
-    if (membersLoading) {
-        return (
-            <div className={`dash ${expandedClass}`}>
-                <div className="members loading">
-                    <div className="loader">Loading members...</div>
-                </div>
-            </div>
-        );
-    }
-
-    // If user doesn't have access to this organization
-    if (!hasAccess) {
-        return (
-            <div className={`dash ${expandedClass}`}>
-                <div className="members">
-                    <header className="header">
-                        <h1>Member Management</h1>
-                        <p>Manage members and assign roles for {org.org_name}</p>
-                        <img src={OrgGrad} alt="" />
-                    </header>
-
-                    <div className="permission-warning">
-                        <p>You don't have access to this organization's member management.</p>
-                        <p>You must be a member of this organization to view member information.</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div className={`dash ${expandedClass}`}>
-            <Popup 
-                isOpen={showApplicationsViewer} 
-                onClose={() => {refetchMembers(); setShowApplicationsViewer(false)}}
-                customClassName="wide-content"
-                defaultStyling={false}
-                popout={false}
-            >
-                <MemberApplicationsViewer org={org} />
-            </Popup>
-            <div className="members">
-                <header className="header">
-                    <h1>Member Management</h1>
-                    <p>Manage members and assign roles for {org.org_name}</p>
-                    <img src={OrgGrad} alt="" />
-                </header>
-
-                {/* <div className="user-role-info">
-                    <p>Your role: <span className="role-badge">{userRole}</span></p>
-                </div> */}
-
-                {!canManageMembers && (
-                    <div className="permission-warning">
-                        <p>You don't have permission to manage members in this organization.</p>
-                        <p>Only organization owners and users with member management permissions can modify member roles.</p>
-                    </div>
-                )}
-
+    // Tab configuration for TabbedContainer
+    const tabs = [
+        CommonTabConfigs.withBadge(
+            'members',
+            'Member List',
+            'mdi:account-group',
+            <div className="members-tab">
                 <div className="member-management-container">
                     {/* search and filter */}
                     <div className="controls">
@@ -303,13 +253,21 @@ function Members({ expandedClass, org }) {
                                     defaultValue="All Roles"
                                 />
                             </div>
-                            <button className="view-applications-btn" onClick={() => setShowApplicationsViewer(true)}>
-                                View Applications <b>{applications.length}</b>
-                            </button>
-                                
                         </div>
-                        
                         {canManageMembers && (
+                            
+                                <button
+                                className="view-applications-btn"
+                                onClick={() => setShowApplicationsViewer(true)}
+                                >
+                                    
+                                   
+                                    View Applications
+                                </button>
+                            
+                        )}
+                        {canManageMembers && (
+    
                             <button 
                                 className="add-member-btn"
                                 onClick={() => setShowAddMember(true)}
@@ -318,6 +276,7 @@ function Members({ expandedClass, org }) {
                                 Add Member
                             </button>
                         )}
+                        
                     </div>
 
                     <div className="members-list">
@@ -355,68 +314,160 @@ function Members({ expandedClass, org }) {
                         ) : (
                             filteredMembers.map(member => (
                                 <div key={member._id} className="member-card">
-                                    {/* <div className="member-info"> */}
-                                        <div className="member-avatar">
-                                            {member.user_id?.picture ? (
-                                                <img src={member.user_id.picture} alt={member.user_id.name} />
-                                            ) : (
-                                                <div className="avatar-placeholder">
-                                                    {member.user_id?.name?.charAt(0) || 'U'}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="member-details">
-                                            <h4>{member.user_id?.name || 'Unknown User'}</h4>
-                                            {/* <p className="username">@{member.user_id?.username || 'unknown'}</p> */}
-                                            <p className="email">{member.user_id?.email || 'No email'}</p>
-                                        </div>
-                                        <div className="member-meta">
-                                            <span className="joined-date">
-                                                Joined {new Date(member.joinedAt).toLocaleDateString()}
-                                            </span>
-                                            {member.assignedBy && (
-                                                <span className="assigned-by">
-                                                    Assigned by {member.assignedBy?.name || 'Unknown'}
-                                                </span>
-                                            )}
-                                        </div>
-                                    {/* </div> */}
-                                    
-                                    {/* <div className="member-actions"> */}
-                                        <div className="role-badge" style={{ backgroundColor: getOrgRoleColor(member.role, 0.1), color: getOrgRoleColor(member.role, 1) }}>
-                                            {getRoleDisplayName(member.role)}
-                                        </div>
-                                        
-                                        {canManageMembers && (
-                                            <div className="action-buttons">
-                                                <button 
-                                                    className="assign-role-btn"
-                                                    onClick={() => {
-                                                        setSelectedMember(member);
-                                                        setShowRoleAssignment(true);
-                                                    }}
-                                                    title="Assign Role"
-                                                >
-                                                    <Icon icon="mdi:shield-account" />
-                                                </button>
-                                                
-                                                {member.role !== 'owner' && (
-                                                    <button 
-                                                        className="remove-member-btn"
-                                                        onClick={() => handleRemoveMember(member.user_id._id)}
-                                                        title="Remove Member"
-                                                    >
-                                                        <Icon icon="mdi:account-remove" />
-                                                    </button>
-                                                )}
+                                    <div className="member-avatar">
+                                        {member.user_id?.picture ? (
+                                            <img src={member.user_id.picture} alt={member.user_id.name} />
+                                        ) : (
+                                            <div className="avatar-placeholder">
+                                                {member.user_id?.name?.charAt(0) || 'U'}
                                             </div>
                                         )}
                                     </div>
-                                // </div>
+                                    <div className="member-details">
+                                        <h4>{member.user_id?.name || 'Unknown User'}</h4>
+                                        <p className="email">{member.user_id?.email || 'No email'}</p>
+                                    </div>
+                                    <div className="member-meta">
+                                        <span className="joined-date">
+                                            Joined {new Date(member.joinedAt).toLocaleDateString()}
+                                        </span>
+                                        {member.assignedBy && (
+                                            <span className="assigned-by">
+                                                Assigned by {member.assignedBy?.name || 'Unknown'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="role-badge" style={{ backgroundColor: getOrgRoleColor(member.role, 0.1), color: getOrgRoleColor(member.role, 1) }}>
+                                        {getRoleDisplayName(member.role)}
+                                    </div>
+                                    
+                                    {canManageMembers && (
+                                        <div className="action-buttons">
+                                            <button 
+                                                className="assign-role-btn"
+                                                onClick={() => {
+                                                    setSelectedMember(member);
+                                                    setShowRoleAssignment(true);
+                                                }}
+                                                title="Assign Role"
+                                            >
+                                                <Icon icon="mdi:shield-account" />
+                                            </button>
+                                            
+                                            {member.role !== 'owner' && (
+                                                <button 
+                                                    className="remove-member-btn"
+                                                    onClick={() => handleRemoveMember(member.user_id._id)}
+                                                    title="Remove Member"
+                                                >
+                                                    <Icon icon="mdi:account-remove" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             ))
                         )}
                     </div>
                 </div>
+            </div>,
+            filteredMembers.length.toString(),
+            'info'
+        ),
+
+        CommonTabConfigs.withBadge(
+            'attendence record',
+            'Attendence Record',
+            'mdi:file-document-multiple',
+            <></>,
+            applications.length.toString(),
+            'warning'
+        ),
+
+        CommonTabConfigs.basic(
+            'applications',
+            'Applications',
+            'mdi:shield-account',
+            <MemberApplicationsViewer org={org} />
+        )
+    ];
+
+    // Custom header component
+    const header = (
+        <header className="header">
+            <h1>Member Management</h1>
+            <p>Manage members and assign roles for {org?.org_name}</p>
+            <img src={AtlasMain} alt="" />
+        </header>
+    );
+
+    if (membersLoading) {
+        return (
+            <div className={`dash ${expandedClass}`}>
+                <div className="members loading">
+                    <div className="loader">Loading members...</div>
+                </div>
+            </div>
+        );
+    }
+
+    // If user doesn't have access to this organization
+    if (!hasAccess) {
+        return (
+            <div className={`dash ${expandedClass}`}>
+                <div className="members">
+                    <header className="header">
+                        <h1>Member Management</h1>
+                        <p>Manage members and assign roles for {org.org_name}</p>
+                        <img src={AtlasMain} alt="" />
+                    </header>
+
+                    <div className="permission-warning">
+                        <p>You don't have access to this organization's member management.</p>
+                        <p>You must be a member of this organization to view member information.</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className={`dash ${expandedClass}`}>
+            <Popup 
+                isOpen={showApplicationsViewer} 
+                onClose={() => {refetchMembers(); setShowApplicationsViewer(false)}}
+                customClassName="wide-content"
+                defaultStyling={false}
+                popout={false}
+            >
+                <MemberApplicationsViewer org={org} />
+            </Popup>
+
+            <div className="members">
+                {!canManageMembers && (
+                    <div className="permission-warning">
+                        <p>You don't have permission to manage members in this organization.</p>
+                        <p>Only organization owners and users with member management permissions can modify member roles.</p>
+                    </div>
+                )}
+
+                <TabbedContainer
+                    tabs={tabs}
+                    defaultTab="members"
+                    tabStyle="default"
+                    size="medium"
+                    animated={true}
+                    showTabIcons={true}
+                    showTabLabels={true}
+                    scrollable={true}
+                    fullWidth={false}
+                    className="members-tabs"
+                    header={header}
+                    onTabChange={(tabId) => {
+                        console.log('Members tab changed to:', tabId);
+                    }}
+                />
 
                 {/* add member form */}
                 <Popup 
@@ -484,3 +535,5 @@ function Members({ expandedClass, org }) {
 }
 
 export default Members;
+
+

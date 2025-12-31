@@ -18,7 +18,7 @@ const verificationRequestSchema = new mongoose.Schema({
     },
     verificationType: {
         type: String,
-        enum: ['basic', 'premium', 'gold', 'platinum', 'official', 'academic', 'cultural', 'sports', 'professional'],
+        // Enum removed - validation happens against orgManagementConfig.verificationTiers
         default: 'basic'
     },
     requestType: {
@@ -54,8 +54,8 @@ const verificationRequestSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Index for efficient queries
-verificationRequestSchema.index({ orgId: 1, status: 1 });
-verificationRequestSchema.index({ status: 1, priority: 1 });
-verificationRequestSchema.index({ requestedBy: 1 });
+// verificationRequestSchema.index({ orgId: 1, status: 1 });
+// verificationRequestSchema.index({ status: 1, priority: 1 });
+// verificationRequestSchema.index({ requestedBy: 1 });
 
 module.exports = verificationRequestSchema;

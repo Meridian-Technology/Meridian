@@ -1,0 +1,147 @@
+.dynamic-form-field {
+    margin-bottom: 1.5rem;
+    
+    label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        font-size: 0.875rem;
+        
+        .required-indicator {
+            color: #ff4444;
+            margin-left: 0.25rem;
+        }
+    }
+    
+    .field-description {
+        margin: 0 0 0.5rem 0;
+        font-size: 0.75rem;
+        color: #666;
+    }
+    
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="url"],
+    input[type="number"],
+    input[type="date"],
+    input[type="datetime-local"],
+    input[type="time"],
+    textarea,
+    select {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-family: inherit;
+        transition: border-color 0.2s;
+        
+        &:focus {
+            outline: none;
+            border-color: #6D8EFA;
+        }
+        
+        &.error {
+            border-color: #ff4444;
+        }
+    }
+    
+    textarea {
+        resize: vertical;
+        min-height: 100px;
+    }
+    
+    .range-field {
+        position: relative;
+        padding: 1rem 0;
+        
+        .range-value-display {
+            position: relative;
+            height: 2rem;
+            
+            .range-preview {
+                position: absolute;
+                top: 0;
+                width: 60px;
+                text-align: center;
+                padding: 0.25rem;
+                border: 1px solid #6D8EFA;
+                background: white;
+                border-radius: 4px;
+                font-weight: 500;
+            }
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #e0e0e0;
+            outline: none;
+            -webkit-appearance: none;
+            
+            &::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 20px;
+                height: 20px;
+                border-radius: 50%;
+                background: #6D8EFA;
+                cursor: pointer;
+            }
+            
+            &::-moz-range-thumb {
+                width: 20px;
+                height: 20px;
+                border-radius: 50%;
+                background: #6D8EFA;
+                cursor: pointer;
+                border: none;
+            }
+            
+            &.error {
+                background: #ffebee;
+            }
+        }
+        
+        .range-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: #666;
+        }
+    }
+    
+    .checkbox-field {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        
+        input[type="checkbox"] {
+            width: auto;
+            cursor: pointer;
+        }
+        
+        span {
+            font-weight: normal;
+        }
+    }
+    
+    .error-message {
+        display: block;
+        margin-top: 0.5rem;
+        color: #ff4444;
+        font-size: 0.75rem;
+    }
+    
+    .help-text {
+        margin: 0.5rem 0 0 0;
+        font-size: 0.75rem;
+        color: #666;
+        font-style: italic;
+    }
+}
+

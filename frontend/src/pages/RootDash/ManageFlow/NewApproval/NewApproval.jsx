@@ -6,27 +6,18 @@ import { UserSearch, SelectedUsers } from '../../../../components/UserSearch';
 import { useNotification } from '../../../../NotificationContext';
 import HeaderContainer from '../../../../components/HeaderContainer/HeaderContainer';
 
-function NewApproval({refetch, handleClose}){
+function NewApproval({refetch, handleClose, refetchFlow}){
     const [approvalName, setApprovalName] = useState('');
-    const [selectedUsers, setSelectedUsers] = useState([]);
+    const [approvalDescription, setApprovalDescription] = useState('');
+    const [selectedOwner, setSelectedOwner] = useState(null);
     const { addNotification } = useNotification();
 
-    const handleUserSelect = (user) => {
-        // Check if user is already selected
-        if (selectedUsers.some(selectedUser => selectedUser._id === user._id)) {
-            addNotification({
-                title: 'User already selected',
-                message: `${user.username} is already in the list`,
-                type: 'info'
-            });
-            return;
-        }
-        
-        setSelectedUsers([...selectedUsers, user]);
+    const handleOwnerSelect = (user) => {
+        setSelectedOwner(user);
     };
 
-    const handleRemoveUser = (user) => {
-        setSelectedUsers(selectedUsers.filter(selectedUser => selectedUser._id !== user._id));
+    const handleRemoveOwner = () => {
+        setSelectedOwner(null);
     };
 
     const onSubmit = async (e) => {
@@ -35,66 +26,96 @@ function NewApproval({refetch, handleClose}){
         if (!approvalName.trim()) {
             addNotification({
                 title: 'Missing information',
-                message: 'Please enter an approval name',
+                message: 'Please enter an approval group name',
                 type: 'error'
             });
             return;
         }
         
-        if (selectedUsers.length === 0) {
+        if (!approvalDescription.trim()) {
             addNotification({
                 title: 'Missing information',
-                message: 'Please select at least one user',
+                message: 'Please enter an approval group description',
                 type: 'error'
             });
             return;
         }
         
-        const usernames = selectedUsers.map(user => user.username);
+        if (!selectedOwner) {
+            addNotification({
+                title: 'Missing information',
+                message: 'Please select an owner for the approval group',
+                type: 'error'
+            });
+            return;
+        }
         
         try {
-            const response = await postRequest('/add-approval', {
-                role: approvalName,
-                usernames: usernames
+            // Create a new stakeholder role using the new system
+            const response = await postRequest('/api/stakeholder-role', {
+                stakeholderId: approvalName.toLowerCase().replace(/\s+/g, '_'),
+                stakeholderName: approvalName,
+                stakeholderType: 'approver',
+                description: approvalDescription,
+                isActive: true,
+                members: selectedOwner ? [{
+                    userId: selectedOwner._id,
+                    assignedAt: new Date()
+                    // assignedBy will be set by the backend
+                }] : [],
+                approvalConfig: {
+                    requiredApprovals: 1,
+                    totalMembers: selectedOwner ? 1 : 0,
+                    allowSelfApproval: false,
+                    requireAllMembers: false
+                },
+                escalationRules: {
+                    timeout: 72,
+                    autoEscalate: true
+                },
+                conditionGroups: [],
+                groupLogicalOperators: []
             });
             
             if (response.success) {
                 addNotification({
                     title: 'Success',
-                    message: 'Approval role created successfully',
+                    message: 'Stakeholder role created successfully. You can now assign this role to domains in the Domains tab.',
                     type: 'success'
                 });
                                 
                 // Reset form
                 setApprovalName('');
-                setSelectedUsers([]);
+                setApprovalDescription('');
+                setSelectedOwner(null);
                 refetch();
+                if(refetchFlow) refetchFlow();
                 handleClose();
             } else {
                 addNotification({
                     title: 'Error',
-                    message: response.message || 'Failed to create approval role',
+                    message: response.message || 'Failed to create stakeholder role',
                     type: 'error'
                 });
             }
         } catch (error) {
-            console.error('Error creating approval role:', error);
+            console.error('Error creating stakeholder role:', error);
             addNotification({
                 title: 'Error',
-                message: 'Failed to create approval role',
+                message: 'Failed to create stakeholder role',
                 type: 'error'
             });
         }
     };
 
     return (
-        <HeaderContainer classN="new-approval" icon="fluent:flowchart-24-filled" header="New Approval Role" subHeader="create a new approval">
+        <HeaderContainer classN="new-approval" icon="fluent:flowchart-24-filled" header="New Stakeholder Role" subHeader="create a new stakeholder role">
             <div className="header">
-                <h2>New Approval Role</h2>
-                <p>create a new approval</p>
+                <h2>New Stakeholder Role</h2>
+                <p>create a new stakeholder role</p>
             </div>
             <Flag 
-                text="Administrators with this role will be prompted to create their own criteria and approval process." 
+                text="Stakeholder roles define who can approve events for specific domains. Each role can be assigned to users and configured with approval conditions and escalation timeouts." 
                 primary="rgba(235,226,127,0.32)" 
                 accent='#B29F5F' 
                 color="#B29F5F" 
@@ -102,31 +123,54 @@ function NewApproval({refetch, handleClose}){
             />
             <form onSubmit={onSubmit} className="content">
                 <div className="field">
-                    <label htmlFor="approval-name">Approval Name</label>
+                    <label htmlFor="stakeholder-name">Stakeholder Role Name</label>
                     <input 
                         type="text" 
-                        name="approval-name" 
-                        id="approval-name" 
+                        name="stakeholder-name" 
+                        id="stakeholder-name" 
                         className="short" 
                         value={approvalName} 
                         onChange={(e) => setApprovalName(e.target.value)}
-                        placeholder="Enter approval role name"
+                        placeholder="Enter stakeholder role name"
                     />
                 </div>
                 <div className="field">
-                    <label htmlFor="user-search">Add Users</label>
-                    <UserSearch 
-                        onUserSelect={handleUserSelect}
-                        placeholder="Search for users by name or username"
-                        excludeIds={selectedUsers.map(user => user._id)}
-                    />
-                    <SelectedUsers 
-                        users={selectedUsers}
-                        onRemoveUser={handleRemoveUser}
+                    <label htmlFor="stakeholder-description">Description</label>
+                    <textarea 
+                        name="stakeholder-description" 
+                        id="stakeholder-description" 
+                        className="long" 
+                        value={approvalDescription} 
+                        onChange={(e) => setApprovalDescription(e.target.value)}
+                        placeholder="Describe the purpose of this stakeholder role"
+                        rows="3"
                     />
                 </div>
+                <div className="field">
+                    <label htmlFor="owner-search">Select Owner</label>
+                    <UserSearch 
+                        onUserSelect={handleOwnerSelect}
+                        placeholder="Search for the owner by name or username"
+                        excludeIds={selectedOwner ? [selectedOwner._id] : []}
+                    />
+                    {selectedOwner && (
+                        <div className="selected-owner">
+                            <div className="owner-info">
+                                <span className="owner-name">{selectedOwner.name || selectedOwner.username}</span>
+                                <span className="owner-email">{selectedOwner.email}</span>
+                            </div>
+                            <button 
+                                type="button" 
+                                className="remove-owner" 
+                                onClick={handleRemoveOwner}
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    )}
+                </div>
                 <button type="submit" className="submit-button">
-                    Create Approval Role
+                    Create Stakeholder Role
                 </button>
             </form>
         </HeaderContainer>

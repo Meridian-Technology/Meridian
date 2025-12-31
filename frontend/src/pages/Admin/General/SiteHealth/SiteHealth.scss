@@ -37,6 +37,8 @@
         gap: 10px;
         margin-left: 20px;
         flex-direction: column;
+        height: fit-content;
+        transition: height 0.3s ease-in-out;
         align-items: flex-start;
         .health-stats-item{
             display: flex;
@@ -68,6 +70,10 @@
                     font-size:11px;
                 }
             }
+        }
+        &.collapsed{
+            height:0;
+            overflow: hidden;
         }
     }
     .tag{

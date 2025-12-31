@@ -1,0 +1,60 @@
+.integration-manager {
+  .integration-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #ecf0f1;
+
+    .header-content {
+      h2 {
+        color: #2c3e50;
+        margin: 0 0 0.5rem 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+
+      p {
+        color: #7f8c8d;
+        margin: 0;
+        font-size: 0.95rem;
+      }
+    }
+  }
+
+  .coming-soon {
+    text-align: center;
+    padding: 3rem 2rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px dashed #bdc3c7;
+
+    .iconify {
+      font-size: 4rem;
+      color: #bdc3c7;
+      margin-bottom: 1rem;
+    }
+
+    h3 {
+      color: #2c3e50;
+      margin: 0 0 1rem 0;
+      font-size: 1.3rem;
+    }
+
+    p {
+      color: #7f8c8d;
+      margin: 0 0 1.5rem 0;
+      font-size: 1rem;
+    }
+
+    ul {
+      text-align: left;
+      max-width: 400px;
+      margin: 0 auto;
+      color: #7f8c8d;
+
+      li {
+        margin: 0.5rem 0;
+        padding-left: 0.5rem;
+      }
+    }
+  }
+}

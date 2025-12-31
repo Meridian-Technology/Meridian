@@ -86,8 +86,8 @@
     .member-management-container {
         flex: 1;
         overflow-y: auto;
-        padding:0 40px 20px 40px;
-
+        padding:20px;
+        box-sizing: border-box;
         .controls {
             display: flex;
             justify-content: space-between;
@@ -191,6 +191,21 @@
 
                 svg {
                     font-size: 1.1rem;
+                }
+            }
+            .view-applications-btn {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 5px 16px;
+                background-color: #dcdcdc;
+                color: black;
+                border: none;
+                border-radius: 8px;
+                font-family: 'Inter', sans-serif;
+
+                &:hover {
+                    background: var(--gray);
                 }
             }
         }

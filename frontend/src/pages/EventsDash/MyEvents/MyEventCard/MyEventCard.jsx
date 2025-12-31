@@ -2,10 +2,24 @@ import React from 'react';
 import './MyEventCard.scss';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import { useNavigate } from 'react-router-dom';
+import useAuth from '../../../../hooks/useAuth';
+import { useDashboardOverlay } from '../../../../hooks/useDashboardOverlay';
 
 const MyEventCard = ({ event }) => {
     const navigate = useNavigate();
+    const { user } = useAuth();
+    const { showEventWorkspace } = useDashboardOverlay();
     const date = new Date(event?.start_time || Date.now());
+    
+    // Check if user is hosting this event
+    const isHosting = user && event && (
+        (event.hostingType === 'User' && (
+            event.hostingId?._id?.toString() === user._id?.toString() ||
+            event.hostingId?.toString() === user._id?.toString() ||
+            (typeof event.hostingId === 'string' && event.hostingId === user._id?.toString())
+        )) ||
+        (event.hostingType === 'Org' && user.roles?.includes('admin'))
+    );
 
     // Color mapping based on event type to wo
     const getEventTypeColor = (eventType) => {
@@ -29,10 +43,26 @@ const MyEventCard = ({ event }) => {
         }
     };
 
+    const handleWorkspaceClick = (e) => {
+        e.stopPropagation(); // Prevent card click
+        if (event?._id) {
+            showEventWorkspace(event._id);
+        }
+    };
+
 
 
     return (
         <div className="my-event-card" onClick={handleCardClick}>
+            {isHosting && (
+                <button 
+                    className="workspace-button"
+                    onClick={handleWorkspaceClick}
+                    title="Open Event Workspace"
+                >
+                    <Icon icon="mdi:briefcase-edit" />
+                </button>
+            )}
             {/* Event Image or Gradient */}
             <div 
                 className={`event-image ${!hasPreviewImage ? 'gradient-background' : ''}`}

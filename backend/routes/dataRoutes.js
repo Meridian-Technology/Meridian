@@ -136,6 +136,95 @@ router.get('/getrooms', async (req, res) => {
     }
 });
 
+// Route to get top rated rooms (optimized for initial load)
+router.get('/top-rated-rooms', async (req, res) => {
+    const { Classroom, Schedule } = getModels(req, 'Classroom', 'Schedule');
+    const { limit = 10 } = req.query;
+
+    try {
+        // Fetch exactly the number of top rated rooms needed, sorted by rating
+        const topRooms = await Classroom.find({
+            average_rating: { $exists: true, $ne: null },
+            number_of_ratings: { $gt: 0 }
+        })
+        .sort({ 
+            average_rating: -1,  // Highest rating first
+            number_of_ratings: -1 // More ratings as tiebreaker
+        })
+        .limit(parseInt(limit))
+        .select('_id name image building floor capacity attributes average_rating number_of_ratings')
+        .lean();
+
+        // Get room IDs to fetch schedules
+        const roomIds = topRooms.map(room => room._id);
+
+        // Batch fetch schedules for these rooms using getbatch-new logic
+        const schedules = await Schedule.find({ 
+            classroom_id: { $in: roomIds } 
+        })
+        .populate('classroom_id')
+        .lean();
+
+        // Combine rooms with their schedules
+        const roomsWithSchedules = topRooms.map(room => {
+            const schedule = schedules.find(s => 
+                s.classroom_id && s.classroom_id._id.toString() === room._id.toString()
+            );
+            return {
+                id: room._id.toString(),
+                name: room.name || 'Unknown Room',
+                image: room.image || null,
+                building: room.building || '',
+                floor: room.floor || '',
+                capacity: room.capacity || 0,
+                attributes: room.attributes || [],
+                average_rating: room.average_rating || 0,
+                number_of_ratings: room.number_of_ratings || 0,
+                schedule: schedule ? schedule.weekly_schedule : null
+            };
+        });
+
+        console.log(`GET: /top-rated-rooms - Returning ${roomsWithSchedules.length} top rated rooms`);
+        
+        res.json({ 
+            success: true, 
+            message: "Top rated rooms fetched", 
+            data: roomsWithSchedules
+        });
+    } catch (error) {
+        console.error('Error fetching top rated rooms:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error fetching top rated rooms', 
+            error: error.message 
+        });
+    }
+});
+
+//route to calculate the number of classes in total
+router.get('/total-classes', async (req, res) => {
+    const { Schedule } = getModels(req, 'Schedule');
+    try{
+        const schedules = await Schedule.find({});
+        const uniqueClassNames = new Set();
+        
+        schedules.forEach(schedule => {
+            Object.keys(schedule.weekly_schedule).forEach(day => {
+                schedule.weekly_schedule[day].forEach(classEntry => {
+                    if (classEntry.class_name) {
+                        uniqueClassNames.add(classEntry.class_name);
+                    }
+                });
+            });
+        });
+        
+        const totalUniqueClasses = uniqueClassNames.size;
+        res.json({ success: true, message: "Total unique classes fetched", data: totalUniqueClasses });
+    } catch(error){
+        res.status(500).json({ success: false, message: "Error fetching total classes", error: error.message });
+    }
+});
+
 
 // Route to get all currently free rooms with pagination support
 router.get('/free-rooms', async (req, res) => {

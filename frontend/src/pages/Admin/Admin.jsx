@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom';
 import BlueGrad1 from '../../assets/BlueGrad1.png';
 import BlueGrad2 from '../../assets/BlueGrad2.png';
 
-import Analytics from '../../components/Analytics/Analytics';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import General from './General/General'
 import BadgeManager from './BadgeManager/BadgeManager';
@@ -50,11 +49,6 @@ function Admin(){
             label: 'Analytics', 
             icon: 'bx:stats',
             subItems: [
-                {
-                    label: 'General',
-                    icon: 'bx:stats',
-                    element: <Analytics/>
-                },
                 {
                     label: 'Events Analytics',
                     icon: 'material-symbols:event',

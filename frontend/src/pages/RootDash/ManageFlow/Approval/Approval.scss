@@ -11,6 +11,17 @@
         color: var(--text);
         margin: 0;
     }
+    
+    .owner-info {
+        margin: 4px 0;
+        
+        .owner-text {
+            font-size: 12px;
+            color: var(--lighter-text);
+            margin: 0;
+            font-style: italic;
+        }
+    }
     .approval-status{
         padding: 2px 10px;
         width:fit-content;

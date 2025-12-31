@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useOrgPermissions, useOrgSave } from './settingsHelpers';
-import OrgGrad from '../../../../assets/Gradients/OrgGrad.png';
+import { useGradient } from '../../../../hooks/useGradient';
 import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
 import useUnsavedChanges from '../../../../hooks/useUnsavedChanges';
+import SettingsList from '../../../../components/SettingsList/SettingsList';
 
 const GeneralSettings = ({ org, expandedClass }) => {
     const [formData, setFormData] = useState({
@@ -15,7 +16,7 @@ const GeneralSettings = ({ org, expandedClass }) => {
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [canManageSettings, setCanManageSettings] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
-
+    const {AtlasMain} = useGradient();
     const { checkUserPermissions } = useOrgPermissions(org);
     const { saveOrgSettings } = useOrgSave(org);
 
@@ -107,27 +108,12 @@ const GeneralSettings = ({ org, expandedClass }) => {
         );
     }
 
-    return (
-        <div className="dash settings-section">
-            <UnsavedChangesBanner
-                hasChanges={hasChanges}
-                onSave={saveChanges}
-                onDiscard={discardChanges}
-                saving={saving}
-            />
-            
-            <header className="header">
-                <h1>General Settings</h1>
-                <p>Manage basic organization information</p>
-                <img src={OrgGrad} alt="" />
-            </header>
-            <div className="settings-content">
-                
-                <div className="settings-child">
-                    <label htmlFor="org_name">
-                        <h4>Organization Name</h4>
-                        <p>The name of your organization</p>
-                    </label>
+    const generalSettingsItems = [
+        {
+            title: 'Organization Name',
+            subtitle: 'The name of your organization',
+            action: (
+                <div className="form-group">
                     <input
                         type="text"
                         id="org_name"
@@ -138,12 +124,13 @@ const GeneralSettings = ({ org, expandedClass }) => {
                         placeholder="Enter organization name"
                     />
                 </div>
-
-                <div className="form-group settings-child">
-                    <label htmlFor="org_description">
-                        <h4>Description</h4>
-                        <p>A brief description of your organization</p>
-                    </label>
+            )
+        },
+        {
+            title: 'Description',
+            subtitle: 'A brief description of your organization',
+            action: (
+                <div className="form-group">
                     <textarea
                         id="org_description"
                         name="org_description"
@@ -156,12 +143,13 @@ const GeneralSettings = ({ org, expandedClass }) => {
                     />
                     <span className="char-count">{formData.org_description.length}/500</span>
                 </div>
-
-                <div className="settings-child">
-                    <label htmlFor="weekly_meeting">
-                        <h4>Weekly Meeting Time</h4>
-                        <p>The time of your weekly meeting</p>
-                    </label>
+            )
+        },
+        {
+            title: 'Weekly Meeting Time',
+            subtitle: 'The time of your weekly meeting',
+            action: (
+                <div className="form-group">
                     <input
                         type="text"
                         id="weekly_meeting"
@@ -172,6 +160,26 @@ const GeneralSettings = ({ org, expandedClass }) => {
                         placeholder="e.g., Every Monday at 6 PM"
                     />
                 </div>
+            )
+        }
+    ];
+
+    return (
+        <div className="dash settings-section">
+            <UnsavedChangesBanner
+                hasChanges={hasChanges}
+                onSave={saveChanges}
+                onDiscard={discardChanges}
+                saving={saving}
+            />
+            
+            <header className="header">
+                <h1>General Settings</h1>
+                <p>Manage basic organization information</p>
+                <img src={AtlasMain} alt="" />
+            </header>
+            <div className="settings-content">
+                <SettingsList items={generalSettingsItems} />
             </div>
         </div>
     );

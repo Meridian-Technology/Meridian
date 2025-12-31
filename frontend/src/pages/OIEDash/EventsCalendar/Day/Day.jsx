@@ -5,7 +5,7 @@ import DailyCalendar from './DailyCalendar/DailyCalendar';
 import Switch from '../../../../components/Switch/Switch';
 import './Day.scss';
 
-function Day({ height, start = new Date(new Date().setHours(0, 0, 0, 0)) , startingText = "", nav=true, setView = () => {}, view = 2, showSwitch = true, filter }) {
+function Day({ height, start = new Date(new Date().setHours(0, 0, 0, 0)) , startingText = "", nav=true, setView = () => {}, view = 2, showSwitch = true, blockedEvents = [], filter }) {
     const initialStartDate = typeof start === 'string' ? new Date(start) : start;
     // Ensure the initial date is set to the start of the day
     const getStartOfDay = (date) => {
@@ -49,6 +49,19 @@ function Day({ height, start = new Date(new Date().setHours(0, 0, 0, 0)) , start
     const url = `/get-events-by-range?start=${encodeURIComponent(getStartOfDay(day).toISOString())}&end=${encodeURIComponent(getEndOfDay(day).toISOString())}${filter ? `&filter=${JSON.stringify(filter)}` : ''}`;
     const events = useFetch(url);
     
+    // Filter blocked events to only show those within the current day
+    const dayBlockedEvents = blockedEvents.filter(event => {
+        const eventStart = new Date(event.start_time);
+        const eventDay = new Date(eventStart.getFullYear(), eventStart.getMonth(), eventStart.getDate());
+        const currentDay = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+        return eventDay.getTime() === currentDay.getTime();
+    });
+
+    // Combine regular events with blocked events
+    const combinedEvents = [
+        ...(events.data ? events.data.events : []),
+        ...dayBlockedEvents
+    ];
     const dayText = formattedDate(day);
     const isToday = day.toDateString() === new Date().toDateString();
 
@@ -104,7 +117,7 @@ function Day({ height, start = new Date(new Date().setHours(0, 0, 0, 0)) , start
                 aria-label={`Day view for ${dayText}${isToday ? ' (today)' : ''}`}
             >
                 <DailyCalendar 
-                    events={events.data ? events.data.events : []} 
+                    events={combinedEvents} 
                     selectedDay={day} 
                     height={'100%'} 
                 />

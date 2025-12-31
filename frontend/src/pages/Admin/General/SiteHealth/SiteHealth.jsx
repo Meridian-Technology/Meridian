@@ -1,7 +1,6 @@
 import React, {useState, useEffect} from 'react';
 import './SiteHealth.scss';
 import { useFetch } from '../../../../hooks/useFetch';
-import HeaderContainer from '../../../../components/HeaderContainer/HeaderContainer';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import PulseDot from '../../../../components/Interface/PulseDot/PulseDot';
 import AnimatedNumber from '../../../../components/Interface/AnimatedNumber/AnimatedNumber';
@@ -24,6 +23,7 @@ const SiteHealth = ({}) => {
     const health = useFetch('/health');
 
     const [good, setGood] = useState(true);
+    const [showDetailed, setShowDetailed] = useState(false);
 
     useEffect(()=>{
         if(health.data){
@@ -33,7 +33,9 @@ const SiteHealth = ({}) => {
                 }
             })
             setTimeout(() => {
-                health.refetch();
+                if(showDetailed){
+                    health.refetch();
+                }
             }, 1500);
         }
     }, [health.data]);
@@ -45,7 +47,6 @@ const SiteHealth = ({}) => {
     }
 
     return(
-        <HeaderContainer icon="heroicons-solid:server" header="site health">
             <div className="site-health">
                 {
                     good ? 
@@ -58,7 +59,7 @@ const SiteHealth = ({}) => {
                                 {health.data.subDomain}.meridian.study
                             </h2>
                         </div>
-                        <div className="tag">
+                        <div className="tag" onClick={() => setShowDetailed(!showDetailed)}>
                             <Icon icon="icon-park-solid:check-one" />
                             <p>all systems operational</p>
                         </div>
@@ -73,8 +74,8 @@ const SiteHealth = ({}) => {
                         </h2>
                     </div>
                 }
-                <div className="health-stats">
-                <div className="health-stats-item">
+                <div className={`health-stats${showDetailed ? '' :' collapsed'}`}>
+                    <div className="health-stats-item">
                         <div className="row">
                             <div className="tag">
                                 <p>
@@ -112,7 +113,6 @@ const SiteHealth = ({}) => {
                     </div>
                 </div>
             </div>
-        </HeaderContainer>
     )
 }
 

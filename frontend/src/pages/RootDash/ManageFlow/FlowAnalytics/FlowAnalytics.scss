@@ -1,0 +1,212 @@
+.flow-analytics {
+
+    .analytics-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+
+        h2 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .time-range-selector {
+            select {
+                padding: 8px 12px;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                background: var(--background);
+                color: var(--text);
+                font-size: 14px;
+                cursor: pointer;
+
+                &:focus {
+                    outline: none;
+                    border-color: var(--primary);
+                }
+            }
+        }
+    }
+
+    .analytics-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    .overview-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+    }
+
+    // KpiCard styles are now in components/Analytics/Dashboard/KpiCard.scss
+
+    .charts-section {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 16px;
+
+        .chart-card {
+            background: var(--card-background);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+
+            h3 {
+                margin: 0 0 16px 0;
+                font-size: 18px;
+                font-weight: 600;
+                color: var(--text);
+            }
+
+            .chart-placeholder {
+                height: 200px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                background: var(--background);
+                border-radius: 8px;
+                color: var(--lighter-text);
+
+                svg {
+                    width: 48px;
+                    height: 48px;
+                    margin-bottom: 8px;
+                }
+
+                p {
+                    margin: 0;
+                    font-size: 14px;
+                }
+            }
+
+            .processing-time {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 200px;
+
+                .time-metric {
+                    text-align: center;
+
+                    .time-number {
+                        font-size: 48px;
+                        font-weight: 700;
+                        color: var(--primary);
+                        line-height: 1;
+                        margin-bottom: 8px;
+                    }
+
+                    .time-label {
+                        font-size: 14px;
+                        color: var(--lighter-text);
+                    }
+                }
+            }
+        }
+    }
+
+    .group-performance {
+        background: var(--card-background);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+
+        h3 {
+            margin: 0 0 16px 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .group-stats-table {
+            .table-header {
+                display: grid;
+                grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
+                gap: 16px;
+                padding: 12px 0;
+                border-bottom: 1px solid var(--border);
+                font-weight: 600;
+                color: var(--text);
+                font-size: 14px;
+            }
+
+            .table-row {
+                display: grid;
+                grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
+                gap: 16px;
+                padding: 12px 0;
+                border-bottom: 1px solid var(--border-light);
+                font-size: 14px;
+                color: var(--text);
+
+                &:last-child {
+                    border-bottom: none;
+                }
+
+                .col {
+                    display: flex;
+                    align-items: center;
+
+                    &.group-name {
+                        font-weight: 500;
+                    }
+
+                    &.approved {
+                        color: #4caf50;
+                        font-weight: 500;
+                    }
+
+                    &.rejected {
+                        color: #f44336;
+                        font-weight: 500;
+                    }
+
+                    &.pending {
+                        color: #ff9800;
+                        font-weight: 500;
+                    }
+                }
+            }
+        }
+    }
+}
+
+@media (max-width: 768px) {
+    .flow-analytics {
+        .overview-cards {
+            grid-template-columns: 1fr;
+        }
+
+        .charts-section {
+            grid-template-columns: 1fr;
+        }
+
+        .group-performance {
+            .group-stats-table {
+                .table-header,
+                .table-row {
+                    grid-template-columns: 1fr;
+                    gap: 8px;
+
+                    .col {
+                        padding: 4px 0;
+                        border-bottom: 1px solid var(--border-light);
+
+                        &:before {
+                            content: attr(data-label);
+                            font-weight: 600;
+                            margin-right: 8px;
+                            min-width: 80px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

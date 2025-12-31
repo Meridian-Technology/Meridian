@@ -10,7 +10,7 @@ const router = express.Router();
 // Submit a verification request
 router.post('/verification-requests', verifyToken, async (req, res) => {
     const { OrgVerification, Org, OrgManagementConfig } = getModels(req, 'OrgVerification', 'Org', 'OrgManagementConfig');
-    const { orgId, requestType, requestData, priority, tags } = req.body;
+    const { orgId, requestType, requestData, priority, tags, verificationType } = req.body;
     const userId = req.user.userId;
 
     try {
@@ -43,11 +43,26 @@ router.post('/verification-requests', verifyToken, async (req, res) => {
         }
 
         // Check if request type is allowed
-        if (config.verificationTypes && !config.verificationTypes.includes(requestType)) {
+        const allowedRequestTypes = Array.isArray(config.allowedRequestTypes) ? config.allowedRequestTypes : [];
+        if (Array.isArray(allowedRequestTypes) && allowedRequestTypes.length > 0 && !allowedRequestTypes.includes(requestType)) {
             return res.status(400).json({
                 success: false,
                 message: 'This request type is not currently allowed'
             });
+        }
+        
+        // Validate and set verification tier (can be at top level or in requestData)
+        const verificationTiers = config.verificationTiers || {};
+        let finalVerificationType = verificationType || requestData?.verificationType || config.defaultVerificationType || 'basic';
+        
+        // For verification and status_upgrade requests, validate the tier
+        if (requestType === 'verification' || requestType === 'status_upgrade') {
+            if (!verificationTiers[finalVerificationType]) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid verification tier. Please select a valid verification tier from the configuration.'
+                });
+            }
         }
 
         // Create verification request
@@ -55,8 +70,8 @@ router.post('/verification-requests', verifyToken, async (req, res) => {
             orgId,
             requestedBy: userId,
             requestType,
-            verificationType: requestData.verificationType || 'basic',
-            requestData,
+            verificationType: finalVerificationType,
+            requestData: requestData || {},
             priority: priority || 'medium',
             tags: tags || []
         });
@@ -80,15 +95,38 @@ router.post('/verification-requests', verifyToken, async (req, res) => {
 });
 
 // Get verification requests (with filtering)
-router.get('/verification-requests', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/verification-requests', verifyToken, async (req, res) => {
     const { OrgVerification, Org, User } = getModels(req, 'OrgVerification', 'Org', 'User');
-    const { status, requestType, priority, page = 1, limit = 20, sortBy = 'submittedAt', sortOrder = 'desc' } = req.query;
+    const { status, requestType, priority, orgId, page = 1, limit = 20, sortBy = 'submittedAt', sortOrder = 'desc' } = req.query;
+    const userId = req.user.userId;
 
     try {
         const filter = {};
         if (status) filter.status = status;
         if (requestType) filter.requestType = requestType;
         if (priority) filter.priority = priority;
+        
+        // If not admin/root, only show requests for user's orgs
+        if (!['admin', 'root'].includes(req.user.role)) {
+            const { OrgMember } = getModels(req, 'OrgMember');
+            const userOrgs = await OrgMember.find({ user_id: userId, role: { $in: ['owner', 'admin'] } }).distinct('org_id');
+            const userOrgIds = userOrgs.map(id => id.toString());
+            
+            if (orgId) {
+                // If orgId is specified, verify user has access to that org
+                if (userOrgIds.includes(orgId.toString())) {
+                    filter.orgId = orgId;
+                } else {
+                    // User doesn't have access, return empty result
+                    filter.orgId = { $in: [] };
+                }
+            } else {
+                filter.orgId = { $in: userOrgs };
+            }
+        } else {
+            // Admin/root can filter by any orgId
+            if (orgId) filter.orgId = orgId;
+        }
 
         const skip = (page - 1) * limit;
         const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
@@ -230,20 +268,53 @@ router.put('/config', verifyToken, authorizeRoles('admin', 'root'), async (req, 
     const updates = req.body;
 
     try {
-        let config = await OrgManagementConfig.findOne();
-        
-        if (!config) {
-            config = new OrgManagementConfig();
-        }
+        console.log('incoming updates:', JSON.stringify(updates, null, 2));
 
-        // Update config fields
+        // Build $set object for nested updates
+        const $set = {};
+        
+        // Process updates and convert to dot notation for $set
         Object.keys(updates).forEach(key => {
-            if (config.schema.paths[key]) {
-                config[key] = updates[key];
+            // Skip special fields
+            if (key === '_id' || key === '__v' || key === 'createdAt' || key === 'updatedAt') {
+                return;
+            }
+
+            // Check if this is a nested object
+            if (typeof updates[key] === 'object' && updates[key] !== null && !Array.isArray(updates[key])) {
+                // For nested objects, iterate through each property
+                Object.keys(updates[key]).forEach(nestedKey => {
+                    // Handle deeply nested objects (like notificationSettings)
+                    if (typeof updates[key][nestedKey] === 'object' && updates[key][nestedKey] !== null && !Array.isArray(updates[key][nestedKey])) {
+                        Object.keys(updates[key][nestedKey]).forEach(deepKey => {
+                            const dotPath = `${key}.${nestedKey}.${deepKey}`;
+                            $set[dotPath] = updates[key][nestedKey][deepKey];
+                            console.log(`Setting ${dotPath} = ${updates[key][nestedKey][deepKey]}`);
+                        });
+                    } else {
+                        // Use dot notation for primitive values
+                        const dotPath = `${key}.${nestedKey}`;
+                        $set[dotPath] = updates[key][nestedKey];
+                        console.log(`Setting ${dotPath} = ${updates[key][nestedKey]}`);
+                    }
+                });
+            } else {
+                // Direct assignment for primitive values or arrays
+                $set[key] = updates[key];
+                console.log(`Setting ${key} = ${updates[key]}`);
             }
         });
 
-        await config.save();
+        console.log('$set object:', JSON.stringify($set, null, 2));
+
+        // Use findOneAndUpdate with $set for proper nested updates
+        const config = await OrgManagementConfig.findOneAndUpdate(
+            {},
+            { $set: $set },
+            { new: true, upsert: true, runValidators: true }
+        );
+
+        console.log('config after updates:', JSON.stringify(config.toObject(), null, 2));
 
         console.log(`PUT: /org-management/config - Configuration updated`);
         res.status(200).json({
@@ -426,10 +497,12 @@ router.get('/organizations', verifyToken, authorizeRoles('admin', 'root'), async
         }
         
         if (status) filter.status = status;
-        if (verified !== undefined) filter.verified = verified === 'true';
+        if (verified !== '') filter.verified = verified === 'true';
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
+
+        console.log(filter);
 
         const orgs = await Org.find(filter)
             .sort(sort)

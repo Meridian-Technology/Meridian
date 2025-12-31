@@ -13,16 +13,20 @@ import Rule from './Rule/Rule';
 import postRequest from '../../../utils/postRequest';
 
 const ApprovalConfig = ({ approvalId }) => {
-    const approvalSteps = useFetch('/get-approval-steps');
+    const approvalGroupsData = useFetch('/approval-groups');
+    const approvalFlowData = useFetch('/api/event-system-config/get-approval-flow');
+    const eventSystemConfigData = useFetch('/api/event-system-config');
+    const [approvalGroups, setApprovalGroups] = useState([]);
     const [steps, setSteps] = useState([]);
     const [fieldDefinitions, setFieldDefinitions] = useState([]);
     const [allowedOperators, setAllowedOperators] = useState([]);
-    const [selectedStep, setSelectedStep] = useState(steps.find((step)=>step.role === approvalId));
+    const [selectedStep, setSelectedStep] = useState(null);
     const [showFormBuilder, setShowFormBuilder] = useState(false);
     const [showFormViewer, setShowFormViewer] = useState(false);
     const [currentForm, setCurrentForm] = useState(null);
     const [hasChanges, setHasChanges] = useState(false);
     const [pendingChanges, setPendingChanges] = useState({});
+    const [systemConfig, setSystemConfig] = useState(null);
 
     const [saveButton, setSaveButton] = useState(0);
 
@@ -35,16 +39,41 @@ const ApprovalConfig = ({ approvalId }) => {
     }
 
     useEffect(()=>{
-        if(approvalSteps.data){
-            setSteps(approvalSteps.data.steps);
-            setSelectedStep(approvalSteps.data.steps.find((step)=>step.role === approvalId));
-            setFieldDefinitions(approvalSteps.data.fieldDefinitions);
-            setAllowedOperators(approvalSteps.data.allowedOperators);
+        if(approvalGroupsData.data){
+            setApprovalGroups(approvalGroupsData.data.data || []);
         }
-        if(approvalSteps.error){
-            console.log(approvalSteps.error);
+        if(approvalGroupsData.error){
+            console.log(approvalGroupsData.error);
         }
-    },[approvalSteps.data]);
+    },[approvalGroupsData.data]);
+
+    useEffect(()=>{
+        if(approvalFlowData.data){
+            setSteps(approvalFlowData.data.data.steps || []);
+            setFieldDefinitions(approvalFlowData.data.data.fieldDefinitions || []);
+            setAllowedOperators(approvalFlowData.data.data.allowedOperators || []);
+            
+            // Find the step that matches the approvalId (which is now an org name)
+            const matchingStep = approvalFlowData.data.data.steps?.find((step) => {
+                // Find the org that matches this step
+                const matchingOrg = approvalGroups.find(org => org._id === step.orgId);
+                return matchingOrg && matchingOrg.org_name === approvalId;
+            });
+            setSelectedStep(matchingStep || null);
+        }
+        if(approvalFlowData.error){
+            console.log(approvalFlowData.error);
+        }
+    },[approvalFlowData.data, approvalGroups]);
+
+    useEffect(()=>{
+        if(eventSystemConfigData.data){
+            setSystemConfig(eventSystemConfigData.data.data);
+        }
+        if(eventSystemConfigData.error){
+            console.log(eventSystemConfigData.error);
+        }
+    },[eventSystemConfigData.data]);
 
     useEffect(()=> {console.log(selectedStep)}, [selectedStep])
 
@@ -66,22 +95,44 @@ const ApprovalConfig = ({ approvalId }) => {
     };
 
     const handleSave = async () => {
-        if (!selectedStep || !hasChanges) return;
+        if (!selectedStep || !hasChanges || !systemConfig) return;
 
         try {
-            const response = await postRequest('/update-approval-flow', {
-                stepIndex: steps.findIndex(step => step.role === selectedStep.role),
-                updates: pendingChanges
+            // Find the domain that matches this approval group
+            const matchingOrg = approvalGroups.find(org => org.org_name === approvalId);
+            if (!matchingOrg) {
+                console.error('Matching organization not found');
+                return;
+            }
+
+            // Find the domain in system config
+            const domain = systemConfig.domains.find(d => d.domainId === matchingOrg._id);
+            if (!domain) {
+                console.error('Domain not found in system config');
+                return;
+            }
+
+            // Update the approval workflow for this domain
+            const response = await postRequest(`/api/event-system-config/approval-workflow/${matchingOrg._id}`, {
+                ...domain.domainSettings.approvalWorkflow,
+                stakeholderRoles: domain.domainSettings.approvalWorkflow.stakeholderRoles.map(roleRef => {
+                    if (roleRef.stakeholderRoleId === selectedStep.role) {
+                        return {
+                            ...roleRef,
+                            conditionGroups: pendingChanges.conditionGroups || roleRef.conditionGroups,
+                            groupLogicalOperators: pendingChanges.groupLogicalOperators || roleRef.groupLogicalOperators
+                        };
+                    }
+                    return roleRef;
+                })
             });
 
             if (response.success) {
                 setHasChanges(false);
                 setPendingChanges({});
-                // Update local state with the response data
-                setSelectedStep(prev => ({
-                    ...prev,
-                    ...response.data
-                }));
+                // Refetch the data to get updated state
+                approvalFlowData.refetch();
+                eventSystemConfigData.refetch();
             } else {
                 console.error('Failed to save changes:', response.message);
             }

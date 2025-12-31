@@ -6,16 +6,9 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 2rem;
+        margin-top: 20px;
         flex-wrap: wrap;
         gap: 1rem;
-
-        h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #333;
-            margin: 0;
-        }
 
         .time-range-selector {
             display: flex;
@@ -41,11 +34,15 @@
                 }
 
                 &.active {
-                    background: #6D8EFA;
+                    background: var(--primary-color);
                     color: white;
                 }
             }
         }
+    }
+
+    .analytics-grid {
+        padding: 0 40px;
     }
 
     .analytics-overview {
@@ -54,6 +51,8 @@
         gap: 1.5rem;
         margin-bottom: 3rem;
     }
+
+    // KpiCard styles are now in components/Analytics/Dashboard/KpiCard.scss
 
     .top-events-section {
         background: white;
@@ -88,7 +87,7 @@
                 .event-rank {
                     width: 40px;
                     height: 40px;
-                    background: linear-gradient(135deg, #6D8EFA, #8BA3FF);
+                    background-color: var(--primary-color);
                     color: white;
                     border-radius: 50%;
                     display: flex;
@@ -124,7 +123,7 @@
 
                             iconify-icon {
                                 font-size: 1rem;
-                                color: #6D8EFA;
+                                color: var(--primary-color);
                             }
                         }
                     }

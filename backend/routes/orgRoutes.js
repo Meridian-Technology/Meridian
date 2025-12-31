@@ -37,7 +37,7 @@ const handleMulterError = (err, req, res, next) => {
 };
 
 //Route to get a specific org by name
-router.get("/get-org/:id", verifyToken, async (req, res) => {
+router.get("/get-org/:id", async (req, res) => {
     //May eventually change login permissions
     const { Org } = getModels(req, "Org");
 
@@ -68,7 +68,7 @@ router.get("/get-org/:id", verifyToken, async (req, res) => {
     }
 });
 
-router.get("/get-org-by-name/:name", verifyToken, async (req, res) => {
+router.get("/get-org-by-name/:name", verifyToken,  async (req, res) => {
     const { Org, OrgMember, OrgFollower, Event, User, OrgMemberApplication } = getModels(req, "Org", "OrgMember", "OrgFollower", "Event", "User", "OrgMemberApplication");
     const { exhaustive } = req.query;
 
@@ -102,6 +102,7 @@ router.get("/get-org-by-name/:name", verifyToken, async (req, res) => {
         //check if the user has applied to the org
         const user = await User.findById(req.user.userId);
         const existingApplication = await OrgMemberApplication.findOne({org_id: org._id, user_id: user._id, status: "pending"});
+        console.log(orgMembers)
         const isMember = orgMembers.some(member => member.user_id._id.toString() === user._id.toString());
         const isFollower = orgFollowers.some(follower => follower.user_id._id.toString() === user._id.toString());
         const isPending = existingApplication ? true : false;
@@ -936,6 +937,53 @@ router.post('/:orgId/edit-member-form', verifyToken, requireMemberManagement(), 
         res.status(500).json({
             success: false,
             message: error.message
+        });
+    }
+})
+
+// Update approval settings for approval groups
+router.post('/:orgId/approval-settings', verifyToken, requireMemberManagement(), async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId } = req.params;
+    const { approvalSettings } = req.body;
+    
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        // Check if this is an approval group
+        if (org.approvalSettings.type !== 'approval_group') {
+            return res.status(400).json({
+                success: false,
+                message: 'This organization is not an approval group'
+            });
+        }
+
+        // Update approval settings
+        org.approvalSettings = {
+            ...org.approvalSettings,
+            ...approvalSettings
+        };
+
+        await org.save();
+
+        console.log('POST: /approval-settings successful');
+        return res.status(200).json({
+            success: true,
+            message: 'Approval settings updated successfully',
+            data: org.approvalSettings
+        });
+    } catch (error) {
+        console.log('POST: /approval-settings failed', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error updating approval settings',
+            error: error.message
         });
     }
 })

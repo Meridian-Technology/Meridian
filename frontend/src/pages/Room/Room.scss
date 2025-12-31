@@ -12,6 +12,8 @@
         .calendar-container{
             width:100%;
             box-shadow: none;
+            padding:20px;
+            box-sizing: border-box;
         }
     }
 
@@ -86,7 +88,7 @@
     /* transform: translate(-1px,-1px); */
 }
 
-select{
+.room select{
     border-radius: 10px;
     border: 1px solid #B0AFAF;
     font-family: 'Satoshi';

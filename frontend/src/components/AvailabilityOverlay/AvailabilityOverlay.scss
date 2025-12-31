@@ -1,0 +1,95 @@
+/**
+ * AvailabilityOverlay Styles
+ * 
+ * Visual indicators for availability states across the calendar grid
+ */
+
+ .availability-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.day-availability {
+    position: relative;
+    height: 100%;
+}
+
+.availability-indicator {
+    transition: opacity 0.2s ease;
+    border-radius: 2px;
+    
+    &.availability-available {
+        // Available slots are not rendered for performance
+        // but this class exists for potential future use
+        background-color: transparent;
+    }
+    
+    &.availability-conflict {
+        background-color: rgba(239, 68, 68, 0.15); // Light red overlay
+        border-left: 3px solid #ef4444;
+        
+        &:hover {
+            background-color: rgba(239, 68, 68, 0.25);
+        }
+    }
+    
+    &.availability-blocked {
+        background-color: rgba(107, 114, 128, 0.15); // Light gray overlay
+        border-left: 3px solid #6b7280;
+        background-image: repeating-linear-gradient(
+            45deg,
+            transparent,
+            transparent 4px,
+            rgba(107, 114, 128, 0.1) 4px,
+            rgba(107, 114, 128, 0.1) 8px
+        );
+        
+        &:hover {
+            background-color: rgba(107, 114, 128, 0.25);
+        }
+    }
+}
+
+// High contrast mode support
+@media (prefers-contrast: high) {
+    .availability-indicator {
+        &.availability-conflict {
+            background-color: rgba(239, 68, 68, 0.3);
+            border-left-width: 4px;
+        }
+        
+        &.availability-blocked {
+            background-color: rgba(107, 114, 128, 0.3);
+            border-left-width: 4px;
+        }
+    }
+}
+
+// Reduced motion support
+@media (prefers-reduced-motion: reduce) {
+    .availability-indicator {
+        transition: none;
+    }
+}
+
+// Responsive adjustments for smaller screens
+@media (max-width: 768px) {
+    .availability-indicator {
+        border-left-width: 2px;
+        
+        &.availability-blocked {
+        background-image: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 2px,
+                rgba(107, 114, 128, 0.1) 2px,
+                rgba(107, 114, 128, 0.1) 4px
+            );
+        }
+    }
+}

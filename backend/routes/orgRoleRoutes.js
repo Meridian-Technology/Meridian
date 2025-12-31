@@ -249,7 +249,7 @@ router.get('/:orgId/roles/:roleName/members', verifyToken   , async (req, res) =
 });
 
 // Assign role to a member
-router.post('/:orgId/members/:userId/role', verifyToken, requireMemberManagement(), async (req, res) => {
+router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
     const { orgId, userId } = req.params;
     const { role, reason } = req.body;

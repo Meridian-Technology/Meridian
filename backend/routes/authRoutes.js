@@ -10,6 +10,7 @@ const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 
 const { authenticateWithGoogle, loginUser, registerUser } = require('../services/userServices.js');
+const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getModels = require('../services/getModelService.js');
 
 const { Resend } = require('resend');
@@ -134,6 +135,15 @@ router.post('/register', async (req, res) => {
         console.log(`POST: /register new user ${username}`);
         sendDiscordMessage(`New user registered`, `user ${username} registered`, "newUser");
         
+        // Send Inngest event for user registration
+        await sendUserRegisteredEvent({
+            id: user._id,
+            email: user.email,
+            username: user.username,
+            name: user.name,
+            school: req.school
+        });
+        
         // Send the response without tokens in body
         res.status(201).json({
             success: true,
@@ -221,8 +231,8 @@ router.post('/login', async (req, res) => {
 router.post('/refresh-token', async (req, res) => {
     const refreshToken = req.cookies.refreshToken;
     
-    console.log('🔄 Refresh token request received');
-    console.log('📦 Cookies:', req.cookies);
+    // console.log('🔄 Refresh token request received');
+    // console.log('📦 Cookies:', req.cookies);
     
     if (!refreshToken) {
         console.log('POST: /refresh-token 403 no refresh token in cookies');
@@ -237,15 +247,15 @@ router.post('/refresh-token', async (req, res) => {
         const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
         // time left for refresh token
         const timeLeft = decoded.exp - Date.now() / 1000;
-        console.log('✅ Refresh token verified for user:', decoded.userId);
-        console.log('🕒 Refresh token valid for:', timeLeft);
+        // console.log('✅ Refresh token verified for user:', decoded.userId);
+        // console.log('🕒 Refresh token valid for:', timeLeft);
         
         // Check if refresh token exists in database
         const { User } = getModels(req, 'User');
         const user = await User.findById(decoded.userId);
-        console.log('🔄 Refresh token user:', user);
-        console.log('🔄 Refresh token refreshToken:', user.refreshToken);
-        console.log('🔄 Refresh token refreshToken:', refreshToken);    
+        // console.log('🔄 Refresh token user:', user);
+        // console.log('🔄 Refresh token refreshToken:', user.refreshToken);
+        // console.log('🔄 Refresh token refreshToken:', refreshToken);    
         
         if (!user || user.refreshToken !== refreshToken) {
             console.log('POST: /refresh-token 401 refresh token not found in database or mismatch');
@@ -352,6 +362,7 @@ router.get('/validate-token', verifyToken, async (req, res) => {
             .select('-password -refreshToken') // Add fields you want to exclude
             .lean()
             .populate('clubAssociations'); 
+            
         if (!user) {
             console.log(`GET: /validate-token token is invalid`);
             return res.status(404).json({ success: false, message: 'User not found' });
@@ -496,7 +507,7 @@ router.post('/forgot-password', async (req, res) => {
         }));
 
         const { data, error } = await resend.emails.send({
-            from: "Study Compass <support@study-compass.com>",
+            from: "Meridian Support <support@meridian.study>",
             to: [email],
             subject: "Password Reset Code",
             html: emailHTML,

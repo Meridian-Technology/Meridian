@@ -162,7 +162,7 @@ const Header = React.memo(()=>{
     return(
         <div className={`Header ${isScrolled ? 'scrolled' : ''}`}>
             <div className="header-content">
-                {page === "/login" || page === "/register"  || page === "/"  ? "" :
+                {/* {page === "/login" || page === "/register"  || page === "/"  ? "" :
                     <div className="nav-container">
                         <nav>
                             {isAuthenticated && <Link className={`nav-link ${ pageClass === "room" ? "active" : ""}`} to="/room/none" ><h2>search</h2></Link>}
@@ -171,7 +171,7 @@ const Header = React.memo(()=>{
                         </nav>  
                     </div>
                     
-                }
+                } */}
                 {
                     isAuthenticated ? 
 

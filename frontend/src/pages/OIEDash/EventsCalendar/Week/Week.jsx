@@ -5,7 +5,7 @@ import './Week.scss';
 import WeeklyCalendar from './WeeklyCalendar/WeeklyCalendar';
 import Switch from '../../../../components/Switch/Switch';
 
-function Week({ height, changeToDay, start = new Date(new Date().setDate(new Date().getDate() - new Date().getDay())), startingText = "", nav=true , filter, setView = () => {}, view = 1, showSwitch = true }) {
+function Week({ height, changeToDay, start = new Date(new Date().setDate(new Date().getDate() - new Date().getDay())), startingText = "", nav=true , filter, setView = () => {}, view = 1, showSwitch = true, allowCrossDaySelection = true, timeIncrement = 15, blockedEvents = [], autoEnableSelection = false }) {
     const initialStartDate = typeof start === 'string' ? new Date(start) : start;
     const initialEndDate = new Date(initialStartDate);
     console.log(initialStartDate);
@@ -49,7 +49,17 @@ function Week({ height, changeToDay, start = new Date(new Date().setDate(new Dat
     const url = `/get-events-by-range?start=${encodeURIComponent(startOfWeek.toISOString())}&end=${encodeURIComponent(endOfWeek.toISOString())}${filter ? `&filter=${JSON.stringify(filter)}` : ''}`;
     const events = useFetch(url);
 
+    // Filter blocked events to only show those within the current week
+    const weekBlockedEvents = blockedEvents.filter(event => {
+        const eventStart = new Date(event.start_time);
+        return eventStart >= startOfWeek && eventStart <= endOfWeek;
+    });
     const weekRangeText = `${formattedDate(startOfWeek)} to ${formattedDate(endOfWeek)}`;
+    // Combine regular events with blocked events
+    const combinedEvents = [
+        ...(events.data ? events.data.events : []),
+        ...weekBlockedEvents
+    ];
 
     return (
         <>  
@@ -105,14 +115,22 @@ function Week({ height, changeToDay, start = new Date(new Date().setDate(new Dat
                 aria-label={`Week view from ${weekRangeText}`}
             >
                 <WeeklyCalendar 
-                    events={events.data ? events.data.events : []} 
+                    events={combinedEvents} 
                     startOfWeek={startOfWeek} 
                     height={"100%"} 
                     dayClick={(date) => {
                         if (changeToDay) {
                             changeToDay(date);
                         }
-                    }} 
+                    }}
+                    onTimeSelection={(selection) => {
+                        console.log('Time selection:', selection);
+                        // You can add custom logic here to handle the time selection
+                        // For example, create a new event, show a modal, etc.
+                    }}
+                    allowCrossDaySelection={allowCrossDaySelection}
+                    timeIncrement={timeIncrement}
+                    autoEnableSelection={autoEnableSelection}
                 />
             </div>
         </>

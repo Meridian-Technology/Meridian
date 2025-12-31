@@ -365,7 +365,13 @@ function Room({hideHeader = false, urlType = 'embedded'}) {
     }
 
     function reloadClassroom(){
-        fetchDataUpdate(roomIds[roomid]);
+        // Validate room ID before reloading
+        const roomIdToReload = room?._id || roomIds[roomid];
+        if (!roomIdToReload || roomIdToReload === undefined) {
+            console.error("Cannot reload classroom: room ID is undefined", { roomid, roomIds, room });
+            return;
+        }
+        fetchDataUpdate(roomIdToReload);
         setContentState("classroom");
         clearQuery();
     }

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../hooks/useFetch';
 import { useParams } from 'react-router-dom';
-import MetricCard from '../MetricCard';
+import KpiCard from '../Analytics/Dashboard/KpiCard';
 import './EventAnalytics.scss';
 
 function EventAnalytics() {
@@ -85,36 +85,32 @@ function EventAnalytics() {
             </div>
 
             <div className="analytics-overview">
-                <MetricCard
+                <KpiCard
                     icon="mingcute:eye-fill"
                     title="Logged-in Views"
-                    value={data?.views || 0}
-                    label={`${formatNumber(data?.uniqueViews || 0)} unique logged-in`}
-                    color="#17a2b8"
+                    value={formatNumber(data?.views || 0)}
+                    subtitle={`${formatNumber(data?.uniqueViews || 0)} unique logged-in`}
                 />
 
-                <MetricCard
+                <KpiCard
                     icon="mdi:anonymous"
                     title="Anonymous Views"
-                    value={data?.anonymousViews || 0}
-                    label={`${formatNumber(data?.uniqueAnonymousViews || 0)} unique anonymous`}
-                    color="#6c757d"
+                    value={formatNumber(data?.anonymousViews || 0)}
+                    subtitle={`${formatNumber(data?.uniqueAnonymousViews || 0)} unique anonymous`}
                 />
 
-                <MetricCard
+                <KpiCard
                     icon="mingcute:user-add-fill"
                     title="Total RSVPs"
-                    value={data?.rsvps || 0}
-                    label={`${formatNumber(data?.uniqueRsvps || 0)} unique RSVPs`}
-                    color="#28a745"
+                    value={formatNumber(data?.rsvps || 0)}
+                    subtitle={`${formatNumber(data?.uniqueRsvps || 0)} unique RSVPs`}
                 />
 
-                <MetricCard
+                <KpiCard
                     icon="mingcute:trending-up-fill"
                     title="Engagement Rate"
                     value={`${data?.engagementRate || 0}%`}
-                    label="RSVPs per view"
-                    color="#ffc107"
+                    subtitle="RSVPs per view"
                 />
             </div>
 

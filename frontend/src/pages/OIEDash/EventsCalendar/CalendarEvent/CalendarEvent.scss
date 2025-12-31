@@ -15,7 +15,7 @@
         padding: 5px;
     }
 
-    .event-content{
+.event-content{
         padding: 8px;
         padding-top: 0px;
         .event-details {
@@ -47,5 +47,33 @@
     &.pending{
         background-color: #FBEBBB;
         border-left: 4px solid var(--yellow);
+    }
+    
+    &.blocked{
+        background-color: #E8E8E8;
+        border-left: 4px solid #999;
+        opacity: 0.7;
+        pointer-events: none; // Prevent clicking on blocked events
+        
+        .event-time {
+            color: #666;
+        }
+        
+        .event-content {
+            .event-name {
+                color: #666;
+                font-weight: normal;
+                font-style: italic;
+            }
+            
+            .event-details {
+                color: #777;
+                
+                .event-type {
+                    background-color: rgba(153, 153, 153, 0.3);
+                    color: #666;
+                }
+            }
+        }
     }
 }

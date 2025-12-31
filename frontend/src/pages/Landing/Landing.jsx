@@ -13,6 +13,8 @@ function Landing() {
     const navigate = useNavigate();
     const [activeMetric, setActiveMetric] = useState('organizations');
     const [width, setWidth] = useState(window.innerWidth);
+    const [isLoading, setIsLoading] = useState(true);
+    const [assetsLoaded, setAssetsLoaded] = useState(false);
 
     const { isAuthenticating, isAuthenticated } = useAuth();
 
@@ -36,12 +38,67 @@ function Landing() {
         };
     }, []);
 
+    // Wait for fonts and images to load before starting animations
+    useEffect(() => {
+        const loadAssets = async () => {
+            try {
+                // Wait for fonts to load
+                if (document.fonts && document.fonts.ready) {
+                    await document.fonts.ready;
+                } else {
+                    // Fallback: wait a bit for fonts if API not available
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+
+                // Preload and wait for images
+                const imagesToLoad = [
+                    heroImage,
+                    backgroundImage,
+                    RPI
+                ];
+
+                const imagePromises = imagesToLoad.map(src => {
+                    return new Promise((resolve) => {
+                        const img = new Image();
+                        img.onload = resolve;
+                        img.onerror = resolve; // Continue even if image fails
+                        img.src = src;
+                        // Timeout after 5 seconds to prevent hanging
+                        setTimeout(resolve, 5000);
+                    });
+                });
+
+                await Promise.all(imagePromises);
+
+                // Small delay to ensure everything is rendered
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                setAssetsLoaded(true);
+            } catch (error) {
+                console.error('Error loading assets:', error);
+                // Still show content even if loading fails
+                setAssetsLoaded(true);
+            }
+        };
+
+        loadAssets();
+    }, []);
+
     if(isAuthenticating) {
         return <div>Loading...</div>;
     }
 
+    // Show loader until assets are ready
+    if (!assetsLoaded) {
+        return (
+            <div className="landing-loader">
+                <div className="landing-loader__spinner"></div>
+            </div>
+        );
+    }
+
     return (
-        <div className="landing-container" >
+        <div className="landing-container">
             <div className="landing">
                 <Header/>
 
@@ -833,13 +890,18 @@ function Landing() {
                         </div>
                         <div className="footer__col">
                             <h6>Product</h6>
-                            <a href="/events-dashboard">Demo</a>
+                            <a href="/contact">Demo</a>
                             <a href="/documentation">Docs</a>
                         </div>
                         <div className="footer__col">
                             <h6>Company</h6>
                             <a href="/login">Sign in</a>
                             <a href="/register">Create account</a>
+                        </div>
+                        <div className="footer__col">
+                            <h6>Legal</h6>
+                            <a href="/privacy-policy">Privacy Policy</a>
+                            <a href="/contact">Contact</a>
                         </div>
                     </div>
                     <div className="footer__legal">© {new Date().getFullYear()} Meridian</div>
