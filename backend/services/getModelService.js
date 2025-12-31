@@ -21,6 +21,7 @@ const orgMemberApplicationSchema = require('../schemas/orgMemberApplication');
 const samlConfigSchema = require('../schemas/samlConfig');
 const notificationSchema = require('../schemas/notification');
 const orgMessageSchema = require('../schemas/orgMessage');
+const contactRequestSchema = require('../schemas/contactRequest');
 // Study Sessions
 const studySessionSchema = require('../schemas/studySession');
 const availabilityPollSchema = require('../schemas/availabilityPoll');
@@ -43,6 +44,7 @@ const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
 const eventSystemConfigSchema = require('../events/schemas/eventSystemConfig');
 const stakeholderRoleSchema = require('../events/schemas/stakeholderRole');
 const domainSchema = require('../events/schemas/domain');
+
 
 
 const getModels = (req, ...names) => {
@@ -93,6 +95,7 @@ const getModels = (req, ...names) => {
         EventSystemConfig: req.db.model('EventSystemConfig', eventSystemConfigSchema, 'eventSystemConfigs'),
         StakeholderRole: req.db.model('StakeholderRole', stakeholderRoleSchema, 'stakeholderRoles'),
         Domain: req.db.model('Domain', domainSchema, 'domains'),
+        ContactRequest: req.db.model('ContactRequest', contactRequestSchema, 'contactRequests'),
     };
 
     return names.reduce((acc, name) => {

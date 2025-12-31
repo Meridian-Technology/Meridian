@@ -3,10 +3,13 @@ const router = express.Router();
 const { Resend } = require('resend');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+const axios = require('axios');
+const getModels = require('../services/getModelService');
 
 // Contact form submission route
 router.post('/contact', async (req, res) => {
     try {
+        const models = getModels(req, 'ContactRequest');
         const { firstName, lastName, email, organization, message } = req.body;
 
         // Validate required fields
@@ -25,6 +28,26 @@ router.post('/contact', async (req, res) => {
                 message: 'Please provide a valid email address' 
             });
         }
+
+        //validate that this email actually exists
+        const hunterApiKey = process.env.HUNTER_API;
+        const hunterResponse = await axios.get(`https://api.hunter.io/v2/email-verifier?email=${email}&api_key=${hunterApiKey}`);
+        if (hunterResponse.data.data.status !== 'valid') {
+            console.log('POST: contact email validation error', hunterResponse.data.data.status);
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Please provide a valid email address' 
+            });
+        }
+
+        //create a new contact request
+        const contactRequest = new models.ContactRequest({
+            name: `${firstName} ${lastName}`,
+            email: email,
+            organization: organization,
+            message: message
+        });
+        await contactRequest.save();
 
         // Escape HTML to prevent XSS attacks
         const escapeHtml = (text) => {
