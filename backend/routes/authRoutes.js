@@ -9,7 +9,7 @@ const { isProfane } = require('../services/profanityFilterService');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 
-const { authenticateWithGoogle, loginUser, registerUser } = require('../services/userServices.js');
+const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser } = require('../services/userServices.js');
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getModels = require('../services/getModelService.js');
 
@@ -469,6 +469,78 @@ router.post('/google-login', async (req, res) => {
         res.status(500).json({
             success: false,
             message: `Google login failed, error: ${error.message}`
+        });
+    }
+});
+
+router.post('/apple-login', async (req, res) => {
+    const { idToken, user } = req.body;
+
+    if (!idToken) {
+        return res.status(400).json({
+            success: false,
+            message: 'No ID token provided'
+        });
+    }
+
+    try {
+        const { user: authenticatedUser } = await authenticateWithApple(idToken, user, req);
+        
+        // Generate both tokens
+        const accessToken = jwt.sign(
+            { userId: authenticatedUser._id, roles: authenticatedUser.roles }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
+        );
+        
+        const refreshToken = jwt.sign(
+            { userId: authenticatedUser._id, type: 'refresh' }, 
+            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
+            { expiresIn: REFRESH_TOKEN_EXPIRY }
+        );
+
+        // Store refresh token in database
+        const {User} = getModels(req, 'User');
+        await User.findByIdAndUpdate(authenticatedUser._id, { 
+            refreshToken: refreshToken 
+        });
+
+        // Set both cookies
+        res.cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
+            path: '/'
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: REFRESH_TOKEN_EXPIRY_MS, // 2 days
+            path: '/'
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Apple login successful',
+            data: {
+                user: authenticatedUser
+            }
+        });
+
+    } catch (error) {
+        if (error.message === 'Email already exists') {
+            return res.status(409).json({
+                success: false,
+                message: 'Email already exists'
+            });
+        }
+        console.log('Apple login failed:', error);
+        res.status(500).json({
+            success: false,
+            message: `Apple login failed, error: ${error.message}`
         });
     }
 });

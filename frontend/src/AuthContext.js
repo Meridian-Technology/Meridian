@@ -33,6 +33,8 @@ export const AuthProvider = ({ children }) => {
                     setAuthMethod('saml');
                 } else if (response.data.user.googleId) {
                     setAuthMethod('google');
+                } else if (response.data.user.appleId) {
+                    setAuthMethod('apple');
                 } else {
                     setAuthMethod('email');
                 }
@@ -101,6 +103,30 @@ export const AuthProvider = ({ children }) => {
             // For example, redirect the user or store the received token in local storage
         } catch (error) {
             console.error('Error sending code to backend:', error);
+            // Handle error
+            throw error;
+        }
+    };
+
+    const appleLogin = async (idToken, user) => {
+        try {
+            const response = await axios.post('/apple-login', { idToken, user }, {
+                withCredentials: true
+            });
+            // Handle response from the backend
+            console.log('Backend response:', response.data);
+            console.log('User object from Apple login:', response.data.data.user);
+            setIsAuthenticated(true);
+            setUser(response.data.data.user);
+            setAuthMethod('apple');
+            addNotification({ title: 'Logged in successfully', type: 'success' });
+            
+            // Redirect admin users to admin dashboard
+            if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
+                window.location.href = '/admin';
+            }
+        } catch (error) {
+            console.error('Error sending Apple ID token to backend:', error);
             // Handle error
             throw error;
         }
@@ -184,7 +210,8 @@ export const AuthProvider = ({ children }) => {
             user, 
             login, 
             logout, 
-            googleLogin, 
+            googleLogin,
+            appleLogin, 
             samlLogin,
             validateToken, 
             isAuthenticating, 
