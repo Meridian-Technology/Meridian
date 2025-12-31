@@ -2,6 +2,7 @@ const google = require('googleapis').google;
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const appleSignin = require('apple-signin-auth');
 const { sendDiscordMessage } = require('./discordWebookService');
 const getModels = require('./getModelService');
 const { get } = require('../schemas/badgeGrant');
@@ -63,12 +64,12 @@ async function loginUser({ email, password, req }) {
     let user;
     if (!email.includes('@')) {
         user = await User.findOne({ username: email.toLowerCase() })
-            .select('-googleId -refreshToken') // Add fields to exclude
+            .select('-googleId -appleId -refreshToken') // Add fields to exclude
             .lean()
             .populate('clubAssociations'); 
     } else {
         user = await User.findOne({ email: email.toLowerCase() })
-            .select('-googleId -refreshToken') // Add fields to exclude
+            .select('-googleId -appleId -refreshToken') // Add fields to exclude
             .lean()
             .populate('clubAssociations'); 
     }
@@ -235,4 +236,95 @@ async function generateUniqueUsername(email, req) {
 
     return username;
 }
-module.exports  = { registerUser, loginUser, authenticateWithGoogle };
+
+async function authenticateWithApple(idToken, user, req) {
+    const { User } = getModels(req, 'User');
+
+    try {
+        // Verify the Apple ID token
+        const clientId = 'com.meridian.auth'; // Apple Service ID
+
+        // Verify and decode the ID token
+        // apple-signin-auth automatically fetches Apple's public keys from JWKS endpoint
+        const decodedToken = await appleSignin.verifyIdToken(idToken, {
+            audience: clientId,
+            ignoreExpiration: false,
+        });
+
+        console.log('Apple user info:', decodedToken);
+
+        // Extract user information
+        // Note: Apple only sends email/name on first sign-in. Subsequent sign-ins may not include email.
+        const appleId = decodedToken.sub; // Apple user ID
+        const email = decodedToken.email || (user && user.email) || null;
+        const name = (user && user.name) ? `${user.name.firstName || ''} ${user.name.lastName || ''}`.trim() : null;
+
+        // Find existing user by Apple ID
+        let existingUser = await User.findOne({ appleId })
+            .select('-password -googleId -appleId -refreshToken')
+            .lean()
+            .populate('clubAssociations');
+
+        if (existingUser) {
+            return { user: existingUser };
+        }
+
+        // If no user found by Apple ID, check by email (if provided)
+        if (email) {
+            existingUser = await User.findOne({ email: email.toLowerCase() });
+            if (existingUser) {
+                // Link Apple ID to existing account
+                existingUser.appleId = appleId;
+                if (name && !existingUser.name) {
+                    existingUser.name = name;
+                }
+                await existingUser.save();
+                
+                // Fetch the user again with populated fields
+                const user = await User.findById(existingUser._id)
+                    .select('-password -googleId -appleId -refreshToken')
+                    .lean()
+                    .populate('clubAssociations');
+                
+                return { user };
+            }
+        }
+
+        // Create new user
+        if (!email) {
+            throw new Error('Email is required for new user registration. Please ensure email scope is requested.');
+        }
+
+        const randomUsername = await generateUniqueUsername(email, req);
+
+        const newUser = new User({
+            appleId: appleId,
+            email: email.toLowerCase(),
+            name: name || null,
+            username: randomUsername,
+            picture: null // Apple doesn't provide profile pictures
+        });
+
+        await newUser.save();
+        sendDiscordMessage(`New user registered`, `user ${newUser.username} registered via Apple Sign In`, "newUser");
+
+        // Fetch the user again with populated fields
+        const user = await User.findById(newUser._id)
+            .select('-password -googleId -appleId -refreshToken')
+            .lean()
+            .populate('clubAssociations');
+
+        return { user };
+    } catch (error) {
+        console.error('Apple Sign In error:', error);
+        if (error.message && error.message.includes('TokenExpiredError')) {
+            throw new Error('Apple ID token has expired. Please sign in again.');
+        }
+        if (error.message && error.message.includes('JsonWebTokenError')) {
+            throw new Error('Invalid Apple ID token.');
+        }
+        throw error;
+    }
+}
+
+module.exports  = { registerUser, loginUser, authenticateWithGoogle, authenticateWithApple };

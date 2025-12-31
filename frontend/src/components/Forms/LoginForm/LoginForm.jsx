@@ -9,9 +9,10 @@ import axios from 'axios';
 import Flag from '../../Flag/Flag';
 import SAMLLoginButton from '../SAMLLoginButton/SAMLLoginButton';
 import { isSAMLEnabled, getUniversityDisplayName, getUniversityLogo, getUniversityClassName } from '../../../config/universities';
+import {Icon} from '@iconify-icon/react/dist/iconify.mjs';
 
 function LoginForm() {
-    const { isAuthenticated, login, googleLogin } = useAuth();
+    const { isAuthenticated, login, googleLogin, appleLogin } = useAuth();
     let navigate =  useNavigate();
     const [valid, setValid] = useState(false);
     const [formData, setFormData] = useState({
@@ -25,6 +26,7 @@ function LoginForm() {
     const location = useLocation();
     const redirectPathRef = useRef(null);
     const [isGoogleLoginInProgress, setIsGoogleLoginInProgress] = useState(false);
+    const [isAppleLoginInProgress, setIsAppleLoginInProgress] = useState(false);
     
     const googleLogo = generalIcons.google;
     
@@ -47,12 +49,12 @@ function LoginForm() {
     const samlEnabled = isSAMLEnabled();
 
     useEffect(() => {
-      if (isAuthenticated && !isGoogleLoginInProgress){
+      if (isAuthenticated && !isGoogleLoginInProgress && !isAppleLoginInProgress){
         console.log("logged in already");
         console.log("auto-redirecting to:", from);
         navigate(from, { replace: true })
       }
-    },[isAuthenticated, navigate, from, isGoogleLoginInProgress]);
+    },[isAuthenticated, navigate, from, isGoogleLoginInProgress, isAppleLoginInProgress]);
 
     useEffect(() => {
         // const token = localStorage.getItem('token'); // or sessionStorage
@@ -138,6 +140,53 @@ function LoginForm() {
         onFailure: () => {failed("Google login failed. Please try again")},
     })
 
+    // Initialize Apple Sign In
+    useEffect(() => {
+        if (window.AppleID) {
+            window.AppleID.auth.init({
+                clientId: 'com.meridian.auth',
+                scope: 'name email',
+                redirectURI: 'https://meridian.study/login',
+                usePopup: false
+            });
+        }
+    }, []);
+
+    const handleAppleSignIn = async () => {
+        if (!window.AppleID) {
+            failed("Apple Sign In is not available. Please check your browser compatibility.");
+            return;
+        }
+
+        try {
+            setIsAppleLoginInProgress(true);
+            const response = await window.AppleID.auth.signIn();
+            
+            if (response && response.id_token) {
+                // Extract user info if provided (only on first sign-in)
+                const user = response.user || null;
+                
+                await appleLogin(response.id_token, user);
+                console.log("Apple login successful, redirecting to:", redirectPathRef.current || from);
+                navigate(redirectPathRef.current || from, { replace: true });
+            } else {
+                throw new Error("No ID token received from Apple");
+            }
+        } catch (error) {
+            setIsAppleLoginInProgress(false);
+            if (error.error === 'popup_closed_by_user') {
+                // User cancelled, don't show error
+                return;
+            }
+            console.error("Apple login failed:", error);
+            if (error.response && error.response.status === 409) {
+                failed("Email already exists");
+            } else {
+                failed("Apple login failed. Please try again");
+            }
+        }
+    };
+
     function failed(message){
         navigate('/login');
         setErrorText(message);
@@ -171,7 +220,21 @@ function LoginForm() {
         )}
 
         {/* Google Login Button */}
-        <button type="button" className="button google" onClick={() => google()}>Continue with Google<img src={googleLogo} alt="google"/></button>
+        <button type="button" className="button google" onClick={() => google()}>
+        <img src={googleLogo} alt="google"/>
+            Continue with Google
+            </button>
+
+        {/* Apple Login Button */}
+        <button 
+            type="button" 
+            className="button apple" 
+            onClick={handleAppleSignIn}
+            disabled={isAppleLoginInProgress}
+        >
+            <Icon icon="mdi:apple" />
+            Continue with Apple
+        </button>
 
         <div className="divider">
             <hr/>
