@@ -129,7 +129,7 @@ function RegisterForm() {
             window.AppleID.auth.init({
                 clientId: 'com.meridian.auth',
                 scope: 'name email',
-                redirectURI: window.location.origin + '/register',
+                redirectURI: window.location.origin + '/apple-login',
                 usePopup: false
             });
         }
