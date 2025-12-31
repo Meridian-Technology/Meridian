@@ -30,14 +30,14 @@
         width:300px;
         .button.submit-button{
             transition: background-color 0.3s;
-            background-color: var(--red);
+            background-color: var(--dark-blue);
             color: white;
             margin-bottom:10px;
             margin-top:0;
             height: 40px;
 
             &:hover {
-                background-color: #e86c64;
+                background-color: var(--dark-blue);
                 filter:none;
             }
         
@@ -91,7 +91,7 @@
                     }
                     h2{
                         font-size: 24px;
-                        font-weight: 600;
+                        font-weight: 800;
                         margin-bottom: 10px;
                         color: var(--text);
                         font-family: 'Satoshi';
@@ -156,11 +156,11 @@
 // Form styles
 .form-title {
     font-size: 24px;
-    font-weight: 600;
+    font-weight: 800;
     margin-bottom: 10px;
     color: var(--text);
     text-align: center;
-    font-family: 'Satoshi';
+    font-family: 'OpenSauce';
 }
 
 .form-subtitle {
@@ -195,7 +195,8 @@
     padding: 20px;
 
     h2 {
-        font-family: 'Satoshi';
+        font-family: 'OpenSauce';
+        font-weight: 800;
         iconify-icon{
             color: var(--green);
         }

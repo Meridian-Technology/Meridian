@@ -54,6 +54,7 @@ import Compass from './pages/FeatureAdmin/Compass/Compass';
 import Atlas from './pages/FeatureAdmin/Atlas/Atlas';
 import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
+import Booking from './pages/Booking/Booking';
 
 function App() {
     useEffect(() => {
@@ -135,6 +136,7 @@ function App() {
                                             <Route path="/register" element={<AnimatedPageWrapper><Register /></AnimatedPageWrapper>}/>
                                             <Route path="/login" element={<AnimatedPageWrapper><Login /></AnimatedPageWrapper>}/>
                                             <Route path="/contact" element={<AnimatedPageWrapper><Contact /></AnimatedPageWrapper>}/>
+                                            <Route path="/booking" element={<AnimatedPageWrapper><Booking /></AnimatedPageWrapper>}/>
                                             <Route path="/privacy-policy" element={<AnimatedPageWrapper><PrivacyPolicy /></AnimatedPageWrapper>}/>
                                             <Route path="/forgot-password" element={<AnimatedPageWrapper><ForgotPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/reset-password" element={<AnimatedPageWrapper><ResetPassword /></AnimatedPageWrapper>}/>

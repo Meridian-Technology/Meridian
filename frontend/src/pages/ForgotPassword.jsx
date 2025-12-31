@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Header from '../components/Header/Header';
-import logo from '../assets/red_logo.svg';
+import logo from '../assets/Brand Image/BEACON.svg';
 import { useNotification } from '../NotificationContext';
 import './Login.scss';
 
@@ -182,9 +182,7 @@ function ForgotPassword() {
     };
 
     return (
-        <div className="main-login">
-            <div className="block"></div>
-
+        <div className="main-login" style={{justifyContent: 'center'}}>
             <div className="login-container">
                 <img src={logo} alt="Study Compass Logo" className="logo" />
                 

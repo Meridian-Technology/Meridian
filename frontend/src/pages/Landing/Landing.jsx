@@ -890,7 +890,7 @@ function Landing() {
                         </div>
                         <div className="footer__col">
                             <h6>Product</h6>
-                            <a href="/events-dashboard">Demo</a>
+                            <a href="/contact">Demo</a>
                             <a href="/documentation">Docs</a>
                         </div>
                         <div className="footer__col">
