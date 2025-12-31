@@ -84,12 +84,8 @@ function Landing() {
         loadAssets();
     }, []);
 
-    if(isAuthenticating) {
-        return <div>Loading...</div>;
-    }
-
     // Show loader until assets are ready
-    if (!assetsLoaded) {
+    if (!assetsLoaded || isAuthenticating) {
         return (
             <div className="landing-loader">
                 <div className="landing-loader__spinner"></div>
