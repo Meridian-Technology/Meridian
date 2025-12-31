@@ -57,7 +57,7 @@ function validateUsername(username) {
 };
 
 // Registration endpoint
-router.post('/register', async (req, res) => {
+router.post('/auth/register', async (req, res) => {
     // Extract user details from request body
     const { username, email, password } = req.body;
 
