@@ -242,14 +242,32 @@ async function authenticateWithApple(idToken, user, req) {
 
     try {
         // Verify the Apple ID token
-        const clientId = 'com.meridian.auth'; // Apple Service ID
+        // For web: uses Service ID (com.meridian.auth)
+        // For mobile iOS: uses Bundle Identifier (com.meridian.mobile)
+        // Accept both to support both web and mobile clients
+        const serviceId = 'com.meridian.auth'; // Apple Service ID (web)
+        const bundleId = 'com.meridian.mobile'; // Bundle Identifier (iOS mobile)
 
         // Verify and decode the ID token
         // apple-signin-auth automatically fetches Apple's public keys from JWKS endpoint
-        const decodedToken = await appleSignin.verifyIdToken(idToken, {
-            audience: clientId,
-            ignoreExpiration: false,
-        });
+        // Try service ID first (web), then bundle ID (mobile)
+        let decodedToken;
+        try {
+            decodedToken = await appleSignin.verifyIdToken(idToken, {
+                audience: serviceId,
+                ignoreExpiration: false,
+            });
+        } catch (error) {
+            // If service ID fails, try bundle ID (for mobile apps)
+            if (error.message && error.message.includes('audience')) {
+                decodedToken = await appleSignin.verifyIdToken(idToken, {
+                    audience: bundleId,
+                    ignoreExpiration: false,
+                });
+            } else {
+                throw error;
+            }
+        }
 
         console.log('Apple user info:', decodedToken);
 
