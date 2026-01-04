@@ -251,22 +251,34 @@ async function authenticateWithApple(idToken, user, req) {
         // Verify and decode the ID token
         // apple-signin-auth automatically fetches Apple's public keys from JWKS endpoint
         // Try service ID first (web), then bundle ID (mobile)
-        let decodedToken;
-        try {
-            decodedToken = await appleSignin.verifyIdToken(idToken, {
-                audience: serviceId,
-                ignoreExpiration: false,
-            });
-        } catch (error) {
-            // If service ID fails, try bundle ID (for mobile apps)
-            if (error.message && error.message.includes('audience')) {
-                decodedToken = await appleSignin.verifyIdToken(idToken, {
-                    audience: bundleId,
-                    ignoreExpiration: false,
-                });
-            } else {
-                throw error;
-            }
+        const tokenParts = idToken.split('.');
+        if (tokenParts.length !== 3) {
+            throw new Error('Malformed Apple ID token');
+        }
+        
+        const payload = JSON.parse(
+            Buffer.from(tokenParts[1], 'base64').toString('utf8')
+        );
+        
+        const aud = payload.aud;
+        
+        // Allowed Apple client identifiers
+        const SERVICE_ID = 'com.meridian.auth';     // Web
+        const BUNDLE_ID  = 'com.meridian.mobile';   // iOS
+        
+        if (![SERVICE_ID, BUNDLE_ID].includes(aud)) {
+            throw new Error(`Unexpected Apple token audience: ${aud}`);
+        }
+        
+        // Verify token using the correct audience
+        const decodedToken = await appleSignin.verifyIdToken(idToken, {
+            audience: aud, // or clientID: aud (depends on lib version)
+            ignoreExpiration: false,
+        });
+        
+        // Optional but recommended hardening
+        if (decodedToken.iss !== 'https://appleid.apple.com') {
+            throw new Error('Invalid Apple token issuer');
         }
 
         console.log('Apple user info:', decodedToken);
