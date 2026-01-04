@@ -274,19 +274,21 @@ async function authenticateWithApple(idToken, user, req) {
             existingUser = await User.findOne({ email: email.toLowerCase() });
             if (existingUser) {
                 // Link Apple ID to existing account
-                existingUser.appleId = appleId;
-                if (name && !existingUser.name) {
-                    existingUser.name = name;
-                }
-                await existingUser.save();
+                // existingUser.appleId = appleId;
+                // if (name && !existingUser.name) {
+                //     existingUser.name = name;
+                // }
+                // await existingUser.save();
                 
-                // Fetch the user again with populated fields
-                const userDoc = await User.findById(existingUser._id)
-                    .select('-password -googleId -appleId -refreshToken')
-                    .lean()
-                    .populate('clubAssociations');
+                // // Fetch the user again with populated fields
+                // const userDoc = await User.findById(existingUser._id)
+                //     .select('-password -googleId -appleId -refreshToken')
+                //     .lean()
+                //     .populate('clubAssociations');
                 
-                return { user: userDoc };
+                // return { user: userDoc };
+                // throw new Error('Email already exists'); 
+                throw new Error('Email already exists'); 
             }
         }
 

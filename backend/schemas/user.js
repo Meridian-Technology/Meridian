@@ -113,7 +113,7 @@ const userSchema = new mongoose.Schema({
     roles: {
         type: [String],
         default: ['user'],
-        enum: ['user', 'admin', 'moderator', 'developer', 'oie'], // Adjust roles as needed
+        enum: ['user', 'admin', 'moderator', 'developer', 'oie', 'root'], // Adjust roles as needed
     },
     approvalRoles: {
         type: [String],
