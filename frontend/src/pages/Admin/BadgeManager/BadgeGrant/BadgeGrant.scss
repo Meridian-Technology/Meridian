@@ -1,0 +1,171 @@
+
+
+.badge-grant{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border:1px solid var(--lighterborder);
+    border-radius: 15px;
+    box-sizing: border-box;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    gap: 10px;
+
+    // .mock-badge{
+    //     margin-top: 20px;
+    //     margin: 10px 20px 10px 20px;
+    //     width: fit-content;
+    //     font-family: 'Inter';
+    //     font-size: 30px;
+    //     color:white;
+    //     padding:8px 20px;
+    //     border-radius: 20px;
+    //     font-weight:800;
+    //     margin-bottom:20px;
+    //     opacity: 0;
+    //     transition: all 0.5s ease-in-out;
+    //     cursor:pointer;
+    //     -webkit-user-select: none;
+    //     user-select: none;
+    //     &.active{
+    //         @include shimmer-effect(130deg,2s );
+    //         transform:scale(1.05);
+    //         &:active{
+    //             transform:scale(0.9);
+    //         }
+    //     }
+    //     &.visible{
+    //         opacity: 1;
+    //     }
+    //     &.inactive{
+    //         filter:grayscale(100%);
+    //         opacity: 0.3;
+    //         &:hover{
+    //             filter:none;
+    //             transform:scale(1.05);
+    //             opacity: 1;
+    //             @include shimmer-effect(130deg,2s );
+
+    //         }
+    //     }
+    // }
+    .badge-status{
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        border-radius: 20px;
+        padding: 5px 20px;
+        box-sizing: border-box;
+        cursor: pointer;
+        -webkit-user-select:none;
+        user-select: none;
+        p{
+            font-family: 'Inter';
+            font-weight: 600;
+            font-size:12px;
+        }
+        &.active{
+            background-color: var(--green-bg);
+            p{
+                color: var(--green);
+            }
+        }
+        &.inactive{
+            background-color: var(--lightest);
+            p{
+                color: var(--darkborder);
+            }
+        }
+    }
+    .inactive-data{
+        p{
+            font-weight: 500;
+            font-family: 'Inter';
+            font-size: 14px;
+            color: var(--lightest-text);
+            text-align: center;
+        }
+    }
+    .badge-button{
+        padding: 6px 20px;
+        transition: 0.3s all ease;
+        width:100%;
+        cursor:pointer;
+        &:hover{
+            transform: scale(1.05);
+        }
+        &:active{
+            transform: scale(1);
+            filter:brightness(0.92);
+        }
+        &.active{
+            background-color: var(--dark);
+            p{
+                color: var(--text);
+            }
+        }
+        &.inactive{
+            background-color: var(--green-bg);
+            p{
+                color: var(--green);
+            }
+        }
+    }
+
+    .badge-hash {
+        width: 100%;
+        margin-top: 10px;
+
+        p {
+            font-family: 'Inter';
+            font-weight: 500;
+            font-size: 12px;
+            color: var(--lightest-text);
+            margin-bottom: 5px;
+        }
+
+        .hash-container {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+
+            input {
+                flex: 1;
+                padding: 6px 10px;
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                background: var(--background);
+                color: var(--text);
+                font-size: 11px;
+                font-family: 'Inter';
+                cursor: text;
+
+                &:focus {
+                    outline: none;
+                    border-color: var(--primary);
+                }
+            }
+
+            .copy-btn {
+                padding: 6px 12px;
+                background: var(--primary);
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 11px;
+                font-family: 'Inter';
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                &:hover {
+                    background: var(--primary-dark);
+                }
+
+                &:active {
+                    transform: scale(0.95);
+                }
+            }
+        }
+    }
+}

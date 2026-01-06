@@ -6,11 +6,14 @@
     width: 100%;
     height: 100%;
     box-sizing: border-box;
-    padding:0 15px;
+    padding: 15px;
 }
 
 .friends{
     overflow:hidden;
+    header.header{
+        width:100%;
+    }
     .dark-overlay{
         position: fixed;
         width: 100vw;
@@ -64,6 +67,12 @@
     position: relative;
     overflow:hidden;
     height:65px;
+    img{
+        border-radius: 50%;
+        background-color: white;
+        height:40px;
+        width:40px;
+    }
 }
 
 .friends .user .gradient{

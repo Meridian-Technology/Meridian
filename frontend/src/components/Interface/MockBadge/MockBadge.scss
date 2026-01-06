@@ -1,0 +1,69 @@
+@mixin shimmer-effect($angle: 130deg, $duration: 2s) {
+    position: relative;
+    overflow: hidden;
+    
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -150%;
+      width: 150%;
+      height: 100%;
+      background-image: linear-gradient(
+        $angle,
+        rgba(255, 255, 255, 0) 25%,   /* Start transparent earlier */
+        rgba(255, 255, 255, 0.3) 80%, /* Peak opacity reduced */
+        rgba(255, 255, 255, 0) 75%  
+      );
+      animation: shimmer1 $duration infinite;
+    }
+  }
+  
+  @keyframes shimmer1 {
+    0% {
+      transform: translateX(0%);
+    }
+    100% {
+      transform: translateX(150%);
+    }
+  }
+
+
+.mock-badge{
+    margin-top: 20px;
+    margin: 10px 20px 10px 20px;
+    width: fit-content;
+    font-family: 'Inter';
+    font-size: 30px;
+    color:white;
+    padding:8px 20px;
+    border-radius: 20px;
+    font-weight:800;
+    margin-bottom:20px;
+    opacity: 0;
+    transition: all 0.5s ease-in-out;
+    cursor:pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    &.active{
+        @include shimmer-effect(130deg,2s );
+        transform:scale(1.05);
+        &:active{
+            transform:scale(0.9);
+        }
+    }
+    &.visible{
+        opacity: 1;
+    }
+    &.inactive{
+        filter:grayscale(100%);
+        opacity: 0.3;
+        &:hover{
+            filter:none;
+            transform:scale(1.05);
+            opacity: 1;
+            @include shimmer-effect(130deg,2s );
+
+        }
+    }
+}

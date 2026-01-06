@@ -1,5 +1,5 @@
-.card-header{
-    display:flex;
+.profile-card-header {
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
     justify-content: space-between;
@@ -10,198 +10,195 @@
     border-radius: 21px;
     background-color: var(--background);
     position: relative;
-    overflow:hidden;
-}
+    overflow: hidden;
 
-.card-header .grad{
-    position:absolute;
-    z-index:1;
-    top:0;
-    left:0;
-    width:60%;
-}
+    .grad {
+        position: absolute;
+        z-index: 1;
+        top: 0;
+        left: 0;
+        width: 60%;
+    }
 
-.card-header .logo{
-    height:35px;
-    position: absolute;
-    z-index: 1;
-    top:10px;
-    right:10px;
-}
+    .logo {
+        height: 35px;
+        position: absolute;
+        z-index: 1;
+        top: 10px;
+        right: 10px;
+    }
 
-.card-header:hover{
-    // box-shadow: 0px 7px 29px 0px var(--red);
-}
+    &:hover {
+        // box-shadow: 0px 7px 29px 0px var(--red);
+    }
 
-.card-header h2.watermark{
-    color:#D45B53;
-    font-family: 'Satoshi';
-    font-size:20px;
-}
+    h2.watermark {
+        color: #D45B53;
+        font-family: 'Satoshi';
+        font-size: 20px;
+    }
 
-.card-header .personal{
-    padding-top: 10px;
-    display:flex;
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: flex-start;
-    width: 100%;
-    height: 100%;
-    z-index: 1;
-}
-
-.card-header .personal .pfp{
-    height:95%;
-    aspect-ratio: 1/1;
-    width:fit-content;
-    margin-left: 4%;
-    margin-top: 10%;
-    position: relative;
-    height: 80px;
-}
-
-.card-header .personal img{
-    height: 100%;
-    z-index: 3;
-    position: relative;
-    border-radius: 50%;
-}
-
-.card-header .personal .pfp::after{
-    content:'';
-    background: white;
-    position:absolute;
-    top:0;
-    left:0;
-    border-radius: 50%;
-    height:100%;
-    width:100%;
-    z-index: 2;
-}
-
-.card-header .profile-info{
-    padding-top: 50px;
-    padding-left: 2%;
-    display:flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-}
-
-.card-header p.user{
-    font-family: 'Satoshi';
-    font-weight: bold;
-    font-size: 13px;
-    margin-top: 0px;
-    margin-bottom: 5px;
-    color: var(--border);
-    color: var(--text);
-}
-
-.card-header p.name{
-    font-family: 'Satoshi';
-    font-weight: bold;
-    margin: 0px;
-    font-size: 20px;
-    color: var(--text);
-
-}
-
-
-.card-header .profile-info .tags{
-    display:flex;
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: space-evenly;
-    gap: 7px;
-    margin: 0px;
-}
-
-.card-header .profile-info .tags p{
-    padding: 0px 4px;
-}
-
-.card-header .stats{
-    display:flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: space-evenly;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 12px;
-    gap: 5px;
-    z-index: 2;
-    margin-top:0;
-}
-
-.card-header .stats p{
-    font-family: 'Satoshi';
-    color: var(--text);
-    font-weight: bold;
-    display: flex;
-    justify-content: left;
-    flex-direction: row;
-    align-items: center;
-    margin: 0px;
-    gap: 5px;
-    font-size: small;
-}
-
-.card-header .stats .num{
-    color: var(--red);
-}
-
-
-.card .bar img{
-    height: 60%;
-}
-
-
-
-.card-header .bar{
-    background-color: var(--red);
-    display:flex;
-    justify-content: right;
-    flex-direction: row;
-    align-items: center;
-    padding-right: 20px;
-    box-sizing: border-box;
-    border-top-left-radius: 20px;
-    border-top-right-radius: 20px;
-    gap: 5px;
-    width: 100%;
-    height: 50px;
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1;
-}
-
-@media (max-width:500px) {
-    .card-header .personal{
+    .personal {
         padding-top: 10px;
-        display:flex;
+        display: flex;
         flex-direction: row;
         align-items: flex-start;
         justify-content: flex-start;
         width: 100%;
         height: 100%;
+        z-index: 1;
+
+        .pfp {
+            height: 95%;
+            aspect-ratio: 1/1;
+            width: fit-content;
+            margin-left: 4%;
+            margin-top: 10%;
+            position: relative;
+            height: 80px;
+
+            &::after {
+                content: '';
+                background: white;
+                position: absolute;
+                top: 0;
+                left: 0;
+                border-radius: 50%;
+                height: 100%;
+                width: 100%;
+                z-index: 2;
+            }
+        }
+
+        img {
+            z-index: 3;
+            position: relative;
+            border-radius: 50%;
+            object-fit: cover;
+            width: 100%;
+            height: 100%;
+        }
+
+        .profile-info {
+            padding-top: 50px;
+            padding-left: 2%;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+
+            .tags {
+                display: flex;
+                flex-direction: row;
+                align-items: flex-start;
+                justify-content: space-evenly;
+                gap: 7px;
+                margin: 0px;
+
+                p {
+                    padding: 0px 4px;
+                }
+            }
+        }
     }
 
-    .card-header .stats{
-        display:flex;
+    p.user {
+        font-family: 'Satoshi';
+        font-weight: bold;
+        font-size: 13px;
+        margin-top: 0px;
+        margin-bottom: 5px;
+        color: var(--border);
+        color: var(--text);
+    }
+
+    p.name {
+        font-family: 'Satoshi';
+        font-weight: bold;
+        margin: 0px;
+        font-size: 20px;
+        color: var(--text);
+    }
+
+    .stats {
+        display: flex;
         flex-direction: column;
         align-items: flex-start;
         justify-content: space-evenly;
         width: 100%;
-        margin: 12px 12px;
+        box-sizing: border-box;
+        padding: 12px;
         gap: 5px;
+        z-index: 2;
+        margin-top: 0;
+
+        p {
+            font-family: 'Satoshi';
+            color: var(--text);
+            font-weight: bold;
+            display: flex;
+            justify-content: left;
+            flex-direction: row;
+            align-items: center;
+            margin: 0px;
+            gap: 5px;
+            font-size: small;
+        }
+
+        .num {
+            color: var(--red);
+        }
     }
 
-    .card-header .personal img{
-        height: 100%;
-        z-index: 3;
-        position: relative;
-        border-radius: 50%;
+    .bar {
+        background-color: var(--red);
+        display: flex;
+        justify-content: right;
+        flex-direction: row;
+        align-items: center;
+        padding-right: 20px;
+        box-sizing: border-box;
+        border-top-left-radius: 20px;
+        border-top-right-radius: 20px;
+        gap: 5px;
+        width: 100%;
+        height: 50px;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1;
+
+        img {
+            height: 60%;
+        }
+    }
+
+    @media (max-width: 500px) {
+        .personal {
+            padding-top: 10px;
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: flex-start;
+            width: 100%;
+            height: 100%;
+
+            img {
+                height: 100%;
+                z-index: 3;
+                position: relative;
+                border-radius: 50%;
+            }
+        }
+
+        .stats {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: space-evenly;
+            width: 100%;
+            margin: 12px 12px;
+            gap: 5px;
+        }
     }
 }

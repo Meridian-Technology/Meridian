@@ -1,0 +1,206 @@
+.metric-card {
+    // CSS Custom Properties for theming
+    // These can all be overridden via the style prop in JSX
+    --metric-color: #4DAA57;
+    --metric-title-color: #6c757d;
+    --metric-value-color: #2c3e50;
+    --metric-label-color: #6c757d;
+
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 2rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-left: 4px solid var(--metric-color);
+    border: 1px solid var(--lighterborder);
+    transition: all 0.2s ease;
+    cursor: default;
+
+    &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    &[role="button"] {
+        cursor: pointer;
+        
+        &:focus {
+            outline: 2px solid var(--metric-color);
+            outline-offset: 2px;
+        }
+    }
+
+    // Size variants
+    &.small {
+        padding: 1.5rem;
+        gap: 1rem;
+        border-radius: 16px;
+
+        .metric-icon {
+            width: 48px;
+            height: 48px;
+            font-size: 1.5rem;
+        }
+
+        .metric-content {
+            .metric-title {
+                font-size: 0.875rem;
+            }
+
+            .metric-value {
+                font-size: 1.8rem;
+            }
+
+            .metric-label {
+                font-size: 0.8rem;
+            }
+        }
+    }
+
+    &.medium {
+        padding: 2rem;
+        gap: 1.5rem;
+
+        .metric-icon {
+            width: 60px;
+            height: 60px;
+            font-size: 1.8rem;
+        }
+
+        .metric-content {
+            .metric-title {
+                font-size: 1rem;
+            }
+
+            .metric-value {
+                font-size: 2.5rem;
+            }
+
+            .metric-label {
+                font-size: 0.9rem;
+            }
+        }
+    }
+
+    &.large {
+        padding: 2.5rem;
+        gap: 2rem;
+
+        .metric-icon {
+            width: 72px;
+            height: 72px;
+            font-size: 2.2rem;
+        }
+
+        .metric-content {
+            .metric-title {
+                font-size: 1.1rem;
+            }
+
+            .metric-value {
+                font-size: 3rem;
+            }
+
+            .metric-label {
+                font-size: 1rem;
+            }
+        }
+    }
+
+    .metric-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 60px;
+        height: 60px;
+        background: var(--metric-color);
+        color: white;
+        border-radius: 12px;
+        font-size: 1.8rem;
+        flex-shrink: 0;
+    }
+
+    .metric-content {
+        flex: 1;
+        min-width: 0; // Prevents flex item from overflowing
+
+        .metric-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--metric-title-color);
+            margin: 0 0 0.5rem 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            line-height: 1.2;
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--metric-value-color);
+            margin: 0 0 0.25rem 0;
+            line-height: 1;
+            word-break: break-word;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            color: var(--metric-label-color);
+            margin: 0;
+            line-height: 1.3;
+        }
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .metric-card {
+        &.small,
+        &.medium,
+        &.large {
+            padding: 1.5rem;
+            gap: 1rem;
+
+            .metric-icon {
+                width: 48px;
+                height: 48px;
+                font-size: 1.5rem;
+            }
+
+            .metric-content {
+                .metric-title {
+                    font-size: 0.875rem;
+                }
+
+                .metric-value {
+                    font-size: 1.8rem;
+                }
+
+                .metric-label {
+                    font-size: 0.8rem;
+                }
+            }
+        }
+    }
+}
+
+@media (max-width: 480px) {
+    .metric-card {
+        flex-direction: column;
+        text-align: center;
+        gap: 1rem;
+
+        .metric-content {
+            .metric-title {
+                margin-bottom: 0.25rem;
+            }
+
+            .metric-value {
+                margin-bottom: 0.125rem;
+            }
+        }
+    }
+}

@@ -1,0 +1,301 @@
+.modal {
+    // Size variants
+    &.modal-small {
+        max-width: 400px;
+        width: 90%;
+    }
+
+    &.modal-medium {
+        max-width: 600px;
+        width: 90%;
+    }
+
+    &.modal-large {
+        max-width: 800px;
+        width: 90%;
+    }
+
+    &.modal-full {
+        max-width: 95vw;
+        width: 95vw;
+        max-height: 95vh;
+    }
+
+    // Common modal styles
+    max-height: 80vh;
+    overflow-y: auto;
+    background: var(--background);
+    border-radius: 15px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--lightborder);
+
+    .modal-container {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid var(--lightborder);
+            flex-shrink: 0;
+
+            h2 {
+                margin: 0;
+                color: var(--text);
+                font-size: 18px;
+                font-weight: 600;
+                font-family: 'Satoshi', sans-serif;
+            }
+        }
+
+        .modal-body {
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+    }
+
+    // Form elements within modal
+    .form-group {
+        margin-bottom: 16px;
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text);
+            font-size: 13px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--lightborder);
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: 'Satoshi', sans-serif;
+            background: var(--light);
+            color: var(--text);
+            box-sizing: border-box;
+
+            &:focus {
+                outline: none;
+                border-color: var(--red);
+            }
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+    }
+
+    // Button styles
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        font-family: 'Inter', sans-serif;
+        cursor: pointer;
+        transition: all 0.3s ease;
+
+        &.primary {
+            background: var(--red);
+            color: var(--background);
+
+            &:hover {
+                filter: brightness(0.9);
+            }
+        }
+
+        &.secondary {
+            background: var(--lighter);
+            color: var(--text);
+            border: 1px solid var(--lightborder);
+
+            &:hover {
+                background: var(--light);
+            }
+        }
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    }
+
+    // Action buttons container
+    .modal-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        padding: 20px;
+        border-top: 1px solid var(--lightborder);
+        flex-shrink: 0;
+    }
+
+    // Summary sections
+    .summary-section {
+        margin-bottom: 20px;
+        padding: 16px;
+        background: var(--lighter);
+        border-radius: 8px;
+        border: 1px solid var(--lightborder);
+
+        h3 {
+            margin: 0 0 12px 0;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 600;
+            font-family: 'Satoshi', sans-serif;
+        }
+
+        p {
+            margin: 0 0 8px 0;
+            color: var(--light-text);
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+
+            &:last-child {
+                margin-bottom: 0;
+            }
+        }
+    }
+
+    // Member summary for role assignment
+    .member-summary {
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background: rgba(220, 38, 38, 0.05);
+        border-radius: 8px;
+        border: 1px solid rgba(220, 38, 38, 0.1);
+
+        h4 {
+            font-family: 'Satoshi', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0 0 0.5rem 0;
+        }
+
+        p {
+            font-size: 0.9rem;
+            color: var(--light-text);
+            margin: 0 0 0.25rem 0;
+            font-family: 'Inter', sans-serif;
+
+            &:last-child {
+                margin-bottom: 0;
+            }
+        }
+    }
+
+    // Role selection
+    .role-selection {
+        h4 {
+            font-family: 'Satoshi', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0 0 1rem 0;
+        }
+
+        .role-options {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+
+            .role-option {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 1rem;
+                border: 1px solid var(--lighterborder);
+                border-radius: 8px;
+                background: var(--background);
+                cursor: pointer;
+                transition: all 0.2s ease;
+                text-align: left;
+
+                &:hover:not(:disabled) {
+                    border-color: var(--red);
+                    background: rgba(220, 38, 38, 0.02);
+                }
+
+                &:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+                &.current {
+                    border-color: var(--red);
+                    background: rgba(220, 38, 38, 0.05);
+                }
+
+                .role-info {
+                    flex: 1;
+
+                    h5 {
+                        font-family: 'Satoshi', sans-serif;
+                        font-size: 1rem;
+                        font-weight: 600;
+                        color: var(--text);
+                        margin: 0 0 0.25rem 0;
+                    }
+
+                    p {
+                        font-size: 0.85rem;
+                        color: var(--light-text);
+                        margin: 0;
+                        font-family: 'Inter', sans-serif;
+                    }
+                }
+
+                .current-indicator {
+                    color: var(--red);
+                    font-size: 1.2rem;
+                }
+            }
+        }
+    }
+
+    // Responsive design
+    @media (max-width: 768px) {
+        &.modal-small,
+        &.modal-medium,
+        &.modal-large {
+            max-width: 95vw;
+            width: 95vw;
+            margin: 10px;
+        }
+
+        .modal-container {
+            .modal-header {
+                padding: 15px;
+
+                h2 {
+                    font-size: 16px;
+                }
+            }
+
+            .modal-body {
+                padding: 15px;
+            }
+        }
+
+        .modal-actions {
+            padding: 15px;
+            flex-direction: column;
+
+            .btn {
+                width: 100%;
+            }
+        }
+    }
+}

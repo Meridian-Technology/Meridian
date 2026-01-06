@@ -31,63 +31,6 @@
             font-weight: 700;
             margin: 0;
         }
-
-        .filters{
-            display: flex;
-            flex-direction: column;
-            background-color: var(--background);
-            box-sizing: border-box;
-            border-radius: 10px;
-            border: 1px solid #e5e5ea;
-            font-family: 'Inter';
-            font-weight: 600;
-            color:var(--text);
-            font-size:14px;
-            height:600px;
-            
-            .header{
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                background-color: var(--lighter);
-                padding: 5px 10px;
-                border-bottom: 1px solid var(--lighterborder);
-                border-radius: 9px 9px 0 0;
-            }
-            .filter-content{
-                padding:0 10px;
-                .filter-section{
-                    display: flex;
-                    flex-direction: column;
-                    gap: 5px;
-                    padding:10px 0;
-                    border-bottom: 1px dashed var(--lighterborder);
-                    p{
-                        margin-left:2px;
-                    }
-                    .filter-options{
-                        display: flex;
-                        gap: 5px;
-                        flex-wrap:wrap;
-                        .filter-option{
-                            transition: all 0.5s;
-                            border:1px solid var(--lighterborder);
-                            border-radius: 5px;
-                            padding: 3px 6px;
-                            width:fit-content;
-                            font-size:13px;
-                            cursor: pointer;
-                            &.selected{
-                                background-color: var(--red);
-                                color: var(--background);
-                                border: 1px solid var(--red);
-                            }
-                        }
-                    }
-                    
-                }
-            }
-        }
     }
 
     .manage-events-columns{
@@ -108,8 +51,6 @@
             border-radius: 10px;
             border: 1px solid var(--lightborder);
     
-    
-    
             &::-webkit-scrollbar {
                 width: 8px;
             }
@@ -120,7 +61,6 @@
                 h1{
                     font-size:18px;
                 }
-    
             }
             .content{
                 overflow-y: auto;

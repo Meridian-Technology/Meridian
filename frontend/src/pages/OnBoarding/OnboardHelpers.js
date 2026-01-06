@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiRequest from '../../utils/postRequest';
 
 const onboardUser = async (name, username, classroom, recommendation) => {
     try{
@@ -7,8 +7,7 @@ const onboardUser = async (name, username, classroom, recommendation) => {
             classroomPreferences += classroom[i][0];
         }
 
-        const response = await axios.post('/update-user', {name, username, classroom : classroomPreferences, recommendation, onboarded : true}, {headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}});
-        const responseBody = response.data;
+        const responseBody = await apiRequest('/update-user', {name, username, classroom : classroomPreferences, recommendation, onboarded : true});
         console.log(responseBody);
         return responseBody;
 

@@ -12,6 +12,8 @@ import FriendRequest from './FriendRequest/FriendRequest.jsx';
 import FriendGradient from '../../assets/FriendGrad.png';
 import useClickOutside from '../../hooks/useClickOutside.js';
 import useOutsideClick from '../../hooks/useClickOutside.js';
+import EventsGrad from '../../assets/Gradients/EventsGrad.png';
+import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 
 function Friends() {
     const { isAuthenticated, isAuthenticating, user, checkedIn } = useAuth();
@@ -145,85 +147,88 @@ function Friends() {
 
     return (
         
-        <div className="friends component" style={{height: viewport}}>
+        <div className="friends dash" style={{height: viewport}}>
             <div className={`dark-overlay ${showSearch ? "active" : ""}`}></div>
-            <Header />
+            <header className="header">
+                <img src={EventsGrad} alt="" />
+                <h1>Friends</h1>
+                <p>Find and connect with your friends</p>
+            </header>
             { user && isAuthenticated &&
-                <div className="friends-container">
-                    <div className="friends-content">
-                        <div className="user">
-                            <div className="profile-picture">
-                                <img src={pfp} alt="" />
-                            </div>
-                            <div className="user-content">
-                                <h1>{user.name}</h1>
-                                <p>@{user.username}</p>
-                            </div>
-                            <div className="gradient">
-                                <img src={FriendGradient} alt="" />
-                            </div>
-                        </div>
-                        <form className={`add-friend ${showSearch ? "active" : ""}`} onSubmit={handleSubmit} ref={wrapperRef}>
-                            <input type="text" placeholder="add a friend by username" value={addValue} onChange={handleAddChange} onFocus={handleShowSearch}/>
-                            <div className="add-friend-icon">
-                                <img src={AddFriend} alt=""/>
-                            </div>
-                            <div className={`friends-results ${showSearch ? "active" : ""}`}>
-                                {
-                                    results.map(user => {
-                                        return <div onClick={()=>{handleFriendRequest(user.username)}}>
-                                            <Friend friend={user} key={user._id} isFriendRequest={true} reload={reload} setReload={setReload}/>
-                                        </div>
-
-                                    })
-                                }
-                            </div>
-                        </form>
-
-                        <div className="friends-list">
-                            <div className="friends-list-header">
-                                <h2>friends</h2>
-                                <div className="pending" onClick={handlePending}>
-                                    <p className={`no-select ${contentState === 'pending' ? "active" : ""}`}>pending</p>
-                                    {
-                                        friendRequests.length > 0 &&
-                                        <div className="pending-count">
-                                            <p>{friendRequests.length}</p>
-                                        </div>
-                                    }
+                <>
+                    <div className="friends-container">
+                        <div className="friends-content">
+                            <div className="user">
+                                <div className="profile-picture">
+                                    <img src={user.picture || pfp} alt="" />
+                                </div>
+                                <div className="user-content">
+                                    <h1>{user.name}</h1>
+                                    <p>@{user.username}</p>
                                 </div>
                             </div>
-                            <div className={`content-container  ${contentState === 'pending' ? "left-staging" : ""}`}>
-                                <div className={`content`} >
+                            <form className={`add-friend ${showSearch ? "active" : ""}`} onSubmit={handleSubmit} ref={wrapperRef}>
+                                <input type="text" placeholder="add a friend by username" value={addValue} onChange={handleAddChange} onFocus={handleShowSearch}/>
+                                <div className="add-friend-icon">
+                                    <img src={AddFriend} alt=""/>
+                                </div>
+                                <div className={`friends-results ${showSearch ? "active" : ""}`}>
                                     {
-                                        friends.map(friend => {
-                                            return <Friend friend={friend} key={friend._id} isFriendRequest={false} reload={reload} setReload={setReload}/>
+                                        results.map(user => {
+                                            return <div onClick={()=>{handleFriendRequest(user.username)}} key={user._id}>
+                                                <Friend friend={user} isFriendRequest={true} reload={reload} setReload={setReload}/>
+                                            </div>
+
                                         })
-                                    }
-                                    {
-                                        friends.length === 0 &&
-                                        <div className="no-requests">
-                                            <p>no friends yet, get out there!</p>
-                                        </div>
                                     }
                                 </div>
-                                <div className={`content pending`} >
-                                    {
-                                        friendRequests.map(friend => {
-                                            return <FriendRequest friendRequest={friend} reload={reload} setReload={setReload}/>
-                                        })
-                                    }
-                                    {
-                                        friendRequests.length === 0 &&
-                                        <div className="no-requests">
-                                            <p>no pending requests</p>
-                                        </div>
-                                    }
+                            </form>
+
+                            <div className="friends-list">
+                                <div className="friends-list-header">
+                                    <h2>friends</h2>
+                                    <div className="pending" onClick={handlePending}>
+                                        <p className={`no-select ${contentState === 'pending' ? "active" : ""}`}>pending</p>
+                                        {
+                                            friendRequests.length > 0 &&
+                                            <div className="pending-count">
+                                                <p>{friendRequests.length}</p>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                                <div className={`content-container  ${contentState === 'pending' ? "left-staging" : ""}`}>
+                                    <div className={`content`} >
+                                        {
+                                            friends.map(friend => {
+                                                return <Friend friend={friend} key={friend._id} isFriendRequest={false} reload={reload} setReload={setReload}/>
+                                            })
+                                        }
+                                        {
+                                            friends.length === 0 &&
+                                            <div className="no-requests">
+                                                <p>no friends yet, get out there!</p>
+                                            </div>
+                                        }
+                                    </div>
+                                    <div className={`content pending`} >
+                                        {
+                                            friendRequests.map(friend => {
+                                                return <FriendRequest friendRequest={friend} reload={reload} setReload={setReload}/>
+                                            })
+                                        }
+                                        {
+                                            friendRequests.length === 0 &&
+                                            <div className="no-requests">
+                                                <p>no pending requests</p>
+                                            </div>
+                                        }
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                </>
             }
         </div>
     );

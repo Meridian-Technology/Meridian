@@ -63,12 +63,48 @@ function MonthEvent({ event }) {
         setShowHover(false);
     };
 
+    const getColor = (event) => {
+        if(event.type === 'study'){
+            return '#000000';
+        } else if(event.type === 'campus'){
+            return '#D3DDFD';
+        } else if(event.type === 'alumni'){
+            return '#D6D6D6';
+        } else if(event.type === 'sports'){
+            return '#D3E8CF';
+        } else if(event.type === 'arts'){
+            return '#FBEBBB';
+        } else {
+            return '#FBD8D6';
+        }
+    }
+
+    const getBorderColor = (event) => {
+        if(event.type === 'study'){
+            return '#000000';
+        } else if(event.type === 'campus'){
+            return '#6D8EFA';
+        } else if(event.type === 'alumni'){
+            return '#5C5C5C';
+        } else if(event.type === 'sports'){
+            return '#6EB25F';
+        } else if(event.type === 'arts'){
+            return '#FBBC05';
+        } else {
+            return 'rgba(250, 117, 109, 1)';
+        }
+    }
+
     return (
         <div
             className="month-event"
             ref={eventRef}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
+            style={{
+                '--color': getColor(event),
+                '--border-color': getBorderColor(event),
+            }}
         >
             <div className="event-info">
                 <p>{event.name}</p>

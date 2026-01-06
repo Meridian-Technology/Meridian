@@ -1,0 +1,59 @@
+/* From Uiverse.io by TimTrayler */ 
+.slide-switch {
+    --secondary-container: var(--green-bg);
+    --primary: #84da89;
+    --size: 0.8;
+    font-size: calc(17px * var(--size));
+    position: relative;
+    display: inline-block;
+    width: calc(3.7em * var(--size));
+    height: calc(1.8em * var(--size));
+   
+   
+   input {
+    display: none;
+    opacity: 0;
+    width: 0;
+    height: 0;
+   }
+   
+   .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--light);
+    transition: .2s;
+    border-radius: 30px;
+   }
+   
+   .slider:before {
+    position: absolute;
+    content: "";
+    height: calc(1.4em * var(--size));
+    width: calc(1.4em * var(--size));
+    border-radius: calc(20px * var(--size));
+    left: calc(0.2em * var(--size));
+    bottom: calc(0.2em * var(--size));
+    background-color: #aeaaae;
+    transition: .4s;
+   }
+   
+   input:checked + .slider::before {
+    background-color: var(--primary);
+   }
+   
+   input:checked + .slider {
+    background-color: var(--secondary-container);
+   }
+   
+   input:focus + .slider {
+    box-shadow: 0 0 1px var(--secondary-container);
+   }
+   
+   input:checked + .slider:before {
+    transform: translateX(calc(1.9em * var(--size)));
+   }
+}

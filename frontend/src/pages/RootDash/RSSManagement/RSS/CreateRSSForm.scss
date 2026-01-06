@@ -1,0 +1,66 @@
+.create-rss-form {
+    padding: 20px;
+    min-width: 400px;
+
+    h2 {
+        margin-bottom: 20px;
+        color: #333;
+    }
+
+    .form-group {
+        margin-bottom: 15px;
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+        }
+
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+
+            &:focus {
+                outline: none;
+                border-color: #007bff;
+            }
+        }
+    }
+
+    .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 20px;
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+
+            &[type="button"] {
+                background-color: #f8f9fa;
+                color: #333;
+
+                &:hover {
+                    background-color: #e9ecef;
+                }
+            }
+
+            &[type="submit"] {
+                background-color: #007bff;
+                color: white;
+
+                &:hover {
+                    background-color: #0056b3;
+                }
+            }
+        }
+    }
+} 

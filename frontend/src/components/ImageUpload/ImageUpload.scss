@@ -1,85 +1,125 @@
-.file-upload{
+.file-upload.image-upload {
+    --text-size: 15px;
+
     background-color: var(--background);
     border: 2px dashed var(--lightborder);
     transition: 0.3s all;
     border-radius: 10px;
-    margin-bottom:15px;
-    padding:10px;
-    display:flex;
+    margin-bottom: 15px;
+    padding: 10px;
+    display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding-top:20px;
+    padding-top: 20px;
     position: relative;
 
-    &.active{
-        background-color: var(--translucent);
-    }
-
-    iconify-icon{
-        font-size: 40px;
-        color: var(--lightborder);
+    iconify-icon {
+        font-size: 30px;
+        color: var(--red);
         transition: all 0.3s;
+        padding: 15px;
+        background-color: var(--red-transparent);
+        border-radius: 15px;
+        margin-bottom: 10px;
+
+        &.drag-over {
+            scale: 1.2;
+        }
     }
 
-    img{
-        max-width:80%;
+    img {
+        max-width: 80%;
         border-radius: 10px;
         box-shadow: var(--shadow);
     }
 
-    &.drag-over{
+    h3.upload-text {
+        font-family: 'Inter';
+        font-weight: 500;
+        font-size: var(--text-size);
+        color: #737373;
+        margin: 0;
+        margin-bottom: 10px;
+        margin-top: 10px;
+        text-align: center;
+        label.browse{
+            color: var(--red);  
+            cursor: pointer;
+            font-weight: 600;
+        }
+    }
+
+    p.upload-message {
+        font-family: 'Inter';
+        font-weight: 500;
+        font-size: calc(var(--text-size) - 1px);
+        color: var(--darkborder);
+        margin: calc(var(--text-size) - 2px);
+                margin-left: 5px;
+
+    }
+
+    .upload-button{
+        font-family: 'Inter';
+        font-weight: 600;
+        border-radius: 5px;
+        padding: 3px 12px;
+        background-color: var(--red);
+        color: white;
+        font-size: 13px;
+        transition: all 0.3s;
+        border:none;
+        outline:none;
+        &:hover{
+            background-color: var(--lightborder);
+        }
+        
+        &:active{
+            background-color: rgba(250,117, 109,0.74);
+        }
+    }
+
+    .clear-button{
+        font-family: 'Inter';
+        font-weight: 600;
+        border-radius: 5px;
+        padding: 3px 12px;
+        background-color: var(--darkborder);
+        color: white;
+        margin-right: 5px;
+        &:hover{
+            background-color: var(--lightborder);
+        }
+        
+        &:active{
+            background-color: rgba(250,117, 109,0.74);
+        }
+    }
+    
+
+    &.horizontal {
+        flex-direction: row;
+        gap: 20px;
+        padding-top:20px;
+        padding-bottom:20px;
+        .text-container{
+            margin-right:50px;
+        }
+    }
+
+    &.active {
         background-color: var(--translucent);
+    }
+
+    &.drag-over,
+    &:hover {
+        cursor: pointer;
+        background-color: var(--red-transparent);
         border: 2px dashed var(--red);
-        iconify-icon{
+
+        iconify-icon {
             color: var(--red);
         }
     }
-}
-
-.file-upload h3{
-    font-family: 'Inter';
-    font-weight: 500;
-    font-size:15px;
-    color: #737373;
-    margin:0;
-    margin-bottom: 10px;
-    margin-top:10px;
-}
-
-
-.file-upload p{
-    font-family: 'Inter';
-    font-weight: 500;
-    font-size:12px;
-    color: #737373;
-    margin:10px;
-}
-
-
-.file-upload .upload-button{
-    font-family: 'Inter';
-    font-weight: 600;
-    border-radius: 5px;
-    padding: 3px 12px;
-    background-color: var(--border);
-    color: white;
-    font-size: 13px;
-    transition: all 0.3s;
-    border:none;
-    outline:none;
-}
-
-.file-upload .upload-button:hover{
-    background-color: var(--lightborder);
-}
-
-.file-upload .upload-button.active{
-    background-color: rgba(250,117, 109,0.74);
-}
-
-.file-upload .clear{
-    position: absolute;
-    top:-8px;
-    right:-8px;
 }

@@ -1,0 +1,212 @@
+.notification-inbox {
+    --background-color-values: 250, 117, 109;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .bell-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height:50px;
+    iconify-icon {
+      font-size: 20px;
+      color: var(--text);
+    }
+    
+    .badge {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      background: rgb(var(--background-color-values));
+      color: white;
+      border-radius: 50%;
+      font-size: 10px;
+      padding: 2px 0px;
+      min-width: 18px;
+      text-align: center;
+      font-weight: bold;
+    }
+    &:hover{
+        box-shadow:none;
+    }
+  }
+
+  .dropdown {
+    position: absolute;
+    right: 0;
+    top: 50px;
+    width: 400px;
+    background: var(--background);
+    // border: 1px solid var(--lighterborder);
+    // border-radius: 15px;
+    z-index: 100;
+    padding: 0;
+
+    // Override HeaderContainer styles for notification context
+    .notification-header.header-container {
+    //   padding: 0;
+    //   box-shadow: none;
+    //   border: none;
+    //   background: transparent;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+
+      .header-container-header {
+        padding: 0.5rem 1rem;
+        margin: 0;
+        
+        .header-container-header-text h2 {
+          font-size: 1rem;
+          font-weight: bold;
+          margin: 0;
+        }
+      }
+      
+      .header-container-content {
+        padding: 0;
+        background: var(--background);
+      }
+    }
+
+    .empty {
+      padding: 1rem;
+      color: #888;
+      text-align: center;
+    }
+
+    ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 320px;
+      overflow-y: auto;
+
+      li {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #F0F0F0;
+        cursor: pointer;
+        transition: background 0.15s;
+        display: flex;
+        gap:10px;
+
+        .image{
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            object-fit: cover;
+            position: relative;
+            img{
+                width: 30px;
+                height: 30px;
+                object-fit: cover;
+                border-radius: 50%;
+            }
+            .unread-badge{
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+        }
+
+        .notif-content{
+            display: flex;
+            flex-direction: column;
+            flex-grow:1;
+            b,
+            span{
+                color: var(--text);
+                font-weight: 700
+            }
+        }
+
+        &.unread {
+          background: rgba(var(--background-color-values), 0.07);
+          border-bottom: 1px solid var(--lighterborder);
+        }
+
+        &:last-child {
+          border-bottom: none;
+        }
+
+        .message {
+          font-size: 1rem;
+          margin-bottom: 0.2rem;
+          color: #444;
+          margin-top: 0;
+        }
+        .meta {
+          font-size: 0.8rem;
+          color: #aaa;
+          margin-top: 0.2rem;
+        }
+        .unread-badge{
+            width: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            .status-dot{
+                height: 10px;
+                border-radius: 50%;
+                background: rgb(var(--background-color-values));
+                width: 10px;
+                height: 10px;
+            }
+        }
+        .actions {
+          margin-top: 0.5rem;
+          display: flex;
+          gap: 0.5rem;
+
+          .notif-action-btn {
+            padding: 6px 18px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            margin: 0;
+            background: var(--background);
+            border: 1px solid var(--border);
+            color: var(--text);
+            transition: background 0.15s;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size:13px;
+            width:fit-content;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+
+
+            &.success {
+            //   background: #27ae60;
+            //   color: #fff;
+                color: var(--red)
+            }
+            &.danger {
+            //   background: #e74c3c;
+            //   color: #fff;
+            }
+            &:disabled {
+              opacity: 0.6;
+              cursor: not-allowed;
+            }
+            &:hover{
+                box-shadow:none;
+            }
+          }
+        }
+        .action-result {
+          margin-top: 0.4rem;
+          font-size: 0.92rem;
+          color: #2d7a2d;
+        }
+      }
+    }
+  }
+}

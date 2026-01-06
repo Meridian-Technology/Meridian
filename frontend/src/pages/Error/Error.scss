@@ -1,75 +1,70 @@
-.errorPage{
+.errorPage {
     display: flex;
     justify-content: flex-start;
     align-items: center;
     height: 100vh;
     background-color: #f8f9fa;
     flex-direction: column;
-}
 
-.errorPage a{
-    text-decoration: none;
-    color: var(--red);
+    a {
+        text-decoration: none;
+        color: var(--red);
+    }
 
-}
+    .content {
+        position: absolute;
+        top: 30%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+    }
 
-.errorPage .content{
-    position: absolute;
-    top:30%;
-}
+    .message {
+        display: flex;
+        gap: 6px;
+        margin-top: 20px;
 
-.details{
-    display: flex;
-    flex-direction: column;
-    gap:10px;
-    margin-top:10px;
-    align-items: center;
-}
+        .whoops {
+            color: var(--red);
+        }
+    }
 
-.details p{
-    font-size: 16px;
-    margin:0;
-    font-weight: 600;
-    color: var(--text);
-}
+    .details {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 10px;
+        align-items: center;
 
-.message{
-    display: flex;
-    gap:6px;
-    margin-top:20px;
-}
+        p {
+            font-size: 16px;
+            margin: 0;
+            font-weight: 600;
+            color: var(--text);
+        }
+    }
 
-.message .whoops{
-    color: var(--red);
-}
+    .error-message {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        margin-top: 20px;
 
-.errorPage .content{
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-direction: column;
+        p {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+        }
 
-}
+        img {
+            cursor: pointer;
+        }
+    }
 
-.button-container{
-    display:flex;
-    width:60%;
-    margin-top:15%;
-}
-
-.error-message{
-    display:flex;
-    gap:5px;
-    align-items: center;
-    margin-top:20px;
-}
-
-.error-message p{
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text);
-}
-
-.error-message img{
-    cursor: pointer;
+    .button-container {
+        display: flex;
+        width: 60%;
+        margin-top: 15%;
+    }
 }

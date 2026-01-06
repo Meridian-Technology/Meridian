@@ -1,0 +1,130 @@
+.approval-group-card {
+    background: var(--card-background);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.2s ease;
+    position: relative;
+
+    &:hover {
+        border-color: var(--primary);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        transform: translateY(-2px);
+    }
+
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 16px;
+
+        .group-info {
+            flex: 1;
+
+            h3 {
+                margin: 0 0 4px 0;
+                font-size: 18px;
+                font-weight: 600;
+                color: var(--text);
+            }
+
+            .group-description {
+                margin: 0;
+                font-size: 14px;
+                color: var(--lighter-text);
+                line-height: 1.4;
+            }
+        }
+
+        .card-actions {
+            .delete-btn {
+                background: none;
+                border: none;
+                color: var(--error);
+                cursor: pointer;
+                padding: 4px;
+                border-radius: 4px;
+                transition: background-color 0.2s;
+
+                &:hover {
+                    background-color: var(--error-light);
+                }
+
+                svg {
+                    width: 18px;
+                    height: 18px;
+                }
+            }
+        }
+    }
+
+    .card-stats {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--lighter-text);
+
+            svg {
+                width: 16px;
+                height: 16px;
+            }
+        }
+    }
+
+    .card-footer {
+        display: flex;
+        gap: 8px;
+
+        button {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--background);
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+
+            &:hover {
+                border-color: var(--primary);
+                background: var(--primary-light);
+            }
+
+            svg {
+                width: 16px;
+                height: 16px;
+            }
+
+            &.configure-btn {
+                background: var(--primary);
+                color: white;
+                border-color: var(--primary);
+
+                &:hover {
+                    background: var(--primary-dark);
+                    border-color: var(--primary-dark);
+                }
+            }
+
+            &.dashboard-btn {
+                &:hover {
+                    background: var(--secondary-light);
+                    border-color: var(--secondary);
+                }
+            }
+        }
+    }
+}

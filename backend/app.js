@@ -4,6 +4,8 @@ const cors = require('cors');
 const path = require('path'); 
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
+const session = require('express-session');
+const passport = require('passport');
 require('dotenv').config();
 const { createServer } = require('http');
 const { Server } = require('socket.io');
@@ -20,7 +22,7 @@ const io = new Server(server, {
     transports: ['websocket', 'polling'], // WebSocket first, fallback to polling if necessary
     cors: {
         origin: process.env.NODE_ENV === 'production'
-            ? ['https://www.study-compass.com', 'https://studycompass.com']
+            ? ['https://www.meridian.study', 'https://meridian.study']
             : 'http://localhost:3000',  // Allow localhost during development
         methods: ['GET', 'POST'],
         allowedHeaders: ['Content-Type'],
@@ -28,22 +30,42 @@ const io = new Server(server, {
     }
 });
 
+// Configure CORS for cookie-based authentication
+const corsOptions = {
+    origin: process.env.NODE_ENV === 'production'
+        ? ['https://www.meridian.study', 'https://meridian.study']
+        : 'http://localhost:3000',
+    credentials: true, // This is crucial for cookies
+    optionsSuccessStatus: 200 // for legacy browser support
+};
+
 if (process.env.NODE_ENV === 'production') {
     app.use(enforce.HTTPS({ trustProtoHeader: true }));
-    const corsOptions = {
-        origin: [
-            'https://www.study-compass.com', 
-            'https://studycompass.com',
-            `http://${process.env.EDUREKA_IP}:${process.env.EDUREKA_PORT}`
-        ],
-        optionsSuccessStatus: 200 // for legacy browser support
-    };
+    app.use(cors(corsOptions));
+} else {
     app.use(cors(corsOptions));
 }
 
 // Other middleware
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Add this for form-encoded data
 app.use(cookieParser());
+
+// Session middleware for SAML
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
 app.use(express.urlencoded({ extended: true }));
 
 // if (process.env.NODE_ENV === 'production') {
@@ -61,8 +83,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(async (req, res, next) => {
     try {
         const subdomain = req.headers.host.split('.')[0]; // Extract subdomain (e.g., 'ucb')
-        console.log(req.headers.host);
         req.db = await connectToDatabase(subdomain);
+        req.school = !subdomain.includes('localhost') ? subdomain : 'rpi';
+        console.log(req.school);
         next();
     } catch (error) {
         console.error('Error establishing database connection:', error);
@@ -79,6 +102,7 @@ const upload = multer({
 
 // Define your routes and other middleware
 const authRoutes = require('./routes/authRoutes.js');
+const samlRoutes = require('./routes/samlRoutes.js');
 const dataRoutes = require('./routes/dataRoutes.js');
 const friendRoutes = require('./routes/friendRoutes.js');
 const userRoutes = require('./routes/userRoutes.js');
@@ -86,24 +110,66 @@ const analyticsRoutes = require('./routes/analytics.js');
 const classroomChangeRoutes = require('./routes/classroomChangeRoutes.js');
 const ratingRoutes = require('./routes/ratingRoutes.js');
 const searchRoutes = require('./routes/searchRoutes.js');
-const eventRoutes = require('./routes/eventRoutes.js');
-const oieRoutes = require('./routes/oie-routes.js');
 const orgRoutes = require('./routes/orgRoutes.js');
-const workflowRoutes = require('./routes/workflowRoutes.js');
+const orgRoleRoutes = require('./routes/orgRoleRoutes.js');
+const orgManagementRoutes = require('./routes/orgManagementRoutes.js');
+const orgMessageRoutes = require('./routes/orgMessageRoutes.js');
+const roomRoutes = require('./routes/roomRoutes.js');
+const adminRoutes = require('./routes/adminRoutes.js');
+const eventsRoutes = require('./events/index.js');
+const notificationRoutes = require('./routes/notificationRoutes.js');
+const qrRoutes = require('./routes/qrRoutes.js');
+const eventAnalyticsRoutes = require('./routes/eventAnalyticsRoutes.js');
+const orgEventManagementRoutes = require('./routes/orgEventManagementRoutes.js');
+const inngestRoutes = require('./routes/inngestRoutes.js');
+
+// Inngest integration
+const inngestServe = require('./inngest/serve.js');
+const studySessionRoutes = require('./routes/studySessionRoutes.js');
+const availabilityPollRoutes = require('./routes/availabilityPollRoutes.js');
+const feedbackRoutes = require('./routes/feedbackRoutes.js');
+const contactRoutes = require('./routes/contactRoutes.js');
 const affiliatedEmailRoutes = require('./routes/affiliatedEmailRoutes.js');
 
 app.use(authRoutes);
+app.use('/auth/saml', samlRoutes);
 app.use(dataRoutes);
 app.use(friendRoutes);
 app.use(userRoutes);
 app.use(analyticsRoutes);
-app.use(searchRoutes);
+app.use('/event-analytics', eventAnalyticsRoutes);
+
 app.use(classroomChangeRoutes);
 app.use(ratingRoutes);
-app.use(eventRoutes);
-app.use(oieRoutes);
+app.use(searchRoutes);
+
+
 app.use(orgRoutes);
-app.use(workflowRoutes);
+app.use('/org-roles', orgRoleRoutes);
+app.use('/org-management', orgManagementRoutes);
+app.use('/org-messages', orgMessageRoutes);
+app.use('/org-event-management', orgEventManagementRoutes);
+app.use('/admin', roomRoutes);
+app.use(adminRoutes);
+
+app.use('/notifications', notificationRoutes);
+app.use('/api/qr', qrRoutes);
+app.use(contactRoutes);
+
+// Inngest serve handler - this handles all Inngest function execution
+app.use('/api/inngest', inngestServe);
+
+// Inngest example routes for triggering events
+app.use('/api/inngest-examples', inngestRoutes);
+
+app.use(eventsRoutes);
+
+app.use('/study-sessions', studySessionRoutes);
+app.use('/availability-polls', availabilityPollRoutes);
+
+app.use('/feedback', feedbackRoutes);
+
+
 app.use('/verify-affiliated-email', affiliatedEmailRoutes);
 
 // Serve static files from the React app in production

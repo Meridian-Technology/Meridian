@@ -1,0 +1,253 @@
+.approve-container{
+    margin-top: 20px;
+    .timeline-approval{
+        padding: 20px;
+        display: flex;
+        gap: 10px;
+        button.button{
+            padding: 10px 10px;
+            height:fit-content;
+            margin: 0;
+            &.approve{
+                background-color: var(--green-bg);
+                color: var(--green);    
+            }
+            &.reject{
+                background-color: var(--red-transparent);
+                color:var(--red);
+            }
+        }
+    }
+}
+
+.timeline {
+    overflow: hidden;
+    border: 1px solid var(--lighterborder);
+    border-radius: 15px;
+
+    h3 {
+        margin: 0;
+        font-family: 'Inter';
+        font-weight: 700;
+        color: var(--lighter-text);
+        font-size: 15px;
+    }
+
+    .header {
+        display: flex;
+        align-items: center;
+        padding: 8px 15px;
+        gap: 8px;
+        background-color: var(--background);
+        border-bottom: 1px solid var(--lighterborder);
+
+        h2 {
+            font-size: 16px;
+            margin: 0;
+            font-family: 'Satoshi';
+            font-weight: 400;
+            color: var(--lighter-text);
+        }
+
+        iconify-icon {
+            font-size: 16px;
+            color: var(--lighter-text);
+        }
+
+    }
+
+    .timeline-container {
+        /* Just some padding and a light overall style */
+        padding: 1rem;
+    }
+
+    /* Each “step” is one row across the page. */
+    .timeline-step {
+        display: flex;
+        align-items: flex-start;
+        position: relative;
+        padding-bottom: 2rem;
+
+        /* You can tweak spacing/position as needed. */
+    }
+
+
+    /* DATE on the left */
+    .step-date {
+        width: 140px;
+        text-align: right;
+        color: var(--lighter-text);
+        margin-right: 1rem;
+        line-height: 1.4;
+
+        h3 {
+            text-align: right;
+        }
+
+        p {
+            margin: 0;
+            font-family: 'Inter';
+            font-weight: 700;
+            text-align: right;
+            color: var(--light-text);
+            font-size: 13px;
+            line-height: 13px;
+        }
+    }
+
+    /* The middle “column” that holds the dot & line. */
+    .timeline-marker {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-right: 1rem;
+        /* space before the content */
+    }
+
+    .marker-container {
+        display: grid;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width:19px;
+        height:19px;
+        iconify-icon{
+            width:19px;
+            height:19px;
+            position: absolute;
+            align-self:center;
+            justify-self: center;
+            font-size:19px;
+            z-index: 2;
+            border-radius: 50%;
+            color:var(--background);
+            transition: all 0.2s;
+            &.completed{
+                background-color: var(--green);   
+                color: var(--background);
+            }
+            &.active{
+                background-color: var(--yellow);
+                color: var(--yellow);
+                transition: all 0.8s ease 0.6s;
+            }
+        }
+        .marker-circle {
+            width: 19px;
+            height: 19px;
+            border: 2px solid  var(--lightborder);
+            box-sizing: border-box;
+            border-radius: 50%;
+            background-color: #fff;
+            z-index: 1;
+            position: absolute;
+            align-self:center;
+            justify-self: center;
+            transition: transform 0.3s ease, border-color 0.3s ease, background-color 0.3s ease;
+    
+            &.active {
+                /* “Pulsing” or “grow” effect */
+                animation: approval-pulse 0.8s infinite alternate ease-in-out;
+                border-color: var(--yellow);
+                background-color: var(--yellow);
+                opacity:0.4;
+            }
+
+            &.completed {
+                background-color: var(--green);
+                border-color: var(--green);
+                animation: pulse-once 0.6s ease-in-out;
+            }
+        }
+    }
+
+    /* The dot itself */
+
+    /* The vertical line that connects the steps. */
+
+    .marker-line {
+        position:absolute;
+        top:0;
+        align-self:center;
+        width: 2px;
+        background: linear-gradient(to bottom, var(--green) 70%, var(--yellow) 100%);
+        overflow:hidden;
+        transition: top 0.5s;
+        &::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            height:100%;
+            width:2px;
+            background-color: var(--lightborder);
+            transition: all 0.5s ease 0.5s;
+        }
+        &.active{
+            &::before{
+                top:100%;
+            }
+        }
+        &.completed{
+            background: linear-gradient(to bottom, var(--green) 100%, var(--yellow) 100%);
+            &::before{
+                top:100%;
+            }
+        }
+    }
+
+    /* The step’s text on the right */
+    .timeline-content {
+        border-radius: 4px;
+        flex: 1;
+        /* Expand to fill available width */
+
+        .content-title {
+            h3 {
+                color: var(--text);
+                font-size: 16px;
+            }
+        }
+
+        .content-subtext {
+            color: var(--light-text);
+            font-size: 14px;
+            font-weight: 600;
+        }
+    }
+
+    .timeline-step:last-child {
+        padding-bottom: 10px;
+        .marker-line {
+            display: none;
+        }
+    }
+
+    /* Keyframes for active “pulse” animation. 
+         You could do “scale(1.2) -> scale(1.0)” or something else. */
+    @keyframes approval-pulse {
+        0% {
+            transform: scale(1.4);
+        }
+
+        100% {
+            transform: scale(1);
+        }
+    }
+
+}
+
+@keyframes pulse-once {
+    0% {
+      transform: scale(1);
+      opacity: 0.6
+    }
+    50% {
+    //   transform: scale(1.5);
+    //   opacity: 0.4
+    }   
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }

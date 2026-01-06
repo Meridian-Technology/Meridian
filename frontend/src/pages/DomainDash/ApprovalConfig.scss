@@ -1,0 +1,238 @@
+.approval-config {
+    padding: 20px;
+    min-height: 100vh;
+    background: var(--background);
+
+    &.loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+
+        .loading-spinner {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            color: var(--lighter-text);
+
+            .spinning {
+                animation: spin 1s linear infinite;
+                font-size: 32px;
+            }
+
+            span {
+                font-size: 16px;
+            }
+        }
+    }
+
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 24px;
+        padding: 24px;
+        background: var(--lightest);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+
+        h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .form-buttons {
+            display: flex;
+            gap: 12px;
+
+            button {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 16px;
+                background: var(--primary);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                &:hover {
+                    background: var(--primary-dark);
+                    transform: translateY(-2px);
+                }
+
+                svg {
+                    width: 16px;
+                    height: 16px;
+                }
+            }
+        }
+    }
+
+    .config-item {
+        .approval-container {
+            .header-actions {
+                display: flex;
+                gap: 12px;
+                align-items: center;
+
+                .add-group-button {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 10px 16px;
+                    background: var(--success);
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+
+                    &:hover {
+                        background: #2e7d32;
+                        transform: translateY(-2px);
+                    }
+
+                    svg {
+                        width: 16px;
+                        height: 16px;
+                    }
+                }
+
+                .save-button {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 10px 16px;
+                    background: var(--primary);
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+
+                    &:hover {
+                        background: var(--primary-dark);
+                        transform: translateY(-2px);
+                    }
+
+                    svg {
+                        width: 16px;
+                        height: 16px;
+                    }
+                }
+            }
+
+            .config-container-content {
+                .no-rules {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 60px 20px;
+                    text-align: center;
+                    background: var(--lightest);
+                    border: 2px dashed var(--border);
+                    border-radius: 12px;
+
+                    svg {
+                        width: 48px;
+                        height: 48px;
+                        color: var(--lighter-text);
+                        margin-bottom: 16px;
+                    }
+
+                    h3 {
+                        margin: 0 0 8px 0;
+                        font-size: 18px;
+                        font-weight: 600;
+                        color: var(--text);
+                    }
+
+                    p {
+                        margin: 0 0 24px 0;
+                        color: var(--lighter-text);
+                        line-height: 1.5;
+                        max-width: 400px;
+                    }
+
+                    .add-first-rule-btn {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        padding: 12px 24px;
+                        background: var(--primary);
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+
+                        &:hover {
+                            background: var(--primary-dark);
+                            transform: translateY(-2px);
+                        }
+
+                        svg {
+                            width: 20px;
+                            height: 20px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 768px) {
+    .approval-config {
+        padding: 16px;
+
+        .header {
+            flex-direction: column;
+            gap: 16px;
+            align-items: stretch;
+
+            .form-buttons {
+                justify-content: center;
+            }
+        }
+
+        .config-item {
+            .approval-container {
+                .header-actions {
+                    flex-direction: column;
+                    align-items: stretch;
+
+                    button {
+                        justify-content: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+

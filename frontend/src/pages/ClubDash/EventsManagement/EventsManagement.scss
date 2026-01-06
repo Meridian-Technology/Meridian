@@ -1,0 +1,207 @@
+.club-dash .dash.events-management {
+    min-height: 100vh;
+    transition: all 0.3s ease;
+    overflow: auto;
+
+    &.minimized {
+        padding: 1rem;
+    }
+
+    &.maximized {
+        padding: 3rem;
+    }
+
+    container.content{
+        padding: 0 40px 10px 40px;
+        // .actions{
+        //     margin-bottom: 20px;
+        // }
+    }
+
+    .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 50vh;
+        flex-direction: column;
+        gap: 1rem;
+
+        .loading-spinner {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            color: #6c757d;
+
+            .spinner {
+                font-size: 2rem;
+                animation: spin 1s linear infinite;
+            }
+
+            p {
+                font-size: 1.1rem;
+                margin: 0;
+            }
+        }
+    }
+
+    .events-management-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+
+        .header-content {
+            h1 {
+                font-size: 2.5rem;
+                font-weight: 700;
+                color: #2c3e50;
+                margin: 0 0 0.5rem 0;
+            }
+
+            p {
+                font-size: 1.1rem;
+                color: #6c757d;
+                margin: 0;
+            }
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+
+            .refresh-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 48px;
+                height: 48px;
+                background: #4DAA57;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                font-size: 1.2rem;
+
+                &:hover {
+                    background: #45a049;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(77, 170, 87, 0.3);
+                }
+
+                &:active {
+                    transform: translateY(0);
+                }
+            }
+        }
+    }
+    .events-management-content{
+        padding: 0 20px;
+    }
+    .events-management-tabs {
+        margin-bottom: 2rem;
+
+        .tab-navigation {
+            display: flex;
+            background: var(--background);
+            border-radius: 12px;
+            padding: 0.3rem;
+            box-shadow: var(--shadow);
+            gap: 0.5rem;
+            border: 1px solid var(--lighterborder);
+            
+
+            .tab-button {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                padding: 8px 12px;
+                background: transparent;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                font-size: 15px;
+                font-weight: 500;
+                color: var(--lighter-text);
+                flex: 1;
+                justify-content: center;
+
+                &:hover {
+                    background: #f8f9fa;
+                    color: #4DAA57;
+                }
+
+                &.active {
+                    background: #4DAA57;
+                    color: white;
+                    box-shadow: 0 2px 8px rgba(77, 170, 87, 0.3);
+                }
+
+                svg {
+                    font-size: 1.2rem;
+                }
+            }
+        }
+    }
+
+    .events-management-content {
+        background: var(--background);
+        border-radius: 12px;
+        min-height: 600px;
+        overflow: hidden;
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .events-management {
+        padding: 1rem;
+
+        .events-management-header {
+            flex-direction: column;
+            gap: 1rem;
+            text-align: center;
+
+            .header-content h1 {
+                font-size: 2rem;
+            }
+        }
+
+        .events-management-tabs {
+            .tab-navigation {
+                flex-direction: column;
+
+                .tab-button {
+                    justify-content: flex-start;
+                }
+            }
+        }
+    }
+}
+
+@media (max-width: 480px) {
+    .events-management {
+        padding: 0.5rem;
+
+        .events-management-header {
+            padding: 1rem;
+
+            .header-content h1 {
+                font-size: 1.5rem;
+            }
+
+            .header-content p {
+                font-size: 1rem;
+            }
+        }
+    }
+}

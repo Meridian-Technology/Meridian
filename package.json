@@ -8,10 +8,12 @@
     "socket.io-client": "^4.7.5"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.10"
   },
   "scripts": {
     "start": "node backend/app.js",
+    "heroku-prebuild": "echo 'running prebuild tasks...'; ./bin/setup_ssh",
     "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install --prefix frontend && npm run build --prefix frontend && npm install --prefix backend",
     "server": "cd backend && nodemon app.js",
     "client": "cd frontend && npm start",

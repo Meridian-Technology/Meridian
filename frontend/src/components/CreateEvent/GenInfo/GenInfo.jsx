@@ -14,6 +14,12 @@ function GenInfo({next, visible, setInfo}){
     const [selectedFile, setSelectedFile] = useState(null);
     const [imagePreview, setImagePreview] = useState(null);
 
+    // RSVP Configuration
+    const [rsvpEnabled, setRsvpEnabled] = useState(false);
+    const [rsvpRequired, setRsvpRequired] = useState(false);
+    const [rsvpDeadline, setRsvpDeadline] = useState("");
+    const [maxAttendees, setMaxAttendees] = useState("");
+
     const [nextActive, setNextActive] = useState(false);
 
     useEffect(()=>{
@@ -27,10 +33,15 @@ function GenInfo({next, visible, setInfo}){
             type: eventType, 
             visibility, 
             expectedAttendance,
-            selectedFile // Store the selected file in the info object
+            selectedFile, // Store the selected file in the info object
+            // RSVP Configuration
+            rsvpEnabled,
+            rsvpRequired,
+            rsvpDeadline: rsvpDeadline ? new Date(rsvpDeadline).toISOString() : null,
+            maxAttendees: maxAttendees ? parseInt(maxAttendees) : null
         }));
     }
-    ,[title, description, eventType, visibility, expectedAttendance, selectedFile]);
+    ,[title, description, eventType, visibility, expectedAttendance, selectedFile, rsvpEnabled, rsvpRequired, rsvpDeadline, maxAttendees]);
 
     const handleChange = (e) => {
         const {name, value} = e.target;
@@ -50,6 +61,12 @@ function GenInfo({next, visible, setInfo}){
                 break;
             case "expectedAttendance":
                 setExpectedAttendance(value);
+                break;
+            case "rsvpDeadline":
+                setRsvpDeadline(value);
+                break;
+            case "maxAttendees":
+                setMaxAttendees(value);
                 break;
             default:
                 break;
@@ -118,6 +135,62 @@ function GenInfo({next, visible, setInfo}){
                         <input name="expectedAttendance" type="number" className="" value={expectedAttendance} onChange={handleChange} placeholder='about how many people are attending?'/>
                     </div>
 
+                    {/* RSVP Configuration */}
+                    <div className="input-field">
+                        <p className="label">RSVP Settings</p>
+                        <div className="rsvp-settings">
+                            <div className="rsvp-toggle">
+                                <label className="checkbox-label">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={rsvpEnabled} 
+                                        onChange={(e) => setRsvpEnabled(e.target.checked)}
+                                    />
+                                    <span className="checkmark"></span>
+                                    Enable RSVP for this event
+                                </label>
+                            </div>
+                            
+                            {rsvpEnabled && (
+                                <div className="rsvp-options">
+                                    <div className="rsvp-toggle">
+                                        <label className="checkbox-label">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={rsvpRequired} 
+                                                onChange={(e) => setRsvpRequired(e.target.checked)}
+                                            />
+                                            <span className="checkmark"></span>
+                                            Require RSVP to attend
+                                        </label>
+                                    </div>
+                                    
+                                    <div className="input-field">
+                                        <p className="label">RSVP Deadline</p>
+                                        <input 
+                                            name="rsvpDeadline" 
+                                            type="datetime-local" 
+                                            value={rsvpDeadline} 
+                                            onChange={handleChange}
+                                            placeholder='RSVP deadline (optional)'
+                                        />
+                                    </div>
+                                    
+                                    <div className="input-field">
+                                        <p className="label">Maximum Attendees</p>
+                                        <input 
+                                            name="maxAttendees" 
+                                            type="number" 
+                                            value={maxAttendees} 
+                                            onChange={handleChange}
+                                            placeholder='Maximum number of attendees (optional)'
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                     <button className={`next-button ${nextActive && "active"}`} onClick={next}>
                         next
                     </button>
@@ -126,9 +199,10 @@ function GenInfo({next, visible, setInfo}){
                     <div className="input-field">
                         <p>Flier</p>
                         <ImageUpload 
-                            uploadText="Drag and Drop to Upload" 
+                            uploadText="Drag your image here" 
                             onFileSelect={handleFileSelect}
                             onFileClear={handleFileClear}
+                            showPrompt={false}
                         />
                     </div>
                 </div>

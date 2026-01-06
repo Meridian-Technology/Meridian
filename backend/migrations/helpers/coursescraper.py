@@ -127,7 +127,7 @@ async def parse_course_info(url, classroom_info):
 def upload_to_mongo(dic, term):
     load_dotenv() # loading .env file
     uri = os.environ.get('MONGO_URL_LOCAL') # fetching URI string
-    client = MongoClient(uri, server_api=ServerApi('1')) 
+    client = MongoClient("mongodb://127.0.0.1:27017/studycompass", server_api=ServerApi('1')) 
     try: # send a ping to confirm a successful connection
         client.admin.command('ping')
         print("Pinged your deployment. You successfully connected to MongoDB!")
@@ -159,7 +159,7 @@ def dump_to_json(dic):
 
 # main function, term determinance feature on the way
 async def main():
-    term = "202501"
+    term = "202509"
     dic= {}
 
     # asynchronous organization of for loops

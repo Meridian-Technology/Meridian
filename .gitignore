@@ -23,6 +23,14 @@ venv/
 .env.test.local
 .env.production.local
 
+# SAML certificates and keys
+backend/certs/
+*.crt
+*.key
+*.pem
+*.p12
+*.pfx
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -33,3 +41,9 @@ venv/
 .vscode/
 
 scripts/
+.env*
+.flaskenv*
+!.env.project
+!.env.vault
+
+dump/

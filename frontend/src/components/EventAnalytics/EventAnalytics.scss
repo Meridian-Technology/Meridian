@@ -1,0 +1,247 @@
+.event-analytics {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+
+    .analytics-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+
+        .header-content {
+            h1 {
+                font-size: 2rem;
+                font-weight: 700;
+                color: #333;
+                margin: 0 0 0.5rem 0;
+            }
+
+            h2 {
+                font-size: 1.5rem;
+                font-weight: 600;
+                color: #6D8EFA;
+                margin: 0 0 0.25rem 0;
+            }
+
+            .event-dates {
+                font-size: 0.875rem;
+                color: #666;
+                margin: 0;
+            }
+        }
+
+        .time-range-selector {
+            display: flex;
+            gap: 0.5rem;
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 0.25rem;
+
+            button {
+                padding: 0.5rem 1rem;
+                border: none;
+                background: transparent;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: #666;
+                transition: all 0.2s ease;
+
+                &:hover {
+                    background: #e0e0e0;
+                    color: #333;
+                }
+
+                &.active {
+                    background: #6D8EFA;
+                    color: white;
+                }
+            }
+        }
+    }
+
+    .analytics-overview {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 3rem;
+    }
+
+    // KpiCard styles are now in components/Analytics/Dashboard/KpiCard.scss
+
+    .analytics-sections {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 2rem;
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e0e0e0;
+
+            h3 {
+                font-size: 1.25rem;
+                font-weight: 600;
+                color: #333;
+                margin: 0 0 1rem 0;
+            }
+
+            .history-list {
+                .history-item {
+                    display: flex;
+                    align-items: center;
+                    padding: 0.75rem;
+                    border-bottom: 1px solid #f0f0f0;
+                    transition: background-color 0.2s ease;
+
+                    &:last-child {
+                        border-bottom: none;
+                    }
+
+                    &:hover {
+                        background-color: #f8f9fa;
+                    }
+
+                    .history-icon {
+                        width: 32px;
+                        height: 32px;
+                        background: #f0f0f0;
+                        border-radius: 8px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        margin-right: 1rem;
+                        flex-shrink: 0;
+
+                        iconify-icon {
+                            font-size: 1rem;
+                            color: #666;
+                        }
+
+                        &.going {
+                            background: #d4edda;
+                            iconify-icon {
+                                color: #28a745;
+                            }
+                        }
+
+                        &.maybe {
+                            background: #fff3cd;
+                            iconify-icon {
+                                color: #ffc107;
+                            }
+                        }
+
+                        &.not-going {
+                            background: #f8d7da;
+                            iconify-icon {
+                                color: #dc3545;
+                            }
+                        }
+                    }
+
+                    .history-content {
+                        flex: 1;
+
+                        .history-time {
+                            font-size: 0.875rem;
+                            font-weight: 500;
+                            color: #333;
+                            margin: 0 0 0.25rem 0;
+                        }
+
+                        .history-detail {
+                            font-size: 0.875rem;
+                            color: #666;
+                            margin: 0;
+
+                            .status {
+                                font-weight: 600;
+                                text-transform: capitalize;
+
+                                &.going {
+                                    color: #28a745;
+                                }
+
+                                &.maybe {
+                                    color: #ffc107;
+                                }
+
+                                &.not-going {
+                                    color: #dc3545;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                .no-data {
+                    text-align: center;
+                    padding: 2rem;
+                    color: #888;
+                    font-style: italic;
+                }
+            }
+        }
+    }
+
+    .loading, .error {
+        text-align: center;
+        padding: 3rem;
+        font-size: 1.125rem;
+        color: #666;
+    }
+
+    .error {
+        color: #dc3545;
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .event-analytics {
+        padding: 1rem;
+
+        .analytics-header {
+            flex-direction: column;
+            align-items: flex-start;
+
+            .time-range-selector {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        .analytics-overview {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .analytics-sections {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+
+            .section {
+                padding: 1rem;
+
+                .history-list {
+                    .history-item {
+                        flex-direction: column;
+                        align-items: flex-start;
+                        gap: 0.75rem;
+
+                        .history-icon {
+                            margin-right: 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

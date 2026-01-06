@@ -1,14 +1,12 @@
-import axios from 'axios';
+import apiRequest from '../../utils/postRequest';
 
 const getUser = async (userId) => {
     try{
-        const response = await axios.get('/get-user', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            },
-            params: { userId }  // Pass the userId as query parameter
+        const responseBody = await apiRequest('/get-user', null, {
+            method: 'GET',
+            params: { userId }
         });
-        return response.data.user;
+        return responseBody.user;
     } catch(error){
         throw error;
     }
@@ -16,12 +14,10 @@ const getUser = async (userId) => {
 
 const getAllEvents = async () => {
     try{
-        const response = await axios.get('/get-all-events', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            },
+        const responseBody = await apiRequest('/get-all-events', null, {
+            method: 'GET'
         });
-        return response.data.events;
+        return responseBody.events;
     } catch(error){
         throw error;
     }
@@ -29,12 +25,10 @@ const getAllEvents = async () => {
 
 const getOIEEvents = async () => {
     try{
-        const response = await axios.get('/oie/get-pending-events', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            },
+        const responseBody = await apiRequest('/oie/get-pending-events', null, {
+            method: 'GET'
         });
-        return response.data.events;
+        return responseBody.events;
     } catch(error){
         throw error;
     }
@@ -42,19 +36,14 @@ const getOIEEvents = async () => {
 
 const createEvent = async (name, type, hosting, location, date, description, image, classroom_id) => {
     try{
-        const response = await axios.post('/create-event', {
+        const responseBody = await apiRequest('/create-event', {
             name, type, hosting, location, date, description, image, classroom_id
-        }, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            }
         });
-        return response.data;
+        return responseBody;
     }
     catch(error){
         throw error;
     }
 }
-
 
 export { getAllEvents, createEvent, getOIEEvents };

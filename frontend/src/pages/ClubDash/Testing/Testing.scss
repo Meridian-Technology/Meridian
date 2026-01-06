@@ -1,0 +1,214 @@
+.testing {
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
+
+    .header {
+        text-align: center;
+        margin-bottom: 30px;
+
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+
+        p {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+        }
+
+        .warning {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 12px;
+            color: #856404;
+
+            svg {
+                font-size: 18px;
+            }
+        }
+    }
+
+    .testing-form {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        margin-bottom: 30px;
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+
+            label {
+                font-weight: 600;
+                color: var(--text);
+                font-size: 14px;
+            }
+
+            input, select {
+                padding: 12px 16px;
+                border: 2px solid var(--lighterborder);
+                border-radius: 8px;
+                font-size: 14px;
+                transition: border-color 0.2s ease;
+
+                &:focus {
+                    outline: none;
+                    border-color: var(--primary);
+                }
+            }
+
+            small {
+                font-size: 12px;
+                color: var(--text-secondary);
+            }
+        }
+
+        .add-user-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 14px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+
+            &:hover:not(:disabled) {
+                background: var(--primary-dark);
+            }
+
+            &:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+
+            .spinning {
+                animation: spin 1s linear infinite;
+            }
+        }
+    }
+
+    .testing-info {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 24px;
+
+        h3 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 16px;
+        }
+
+        ol {
+            margin-bottom: 24px;
+            padding-left: 20px;
+
+            li {
+                margin-bottom: 8px;
+                color: var(--text);
+                line-height: 1.5;
+            }
+        }
+
+        .role-info {
+            h4 {
+                font-size: 18px;
+                font-weight: 600;
+                color: var(--text);
+                margin-bottom: 16px;
+            }
+
+            .roles-list {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .role-item {
+                background: white;
+                border-radius: 8px;
+                padding: 16px;
+                border: 1px solid var(--lighterborder);
+
+                strong {
+                    display: block;
+                    font-size: 16px;
+                    color: var(--text);
+                    margin-bottom: 4px;
+                }
+
+                .role-name {
+                    font-size: 12px;
+                    color: var(--text-secondary);
+                    font-family: monospace;
+                }
+
+                .permissions {
+                    margin-top: 8px;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+
+                    .permission-tag {
+                        background: var(--primary-light);
+                        color: var(--primary);
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        font-size: 11px;
+                        font-weight: 500;
+                    }
+
+                    .no-permissions {
+                        color: var(--text-secondary);
+                        font-size: 12px;
+                        font-style: italic;
+                    }
+                }
+            }
+        }
+    }
+
+    &.loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 200px;
+
+        .loader {
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+} 

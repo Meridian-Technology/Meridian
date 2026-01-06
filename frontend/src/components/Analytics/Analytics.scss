@@ -1,10 +1,54 @@
-.analytics{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
+.analytics {
+  .kpi-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
 
-    .heading{
-        
+    @media (max-width: 1200px) {
+      grid-template-columns: repeat(3, 1fr);
     }
+    @media (max-width: 900px) {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    @media (max-width: 600px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  // KpiCard styles are now in components/Analytics/Dashboard/KpiCard.scss
+
+  .analytics-charts-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
+    // When viewport is wide enough that cards would exceed 650px in single column,
+    // switch to 2x2 grid layout
+    // Calculation: content width = viewport - 200px (sidebar)
+    // For 2 columns: 650px * 2 + gap (20px) = 1320px minimum content width
+    // So viewport needs: 1320px + 200px = 1520px minimum
+    @media (min-width: 1200px) {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, auto);
+      gap: 20px;
+      width: 100%;
+      
+      // Cards fill their grid cell completely
+      .visit-chart {
+        width: 100%;
+      }
+    }
+  }
+
+  .visit-chart {
+    .chart-container {
+      height: 250px;
+    }
+
+    .header { flex-wrap: wrap; gap: 12px; }
+  }
 }
+
+

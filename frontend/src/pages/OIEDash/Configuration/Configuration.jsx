@@ -9,7 +9,6 @@ import { useFetch } from '../../../hooks/useFetch';
 
 import Loader from '../../../components/Loader/Loader';
 import axios from 'axios';
-import { set } from 'mongoose';
 
 function CheckItem({ item, index, handleCheck, editOnLoad=false, editing, setEditing }) {
     const {addNotification} = useNotification();

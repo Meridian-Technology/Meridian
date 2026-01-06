@@ -9,6 +9,7 @@ const { sendDiscordMessage } = require('../services/discordWebookService');
 const BadgeGrant = require('../schemas/badgeGrant');
 const getModels = require('../services/getModelService');
 const { uploadImageToS3, deleteAndUploadImageToS3 } = require('../services/imageUploadService');
+const { sendRoomCheckinEvent } = require('../inngest/events');
 const multer = require('multer');
 const path = require('path');
 
@@ -106,8 +107,20 @@ router.post("/check-in", verifyToken, async (req, res) => {
         const io = req.app.get('io');
         io.to(classroomId).emit('check-in', { classroomId, userId: req.user.userId });
 
+        // Send Inngest event to schedule auto-checkout after 2 hours
+        // await sendRoomCheckinEvent(req.user.userId, classroomId, new Date());
+
         console.log(`POST: /check-in ${req.user.userId} into ${classroom.name} successful`);
-        return res.status(200).json({ success: true, message: 'Checked in successfully' });
+        return res.status(200).json({ 
+            success: true, 
+            message: 'Checked in successfully - auto-checkout scheduled for 2 hours',
+            data: {
+                classroomId,
+                classroomName: classroom.name,
+                checkinTime: new Date().toISOString(),
+                autoCheckoutTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() // 2 hours from now
+            }
+        });
     } catch (error) {
         console.log(`POST: /check-in ${req.user.userId} failed`);
         console.log(error);
@@ -254,6 +267,92 @@ router.get("/get-users", async (req, res) => {
     }
 });
 
+// Advanced user search with configurable filters
+router.get("/search-users", verifyToken, async (req, res) => {
+    const { User } = getModels(req, 'User');
+    const { 
+        query, 
+        roles, 
+        tags, 
+        limit = 20, 
+        skip = 0,
+        sortBy = 'username',
+        sortOrder = 'asc',
+        excludeIds = []
+    } = req.query;
+    
+    try {
+        // Build the search query
+        let searchQuery = {};
+        
+        // Text search on username or name
+        if (query) {
+            // Escape regex special characters to prevent regex errors
+            const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            searchQuery.$or = [
+                { username: { $regex: new RegExp(escapedQuery, 'i') } },
+                { name: { $regex: new RegExp(escapedQuery, 'i') } }
+            ];
+        }
+        
+        // Filter by roles if provided
+        if (roles) {
+            const roleArray = Array.isArray(roles) ? roles : [roles];
+            searchQuery.roles = { $in: roleArray };
+        }
+        
+        // Filter by tags if provided
+        if (tags) {
+            const tagArray = Array.isArray(tags) ? tags : [tags];
+            searchQuery.tags = { $in: tagArray };
+        }
+        
+        // Exclude specific user IDs if provided
+        if (excludeIds && excludeIds.length > 0) {
+            let excludeArray;
+            try {
+                // Try to parse as JSON if it's a string
+                excludeArray = typeof excludeIds === 'string' ? JSON.parse(excludeIds) : excludeIds;
+                // Ensure it's an array
+                excludeArray = Array.isArray(excludeArray) ? excludeArray : [excludeArray];
+            } catch (error) {
+                console.error('Error parsing excludeIds:', error);
+                excludeArray = [excludeIds];
+            }
+            searchQuery._id = { $nin: excludeArray };
+        }
+        
+        // Build sort object
+        const sort = {};
+        sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+        
+        // Execute the query with pagination
+        const users = await User.find(searchQuery)
+            .sort(sort)
+            .limit(parseInt(limit))
+            .skip(parseInt(skip))
+            .select('-password -googleId'); // Exclude sensitive fields
+        
+        // Get total count for pagination
+        const total = await User.countDocuments(searchQuery);
+        
+        console.log(`GET: /search-users successful`);
+        return res.status(200).json({ 
+            success: true, 
+            message: 'Users found', 
+            data: users,
+            pagination: {
+                total,
+                limit: parseInt(limit),
+                skip: parseInt(skip)
+            }
+        });
+    } catch (error) {
+        console.log(`GET: /search-users failed`, error);
+        return res.status(500).json({ success: false, message: 'Internal server error', error });
+    }
+});
+
 router.post('/create-badge-grant', verifyToken, authorizeRoles('admin'), async (req, res) => {
     const { BadgeGrant } = getModels(req, 'BadgeGrant');
     try {
@@ -330,9 +429,93 @@ router.post('/grant-badge', verifyToken, async (req, res) => {
         res.status(200).json({ message: 'Badge granted successfully', badges: user.badges, badge: {badgeContent:badgeGrant.badgeContent, badgeColor: badgeGrant.badgeColor} });
     } catch (error) {
         console.error('Error granting badge:', error);
-        res.status(500).json({ error: 'Server error' });
+        res.status(500).json({ error: error});
     }
 });
+
+router.post('/renew-badge-grant', verifyToken, authorizeRoles('admin'), async (req,res) => {
+    const { BadgeGrant } = getModels(req, 'BadgeGrant');
+    try {
+        const { badgeGrantId, daysValid } = req.body;
+
+        if (!badgeGrantId || !daysValid) {
+            return res.status(400).json({ error: 'Badge grant ID and days valid are required' });
+        }
+
+        const badgeGrant = await BadgeGrant.findById(badgeGrantId);
+        if (!badgeGrant) {
+            return res.status(404).json({ error: 'Badge grant not found' });
+        }
+
+        const validFrom = new Date();
+        const validTo = new Date();
+        validTo.setDate(validTo.getDate() + daysValid);
+
+        badgeGrant.validFrom = validFrom;
+        badgeGrant.validTo = validTo;
+
+        await badgeGrant.save();
+
+        res.status(200).json({
+            message: 'Badge grant renewed successfully',
+            validFrom,
+            validTo,
+        });
+    } catch (error) {
+        console.error('Error renewing badge grant:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+})
+
+router.get('/get-badge-grants', verifyToken, authorizeRoles('admin'), async (req,res) => {
+    const { User, BadgeGrant } = getModels(req, 'User', 'BadgeGrant');
+    try{
+        const user = await User.findById(req.user.userId);
+        if(!user || !user.roles.includes('admin')){
+            return res.status(403).json({
+                success: false,
+                message: 'You don\'t have permissions to view badge grants'
+            })
+        }
+        const badgeGrants = await BadgeGrant.find({});
+        return res.status(200).json({
+            success:true,
+            badgeGrants
+        })
+    } catch (error){
+        console.error('Error getting badges:', error);
+        res.status(500).json({erorr:error})
+    }
+});
+
+router.get('/get-badge-grant/:hash', async (req,res) => {
+    const { BadgeGrant } = getModels(req, 'BadgeGrant');
+    try{
+        const { hash } = req.params;
+        const badgeGrant = await BadgeGrant.findOne({ hash });
+        
+        if(!badgeGrant){
+            return res.status(404).json({
+                success: false,
+                message: 'Badge grant not found'
+            })
+        }
+        
+        return res.status(200).json({
+            success: true,
+            badgeGrant: {
+                badgeContent: badgeGrant.badgeContent,
+                badgeColor: badgeGrant.badgeColor,
+                validFrom: badgeGrant.validFrom,
+                validTo: badgeGrant.validTo
+            }
+        })
+    } catch (error){
+        console.error('Error getting badge grant:', error);
+        res.status(500).json({error: error})
+    }
+});
+
 
 
 router.post("/upload-user-image", verifyToken, upload.single('image'), async (req, res) =>{
@@ -367,6 +550,106 @@ router.post("/upload-user-image", verifyToken, upload.single('image'), async (re
     } catch(error){
         console.log(`POST: /upload-user-image ${req.user.userId} failed, ${error}`)
         return res.status(500).json({ success: false, message: 'Internal server error', error });
+    }
+});
+
+//add or remove role from user
+
+router.post('/manage-roles', verifyToken, authorizeRoles('admin'), async (req,res) => {
+    const { role, userId } = req.body;
+    const { User } = getModels(req, 'User');
+    try{
+        console.log(`${userId}`);
+        const user = await User.findById(userId);
+        console.log('asd');
+        if(!user){
+            return res.status(404).json({
+                success:false,
+            })
+        } else {
+            const admin = await User.findById(req.user.userId);
+            console.log(admin);
+            if(!admin || !(admin.roles.includes('admin'))){
+                console.log('POST: /manage-roles unauthorized');
+                return res.status(403);
+            } else {
+                //update role
+                if(user.roles.includes(role)){
+                    //remove role
+                    console.log('asd')
+                    user.roles = user.roles.filter((i) => i !== role);
+                    console.log(user.roles);
+                    await user.save();
+                    console.log(`POST: /manage-roles, successfully added ${role}`);
+
+                    return res.status(200).json({
+                        success:true,
+                        message:'successfully renoved role from user'
+                    })
+                } else {
+                    console.log('asd')
+                    user.roles.push(role);
+                    console.log(user);
+                    const response = await user.save();
+                    if(response){
+                        console.log(response)
+                    }
+                    console.log('gothere')
+                    console.log(`POST: /manage-roles, successfully added ${role}`);
+                    return res.status(200).json({
+                        success: true,
+                        message: "successfuly aded new role to user"
+                    })
+                }
+            }
+        }
+    } catch (error){
+        console.log(error);
+        return res.status(500).json({
+            success:false,
+            error
+        })
+    }
+})
+
+// Get user by username (for development testing)
+router.post('/get-user-by-username', verifyToken, async (req, res) => {
+    const { User } = getModels(req, 'User');
+    const { username } = req.body;
+    
+    try {
+        if (!username) {
+            return res.status(400).json({
+                success: false,
+                message: 'Username is required'
+            });
+        }
+
+        const user = await User.findOne({ username: { $regex: new RegExp(username, "i") } });
+        
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Return minimal user info for security
+        res.status(200).json({
+            success: true,
+            user: {
+                _id: user._id,
+                username: user.username,
+                name: user.name,
+                email: user.email
+            }
+        });
+    } catch (error) {
+        console.error('Error getting user by username:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
     }
 });
 

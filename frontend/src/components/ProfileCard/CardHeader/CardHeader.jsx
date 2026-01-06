@@ -9,9 +9,8 @@ import StudentCardGrad from '../../../assets/Gradients/StudentCardGrad.png';
 import logo from '../../../assets/Logo.svg'
 
 function CardHeader({userInfo, settings}){
-    console.log(userInfo);
     return (
-        <div className="card-header">
+        <div className="profile-card-header">
             {/* <div className="bar" style={{backgroundImage: `url(${GrainTexture}), -webkit-linear-gradient(135deg, #F9E298, #F2374C)`,}}>
                 {settings ? <img src={WhiteSettings} alt="settings-icon" /> : <h2 className="watermark">study compass</h2> }
                 

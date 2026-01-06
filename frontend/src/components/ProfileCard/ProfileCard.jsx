@@ -9,7 +9,7 @@ import StudyHistory from './StudyHistory/StudyHistory';
 
 function ProfileCard({userInfo}){
     return (
-        <div className="card">
+        <div className="profile-card">
             <div className="left-profile">
                 <div className="header">
                     <CardHeader userInfo={userInfo} settings={true}/>

@@ -1,0 +1,121 @@
+.filters {
+    display: flex;
+    flex-direction: column;
+    background-color: var(--background);
+    box-sizing: border-box;
+    border-radius: 10px;
+    border: 1px solid #e5e5ea;
+    font-family: 'Inter';
+    font-weight: 600;
+    color: var(--text);
+    font-size: 14px;
+    
+    .header {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background-color: var(--lighter);
+        padding: 5px 10px;
+        border-bottom: 1px solid var(--lighterborder);
+        border-radius: 9px 9px 0 0;
+    }
+
+    .filter-content {
+        padding: 0 10px;
+        .filter-section {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            padding: 10px 0;
+            border-bottom: 1px dashed var(--lighterborder);
+            border-left:none;
+            border-right:none;
+            border-top:none;  
+            padding-block:0;
+            margin-inline:0;
+            margin:10px 0;         
+
+            
+            .filter-legend {
+                margin-left: 2px;
+                font-weight: 600;
+                color: var(--text);
+                margin-bottom: 5px;
+            }
+            
+            .filter-options {
+                display: flex;
+                gap: 5px;
+                flex-wrap: wrap;
+                margin-bottom: 5px;
+                .filter-option {
+                    transition: all 0.5s;
+                    border: 1px solid var(--lighterborder);
+                    border-radius: 5px;
+                    padding: 3px 6px;
+                    width: fit-content;
+                    font-size: 13px;
+                    cursor: pointer;
+                    -webkit-user-select: none;
+                    -moz-user-select: none;
+                    -ms-user-select: none;
+                    user-select: none;
+                    background-color: var(--background);
+                    color: var(--text);
+                    
+                    /* Focus styles for accessibility */
+                    &:focus {
+                        outline: 2px solid var(--red, #d6001c);
+                        outline-offset: 2px;
+                        border-radius: 5px;
+                    }
+                    
+                    &:focus:not(:focus-visible) {
+                        outline: none;
+                    }
+                    
+                    &:focus-visible {
+                        outline: 2px solid var(--red, #d6001c);
+                        outline-offset: 2px;
+                        border-radius: 5px;
+                    }
+                    
+                    /* Hover state */
+                    &:hover {
+                        background-color: var(--lighter);
+                        border-color: var(--red, #d6001c);
+                    }
+                    
+                    &.selected {
+                        background-color: var(--red);
+                        color: var(--background);
+                        border: 1px solid var(--red);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .filters {
+        border: 2px solid var(--text, #000);
+        
+        .filter-option {
+            border: 2px solid var(--text, #000);
+            
+            &:focus {
+                outline: 3px solid var(--text, #000);
+                outline-offset: 1px;
+            }
+        }
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .filter-option {
+        transition: none;
+    }
+} 

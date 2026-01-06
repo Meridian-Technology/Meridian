@@ -17,7 +17,7 @@ function Error() {
     
     useEffect(() => {
         if(!errorCode){
-            navigate("/error/404");
+            // navigate("/error/404");
         }
         const message = localStorage.getItem("error");
         if (message) {

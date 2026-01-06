@@ -12,9 +12,32 @@ const { render } = require('@react-email/render')
 const React = require('react');
 const ForgotEmail = require('../emails/ForgotEmail').default;
 const resend = new Resend(process.env.RESEND_API_KEY);
+const multer = require('multer');
+const path = require('path');
+const { uploadImageToS3, upload } = require('../services/imageUploadService');
+const { requireMemberManagement } = require('../middlewares/orgPermissions');
+const NotificationService = require('../services/notificationService');
+
+// Error handling middleware for multer
+const handleMulterError = (err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                success: false,
+                message: 'File size exceeds 5MB limit.'
+            });
+        }
+    } else if (err) {
+        return res.status(400).json({
+            success: false,
+            message: err.message
+        });
+    }
+    next();
+};
 
 //Route to get a specific org by name
-router.get("/get-org/:id", verifyToken, async (req, res) => {
+router.get("/get-org/:id", async (req, res) => {
     //May eventually change login permissions
     const { Org } = getModels(req, "Org");
 
@@ -45,23 +68,44 @@ router.get("/get-org/:id", verifyToken, async (req, res) => {
     }
 });
 
-router.get("/get-org-by-name/:name", verifyToken, async (req, res) => {
-    const { Org, OrgMember, OrgFollower, User } = getModels(req, "Org", "OrgMember", "OrgFollower", "User");
+router.get("/get-org-by-name/:name", verifyToken,  async (req, res) => {
+    const { Org, OrgMember, OrgFollower, Event, User, OrgMemberApplication } = getModels(req, "Org", "OrgMember", "OrgFollower", "Event", "User", "OrgMemberApplication");
+    const { exhaustive } = req.query;
+
     try {
         const orgName = req.params.name;
 
-        const org = await Org.findOne({ org_name: orgName });
+        const org = await Org.findOne({ org_name: orgName }).populate('memberForm');
 
         if (!org) {
+            console.log(`GET: /get-org-by-name/${orgName} - Org not found`);
             return res.status(404).json({ success: false, message: "Org not found" });
         }
 
+        const exhaustiveData = {
+            eventCount: 0,
+            memberCount: 0,
+            followerCount: 0,
+        }
+
+        if(exhaustive){
+            const eventCount = await Event.countDocuments({hostingId: org._id, start_time: {$gte: new Date()}, status: { $in: ["approved", "not-applicable"] }});
+            exhaustiveData.eventCount = eventCount;
+        console.log(exhaustiveData);
+        }
         const orgMembers = await OrgMember.find({ org_id: org._id }).populate(
             "user_id"
         );
         const orgFollowers = await OrgFollower.find({ org_id: org._id }).populate(
             "user_id"
         );
+        //check if the user has applied to the org
+        const user = await User.findById(req.user.userId);
+        const existingApplication = await OrgMemberApplication.findOne({org_id: org._id, user_id: user._id, status: "pending"});
+        console.log(orgMembers)
+        const isMember = orgMembers.some(member => member.user_id._id.toString() === user._id.toString());
+        const isFollower = orgFollowers.some(follower => follower.user_id._id.toString() === user._id.toString());
+        const isPending = existingApplication ? true : false;
 
         // If the org exists, return it
         console.log(`GET: /get-org-by-name/${orgName}`);
@@ -72,8 +116,12 @@ router.get("/get-org-by-name/:name", verifyToken, async (req, res) => {
                 overview: org,
                 members: orgMembers,
                 followers: orgFollowers,
+                isMember: isMember,
+                isFollower: isFollower,
+                isPending: isPending,
             },
-        });
+            exhaustive: exhaustive ? exhaustiveData : null
+        }); 
     } catch (error) {
         // Handle any errors that occur during the process
         console.log(`GET: /get-org-by-name failed`, error);
@@ -87,15 +135,16 @@ router.get("/get-org-by-name/:name", verifyToken, async (req, res) => {
     }
 });
 
-router.post("/create-org", verifyToken, async (req, res) => {
+router.post("/create-org", verifyToken, upload.single('image'), handleMulterError, async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, "Org", "OrgMember", "User");
     const {
         org_name,
-        org_profile_image,
         org_description,
         positions,
         weekly_meeting,
+        custom_roles
     } = req.body;
+    const file = req.file;
 
     try {
         //Verify user and have their orgs saved under them
@@ -138,21 +187,104 @@ router.post("/create-org", verifyToken, async (req, res) => {
 
         const cleanOrgDescription = clean(org_description);
 
+        // Prepare default roles
+        const defaultRoles = [
+            {
+                name: 'owner',
+                displayName: 'Owner',
+                permissions: ['all'],
+                isDefault: false,
+                canManageMembers: true,
+                canManageRoles: true,
+                canManageEvents: true,
+                canViewAnalytics: true,
+                order: 0
+            },
+            {
+                name: 'admin',
+                displayName: 'Administrator',
+                permissions: ['manage_members', 'manage_events', 'view_analytics'],
+                isDefault: false,
+                canManageMembers: true,
+                canManageRoles: false,
+                canManageEvents: true,
+                canViewAnalytics: true,
+                order: 1
+            },
+            {
+                name: 'officer',
+                displayName: 'Officer',
+                permissions: ['manage_events'],
+                isDefault: false,
+                canManageMembers: false,
+                canManageRoles: false,
+                canManageEvents: true,
+                canViewAnalytics: false,
+                order: 2
+            },
+            {
+                name: 'member',
+                displayName: 'Member',
+                permissions: ['view_events'],
+                isDefault: true,
+                canManageMembers: false,
+                canManageRoles: false,
+                canManageEvents: false,
+                canViewAnalytics: false,
+                order: 3
+            }
+        ];
+
+        // Parse and merge custom roles if provided
+        let allRoles = [...defaultRoles];
+        if (custom_roles) {
+            try {
+                const parsedCustomRoles = JSON.parse(custom_roles);
+                if (Array.isArray(parsedCustomRoles)) {
+                    // Add custom roles with proper order
+                    parsedCustomRoles.forEach((customRole, index) => {
+                        const roleWithOrder = {
+                            ...customRole,
+                            order: defaultRoles.length + index,
+                            isDefault: false
+                        };
+                        allRoles.push(roleWithOrder);
+                    });
+                }
+            } catch (error) {
+                console.error('Error parsing custom roles:', error);
+                // Continue with default roles only if parsing fails
+            }
+        }
+
         const newOrg = new Org({
             org_name: cleanOrgName,
-            org_profile_image: org_profile_image,
             org_description: cleanOrgDescription,
-            positions: positions || ["chair", "officer", "regular"],
+            positions: allRoles,
             weekly_meeting: weekly_meeting || null,
             //Owner is the user
             owner: userId,
         });
 
+        // Handle image upload if file is present
+        if (file) {
+            console.log('Uploading image');
+            const fileExtension = path.extname(file.originalname);
+            const fileName = `${newOrg._id}${fileExtension}`;
+            const imageUrl = await uploadImageToS3(file, 'orgs', fileName);
+            newOrg.org_profile_image = imageUrl;
+        } else {
+            // Set default image if no file uploaded
+            newOrg.org_profile_image = '/Logo.svg';
+        }
+
         const newMember = new OrgMember({
             //add new member to the org
             org_id: newOrg._id,
             user_id: userId,
-            status: 0,
+            role: 'owner', // Set the creator as owner
+            status: 'active',
+            assignedBy: userId
         });
 
         await newMember.save();
@@ -181,9 +313,9 @@ router.post("/create-org", verifyToken, async (req, res) => {
             });
     }
 });
-
-router.post("/edit-org", verifyToken, async (req, res) => {
-    const { Org } = getModels(req, "Org");
+//add org perms
+router.post("/edit-org", verifyToken, upload.single('image'), handleMulterError, async (req, res) => {
+    const { Org, Form } = getModels(req, "Org", "Form");
     try {
         const {
             orgId,
@@ -192,8 +324,11 @@ router.post("/edit-org", verifyToken, async (req, res) => {
             positions,
             weekly_meeting,
             org_name,
+            requireApprovalForJoin,
+            memberForm,
         } = req.body;
         const userId = req.user?.userId;
+        const file = req.file;
 
         // Validate that the essential fields are present
         if (!orgId) {
@@ -260,12 +395,46 @@ router.post("/edit-org", verifyToken, async (req, res) => {
             org.org_description = cleanOrgDescription;
         }
 
-        // Update other fields only if they are provided
-        if (org_profile_image) {
+        // Handle image upload if file is present
+        if (file) {
+            console.log('Uploading new image');
+            const fileExtension = path.extname(file.originalname);
+            const fileName = `${org._id}${fileExtension}`;
+            const imageUrl = await uploadImageToS3(file, 'orgs', fileName);
+            org.org_profile_image = imageUrl;
+        } else if (org_profile_image) {
             org.org_profile_image = org_profile_image;
         }
+
+        // Update other fields only if they are provided
         if (positions) {
-            org.positions = positions;
+            try {
+                // Parse positions if it's a JSON string
+                const parsedPositions = typeof positions === 'string' ? JSON.parse(positions) : positions;
+                org.positions = parsedPositions;
+            } catch (error) {
+                console.error('Error parsing positions:', error);
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid positions data format"
+                });
+            }
+        }
+        if (requireApprovalForJoin) {
+            org.requireApprovalForJoin = requireApprovalForJoin;
+        }
+        if (memberForm) {
+            console.log(memberForm);
+            if(org.memberForm) {
+                const formObject = JSON.parse(memberForm);
+                await Form.findByIdAndUpdate(org.memberForm, formObject);
+            } else {
+                const formObject = JSON.parse(memberForm);
+                formObject.createdBy = userId;
+                const newForm = new Form(formObject);
+                await newForm.save();
+                org.memberForm = newForm._id;
+            }
         }
         if (weekly_meeting) {
             org.weekly_meeting = weekly_meeting;
@@ -290,6 +459,7 @@ router.post("/edit-org", verifyToken, async (req, res) => {
     }
 });
 
+// Candidate: no direct frontend references found; verify before deprecating
 router.delete("/delete-org/:orgId", verifyToken, async (req, res) => {
     const { Org, Follower, OrgMember } = getModels(req, "Org", "Follower", "OrgMember");
     try {
@@ -330,6 +500,7 @@ router.delete("/delete-org/:orgId", verifyToken, async (req, res) => {
     }
 });
 
+// UNUSED: No current frontend references; consider deprecating in favor of a future follow system
 router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
     const { Org, Follower } = getModels(req, "Org", "Follower");
     try {
@@ -376,6 +547,7 @@ router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
     }
 });
 
+// UNUSED: No current frontend references; consider deprecating in favor of a future follow system
 router.post("/unfollow-org/:orgId", verifyToken, async (req, res) => {
     const { Org, Follower } = getModels(req, "Org", "Follower");
     try {
@@ -438,6 +610,7 @@ router.get("/get-followed-orgs", verifyToken, async (req, res) => {
     }
 });
 
+// UNUSED: Replaced by /org-roles/:orgId/members
 router.get("/get-org-members/:orgId", verifyToken, async (req, res) => {
     const { Org, OrgMember } = getModels(req, "Org", "OrgMember");
     try {
@@ -478,158 +651,106 @@ router.get("/get-org-members/:orgId", verifyToken, async (req, res) => {
     }
 });
 
-router.post("/add-org-member/:orgId", verifyToken, async (req, res) => {
-    const { Org, OrgMember } = getModels(req, "Org", "OrgMember");
+// Candidate: No direct frontend references found; verify if still needed with new membership flows
+router.post("/:orgId/apply-to-org", verifyToken, async (req, res) => {
+    const { Org, OrgMemberApplication, FormResponse, Form, User, Notification, OrgMember } = getModels(req, "Org", "OrgMemberApplication", "FormResponse", "Form", "User", "Notification", "OrgMember");
     try {
         const { orgId } = req.params;
         const userId = req.user.userId;
-        const { user_id, role } = req.body;
+        const { formResponse } = req.body;
 
         const org = await Org.findById(orgId);
-
-        //Check if the org exists
-        if (!org) {
-            return res.status(404).json({ success: false, message: "Org not found" });
+        if(!org) return res.status(404).json({success: false, message: "Org not found"});
+        
+        if(org.requireApprovalForJoin) {
+            const existingApplication = await OrgMemberApplication.findOne({org_id: orgId, user_id: userId, status: "pending"});
+            if(existingApplication) return res.status(400).json({success: false, message: "You have already applied to this org"});
+        } else {
+            const newMember = new OrgMember({
+                org_id: orgId,
+                user_id: userId,
+                role: 'member',
+            });
+            await newMember.save();
+            res.status(200).json({success: true, message: "You are now a member of this org"});
+            return;
+        };
+        
+        if(org.memberForm) {
+            const form = await Form.findById(org.memberForm);
+            if(!form) return res.status(404).json({success: false, message: "Form not found"});
+            
+            // Create answers array in the same order as questions
+            const answers = form.questions.map(question => {
+                const response = formResponse.find(r => r.referenceId === question._id.toString());
+                return response ? response.answer : null;
+            });
+            
+            const formResponseObject = await FormResponse.create({
+                form: form._id,
+                formSnapshot: form.toObject(), // Store the complete form object
+                submittedBy: userId,
+                answers: answers,
+                submittedAt: new Date(),
+                lastModifiedAt: new Date(),
+            });
+            if(!formResponseObject) return res.status(400).json({success: false, message: "Error submitting form"});
+            //check if the user has already applied to the org
+            //create a new application
+            const newApplication = new OrgMemberApplication({
+                org_id: orgId,
+                user_id: userId,
+                formResponse: formResponseObject._id,
+            });
+            await newApplication.save();
+        } else {
+            const newApplication = new OrgMemberApplication({
+                org_id: orgId,
+                user_id: userId,
+            });
+            await newApplication.save();
         }
 
-        // Check if the user is the owner of the org
-        if (org.owner.toString() !== userId) {
-            return res
-                .status(400)
-                .json({
-                    success: false,
-                    message: "You are not authorized to add members to this org",
-                });
-        }
-
-        // Check if the user to be added is already a member
-        const member = await OrgMember.findOne({ org_id: orgId, user_id: user_id });
-        if (member) {
-            return res
-                .status(400)
-                .json({
-                    success: false,
-                    message: "User is already a member of this org",
-                });
-        }
-
-        const newMember = new OrgMember({
-            org_id: orgId,
-            user_id,
-            role,
+        // Send notification to org admins about the new member
+        const orgAdmins = await OrgMember.find({ 
+            org_id: orgId, 
+            role: { $in: ['owner', 'admin'] } 
         });
-        await newMember.save();
+        console.log('orgAdmins', orgAdmins);
 
-        console.log(`POST: /add-org-member`);
-        res.json({ success: true, message: "Member added successfully" });
+        const user = await User.findById(userId);
+        
+        if (orgAdmins.length > 0) {
+            const notificationService = NotificationService.withModels({ Notification });
+            const recipients = orgAdmins.map(admin => ({
+                id: admin.user_id,
+                model: 'User'
+            }));
+            
+            await notificationService.createBatchTemplateNotification(recipients, 'org_member_applied', {
+                senderName: user.name || user.username,
+                orgName: org.org_name,
+                sender: user._id,
+            });
+            
+            // Legacy direct notification path removed; handled via template above
+        }
+        res.status(200).json({success: true, message: "Application submitted successfully"});
     } catch (error) {
-        console.log(`POST: /add-org-member failed`, error);
+        console.log(`POST: /apply-to-org failed`, error);
         return res
             .status(500)
             .json({
                 success: false,
-                message: "Error adding member",
+                message: "Error applying to org",
                 error: error.message,
             });
     }
 });
 
-router.delete("/remove-org-member/:orgId", verifyToken, async (req, res) => {
-    const { Org, OrgMember } = getModels(req, "Org", "OrgMember");
-    try {
-        const { orgId } = req.params;
-        const userId = req.user.userId;
-        const { user_id } = req.body;
 
-        const org = await Org.findById(orgId);
+// UNUSED: Superseded by DELETE /org-roles/:orgId/members/:userId
 
-        //Check if the org exists
-        if (!org) {
-            return res.status(404).json({ success: false, message: "Org not found" });
-        }
-
-        // Check if the user is the owner of the org
-        if (org.owner.toString() !== userId) {
-            return res
-                .status(400)
-                .json({
-                    success: false,
-                    message: "You are not authorized to remove members from this org",
-                });
-        }
-
-        // Check if the user to be removed is a member
-        const member = await OrgMember.findOne({ org_id: orgId, user_id });
-        if (!member) {
-            return res
-                .status(400)
-                .json({ success: false, message: "User is not a member of this org" });
-        }
-
-        await OrgMember.findByIdAndDelete(member._id);
-
-        console.log(`DELETE: /remove-org-member`);
-        res.json({ success: true, message: "Member removed successfully" });
-    } catch (error) {
-        console.log(`DELETE: /remove-org-member failed`, error);
-        return res
-            .status(500)
-            .json({
-                success: false,
-                message: "Error removing member",
-                error: error.message,
-            });
-    }
-});
-
-router.post("/update-org-member/:orgId", verifyToken, async (req, res) => {
-    const { Org, OrgMember } = getModels(req, "Org", "Member");
-    try {
-        const { orgId } = req.params;
-        const userId = req.user.userId;
-        const { user_id, role } = req.body;
-
-        const org = await Org.findById(orgId);
-
-        //Check if the org exists
-        if (!org) {
-            return res.status(404).json({ success: false, message: "Org not found" });
-        }
-
-        // Check if the user is the owner of the org
-        if (org.owner.toString() !== userId) {
-            return res
-                .status(400)
-                .json({
-                    success: false,
-                    message: "You are not authorized to update members of this org",
-                });
-        }
-
-        // Check if the user to be updated is a member
-        const member = await OrgMember.findOne({ org_id: orgId, user_id });
-        if (!member) {
-            return res
-                .status(400)
-                .json({ success: false, message: "User is not a member of this org" });
-        }
-
-        member.role = role;
-        await member.save();
-
-        console.log(`POST: /update-org-member`);
-        res.json({ success: true, message: "Member updated successfully" });
-    } catch (error) {
-        console.log(`POST: /update-org-member failed`, error);
-        return res
-            .status(500)
-            .json({
-                success: false,
-                message: "Error updating member",
-                error: error.message,
-            });
-    }
-});
 
 router.post("/check-org-name", verifyToken, async (req, res) => {
     const { Org } = getModels(req, "Org");
@@ -673,8 +794,9 @@ router.get('/get-meetings/:name', verifyToken, async(req,res)=>{
     const { Org, Event } = getModels(req, "Org", "Event");
     const name = req.params.name;
     try {
-        const org = await Org.find({name:name});
-        const events = await Event.find({hosting: org._id, type: "meeting"});
+        const org = await Org.findOne({ org_name: name });
+        if(!org) return res.status(404).json({ success: false, message: 'Org not found' });
+        const events = await Event.find({ hostingId: org._id, hostingType: 'Org', type: "meeting" });
         console.log(`GET: /get-meetings`);
         res.json({
             success: true,
@@ -693,6 +815,7 @@ router.get('/get-meetings/:name', verifyToken, async(req,res)=>{
     }
 });
 
+// UNUSED/DEV: Sample email sender route
 router.post('/send-email', async (req,res) => {
     try{
         
@@ -714,6 +837,157 @@ router.post('/send-email', async (req,res) => {
         res.status(500).json({ success: false, message: 'Error sending email', error: error.message });
     }
 });
+
+router.get('/get-orgs', async (req, res) => {
+    try{
+        const { Org } = getModels(req, 'Org');
+        const orgs = await Org.find();
+        console.log('GET: /get-orgs successful')
+        res.status(200).json({
+            success:true,
+            orgs:orgs
+        })
+    } catch (error){
+        console.log('GET: /get-orgs failed', error);
+        res.status(500).json({
+            sucess:false,
+            
+        })
+    }
+});
+
+router.get('/:orgId/events', verifyToken, async (req, res) => {
+    const { Event } = getModels(req, 'Event');
+    try {
+        const { orgId } = req.params;
+        const { page = 1, limit = 15 } = req.query;
+        
+        const skip = (page - 1) * limit;
+        
+        // Find events hosted by this organization
+        const events = await Event.find({
+            hostingId: orgId,
+            hostingType: 'Org',
+            start_time: { $gte: new Date() },
+            status: { $in: ['approved', 'not-applicable'] },
+            isDeleted: false
+        })
+        .sort({ start_time: 1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('hostingId');
+
+        console.log(events);
+        
+        const totalEvents = await Event.countDocuments({
+            hostingId: orgId,
+            hostingType: 'Org',
+            start_time: { $gte: new Date() },
+            status: { $in: ['approved', 'not-applicable'] },
+            isDeleted: false
+        });
+        
+        console.log(`GET: /${orgId}/events`);
+        res.json({
+            success: true,
+            message: "Org events retrieved successfully",
+            events,
+            hasMore: events.length === parseInt(limit),
+            total: totalEvents
+        });
+    } catch (error) {
+        console.log(`GET: /${req.params.orgId}/events failed`, error);
+        return res.status(500).json({
+            success: false,
+            message: "Error retrieving org events",
+            error: error.message,
+        });
+    }
+});
+
+router.post('/:orgId/create-member-form', verifyToken, requireMemberManagement(), async (req, res) => {
+    const { Org, Form } = getModels(req, 'Org', 'Form');
+    const { form, orgId } = req.body;
+    try{
+        const newForm = new Form(form);
+        await newForm.save();
+        const org = await Org.findOneAndUpdate({_id: orgId}, {$set: {memberForm: newForm._id}});
+        if(!org) return res.status(404);
+        console.log('POST: /create-member-form successful');
+        return res.status(200).json({success:true, message: "Form created"});
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+router.post('/:orgId/edit-member-form', verifyToken, requireMemberManagement(), async (req, res) => {
+    const { Org, Form } = getModels(req, 'Org', 'Form');
+    const { formId, form } = req.body;
+    try{
+        const form = await Form.findByIdAndUpdate(formId, form);
+        if(!form) return res.status(404);      
+        console.log('POST: /edit-member-form successful');
+        return res.status(200).json({success:true, message: "Form updated"});
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+})
+
+// Update approval settings for approval groups
+router.post('/:orgId/approval-settings', verifyToken, requireMemberManagement(), async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId } = req.params;
+    const { approvalSettings } = req.body;
+    
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        // Check if this is an approval group
+        if (org.approvalSettings.type !== 'approval_group') {
+            return res.status(400).json({
+                success: false,
+                message: 'This organization is not an approval group'
+            });
+        }
+
+        // Update approval settings
+        org.approvalSettings = {
+            ...org.approvalSettings,
+            ...approvalSettings
+        };
+
+        await org.save();
+
+        console.log('POST: /approval-settings successful');
+        return res.status(200).json({
+            success: true,
+            message: 'Approval settings updated successfully',
+            data: org.approvalSettings
+        });
+    } catch (error) {
+        console.log('POST: /approval-settings failed', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error updating approval settings',
+            error: error.message
+        });
+    }
+})
+
 
 
 module.exports = router;

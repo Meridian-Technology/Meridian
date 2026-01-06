@@ -2,6 +2,7 @@ const google = require('googleapis').google;
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const appleSignin = require('apple-signin-auth');
 const { sendDiscordMessage } = require('./discordWebookService');
 const getModels = require('./getModelService');
 const { get } = require('../schemas/badgeGrant');
@@ -49,13 +50,12 @@ async function registerUser({ username, email, password, req }) {
     const hashedPassword = await bcrypt.hash(password, 10); // Example hashing
     const user = new User({
         username,
-        email,
+        email: email.toLowerCase(),
         password: hashedPassword
     });
     await user.save();
 
-    const token = jwt.sign({ userId: user._id, roles:user.roles }, process.env.JWT_SECRET, { expiresIn: '5d' });
-    return { user, token };
+    return { user };
 }
 
 async function loginUser({ email, password, req }) {
@@ -63,13 +63,13 @@ async function loginUser({ email, password, req }) {
     //check if it is an email or username
     let user;
     if (!email.includes('@')) {
-        user = await User.findOne({ username: email })
-            .select('-googleId') // Add fields to exclude
+        user = await User.findOne({ username: email.toLowerCase() })
+            .select('-googleId -appleId -refreshToken') // Add fields to exclude
             .lean()
             .populate('clubAssociations'); 
     } else {
-        user = await User.findOne({ email })
-            .select('-googleId') // Add fields to exclude
+        user = await User.findOne({ email: email.toLowerCase() })
+            .select('-googleId -appleId -refreshToken') // Add fields to exclude
             .lean()
             .populate('clubAssociations'); 
     }
@@ -82,91 +82,141 @@ async function loginUser({ email, password, req }) {
         throw new Error('Invalid credentials');
     }
     delete user.password;
-    const token = jwt.sign({ userId: user._id, roles: user.roles }, process.env.JWT_SECRET, { expiresIn: '5d' });
-    return { user, token };
+    return { user };
 }
 function getRedirectUri(url) {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-    const path = urlObj.pathname;
-
-    // Determine the base path for redirect (either login or register)
-    const basePath = path.includes('register') ? '/register' : '/login';
-    const development = process.env.NODE_ENV === 'development';
-    const uri = development ? `http://${hostname}:3000${basePath}` : `https://${hostname}${basePath}`;
-
-    const allowedOrigins = [
-        'http://localhost:3000/login',
-        'http://localhost:3000/register',
-        'https://study-compass.com/login',
-        'https://study-compass.com/register',
-        'https://www.study-compass.com/login',
-        'https://www.study-compass.com/register',
-        'https://rpi.study-compass.com/login',
-        'https://rpi.study-compass.com/register',
-        'https://berkeley.study-compass.com/login',
-        'https://berkeley.study-compass.com/register'
-    ];
-
-    if(!allowedOrigins.includes(uri)) {
-        throw new Error(`Invalid redirect URI ${uri}`);
+    // Handle Expo proxy redirect URIs (https://auth.expo.io)
+    if (url && url.includes('auth.expo.io')) {
+        // Expo proxy redirect URIs - return as-is, Google OAuth will validate them
+        // These should be registered in Google Cloud Console as authorized redirect URIs
+        // Format: https://auth.expo.io/@<username>/<slug>
+        if (url.startsWith('https://auth.expo.io')) {
+            return url;
+        } else {
+            throw new Error(`Invalid Expo proxy redirect URI: ${url}`);
+        }
+    }
+    
+    // Handle mobile app redirect URIs (custom schemes like meridian://)
+    // Note: These require platform-specific OAuth clients in Google Cloud Console
+    if (url && (url.startsWith('meridian://') || url.startsWith('com.meridian.mobile://'))) {
+        // Mobile app redirect URIs - return as-is, Google OAuth will validate them
+        // These should be registered in Google Cloud Console as authorized redirect URIs
+        const allowedMobileUris = [
+            'meridian://auth/google',
+            'com.meridian.mobile://auth/google'
+        ];
+        
+        if (allowedMobileUris.includes(url)) {
+            return url;
+        } else {
+            throw new Error(`Invalid mobile redirect URI: ${url}`);
+        }
     }
 
-    // Return the redirect URI dynamically constructed
-    return uri;
+    // Handle web redirect URIs
+    try {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname;
+        const path = urlObj.pathname;
+
+        // Determine the base path for redirect (either login or register)
+        const basePath = path.includes('register') ? '/register' : '/login';
+        const development = process.env.NODE_ENV === 'development';
+        const uri = development ? `http://${hostname}:3000${basePath}` : `https://${hostname}${basePath}`;
+
+        const allowedOrigins = [
+            'http://localhost:3000/login',
+            'http://localhost:3000/register',
+            'https://meridian.study/login',
+            'https://meridian.study/register',
+            'https://www.meridian.study/login',
+            'https://www.meridian.study/register',
+            'https://rpi.meridian.study/login',
+            'https://rpi.meridian.study/register',
+            'https://berkeley.meridian.study/login',
+            'https://berkeley.meridian.study/register'
+        ];
+
+        if(!allowedOrigins.includes(uri)) {
+            throw new Error(`Invalid redirect URI ${uri}`);
+        }
+
+        // Return the redirect URI dynamically constructed
+        return uri;
+    } catch (error) {
+        // If URL parsing fails, it might be a malformed URL
+        throw new Error(`Invalid redirect URI format: ${url}`);
+    }
 }
 
 async function authenticateWithGoogle(code, isRegister = false, url, req) {
     const { User } = getModels(req, 'User');
 
-    if (url.startsWith('http://www.') || url.startsWith('https://www.')) {
-        www = true;
-    }
+    // Get the redirect URI (handles both web and mobile)
+    const redirectUri = getRedirectUri(url);
+    
+    console.log(`Google OAuth: Using redirect URI: ${redirectUri} (from: ${url})`);
 
+    // Create OAuth2 client with the redirect URI
     const client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
-        getRedirectUri(url)
+        redirectUri
     );
 
-    const { tokens } = await client.getToken(code);
-    client.setCredentials(tokens);
+    try {
+        const { tokens } = await client.getToken(code);
+        client.setCredentials(tokens);
 
-    const oauth2 = google.oauth2({
-        auth: client,
-        version: 'v2'
-    });
+        const oauth2 = google.oauth2({
+            auth: client,
+            version: 'v2'
+        });
 
-    const userInfo = await oauth2.userinfo.get();
-    console.log('Google user info:', userInfo.data)
-    let user = await User.findOne({ googleId: userInfo.data.id })
-        .select('-password -googleId') // Add fields to exclude
-        .lean();
+        const userInfo = await oauth2.userinfo.get();
+        console.log('Google user info:', userInfo.data);
+        
+        let user = await User.findOne({ googleId: userInfo.data.id })
+            .select('-password -googleId -refreshToken') // Add fields to exclude
+            .lean()
+            .populate('clubAssociations');
 
+        if (!user) {
+            //check if email already exists
+            user = await User.findOne({ email: userInfo.data.email });
+            if (user) {
+                throw new Error('Email already exists');
+            }
 
-    if (!user) {
-        //check if email already exists
-        user = await User.findOne({ email: userInfo.data.email });
-        if (user) {
-            throw new Error('Email already exists');
+            const randomUsername = await generateUniqueUsername(userInfo.data.email, req);
+
+            user = new User({
+                googleId: userInfo.data.id,
+                email: userInfo.data.email,
+                name: userInfo.data.name,
+                username: randomUsername, //replace this with a random username generated
+                picture: userInfo.data.picture
+            });
+            await user.save();
+            sendDiscordMessage(`New user registered`, `user ${user.username} registered`, "newUser");
+            
+            // Fetch the user again with populated fields
+            user = await User.findById(user._id)
+                .select('-password -googleId -refreshToken')
+                .lean()
+                .populate('clubAssociations');
         }
 
-        const randomUsername = await generateUniqueUsername(userInfo.data.email, req);
-
-        user = new User({
-            googleId: userInfo.data.id,
-            email: userInfo.data.email,
-            name: userInfo.data.name,
-            username: randomUsername, //replace this with a random username generated
-            picture: userInfo.data.picture
-        });
-        await user.save();
-        sendDiscordMessage(`New user registered`, `user ${user.username} registered`, "newUser");
+        return { user };
+    } catch (error) {
+        // Enhanced error logging for OAuth token exchange
+        if (error.message && error.message.includes('redirect_uri_mismatch')) {
+            console.error('Google OAuth redirect URI mismatch. Expected:', redirectUri);
+            throw new Error(`OAuth redirect URI mismatch. Please ensure '${redirectUri}' is registered in Google Cloud Console.`);
+        }
+        throw error;
     }
-
-    const jwtToken = jwt.sign({ userId: user._id, roles: user.roles }, process.env.JWT_SECRET, { expiresIn: '5d' });
-
-    return { user, token: jwtToken };
 }
 
 async function generateUniqueUsername(email, req) {
@@ -186,4 +236,95 @@ async function generateUniqueUsername(email, req) {
 
     return username;
 }
-module.exports  = { registerUser, loginUser, authenticateWithGoogle };
+
+async function authenticateWithApple(idToken, user, req) {
+    const { User } = getModels(req, 'User');
+
+    try {
+        // Verify the Apple ID token
+        const clientId = 'com.meridian.auth'; // Apple Service ID
+
+        // Verify and decode the ID token
+        // apple-signin-auth automatically fetches Apple's public keys from JWKS endpoint
+        const decodedToken = await appleSignin.verifyIdToken(idToken, {
+            audience: clientId,
+            ignoreExpiration: false,
+        });
+
+        console.log('Apple user info:', decodedToken);
+
+        // Extract user information
+        // Note: Apple only sends email/name on first sign-in. Subsequent sign-ins may not include email.
+        const appleId = decodedToken.sub; // Apple user ID
+        const email = decodedToken.email || (user && user.email) || null;
+        const name = (user && user.name) ? `${user.name.firstName || ''} ${user.name.lastName || ''}`.trim() : null;
+
+        // Find existing user by Apple ID
+        let existingUser = await User.findOne({ appleId })
+            .select('-password -googleId -appleId -refreshToken')
+            .lean()
+            .populate('clubAssociations');
+
+        if (existingUser) {
+            return { user: existingUser };
+        }
+
+        // If no user found by Apple ID, check by email (if provided)
+        if (email) {
+            existingUser = await User.findOne({ email: email.toLowerCase() });
+            if (existingUser) {
+                // Link Apple ID to existing account
+                existingUser.appleId = appleId;
+                if (name && !existingUser.name) {
+                    existingUser.name = name;
+                }
+                await existingUser.save();
+                
+                // Fetch the user again with populated fields
+                const user = await User.findById(existingUser._id)
+                    .select('-password -googleId -appleId -refreshToken')
+                    .lean()
+                    .populate('clubAssociations');
+                
+                return { user };
+            }
+        }
+
+        // Create new user
+        if (!email) {
+            throw new Error('Email is required for new user registration. Please ensure email scope is requested.');
+        }
+
+        const randomUsername = await generateUniqueUsername(email, req);
+
+        const newUser = new User({
+            appleId: appleId,
+            email: email.toLowerCase(),
+            name: name || null,
+            username: randomUsername,
+            picture: null // Apple doesn't provide profile pictures
+        });
+
+        await newUser.save();
+        sendDiscordMessage(`New user registered`, `user ${newUser.username} registered via Apple Sign In`, "newUser");
+
+        // Fetch the user again with populated fields
+        const user = await User.findById(newUser._id)
+            .select('-password -googleId -appleId -refreshToken')
+            .lean()
+            .populate('clubAssociations');
+
+        return { user };
+    } catch (error) {
+        console.error('Apple Sign In error:', error);
+        if (error.message && error.message.includes('TokenExpiredError')) {
+            throw new Error('Apple ID token has expired. Please sign in again.');
+        }
+        if (error.message && error.message.includes('JsonWebTokenError')) {
+            throw new Error('Invalid Apple ID token.');
+        }
+        throw error;
+    }
+}
+
+module.exports  = { registerUser, loginUser, authenticateWithGoogle, authenticateWithApple };

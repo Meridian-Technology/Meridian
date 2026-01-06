@@ -10,7 +10,10 @@ const ImageUpload = ({
     maxSize = 5, // in MB
     onFileClear,
     isUploading = false,
-    uploadMessage = "Maximum size: 5MB"
+    uploadMessage = "Maximum size: 5MB",
+    fontSize = 15,
+    showPrompt = true,
+    orientation = "vertical"
 }) => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [message, setMessage] = useState('');
@@ -75,40 +78,58 @@ const ImageUpload = ({
 
     return (
         <div
-            className={`file-upload ${isDragging ? 'drag-over' : ''} ${selectedFile ? 'active' : ''}`}
+            className={`file-upload image-upload ${isDragging ? 'drag-over' : ''} ${selectedFile ? 'active' : ''} ${orientation === "horizontal" ? "horizontal" : ""}`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
+            style={{ '--text-size': `${fontSize}px` }}
         >   
-            {image ? <img src={image} alt="preview" className="preview" /> : <Icon className="upload-icon" icon={isDragging? "line-md:uploading-loop" : "line-md:uploading"} />}
-
-            <h3>{selectedFile ? fileName : uploadText}</h3>
-            <input
-                type="file"
-                ref={fileInputRef}
-                id="fileInput"
-                onChange={onFileChange}
-                accept="image/*"
-                style={{ display: 'none' }}
-            />
-            {
-                selectedFile ? 
-                <div className="upload-actions">
-                    <button 
-                        className="upload-button" 
-                        onClick={handleUpload}
-                        disabled={isUploading}
-                    >
-                        {isUploading ? 'Uploading...' : 'Upload'}
-                    </button>
-                    <img src={CircleX} className="clear" onClick={handleClear}/>
-                </div>
-                :
-                <>
-                    <label htmlFor="fileInput" className="upload-button">Choose File</label>
-                    <p>{message || uploadMessage}</p>
-                </>
-            }
+            {image ? <img src={image} alt="preview" className="preview" /> : <Icon className={`upload-icon ${isDragging ? 'drag-over' : ''}`} icon="famicons:images" />}
+            <div className="text-container">
+                <h3 className="upload-text">
+                    {selectedFile ? fileName : uploadText}
+                    {
+                        selectedFile ? 
+                        ""
+                        :
+                        <>
+                            ,<br />or{" "}
+                            <label htmlFor="fileInput" className="browse">browse</label>
+                        </>
+                    }
+                </h3>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    id="fileInput"
+                    onChange={onFileChange}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                />
+                {
+                    selectedFile && showPrompt ? 
+                    <div className="upload-actions">
+                        <button
+                            className="clear-button"
+                            onClick={handleClear}
+                        >
+                            Clear
+                        </button>
+                        <button 
+                            className="upload-button" 
+                            onClick={handleUpload}
+                            disabled={isUploading}
+                        >
+                            {isUploading ? 'Uploading...' : 'Upload'}
+                        </button>
+                        {/* <img src={CircleX} className="clear" onClick={handleClear}/> */}
+                    </div>
+                    :
+                    <>
+                        <p className="upload-message">{message || uploadMessage}</p>
+                    </>
+                }
+            </div>
         </div>
     );
 };

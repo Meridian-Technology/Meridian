@@ -4,6 +4,8 @@ const { verifyToken } = require('../middlewares/verifyToken');
 const friendshipSchema = require('../schemas/friendship');
 const userSchema = require('../schemas/user');
 const getModels = require('../services/getModelService');
+const NotificationService = require('../services/notificationService');
+
 
 router.get('/user-search/:searchTerm', verifyToken, async (req, res) => {
     const { User } = getModels(req, 'User');
@@ -21,7 +23,7 @@ router.get('/user-search/:searchTerm', verifyToken, async (req, res) => {
 });
 
 router.post('/friend-request/:friendUsername', verifyToken, async (req, res) => {
-    const { User, Friendship } = getModels(req, 'User', 'Friendship');
+    const { User, Friendship, Notification } = getModels(req, 'User', 'Friendship', 'Notification');
     const { friendUsername } = req.params;
     const requester = req.user.userId;
     let friendId;
@@ -45,7 +47,17 @@ router.post('/friend-request/:friendUsername', verifyToken, async (req, res) => 
     }
 
     try {
-        await new Friendship({ requester, recipient: friendId, status: 'pending' }).save();
+        const requesterUser = await User.findById(requester);
+        const newFriendship = await new Friendship({ requester, recipient: friendId, status: 'pending' }).save();
+        const notificationService = NotificationService.withModels({ Notification });
+        console.log(requesterUser._id);
+        await notificationService.createSystemNotification(
+            friendId,
+            'User',
+            'friend_request',
+            {senderName: requesterUser.username, friendshipId: newFriendship._id, sender: requester}
+        );
+        console.log('Friend request sent to', friendId);
         res.status(201).json({ success: true, message: 'Friend request sent' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error sending friend request' });
@@ -100,6 +112,44 @@ router.get('/getFriends', verifyToken, async (req, res) => {
         res.json({ success: true, message: 'Friends found', data: friends });
     } catch (error) {
         res.json({ success: false, message: error.message });
+    }
+});
+
+router.get('/friend-requests', verifyToken, async (req, res) => {
+    const { Friendship } = getModels(req, 'Friendship');
+    const userId = req.user.userId;
+
+    try {
+        const requests = await Friendship.find({
+            recipient: userId,
+            status: 'pending'   
+        }).populate('requester');
+        res.json({
+            success: true,
+            message: 'Friend requests found',
+            data: requests
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+//unfriend
+router.post('/unfriend/:friendId', verifyToken, async (req, res) => {
+    const { Friendship } = getModels(req, 'Friendship');
+    const { friendId } = req.params;
+    const userId = req.user.userId;
+
+    try {
+        const friendship = await Friendship.findOne({ $or: [{ requester: userId, recipient: friendId }, { requester: friendId, recipient: userId }] });
+        if (!friendship) return res.status(404).json({ success: false, message: 'Friendship not found.' });
+        await Friendship.deleteOne({ _id: friendship._id });
+        res.status(200).json({ success: true, message: 'Unfriended.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 

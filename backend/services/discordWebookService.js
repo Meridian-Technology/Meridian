@@ -22,7 +22,7 @@ function sendDiscordMessage (title, message, type){
         },
         author: {
             name: 'Study Compass Tracker', // Author's name
-            icon_url: 'https://study-compass.com/Logo.png', // URL to author's avatar image
+            icon_url: 'https://meridian.study/Logo.png', // URL to author's avatar image
           },
     };
     try{

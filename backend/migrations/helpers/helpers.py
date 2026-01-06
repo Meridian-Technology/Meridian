@@ -10,7 +10,7 @@ def test_mongo_insert_and_read(delete=False):
     collection_name = 'classrooms'
 
     # MongoDB URI - make sure this is set correctly in your environment variables
-    uri = os.environ.get('MONGO_URL')
+    uri = os.environ.get('MONGO_URL_LOCAL')
     print(uri)
     # Create a MongoClient
     client = MongoClient(uri)

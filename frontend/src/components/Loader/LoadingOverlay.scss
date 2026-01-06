@@ -1,0 +1,57 @@
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    
+    &.blur {
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+    }
+    
+    .overlay-content {
+        background: var(--lighter);
+        border: 1px solid var(--lighterborder);
+        border-radius: 16px;
+        padding: 32px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        max-width: 90%;
+        max-height: 90%;
+        overflow: auto;
+        
+        // Ensure the loader content is properly centered
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+}
+
+// Animation for overlay appearance
+.loading-overlay {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .loading-overlay {
+        .overlay-content {
+            padding: 24px;
+            margin: 16px;
+        }
+    }
+}

@@ -7,6 +7,17 @@
     height:100vh;
     max-height:100vh;
     position: relative;
+
+    &.hide-header{
+        .calendar-container{
+            width:100%;
+            box-shadow: none;
+            padding:20px;
+            box-sizing: border-box;
+        }
+    }
+
+
 }
 
 .calendar-container{
@@ -45,10 +56,10 @@
     width:100%;
     height:calc(100% - 115px);
     max-height:calc(100% - 115px);
-    padding: 20px 20px 40px 20px;
+    // padding: 20px 20px 40px 20px;
     box-sizing: border-box;
 }
-.right{
+.room .right{
     display:flex;
     flex-direction: column;
     justify-content: flex-start;
@@ -77,7 +88,7 @@
     /* transform: translate(-1px,-1px); */
 }
 
-select{
+.room select{
     border-radius: 10px;
     border: 1px solid #B0AFAF;
     font-family: 'Satoshi';
@@ -93,13 +104,14 @@ select{
 
 
 ::-webkit-scrollbar {
-    width: 10px; /* or height for horizontal scrollbars */
+    width: 9px; /* or height for horizontal scrollbars */
   }
   
   /* This styles the scrollbar thumb (the moving part) */
 ::-webkit-scrollbar-thumb {
     background: var(--lightborder); /* Thumb color */
     border-radius: 10px; /* Roundness of the thumb */
+    border:2px solid var(--background);
 }
   
   /* This styles the scrollbar thumb on hover */
@@ -391,11 +403,11 @@ select{
       opacity: 0;
     }
     40%{
-        transform: scale(0.9);
+        transform: scale(0.8);
         opacity: 0.5;
     }
     100% {
-        transform: scale(0.9);
+        transform: scale(1);
         opacity: 0;
     }
   }
@@ -417,8 +429,10 @@ select{
     .content-container{
         padding:0px 10px 10px 10px;
         width:97%;
-        height: calc(100% - 80px);
-        max-height: calc(100% - 80px);
+        height: calc(100% - 20px);
+        max-height: calc(100% - 20px);
+        margin:10px;
+        height:100%;
     }
     .dot{
         height:18px;

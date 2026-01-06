@@ -1,10 +1,11 @@
 .month-event {
-    
+    --color: #FBD8D6;
+    --border-color: var(--red);
     border-radius: 3px;
     padding: 2px 5px;
-    background-color: #FBD8D6;
+    background-color: var(--color);
     transition: transform 0.3s ease-in-out;
-    border-left: 3px solid var(--red);
+    border-left: 3px solid var(--border-color);
 
 
     &:hover{

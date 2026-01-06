@@ -6,7 +6,7 @@
     position: relative;
     overflow: show;
     z-index: 1;
-    animation: glint 3s infinite linear;
+    // animation: glint 3s infinite linear;
     transition: border 0.3s ease;
     min-width:250px;
     
@@ -22,6 +22,10 @@
         left: 0;
         top: 0;
         opacity: 0;
+    }
+
+    &.red::after{
+        background-image: radial-gradient( circle farthest-corner at 10% 20%,  #F4A178 17.8%, #FFFFFF 100.2% );
     }
 
     &:hover{
@@ -83,6 +87,13 @@
         }
         h1{
             color: var(--background);
+        }
+    }
+    &.row{
+        padding: 10px 20px;
+        .info{
+            flex-direction: row;
+            gap:10px;
         }
     }
 }

@@ -127,5 +127,6 @@
     "typeindex": "cpp",
     "typeinfo": "cpp",
     "valarray": "cpp"
-  }
+  },
+  "kiroAgent.configureMCP": "Disabled"
 }

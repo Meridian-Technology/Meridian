@@ -134,6 +134,31 @@ function Review({info, visible, setInfo, onSubmit}){
                             <label htmlFor="none">None of the above</label>
                         </div>
                     </div>
+
+                    {/* RSVP Configuration Review */}
+                    {info.rsvpEnabled && (
+                        <div className="rsvp-review">
+                            <h4>RSVP Configuration:</h4>
+                            <div className="rsvp-settings-review">
+                                <div className="rsvp-setting">
+                                    <span className="label">RSVP Required:</span>
+                                    <span className="value">{info.rsvpRequired ? 'Yes' : 'No'}</span>
+                                </div>
+                                {info.rsvpDeadline && (
+                                    <div className="rsvp-setting">
+                                        <span className="label">RSVP Deadline:</span>
+                                        <span className="value">{new Date(info.rsvpDeadline).toLocaleString()}</span>
+                                    </div>
+                                )}
+                                {info.maxAttendees && (
+                                    <div className="rsvp-setting">
+                                        <span className="label">Maximum Attendees:</span>
+                                        <span className="value">{info.maxAttendees}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
             </div>
@@ -141,7 +166,7 @@ function Review({info, visible, setInfo, onSubmit}){
                 {visible && 
                     <div className={`publish ${complete && 'active'}`} onClick={complete ? onSubmit : ()=>{}}>
                         <div className="info">
-                            <h1>{pspeak || catering || info.expectedAttendance > 99 || alumni ? "request OIE approval" : "publish event"}</h1>
+                            <h1>{pspeak || catering || info.expectedAttendance > 99 || alumni ? "request approval" : "publish event"}</h1>
                         </div>
                         <div className="gradient-cover">
                             <img src={GradientButtonCover} alt="" />

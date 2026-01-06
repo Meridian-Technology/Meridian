@@ -1,0 +1,317 @@
+.event-viewer {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 200px;
+        text-align: center;
+        color: #6c757d;
+        gap: 1rem;
+
+        .spinner {
+            font-size: 2rem;
+            animation: spin 1s linear infinite;
+        }
+
+        p {
+            font-size: 1.1rem;
+            margin: 0;
+        }
+    }
+
+    .event-content {
+        width: 100%;
+        height: 100%;
+        padding: 1rem;
+        box-sizing: border-box;
+
+        .image-container {
+            width: 100%;
+            height: 200px;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+
+            .event-image {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+        }
+
+        .event-details {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e9ecef;
+
+            .back {
+                display: flex;
+                align-items: center;
+                font-family: 'OpenSauce';
+                font-weight: 600;
+                font-size: 1rem;
+                color: #6c757d;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+
+                &:hover {
+                    color: #4DAA57;
+                }
+            }
+
+            h1 {
+                font-size: 1.8rem;
+                font-weight: 700;
+                color: #2c3e50;
+                margin-bottom: 1.5rem;
+                line-height: 1.2;
+                font-family: 'OpenSauce';
+                font-weight: 900;
+            }
+
+            .col {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+
+                &.event-detail {
+                    font-size: 1rem;
+                    color: #2c3e50;
+
+                    p {
+                        margin: 0;
+                        font-weight: 500;
+                        font-size: inherit;
+                    }
+
+                    &.date {
+                        font-size: 1.1rem;
+                        font-weight: 800;
+                        font-family: 'OpenSauce';
+                    }
+
+                    &.time {
+                        font-size: 0.95rem;
+                    }
+
+                    &.location {
+                        svg {
+                            color: #4DAA57;
+                        }
+                    }
+                }
+
+                &.hosting {
+                    border-radius: 8px;
+                    margin-bottom: 1rem;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    padding: 0.75rem;
+                    background: #f8f9fa;
+
+                    &:hover {
+                        background: #e9ecef;
+                    }
+
+                    p {
+                        margin: 0;
+                        font-weight: 600;
+                        font-size: 1rem;
+                    }
+
+                    img {
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 50%;
+                        object-fit: cover;
+                    }
+
+                    .user-name {
+                        font-weight: 700;
+                        color: #2c3e50;
+                        font-size: 1rem;
+                        font-family: 'OpenSauce';
+                    }
+
+                    .level {
+                        padding: 0.2rem 0.6rem;
+                        border-radius: 16px;
+                        font-size: 0.75rem;
+                        font-weight: 600;
+
+                        &.faculty {
+                            background-color: #6D8EFA;
+                            color: white;
+                        }
+
+                        &.organization {
+                            background-color: #dc3545;
+                            color: white;
+                        }
+
+                        &.developer {
+                            background-color: #17a2b8;
+                            color: white;
+                        }
+
+                        &.student {
+                            background-color: #6c757d;
+                            color: white;
+                        }
+                    }
+                }
+
+                &.event-description {
+                    align-items: flex-start;
+                    margin-bottom: 1.5rem;
+
+                    p {
+                        margin: 0;
+                        font-size: 1rem;
+                        line-height: 1.6;
+                        color: #495057;
+                    }
+                }
+
+                &.external-link {
+                    a {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        color: #4DAA57;
+                        text-decoration: none;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        transition: all 0.3s ease;
+                        font-size: 1rem;
+
+                        &:hover {
+                            color: #45a049;
+                            transform: translateY(-1px);
+                        }
+
+                        p {
+                            margin: 0;
+                        }
+                    }
+                }
+            }
+
+            .analytics-tab {
+                margin-top: 1.5rem;
+                background: #f8f9fa;
+                border-radius: 8px;
+                overflow: hidden;
+                border: 1px solid #e9ecef;
+
+                .tab-buttons {
+                    display: flex;
+
+                    button {
+                        flex: 1;
+                        padding: 0.75rem;
+                        border: none;
+                        background: transparent;
+                        font-size: 0.9rem;
+                        font-weight: 500;
+                        color: #6c757d;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 0.5rem;
+
+                        &:hover {
+                            background: #e9ecef;
+                            color: #2c3e50;
+                        }
+
+                        &.active {
+                            background: #4DAA57;
+                            color: white;
+                        }
+
+                        &:first-child {
+                            border-right: 1px solid #e9ecef;
+                        }
+
+                        svg {
+                            font-size: 1rem;
+                        }
+                    }
+                }
+
+                .analytics-content {
+                    padding: 0;
+                }
+            }
+        }
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .event-viewer {
+        .event-content {
+            padding: 0.5rem;
+
+            .event-details {
+                padding: 1rem;
+
+                h1 {
+                    font-size: 1.5rem;
+                }
+
+                .row {
+                    &.hosting {
+                        flex-direction: column;
+                        align-items: flex-start;
+                        gap: 0.5rem;
+                    }
+                }
+
+                .analytics-tab {
+                    .tab-buttons {
+                        flex-direction: column;
+
+                        button {
+                            border-right: none;
+                            border-bottom: 1px solid #e9ecef;
+
+                            &:last-child {
+                                border-bottom: none;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

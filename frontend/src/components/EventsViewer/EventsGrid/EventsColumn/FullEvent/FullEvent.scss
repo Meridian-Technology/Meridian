@@ -5,34 +5,39 @@
     gap:20px;
     position: relative;
     background-color: var(--background);
-    border-radius: 20px;
+    border-radius: 10px;
     overflow:hidden;
     padding:20px;
     box-sizing: border-box;
+    min-height:500px;
     
     iconify-icon{
         font-size: 20px;
         color: var(--text);
     }
 
-    .image{
-        max-width: 35%;
+    .image-container{
+        width: 35%;
+        flex-shrink: 0;
         img{
-            width:100%;
+            width: 100%;
+            height: auto;
             border-radius: 10px;
             box-shadow: var(--shadow);
+            display: block;
         }
     }
     .event-content{
         flex-grow: 1;
-        padding-top:5px;
         box-sizing: border-box;
-        gap:10px;
+        gap:15px;
         display:flex;
         flex-direction: column;
         h1{
-            font-size: 25px;
-            margin-bottom:0;
+            font-size: 28px;
+            font-family: 'OpenSauce';
+            font-weight: 900;
+            margin: 0;
         }
         p{
             font-size: 15px;
@@ -40,6 +45,49 @@
             font-family: 'Inter';
         }
 
+        .event-detail{
+            border-radius: 10px;
+            align-items: center;
+            cursor: pointer;
+            &.date{
+                p{
+                    font-size:20px;
+                    font-weight: 600;
+                }
+            }
+            &.time{
+                p{
+                    font-size:16px;
+                    font-weight: 600;
+                    color: var(--lighter-text);
+                }
+                margin-bottom: 10px;
+            }
+            &.location{
+                p{
+                    font-size:18px;
+                    font-weight: 600;
+                }
+            }
+            p{
+                font-size:16px;
+            }
+            iconify-icon{
+                font-size:15px;
+            }
+        }
+        .external-link{
+            a{
+                display: flex;
+                align-items: center;
+                gap:5px;
+            }
+        }
+
+    }
+    .event-description{
+        display: flex;
+        flex-direction: column;
     }
     .gradient{
         position: absolute;
@@ -51,11 +99,11 @@
     .row.hosting{
         display: flex;
         align-items: center;
+        cursor: pointer;
         img{
             width:25px;
             height:25px;
             border-radius: 50%;
-            margin-right:5px;
         }
         .user-name{
             font-weight: 700;
@@ -83,3 +131,4 @@
         }
     }
 }
+

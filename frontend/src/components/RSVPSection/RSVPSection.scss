@@ -1,0 +1,266 @@
+.rsvp-section {
+    padding-top: 2rem;
+
+    .rsvp-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-direction: column;
+
+        h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0;
+        }
+
+        .rsvp-stats-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+
+            .rsvp-stats {
+                display: flex;
+                gap: 0.5rem;
+
+
+                .stat {
+                    text-align: center;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap:5px;
+                    
+
+                    .count {
+                        display: block;
+                        font-size: 1rem;
+                        font-weight: 700;
+                        color: var(--text);
+                    }
+
+                    .label {
+                        font-size: 0.8rem;
+                        color: var(--text-secondary);
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                }
+            }
+
+            .friends-going {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 20px;
+                color: var(--text);
+                font-size: 0.9rem;
+                font-weight: 500;
+            }
+        }
+    }
+
+    .rsvp-deadline-passed,
+    .rsvp-capacity-reached {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        font-size: 14px;
+        font-weight: 500;
+        
+        svg {
+            width: 16px;
+            height: 16px;
+        }
+    }
+    
+    .rsvp-deadline-passed {
+        background: rgba(255, 152, 0, 0.2);
+        color: #FF9800;
+    }
+    
+    .rsvp-capacity-reached {
+        background: rgba(244, 67, 54, 0.2);
+        color: #F44336;
+    }
+
+    .attendees-category {
+        margin-bottom: 1.5rem;
+
+        h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin: 0 0 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+    }
+
+    .attendees-section {
+        .attendees-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: -5px;
+            margin-bottom: 10px;
+            
+            .attendee {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 0;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 20px;
+                margin-right: -5px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                
+                &:hover {
+                    background: rgba(255, 255, 255, 0.2);
+                    transform: scale(1.05);
+                }
+                
+                img {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 50%;
+                    object-fit: cover;
+                }
+                
+                span {
+                    font-size: 14px;
+                    color: var(--text);
+                    font-weight: 500;
+                }
+            }
+            
+            .more-attendees {
+                display: flex;
+                align-items: center;
+                padding: 8px 12px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 20px;
+                font-size: 14px;
+                color: rgba(255, 255, 255, 0.7);
+                font-weight: 500;
+            }
+        }
+    }
+
+    .view-all-attendees-btn {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: var(--text);
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-bottom: 1rem;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+    }
+
+    .rsvp-button-container {
+        .rsvp-btn {
+            max-width: 200px;
+            font-size: 13px;
+            padding: 10px 10px;
+        }
+    }
+}
+
+// User Info Popup Styles
+.user-info-popup {
+    .popup-content {
+        max-width: 400px;
+        padding: 0;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .user-info-content {
+        .user-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+            .user-avatar {
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                object-fit: cover;
+                border: 3px solid rgba(255, 255, 255, 0.2);
+            }
+
+            .user-details {
+                flex: 1;
+
+                h3 {
+                    font-size: 1.2rem;
+                    font-weight: 600;
+                    color: var(--text);
+                    margin: 0 0 4px 0;
+                }
+
+                .user-username {
+                    font-size: 0.9rem;
+                    color: var(--text-secondary);
+                    margin: 0 0 4px 0;
+                }
+
+                .user-email {
+                    font-size: 0.8rem;
+                    color: var(--text-secondary);
+                    margin: 0;
+                    opacity: 0.8;
+                }
+            }
+        }
+
+        .user-rsvp-status {
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: center;
+
+            .status-badge {
+                padding: 6px 16px;
+                border-radius: 20px;
+                font-size: 0.9rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+
+                &.going {
+                    background: rgba(76, 175, 80, 0.2);
+                    color: #4CAF50;
+                    border: 1px solid rgba(76, 175, 80, 0.3);
+                }
+
+                &.maybe {
+                    background: rgba(255, 152, 0, 0.2);
+                    color: #FF9800;
+                    border: 1px solid rgba(255, 152, 0, 0.3);
+                }
+
+                &.not-going {
+                    background: rgba(244, 67, 54, 0.2);
+                    color: #F44336;
+                    border: 1px solid rgba(244, 67, 54, 0.3);
+                }
+            }
+        }
+    }
+}

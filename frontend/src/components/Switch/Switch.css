@@ -36,6 +36,8 @@
     border-radius: var(--switch-inner-bradius);
     z-index: 1;
     transition: var(--transition);
+    background-color: transparent;
+    color: var(--text);
 }
 
 .switch-option p{

@@ -1,0 +1,15 @@
+.xml-viewer {
+  width: 100%;
+  overflow: auto;
+  
+  pre {
+    margin: 0 !important;
+    background: transparent !important;
+  }
+  
+  code {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+} 

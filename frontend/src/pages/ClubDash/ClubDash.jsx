@@ -2,15 +2,33 @@ import React, { useEffect, useState} from 'react';
 import './ClubDash.scss';
 import useAuth from '../../hooks/useAuth';
 import { useNavigate, useParams } from 'react-router-dom';
-import Dashboard from '../../assets/Icons/Dashboard.svg';
 import logo from '../../assets/red_logo.svg';
 import { getAllEvents } from '../../components/EventsViewer/EventHelpers';
 import { useNotification } from '../../NotificationContext';
 import {Icon} from '@iconify-icon/react';  
 import Dash from './Dash/Dash';
 import Members from './Members/Members';
+import Roles from './Roles/Roles';
+import Testing from './Testing/Testing';
+
 import {useFetch} from '../../hooks/useFetch';
-import { use } from 'react';
+import OrgDropdown from './OrgDropdown/OrgDropdown';
+import Dashboard from '../../components/Dashboard/Dashboard';
+import orgLogo from '../../assets/Brand Image/ATLAS.svg';
+import apiRequest from '../../utils/postRequest';
+import { useLocation } from 'react-router-dom';
+import EventsPanel from './EventsPanel/EventsPanel';
+import EventsManagement from './EventsManagement/EventsManagement';
+import ClubAnnouncements from './ClubAnnouncements/ClubAnnouncements';
+import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
+import { 
+    GeneralSettings, 
+    AppearanceSettings, 
+    RolesSettings, 
+    DangerZone,
+    MemberSettings
+} from './OrgSettings/components';
+import VerificationRequest from './Settings/VerificationRequest/VerificationRequest';
 
 function ClubDash(){
     const [clubId, setClubId] = useState(useParams().id);
@@ -23,18 +41,19 @@ function ClubDash(){
     const [currentPage, setCurrentPage] = useState('dash');
     const { addNotification } = useNotification();
     const [showDrop, setShowDrop] = useState(false);
+    const [userPermissions, setUserPermissions] = useState({
+        canManageRoles: false,
+        canManageMembers: false,
+        canViewAnalytics: false
+    });
+    const [permissionsChecked, setPermissionsChecked] = useState(false);
 
-    const [loadingIn, setLoadingIn] = useState(true);
-    const orgData = useFetch(`/get-org-by-name/${clubId}`);
+    const orgData = useFetch(`/get-org-by-name/${clubId}?exhaustive=true`);
     const meetings = useFetch(`/get-meetings/${clubId}`);
 
-    useEffect(()=>{
-        if(orgData){
-            setTimeout(() => {
-                setLoadingIn(false);
-            }, 1000);
-        }
-    },[orgData]);
+    const location = useLocation();
+
+
     useEffect(()=>{
         if(isAuthenticating){
             return;
@@ -58,10 +77,63 @@ function ClubDash(){
             }
             if(orgData.data){
                 console.log(orgData.data);
+                // Only check permissions once when org data is loaded
+                if (!permissionsChecked && orgData.data && user) {
+                    checkUserPermissions();
+                }
             }
         }
     }
-    ,[orgData]);
+    ,[orgData, user, permissionsChecked]);
+
+    const checkUserPermissions = async () => {
+        if (!orgData.data || !user || permissionsChecked) return;
+
+        try {
+            const org = orgData.data.org.overview;
+            
+            // Check if user is the owner
+            const isOwner = org.owner === user._id;
+            
+            if (isOwner) {
+                setUserPermissions({
+                    canManageRoles: true,
+                    canManageMembers: true,
+                    canViewAnalytics: true
+                });
+                setPermissionsChecked(true);
+                return;
+            }
+
+            // Get user's role in this organization
+            const response = await apiRequest(`/org-roles/${org._id}/members`, {}, {
+                method: 'GET'
+            });
+
+            if (response.success) {
+                const userMember = response.members.find(member => 
+                    member.user_id._id === user._id
+                );
+
+                if (userMember) {
+                    const userRoleData = org.positions.find(role => role.name === userMember.role);
+                    
+                    if (userRoleData) {
+                        setUserPermissions({
+                            canManageRoles: userRoleData.canManageRoles || userRoleData.permissions.includes('manage_roles') || userRoleData.permissions.includes('all'),
+                            canManageMembers: userRoleData.canManageMembers || userRoleData.permissions.includes('manage_members') || userRoleData.permissions.includes('all'),
+                            canViewAnalytics: userRoleData.canViewAnalytics || userRoleData.permissions.includes('view_analytics') || userRoleData.permissions.includes('all')
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error checking user permissions:', error);
+        } finally {
+            setPermissionsChecked(true);
+        }
+    };
+    
 
     useEffect(()=>{ 
         if(meetings){
@@ -104,98 +176,120 @@ function ClubDash(){
         }
     }
 
-    const openMembers = () =>{
-        setCurrentPage('members');
+    function openMembers(){
+        const newPath = `/club-dashboard/${clubId}?page=2`;
+        navigate(newPath);
     }
 
     const onOrgChange = (org) => {
-        setLoadingIn(true);
-        setClubId(org.org_name);
-        setTimeout(() => {
-            setLoadingIn(false);
-        }, 500);
+        const newPath = `/club-dashboard/${org.org_name}`;
+        navigate(newPath);
     }
 
-    if(orgData.loading || loadingIn){
+    const baseMenuItems = [
+        { 
+            label: 'Dashboard', 
+            icon: 'ic:round-dashboard', 
+            key: 'dash',
+            element: <Dash expandedClass={expandedClass} openMembers={openMembers} clubName={clubId} meetings={meetings.data} org={orgData.data}/>
+        },
+        { 
+            label: 'Events', 
+            icon: 'mingcute:calendar-fill', 
+            key: 'events',
+            element: <EventsManagement expandedClass={expandedClass} orgId={clubId}/>
+        },
+        { 
+            label: 'Announcements', 
+            icon: 'mdi:message-text', 
+            key: 'announcements',
+            element: <ClubAnnouncements orgData={orgData} expandedClass={expandedClass}/>
+        },
+        { 
+            label: 'Members', 
+            icon: 'mdi:account-group', 
+            key: 'members', 
+            requiresPermission: 'canManageMembers',
+            element: <Members expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
+        },
+        // { 
+        //     label: 'Roles', 
+        //     icon: 'mdi:shield-account', 
+        //     key: 'roles', 
+        //     requiresPermission: 'canManageRoles',
+        //     element: <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
+        // },
+        { 
+            label: 'Settings', 
+            icon: 'mdi:cog', 
+            key: 'settings',
+            subItems: [
+                {
+                    label: 'General',
+                    icon: 'mdi:cog',
+                    element: <GeneralSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                },
+                {
+                    label: 'Appearance',
+                    icon: 'mdi:palette',
+                    element: <AppearanceSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                },
+                {
+                    label: 'Roles & Permissions',
+                    icon: 'mdi:shield-account',
+                    element:  <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview} refetch={orgData.refetch}/>
+                },
+                {
+                    label: 'Membership',
+                    icon: 'mdi:account-group',
+                    element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                },
+                {
+                    label: 'Verification Requests',
+                    icon: 'mdi:shield-check',
+                    element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                },
+                {
+                    label: 'Danger Zone',
+                    icon: 'mdi:alert-circle',
+                    element: <DangerZone org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                },
+            ]
+        },
+        // { 
+        //     label: 'Testing', 
+        //     icon: 'mdi:test-tube', 
+        //     key: 'testing',
+        //     element: <Testing expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
+        // },
+    ];
+    // Filter menu items based on user permissions
+    const menuItems = baseMenuItems.filter(item => {
+        if (!item.requiresPermission) return true;
+        return userPermissions[item.requiresPermission];
+    });
+
+    
+
+    if(orgData.loading){
         return (
-            <div className={`club-dash loading`}>
-                <div className={`dash-left`}>
-                    <div className="logo" onClick={()=>setShowDrop(!showDrop)}>
-                        <h1>asdf</h1>
-                        <Icon icon={`${showDrop ? "ic:round-keyboard-arrow-up" : "ic:round-keyboard-arrow-down"}`} width="24" height="24"  />
-                    </div>
-                    <nav className="nav">
-                        <ul>
-                            <li className= {`${currentPage === 'dash' ? 'selected' : ''}`} onClick={()=>setCurrentPage("dash")}>
-                                <Icon icon="ic:round-dashboard" />
-                                <p>Dashboard</p>
-                            </li>
-                            <li className={`${currentPage === "members" ? 'selected' : ''}`}  onClick = {()=>setCurrentPage('members')}>
-                                <img src={Dashboard} alt="" />
-                                <p>Members</p>
-                            </li>
-                        </ul>
-                    </nav>
-                </div>
-                <div className={`dash-right ${expandedClass}`}>
-                </div>
-            </div>
+            <div></div>
         );
     }
 
+    
+
     return (
-        <div className={`club-dash ${loadingIn && "loading"}`}>
-            <div className={`dash-left ${expanded && "hidden"}`}>
-                <div className="logo" onClick={()=>setShowDrop(!showDrop)}>
-                    <img src={orgData.data.org.overview.org_profile_image} alt="" />
-                    <h1>{orgData.data.org.overview.org_name}</h1>
-                    <Icon icon={`${showDrop ? "ic:round-keyboard-arrow-up" : "ic:round-keyboard-arrow-down"}`} width="24" height="24"  />
-                    {
-                        showDrop && 
-                        <div className={`dropdown`} >
-                            {
-                                user && user.clubAssociations && user.clubAssociations.map((org, index)=>{
-                                    return(
-                                        <div className={`drop-option ${org.org_name === orgData.data.org.overview.org_name && "selected"}`} key={org._id} onClick={()=>onOrgChange(org)}>
-                                            <img src={org.org_profile_image} alt="" />
-                                            <p>{org.org_name}</p>
-                                        </div>
-                                    )
-                                })
-                            }
-                            <button className="create-org">
-                                <p>new organization</p>
-                            </button>
-                        </div>
-                    }
-                </div>
-                <nav className="nav">
-                    <ul>
-                        <li className= {`${currentPage === 'dash' ? 'selected' : ''}`} onClick={()=>setCurrentPage("dash")}>
-                            <Icon icon="ic:round-dashboard" />
-                            <p>Dashboard</p>
-                        </li>
-                        <li className={`${currentPage === "members" ? 'selected' : ''}`}  onClick = {()=>setCurrentPage('members')}>
-                            <img src={Dashboard} alt="" />
-                            <p>Members</p>
-                        </li>
-                    </ul>
-                </nav>
-            </div>
-            <div className={`dash-right ${expandedClass}`}>
-                {
-                    currentPage === "dash" &&
-                    <Dash expandedClass={expandedClass} openMembers={openMembers} clubName={clubId} meetings={meetings.data}/> 
-                }
-                {
-                    currentPage === 'members' && 
-                    <Members expandedClass = {expandedClass} people={orgData.data.org.members} positions={orgData.data.org.overview.positions}/>
-                }
-                <div className={`expand`} onClick={onExpand}>
-                    <Icon icon="material-symbols:expand-content-rounded" />
-                </div>
-            </div>
-        </div>
+        <Dashboard 
+        menuItems={menuItems} 
+        additionalClass='club-dash' 
+        middleItem={<OrgDropdown showDrop={showDrop} setShowDrop={setShowDrop} user={user} currentOrgName={clubId} onOrgChange={onOrgChange}/>} 
+        logo={orgLogo} 
+        secondaryColor="#EDF6EE" 
+        primaryColor="#4DAA57"
+        enableSubSidebar={true}
+        >
+        </Dashboard>
     )
 }
 

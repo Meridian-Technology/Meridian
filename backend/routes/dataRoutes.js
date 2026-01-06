@@ -16,6 +16,72 @@ const getModels = require('../services/getModelService');
 
 const router = express.Router();
 
+
+// Route to get featured content (rooms and events) for explore screen
+router.get('/featured-all', async (req, res) => {
+    try {
+        const { Classroom, Event } = getModels(req, 'Classroom', 'Event');
+        
+        // Get 5 random rooms
+        const rooms = await Classroom.aggregate([
+            { $sample: { size: 5 } },
+            {
+                $project: {
+                    _id: 1,
+                    name: 1,
+                    building: 1,
+                    floor: 1,
+                    capacity: 1,
+                    image: 1,
+                    attributes: 1,
+                    average_rating: 1,
+                    number_of_ratings: 1
+                }
+            }
+        ]);
+
+        // Get 5 random events
+        //prioritize events that have an image
+        //no past events, choose from events in the next 2 weeks
+        const events = await Event.aggregate([
+            { $match: { start_time: { $gte: new Date(), $lte: new Date(Date.now() + 2 * 7 * 24 * 60 * 60 * 1000) } }, },
+            { $sample: { size: 5 } },
+            {
+                $project: {
+                    _id: 1,
+                    name: 1,
+                    description: 1,
+                    start_time: 1,
+                    end_time: 1,
+                    location: 1,
+                    image: 1,
+                    type: 1,
+                    rsvp_count: 1,
+                    max_capacity: 1
+                }
+            }
+        ]);
+
+        console.log(`GET: /featured-all - Returning ${rooms.length} rooms and ${events.length} events`);
+        
+        res.json({
+            success: true,
+            message: "Featured content retrieved",
+            data: {
+                rooms: rooms,
+                events: events
+            }
+        });
+    } catch (error) {
+        console.error('Error retrieving featured content:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error retrieving featured content', 
+            error: error.message 
+        });
+    }
+});
+
 // Route to get a specific classroom by name
 router.get('/getroom/:id', async (req, res) => {
     const { Classroom, Schedule } = getModels(req, 'Classroom', 'Schedule');
@@ -69,6 +135,153 @@ router.get('/getrooms', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error fetching room names', error: error.message });
     }
 });
+
+// Route to get top rated rooms (optimized for initial load)
+router.get('/top-rated-rooms', async (req, res) => {
+    const { Classroom, Schedule } = getModels(req, 'Classroom', 'Schedule');
+    const { limit = 10 } = req.query;
+
+    try {
+        // Fetch exactly the number of top rated rooms needed, sorted by rating
+        const topRooms = await Classroom.find({
+            average_rating: { $exists: true, $ne: null },
+            number_of_ratings: { $gt: 0 }
+        })
+        .sort({ 
+            average_rating: -1,  // Highest rating first
+            number_of_ratings: -1 // More ratings as tiebreaker
+        })
+        .limit(parseInt(limit))
+        .select('_id name image building floor capacity attributes average_rating number_of_ratings')
+        .lean();
+
+        // Get room IDs to fetch schedules
+        const roomIds = topRooms.map(room => room._id);
+
+        // Batch fetch schedules for these rooms using getbatch-new logic
+        const schedules = await Schedule.find({ 
+            classroom_id: { $in: roomIds } 
+        })
+        .populate('classroom_id')
+        .lean();
+
+        // Combine rooms with their schedules
+        const roomsWithSchedules = topRooms.map(room => {
+            const schedule = schedules.find(s => 
+                s.classroom_id && s.classroom_id._id.toString() === room._id.toString()
+            );
+            return {
+                id: room._id.toString(),
+                name: room.name || 'Unknown Room',
+                image: room.image || null,
+                building: room.building || '',
+                floor: room.floor || '',
+                capacity: room.capacity || 0,
+                attributes: room.attributes || [],
+                average_rating: room.average_rating || 0,
+                number_of_ratings: room.number_of_ratings || 0,
+                schedule: schedule ? schedule.weekly_schedule : null
+            };
+        });
+
+        console.log(`GET: /top-rated-rooms - Returning ${roomsWithSchedules.length} top rated rooms`);
+        
+        res.json({ 
+            success: true, 
+            message: "Top rated rooms fetched", 
+            data: roomsWithSchedules
+        });
+    } catch (error) {
+        console.error('Error fetching top rated rooms:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error fetching top rated rooms', 
+            error: error.message 
+        });
+    }
+});
+
+//route to calculate the number of classes in total
+router.get('/total-classes', async (req, res) => {
+    const { Schedule } = getModels(req, 'Schedule');
+    try{
+        const schedules = await Schedule.find({});
+        const uniqueClassNames = new Set();
+        
+        schedules.forEach(schedule => {
+            Object.keys(schedule.weekly_schedule).forEach(day => {
+                schedule.weekly_schedule[day].forEach(classEntry => {
+                    if (classEntry.class_name) {
+                        uniqueClassNames.add(classEntry.class_name);
+                    }
+                });
+            });
+        });
+        
+        const totalUniqueClasses = uniqueClassNames.size;
+        res.json({ success: true, message: "Total unique classes fetched", data: totalUniqueClasses });
+    } catch(error){
+        res.status(500).json({ success: false, message: "Error fetching total classes", error: error.message });
+    }
+});
+
+
+// Route to get all currently free rooms with pagination support
+router.get('/free-rooms', async (req, res) => {
+    const { Schedule, Classroom } = getModels(req, 'Schedule', 'Classroom');
+    
+    try {
+        const currentTime = new Date();
+        const days = ['X', 'M', 'T', 'W', 'R', 'F', 'X']; // Sunday=0, Monday=1, etc.
+        const day = days[currentTime.getDay()];
+        const hour = currentTime.getHours();
+        const minute = currentTime.getMinutes();
+        const time = hour * 60 + minute; // Convert to minutes since midnight
+        
+        let query;
+        console.log(day);
+        
+        // If it's weekend (Saturday or Sunday), return all rooms
+        if (day === 'X') {
+            query = {};
+        } else {
+            // Find rooms that don't have a class scheduled right now
+            query = {
+                [`weekly_schedule.${day}`]: {
+                    $not: {
+                        $elemMatch: { 
+                            start_time: { $lt: time }, 
+                            end_time: { $gt: time } 
+                        }
+                    }
+                }
+            };
+        }
+
+        // Get all free room IDs
+        const freeSchedules = await Schedule.find(query);
+        const freeRoomIds = freeSchedules.map(schedule => schedule.classroom_id);
+        
+        console.log(`GET: /free-rooms - Found ${freeRoomIds.length} free rooms at ${hour}:${minute.toString().padStart(2, '0')} on ${day}`);
+        
+        // Return the room IDs for pagination
+        res.json({ 
+            success: true, 
+            message: "Free rooms found", 
+            data: freeRoomIds,
+            total: freeRoomIds.length,
+            timestamp: currentTime.toISOString()
+        });
+    } catch (error) {
+        console.error('Error finding free rooms:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error finding free rooms', 
+            error: error.message 
+        });
+    }
+});
+
 
 // Route to find classrooms available during given free periods
 router.post('/free', async (req, res) => {
@@ -275,9 +488,11 @@ router.get('/get-recommendation', verifyTokenOptional, async (req, res) => {
         console.log(`day: ${day}`);
         let query;
         if (userId) {
+            console.log(`userId: ${userId}`);
             user = await User.findOne({ _id: userId });
             const savedClassrooms = user.saved.map(id => new mongoose.Types.ObjectId(id)); // Ensure ObjectId for classroom IDs
             // const savedClassrooms = user.saved; 
+            console.log(`savedClassrooms: ${savedClassrooms}`);
             if (day === 'X') {
                 query = {
                     classroom_id: { $in: savedClassrooms }

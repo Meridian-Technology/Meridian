@@ -1,16 +1,9 @@
-import axios from "axios";
+import apiRequest from "./utils/postRequest";
 
 //todo: make protected route
 const changeClasroom = async (id, attributes, imageUrl) => {
     try {
-        const response = await axios.post(`/changeclassroom/`, { id, attributes, imageUrl });
-        const responseBody = response.data;
-        if (!response.ok) {
-            // Log the error if the response status is not OK
-            console.error("Error changing room:", responseBody.message);
-            return;
-        }
-
+        const responseBody = await apiRequest(`/changeclassroom/`, { id, attributes, imageUrl });
         if (!responseBody.success) {
             // Log the error if success is false
             console.error("Error changing room:", responseBody.message);
@@ -32,19 +25,10 @@ const changeClasroom = async (id, attributes, imageUrl) => {
     }
 };  
 
-
-
-
 //expects roomid, userid, and operation, true for save, false for unsave
 const save = async (roomId, userId, operation) => {
     try {
-        const response = await axios.post(`/save/`, { roomId, userId, operation }, {headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}});
-        const responseBody = response.data;
-        if (!response.ok) {
-            // Log the error if the response status is not OK
-            console.error("Error saving room:", responseBody.message);
-            return;
-        }
+        const responseBody = await apiRequest(`/save/`, { roomId, userId, operation });
         if (!responseBody.success) {
             // Log the error if success is false
             console.error("Error saving room:", responseBody.message);
@@ -68,9 +52,8 @@ const save = async (roomId, userId, operation) => {
 
 const saveUser = async (name, username, email, password, recommendation, classroom) => {
     try{
-        const response = await axios.post('/update-user', {name, email, username, classroom, recommendation, onboarded :null}, {headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}});
-        const responseBody = response.body;
-        if (response.data.success) {
+        const responseBody = await apiRequest('/update-user', {name, email, username, classroom, recommendation, onboarded :null});
+        if (responseBody.success) {
             console.log("User saved successfully");
         } else {
             console.error("User save unsuccessful");
@@ -79,18 +62,11 @@ const saveUser = async (name, username, email, password, recommendation, classro
         console.error("Error saving user");
         throw error;
     }
-
 }
 
 const checkUsername = async (username) => {
     try {
-        const response = await axios.post("/check-username/", { username },{
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        const responseBody = response.data;
+        const responseBody = await apiRequest("/check-username/", { username });
         if (!responseBody.success) {
             // Log the error if the response status is not OK
             console.error("Error checking username:", responseBody.message);
@@ -101,12 +77,9 @@ const checkUsername = async (username) => {
         }
         return true;
     } catch (error) {
-
         throw error;
     }
 }
-
-
 
 const sendError = async (description, roomid) => {
     try {
@@ -118,14 +91,7 @@ const sendError = async (description, roomid) => {
             type: "incorrectData"
         };
 
-            
-        await axios.post('/send-report', reportData, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
+        await apiRequest('/send-report', reportData);
     } catch (error) {
         throw error;
     }
@@ -133,15 +99,9 @@ const sendError = async (description, roomid) => {
 
 const checkIn = async (classroomId) => {
     try{
-        const response = await axios.post('/check-in', {classroomId}, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                'Content-Type': 'application/json'
-            }
-        });
+        const responseBody = await apiRequest('/check-in', {classroomId});
         console.log("successful");
-        const responseBody = response.data;
-        return response;
+        return responseBody;
     } catch (error){
         throw error;
     }
@@ -149,14 +109,9 @@ const checkIn = async (classroomId) => {
 
 const checkOut = async (classroomId) => {
     try{
-        const response = await axios.post('/check-out', {classroomId}, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                'Content-Type': 'application/json'
-            }
-        });
+        const responseBody = await apiRequest('/check-out', {classroomId});
         console.log("successful");
-        return response;
+        return responseBody;
     } catch(error){
         throw error;
     }
@@ -164,14 +119,12 @@ const checkOut = async (classroomId) => {
 
 const getUser = async (userId) => {
     try{
-        const response = await axios.get('/get-user', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            },
-            params: { userId }  // Pass the userId as query parameter
+        const responseBody = await apiRequest('/get-user', null, {
+            method: 'GET',
+            params: { userId }
         });
         console.log("successful");
-        return response.data.user;
+        return responseBody.user;
     } catch(error){
         throw error;
     }
@@ -179,14 +132,12 @@ const getUser = async (userId) => {
 
 const getUsers = async (userIds) => {
     try{
-        const response = await axios.get('/get-users', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            },
-            params: { userIds }  // Pass the userIds as query parameter
+        const responseBody = await apiRequest('/get-users', null, {
+            method: 'GET',
+            params: { userIds }
         });
         console.log("successful");
-        return response.data.users;
+        return responseBody.users;
     } catch(error){
         throw error;
     }
@@ -195,79 +146,82 @@ const getUsers = async (userIds) => {
 //all purpose rating route, can be used to create new ratings, update ratings (update downvote), and edit ratings
 const updateRating = async (classroomId, userId, comment, score, upvotes, downvotes) => {
     try{
-        const response = await axios.post('/update_rating', {classroomId, userId, comment, score, upvotes, downvotes}, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        console.log("successful");
-        return response;
-    }
-    catch(error){
+        const responseBody = await apiRequest('/update_rating', {classroomId, userId, comment, score, upvotes, downvotes});
+        if (!responseBody.success) {
+            console.error("Error updating rating:", responseBody.message);
+            return;
+        }
+        return responseBody.data;
+    } catch (error) {
+        console.error("Error updating rating:", error);
         throw error;
     }
 }
 
 const userRated = async (classroomId, userId) => {
     try{
-        const response = await axios.get('/user-rated', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            },
-            params: {classroomId, userId}
+        const responseBody = await apiRequest('/user-rated', null, {
+            method: 'GET',
+            params: { classroomId, userId }
         });
-        console.log("successful");
-        return response;
-    } catch(error){
+        if (!responseBody.success) {
+            console.error("Error checking if user rated:", responseBody.message);
+            return;
+        }
+        return responseBody.data;
+    } catch (error) {
+        console.error("Error checking if user rated:", error);
         throw error;
     }
 }
 
 const getRatings = async (classroomId) => {
     try{
-        const response = await axios.get('/get-ratings', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            },
-            params: {classroomId}
+        const responseBody = await apiRequest('/get-ratings', null, {
+            method: 'GET',
+            params: { classroomId }
         });
-        return response;
-    } catch(error){
+        if (!responseBody.success) {
+            console.error("Error getting ratings:", responseBody.message);
+            return;
+        }
+        console.log(responseBody);
+        return responseBody.data;
+    } catch (error) {
+        console.error("Error getting ratings:", error);
         throw error;
     }
 }
 
-
 const mainSearchChange = async (classroomId) => {
     try{
-        const response = await axios.post('/main-search-change', {classroomId}, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        console.log("successful");
-        return response;
-    }
-    catch(error){
+        const responseBody = await apiRequest('/main-search-change', {classroomId});
+        if (!responseBody.success) {
+            console.error("Error changing main search:", responseBody.message);
+            return;
+        }
+        return responseBody.data;
+    } catch (error) {
+        console.error("Error changing main search:", error);
         throw error;
     }
 }
 
 const getRecommendation = async () => {
-    const token = localStorage.getItem('token');;
     try{
-        const response = await axios.get('/get-recommendation', {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-            }
+        const responseBody = await apiRequest('/get-recommendation', null, {
+            method: 'GET'
         });
-        return response;
-    } catch(error){
+        if (!responseBody.success) {
+            console.error("Error getting recommendation:", responseBody.message);
+            return;
+        }
+        console.log(responseBody);
+        return responseBody;
+    } catch (error) {
+        console.error("Error getting recommendation:", error);
         throw error;
     }
 }
 
-
-export { changeClasroom, save, checkUsername, saveUser, sendError, checkIn, checkOut, getUser, getUsers, updateRating, userRated, mainSearchChange, getRecommendation, getRatings };
+export { changeClasroom, save, saveUser, checkUsername, sendError, checkIn, checkOut, getUser, getUsers, updateRating, userRated, getRatings, mainSearchChange, getRecommendation };

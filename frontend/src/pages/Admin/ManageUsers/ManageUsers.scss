@@ -1,0 +1,15 @@
+.manage-users{
+    padding: 20px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    z-index: 1;
+    
+    .card-header{
+        max-height:290px;
+        width:350px;
+        z-index: 10;
+    }
+    
+}

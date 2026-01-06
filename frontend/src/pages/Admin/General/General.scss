@@ -1,0 +1,18 @@
+.general{
+    z-index: 1;
+    height:100vh;
+    box-sizing: border-box;
+    padding: 25px 30px;
+    width:100%;
+    .general-content{
+        display: flex;
+        flex-direction: column;
+    }
+    .analytics-container{
+        display: flex;
+        gap: 20px;
+        padding: 10px;
+        box-sizing: border-box;
+        flex-wrap: wrap;
+    }
+}

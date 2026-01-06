@@ -10,12 +10,14 @@ import { useError } from '../../ErrorContext.js';
 import { useNotification } from '../../NotificationContext.js';
 import CardHeader from '../../components/ProfileCard/CardHeader/CardHeader.jsx';
 import ImageUpload from '../../components/ImageUpload/ImageUpload.jsx';
+import RoleManager from '../../components/RoleManager';
 import axios from 'axios';
 import { debounce } from '../../Query.js';
 import check from '../../assets/Icons/Check.svg';
 import waiting from '../../assets/Icons/Waiting.svg';
 import error from '../../assets/circle-warning.svg';
 import unavailable from '../../assets/Icons/Circle-X.svg';
+import postRequest from '../../utils/postRequest';
 
 function CreateOrg(){
     const [start, setStart] = useState(false);
@@ -23,12 +25,14 @@ function CreateOrg(){
     const [show, setShow] = useState(0);
     const [currentTransition, setCurrentTransition] = useState(0);
     const [containerHeight, setContainerHeight] = useState(250);
-    const { isAuthenticated, isAuthenticating, user } = useAuth();
+    const { isAuthenticated, isAuthenticating, user, validateToken } = useAuth();
     const [userInfo, setUserInfo] = useState(null);
     const [name, setName] = useState("");
     const [timeCommitment, setTimeCommitment] = useState(null);
     const [description, setDescription] = useState(""); 
     const [org, setOrg] = useState(null);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [customRoles, setCustomRoles] = useState([]);
 
     const navigate = useNavigate();
     const {addNotification} = useNotification();
@@ -37,6 +41,7 @@ function CreateOrg(){
     const [buttonActive, setButtonActive] = useState(true);
     const [validNext, setValidNext] = useState(true);
     const [nameValid, setNameValid] = useState(null);
+    const [nameError, setNameError] = useState("");
 
     const containerRef = useRef(null);
     const contentRefs = useRef([]);
@@ -62,10 +67,6 @@ function CreateOrg(){
             navigate('/login');
         } else {
             if(user){
-                if(user.developer === 0){
-                    navigate('/settings');
-
-                }
                 setUserInfo(user);
             }
         }
@@ -89,8 +90,25 @@ function CreateOrg(){
 
     async function handleOrgCreation(name, description){
         try {
-            const response = await axios.post('/create-org', {org_name: name, org_profile_image: '/Logo.svg', org_description: description}, {headers: {"Authorization": `Bearer ${localStorage.getItem("token")}`}});
-            setOrg(response.data.org);
+            const formData = new FormData();
+            formData.append('org_name', name);
+            formData.append('org_description', description);
+            formData.append('custom_roles', JSON.stringify(customRoles));
+            if (selectedFile) {
+                formData.append('image', selectedFile);
+            }
+
+            const response = await postRequest('/create-org', formData);
+            
+            // Check if the response contains an error
+            if (response.error) {
+                const errorWithCode = new Error(response.error);
+                errorWithCode.code = response.code;
+                throw errorWithCode;
+            }
+            
+            await validateToken();
+            setOrg(response.org);
         } catch (error) {
             addNotification({ title: 'Error', message: error.message, type: 'error' });
             navigate('/');
@@ -118,32 +136,33 @@ function CreateOrg(){
             return;
         }
         if(current === 4){
-            if("" === ""){
-                setValidNext(false);
-            } else {
-                setValidNext(true);
-            }
+            // Always allow proceeding from roles stage - roles are optional
+            setValidNext(true);
             return;
         }
 
-
-    },[current, name, description]);
+    },[current, name, description, customRoles]);
 
     useEffect(()=>{
         if(show === 0){return;}
         setTimeout(() => {
             setCurrent(current+1);
         }, 500);
+        
+        if(current === 0){
+            setValidNext(false);
+        }
 
         if(current === 4){
             try{
+                console.log('hello')
                 handleOrgCreation(name, description);
             } catch (error){
                 newError(error, navigate);
             }
         }
         if(current === 5){
-            navigate('/room/none');
+            navigate(`/club-dashboard/${org.org_name}`);
         }
         setButtonActive(false);
         setTimeout(() => {
@@ -159,13 +178,23 @@ function CreateOrg(){
 
     const validOrgName = async (name) => {
         try {
-            const response = await axios.post('/check-org-name', {orgName: name}, {headers: {"Authorization": `Bearer ${localStorage.getItem("token")}`}});
+            const response = await postRequest('/check-org-name', {orgName: name});
             console.log(response);
+            
+            // Check if the response contains an error
+            if (response.error) {
+                const errorWithCode = new Error(response.error);
+                errorWithCode.code = response.code;
+                throw errorWithCode;
+            }
+            
             setNameValid(1);
+            setNameError("");
             setValidNext(true);
-            return response.data.valid;
+            return response.valid;
         } catch (error) {
             setNameValid(3);
+            setNameError(error.message);
             setValidNext(false);
             // addNotification({ title: 'Error', message: error.message, type: 'error' });
         }
@@ -176,6 +205,7 @@ function CreateOrg(){
     useEffect(()=>{
         if(name === ""){
             setNameValid(3);
+            setNameError("Org name is required");
             if(current === 1){
                 debounced(name);
                 setValidNext(false);
@@ -183,6 +213,7 @@ function CreateOrg(){
             return;
         }
         setNameValid(0);
+        setNameError("");
         debounced(name);
     }, [name]);
 
@@ -203,6 +234,14 @@ function CreateOrg(){
         }
         setDescription(e.target.value);
     }
+
+    const handleFileSelect = (file) => {
+        setSelectedFile(file);
+    };
+
+    const handleRolesChange = (roles) => {
+        setCustomRoles(roles);
+    };
 
     return (
         <div className={`onboard ${start ? "visible" : ""} create-org`} style={{height: viewport}}>
@@ -229,7 +268,7 @@ function CreateOrg(){
                                     { nameValid === 0 && <div className="checking"><img src={waiting} alt="" /><p>checking name...</p></div>}
                                     { nameValid === 1 && <div className="available"><img src={check} alt="" /><p>name is available</p></div>}
                                     { nameValid === 2 && <div className="taken"><img src={unavailable} alt="" /><p>name is taken</p></div>}
-                                    { nameValid === 3 && <div className="invalid"><img src={error} alt="" /><p>invalid name</p></div>}   
+                                    { nameValid === 3 && <div className="invalid"><img src={error} alt="" /><p>{nameError}</p></div>}   
                                 </div>
                             </div>
                         </div>
@@ -239,23 +278,36 @@ function CreateOrg(){
                             <Loader/>
                             <h2>tell us a little bit about your organization</h2>
                             <p>Give users a description of what your org is about, feel free to be descriptive!</p>
-                            <textarea type="text" value={description} onChange={handleDescChange} className="text-input"/>
+                            <textarea 
+                                value={description} 
+                                onChange={handleDescChange} 
+                                className="text-input"
+                                maxLength={500}
+                            />
                         </div>
                     }
                     { current === 3 &&
                         <div className={`content ${current === 4 ? "going": ""} ${3 === currentTransition ? "": "beforeOnboard"}`} ref={el => contentRefs.current[3] = el}>
                             <Loader/>
                             <h2>upload a profile picture</h2>
-                            <p>Let's make it feel like home in here, feel free to cuztomize your logo!</p>
-                            <ImageUpload uploadText="Drag and Drop to Upload"/>
+                            <p>Let's make it feel like home in here, feel free to customize your logo!</p>
+                            <ImageUpload 
+                                uploadText="Drag and Drop to Upload"
+                                onFileSelect={handleFileSelect}
+                            />
                         </div>
                     }
                     { current === 4 &&
                         <div className={`content ${current === 5 ? "going": ""} ${4 === currentTransition ? "": "beforeOnboard"}`} ref={el => contentRefs.current[4] = el}>
                             <Loader/>
-                            <h2>define some roles</h2>
-                            <p>Lorem ipsum dolorem asdf asd f asd sdf sdfasdlfkjas;ldkf sdaflkjsdf sdflkjsdf lkj</p>
-                            <textarea type="text" value={description} onChange={handleDescChange} className="text-input"/>
+                            <h2>define custom roles (optional)</h2>
+                            <p>Create custom roles for your organization members. You can always add or modify these later.</p>
+                            
+                            <RoleManager 
+                                roles={customRoles}
+                                onRolesChange={handleRolesChange}
+                                isEditable={true}
+                            />
                         </div>
                     }
                     { current === 5 &&

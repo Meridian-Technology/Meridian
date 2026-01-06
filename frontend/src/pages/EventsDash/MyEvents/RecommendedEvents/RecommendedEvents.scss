@@ -1,0 +1,119 @@
+.recommended-events {
+  width: 100%;
+  box-sizing: border-box;
+
+  .content-row {
+    display: flex;
+    gap: 15px;
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .recommended-events-container {
+    display: flex;
+    flex-direction: column;
+    width:75%;
+    .explore-events-button {
+      background-color: var(--background);
+      color: var(--text);
+      border: none;
+      border-radius: 8px;
+      font-family: 'Satoshi';
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.3s ease;
+
+      &:hover {
+        color: var(--primary);
+        iconify-icon {
+          color: var(--primary) !important;
+          transform: translateX(4px);
+        }
+      }
+
+      iconify-icon {
+        font-size: 16px;
+        color: var(--text) !important;
+        transition: all 0.3s ease;
+      }
+    }
+
+    .top-picks-content {
+      display: flex;
+      gap: 15px;
+      overflow-x: auto;
+      padding: 15px;
+      width: 100%;
+      box-sizing: border-box;
+
+      &::-webkit-scrollbar {
+        height: 4px;
+      }
+
+      &::-webkit-scrollbar-track {
+        background: var(--lighter);
+        border-radius: 2px;
+      }
+
+      &::-webkit-scrollbar-thumb {
+        background: var(--lightborder);
+        border-radius: 2px;
+      }
+
+      &::-webkit-scrollbar-thumb:hover {
+        background: var(--darkborder);
+      }
+    }
+  }
+
+  .recommended-room {
+    display: flex;
+    width: 25%;
+    justify-content: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    .recommended-room-header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      background-color: var(--secondary-color);
+      border-radius: 10px;
+      padding: 6px 12px;
+      box-sizing: border-box;
+    
+      .recommended-room-title {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--primary);
+        font-family: 'Satoshi';
+  
+      }
+    }
+    
+  }
+}
+
+@media (max-width: 768px) {
+  .recommended-events {
+    .recommended-events-container {
+      width: 100%;
+    }
+    .content-row {
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .recommended-room {
+      width: 100%;
+      min-width: unset;
+      .recommended-room-header{
+        display:none;
+      }
+    }
+  }
+}

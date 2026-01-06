@@ -1,0 +1,53 @@
+.weekly-header{
+    display: flex;
+    align-items: flex-start;
+    gap:10px;
+    justify-content: space-between;
+    height:44px;
+    width:100%;
+    align-items: flex-start;
+    .time-period{
+        display: flex;
+        gap:10px;
+        // align-items: center;
+        h3{
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            font-size:17px;
+            font-family: 'Satoshi', sans-serif;
+            color: var(--text);
+            margin-top:5px;
+        }
+    }
+
+
+    .arrows{
+        display: flex;
+        align-items: center;
+        margin-bottom:10px;
+        .left-arrow, .right-arrow{
+            cursor: pointer;
+            padding: 5px;   
+            border-radius: 5px 0 0 5px;
+            background-color: var(--lighter);
+            border: 1px solid var(--lighterborder);
+            &:hover{
+                background-color: var(--light);
+            }
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .right-arrow{
+            border-radius: 0 5px 5px 0;
+
+        }
+    }
+    
+}
+
+.week{
+    width:100%;
+}

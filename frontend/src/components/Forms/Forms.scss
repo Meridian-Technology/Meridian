@@ -103,6 +103,22 @@
     color: #FFFFFF;
     margin-top:0;
     pointer-events: all;
+    min-height:50px;
+}
+
+.apple{
+    background-color: #000000;
+    color: #FFFFFF;
+    margin-top:0;
+    pointer-events: all;
+    min-height:50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    iconify-icon{
+        font-size: 22px;
+    }
 }
 
 .divider{
@@ -169,7 +185,7 @@
     border-radius: 15px 0 0 15px;
 }
 
-@media (max-width: 500px) {
+@media (max-width: 700px) {
     .form, .form-content, .email-form{
         width:100%;
     }

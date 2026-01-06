@@ -74,7 +74,7 @@ def findNoPics():
 
 def migrateClassrooms(uri, db):
     load_dotenv() # loading .env file
-    uri = os.environ.get('MONGO_URL_LOCAL') # fetching URI string
+    uri = os.environ.get('MONGO_PROD') # fetching URI string
     client = MongoClient(uri, server_api=ServerApi('1')) 
     try: # send a ping to confirm a successful connection
         client.admin.command('ping')
@@ -88,6 +88,7 @@ def migrateClassrooms(uri, db):
     collection1 = db['classrooms1']  
     schedules = db['schedules']
     schedules.drop()
+    
 
     all_classes = collection.find({})
     for classroom in all_classes:
@@ -351,5 +352,7 @@ def load_json_to_mongo(json_file, uri):
 # forceUpdate('users', {'visited': [], 'partners': [], 'sessions': [], 'hours': 0, 'contributions': 0})
 # updateImages()
 
-# load_json_to_mongo("classes.json", "mongodb://127.0.0.1:27017/ucb" )
+# load_json_to_mongo("classes.json", "mongodb://127.0.0.1:27017/studycompass" )
 # migrateClassrooms('mongodb://127.0.0.1:27017/ucb', 'ucb')
+migrateClassrooms('mongodb://127.0.0.1:27017/studycompass', 'studycompass')
+# migrateClassrooms('mongodb+srv://jbliu88:1CLPY0FGxc1Etx5l@studycompass.m1gjmdo.mongodb.net/studycompass?retryWrites=true&w=majority', 'studycompass')

@@ -1,0 +1,78 @@
+.org-settings {
+    padding: 2rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+
+    .header {
+        margin-bottom: 2rem;
+        
+        h1 {
+            margin: 0 0 0.5rem 0;
+            color: #333;
+        }
+        
+        p {
+            margin: 0;
+            color: #666;
+        }
+    }
+
+    .settings-container {
+        display: flex;
+        flex: 1;
+        gap: 2rem;
+
+        .settings-sidebar {
+            width: 250px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+
+            .sidebar-section {
+                h3 {
+                    margin: 0 0 1rem 0;
+                    color: #333;
+                    font-size: 1.1rem;
+                }
+
+                .sidebar-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.75rem;
+                    width: 100%;
+                    padding: 0.75rem 1rem;
+                    border: none;
+                    background: transparent;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    text-align: left;
+                    color: #666;
+
+                    &:hover {
+                        background: #e9ecef;
+                        color: #333;
+                    }
+
+                    &.active {
+                        background: #4DAA57;
+                        color: white;
+                    }
+
+                    span {
+                        font-size: 0.9rem;
+                    }
+                }
+            }
+        }
+
+        .settings-content {
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+    }
+} 

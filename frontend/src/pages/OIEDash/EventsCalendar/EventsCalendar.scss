@@ -8,6 +8,27 @@
     gap:20px;
     position: relative;
     z-index: 10;
+    
+    &.create-event-calendar {
+        padding: 0; // Remove padding for create event flow
+        gap: 0; // Remove gap for create event flow
+        height: 100%;
+        
+        .top-bar {
+            background-color: var(--light);
+            border-radius: 0;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            flex-shrink: 0;
+        }
+        
+        .content {
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+    }
+    
     .top-bar{
         display: flex;
         justify-content: space-between;

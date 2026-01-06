@@ -15,7 +15,7 @@ export const WebSocketProvider = ({ children }) => {
     // Create the socket connection
     socketRef.current = io(
       process.env.NODE_ENV === 'production'
-        ? 'https://www.study-compass.com'
+        ? 'https://www.meridian.study'
         : 'http://localhost:5001',
       {
         transports: ['websocket'], // Force WebSocket transport

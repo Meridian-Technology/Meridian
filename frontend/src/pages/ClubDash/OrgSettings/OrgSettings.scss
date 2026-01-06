@@ -1,0 +1,369 @@
+.org-settings {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
+
+    &.loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        
+        .loader {
+            font-size: 18px;
+            color: #666;
+        }
+    }
+
+    .header {
+        position: relative;
+        margin-bottom: 30px;
+        border-radius: 12px;
+        color: white;
+        overflow: hidden;
+
+        h1 {
+            margin: 0 0 8px 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        p {
+            margin: 0;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        img {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.1;
+            pointer-events: none;
+        }
+    }
+
+    .permission-warning {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+        text-align: center;
+
+        p {
+            margin: 0 0 10px 0;
+            color: #856404;
+            font-size: 14px;
+
+            &:last-child {
+                margin-bottom: 0;
+            }
+        }
+    }
+
+    .settings-container {
+        display: flex;
+        gap: 30px;
+        height: calc(100% - 120px);
+
+        .settings-sidebar {
+            width: 250px;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            height: fit-content;
+            position: relative;
+            &:after{
+                content: '';
+                position: absolute;
+                top: 10%;
+                right: -10px;
+                width: 2px;
+                height: 80%;
+                background-color: var(--lighterborder);
+                border-radius: 10px;
+            }
+
+            .sidebar-section {
+                h3 {
+                    margin: 0 0 20px 0;
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: #333;
+                    padding-bottom: 10px;
+                    border-bottom: 2px solid #f0f0f0;
+                }
+
+                .sidebar-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    width: 100%;
+                    padding: 12px 16px;
+                    margin-bottom: 8px;
+                    border: none;
+                    border-radius: 8px;
+                    background: transparent;
+                    color: #666;
+                    font-size: 14px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    text-align: left;
+
+                    &:hover {
+                        background: #f8f9fa;
+                        color: #4DAA57;
+                    }
+
+                    &.active {
+                        background: #4DAA57;
+                        color: white;
+                    }
+
+                    .iconify-icon {
+                        font-size: 18px;
+                    }
+                }
+            }
+        }
+
+        .settings-content {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            overflow-y: auto;
+
+            .settings-section {
+                h2 {
+                    margin: 0 0 8px 0;
+                    font-size: 24px;
+                    font-weight: 600;
+                    color: #333;
+                }
+
+                > p {
+                    margin: 0 0 30px 0;
+                    color: #666;
+                    font-size: 14px;
+                }
+
+                .form-group {
+                    margin-bottom: 24px;
+
+                    label {
+                        display: block;
+                        margin-bottom: 8px;
+                        font-weight: 500;
+                        color: #333;
+                        font-size: 14px;
+                    }
+
+                    input, textarea {
+                        width: 100%;
+                        padding: 12px 16px;
+                        border: 2px solid #e9ecef;
+                        border-radius: 8px;
+                        font-size: 14px;
+                        transition: border-color 0.2s ease;
+                        box-sizing: border-box;
+
+                        &:focus {
+                            outline: none;
+                            border-color: #4DAA57;
+                        }
+
+                        &:disabled {
+                            background: #f8f9fa;
+                            color: #6c757d;
+                            cursor: not-allowed;
+                        }
+                    }
+
+                    textarea {
+                        resize: vertical;
+                        min-height: 100px;
+                    }
+
+                    .char-count {
+                        display: block;
+                        text-align: right;
+                        font-size: 12px;
+                        color: #6c757d;
+                        margin-top: 4px;
+                    }
+
+                    .current-image {
+                        margin-bottom: 16px;
+
+                        img {
+                            width: 100px;
+                            height: 100px;
+                            border-radius: 50%;
+                            object-fit: cover;
+                            border: 3px solid #e9ecef;
+                        }
+                    }
+                }
+
+                .save-button {
+                    background: #4DAA57;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: background-color 0.2s ease;
+
+                    &:hover:not(:disabled) {
+                        background: #45a049;
+                    }
+
+                    &:disabled {
+                        background: #6c757d;
+                        cursor: not-allowed;
+                    }
+                }
+
+                .role-manager-container {
+                    margin-top: 20px;
+                }
+
+                .danger-zone {
+                    .danger-item {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        padding: 20px;
+                        border: 2px solid #dc3545;
+                        border-radius: 8px;
+                        background: #fff5f5;
+
+                        .danger-content {
+                            h3 {
+                                margin: 0 0 8px 0;
+                                color: #dc3545;
+                                font-size: 18px;
+                                font-weight: 600;
+                            }
+
+                            p {
+                                margin: 0;
+                                color: #721c24;
+                                font-size: 14px;
+                            }
+                        }
+
+                        .delete-button {
+                            background: #dc3545;
+                            color: white;
+                            border: none;
+                            padding: 12px 24px;
+                            border-radius: 8px;
+                            font-size: 14px;
+                            font-weight: 500;
+                            cursor: pointer;
+                            transition: background-color 0.2s ease;
+
+                            &:hover:not(:disabled) {
+                                background: #c82333;
+                            }
+
+                            &:disabled {
+                                background: #6c757d;
+                                cursor: not-allowed;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .settings {
+        padding: 15px;
+
+        .header {
+            padding: 15px;
+            margin-bottom: 20px;
+
+            h1 {
+                font-size: 24px;
+            }
+
+            p {
+                font-size: 14px;
+            }
+        }
+
+        .settings-container {
+            flex-direction: column;
+            gap: 20px;
+
+            .settings-sidebar {
+                width: 100%;
+                order: 2;
+
+                .sidebar-section {
+                    .sidebar-item {
+                        padding: 10px 12px;
+                        font-size: 13px;
+
+                        .iconify-icon {
+                            font-size: 16px;
+                        }
+                    }
+                }
+            }
+
+            .settings-content {
+                order: 1;
+                padding: 20px;
+
+                .settings-section {
+                    h2 {
+                        font-size: 20px;
+                    }
+
+                    .form-group {
+                        margin-bottom: 20px;
+
+                        input, textarea {
+                            padding: 10px 12px;
+                            font-size: 13px;
+                        }
+                    }
+
+                    .danger-zone {
+                        .danger-item {
+                            flex-direction: column;
+                            gap: 15px;
+                            text-align: center;
+
+                            .danger-content {
+                                h3 {
+                                    font-size: 16px;
+                                }
+
+                                p {
+                                    font-size: 13px;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+} 

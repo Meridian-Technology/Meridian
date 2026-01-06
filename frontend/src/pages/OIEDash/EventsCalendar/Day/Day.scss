@@ -1,0 +1,46 @@
+.daily-header{
+    display: flex;
+    align-items: flex-start;
+    gap:10px;
+    justify-content: space-between;
+    height:44px;
+    width:100%;
+    .time-period{
+        display: flex;
+        gap:10px;
+        h1{
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    }
+
+
+    .arrows{
+        display: flex;
+        align-items: center;
+        margin-bottom:10px;
+        .left-arrow, .right-arrow{
+            cursor: pointer;
+            padding: 5px;   
+            border-radius: 5px 0 0 5px;
+            background-color: var(--lighter);
+            border: 1px solid var(--lighterborder);
+            &:hover{
+                background-color: var(--light);
+            }
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .right-arrow{
+            border-radius: 0 5px 5px 0;
+
+        }
+    }
+}
+
+.day{
+    width:100%;
+}

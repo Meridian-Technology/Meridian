@@ -6,6 +6,16 @@
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+    
+    .login-container-container{
+        height:100%;
+        display:flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 2;
+        background: var(--background);
+    }
 
     .login-container{
         display:flex;
@@ -16,17 +26,18 @@
         margin-bottom: 100px;
         // gap: 50px;
         padding: 0 60px;
+        background: var(--background);
         width:300px;
         .button.submit-button{
             transition: background-color 0.3s;
-            background-color: var(--red);
+            background-color: var(--dark-blue);
             color: white;
             margin-bottom:10px;
             margin-top:0;
             height: 40px;
 
             &:hover {
-                background-color: #e86c64;
+                background-color: var(--dark-blue);
                 filter:none;
             }
         
@@ -44,9 +55,73 @@
         height: 100%;
         flex-grow: 1;
         width:50%;
+        overflow: hidden;
         justify-content: left;
         align-content: flex-start;
-        background-color: var(--block);
+        background-color:#F2F2F2;
+        .org-teaser-container{
+            z-index: 1;
+            display:flex;
+            margin-left:25%;
+            height:100%;
+            align-items: flex-end;
+            // position:relative;
+            .org-teaser-img{
+                .teaser-text{
+                    position:absolute;
+                    top:-27%;
+                    width: 30%;
+                    height:20%;
+                    margin-left:10px;
+                    b{
+                        font-size: 30px;
+                        font-weight: bold;
+                        background: linear-gradient(
+                            to right,
+                            #4DAA57 25%,     /* Red at 0% */
+                            #ADD068 50%,   /* Yellow at 50% */
+                            #4DAA57 80%,   /* Green at 75% */
+                            #4DAA57 100%   /* Blue at 100% */
+                        );
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        background-clip: text; /* Optional for Firefox with the right flags */
+                        color: transparent;
+                        
+                    }
+                    h2{
+                        font-size: 24px;
+                        font-weight: 800;
+                        margin-bottom: 10px;
+                        color: var(--text);
+                        font-family: 'Satoshi';
+                    }
+                    p{
+                        font-size: 16px;
+                        font-weight: 500;
+                        margin-bottom: 10px;
+                        color: var(--text);
+                        font-family: 'Inter';
+                    }
+                }
+                width:100%;
+                position:absolute;
+                top:40%;
+                z-index: 1;
+                img{
+                    height:600px;
+                }
+            }
+            .org-teaser-grad{
+                position:absolute;
+                top:15%;
+                left:0%;
+                width:700px;
+                height:700px;
+                z-index: 0;
+
+            }
+        }
     
     }
 
@@ -60,9 +135,12 @@
     
 }
 
-@media (max-width: 500px){
+@media (max-width: 700px){
     .main-login{
         .login-container{
+            padding:0;
+        }
+        .login-container-container{
             width:100%;
             padding: 0 30px;
         }   
@@ -78,11 +156,11 @@
 // Form styles
 .form-title {
     font-size: 24px;
-    font-weight: 600;
+    font-weight: 800;
     margin-bottom: 10px;
     color: var(--text);
     text-align: center;
-    font-family: 'Satoshi';
+    font-family: 'OpenSauce';
 }
 
 .form-subtitle {
@@ -106,20 +184,6 @@
     gap:0;
 }
 
-.form-group {
-    display: flex;
-    flex-direction: column;
-    width:100%;
-
-    label {
-        font-family: Inter, sans-serif;
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--text);
-        margin: 0 0 5px 7px;
-    }
-}
-
 .error-message {
     color: #e74c3c;
     margin-bottom: 15px;
@@ -131,7 +195,8 @@
     padding: 20px;
 
     h2 {
-        font-family: 'Satoshi';
+        font-family: 'OpenSauce';
+        font-weight: 800;
         iconify-icon{
             color: var(--green);
         }
@@ -231,7 +296,7 @@
         background-color: #f5f5f5;
         border-color: #ccc;
         color: #666;
-        animation: pulse 1.5s infinite;
+        animation: pulsing 1.5s infinite;
     }
     
     // Success state
@@ -272,7 +337,7 @@
 }
 
 // Pulse animation for verifying state
-@keyframes pulse {
+@keyframes pulsing {
     0% {
         opacity: 1;
     }

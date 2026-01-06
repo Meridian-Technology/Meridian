@@ -1,0 +1,196 @@
+.events-analytics {
+    max-width: 1200px;
+    // margin: 0 auto;
+
+    .analytics-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 20px;
+        flex-wrap: wrap;
+        gap: 1rem;
+
+        .time-range-selector {
+            display: flex;
+            gap: 0.5rem;
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 0.25rem;
+
+            button {
+                padding: 0.5rem 1rem;
+                border: none;
+                background: transparent;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: #666;
+                transition: all 0.2s ease;
+
+                &:hover {
+                    background: #e0e0e0;
+                    color: #333;
+                }
+
+                &.active {
+                    background: var(--primary-color);
+                    color: white;
+                }
+            }
+        }
+    }
+
+    .analytics-grid {
+        padding: 0 40px;
+    }
+
+    .analytics-overview {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 3rem;
+    }
+
+    // KpiCard styles are now in components/Analytics/Dashboard/KpiCard.scss
+
+    .top-events-section {
+        background: white;
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        border: 1px solid #e0e0e0;
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+            margin: 0 0 1.5rem 0;
+        }
+
+        .top-events-list {
+            .event-item {
+                display: flex;
+                align-items: center;
+                padding: 1rem;
+                border-bottom: 1px solid #f0f0f0;
+                transition: background-color 0.2s ease;
+
+                &:last-child {
+                    border-bottom: none;
+                }
+
+                &:hover {
+                    background-color: #f8f9fa;
+                }
+
+                .event-rank {
+                    width: 40px;
+                    height: 40px;
+                    background-color: var(--primary-color);
+                    color: white;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: 600;
+                    font-size: 0.875rem;
+                    margin-right: 1rem;
+                    flex-shrink: 0;
+                }
+
+                .event-info {
+                    flex: 1;
+
+                    h4 {
+                        font-size: 1rem;
+                        font-weight: 600;
+                        color: #333;
+                        margin: 0 0 0.5rem 0;
+                    }
+
+                    .event-stats {
+                        display: flex;
+                        gap: 1.5rem;
+                        flex-wrap: wrap;
+
+                        .stat {
+                            display: flex;
+                            align-items: center;
+                            gap: 0.5rem;
+                            font-size: 0.875rem;
+                            color: #666;
+
+                            iconify-icon {
+                                font-size: 1rem;
+                                color: var(--primary-color);
+                            }
+                        }
+                    }
+                }
+            }
+
+            .no-data {
+                text-align: center;
+                padding: 2rem;
+                color: #888;
+                font-style: italic;
+            }
+        }
+    }
+
+    .loading, .error {
+        text-align: center;
+        padding: 3rem;
+        font-size: 1.125rem;
+        color: #666;
+    }
+
+    .error {
+        color: #dc3545;
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .events-analytics {
+        padding: 1rem;
+
+        .analytics-header {
+            flex-direction: column;
+            align-items: flex-start;
+
+            .time-range-selector {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        .analytics-overview {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .top-events-section {
+            padding: 1rem;
+
+            .top-events-list {
+                .event-item {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 1rem;
+
+                    .event-rank {
+                        margin-right: 0;
+                    }
+
+                    .event-info {
+                        .event-stats {
+                            gap: 1rem;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

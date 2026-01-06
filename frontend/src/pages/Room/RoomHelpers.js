@@ -1,3 +1,4 @@
+import apiRequest from '../../utils/postRequest';
 
 function minutesToTime(minutes){
     let hours = Math.floor(minutes / 60);
@@ -166,6 +167,66 @@ const allPurposeFetchHelper = async (allSearch, nameQuery, timeQuery, attributeQ
     
 }
 
+// New utility functions that use apiRequest directly
+const fetchRoomData = async (id) => {
+    try {
+        const response = await apiRequest(`/getroom/${id}`, null, { method: 'GET' });
+        return response;
+    } catch (error) {
+        console.error('Error fetching room data:', error);
+        throw error;
+    }
+};
+
+const fetchFreeRoomsDirect = async (query) => {
+    try {
+        const response = await apiRequest('/free', { query });
+        if (!response.success) {
+            throw new Error(response.message || 'Failed to fetch free rooms');
+        }
+        return response.data.filter(room => !room.toLowerCase().includes('alumni'));
+    } catch (error) {
+        console.error('Error fetching free rooms:', error);
+        throw error;
+    }
+};
+
+const searchRoomsDirect = async (query, attributes, sort) => {
+    try {
+        const response = await apiRequest('/search', null, {
+            method: 'GET',
+            params: { query, attributes, sort }
+        });
+        if (!response.success) {
+            throw new Error(response.message || 'Failed to search rooms');
+        }
+        return response.data;
+    } catch (error) {
+        console.error('Error searching rooms:', error);
+        throw error;
+    }
+};
+
+const allPurposeSearchDirect = async (nameQuery, timeQuery, attributes, sort) => {
+    try {
+        const response = await apiRequest('/all-purpose-search', null, {
+            method: 'GET',
+            params: {
+                query: nameQuery,
+                timePeriod: timeQuery,
+                attributes,
+                sort
+            }
+        });
+        if (!response.success) {
+            throw new Error(response.message || 'Failed to perform all-purpose search');
+        }
+        return response.data;
+    } catch (error) {
+        console.error('Error in all-purpose search:', error);
+        throw error;
+    }
+};
 
 const addQueryHelper = (key, newValue, setNoQuery, setContentState, setQuery) => {
     setNoQuery(false);
@@ -220,6 +281,18 @@ const removeQueryHelper = (key, value, setQuery, setNoQuery ) => {
     // Check if all keys in the query object have empty arrays and update `noQuery` accordingly.
 }
 
-
-
-export { findNext, fetchDataHelper, fetchFreeRoomsHelper, fetchFreeNowHelper, fetchSearchHelper, addQueryHelper, removeQueryHelper, allPurposeFetchHelper };
+export { 
+    findNext, 
+    fetchDataHelper, 
+    fetchFreeRoomsHelper, 
+    fetchFreeNowHelper, 
+    fetchSearchHelper, 
+    addQueryHelper, 
+    removeQueryHelper, 
+    allPurposeFetchHelper,
+    // New direct API functions
+    fetchRoomData,
+    fetchFreeRoomsDirect,
+    searchRoomsDirect,
+    allPurposeSearchDirect
+};

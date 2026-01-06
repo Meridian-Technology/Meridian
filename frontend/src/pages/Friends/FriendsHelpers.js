@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiRequest from '../../utils/postRequest';
 
 function debounce(func, wait) { //move logic to other file
     let timeout;
@@ -14,12 +14,9 @@ function debounce(func, wait) { //move logic to other file
 
 const userSearch = async (query, setResults) => {
     try{
-        const response = await axios.get(`/user-search/${query}`, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
+        const responseBody = await apiRequest(`/user-search/${query}`, null, {
+            method: 'GET'
         });
-        const responseBody = response.data;
         if(!responseBody.success){
             console.error('Error fetching search data:', responseBody.message);
             return [];
@@ -37,12 +34,9 @@ const debounceUserSearch = debounce(userSearch, 500);
 
 const getFriends = async () => {
     try{
-        const response = await axios.get('/getFriends', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
+        const responseBody = await apiRequest('/getFriends', null, {
+            method: 'GET'
         });
-        const responseBody = response.data;
         console.log(responseBody);
         if (!responseBody.success) {
             console.error('Error fetching friends:', responseBody.message);
@@ -57,12 +51,7 @@ const getFriends = async () => {
 
 const sendFriendRequest = async (friendUsername) => {
     try{
-        const response = await axios.post(`/friend-request/${friendUsername}`, {}, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-        });
-        const responseBody = response.data;
+        const responseBody = await apiRequest(`/friend-request/${friendUsername}`, {});
         if(!responseBody.success){
             console.error('Error sending friend request:', responseBody.message);
             return responseBody.message;
@@ -70,10 +59,10 @@ const sendFriendRequest = async (friendUsername) => {
             return 'Friend request sent';
         }
     } catch (error){
-        if(error.response.status === 404){
+        if(error.response?.status === 404){
             return 'User not found';
         }
-        return error.response.data.message;
+        return error.response?.data?.message || 'Error sending friend request';
     }
 }
 
@@ -83,21 +72,12 @@ const updateFriendRequest = async (friendshipId, status) => {
             console.error('Invalid status');
             return;
         }
-        let response;
+        let responseBody;
         if(status === 'accept'){
-            response = await axios.post(`/friend-request/accept/${friendshipId}`, {}, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
+            responseBody = await apiRequest(`/friend-request/accept/${friendshipId}`, {});
         } else {
-            response = await axios.post(`/friend-request/reject/${friendshipId}`, {}, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
+            responseBody = await apiRequest(`/friend-request/reject/${friendshipId}`, {});
         }
-        const responseBody = response.data;
         if(!responseBody.success){
             console.error('Error updating friend request:', responseBody.message);
             return 'Error updating friend request';
@@ -112,12 +92,9 @@ const updateFriendRequest = async (friendshipId, status) => {
 
 const getFriendRequests = async () => {
     try{
-        const response = await axios.get('/friend-requests', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
+        const responseBody = await apiRequest('/friend-requests', null, {
+            method: 'GET'
         });
-        const responseBody = response.data;
         if(!responseBody.success){
             console.error('Error fetching friend requests:', responseBody.message);
             return [];
@@ -131,12 +108,7 @@ const getFriendRequests = async () => {
 
 const unFriend = async (friendId) => {
     try{
-        const response = await axios.post(`/unfriend/${friendId}`, {}, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-        });
-        const responseBody = response.data;
+        const responseBody = await apiRequest(`/unfriend/${friendId}`, {});
         if(!responseBody.success){
             console.error('Error unfriending:', responseBody.message);
             return responseBody.message;

@@ -1,0 +1,37 @@
+.dash-status{
+    --color: var(--org-primary);
+    --background-color: var(--org-primary-transparent);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    width:100%;
+    padding:6px 6px 6px 20px;
+    border-radius: 10px;
+    background-color: var(--background-color);
+    color: var(--color);
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid var(--color);
+    box-sizing: border-box;
+    justify-content: space-between;
+    .status-container{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        iconify-icon{
+            font-size:18px;
+        }
+    }
+    button{
+        background-color: var(--color);
+        color: white;
+        border: none;
+        padding: 6px 10px;
+        border-radius: 10px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+}

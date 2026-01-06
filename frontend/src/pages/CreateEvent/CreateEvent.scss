@@ -135,6 +135,7 @@
                     flex-direction: column;
                     
                     .step{
+                        animation: slideInStep 0.3s forwards ease-in-out;
                         cursor: pointer;
                         display:flex;
                         flex-direction: row;
@@ -147,6 +148,10 @@
                         img{
                             height:20px;
                             width:20px;
+                        }
+                        iconify-icon{
+                            font-size: 20px;
+                            color: var(--text)
                         }
                         p{
                             font-size:15px;
@@ -212,5 +217,20 @@
                 }
             }
         }
+    }
+}
+
+
+@keyframes slideInStep {
+    0%{
+        transform:translateX(-100%);
+        opacity: 0;
+        height:0;
+    }
+
+    100%{
+        transform: translateX(0);
+        opacity:1;
+        height:36px;
     }
 }

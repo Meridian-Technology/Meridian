@@ -26,6 +26,30 @@ else:
 
 # =====================================================================================
 
-addNewField(uri, "users", {"darkModePreference" : False})
+# Add RSVP fields to existing events
+client = MongoClient(uri, server_api=ServerApi(version='1'))
+db = client["studycompass"]
+events_collection = db["events"]
+
+# Update all existing events to include RSVP fields
+events_collection.update_many(
+    {},
+    {
+        "$set": {
+            "rsvpEnabled": True,
+            "rsvpRequired": False,
+            "rsvpDeadline": None,
+            "maxAttendees": None,
+            "attendees": [],
+            "rsvpStats": {
+                "going": 0,
+                "maybe": 0,
+                "notGoing": 0
+            }
+        }
+    }
+)
+
+print("Successfully added RSVP fields to all existing events")
 
 updateVersion(uri, VERSION)

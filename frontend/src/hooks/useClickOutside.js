@@ -9,7 +9,7 @@ function useOutsideClick(ref, onOutsideClick, exclude = []) {
      * Call the handler if clicked on outside of element
      */
     function handleClickOutside(event) {
-    console.log(event.target.className);
+    // console.log(event.target.className);
       if (exclude.length > 0) {
         for (let i = 0; i < exclude.length; i++) {
           if (typeof event.target.className!=="string" || event.target.className.includes(exclude[i])) {

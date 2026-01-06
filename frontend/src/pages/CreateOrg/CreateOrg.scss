@@ -20,6 +20,28 @@
         }
         .file-upload{
             width:100%;
+            img{
+                width:50px;
+                height:50px;
+                object-fit: cover;
+                border-radius: 50%;
+            }
+        }
+        .role-manager{
+            border: 1px solid var(--lighterborder);
+            background: var(--background);
+            padding: 20px;
+            box-shadow:var(--shadow);
+            max-height:40vh;
+            overflow-y: auto;
+            box-sizing: border-box;
+            border-radius: 10px;
+            margin-top: 10px;
+            .role-container{
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
         }
         .status{
             bottom:-30px;

@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import './CreateEventButton.scss';
 import {Icon} from '@iconify-icon/react';  
 import GradientButtonCover from '../../../../../assets/GradientButtonCover.png';
+import AltGradientButtonCover from '../../../../../assets/AltGradButtonCover.png'
 
-function CreateEventButton({origin = ""}){
+function CreateEventButton({origin = "", row=false, color = 'pink'}){
     const navigate = useNavigate();
 
     const handleEventClick = () => {
@@ -16,13 +17,13 @@ function CreateEventButton({origin = ""}){
     }
 
     return(
-        <div className="event-component create" onClick={handleEventClick}>
+        <div className={`event-component create ${row && "row"} ${color}`} onClick={handleEventClick} >
             <div className="info">
                 <Icon icon="ph:plus-bold" className="create-icon"/>
                 <h1>create event</h1>
             </div>
             <div className="gradient-cover">
-                <img src={GradientButtonCover} alt="" />
+                <img src={color === "pink" ? GradientButtonCover : AltGradientButtonCover} alt="" />
             </div>
         </div>
     );

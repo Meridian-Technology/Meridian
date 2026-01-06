@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from './NotificationContext';
+import apiRequest from './utils/postRequest';
 
 /** 
 documentation:
@@ -14,36 +15,38 @@ export const AuthProvider = ({ children }) => {
     const [isAuthenticating, setIsAuthenticating] = useState(true); // [1
     const [user, setUser] = useState(null);
     const [checkedIn, setCheckedIn] = useState(null);
+    const [authMethod, setAuthMethod] = useState(null); // 'google', 'saml', 'email'
 
     const { addNotification } = useNotification();
 
     const validateToken = async () => {
-        const token = localStorage.getItem('token');
         try {
-            // Set up the Authorization header
-            const config = {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            };
-            // Make the GET request to the validate-token endpoint
-            const response = await axios.get('/validate-token', config);
-
-            console.log('Token validation response:', response.data);
+            // Make the GET request to the validate-token endpoint with cookies
+            const response = await apiRequest('/validate-token', null, { method: 'GET' });
+            console.log('Token validation response:', response);
+            // console.log('Token validation response:', response.data);
             // Handle response...
-            if (response.data.success) {
-                setUser(response.data.data.user);
-                console.log(response.data.data.user);
+            if (response.success) {
+                setUser(response.data.user);
+                // Determine auth method from user data
+                if (response.data.user.samlProvider) {
+                    setAuthMethod('saml');
+                } else if (response.data.user.googleId) {
+                    setAuthMethod('google');
+                } else if (response.data.user.appleId) {
+                    setAuthMethod('apple');
+                } else {
+                    setAuthMethod('email');
+                }
+                // console.log(response.data.user);
                 setIsAuthenticated(true);
                 setIsAuthenticating(false);
                 getCheckedIn();
             } else {
                 setIsAuthenticated(false);
                 setIsAuthenticating(false);
-                localStorage.removeItem('token');
             }
         } catch (error) {
-            localStorage.removeItem('token');
             console.log('Token expired or invalid');
             setIsAuthenticated(false);
             setIsAuthenticating(false);
@@ -52,24 +55,25 @@ export const AuthProvider = ({ children }) => {
     };
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            validateToken();
-        } else {
-            setIsAuthenticated(false);
-            setIsAuthenticating(false);
-        }
+        validateToken();
     }, []);
 
     const login = async (credentials) => {
         try {
-            const response = await axios.post('/login', credentials);
+            const response = await axios.post('/login', credentials, {
+                withCredentials: true
+            });
             if (response.status === 200) {
-                localStorage.setItem('token', response.data.data.token);
                 setIsAuthenticated(true);
                 setUser(response.data.data.user);
+                setAuthMethod('email');
                 console.log(response.data);
                 addNotification({ title:'Logged in successfully',type: 'success'});
+                
+                // Redirect admin users to admin dashboard
+                if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
+                    window.location.href = '/admin';
+                }
             }
         } catch (error) {
             // console.error('Login failed:', error);
@@ -81,13 +85,21 @@ export const AuthProvider = ({ children }) => {
     const googleLogin = async (code, isRegister) => {
         try {
             const url = window.location.href;
-            const response = await axios.post('/google-login', { code, isRegister, url });
+            const response = await axios.post('/google-login', { code, isRegister, url }, {
+                withCredentials: true
+            });
             // Handle response from the backend (e.g., storing the token, redirecting the user)
             console.log('Backend response:', response.data);
-            localStorage.setItem('token', response.data.data.token);
+            console.log('User object from Google login:', response.data.data.user);
             setIsAuthenticated(true);
             setUser(response.data.data.user);
+            setAuthMethod('google');
             // addNotification({title: 'Logged in successfully',type: 'success'});
+            
+            // Redirect admin users to admin dashboard
+            if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
+                window.location.href = '/admin';
+            }
             // For example, redirect the user or store the received token in local storage
         } catch (error) {
             console.error('Error sending code to backend:', error);
@@ -96,22 +108,67 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const logout = () => {
-        localStorage.removeItem('token');
-        setIsAuthenticated(false);
-        setUser(null);
-        addNotification({title: 'Logged out successfully',type: 'success'});
+    const appleLogin = async (idToken, user) => {
+        try {
+            const response = await axios.post('/apple-login', { idToken, user }, {
+                withCredentials: true
+            });
+            // Handle response from the backend
+            console.log('Backend response:', response.data);
+            console.log('User object from Apple login:', response.data.data.user);
+            setIsAuthenticated(true);
+            setUser(response.data.data.user);
+            setAuthMethod('apple');
+            addNotification({ title: 'Logged in successfully', type: 'success' });
+            
+            // Redirect admin users to admin dashboard
+            if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
+                window.location.href = '/admin';
+            }
+        } catch (error) {
+            console.error('Error sending Apple ID token to backend:', error);
+            // Handle error
+            throw error;
+        }
+    };
+
+    const samlLogin = async (relayState = null) => {
+        try {
+            // Redirect to SAML login endpoint
+            const baseUrl = process.env.NODE_ENV === 'production' 
+                ? window.location.origin 
+                : 'http://localhost:5001'; // Use backend URL directly in development
+            const loginUrl = `${baseUrl}/auth/saml/login${relayState ? `?relayState=${encodeURIComponent(relayState)}` : ''}`;
+            window.location.href = loginUrl;
+        } catch (error) {
+            console.error('SAML login error:', error);
+            throw error;
+        }
+    };
+
+    const logout = async () => {
+        try {
+            // Use SAML logout if user authenticated via SAML
+            if (authMethod === 'saml') {
+                await axios.post('/auth/saml/logout', {}, { withCredentials: true });
+            } else {
+                await axios.post('/logout', {}, { withCredentials: true });
+            }
+        } catch (error) {
+            console.error('Logout error:', error);
+        } finally {
+            setIsAuthenticated(false);
+            setUser(null);
+            setAuthMethod(null);
+            addNotification({title: 'Logged out successfully',type: 'success'});
+        }
     };
 
     const getDeveloper = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const config = {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            };
-            const response = await axios.get('/get-developer', config);
+            const response = await axios.get('/get-developer', {
+                withCredentials: true
+            });
             
             if (response.data.success) {
                 const responseBody = response.data;
@@ -128,13 +185,9 @@ export const AuthProvider = ({ children }) => {
 
     const getCheckedIn = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const config = {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            };
-            const response = await axios.get('/checked-in', config);
+            const response = await axios.get('/checked-in', {
+                withCredentials: true
+            });
 
             if (response.data.success) {
                 const responseBody = response.data;
@@ -152,7 +205,21 @@ export const AuthProvider = ({ children }) => {
     }
 
     return (
-        <AuthContext.Provider value={{ isAuthenticated, user, login, logout, googleLogin, validateToken, isAuthenticating, getDeveloper, checkedIn, getCheckedIn }}>
+        <AuthContext.Provider value={{ 
+            isAuthenticated, 
+            user, 
+            login, 
+            logout, 
+            googleLogin,
+            appleLogin, 
+            samlLogin,
+            validateToken, 
+            isAuthenticating, 
+            getDeveloper, 
+            checkedIn, 
+            getCheckedIn,
+            authMethod 
+        }}>
             {children}
         </AuthContext.Provider>
     );

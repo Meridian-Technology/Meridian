@@ -1,0 +1,48 @@
+.form-viewer {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: var(--background);
+  border-radius: 15px;
+
+
+  .form-header {
+    margin-bottom: 30px;
+    text-align: center;
+
+    h1 {
+      font-size: 24px;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+
+    p {
+      color: var(--text);
+      opacity: 0.8;
+      font-size: 16px;
+    }
+  }
+  
+  form{
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .submit-button {
+    width: 100%;
+    padding: 12px;
+    background-color: var(--red);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: opacity 0.2s;
+
+    &:hover {
+      opacity: 0.9;
+    }
+  }
+}

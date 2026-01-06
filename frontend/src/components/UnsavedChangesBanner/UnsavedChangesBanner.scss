@@ -1,0 +1,109 @@
+// Discord-style unsaved changes banner
+.unsaved-changes-banner {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    // background: linear-gradient(90deg, #ff6b6b 0%, #ff8e8e 100%);
+    background-color: var(--background);
+    border: 1px solid var(--lighterborder);
+    animation: slideUp 0.3s ease-out;
+    box-shadow: 0px 7px 29px 0px rgba(100, 171, 108, 0.3);
+
+    margin: 20px;
+    border-radius: 10px;
+
+    .banner-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 24px;
+        max-width: 1200px;
+        margin: 0 auto;
+        
+        .banner-text {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+            font-family: 'Inter';
+            font-size: 14px;
+            font-weight: 600;
+            
+            .banner-icon {
+                font-size: 18px;
+                color: var(--org-primary);
+            }
+            b{
+                font-weight: 800;
+            }
+        }
+        
+        .banner-actions {
+            display: flex;
+            gap: 8px;
+            
+            .btn {
+                font-family: 'Inter';
+                font-size: 13px;
+                font-weight: 500;
+                padding: 6px 12px;
+                border-radius: 4px;
+                border: none;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                min-width: 70px;
+                
+                &.btn-secondary {
+                    background-color: var(--light);
+                    color: var(--text);
+                    border: 1px solid rgba(255, 255, 255, 0.3);
+                    
+                    &:hover:not(:disabled) {
+                        background-color: rgba(255, 255, 255, 0.3);
+                    }
+                    
+                    &:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                    }
+                }
+                
+                &.btn-primary {
+                    background-color: var(--org-primary);
+                    color: white;
+                    box-shadow: 0px 7px 29px 0px rgba(100, 171, 108, 0.1);
+                    transition: all 0.2s ease;
+                    
+                    &:hover:not(:disabled) {
+                        background-color: var(--org-primary);
+                        box-shadow: 0px 7px 29px 0px rgba(100, 171, 108, 0.6);
+
+                    }
+                    
+                    &:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                    }
+                }
+            }
+        }
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+// Global styles for pages that use the banner
+.dash:has(.unsaved-changes-banner) {
+    padding-bottom: 60px;
+} 

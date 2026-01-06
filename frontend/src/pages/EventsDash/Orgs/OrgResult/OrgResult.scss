@@ -1,0 +1,22 @@
+.org-result{
+    border:1px solid var(--lighterborder);
+    display: flex;
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 10px 20px;
+    text-decoration: none;
+    color: var(--text);
+    display: flex;
+
+    img{
+        width:50px;
+        height:50px;
+    }
+    .info{
+        h3{
+            margin: 0;
+        }
+    }
+
+    
+}

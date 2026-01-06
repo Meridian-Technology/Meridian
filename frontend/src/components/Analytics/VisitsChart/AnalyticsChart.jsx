@@ -1,11 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
-import axios from 'axios';
-import { format, subWeeks, addWeeks, subDays, addDays, startOfWeek, endOfWeek } from 'date-fns'; // Import date manipulation functions
+import apiRequest from '../../../utils/postRequest';
+import { format, addWeeks, addDays, subWeeks, subDays, subMonths, subYears } from 'date-fns'; // Import date manipulation functions
 import './AnalyticsChart.scss';
 import Stats from '../../../assets/Icons/Stats.svg';
-import Switch from '../../Switch/Switch';
-import RightArrow from '../../../assets/Icons/RightArrow.svg';
+// removed per-chart date navigation
 
 // Chart.js components
 import {
@@ -18,6 +17,7 @@ import {
   Tooltip,
   Legend,
   Filler, // For filling under the line
+  Decimation,
 } from 'chart.js';
 
 ChartJS.register(
@@ -28,13 +28,18 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  Decimation
 );
 
-const AnalyticsChart = ({endpoint, heading, color}) => {
+const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalStartDate, externalCumulative, previousPeriodMode}) => {
     const [chartData, setChartData] = useState({});
-    const [viewMode, setViewMode] = useState('day'); // 'day', 'hour', or 'all'
-    const [startDate, setStartDate] = useState(new Date()); // Track current start date
+    const [totalCount, setTotalCount] = useState(0);
+    const [previousTotalCount, setPreviousTotalCount] = useState(0);
+    const [viewMode, setViewMode] = useState(externalViewMode || 'month'); // 'month'|'week'|'day'|'all'
+    const [startDate, setStartDate] = useState(externalStartDate || new Date());
+    // cumulative controlled globally
+    const [lastRoute, setLastRoute] = useState('day');
     const chartRef = useRef(null);
   
     function hexToRgb(hex) {
@@ -56,114 +61,227 @@ const AnalyticsChart = ({endpoint, heading, color}) => {
 
     let { r, g, b } = hexToRgb(color);
 
-    // Function to move time range backward
-    const handlePrev = () => {
-      if (viewMode === 'day') {
-        setStartDate((prev) => subWeeks(prev, 1)); // Go back 1 week
-      } else if (viewMode === 'hour') {
-        setStartDate((prev) => subDays(prev, 1)); // Go back 1 day
-      }
-    };
-  
-    // Function to move time range forward
-    const handleNext = () => {
-      if (viewMode === 'day') {
-        setStartDate((prev) => addWeeks(prev, 1)); // Go forward 1 week
-      } else if (viewMode === 'hour') {
-        setStartDate((prev) => addDays(prev, 1)); // Go forward 1 day
-      }
-    };
+    // Per-chart date navigation removed; global controls manage range
       useEffect(() => {
-    if (chartRef.current) {
+    if (chartRef.current && chartData.datasets) {
       const chart = chartRef.current;
       const ctx = chart.ctx;
-      const gradient = ctx.createLinearGradient(0, 0, 0, 250); // Customize start/end points of the gradient
-      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.8)`);
-      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-
-      // Apply gradient to the chart
-      chart.data.datasets[0].backgroundColor = gradient;
+      
+      // Apply gradient to current period dataset
+      if (chartData.datasets[0]) {
+        const gradient = ctx.createLinearGradient(0, 0, 0, 190);
+        gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.8)`);
+        gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+        chart.data.datasets[0].backgroundColor = gradient;
+      }
+      
+      // Apply lighter gradient to previous period dataset if it exists
+      if (chartData.datasets[1]) {
+        const prevGradient = ctx.createLinearGradient(0, 0, 0, 190);
+        prevGradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.3)`);
+        prevGradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+        chart.data.datasets[1].backgroundColor = prevGradient;
+      }
+      
       chart.update();
     }
-  }, [chartData]);
+  }, [chartData, r, g, b]);
   
-    // Fetch visit data based on mode (day, hour, all)
-    const fetchVisitData = async (mode, startDate) => {
-      let endDate;
-      if (mode === 'day') {
-        endDate = addWeeks(startDate, 1);
-      } else if (mode === 'hour') {
-        endDate = addDays(startDate, 1);
+    // Calculate previous period dates based on mode
+    const calculatePreviousPeriod = (mode, anchorDate, endDate) => {
+      if (!previousPeriodMode || previousPeriodMode === 'none') {
+        return null;
       }
-  
-      const params = mode === 'all' ? {} : {
-        startDate: format(startDate, 'yyyy-MM-dd'),
+
+      let prevStartDate, prevEndDate;
+
+      if (previousPeriodMode === 'lastYear') {
+        // This time last year - subtract exactly one year from both dates
+        prevStartDate = subYears(anchorDate, 1);
+        prevEndDate = subYears(endDate, 1);
+      } else if (previousPeriodMode === 'adjacent') {
+        // Adjacent previous period
+        if (mode === 'month') {
+          prevStartDate = subWeeks(anchorDate, 4);
+          prevEndDate = anchorDate;
+        } else if (mode === 'week') {
+          prevStartDate = subWeeks(anchorDate, 1);
+          prevEndDate = anchorDate;
+        } else if (mode === 'day') {
+          prevStartDate = subDays(anchorDate, 1);
+          prevEndDate = anchorDate;
+        } else {
+          return null;
+        }
+      } else {
+        return null;
+      }
+
+      return { prevStartDate, prevEndDate };
+    };
+
+    // Fetch data based on viewMode
+    const fetchVisitData = async (mode, anchorDate) => {
+      let endDate;
+      let routeSuffix;
+      if (mode === 'all') {
+        routeSuffix = 'all';
+      } else if (mode === 'month' || mode === 'week') {
+        // both use -by-day
+        routeSuffix = 'day';
+        endDate = mode === 'month' ? addWeeks(anchorDate, 4) : addWeeks(anchorDate, 1);
+      } else {
+        // day view uses -by-hour
+        routeSuffix = 'hour';
+        endDate = addDays(anchorDate, 1);
+      }
+
+      const params = routeSuffix === 'all' ? {} : {
+        startDate: format(anchorDate, 'yyyy-MM-dd'),
         endDate: format(endDate, 'yyyy-MM-dd'),
       };
-  
+
       try {
-        const response = await axios.get(`/${endpoint}-by-${mode}`, { params });
-        if (response.status === 200) {
-          const data = response.data;
+        // Fetch current period data
+        const data = await apiRequest(`/${endpoint}-by-${routeSuffix}`, null, { method: 'GET', params });
+        if (data && !data.error) {
           const labels = data.map(item => {
-            if (mode === 'day') {
+            if (routeSuffix === 'day') {
               const date = addDays(new Date(item.date + 'T00:00:00Z'), 1);
               return format(date, 'MMM dd');
-            } else if (mode === 'hour') {
-              return format(new Date(item.hour), 'H:mm');
             } else {
-              return format(new Date(item.date), 'MMM dd yyyy');
+              if (routeSuffix === 'hour') {
+                return format(new Date(item.hour), 'H:mm');
+              }
+              // all
+              const date = addDays(new Date(item.date + 'T00:00:00Z'), 1);
+              return format(date, 'MMM yyyy');
             }
           });
-          const counts = data.map(item => item.count);
+          const rawCounts = data.map(item => item.count);
+          setTotalCount(rawCounts.reduce((a, b) => a + b, 0));
+          let counts = rawCounts.slice();
+          if (externalCumulative && counts.length) {
+            let running = 0;
+            counts = counts.map((v) => (running += v));
+          }
+
+          // Fetch previous period data if enabled
+          let previousCounts = null;
+          let previousLabels = null;
+          if (previousPeriodMode && previousPeriodMode !== 'none' && mode !== 'all') {
+            const prevPeriod = calculatePreviousPeriod(mode, anchorDate, endDate);
+            if (prevPeriod) {
+              try {
+                // For hour-based queries, only pass startDate; for others, pass both dates
+                const prevParams = routeSuffix === 'hour' 
+                  ? { startDate: format(prevPeriod.prevStartDate, 'yyyy-MM-dd') }
+                  : {
+                      startDate: format(prevPeriod.prevStartDate, 'yyyy-MM-dd'),
+                      endDate: format(prevPeriod.prevEndDate, 'yyyy-MM-dd'),
+                    };
+                const prevData = await apiRequest(`/${endpoint}-by-${routeSuffix}`, null, { method: 'GET', params: prevParams });
+                if (prevData && !prevData.error) {
+                  previousLabels = prevData.map(item => {
+                    if (routeSuffix === 'day') {
+                      const date = addDays(new Date(item.date + 'T00:00:00Z'), 1);
+                      return format(date, 'MMM dd');
+                    } else if (routeSuffix === 'hour') {
+                      return format(new Date(item.hour), 'H:mm');
+                    }
+                    return '';
+                  });
+                  const prevRawCounts = prevData.map(item => item.count);
+                  setPreviousTotalCount(prevRawCounts.reduce((a, b) => a + b, 0));
+                  previousCounts = prevRawCounts.slice();
+                  if (externalCumulative && previousCounts.length) {
+                    let running = 0;
+                    previousCounts = previousCounts.map((v) => (running += v));
+                  }
+                }
+              } catch (prevErr) {
+                console.error('Error fetching previous period data', prevErr);
+              }
+            }
+          }
+
+          const datasets = [
+            {
+              label: 'Current',
+              data: counts,
+              fill: true,
+              backgroundColor: 'transparent',
+              borderColor: `rgba(${r}, ${g}, ${b}, 0.8)`,
+              pointBackgroundColor: `rgba(${r}, ${g}, ${b}, 1)`,
+              pointBorderColor: '#fff',
+              tension: 0.3,
+              borderWidth: 3,
+              pointRadius: 0,
+              pointHoverRadius: 6,
+              hitRadius: 20,
+            },
+          ];
+
+          // Add previous period dataset if available
+          if (previousCounts && previousCounts.length > 0) {
+            datasets.push({
+              label: previousPeriodMode === 'lastYear' ? 'Last Year' : 'Previous Period',
+              data: previousCounts,
+              fill: true,
+              backgroundColor: 'transparent',
+              borderColor: `rgba(${r}, ${g}, ${b}, 0.4)`,
+              pointBackgroundColor: `rgba(${r}, ${g}, ${b}, 0.6)`,
+              pointBorderColor: '#fff',
+              tension: 0.3,
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              pointHoverRadius: 6,
+              hitRadius: 20,
+            });
+          }
+
           setChartData({
             labels,
-            datasets: [
-              {
-                  data: counts,
-                  fill: true,
-                  backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                  borderColor: `rgba(${r}, ${g}, ${b}, 0.8)`,
-                  pointBackgroundColor: `rgba(${r}, ${g}, ${b}, 1)`,
-                  pointBorderColor: '#fff',
-                  tension: 0.3,
-                  borderWidth: 4,
-                  pointRadius: 0,
-                  pointHoverRadius: 6,
-                  hitRadius: 20,
-              },
-            ],
+            datasets,
           });
+          setLastRoute(routeSuffix);
         }
       } catch (err) {
         console.error('Error fetching visit data', err);
       }
     };
   
-    // Fetch data when component mounts or viewMode/startDate changes
+    // Fetch data when component mounts or dependencies change
     useEffect(() => {
-      fetchVisitData(viewMode, startDate);
-    }, [viewMode, startDate]);
+      const vm = externalViewMode || viewMode;
+      const sd = externalStartDate || startDate;
+      setViewMode(vm);
+      setStartDate(sd);
+      fetchVisitData(vm, sd);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [externalViewMode, externalStartDate, externalCumulative, previousPeriodMode, viewMode, startDate]);
   
-    const handleViewModeChange = (mode) => {
-      const newMode = mode === 0 ? 'day' : mode === 1 ? 'hour' : 'all';
-      setViewMode(newMode);
-      if (newMode !== 'all') {
-        setStartDate(new Date()); // Reset start date when changing view mode
-      }
-    };
+    // View mode is controlled externally via DateRangeControls
   
     return (
       <div className="visit-chart">
           <div className="header">
               <div className="header-content">
-                  <img src={Stats} alt="Stats" />
+                  {/* <img src={Stats} alt="Stats" /> */}
                   <h2>{heading}</h2>
               </div>
-              <Switch options={["week", "day", "all"]} onChange={handleViewModeChange} selectedPass={0} setSelectedPass={console.log}/>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }} />
           </div>
           <div className="row">
-              <h3>{chartData.datasets ? chartData.datasets[0].data.reduce((a, b) => a + b, 0) : 0} {endpoint}</h3>
+              <h3>
+                {totalCount}
+                {/* {previousPeriodMode && previousPeriodMode !== 'none' && previousTotalCount > 0 && (
+                  <span style={{ marginLeft: 12, fontSize: '0.7em', color: '#666', fontWeight: 'normal' }}>
+                    ({previousTotalCount} {previousPeriodMode === 'lastYear' ? 'last year' : 'previous'})
+                  </span>
+                )} */}
+              </h3>
           </div>
           <div className="chart-container">
             {chartData.labels ? (
@@ -195,6 +313,16 @@ const AnalyticsChart = ({endpoint, heading, color}) => {
                         },
                         ticks: {
                           color: '#666',
+                          autoSkip: true,
+                          maxTicksLimit: lastRoute === 'all' ? 8 : 12,
+                          callback: function(value, index, ticks) {
+                            const total = chartData.labels ? chartData.labels.length : 0;
+                            if (lastRoute === 'all' && total > 0) {
+                              const step = Math.ceil(total / 8);
+                              return index % step === 0 ? this.getLabelForValue(value) : '';
+                            }
+                            return this.getLabelForValue(value);
+                          },
                           font: {
                             size: 11,
                             family: 'Inter',
@@ -204,7 +332,7 @@ const AnalyticsChart = ({endpoint, heading, color}) => {
                       },
                       y: {
                         grid:{
-                            display: true,
+                            display: false,
                             drawBorder: false,
                         },
                         border:{
@@ -219,6 +347,19 @@ const AnalyticsChart = ({endpoint, heading, color}) => {
                         },
                         ticks: {
                           color: '#666',
+                          autoSkip: true,
+                          maxTicksLimit: 6,
+                          padding: 4,
+                          callback: function(value) {
+                            try {
+                              return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+                            } catch (e) {
+                              // Fallback
+                              if (value >= 1_000_000) return (value/1_000_000).toFixed(1) + 'M';
+                              if (value >= 1_000) return (value/1_000).toFixed(1) + 'k';
+                              return value;
+                            }
+                          },
                           font: {
                             size: 11,
                             family: 'Inter',
@@ -230,19 +371,27 @@ const AnalyticsChart = ({endpoint, heading, color}) => {
                       },
                   }, // Your scale options here
                   plugins: {
+                    decimation: {
+                      enabled: true,
+                      algorithm: 'lttb',
+                      samples: 250,
+                    },
                     legend: {
-                        display: false,
+                        display: previousPeriodMode && previousPeriodMode !== 'none' && chartData.datasets && chartData.datasets.length > 1,
                         position: 'top',
                         labels: {
                           color: '#333',
                           font: {
-                            size: 14,
+                            size: 12,
+                            family: 'Inter',
                           },
+                          usePointStyle: true,
+                          padding: 12,
                         },
                       },
                       tooltip: {
                         enabled: true, // Ensure the tooltip is enabled
-                        backgroundColor: 'white', // Background color of the tooltip
+                        backgroundColor: 'rgba(255, 255, 255, 0.6)', // Background color of the tooltip
                         titleColor: '#414141', // Color of the tooltip title
                         bodyColor: '#414141', // Color of the tooltip body text
                         borderColor: 'white', // Border color around the tooltip
@@ -280,21 +429,12 @@ const AnalyticsChart = ({endpoint, heading, color}) => {
                         },
                       },
                   }, // Your plugin options here
+                  interaction: { mode: 'index', intersect: false },
                 }}
               />
             ) : <p>Loading chart...</p>}
           </div>
-          {viewMode !== 'all' && (
-            <div className="dates">
-              <button onClick={handlePrev} className="left-button"><img src={RightArrow} alt="" /></button>
-              <h3>
-                {viewMode === 'day'
-                  ? `${format(startOfWeek(startDate, { weekStartsOn: 0 }), 'MMM dd')} - ${format(endOfWeek(startDate, { weekStartsOn: 0 }), 'MMM dd')}`
-                  : `${format(startDate, 'MMM dd')}`}
-              </h3>
-              <button onClick={handleNext}><img src={RightArrow} alt="" /></button>
-            </div>
-          )}
+          {/* per-chart date range UI removed; global DateRangeControls used */}
       </div>
     );
   };

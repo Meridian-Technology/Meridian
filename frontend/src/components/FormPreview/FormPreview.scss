@@ -1,0 +1,35 @@
+.form-preview{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border: 1px solid var(--lighterborder);
+    border-radius: 10px;
+    padding: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    .preview-header{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        h3{
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin: 0;
+            color: var(--lighter-text);
+        }
+        iconify-icon{
+            font-size: 1.1rem;
+            color: var(--lighter-text);
+        }
+        p{
+            font-size: 0.8rem;
+            color: var(--lighter-text);
+            margin: 0;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    }
+}

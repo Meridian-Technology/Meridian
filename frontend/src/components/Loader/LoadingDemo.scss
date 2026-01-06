@@ -1,0 +1,167 @@
+.loading-demo {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    
+    h2 {
+        text-align: center;
+        color: var(--text);
+        margin-bottom: 2rem;
+        font-size: 2rem;
+    }
+    
+    .demo-section {
+        margin-bottom: 3rem;
+        padding: 2rem;
+        background: var(--lighter);
+        border: 1px solid var(--lighterborder);
+        border-radius: 12px;
+        
+        h3 {
+            color: var(--text);
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 0.5rem;
+        }
+        
+        .loader-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            
+            .loader-item {
+                padding: 1.5rem;
+                background: white;
+                border: 1px solid var(--lighterborder);
+                border-radius: 8px;
+                text-align: center;
+                
+                h4 {
+                    color: var(--text);
+                    margin-bottom: 1rem;
+                    font-size: 1.1rem;
+                }
+            }
+        }
+        
+        .progress-demo {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            
+            .reset-btn {
+                padding: 0.75rem 1.5rem;
+                background: var(--primary);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 500;
+                transition: all 0.3s ease;
+                
+                &:hover {
+                    background: var(--primary-dark, var(--primary));
+                    transform: translateY(-2px);
+                }
+            }
+        }
+        
+        .skeleton-demo {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .overlay-btn {
+            padding: 0.75rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            
+            &:hover {
+                background: var(--primary-dark, var(--primary));
+                transform: translateY(-2px);
+            }
+        }
+        
+        .type-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            
+            button {
+                padding: 0.5rem 1rem;
+                background: var(--lighterborder);
+                color: var(--text);
+                border: 1px solid var(--lighterborder);
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 500;
+                transition: all 0.3s ease;
+                
+                &:hover {
+                    background: var(--primary);
+                    color: white;
+                }
+                
+                &.active {
+                    background: var(--primary);
+                    color: white;
+                }
+            }
+        }
+        
+        .selected-loader {
+            display: flex;
+            justify-content: center;
+            padding: 2rem;
+            background: white;
+            border: 1px solid var(--lighterborder);
+            border-radius: 8px;
+        }
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .loading-demo {
+        padding: 1rem;
+        
+        h2 {
+            font-size: 1.5rem;
+        }
+        
+        .demo-section {
+            padding: 1rem;
+            margin-bottom: 2rem;
+            
+            h3 {
+                font-size: 1.3rem;
+            }
+            
+            .loader-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+                
+                .loader-item {
+                    padding: 1rem;
+                }
+            }
+            
+            .type-selector {
+                justify-content: center;
+                
+                button {
+                    padding: 0.4rem 0.8rem;
+                    font-size: 0.9rem;
+                }
+            }
+        }
+    }
+}

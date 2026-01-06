@@ -1,0 +1,270 @@
+.bulk-operations-panel {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    width: 400px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    animation: slideUp 0.3s ease;
+
+    .bulk-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem;
+        background: #f8f9fa;
+        border-bottom: 1px solid #e9ecef;
+        border-radius: 12px 12px 0 0;
+
+        .header-content {
+            h3 {
+                font-size: 1.2rem;
+                font-weight: 600;
+                color: #2c3e50;
+                margin: 0 0 0.25rem 0;
+            }
+
+            p {
+                font-size: 0.9rem;
+                color: #6c757d;
+                margin: 0;
+            }
+        }
+
+        .close-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: #e9ecef;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+
+            &:hover {
+                background: #dee2e6;
+            }
+
+            svg {
+                font-size: 1.2rem;
+                color: #6c757d;
+            }
+        }
+    }
+
+    .bulk-content {
+        padding: 1.5rem;
+
+        .action-selection {
+            margin-bottom: 1.5rem;
+
+            h4 {
+                font-size: 1rem;
+                font-weight: 600;
+                color: #2c3e50;
+                margin: 0 0 1rem 0;
+            }
+
+            .action-options {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+
+                .action-option {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 0.5rem;
+                    padding: 1rem;
+                    background: #f8f9fa;
+                    border: 2px solid #e9ecef;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+
+                    &:hover {
+                        background: #e9ecef;
+                        border-color: #dee2e6;
+                    }
+
+                    &.selected {
+                        background: #e3f2fd;
+                        border-color: #2196f3;
+                        color: #1976d2;
+
+                        svg {
+                            color: #1976d2;
+                        }
+                    }
+
+                    svg {
+                        font-size: 1.5rem;
+                        color: #6c757d;
+                    }
+
+                    span {
+                        font-size: 0.9rem;
+                        font-weight: 500;
+                    }
+                }
+            }
+        }
+
+        .action-preview {
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #4DAA57;
+
+            .preview-header {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                margin-bottom: 0.75rem;
+
+                svg {
+                    font-size: 1.2rem;
+                }
+
+                h4 {
+                    font-size: 1rem;
+                    font-weight: 600;
+                    color: #2c3e50;
+                    margin: 0;
+                }
+            }
+
+            p {
+                font-size: 0.9rem;
+                color: #6c757d;
+                margin: 0 0 1rem 0;
+                line-height: 1.4;
+            }
+
+            .preview-details {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+
+                .detail-item {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+
+                    .label {
+                        font-size: 0.85rem;
+                        color: #6c757d;
+                        font-weight: 500;
+                    }
+
+                    .value {
+                        font-size: 0.85rem;
+                        color: #2c3e50;
+                        font-weight: 600;
+                    }
+                }
+            }
+        }
+    }
+
+    .bulk-footer {
+        display: flex;
+        gap: 1rem;
+        padding: 1.5rem;
+        border-top: 1px solid #e9ecef;
+
+        .cancel-btn,
+        .execute-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cancel-btn {
+            background: #6c757d;
+            color: white;
+
+            &:hover {
+                background: #5a6268;
+            }
+        }
+
+        .execute-btn {
+            color: white;
+
+            &:hover:not(:disabled) {
+                opacity: 0.9;
+                transform: translateY(-1px);
+            }
+
+            &:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+
+            .spinner {
+                animation: spin 1s linear infinite;
+            }
+        }
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .bulk-operations-panel {
+        bottom: 1rem;
+        right: 1rem;
+        left: 1rem;
+        width: auto;
+
+        .bulk-content {
+            .action-selection {
+                .action-options {
+                    grid-template-columns: 1fr;
+                }
+            }
+        }
+
+        .bulk-footer {
+            flex-direction: column;
+
+            .cancel-btn,
+            .execute-btn {
+                width: 100%;
+            }
+        }
+    }
+}

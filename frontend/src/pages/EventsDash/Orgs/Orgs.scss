@@ -1,0 +1,11 @@
+.orgs{
+    z-index:2;
+    width:100%;
+    box-sizing: border-box;
+    .org-container{
+        display: flex;
+        flex-direction: column;
+        gap:10px;
+        padding:20px;
+    }
+}

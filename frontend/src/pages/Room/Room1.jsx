@@ -38,9 +38,16 @@ STATES
 contentState: "empty", "classroom", "calendarSearch" , "calendarSearchResult", "nameSearch" , "freeNowSearch" 
 */ 
 
-function Room() {
+function Room({hideHeader = false, urlType = 'embedded'}) {
+    //get search params
     let { roomid } = useParams();
     let navigate = useNavigate();
+    
+    // Handle embedded mode - if no roomid from params, set to "none"
+    if (urlType === 'embedded' && !roomid) {
+        roomid = "none";
+    }
+    
     const [room, setRoom] = useState(null);
     const [roomName, setRoomName] = useState(null);
     const [rooms, setRooms] = useState(null);
@@ -114,6 +121,29 @@ function Room() {
         if(contentState === "calendarSearch" || contentState === "freeNowSearch"){
             return;
         }
+        
+        // In embedded mode, check if we have a roomid from URL parameters
+        if (urlType === 'embedded') {
+            // Check if roomid is provided via URL parameters (for EventsDash integration)
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlRoomId = urlParams.get('roomid');
+            
+            if (urlRoomId && urlRoomId !== "none") {
+                // We have a roomid from URL, use it
+                roomid = decodeURIComponent(urlRoomId);
+                setContentState("classroom");
+                return;
+            }
+            
+            if(roomid === "none"){
+                setContentState("empty");
+                setSearchQuery("");
+                fetchData("none");
+                return;
+            }
+            return;
+        }
+        
         const searchParams = new URLSearchParams(window.location.search);
         const searchQuery = searchParams.get('query');
         if(searchQuery){
@@ -130,15 +160,41 @@ function Room() {
     },[roomid]);
 
     function changeURL(option) {
-        navigate(`/room/${encodeURI(option)}`);
-        fetchData(roomIds[option]);
-        setContentState("calendarSearchResult");
+        // Check if the room exists in roomIds
+        if (roomIds[option] === undefined) {
+            // Room not found, trigger a search instead
+            onSearch(option, [], "name");
+            return;
+        }
+        
+        if (urlType === 'embedded') {
+            // In embedded mode, just update internal state without navigation
+            fetchData(roomIds[option]);
+            setContentState("calendarSearchResult");
+        } else {
+            navigate(`/room/${encodeURI(option)}`);
+            fetchData(roomIds[option]);
+            setContentState("calendarSearchResult");
+        }
     }
 
     function changeURL2(option) {
-        navigate(`/room/${encodeURI(option)}`);
-        fetchData(roomIds[option]);
-        setContentState("classroom");
+        // Check if the room exists in roomIds
+        if (roomIds[option] === undefined) {
+            // Room not found, trigger a search instead
+            onSearch(option, [], "name");
+            return;
+        }
+        
+        if (urlType === 'embedded') {
+            // In embedded mode, just update internal state without navigation
+            fetchData(roomIds[option]);
+            setContentState("classroom");
+        } else {
+            navigate(`/room/${encodeURI(option)}`);
+            fetchData(roomIds[option]);
+            setContentState("classroom");
+        }
     }
 
     function onX(){ //make a reset function soon
@@ -148,6 +204,9 @@ function Room() {
         clearQuery();
         setLoadedResults([]);
         setFreeNow(false);
+        setSearchQuery(''); // Clear search query
+        setSearchAttributes([]); // Clear search attributes
+        setSearchSort('name'); // Reset search sort to default
     }
 
     function setReportUp(){
@@ -172,10 +231,10 @@ function Room() {
     const [viewport, setViewport] = useState("100vh");
     useEffect(() => {
         let height = window.innerHeight;
-        if(checkedIn!==null){
+        if(checkedIn!==null && !hideHeader){
             height -= 20;
         }
-        if(!isAuthenticated && !isAuthenticating){
+        if(!isAuthenticated && !isAuthenticating && !hideHeader){
             height -= 20;
             setViewport(height + 'px');
         }
@@ -198,12 +257,63 @@ function Room() {
         }
         if(isAuthenticated){
             if(user.onboarded === false){
-                navigate('/onboard');
+                if (urlType === 'embedded') {
+                    // In embedded mode, we can't navigate away, so just return
+                    return;
+                } else {
+                    navigate('/events-dashboard');
+                }
             }
         }
         if(!roomIds){
             return;
         }
+        
+        // In embedded mode, check for roomid from URL parameters
+        if (urlType === 'embedded') {
+            // Check if roomid is provided via URL parameters (for EventsDash integration)
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlRoomId = urlParams.get('roomid');
+            
+            if (urlRoomId && urlRoomId !== "none") {
+                // We have a roomid from URL, decode it and use it
+                const decodedRoomId = decodeURIComponent(urlRoomId);
+                
+                // Check if this room exists in our roomIds mapping
+                if (roomIds[decodedRoomId] === undefined) {
+                    // Room not found, show empty state
+                    setContentState("empty");
+                    fetchData("none");
+                    return;
+                }
+                
+                // Room found, fetch its data
+                fetchData(roomIds[decodedRoomId]);
+                setContentState("classroom");
+                clearQuery();
+                return;
+            }
+            
+            // No URL roomid, use the roomid from props
+            if(roomIds[roomid] === undefined && roomid !== "none"){
+                return;
+            }
+            if(roomid === "none"){
+                setContentState("empty");
+                fetchData("none");
+                return;
+            }
+            if(contentState === "calendarSearchResult"){
+                fetchData(roomIds[roomid]);
+            } else {
+                fetchData(roomIds[roomid]);
+                setContentState("classroom");
+                clearQuery();
+            }
+            return;
+        }
+        
+        // Handle URL-based navigation for non-embedded mode
         const searchParams = new URLSearchParams(window.location.search);
         const searchQueryParams = searchParams.get('query');
         const attributes = searchParams.get('attributes') ? JSON.parse(searchParams.get('attributes')) : null;
@@ -240,15 +350,28 @@ function Room() {
     }, [isAuthenticated, isAuthenticating, roomIds]);
 
     function onSearch(query, attributes, sort){
-        const queryString = new URLSearchParams({ query, attributes: JSON.stringify(attributes), sort }).toString();
-        navigate(`/room1/search?${queryString}`, { replace: true });        
-        setSearchAttributes(attributes);
-        setSearchSort(sort);
-        setSearchQuery(query);
+        if (urlType === 'embedded') {
+            // In embedded mode, just update internal state without navigation
+            setSearchAttributes(attributes);
+            setSearchSort(sort);
+            setSearchQuery(query);
+        } else {
+            const queryString = new URLSearchParams({ query, attributes: JSON.stringify(attributes), sort }).toString();
+            navigate(`/room/search?${queryString}`, { replace: true });        
+            setSearchAttributes(attributes);
+            setSearchSort(sort);
+            setSearchQuery(query);
+        }
     }
 
     function reloadClassroom(){
-        fetchDataUpdate(roomIds[roomid]);
+        // Validate room ID before reloading
+        const roomIdToReload = room?._id || roomIds[roomid];
+        if (!roomIdToReload || roomIdToReload === undefined) {
+            console.error("Cannot reload classroom: room ID is undefined", { roomid, roomIds, room });
+            return;
+        }
+        fetchDataUpdate(roomIdToReload);
         setContentState("classroom");
         clearQuery();
     }
@@ -263,6 +386,10 @@ function Room() {
         if(noquery && searchQuery === "" && searchAttributes.length === 0 && contentState !== "classroom"){
             setContentState("empty");
             return;
+        }
+        // In embedded mode, if we have a search query, set content state to nameSearch
+        if (urlType === 'embedded' && searchQuery && searchQuery !== "" && contentState !== "classroom") {
+            setContentState("nameSearch");
         }
         allPurposeSearch();
     }, [searchQuery, searchAttributes, searchSort, query]);
@@ -286,7 +413,7 @@ function Room() {
             
             try{
                 const recommendation = await getRecommendation();
-                setRecommendedRoom(recommendation.data.data);
+                setRecommendedRoom(recommendation.data);
             } catch (error){
                 console.log(error);
             }
@@ -296,8 +423,13 @@ function Room() {
 
         const newBadgeRedirect = localStorage.getItem('badge');
         if(newBadgeRedirect){
-            navigate(newBadgeRedirect);
-            localStorage.removeItem('badge');
+            if (urlType === 'embedded') {
+                // In embedded mode, we can't navigate away, so just clear the badge
+                localStorage.removeItem('badge');
+            } else {
+                navigate(newBadgeRedirect);
+                localStorage.removeItem('badge');
+            }
         }
 
     },[]);
@@ -385,11 +517,12 @@ function Room() {
 //==========================================================================================================================================================
 
     return (    
-        <div className="room" style={{ height: viewport }}>
+        <div className={`room ${hideHeader ? "hide-header" : ""}`} style={{ height: viewport }}>
             {/* <Banner visible={bannerVisible} setVisible={setBannerVisible}/> */}
             <Report text={roomName} isUp={reportIsUp} setIsUp={setReportUp}/>
-            <Header />
-            <div className="content-container" style={{height: width < 800 ? bannerVisible ? "max(100% - 10px)":  "max(100% - 80px)"  : bannerVisible ? "max(100% - 135px)":  "max(100% - 115px)", maxHeight:width < 800 ? bannerVisible ? "max(100% - 10px)":  "max(100% - 80px)"  : bannerVisible ? "max(100% - 135px)":  "max(100% - 115px)"}}>
+            {hideHeader ? "" : <Header />}
+            <div className="content-container" 
+            style={{height: width < 800 ? "calc(100% - 20px)" : hideHeader ? "max(100% - 10px)" : bannerVisible ? "max(100% - 135px)":  "max(100% - 115px)", maxHeight:width < 800 ? "calc(100% - 20px)" : hideHeader ? "max(100% - 10px)" : bannerVisible ? "max(100% - 135px)":  "max(100% - 115px)"}}>
                 <div className="calendar-container">
                     <div className={width < 800 ? "left-mobile" : "left"}>
                         {ready && contentState !== "classroom" && 
@@ -404,18 +537,19 @@ function Room() {
                                 givenRoom={recommendedRoom}
                             />
                         }
-                        <SearchBar data={rooms} addQuery={addQuery} onEnter={changeURL2} room={contentState === "classroom" || contentState === "calendarSearchResult" ? roomName : searchQuery } onX={onX} onSearch={onSearch} query={searchQuery} onBlur={setSearchFocus} />
+                        <SearchBar data={rooms} addQuery={addQuery} onEnter={changeURL2} room={contentState === "classroom" || contentState === "calendarSearchResult" ? roomName : searchQuery } onX={onX} onSearch={onSearch} query={searchQuery} onBlur={setSearchFocus} urlType={urlType} />
                         {contentState === "classroom" || contentState === "calendarSearchResult"  ? 
                             <Classroom  
                                 room={room} 
                                 state={contentState} 
                                 setState={setContentState}
                                 schedule={data}
-                                roomName={roomid}
+                                roomName={roomName}
                                 width={width}
                                 setShowMobileCalendar={setShowMobileCalendar}
                                 setIsUp={setReportUp}
-                            reload={reloadClassroom}
+                                reload={reloadClassroom}
+                                urlType={urlType}
                             /> 
                         : ""}
                         {/* {contentState !== "classroom" &&
@@ -431,7 +565,7 @@ function Room() {
                             <Sort
                                 query={searchQuery}
                                 searchAttributes={searchAttributes}
-                                setSearchAttributes={setSearchAttributes}
+                                setSearchAttributes={setSearchAttributes}   
                                 searchSort={searchSort}
                                 setSearchSort={setSearchSort}
                                 onSearch={onSearch}
@@ -475,7 +609,7 @@ function Room() {
                 </div>
             </div>
             {
-                width > 800 ? 
+                width > 800 && !hideHeader ? 
                     <Footer/>
                 : ""
             }

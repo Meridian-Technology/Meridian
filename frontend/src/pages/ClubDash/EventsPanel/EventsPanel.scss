@@ -1,0 +1,7 @@
+.events-panel{
+    z-index: 10;
+    .item-container{
+        margin: 0 40px 40px 40px;
+        width: calc(100% - 80px);
+    }
+}

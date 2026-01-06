@@ -151,7 +151,7 @@ const DailyCalendar = ({ selectedDay, events, height }) => {
     };
 
     return (
-        <div className="oie-weekly-calendar-container day-only" style={{ height: `${height}px` }} ref={ref}>
+        <div className="oie-weekly-calendar-container day-only" style={{ height: `${height}` }} ref={ref}>
             <div className="calendar-header">
                 <div className="day-header">
                     <div className="day-name">{selectedDay.toLocaleDateString('en-US', { weekday: 'long' })}</div>
