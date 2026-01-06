@@ -16,12 +16,12 @@ function VerificationRequest({ org, expandedClass }) {
     const [submitted, setSubmitted] = useState(false);
 
     const { data: existingRequests, loading, refetch } = useFetch(
-        `/org-management/verification-requests?orgId=${org?._id}&status=pending`
+        org?._id ? `/org-management/verification-requests?orgId=${org._id}&status=pending` : null
     );
 
-    // Fetch verification types configuration
+    // Fetch verification tiers configuration
     const { data: configData } = useFetch('/org-management/config');
-    const verificationTypes = configData?.verificationStatusTypes || {};
+    const verificationTiers = configData?.data?.verificationTiers || {};
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -71,8 +71,8 @@ function VerificationRequest({ org, expandedClass }) {
     };
 
     const getVerificationTypeLabel = (type) => {
-        if (verificationTypes[type]) {
-            return verificationTypes[type].name;
+        if (verificationTiers[type]) {
+            return verificationTiers[type].name;
         }
         return type;
     };
@@ -180,11 +180,15 @@ function VerificationRequest({ org, expandedClass }) {
                                         onChange={(e) => setRequestData({...requestData, verificationType: e.target.value})}
                                         required
                                     >
-                                        {Object.entries(verificationTypes).map(([key, config]) => (
-                                            <option key={key} value={key}>
-                                                {config.name}
-                                            </option>
-                                        ))}
+                                        {Object.keys(verificationTiers).length > 0 ? (
+                                            Object.entries(verificationTiers).map(([key, config]) => (
+                                                <option key={key} value={key}>
+                                                    {config.name || key}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="basic">Basic Verification</option>
+                                        )}
                                     </select>
                                 </div>
                             )}
@@ -250,7 +254,8 @@ function VerificationRequest({ org, expandedClass }) {
                             className="new-request-btn"
                             onClick={() => {
                                 setSubmitted(false);
-                                const firstVerificationType = Object.keys(verificationTypes)[0] || 'basic';
+                                const verificationTierKeys = Object.keys(verificationTiers);
+                                const firstVerificationType = verificationTierKeys.length > 0 ? verificationTierKeys[0] : 'basic';
                                 setRequestData({
                                     requestType: 'verification',
                                     verificationType: firstVerificationType,

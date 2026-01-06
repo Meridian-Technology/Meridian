@@ -38,9 +38,9 @@ function FullEvent({ event }){
         if(event.hostingType === "User"){
             hostingImage = event.hostingId.image ? event.hostingId.image : defaultAvatar;
             hostingName = event.hostingId.name;
-            if(event.hostingId.roles.includes("developer")){
+            if(event?.hostingId?.roles?.includes("developer")){
                 level = "Developer";
-            } else if(event.hostingId.roles.includes("oie")){
+            } else if(event?.hostingId?.roles?.includes("oie")){
                 level = "Faculty";
             } else {
                 level = "Student";
@@ -101,6 +101,7 @@ function FullEvent({ event }){
                         </div>
                     }
                 <RSVPSection event={event} />
+                <a href={`/event/${event._id}`} target="_blank" rel="noopener noreferrer"> <p>Full Event Page</p></a>      
             </div>
             <img src={StarGradient} alt="" className="gradient" />
         </div>

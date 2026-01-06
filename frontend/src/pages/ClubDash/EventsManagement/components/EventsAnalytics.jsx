@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../hooks/useFetch';
 import { useNotification } from '../../../../NotificationContext';
 import MetricCard from '../../../../components/MetricCard';
+import KpiCard from '../../../../components/Analytics/Dashboard/KpiCard';
 import './EventsAnalytics.scss';
 
 function EventsAnalytics({ orgId, orgName, refreshTrigger }) {
@@ -123,52 +124,47 @@ function EventsAnalytics({ orgId, orgName, refreshTrigger }) {
             <div className="kpi-section">
                 <h3>Key Performance Indicators</h3>
                 <div className="kpi-grid">
-                    <MetricCard
+                    <KpiCard
                         icon="mingcute:calendar-fill"
                         title="Total Events"
                         value={overview.totalEvents}
-                        label={getTimeRangeLabel(timeRange)}
-                        color="#4DAA57"
+                        subtitle={getTimeRangeLabel(timeRange)}
                     />
 
-                    <MetricCard
+                    <KpiCard
                         icon="mingcute:eye-fill"
                         title="Total Views"
                         value={overview.totalViews}
-                        label={`${formatNumber(overview.totalUniqueViews)} unique`}
-                        color="#17a2b8"
+                        subtitle={`${formatNumber(overview.totalUniqueViews)} unique`}
                     />
 
-                    <MetricCard
+                    <KpiCard
                         icon="mingcute:user-add-fill"
                         title="Total RSVPs"
                         value={overview.totalRsvps}
-                        label={`${formatNumber(overview.totalUniqueRsvps)} unique`}
-                        color="#28a745"
+                        subtitle={`${formatNumber(overview.totalUniqueRsvps)} unique`}
                     />
 
-                    <MetricCard
+                    <KpiCard
                         icon="mingcute:trending-up-fill"
                         title="Engagement Rate"
                         value={`${overview.avgEngagementRate || 0}%`}
-                        label="Average across events"
+                        subtitle="Average across events"
                         color="#ffc107"
                     />
 
-                    <MetricCard
+                    <KpiCard
                         icon="mingcute:group-fill"
                         title="Expected Attendance"
                         value={overview.totalExpectedAttendance}
-                        label="Total expected"
-                        color="#6c757d"
+                        subtitle="Total expected"
                     />
 
-                    <MetricCard
+                    <KpiCard
                         icon="mingcute:user-group-fill"
                         title="Member Engagement"
                         value={memberEngagement.avgEventsPerMember?.toFixed(1) || 0}
-                        label="Avg events per member"
-                        color="#6f42c1"
+                        subtitle="Avg events per member"
                     />
                 </div>
             </div>

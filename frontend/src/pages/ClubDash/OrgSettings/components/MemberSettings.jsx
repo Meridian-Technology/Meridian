@@ -1,6 +1,6 @@
 import React, {useState, useEffect} from 'react';
 import './MemberSettings.scss';
-import OrgGrad from '../../../../assets/Gradients/OrgGrad.png';
+import { useGradient } from '../../../../hooks/useGradient';
 import FormBuilder from '../../../../components/FormBuilder/FormBuilder';
 import FormViewer from '../../../../components/FormViewer/FormViewer';
 import apiRequest from '../../../../utils/postRequest';
@@ -10,6 +10,7 @@ import Popup from '../../../../components/Popup/Popup';
 import FormPreview from '../../../../components/FormPreview/FormPreview';
 import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
 import useUnsavedChanges from '../../../../hooks/useUnsavedChanges';
+import SettingsList from '../../../../components/SettingsList/SettingsList';
 
 function MemberSettings({org}){
     const [formData, setFormData] = useState({
@@ -19,7 +20,7 @@ function MemberSettings({org}){
     const [showFormBuilder, setShowFormBuilder] = useState(false);
     const [showFormViewer, setShowFormViewer] = useState(false);
     const [currentForm, setCurrentForm] = useState(null);
-
+    const {AtlasMain} = useGradient();
     const { checkUserPermissions } = useOrgPermissions(org);
     const { saveOrgSettings } = useOrgSave(org);
 
@@ -78,6 +79,46 @@ function MemberSettings({org}){
         setFormData({...formData, requireApprovalForJoin: !formData.requireApprovalForJoin});
     }
 
+    const memberSettingsItems = [
+        {
+            title: 'Require Approval to Join',
+            subtitle: 'Require approval for new members to join the organization',
+            action: (
+                <SlideSwitch
+                    checked={formData.requireApprovalForJoin}
+                    onChange={handleToggleApproval}
+                />
+            )
+        },
+        ...(formData.requireApprovalForJoin ? [
+            {
+                title: 'Member Form (Optional)',
+                subtitle: 'Customize the member form for new members to collect information',
+                action: (
+                    <div className="member-form-actions">
+                        {
+                            formData.memberForm ? (
+                                <>
+                                    <FormPreview form={formData.memberForm} />
+                                    <button className="btn" onClick={() => setShowFormBuilder(true)}>Edit</button>
+                                </>
+                            ) : (
+                                <button className="btn" onClick={() => setShowFormBuilder(true)}>Create</button>
+                            )
+                        }
+                    </div>
+                )
+            }
+        ] : []),
+        {
+            title: 'Member Renewal Process',
+            subtitle: 'Customize the member renewal process for existing members',
+            action: (
+                <button className="btn" onClick={() => setShowFormBuilder(true)}>Edit</button>
+            )
+        }
+    ];
+
     return (
         <div className="member-settings dash">
             <UnsavedChangesBanner
@@ -102,55 +143,10 @@ function MemberSettings({org}){
             <header className="header">
                 <h1>Member Settings</h1>
                 <p>Customize your organization's member settings</p>
-                <img src={OrgGrad} alt="" />
+                <img src={AtlasMain} alt="" />
             </header>
             <div className="member-settings-container">
-                <div className="settings-list">
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Require Approval to Join</h4>
-                            <p>Require approval for new members to join the organization</p>
-                        </div>
-                        <div className="action">
-                            <SlideSwitch
-                                checked={formData.requireApprovalForJoin}
-                                onChange={handleToggleApproval}
-                            />
-                        </div>
-                    </div>
-                    {
-                        formData.requireApprovalForJoin && (                        
-                            <div className="setting-child">
-                                <div className="content">
-                                    <h4>Member Form (Optional)</h4>
-                                    <p>Customize the member form for new members, this will be used to collect information from new members</p>
-                                </div>
-                                <div className="action">
-                                    {
-                                        formData.memberForm ? (
-                                            <>
-                                                <FormPreview form={formData.memberForm} />
-                                                <button className="btn" onClick={() => setShowFormBuilder(true)}>Edit</button>
-                                            </>
-                                        ) : (
-                                            <button className="btn" onClick={() => setShowFormBuilder(true)}>Create</button>
-                                        )
-                                    }
-                                </div>
-                            </div>
-                        )
-                    }
-                    <div className="setting-child">
-                        <div className="content">
-                            <h4>Member Renewal Process</h4>
-                            <p>Customize the member renewal process for existing members</p>
-                        </div>
-                        <div className="action">
-                            <button className="btn" onClick={() => setShowFormBuilder(true)}>Edit</button>
-                        </div>
-                    </div>
-
-                </div>
+                <SettingsList items={memberSettingsItems} />
             </div>
         </div>
     )

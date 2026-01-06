@@ -112,6 +112,7 @@ const searchRoutes = require('./routes/searchRoutes.js');
 const orgRoutes = require('./routes/orgRoutes.js');
 const orgRoleRoutes = require('./routes/orgRoleRoutes.js');
 const orgManagementRoutes = require('./routes/orgManagementRoutes.js');
+const orgMessageRoutes = require('./routes/orgMessageRoutes.js');
 const roomRoutes = require('./routes/roomRoutes.js');
 const adminRoutes = require('./routes/adminRoutes.js');
 const eventsRoutes = require('./events/index.js');
@@ -121,6 +122,14 @@ const eventAnalyticsRoutes = require('./routes/eventAnalyticsRoutes.js');
 const orgEventManagementRoutes = require('./routes/orgEventManagementRoutes.js');
 const formRoutes = require('./routes/formRoutes.js');
 
+const inngestRoutes = require('./routes/inngestRoutes.js');
+
+// Inngest integration
+const inngestServe = require('./inngest/serve.js');
+const studySessionRoutes = require('./routes/studySessionRoutes.js');
+const availabilityPollRoutes = require('./routes/availabilityPollRoutes.js');
+const feedbackRoutes = require('./routes/feedbackRoutes.js');
+const contactRoutes = require('./routes/contactRoutes.js');
 
 app.use(authRoutes);
 app.use('/auth/saml', samlRoutes);
@@ -139,14 +148,29 @@ app.use(searchRoutes);
 app.use(orgRoutes);
 app.use('/org-roles', orgRoleRoutes);
 app.use('/org-management', orgManagementRoutes);
+app.use('/org-messages', orgMessageRoutes);
 app.use('/org-event-management', orgEventManagementRoutes);
 app.use('/admin', roomRoutes);
 app.use(adminRoutes);
 app.use(formRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/api/qr', qrRoutes);
+app.use(contactRoutes);
+
+// Inngest serve handler - this handles all Inngest function execution
+app.use('/api/inngest', inngestServe);
+
+// Inngest example routes for triggering events
+app.use('/api/inngest-examples', inngestRoutes);
 
 app.use(eventsRoutes);
+
+app.use('/study-sessions', studySessionRoutes);
+app.use('/availability-polls', availabilityPollRoutes);
+
+app.use('/feedback', feedbackRoutes);
+
+
 // Serve static files from the React app in production
 if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, '../frontend/build')));

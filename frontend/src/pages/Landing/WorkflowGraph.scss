@@ -1,0 +1,123 @@
+// React Flow container
+.feature-mockup__reactflow-container {
+  width: 100%;
+  height: 240px;
+  border-radius: 8px;
+  overflow: hidden;
+  width:800px;
+  
+  .react-flow {
+    background: transparent;
+  }
+  
+  .react-flow__node {
+    width: auto;
+    min-width: 140px;
+  }
+  
+  .react-flow__handle {
+    width: 6px;
+    height: 6px;
+    border: 1.5px solid #b0b0b0;
+    background: #fff;
+  }
+  
+  .feature-mockup__flow-handle {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .react-flow__edge-path {
+    stroke: #d0d0d0;
+    stroke-width: 2;
+  }
+  
+  // Make bezier curves smooth and elegant
+  .react-flow__edge {
+    &.react-flow__edge-bezier {
+      .react-flow__edge-path {
+        transition: stroke 0.2s ease;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+    }
+  }
+}
+
+// React Flow custom nodes
+.feature-mockup__flow-node {
+  position: relative;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  min-width: 140px;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border-color: #d0d0d0;
+  }
+  
+
+}
+
+.feature-mockup__flow-condition {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+  font-weight: 500;
+  z-index: 10;
+}
+
+.feature-mockup__flow-node-content {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.feature-mockup__flow-node-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(23, 23, 23);
+  text-align: center;
+  line-height: 1.4;
+}
+
+// Node badges (shared with other feature mockups)
+.feature-mockup__node-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  
+  &--notify {
+    background: #e3f2fd;
+    color: #1976d2;
+  }
+  
+  &--approve {
+    background: #fff3e0;
+    color: #f57c00;
+  }
+  
+  &--acknowledge {
+    background: #e8f5e9;
+    color: #388e3c;
+  }
+}
+

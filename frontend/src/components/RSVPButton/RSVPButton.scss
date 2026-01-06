@@ -31,6 +31,17 @@
             cursor: not-allowed;
         }
         
+        .button-text {
+            flex: 1;
+            text-align: center;
+            b{
+                border-radius: 100px;
+                padding: 2px 6px;
+                background-color: var(--blue);
+                color: white;
+                margin-right:3px;
+            }
+        }
         &.active {
             border-color: #4CAF50;
             background: rgba(76, 175, 80, 0.1);
@@ -40,18 +51,27 @@
                 border-color: #4CAF50;
                 background: rgba(76, 175, 80, 0.1);
                 color: #4CAF50;
+                .button-text b{
+                    background-color: var(--green-main);
+                }
             }
             
             &.maybe {
                 border-color: #FF9800;
                 background: rgba(255, 152, 0, 0.1);
                 color: #FF9800;
+                .button-text b{
+                    background-color: #FF9800;
+                }
             }
             
             &.not-going {
                 border-color: #F44336;
                 background: rgba(244, 67, 54, 0.1);
                 color: #F44336;
+                .button-text b{
+                    background-color: #FF9800;
+                }
             }
         }
         
@@ -59,6 +79,8 @@
             width: 12px;
             height: 12px;
         }
+        
+
     }
 }
 

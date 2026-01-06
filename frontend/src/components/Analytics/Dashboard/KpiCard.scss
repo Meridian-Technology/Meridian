@@ -1,0 +1,77 @@
+// KpiCard Component Styles
+// Shared styles for KPI cards used across analytics components
+
+.kpi-card {
+    background: var(--card-background, #ffffff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    transition: all 0.2s ease;
+
+    &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    &__icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--secondary-color, #e0e7ff);
+        color: var(--primary-color, #6366f1);
+        flex-shrink: 0;
+
+        svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        &.approved {
+            background: #e8f5e8;
+            color: #4caf50;
+        }
+
+        &.rejected {
+            background: #ffebee;
+            color: #f44336;
+        }
+
+        &.pending {
+            background: #fff3e0;
+            color: #ff9800;
+        }
+    }
+
+    &__content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    &__value {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--text, #0f172a);
+        line-height: 1;
+        margin-bottom: 4px;
+    }
+
+    &__title {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text, #0f172a);
+        margin-bottom: 2px;
+    }
+
+    &__subtitle {
+        font-size: 12px;
+        color: var(--lighter-text, #94a3b8);
+        margin-top: 4px;
+    }
+}
+

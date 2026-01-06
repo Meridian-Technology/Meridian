@@ -15,6 +15,13 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
   }), [options.method, options.data, options.headers, options.params]);
 
   const fetchData = useCallback(async () => {
+    // Don't fetch if URL is null or undefined
+    if (!url) {
+      setLoading(false);
+      setData(null);
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     try {

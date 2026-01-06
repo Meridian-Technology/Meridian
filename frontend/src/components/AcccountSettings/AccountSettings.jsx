@@ -13,8 +13,10 @@ import useAuth from '../../hooks/useAuth.js';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import ImageUpload from '../ImageUpload/ImageUpload';
 import axios from 'axios';
+import GradientHeader from '../../assets/Gradients/ApprovalGrad.png';
 
-function AccountSettings({ settingsRightSide, width, handleBackClick, userInfo }) {
+
+function AccountSettings({ userInfo }) {
 
     const { validateToken } = useAuth();
 
@@ -160,128 +162,130 @@ function AccountSettings({ settingsRightSide, width, handleBackClick, userInfo }
     }
 
     return (
-        <div className={`settings-right ${settingsRightSide ? "active" : "not-active"}`}>
-            <div className='header'>
-                <h1>Account Settings</h1>
-                {width <= 700 && settingsRightSide && (
-                    <button className='back-arrow' onClick={handleBackClick}>
-                        <img src={rightarrow} alt="Back Arrow" style={{ transform: 'rotate(180deg)' }} />
-                    </button>
-                )}
-            </div>
+        <div className="header dash">
+            <div className={`settings-right `}>
+                <header className='header'>
+                    <img src={GradientHeader} alt="" className="" />
 
-            <div className='profile'>
+                    <h1>Account Settings</h1>
+                    <p>welcome back to your account settings</p>
+                  
+                </header>
 
-                <h2>profile settings</h2>
-                <hr />
+                <div className='profile'>
 
-                <div className='name-settings'>
-                    <div className="picture-container">
-                        <img className="pfp" src={profilePicture ? profilePicture : pfp} alt="" />
-                        <div className="add-picture" onClick={uploadPfpToggle}>
-                            <Icon icon="mdi:image-add"/>
+                    <h2>profile settings</h2>
+                    <hr />
+
+                    <div className='name-settings'>
+                        <div className="picture-container">
+                            <img className="pfp" src={profilePicture ? profilePicture : pfp} alt="" />
+                            <div className="add-picture" onClick={uploadPfpToggle}>
+                                <Icon icon="mdi:image-add"/>
+                            </div>
+                        </div>
+
+                        <div className='input-name'>
+                            <h3>name:</h3>
+                            <input type="text" value={name} onChange={handleNameChange}/>
+                            {name !== intialName && <button className='save-name' onClick={saveName}>save</button>}
+                        </div>
+
+                    </div>
+                    <div className={`pfp-upload ${uploadPfp && "active"}`}>
+                        <ImageUpload 
+                            uploadText="Drag your image here" 
+                            onFileSelect={handleFileSelect}
+                            onUpload={handleProfilePictureUpload}
+                            onFileClear={handleFileClear}
+                            isUploading={isUploading}
+                            uploadMessage="Maximum size: 5MB"
+                            fontSize={13}
+                            orientation="horizontal"
+                        />
+                    </div>
+
+                    <h2>security settings</h2>
+                    <hr />
+                    <div className="settings-rows-container">
+                        <div className='user-container'>
+                            <div className='user'>
+                            {editUsername ? (
+                                    <>  
+                                        <input type="text" value={username} onChange={handleUsernameChange}
+                                            // onBlur={saveUsername}
+                                            // autoFocus
+                                        />
+                                            <div className="status">
+                                                { usernameValid === 0 && <div className="checking"><img src={waiting} alt="" /><p>checking username...</p></div>}
+                                                { usernameValid === 1 && <div className="available"><img src={check} alt="" /><p>username is available</p></div>}
+                                                { usernameValid === 2 && <div className="taken"><img src={unavailable} alt="" /><p>username is taken</p></div>}
+                                                { usernameValid === 3 && <div className="invalid"><img src={error} alt="" /><p>invalid username</p></div>}   
+                                            </div>
+                                    </>
+                                    ): 
+                                    (
+                                    <>
+                                        <h3>username</h3>
+                                        <p>@{username}</p>
+                                    </>
+                                    )
+                            }
+                            
+                            </div>
+                            {/* <button onClick={(saveUsername) => setEditUsername(true)}>change username</button> */}
+                            
+                            <button disabled={usernameValid !== 1} onClick={(saveUsername)}> {editUsername ? 'save' : 'change username'} </button>
+
+                        </div>
+                        <div className='user-container'>
+                            <div className='email'>
+                            {editEmail ? (
+                                    <input
+                                        type="text" value={email} onChange={handleEmailChange}
+                                        onBlur={saveUsername}
+                                        autoFocus
+                                    /> ): 
+                                    (
+                                    <>
+                                        <h3>email</h3>
+                                        <p>{userInfo.email}</p>
+                                    </>
+                                    )  
+                            }
+                            </div>
+                            <button onClick={() => setEditEmail(true)}>change email</button>
+
+                        </div>
+                        <div className='user-container'>
+                            <div className='password'>
+                                <h3>password</h3>
+                                <p>enabled</p>
+                            </div>
+                            <button>change password</button>
+
                         </div>
                     </div>
 
-                    <div className='input-name'>
-                        <h3>name:</h3>
-                        <input type="text" value={name} onChange={handleNameChange}/>
-                        {name !== intialName && <button className='save-name' onClick={saveName}>save</button>}
-                    </div>
-
-                </div>
-                <div className={`pfp-upload ${uploadPfp && "active"}`}>
-                    <ImageUpload 
-                        uploadText="Drag your image here" 
-                        onFileSelect={handleFileSelect}
-                        onUpload={handleProfilePictureUpload}
-                        onFileClear={handleFileClear}
-                        isUploading={isUploading}
-                        uploadMessage="Maximum size: 5MB"
-                        fontSize={13}
-                        orientation="horizontal"
-                    />
-                </div>
-
-                <h2>security settings</h2>
-                <hr />
-                <div className="settings-rows-container">
-                    <div className='user-container'>
-                        <div className='user'>
-                        {editUsername ? (
-                                <>  
-                                    <input type="text" value={username} onChange={handleUsernameChange}
-                                        // onBlur={saveUsername}
-                                        // autoFocus
-                                    />
-                                        <div className="status">
-                                            { usernameValid === 0 && <div className="checking"><img src={waiting} alt="" /><p>checking username...</p></div>}
-                                            { usernameValid === 1 && <div className="available"><img src={check} alt="" /><p>username is available</p></div>}
-                                            { usernameValid === 2 && <div className="taken"><img src={unavailable} alt="" /><p>username is taken</p></div>}
-                                            { usernameValid === 3 && <div className="invalid"><img src={error} alt="" /><p>invalid username</p></div>}   
-                                        </div>
-                                </>
-                                ): 
-                                (
-                                <>
-                                    <h3>username</h3>
-                                    <p>@{username}</p>
-                                </>
-                                )
-                        }
-                        
+                    <h2>danger zone</h2>
+                    <hr />
+                    <div className="settings-rows-container">
+                        <div className='delete' onClick={deleteAccount}>
+                            <button>
+                                <h3>delete account</h3>
+                            </button>
+                            <p>warning: this is a permanent action !</p>
                         </div>
-                        {/* <button onClick={(saveUsername) => setEditUsername(true)}>change username</button> */}
-                        
-                        <button disabled={usernameValid !== 1} onClick={(saveUsername)}> {editUsername ? 'save' : 'change username'} </button>
-
                     </div>
-                    <div className='user-container'>
-                        <div className='email'>
-                        {editEmail ? (
-                                <input
-                                    type="text" value={email} onChange={handleEmailChange}
-                                    onBlur={saveUsername}
-                                    autoFocus
-                                /> ): 
-                                (
-                                <>
-                                    <h3>email</h3>
-                                    <p>{userInfo.email}</p>
-                                </>
-                                )  
-                        }
-                        </div>
-                        <button onClick={() => setEditEmail(true)}>change email</button>
 
-                    </div>
-                    <div className='user-container'>
-                        <div className='password'>
-                            <h3>password</h3>
-                            <p>enabled</p>
-                        </div>
-                        <button>change password</button>
+                </div>
+                <div className='security'>
 
-                    </div>
                 </div>
 
-                <h2>danger zone</h2>
-                <hr />
-                <div className="settings-rows-container">
-                    <div className='delete' onClick={deleteAccount}>
-                        <button>
-                            <h3>delete account</h3>
-                        </button>
-                        <p>warning: this is a permanent action !</p>
-                    </div>
+                <div className='danger'>
+
                 </div>
-
-            </div>
-            <div className='security'>
-
-            </div>
-
-            <div className='danger'>
 
             </div>
 

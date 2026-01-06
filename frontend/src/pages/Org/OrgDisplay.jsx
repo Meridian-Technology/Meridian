@@ -3,8 +3,9 @@ import Org from './Org.jsx';
 import { useParams } from 'react-router-dom';
 import { useFetch } from '../../hooks/useFetch';
 
-const OrgDisplay = () => {
-    const orgName = useParams().name;
+const OrgDisplay = ({name}) => {
+    const orgParam = useParams().name;
+    const orgName = name ? name : orgParam;
     const orgData = useFetch(`/get-org-by-name/${orgName}`);
 
     return (

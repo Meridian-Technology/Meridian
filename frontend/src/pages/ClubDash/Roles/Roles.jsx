@@ -5,7 +5,7 @@ import { useNotification } from '../../../NotificationContext';
 import useAuth from '../../../hooks/useAuth';
 import axios from 'axios';
 import apiRequest from '../../../utils/postRequest';
-import OrgGrad from '../../../assets/Gradients/OrgGrad.png';
+import { useGradient } from '../../../hooks/useGradient';
 
 function Roles({ expandedClass, org, refetch }) {
     const { user } = useAuth();
@@ -16,6 +16,7 @@ function Roles({ expandedClass, org, refetch }) {
     const [userRole, setUserRole] = useState(null);
     const [hasAccess, setHasAccess] = useState(false);
     const [permissionsChecked, setPermissionsChecked] = useState(false);
+    const {AtlasMain} = useGradient();
 
     useEffect(() => {
         if (org && !permissionsChecked) {
@@ -139,7 +140,7 @@ function Roles({ expandedClass, org, refetch }) {
                     <header className="header">
                         <h1>Role Management</h1>
                         <p>Manage roles and permissions for {org.org_name}</p>
-                        <img src={OrgGrad} alt="" />
+                        <img src={AtlasMain} alt="" />
                     </header>
 
                     <div className="permission-warning">
@@ -157,7 +158,7 @@ function Roles({ expandedClass, org, refetch }) {
                 <header className="header">
                     <h1>Role Management</h1>
                     <p>Manage roles and permissions for {org.org_name}</p>
-                    <img src={OrgGrad} alt="" />
+                    <img src={AtlasMain} alt="" />
                 </header>
 
                 {/* User Role Information */}

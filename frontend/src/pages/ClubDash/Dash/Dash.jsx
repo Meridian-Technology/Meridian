@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import './Dash.scss';
-import OrgGrad from '../../../assets/Gradients/OrgGrad.png';
+import { useGradient } from '../../../hooks/useGradient';
 import Week from '../../../pages/OIEDash/EventsCalendar/Week/Week';
 import useAuth from '../../../hooks/useAuth';
 import HeaderContainer from '../../../components/HeaderContainer/HeaderContainer';
@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 function Dash({ expandedClass, openMembers, clubName, meetings, org}) {
     //define welcometext to be either good morning, good afternoon, or good evening, in one line
     const welcomeText = `Good ${new Date().getHours() < 12 ? "Morning" : new Date().getHours() < 18 ? "Afternoon" : "Evening"}`;
+    const {AtlasMain} = useGradient();
 
     const [events, setEvents] = useState([]);
     const weeklyRef = useRef(null);
@@ -54,7 +55,7 @@ function Dash({ expandedClass, openMembers, clubName, meetings, org}) {
             <header className="header">
                 <h1>{welcomeText}, {clubName}</h1>
                 <p>welcome back to your organization portal</p>
-                <img src={OrgGrad} alt="" />
+                <img src={AtlasMain} alt="" />
             </header>
             <div className="org-content">
                 <div className="actions row">

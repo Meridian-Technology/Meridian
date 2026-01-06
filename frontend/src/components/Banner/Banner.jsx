@@ -20,28 +20,48 @@ function Banner({visible, setVisible, bannerType}) {
         if (!isAuthenticating && !isAuthenticated) {
             setVisible(true);   
         } else if(checkedIn){
-            console.log(checkedIn);
-            setCheckedInClassroom(checkedIn.classroom);
+            setCheckedInClassroom(checkedIn);
             setVisible(true);
-            emit('join-classroom', checkedIn._id);
+            // Join the classroom WebSocket room
+            if (checkedIn._id) {
+                emit('join-classroom', checkedIn._id);
+            }
+            // Listen for check-out events
             on('check-out', onCheckOut);
+            
+            // Cleanup WebSocket listeners on unmount or when checkedIn changes
+            return () => {
+                off('check-out', onCheckOut);
+            };
         }
 
-    }, [isAuthenticating, isAuthenticated, checkedIn]);
+    }, [isAuthenticating, isAuthenticated, checkedIn, emit, on, off]);
 
-
-
-    const handleCheckInClick = () => {
-        navigate(`/room/${checkedIn.name}`);
-        window.location.reload();
+    const handleCheckInClick = (e) => {
+        // Prevent event bubbling if clicking on the exit button
+        if (e.target.closest('.exit')) {
+            return;
+        }
+        
+        if (checkedIn && checkedIn.name) {
+            // Navigate to EventsDash Rooms tab (page index 2)
+            // The Room component in embedded mode expects room names via roomid query parameter
+            const encodedRoomName = encodeURIComponent(checkedIn.name);
+            navigate(`/events-dashboard?page=2&roomid=${encodedRoomName}`);
+        }
     }
 
 
-if(checkedInClassroom !== null){
+    if(checkedInClassroom !== null && checkedIn){
         return(
             <div className={`banner ${visible && "visible checked-in"}`} onClick={handleCheckInClick}>
                 you are checked in to {checkedIn.name}
-                <div className="exit"><img src={x_white} onClick={()=>{setVisible(false)}} alt="" /></div>
+                <div className="exit" onClick={(e) => {
+                    e.stopPropagation();
+                    setVisible(false);
+                }}>
+                    <img src={x_white} alt="close" />
+                </div>
             </div>
         )
     } 

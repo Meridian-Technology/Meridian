@@ -1,5 +1,4 @@
 .flow-analytics {
-    padding: 20px 0;
 
     .analytics-header {
         display: flex;
@@ -42,72 +41,9 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 16px;
-
-        .overview-card {
-            background: var(--card-background);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-
-            .card-icon {
-                width: 48px;
-                height: 48px;
-                border-radius: 12px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background: var(--primary-light);
-                color: var(--primary);
-
-                svg {
-                    width: 24px;
-                    height: 24px;
-                }
-
-                &.approved {
-                    background: #e8f5e8;
-                    color: #4caf50;
-                }
-
-                &.rejected {
-                    background: #ffebee;
-                    color: #f44336;
-                }
-
-                &.pending {
-                    background: #fff3e0;
-                    color: #ff9800;
-                }
-            }
-
-            .card-content {
-                flex: 1;
-
-                .card-number {
-                    font-size: 28px;
-                    font-weight: 700;
-                    color: var(--text);
-                    line-height: 1;
-                    margin-bottom: 4px;
-                }
-
-                .card-label {
-                    font-size: 14px;
-                    font-weight: 500;
-                    color: var(--text);
-                    margin-bottom: 2px;
-                }
-
-                .card-subtitle {
-                    font-size: 12px;
-                    color: var(--lighter-text);
-                }
-            }
-        }
     }
+
+    // KpiCard styles are now in components/Analytics/Dashboard/KpiCard.scss
 
     .charts-section {
         display: grid;

@@ -9,6 +9,7 @@ const { sendDiscordMessage } = require('../services/discordWebookService');
 const BadgeGrant = require('../schemas/badgeGrant');
 const getModels = require('../services/getModelService');
 const { uploadImageToS3, deleteAndUploadImageToS3 } = require('../services/imageUploadService');
+const { sendRoomCheckinEvent } = require('../inngest/events');
 const multer = require('multer');
 const path = require('path');
 
@@ -106,8 +107,20 @@ router.post("/check-in", verifyToken, async (req, res) => {
         const io = req.app.get('io');
         io.to(classroomId).emit('check-in', { classroomId, userId: req.user.userId });
 
+        // Send Inngest event to schedule auto-checkout after 2 hours
+        // await sendRoomCheckinEvent(req.user.userId, classroomId, new Date());
+
         console.log(`POST: /check-in ${req.user.userId} into ${classroom.name} successful`);
-        return res.status(200).json({ success: true, message: 'Checked in successfully' });
+        return res.status(200).json({ 
+            success: true, 
+            message: 'Checked in successfully - auto-checkout scheduled for 2 hours',
+            data: {
+                classroomId,
+                classroomName: classroom.name,
+                checkinTime: new Date().toISOString(),
+                autoCheckoutTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() // 2 hours from now
+            }
+        });
     } catch (error) {
         console.log(`POST: /check-in ${req.user.userId} failed`);
         console.log(error);

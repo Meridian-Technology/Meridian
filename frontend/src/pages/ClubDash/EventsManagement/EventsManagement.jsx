@@ -6,7 +6,8 @@ import { useNotification } from '../../../NotificationContext';
 import { useDashboardOverlay } from '../../../hooks/useDashboardOverlay';
 import EventViewer from '../../../components/EventViewer';
 import './EventsManagement.scss';
-import OrgGrad from '../../../assets/Gradients/OrgGrad.png';
+import { useGradient } from '../../../hooks/useGradient';
+import TabbedContainer from '../../../components/TabbedContainer';
 
 // Import sub-components
 import EventsOverview from './components/EventsOverview';
@@ -21,38 +22,12 @@ function EventsManagement({ orgId, expandedClass }) {
     const [activeTab, setActiveTab] = useState('overview');
     const [selectedEvents, setSelectedEvents] = useState([]);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
-
+    const {AtlasMain} = useGradient();
     // Fetch organization data
     const { data: orgData, loading: orgLoading } = useFetch(
         orgId ? `/get-org-by-name/${orgId}?exhaustive=true` : null
     );
 
-    const tabs = [
-        {
-            id: 'overview',
-            label: 'Overview',
-            icon: 'mingcute:chart-fill',
-            description: 'Event statistics and quick actions'
-        },
-        {
-            id: 'analytics',
-            label: 'Analytics',
-            icon: 'mingcute:analytics-fill',
-            description: 'Detailed analytics and insights'
-        },
-        {
-            id: 'events',
-            label: 'Events',
-            icon: 'mingcute:calendar-fill',
-            description: 'Manage all organization events'
-        },
-        {
-            id: 'templates',
-            label: 'Templates',
-            icon: 'mingcute:file-template-fill',
-            description: 'Create and manage event templates'
-        }
-    ];
 
     const handleRefresh = () => {
         setRefreshTrigger(prev => prev + 1);
@@ -75,28 +50,36 @@ function EventsManagement({ orgId, expandedClass }) {
         setSelectedEvents(eventIds);
     };
 
-    const renderTabContent = () => {
-        switch (activeTab) {
-            case 'overview':
-                return (
-                    <EventsOverview
+    const tabs = [
+        // {
+        //     id: 'overview',
+        //     label: 'Overview',
+        //     icon: 'mingcute:chart-bar-fill',
+        //     description: 'Event statistics and quick actions',
+        //     content: <EventsOverview
+        //                 orgId={orgData?.org?.overview?._id}
+        //                 orgName={orgData?.org?.overview?.org_name}
+        //                 refreshTrigger={refreshTrigger}
+        //                 onRefresh={handleRefresh}
+        //             />
+        // },
+        {
+            id: 'overview',
+            label: 'Overview',
+            icon: 'mingcute:department-fill',
+            description: 'Detailed analytics and insights',
+            content: <EventsAnalytics
                         orgId={orgData?.org?.overview?._id}
                         orgName={orgData?.org?.overview?.org_name}
                         refreshTrigger={refreshTrigger}
-                        onRefresh={handleRefresh}
                     />
-                );
-            case 'analytics':
-                return (
-                    <EventsAnalytics
-                        orgId={orgData?.org?.overview?._id}
-                        orgName={orgData?.org?.overview?.org_name}
-                        refreshTrigger={refreshTrigger}
-                    />
-                );
-            case 'events':
-                return (
-                    <EventsList
+        },
+        {
+            id: 'events',
+            label: 'Events',
+            icon: 'mingcute:calendar-fill',
+            description: 'Manage all organization events',
+            content: <EventsList
                         orgId={orgData?.org?.overview?._id}
                         orgName={orgData?.org?.overview?.org_name}
                         refreshTrigger={refreshTrigger}
@@ -105,20 +88,20 @@ function EventsManagement({ orgId, expandedClass }) {
                         selectedEvents={selectedEvents}
                         onViewEvent={handleViewEvent}
                     />
-                );
-            case 'templates':
-                return (
-                    <EventTemplates
+        },
+        {
+            id: 'templates',
+            label: 'Templates',
+            icon: 'mingcute:file-line',
+            description: 'Create and manage event templates',
+            content: <EventTemplates
                         orgId={orgData?.org?.overview?._id}
                         orgName={orgData?.org?.overview?.org_name}
                         refreshTrigger={refreshTrigger}
                         onRefresh={handleRefresh}
                     />
-                );
-            default:
-                return null;
         }
-    };
+    ];
 
     if (orgLoading) {
         return (
@@ -136,7 +119,7 @@ function EventsManagement({ orgId, expandedClass }) {
             <header className="events-management-header header">
                 <h1>Events Management</h1>
                 <p>Manage and analyze your organization's events</p>
-                <img src={OrgGrad} alt="" />
+                <img src={AtlasMain} alt="" />
             </header>
 
             <container className="content">
@@ -150,8 +133,8 @@ function EventsManagement({ orgId, expandedClass }) {
                     <p>Refresh</p>
                 </button>
             </div>
-            
-                <div className="events-management-tabs">
+
+                {/* <div className="events-management-tabs">
                     <div className="tab-navigation">
                         {tabs.map(tab => (
                             <button
@@ -164,11 +147,11 @@ function EventsManagement({ orgId, expandedClass }) {
                             </button>
                         ))}
                     </div>
-                </div>
+                </div> */}
 
-                <div className="events-management-content">
+                {/* <div className="events-management-content">
                     {renderTabContent()}
-                </div>
+                </div> */}
 
                 {/* Bulk Operations Panel */}
                 {selectedEvents.length > 0 && (
@@ -179,7 +162,23 @@ function EventsManagement({ orgId, expandedClass }) {
                         onSuccess={handleRefresh}
                     />
                 )}
+
             </container>
+            <TabbedContainer
+                    tabs={tabs}
+                    defaultTab="overview"
+                    tabStyle="default"
+                    size="medium"
+                    animated={true}
+                    showTabIcons={true}
+                    showTabLabels={true}
+                    fullWidth={false}
+                    scrollable={false}
+                    lazyLoad={true}
+                    keepAlive={true}
+                    className="events-management-tabs"
+
+                />
         </div>
     );
 }

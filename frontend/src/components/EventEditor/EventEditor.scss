@@ -1,0 +1,379 @@
+.event-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    &__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+    }
+
+    &__title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #111;
+
+        svg {
+            font-size: 16px;
+            color: #666;
+        }
+
+        h3 {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: #111;
+        }
+    }
+
+    &__edit-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px;
+        background: transparent;
+        color: #667eea;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover {
+            background: #f0f4ff;
+            border-color: #667eea;
+        }
+
+        svg {
+            font-size: 14px;
+        }
+    }
+
+    &__form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    &__form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #111;
+        }
+
+        input,
+        textarea,
+        select {
+            padding: 8px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+            background: #fff;
+            transition: all 0.2s ease;
+
+            &:focus {
+                outline: none;
+                border-color: #667eea;
+                box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+            }
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+    }
+
+    &__form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    &__section {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #eee;
+
+        h4 {
+            margin: 0 0 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #111;
+        }
+    }
+
+    &__checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        color: #111;
+
+        input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+    }
+
+    &__read-only {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #eee;
+        background: #fafafa;
+        padding: 12px;
+        border-radius: 6px;
+
+        h4 {
+            margin: 0 0 10px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+
+            &::before {
+                content: '';
+                display: inline-block;
+                width: 14px;
+                height: 14px;
+                background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23666'%3E%3Cpath d='M12 1C5.9 1 1 5.9 1 12s4.9 11 11 11 11-4.9 11-11S18.1 1 12 1zm0 20c-5 0-9-4-9-9s4-9 9-9 9 4 9 9-4 9-9 9zm-1-13h2v6h-2zm0 8h2v2h-2z'/%3E%3C/svg%3E") no-repeat center;
+                background-size: contain;
+            }
+        }
+    }
+
+    &__read-only-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    &__read-only-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+
+        label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+    }
+
+    &__read-only-value {
+        font-size: 13px;
+        color: #111;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    &__room-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        background: #fff8f0;
+        color: #ff9800;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-left: 6px;
+
+        svg {
+            font-size: 12px;
+        }
+    }
+
+    &__actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #eee;
+    }
+
+    &__btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        svg {
+            font-size: 14px;
+        }
+
+        &--primary {
+            background: #667eea;
+            color: white;
+
+            &:hover:not(:disabled) {
+                background: #5568d3;
+            }
+        }
+
+        &--secondary {
+            background: transparent;
+            color: #666;
+            border: 1px solid #e0e0e0;
+
+            &:hover:not(:disabled) {
+                background: #fafafa;
+            }
+        }
+    }
+
+    &__view {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    &__view-section {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+
+        h4 {
+            margin: 0 0 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #111;
+        }
+
+        &--locked {
+            padding-top: 12px;
+            border-top: 1px solid #eee;
+            background: #fafafa;
+            padding: 12px;
+            border-radius: 6px;
+
+            h4 {
+                color: #666;
+                font-size: 12px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+
+                &::before {
+                    content: '';
+                    display: inline-block;
+                    width: 14px;
+                    height: 14px;
+                    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23666'%3E%3Cpath d='M12 1C5.9 1 1 5.9 1 12s4.9 11 11 11 11-4.9 11-11S18.1 1 12 1zm0 20c-5 0-9-4-9-9s4-9 9-9 9 4 9 9-4 9-9 9zm-1-13h2v6h-2zm0 8h2v2h-2z'/%3E%3C/svg%3E") no-repeat center;
+                    background-size: contain;
+                }
+            }
+        }
+    }
+
+    &__view-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+
+        label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        p {
+            margin: 0;
+            font-size: 13px;
+            color: #111;
+            line-height: 1.5;
+        }
+
+        a {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 13px;
+            transition: all 0.2s ease;
+
+            &:hover {
+                color: #5568d3;
+                text-decoration: underline;
+            }
+
+            svg {
+                font-size: 14px;
+            }
+        }
+    }
+
+    &__view-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .spinner {
+        animation: spin 1s linear infinite;
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .event-editor {
+        &__form-row,
+        &__view-row {
+            grid-template-columns: 1fr;
+        }
+
+        &__actions {
+            flex-direction: column;
+        }
+
+        &__btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+}
+

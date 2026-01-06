@@ -4,6 +4,7 @@
   gap: 16px;
 //   height: 100%;
   overflow: hidden;
+  min-height:fit-content;
 
   // Common base styles for all variants
   .search-input-wrapper {
@@ -531,7 +532,8 @@
       padding: 0;
       margin: 10px 20px 0 20px;
       width:calc(100% - 40px);
-
+      visibility: visible;
+      opacity: 1;
     }
 
     .search-input-wrapper {
@@ -544,7 +546,7 @@
       transition: all 0.3s ease;
       
       &:focus {
-        height: 40  px;
+        height: 40px;
         transform: scale(1.02);
       }
     }
@@ -571,7 +573,7 @@
 
         h4 {
           font-size: 14px;
-        }ca tje r
+        }
 
         .date {
           font-size: 11px;
@@ -629,10 +631,6 @@
     }
 
     &.compact {
-        .search-container {
-            margin: 0;
-          }
-
       .result-grid {
         grid-template-columns: 1fr;
       }

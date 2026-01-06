@@ -51,42 +51,38 @@ function NewApproval({refetch, handleClose, refetchFlow}){
         }
         
         try {
-            const response = await postRequest('/approval-groups', {
-                name: approvalName,
-                displayName: approvalName,
+            // Create a new stakeholder role using the new system
+            const response = await postRequest('/api/stakeholder-role', {
+                stakeholderId: approvalName.toLowerCase().replace(/\s+/g, '_'),
+                stakeholderName: approvalName,
+                stakeholderType: 'approver',
                 description: approvalDescription,
-                ownerId: selectedOwner._id
+                isActive: true,
+                members: selectedOwner ? [{
+                    userId: selectedOwner._id,
+                    assignedAt: new Date()
+                    // assignedBy will be set by the backend
+                }] : [],
+                approvalConfig: {
+                    requiredApprovals: 1,
+                    totalMembers: selectedOwner ? 1 : 0,
+                    allowSelfApproval: false,
+                    requireAllMembers: false
+                },
+                escalationRules: {
+                    timeout: 72,
+                    autoEscalate: true
+                },
+                conditionGroups: [],
+                groupLogicalOperators: []
             });
             
             if (response.success) {
-                // Add the approval group to the approval flow
-                try {
-                    const flowResponse = await postRequest('/add-approval', {
-                        orgId: response.data._id,
-                        role: 'admin' // Default role for the approval group
-                    });
-                    
-                    if (flowResponse.success) {
-                        addNotification({
-                            title: 'Success',
-                            message: 'Approval group created and added to flow successfully',
-                            type: 'success'
-                        });
-                    } else {
-                        addNotification({
-                            title: 'Partial Success',
-                            message: 'Approval group created but failed to add to flow',
-                            type: 'warning'
-                        });
-                    }
-                } catch (flowError) {
-                    console.error('Error adding to approval flow:', flowError);
-                    addNotification({
-                        title: 'Partial Success',
-                        message: 'Approval group created but failed to add to flow',
-                        type: 'warning'
-                    });
-                }
+                addNotification({
+                    title: 'Success',
+                    message: 'Stakeholder role created successfully. You can now assign this role to domains in the Domains tab.',
+                    type: 'success'
+                });
                                 
                 // Reset form
                 setApprovalName('');
@@ -98,28 +94,28 @@ function NewApproval({refetch, handleClose, refetchFlow}){
             } else {
                 addNotification({
                     title: 'Error',
-                    message: response.message || 'Failed to create approval group',
+                    message: response.message || 'Failed to create stakeholder role',
                     type: 'error'
                 });
             }
         } catch (error) {
-            console.error('Error creating approval group:', error);
+            console.error('Error creating stakeholder role:', error);
             addNotification({
                 title: 'Error',
-                message: 'Failed to create approval group',
+                message: 'Failed to create stakeholder role',
                 type: 'error'
             });
         }
     };
 
     return (
-        <HeaderContainer classN="new-approval" icon="fluent:flowchart-24-filled" header="New Approval Group" subHeader="create a new approval group">
+        <HeaderContainer classN="new-approval" icon="fluent:flowchart-24-filled" header="New Stakeholder Role" subHeader="create a new stakeholder role">
             <div className="header">
-                <h2>New Approval Group</h2>
-                <p>create a new approval group</p>
+                <h2>New Stakeholder Role</h2>
+                <p>create a new stakeholder role</p>
             </div>
             <Flag 
-                text="Approval groups can manage their own members and configure approval rules. The selected owner will have full control over the group." 
+                text="Stakeholder roles define who can approve events for specific domains. Each role can be assigned to users and configured with approval conditions and escalation timeouts." 
                 primary="rgba(235,226,127,0.32)" 
                 accent='#B29F5F' 
                 color="#B29F5F" 
@@ -127,26 +123,26 @@ function NewApproval({refetch, handleClose, refetchFlow}){
             />
             <form onSubmit={onSubmit} className="content">
                 <div className="field">
-                    <label htmlFor="approval-name">Approval Group Name</label>
+                    <label htmlFor="stakeholder-name">Stakeholder Role Name</label>
                     <input 
                         type="text" 
-                        name="approval-name" 
-                        id="approval-name" 
+                        name="stakeholder-name" 
+                        id="stakeholder-name" 
                         className="short" 
                         value={approvalName} 
                         onChange={(e) => setApprovalName(e.target.value)}
-                        placeholder="Enter approval group name"
+                        placeholder="Enter stakeholder role name"
                     />
                 </div>
                 <div className="field">
-                    <label htmlFor="approval-description">Description</label>
+                    <label htmlFor="stakeholder-description">Description</label>
                     <textarea 
-                        name="approval-description" 
-                        id="approval-description" 
+                        name="stakeholder-description" 
+                        id="stakeholder-description" 
                         className="long" 
                         value={approvalDescription} 
                         onChange={(e) => setApprovalDescription(e.target.value)}
-                        placeholder="Describe the purpose of this approval group"
+                        placeholder="Describe the purpose of this stakeholder role"
                         rows="3"
                     />
                 </div>
@@ -174,7 +170,7 @@ function NewApproval({refetch, handleClose, refetchFlow}){
                     )}
                 </div>
                 <button type="submit" className="submit-button">
-                    Create Approval Group
+                    Create Stakeholder Role
                 </button>
             </form>
         </HeaderContainer>

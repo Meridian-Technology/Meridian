@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import './EventsDash.scss';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
@@ -14,7 +14,8 @@ import EventsGrad from '../../assets/Gradients/EventsGrad.png';
 import Popup from '../../components/Popup/Popup';
 import EventsAnalytics from '../../components/EventsAnalytics/EventsAnalytics';
 import Room from '../Room/Room1';
-
+import CreateStudySession from '../Create/CreateStudySession/CreateStudySession';
+import '../Create/Create.scss';
 // Sign-up prompt component
 const SignUpPrompt = ({ onSignUp, onExplore, handleClose }) => {
     return (
@@ -63,7 +64,7 @@ const SignUpPrompt = ({ onSignUp, onExplore, handleClose }) => {
                         <Icon icon="mingcute:user-add-fill" />
                         Sign Up Now
                     </button>
-                    <button className="signup-btn secondary" onClick={onExplore}>
+                    <button className="signup-btn secondary" onClick={handleClose}>
                         no thanks
                     </button>
                 </div>
@@ -76,6 +77,11 @@ function EventsDash({}){
     const [showLoading, setShowLoading] = useState(false);
     const [showExplore, setShowExplore] = useState(false);
     const [showSignUpPrompt, setShowSignUpPrompt] = useState(false);
+    const [showCreatePopup, setShowCreatePopup] = useState(false);
+    const [showCreateMenu, setShowCreateMenu] = useState(false);
+    const [createType, setCreateType] = useState('');
+    const createMenuRef = useRef(null);
+    const createButtonRef = useRef(null);
     const { user, isAuthenticating } = useAuth();
     const navigate = useNavigate();
 
@@ -86,6 +92,7 @@ function EventsDash({}){
         
         const today = new Date().toDateString();
         return lastPromptDate !== today;
+
     };
 
     // Helper function to mark sign-up prompt as shown today
@@ -95,6 +102,28 @@ function EventsDash({}){
     };
 
     // Show sign-up prompt after loading for non-authenticated users (only once per day)
+    // Close create menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (
+                createMenuRef.current && 
+                !createMenuRef.current.contains(event.target) &&
+                createButtonRef.current &&
+                !createButtonRef.current.contains(event.target)
+            ) {
+                setShowCreateMenu(false);
+            }
+        };
+
+        if (showCreateMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showCreateMenu]);
+
     useEffect(() => {
         if (!isAuthenticating && !user && !showExplore && shouldShowSignUpPrompt()) {
             const timer = setTimeout(() => {
@@ -119,7 +148,7 @@ function EventsDash({}){
     // Handle room navigation from search results
     const handleRoomNavigation = (room) => {
         // Navigate to Rooms tab (index 2 for authenticated users, index 1 for non-authenticated)
-        const roomsTabIndex = user ? 2 : 1;
+        const roomsTabIndex = 2;
         
         // Navigate to Rooms tab with the room name as roomid parameter
         // The Room component in embedded mode expects room names, not IDs
@@ -130,24 +159,25 @@ function EventsDash({}){
     const getMenuItems = () => {
         const items = [
             { 
+                label: 'Home', 
+                icon: 'material-symbols:home-rounded',
+                element: <MyEvents onRoomNavigation={handleRoomNavigation} />
+            },
+            { 
                 label: 'Explore', 
                 icon: 'mingcute:compass-fill',
                 element: <Explore />
             },
             {
                 label: 'Rooms',
-                icon: 'ic:baseline-room',
+                icon: 'mingcute:calendar-fill',
                 element: <Room hideHeader={true} urlType="embedded" />
             }
         ];
         
-        // Only add "My Events" if user is logged in
+        // Add additional tabs for authenticated users
         if (user) {
-            items.unshift({
-                label: 'My Events', 
-                icon: 'mingcute:calendar-fill',
-                element: <MyEvents onRoomNavigation={handleRoomNavigation} />
-            });
+            
             items.push({
                 label: 'Friends', 
                 icon: 'mdi:account-group',
@@ -156,10 +186,15 @@ function EventsDash({}){
             
             // Add Analytics tab for admin users
             if (user.roles && user.roles.includes('admin')) {
+                // items.push({
+                //     label: 'Analytics', 
+                //     icon: 'mingcute:chart-fill',
+                //     element: <EventsAnalytics />
+                // });
                 items.push({
-                    label: 'Analytics', 
-                    icon: 'mingcute:chart-fill',
-                    element: <EventsAnalytics />
+                    label: 'Orgs',
+                    icon: 'mingcute:group-2-fill',
+                    element: <Orgs />
                 });
             }
         }
@@ -191,6 +226,91 @@ function EventsDash({}){
         setShowSignUpPrompt(false);
     };
 
+    const handleCreateClick = () => {
+        setShowCreateMenu(!showCreateMenu);
+    };
+
+    const handleCreateOption = (action) => {
+        setShowCreateMenu(false);
+        if (action === 'study-session') {
+            setCreateType('study-session');
+            setShowCreatePopup(true);
+        } else if (action === 'event') {
+            navigate('/create-event');
+        } else if (action === 'org') {
+            navigate('/create-org');
+        }
+    };
+
+    const handleCloseCreatePopup = () => {
+        setShowCreatePopup(false);
+        setCreateType('');
+    };
+
+    // Create the plus button middle item for authenticated users
+    const getMiddleItem = () => {
+        if (!user) return null;
+        if(user.roles && !user.roles.includes('admin')){
+            return null;
+        }
+        return (
+            <div className="create-button-container">
+                <div className="create-menu-container">
+                    <button 
+                        ref={createButtonRef}
+                        className="create-plus-button" 
+                        onClick={handleCreateClick}
+                        title="Create"
+                    >
+                        <Icon icon="mingcute:add-circle-fill" />
+                        <span>Create</span>
+                    </button>
+                    
+                    {showCreateMenu && (
+                        <div ref={createMenuRef} className="create-menu">
+                            <div 
+                                className="create-menu-item"
+                                onClick={() => handleCreateOption('study-session')}
+                            >
+                                <div className="menu-item-icon">
+                                    <Icon icon="mingcute:book-6-fill" />
+                                </div>
+                                <div className="menu-item-content">
+                                    <span className="menu-item-title">Study Session</span>
+                                    <span className="menu-item-subtitle">Create a new study session</span>
+                                </div>
+                            </div>
+                            <div 
+                                className="create-menu-item"
+                                onClick={() => handleCreateOption('event')}
+                            >
+                                <div className="menu-item-icon">
+                                    <Icon icon="mingcute:calendar-fill" />
+                                </div>
+                                <div className="menu-item-content">
+                                    <span className="menu-item-title">Event</span>
+                                    <span className="menu-item-subtitle">Create a new event</span>
+                                </div>
+                            </div>
+                            <div 
+                                className="create-menu-item"
+                                onClick={() => handleCreateOption('org')}
+                            >
+                                <div className="menu-item-icon">
+                                    <Icon icon="mingcute:group-fill" />
+                                </div>
+                                <div className="menu-item-content">
+                                    <span className="menu-item-title">Organization</span>
+                                    <span className="menu-item-subtitle">Create a new organization</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     return (
         <>
             {showLoading && !isAuthenticating && !user && (
@@ -213,7 +333,9 @@ function EventsDash({}){
                 logo={eventsLogo} 
                 primaryColor='#6D8EFA' 
                 secondaryColor='rgba(109, 142, 250, 0.15)'
-                defaultPage={user ? 1 : 0}
+                middleItem={getMiddleItem()}
+                // Set default page to "My Events" (index 1) if user is logged in, otherwise "Explore" (index 0)
+                defaultPage={0}
             >
             </Dashboard>
 
@@ -230,6 +352,18 @@ function EventsDash({}){
                     handleClose={handleClosePrompt}
                 />
             </Popup>
+
+            {/* Create Study Session popup */}
+            {createType === 'study-session' && (
+                <Popup 
+                    isOpen={showCreatePopup} 
+                    onClose={handleCloseCreatePopup}
+                    customClassName="create-study-session-popup"
+                    defaultStyling={false}
+                >
+                    <CreateStudySession />
+                </Popup>
+            )}
         </>
     )
 }

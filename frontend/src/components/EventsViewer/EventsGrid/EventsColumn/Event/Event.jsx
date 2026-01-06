@@ -195,21 +195,6 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate}
                     </div>
                 )}
                 
-                {/* RSVP stats if available */}
-                {optimisticEvent.rsvpStats && (
-                    <div className="rsvp-preview">
-                        <div className="rsvp-stat">
-                            <span className="count">{optimisticEvent.rsvpStats.going}</span>
-                            <span className="label">going</span>
-                        </div>
-                        {optimisticEvent.rsvpStats.maybe > 0 && (
-                            <div className="rsvp-stat">
-                                <span className="count">{optimisticEvent.rsvpStats.maybe}</span>
-                                <span className="label">maybe</span>
-                            </div>
-                        )}
-                    </div>
-                )}
                 
                 {/* RSVP Button */}
                 <RSVPButton 

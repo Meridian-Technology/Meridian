@@ -1,5 +1,16 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const {
+    ORG_PERMISSIONS,
+    EVENT_PERMISSIONS,
+    USER_PERMISSIONS
+} = require('../constants/permissions');
+
+const ROLE_PERMISSION_VALUES = Array.from(new Set([
+    ...Object.values(ORG_PERMISSIONS),
+    ...Object.values(EVENT_PERMISSIONS),
+    ...Object.values(USER_PERMISSIONS)
+]));
 
 const OrgSchema= new Schema({
     org_name:{
@@ -26,13 +37,7 @@ const OrgSchema= new Schema({
             },
             permissions: {
                 type: [String],
-                enum: [
-                    // Organization permissions
-                    'manage_members', 'manage_events', 'view_analytics', 'all',
-                    // Approval permissions
-                    'approve_events', 'reject_events', 'request_changes', 
-                    'configure_approval_rules', 'escalate_approvals'
-                ],
+                enum: ROLE_PERMISSION_VALUES,
                 default: []
             },
             isDefault: {
@@ -197,6 +202,40 @@ const OrgSchema= new Schema({
                 type: Boolean,
                 default: true
             }
+        }
+    },
+    // Message/announcement settings
+    messageSettings: {
+        enabled: {
+            type: Boolean,
+            default: true
+        },
+        visibility: {
+            type: String,
+            enum: ['members_only', 'members_and_followers', 'public'],
+            default: 'members_and_followers'
+        },
+        postingPermissions: {
+            type: [String], // Role names that can post
+            default: ['owner', 'admin', 'officer']
+        },
+        allowReplies: {
+            type: Boolean,
+            default: true
+        },
+        allowLikes: {
+            type: Boolean,
+            default: true
+        },
+        requireApproval: {
+            type: Boolean,
+            default: false
+        },
+        characterLimit: {
+            type: Number,
+            default: 500,
+            min: 100,
+            max: 2000
         }
     }
 });

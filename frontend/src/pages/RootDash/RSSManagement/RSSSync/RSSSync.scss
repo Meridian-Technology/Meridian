@@ -146,6 +146,10 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+
+            .event-component{
+                min-height:fit-content;
+            }
             
             .xml-viewer {
                 height: 100%;

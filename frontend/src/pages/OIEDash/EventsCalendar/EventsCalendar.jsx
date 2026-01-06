@@ -15,6 +15,9 @@ function EventsCalendar({expandedClass, allowCrossDaySelection = true, timeIncre
     const contentRef = useRef(null);
     const [filter, setFilter] = useState({type: "all"});
 
+    // look into this blocking system, could likely be optimized using shared logic with true events.
+    const blockedEvents = [];
+
     useEffect(() => {
         if(contentRef.current){
             setContentHeight(contentRef.current.clientHeight-50);
@@ -43,13 +46,13 @@ function EventsCalendar({expandedClass, allowCrossDaySelection = true, timeIncre
 
             <div className="content" ref={contentRef}>
                 {
-                    view === 0 && <Month height={`${contentHeight}px`} changeToWeek={changeToWeek} view={view} setView={setView} filter={filter}/>
+                    view === 0 && <Month height={`${contentHeight}px`} changeToWeek={changeToWeek} view={view} setView={setView} filter={filter} blockedEvents={blockedEvents}/>
                 }
                 {
                     view === 1 && <Week height={`${contentHeight}px`} changeToDay={changeToDay} start={start} filter={filter} view={view} setView={setView} allowCrossDaySelection={allowCrossDaySelection} timeIncrement={timeIncrement}/>
                 }
                 {
-                    view === 2 && <Day height={`${contentHeight}px`} start={selected} filter={filter} view={view} setView={setView}/>
+                    view === 2 && <Day height={`${contentHeight}px`} start={selected} filter={filter} view={view} setView={setView} blockedEvents={blockedEvents}/>
                 }
 
             </div>

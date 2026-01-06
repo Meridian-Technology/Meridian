@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import './Classroom.scss';
 import leftArrow from '../../assets/leftarrow.svg';
 import { useNavigate } from 'react-router-dom';
@@ -35,7 +35,7 @@ import '../../pages/Room/Room.scss';
 
 function Classroom({ room, state, setState, schedule, roomName, width, setShowMobileCalendar, setIsUp, reload, urlType }) {
     const [image, setImage] = useState("")
-    const { isAuthenticating, isAuthenticated, user, getCheckedIn } = useAuth();
+    const { isAuthenticating, isAuthenticated, user } = useAuth();
     const [success, setSuccess] = useState(null);
     const [message, setMessage] = useState("");
     const [defaultImage, setDefaultImage] = useState(false);
@@ -49,56 +49,88 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
     const [ratings, setRatings] = useState([]);
 
     const { emit, on, off } = useWebSocket();
+    const { addNotification } = useNotification();
+    const navigate = useNavigate();
 
-    //get all users currently checked in
-    const getCheckedInUsers = async () => {
+    // Use refs to access latest values in event handlers without causing re-renders
+    const roomRef = useRef(room);
+    const checkedInUsersRef = useRef(checkedInUsers);
+
+    // Get all users currently checked in
+    const getCheckedInUsers = useCallback(async () => {
         try {
-            
-            if (room.name !== null && room.checked_in.length === 0) {
+            const currentRoom = roomRef.current;
+            if (!currentRoom || !currentRoom.checked_in || currentRoom.checked_in.length === 0) {
+                setCheckedInUsers({});
                 return;
             }
-            const users = await getUsers(room.checked_in);
-            const checkedInUsers = {};
+            const users = await getUsers(currentRoom.checked_in);
+            const checkedInUsersMap = {};
             users.forEach(user => {
-                checkedInUsers[user._id] = user;
+                if (user && user._id) {
+                    checkedInUsersMap[user._id] = user;
+                }
             });
-            setCheckedInUsers(checkedInUsers);
+            setCheckedInUsers(checkedInUsersMap);
         } catch (error) {
-            console.log(error);
-            addNotification({ title: "An error occured", message: "an internal error occured", type: "error" })
+            console.error('Error fetching checked-in users:', error);
+            addNotification({ 
+                title: "Error loading users", 
+                message: "Could not load checked-in users", 
+                type: "error" 
+            });
         }
-    }
+    }, [addNotification]);
 
-    //legacy code
-    // const getRating = async () => {
-    //     if (!isAuthenticated) {
-    //         return;
-    //     }
-    //     try {
-    //         const rated = await userRated(room._id);
-    //         console.log(rated);
-    //         if (rated.data.success) {
-    //             console.log(rated.data.data);
-    //             setUserRating(rated.data.data);
-    //         }
-    //     } catch (error) {
-    //         console.log(error);
-    //         addNotification({ title: "An error occured", message: "an internal error occured", type: "error" })
-    //     }
-    // }
+    useEffect(() => {
+        roomRef.current = room;
+        checkedInUsersRef.current = checkedInUsers;
+    }, [room, checkedInUsers]);
 
-    const handleCheckInEvent = (data) => {
-        if (data.classroomId === room._id) {
-            reload();
-            handleNewUserCheckIn();
+    const handleCheckInEvent = useCallback(async (data) => {
+        const currentRoom = roomRef.current;
+        if (currentRoom && data.classroomId === currentRoom._id) {
+            // Update room data first
+            await reload();
+            // Then update checked-in users list
+            const currentCheckedInUsers = checkedInUsersRef.current;
+            if (data.userId && !currentCheckedInUsers[data.userId]) {
+                try {
+                    const newUser = await getUser(data.userId);
+                    setCheckedInUsers(prevState => ({
+                        ...prevState,
+                        [data.userId]: newUser
+                    }));
+                } catch (error) {
+                    console.error('Error fetching new user:', error);
+                    // Fallback: reload all checked-in users
+                    getCheckedInUsers();
+                }
+            } else {
+                // If user already exists or userId not provided, reload all
+                getCheckedInUsers();
+            }
         }
-    };
+    }, [reload, getCheckedInUsers]);
 
-    const handleCheckOutEvent = (data) => {
-        if (data.classroomId === room._id) {
-            reload();
-    }
-    };
+    const handleCheckOutEvent = useCallback(async (data) => {
+        const currentRoom = roomRef.current;
+        if (currentRoom && data.classroomId === currentRoom._id) {
+            // Update room data
+            await reload();
+            // Remove user from checked-in users list
+            if (data.userId) {
+                setCheckedInUsers(prevState => {
+                    const updated = { ...prevState };
+                    delete updated[data.userId];
+                    return updated;
+                });
+            } else {
+                // If userId not provided, reload all
+                getCheckedInUsers();
+            }
+        }
+    }, [reload, getCheckedInUsers]);
 
     useEffect(() => {
         if(!room){
@@ -114,30 +146,28 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
     }, [room]);
 
 
-    let fetched = false;
+    // Initialize checked-in users and WebSocket listeners when room changes
     useEffect(() => {
-        if (!room) {
+        if (!room || !room._id) {
             return;
         }
-        if (fetched) {
-            return;
-        }
+
+        // Load checked-in users
         getCheckedInUsers();
-        // getRating();
-        fetched = true;
-        // Join the room for this classroom
+
+        // Join the room for this classroom via WebSocket
         emit('join-classroom', room._id);
 
         // Listen for check-in events
         on('check-in', handleCheckInEvent);
         on('check-out', handleCheckOutEvent);
 
-        // Clean up on component unmount
+        // Clean up on component unmount or room change
         return () => {
             off('check-in', handleCheckInEvent);
             off('check-out', handleCheckOutEvent);
         };
-    }, [room]);
+    }, [room?._id, handleCheckInEvent, handleCheckOutEvent, emit, on, off, getCheckedInUsers]);
     
     useEffect(() => {
         if(!user){
@@ -149,9 +179,23 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
     }, [ratings, user]);
 
 
+    // Update checked-in users when room.checked_in changes (from reload or WebSocket)
     useEffect(() => {
-
-    }, [isAuthenticating]);
+        if (room && room.checked_in) {
+            // Sync checkedInUsers with room.checked_in
+            const currentUserIds = Object.keys(checkedInUsers);
+            const roomUserIds = room.checked_in;
+            
+            // Check if we need to update (if counts differ or IDs don't match)
+            const needsUpdate = 
+                currentUserIds.length !== roomUserIds.length ||
+                roomUserIds.some(id => !checkedInUsers[id]);
+            
+            if (needsUpdate) {
+                getCheckedInUsers();
+            }
+        }
+    }, [room?.checked_in, getCheckedInUsers]);
 
     const handleImageClick = () => {
         setClassImgOpen(true);
@@ -178,9 +222,6 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
         "printer": Printer
     };
 
-    const { addNotification } = useNotification();
-    const navigate = useNavigate();
-
     useEffect(() => {
         if (checkInRef.current) {
             setFillerHeight(checkInRef.current.clientHeight + 100);
@@ -191,18 +232,7 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
         setImage("");
     }, [room])
 
-    useEffect(() => {
-        if (isAuthenticated) {
-            if(!user){
-                return;
-            }
-            if (room && room.checked_in && room.checked_in.includes(user._id)) {
-                if (success === false) {
-                    handleCheckOut();
-                }
-            }
-        }
-    }, [success, room]);
+    // Removed auto-checkout logic - users should manually check out
 
     useEffect(() => {
 
@@ -251,52 +281,90 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
     };
 
     const handleCheckIn = async () => {
+        if (!isAuthenticated || !user) {
+            addNotification({ 
+                title: "Authentication required", 
+                message: "Please log in to check in", 
+                type: "error" 
+            });
+            return;
+        }
+
+        if (!success) {
+            addNotification({ 
+                title: "Classroom unavailable", 
+                message: "This classroom is currently in use", 
+                type: "error" 
+            });
+            return;
+        }
+
         try {
-            const response = await checkIn(room._id);
+            await checkIn(room._id);
+            // Reload room data to get updated checked_in array
             await reload();
-            getCheckedIn();
+            // Update checked-in users list
+            await getCheckedInUsers();
+            // Show success notification
+            addNotification({ 
+                title: "Checked in successfully", 
+                message: `You're now checked in to ${roomName}`, 
+                type: "success" 
+            });
         } catch (error) {
-            console.log(error);
-            if (error.response.status === 400) {
-                addNotification({ title: "You are already checked in to another classroom", message: "Check out and try again", type: "error" })
+            console.error('Check-in error:', error);
+            if (error.response?.status === 400) {
+                addNotification({ 
+                    title: "Already checked in", 
+                    message: "You are already checked in to another classroom. Please check out first.", 
+                    type: "error" 
+                });
             } else {
-                addNotification({ title: "An error occured", message: "an internal error occured", type: "error" })
+                addNotification({ 
+                    title: "Check-in failed", 
+                    message: "An error occurred while checking in. Please try again.", 
+                    type: "error" 
+                });
             }
         }
     }
 
     const handleCheckOut = async () => {
+        if (!isAuthenticated || !user) {
+            return;
+        }
+
         try {
-            const response = await checkOut(room._id);
+            await checkOut(room._id);
+            // Remove current user from checked-in users list immediately
+            setCheckedInUsers(prevState => {
+                const updated = { ...prevState };
+                delete updated[user._id];
+                return updated;
+            });
+            // Reload room data
+            await reload();
+            // Show rating popup if user hasn't rated
             if (!userRating) {
                 handleOpenRatingPopup();
             }
-            await reload();
-
-
-        } catch (error) {
-            console.log(error);
-            addNotification({ title: "An error occured", message: "an internal error occured", type: "error" })
-        }
-    }
-
-    const handleNewUserCheckIn = async () => {
-        try {
-            //get new user id from room.checked_in, not in checkedInUsers
-            const id = room.checked_in.filter(userId => !(userId in checkedInUsers))[0];
-            const user = await getUser(id);
-            //add user to checkedInUsers
-            setCheckedInUsers(prevState => {
-                return {
-                    ...prevState,
-                    [id]: user
-                }
+            // Show success notification
+            addNotification({ 
+                title: "Checked out successfully", 
+                message: `You've checked out of ${roomName}`, 
+                type: "success" 
             });
         } catch (error) {
-            console.log(error);
-            addNotification({ title: "An error occured", message: "an internal error occured", type: "error" })
+            console.error('Check-out error:', error);
+            addNotification({ 
+                title: "Check-out failed", 
+                message: "An error occurred while checking out. Please try again.", 
+                type: "error" 
+            });
         }
     }
+
+    // This function is no longer needed - handleCheckInEvent handles user updates
 
     return (
         <div className={`classroom-component  ${user && room.checked_in.includes(user._id) ? "checked-in" : ""}`}>

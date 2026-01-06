@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
-import axios from 'axios';
+import apiRequest from '../../../utils/postRequest';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import './AnalyticsChart.scss';
 import Stats from '../../../assets/Icons/Stats.svg';
@@ -63,15 +63,15 @@ const SimpleAnalyticsChart = ({endpoint, heading, color}) => {
       const endDate = endOfWeek(new Date(), { weekStartsOn: 0 });
   
       try {
-        const response = await axios.get(`/${endpoint}-by-day`, {
+        const data = await apiRequest(`/${endpoint}-by-day`, null, {
+          method: 'GET',
           params: {
             startDate: format(startDate, 'yyyy-MM-dd'),
             endDate: format(endDate, 'yyyy-MM-dd'),
           }
         });
         
-        if (response.status === 200) {
-          const data = response.data;
+        if (data && !data.error && Array.isArray(data)) {
           const labels = data.map(item => format(new Date(item.date + 'T00:00:00Z'), 'MMM dd'));
           const counts = data.map(item => item.count);
           

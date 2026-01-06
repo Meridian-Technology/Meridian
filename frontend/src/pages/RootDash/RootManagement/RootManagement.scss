@@ -8,6 +8,50 @@
         gap: 20px;
         padding: 25px 30px;
         box-sizing: border-box;
+        .solutions-container{
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            h2{
+                font-size: 20px;
+                font-weight: 700;
+                color: var(--text);
+                margin-left:10px;
+                margin-bottom: 0px;
+            }
+        }
+        .solutions-router{
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            .solution-card{
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                border: 1px solid var(--border);
+                box-shadow: var(--shadow);
+                padding: 10px;
+                border-radius: 10px;
+                width: 30%;
+                img{
+                    width: 100%;
+                    height: 100%;
+                    
+                }
+                button{
+                    background: var(--background);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 6px;
+                    cursor: pointer;
+                }
+                .solution-card-header{
+                    display: flex;
+                    flex-direction: row;
+                    gap: 10px;
+                }
+            }
+        }
     }
     .analytics-container{
         display: flex;

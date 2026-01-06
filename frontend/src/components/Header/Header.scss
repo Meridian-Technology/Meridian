@@ -5,6 +5,15 @@
     position: relative;
     max-width: 100vw;
     flex-wrap: nowrap;
+    background: transparent;
+    transition: background-color 0.3s ease, backdrop-filter 0.3s ease, box-shadow 0.3s ease;
+
+    &.scrolled {
+        background: rgba(255, 255, 255, 0.5);
+        backdrop-filter: blur(10px) saturate(180%);
+        -webkit-backdrop-filter: blur(10px) saturate(180%);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
 
     .header-content{
         display:flex;
@@ -82,23 +91,26 @@
 }
 
 .Header button{
-    font-family: 'Satoshi';
+    font-family: 'Montserrat';
     font-size: 15px;
     outline:none;
     border-radius: 12px;
-    background-color: var(--red);
+    background-color: #111;
     border:none;
-    padding:5px 20px;
+    padding:10px 20px;
     margin:10px;
     color: white;
     width:calc(100% - 20px);
     pointer-events: all;
     transition: all 0.5s;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 0 20px 0 rgba(255, 255, 255, 0.5);
 }
 
 .Header button:hover{
     background-color: var(--background);
-    color: var(--red);
+    color: var(--dark-blue);
     box-shadow: 0 0 10px 0 rgba(0,0,0,0.1);
     cursor:pointer;
 }

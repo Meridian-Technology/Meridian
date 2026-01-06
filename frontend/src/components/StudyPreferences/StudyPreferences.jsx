@@ -4,8 +4,9 @@ import DragList from '../../pages/OnBoarding/DragList/DragList';
 import Recommendation from '../../pages/OnBoarding/Recommendation/Recommendation';
 import rightarrow from '../../assets/Icons/RightArrow.svg';
 import { saveUser } from '../../DBInteractions';
+import GradientHeader from '../../assets/Gradients/ApprovalGrad.png';
 
-const StudyPreferences = ({ settingsRightSide, width, handleBackClick, userInfo }) => {
+const StudyPreferences = ({userInfo }) => {
     const [items, setItems] = useState(["outlets", "classroom type", "printer", "table type", "windows"]);
     const [sliderValue, setSliderValue] = useState(2);
     const details = {
@@ -65,15 +66,13 @@ const StudyPreferences = ({ settingsRightSide, width, handleBackClick, userInfo 
 
 
     return (
-        <div className={`study-preferences settings-right ${settingsRightSide ? "active" : "not-active"}`}>
-            <div className="header">
+        <div className="header dash">
+        <div className={`study-preferences settings-right `}>
+           <header className='header'>
+                <img src={GradientHeader} alt="" className="" />
                 <h1>Study Preferences</h1>
-                {width <= 700 && settingsRightSide && (
-                    <button className='back-arrow' onClick={handleBackClick}>
-                        <img src={rightarrow} alt="Back Arrow" style={{ transform: 'rotate(180deg)' }} />
-                    </button>
-                )}
-            </div>
+                <p>welcome back to your study preferences</p>
+            </header>
 
             <div className='profile'>
                 <h2>recommendation settings</h2>
@@ -105,6 +104,7 @@ const StudyPreferences = ({ settingsRightSide, width, handleBackClick, userInfo 
 
             </div>
             
+        </div>
         </div>
     );
 };

@@ -1,25 +1,6 @@
 const mongoose = require('mongoose');
 
-const orgManagementConfigSchema = new mongoose.Schema({
-    // Verification settings
-    verificationEnabled: {
-        type: Boolean,
-        default: true
-    },
-    verificationRequired: {
-        type: Boolean,
-        default: false
-    },
-    verificationTypes: [{
-        type: String,
-        enum: ['verification', 'feature_access', 'funding', 'space_reservation', 'event_approval', 'status_upgrade'],
-        default: ['verification']
-    }],
-    
-    // Verification status types configuration
-    verificationStatusTypes: {
-        type: mongoose.Schema.Types.Mixed,
-        default: {
+const defaultVerificationTiers = {
             basic: {
                 name: 'Basic Verification',
                 description: 'Standard organization verification',
@@ -128,7 +109,29 @@ const orgManagementConfigSchema = new mongoose.Schema({
                 },
                 benefits: ['event_creation', 'member_management', 'career_resources', 'networking_events']
             }
-        }
+};
+
+const orgManagementConfigSchema = new mongoose.Schema({
+    // Verification settings
+    verificationEnabled: {
+        type: Boolean,
+        default: true
+    },
+    verificationRequired: {
+        type: Boolean,
+        default: false
+    },
+    // Allowed request types (feature flags - controls which request types can be submitted)
+    allowedRequestTypes: {
+        type: [String],
+        enum: ['verification', 'feature_access', 'funding', 'space_reservation', 'event_approval', 'status_upgrade'],
+        default: ['verification']
+    },
+    
+    // Verification tiers/levels (the actual verification system - basic, premium, gold, etc.)
+    verificationTiers: {
+        type: mongoose.Schema.Types.Mixed,
+        default: () => JSON.parse(JSON.stringify(defaultVerificationTiers))
     },
     
     // Auto-approval settings
@@ -139,6 +142,20 @@ const orgManagementConfigSchema = new mongoose.Schema({
     autoApproveThreshold: {
         type: Number,
         default: 0 // Minimum members required for auto-approval
+    },
+    
+    // Verification type settings
+    enableCustomVerificationTypes: {
+        type: Boolean,
+        default: true
+    },
+    defaultVerificationType: {
+        type: String,
+        default: 'basic'
+    },
+    autoUpgradeThreshold: {
+        type: Number,
+        default: 90 // Days after which organizations can request status upgrades
     },
     
     // Feature access control
@@ -277,6 +294,63 @@ const orgManagementConfigSchema = new mongoose.Schema({
         slackNotifications: {
             type: Boolean,
             default: false
+        }
+    },
+    
+    // Messaging/announcement system configuration
+    messaging: {
+        enabled: {
+            type: Boolean,
+            default: true
+        },
+        defaultCharacterLimit: {
+            type: Number,
+            default: 500,
+            min: 100,
+            max: 2000
+        },
+        maxCharacterLimit: {
+            type: Number,
+            default: 2000
+        },
+        minCharacterLimit: {
+            type: Number,
+            default: 100
+        },
+        defaultVisibility: {
+            type: String,
+            enum: ['members_only', 'members_and_followers', 'public'],
+            default: 'members_and_followers'
+        },
+        moderationEnabled: {
+            type: Boolean,
+            default: false
+        },
+        requireProfanityFilter: {
+            type: Boolean,
+            default: true
+        },
+        allowEventMentions: {
+            type: Boolean,
+            default: true
+        },
+        allowLinks: {
+            type: Boolean,
+            default: true
+        },
+        notificationSettings: {
+            notifyOnNewMessage: {
+                type: Boolean,
+                default: true
+            },
+            notifyOnMention: {
+                type: Boolean,
+                default: true
+            },
+            notifyOnReply: {
+                type: Boolean,
+                default: true
+            }
         }
     }
 }, { timestamps: true });

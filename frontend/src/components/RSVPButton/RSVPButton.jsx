@@ -101,7 +101,9 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                 title="I'm going"
             >
                 <Icon icon="mdi:check" />
-                {rsvpStatus?.status === 'going' ? 'Going' : 'Going'}
+                <span className="button-text">
+                    {event.rsvpStats?.going > 0 ? (<><b>{event.rsvpStats.going}</b> Going</>) : 'Going'}
+                </span>
             </button>
             <button
                 className={`rsvp-btn maybe ${rsvpStatus?.status === 'maybe' ? 'active' : ''}`}
@@ -110,7 +112,9 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                 title="Maybe"
             >
                 <Icon icon="mdi:help" />
-                {rsvpStatus?.status === 'maybe' ? 'Maybe' : 'Maybe'}
+                <span className="button-text">
+                    {event.rsvpStats?.maybe > 0 ? (<><b>{event.rsvpStats.maybe}</b> Maybe</>) : 'Maybe'}
+                </span>
             </button>
             <button
                 className={`rsvp-btn not-going ${rsvpStatus?.status === 'not-going' ? 'active' : ''}`}
@@ -119,7 +123,9 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                 title="Not going"
             >
                 <Icon icon="mdi:close" />
-                {rsvpStatus?.status === 'not-going' ? 'Not Going' : 'Not Going'}
+                <span className="button-text">
+                    {event.rsvpStats?.notGoing > 0 ? (<><b>{event.rsvpStats.notGoing}</b> Not Going</>) : 'Not Going'}
+                </span>
             </button>
         </div>
     );

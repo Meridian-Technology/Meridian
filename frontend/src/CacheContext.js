@@ -41,6 +41,11 @@ export const CacheProvider = ({children}) =>{
     
     const getRoom = async (id) => {
         try {
+            // Validate id before making request
+            if (!id || id === undefined || id === null) {
+                console.error("getRoom called with invalid id:", id);
+                return null;
+            }
             const queryString = `/getroom/${id}`;
             if(cache[queryString]){
                 // console.log('returning cached');
@@ -54,11 +59,17 @@ export const CacheProvider = ({children}) =>{
             }
         } catch (error) {
             console.error("Error fetching data: ", error);
+            return null;
         }
     };
 
     const getRoomUpdate = async (id) => {
         try {
+            // Validate id before making request
+            if (!id || id === undefined || id === null) {
+                console.error("getRoomUpdate called with invalid id:", id);
+                return null;
+            }
             const queryString = `/getroom/${id}`;
             const response = await fetch(`/getroom/${id}`);
             const data = await response.json();
@@ -68,6 +79,7 @@ export const CacheProvider = ({children}) =>{
             
         } catch (error) {
             console.error("Error fetching data: ", error);
+            return null;
         }
     };
     

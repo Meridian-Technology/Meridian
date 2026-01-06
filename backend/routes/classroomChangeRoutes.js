@@ -11,6 +11,7 @@ const path = require('path');
 const s3 = require('../aws-config');
 const mongoose = require('mongoose');
 const { clean } = require('../services/profanityFilterService');
+const getModels = require('../services/getModelService');
 
 const router = express.Router();
 
@@ -44,10 +45,9 @@ router.post('/save', verifyToken, async (req, res) => {
     const roomId = req.body.roomId;
     const userId = req.user.userId;
     const operation = req.body.operation; // true is add, false is remove
+    const { Classroom, User } = getModels(req, 'Classroom', 'User');
 
     try {
-        const Classroom = mongoose.model('Classroom', classroomSchema, 'classrooms1');
-        const User = mongoose.model('User', userSchema, 'users');
         const classroom = await Classroom.findOne({ _id: roomId });
         if (!classroom) {
             console.log(`POST: /save/${roomId}/${userId} failed`);

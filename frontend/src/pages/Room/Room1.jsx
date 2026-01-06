@@ -204,6 +204,9 @@ function Room({hideHeader = false, urlType = 'embedded'}) {
         clearQuery();
         setLoadedResults([]);
         setFreeNow(false);
+        setSearchQuery(''); // Clear search query
+        setSearchAttributes([]); // Clear search attributes
+        setSearchSort('name'); // Reset search sort to default
     }
 
     function setReportUp(){
@@ -362,7 +365,13 @@ function Room({hideHeader = false, urlType = 'embedded'}) {
     }
 
     function reloadClassroom(){
-        fetchDataUpdate(roomIds[roomid]);
+        // Validate room ID before reloading
+        const roomIdToReload = room?._id || roomIds[roomid];
+        if (!roomIdToReload || roomIdToReload === undefined) {
+            console.error("Cannot reload classroom: room ID is undefined", { roomid, roomIds, room });
+            return;
+        }
+        fetchDataUpdate(roomIdToReload);
         setContentState("classroom");
         clearQuery();
     }
@@ -556,7 +565,7 @@ function Room({hideHeader = false, urlType = 'embedded'}) {
                             <Sort
                                 query={searchQuery}
                                 searchAttributes={searchAttributes}
-                                setSearchAttributes={setSearchAttributes}
+                                setSearchAttributes={setSearchAttributes}   
                                 searchSort={searchSort}
                                 setSearchSort={setSearchSort}
                                 onSearch={onSearch}

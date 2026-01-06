@@ -1,0 +1,339 @@
+.agenda-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    &__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+    }
+
+    &__title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #111;
+
+        svg {
+            font-size: 16px;
+            color: #666;
+        }
+
+        h3 {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: #111;
+        }
+    }
+
+    &__add-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px;
+        background: transparent;
+        color: #667eea;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover {
+            background: #f0f4ff;
+            border-color: #667eea;
+        }
+
+        svg {
+            font-size: 14px;
+        }
+    }
+
+    &__empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 12px;
+        text-align: center;
+        color: #666;
+
+        svg {
+            font-size: 24px;
+            margin-bottom: 8px;
+            opacity: 0.5;
+        }
+
+        p {
+            margin: 0;
+            font-size: 12px;
+        }
+    }
+
+    &__list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    &__item {
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #fafafa;
+        transition: all 0.2s ease;
+
+        &:hover {
+            background: #f5f5f5;
+        }
+    }
+
+    &__item-view {
+        padding: 10px 12px;
+    }
+
+    &__item-content {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    &__item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+
+        h4 {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: #111;
+            flex: 1;
+        }
+    }
+
+    &__edit-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px;
+        background: transparent;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        color: #666;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover {
+            background: #f0f0f0;
+            color: #667eea;
+            border-color: #667eea;
+        }
+
+        svg {
+            font-size: 14px;
+        }
+    }
+
+    &__item-description {
+        margin: 0;
+        font-size: 12px;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    &__item-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 6px;
+    }
+
+    &__meta-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: #666;
+
+        svg {
+            font-size: 12px;
+            color: #667eea;
+        }
+
+        span {
+            font-weight: 500;
+        }
+    }
+
+    &__item-edit {
+        padding: 12px;
+        background: #fff;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    &__form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 10px;
+
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #111;
+        }
+
+        input,
+        textarea {
+            padding: 8px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+            background: #fff;
+            transition: all 0.2s ease;
+
+            &:focus {
+                outline: none;
+                border-color: #667eea;
+                box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+            }
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+    }
+
+    &__form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    &__item-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    &__actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #eee;
+    }
+
+    &__btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        svg {
+            font-size: 14px;
+        }
+
+        &--primary {
+            background: #667eea;
+            color: white;
+
+            &:hover:not(:disabled) {
+                background: #5568d3;
+            }
+        }
+
+        &--secondary {
+            background: transparent;
+            color: #666;
+            border: 1px solid #e0e0e0;
+
+            &:hover:not(:disabled) {
+                background: #fafafa;
+            }
+        }
+
+        &--save {
+            background: #667eea;
+            color: white;
+            padding: 6px 12px;
+            font-size: 12px;
+
+            &:hover {
+                background: #5568d3;
+            }
+        }
+
+        &--delete {
+            background: #ff4444;
+            color: white;
+            padding: 6px 12px;
+            font-size: 12px;
+
+            &:hover {
+                background: #e63939;
+            }
+        }
+    }
+
+    .spinner {
+        animation: spin 1s linear infinite;
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .agenda-editor {
+        &__header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        &__form-row {
+            grid-template-columns: 1fr;
+        }
+
+        &__actions {
+            flex-direction: column;
+        }
+
+        &__btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+}
+

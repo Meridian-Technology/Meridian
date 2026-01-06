@@ -16,7 +16,6 @@ router.get('/search', verifyTokenOptional, async (req, res) => {
     const sort = req.query.sort;
     const fullObjects = req.query.fullObjects === 'true'; // New parameter to return full objects
     const userId = req.user ? req.user.userId : null;
-    console.log('sort', sort);
     let user;
     if (userId) {
         try {
@@ -231,12 +230,29 @@ router.get('/all-purpose-search', verifyTokenOptional, async (req, res) => {
     const { Classroom, User, Schedule, Search } = getModels(req, 'Classroom', 'User', 'Schedule', 'Search');
     const query = req.query.query;
     const attributes = req.query.attributes ? req.query.attributes : []; // Ensure attributes is an array
-    const timePeriod = req.query.timePeriod; // might be null
     const sort = req.query.sort;
+    const returnIds = req.query.returnIds || false; // Return room IDs instead of names
     const userId = req.user ? req.user.userId : null;
     let user;
-    console.log(`GET: /all-purpose-search?query=${query}&attributes=${attributes}&sort=${sort}&time=${timePeriod}`);
 
+    // Handle timePeriod - it might already be an object (from Express query parsing) or a JSON string
+    let timePeriod = null;
+    if (req.query.timePeriod) {
+        if (typeof req.query.timePeriod === 'string') {
+            try {
+                timePeriod = JSON.parse(req.query.timePeriod);
+            } catch (e) {
+                console.error('Error parsing timePeriod:', e);
+                timePeriod = null;
+            }
+        } else {
+            // Already an object from Express query parsing
+            timePeriod = req.query.timePeriod;
+        }
+    }
+    
+    console.log(`GET: /all-purpose-search?query=${query}&attributes=${attributes}&sort=${sort}&time=${timePeriod}`);
+    console.log(JSON.stringify(req.query));
     const createTimePeriodQuery = (queryObject) => {
         let conditions = [];
         Object.entries(queryObject).forEach(([day, periods]) => {
@@ -310,6 +326,7 @@ router.get('/all-purpose-search', verifyTokenOptional, async (req, res) => {
                 },
                 {
                     $project: {
+                        _id: 1, // Include classroom ID in the output
                         name: 1, // Includes classroom name in the output
                         weekly_schedule: "$schedule_info.weekly_schedule" // Projects only the weekly_schedule part from each schedule_info
                     }
@@ -352,8 +369,10 @@ router.get('/all-purpose-search', verifyTokenOptional, async (req, res) => {
             sortedClassrooms = classrooms; // No user or saved info, use original order
         }
 
-        // Extract only the names from the result set
-        const names = sortedClassrooms.map(classroom => classroom.name);
+        // Extract names or IDs from the result set based on returnIds parameter
+        const result = returnIds 
+            ? sortedClassrooms.map(classroom => classroom._id.toString())
+            : sortedClassrooms.map(classroom => classroom.name);
 
         //analytics
         const search = new Search({
@@ -366,7 +385,7 @@ router.get('/all-purpose-search', verifyTokenOptional, async (req, res) => {
         });
 
         search.save();
-        res.json({ success: true, message: "Rooms found", data: names });
+        res.json({ success: true, message: "Rooms found", data: result });
 
 
     } catch (error) {

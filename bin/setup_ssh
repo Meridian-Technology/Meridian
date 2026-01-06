@@ -7,5 +7,20 @@ echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
 chmod 600 ~/.ssh/id_ed25519
 ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-rm -rf backend/events
-git clone git@github.com:Study-Compass/Events-Backend.git backend/events
+# Clone submodules for Heroku build
+# Read .gitmodules and clone each submodule
+if [ -f .gitmodules ]; then
+    while IFS= read -r line; do
+        if [[ $line == \[submodule* ]]; then
+            # Extract submodule name
+            submodule_name=$(echo "$line" | sed 's/\[submodule "\(.*\)"\]/\1/')
+        elif [[ $line == *url* ]]; then
+            # Extract URL
+            submodule_url=$(echo "$line" | sed 's/.*url = \(.*\)/\1/')
+            # Clone the submodule
+            echo "Cloning submodule: $submodule_name from $submodule_url"
+            rm -rf "$submodule_name"
+            git clone "$submodule_url" "$submodule_name"
+        fi
+    done < .gitmodules
+fi

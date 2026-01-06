@@ -9,9 +9,10 @@ import axios from 'axios';
 import Flag from '../../Flag/Flag';
 import SAMLLoginButton from '../SAMLLoginButton/SAMLLoginButton';
 import { isSAMLEnabled, getUniversityDisplayName, getUniversityLogo, getUniversityClassName } from '../../../config/universities';
+import {Icon} from '@iconify-icon/react/dist/iconify.mjs';
 
 function LoginForm() {
-    const { isAuthenticated, login, googleLogin } = useAuth();
+    const { isAuthenticated, login, googleLogin, appleLogin } = useAuth();
     let navigate =  useNavigate();
     const [valid, setValid] = useState(false);
     const [formData, setFormData] = useState({
@@ -138,6 +139,33 @@ function LoginForm() {
         onFailure: () => {failed("Google login failed. Please try again")},
     })
 
+    // Initialize Apple Sign In
+    useEffect(() => {
+        if (window.AppleID) {
+            window.AppleID.auth.init({
+                clientId: 'com.meridian.auth',
+                scope: 'name email',
+                redirectURI: window.location.origin + '/auth/apple/callback',
+                usePopup: false // Use redirect mode
+            });
+        }
+    }, []);
+
+    const handleAppleSignIn = () => {
+        if (!window.AppleID) {
+            failed("Apple Sign In is not available. Please check your browser compatibility.");
+            return;
+        }
+
+        // Store redirect path in state for callback to use
+        const redirectState = JSON.stringify({ redirect: redirectPathRef.current || from });
+        
+        // Initiate Apple Sign In - will redirect to callback URL
+        window.AppleID.auth.signIn({
+            state: redirectState
+        });
+    };
+
     function failed(message){
         navigate('/login');
         setErrorText(message);
@@ -171,7 +199,20 @@ function LoginForm() {
         )}
 
         {/* Google Login Button */}
-        <button type="button" className="button google" onClick={() => google()}>Continue with Google<img src={googleLogo} alt="google"/></button>
+        <button type="button" className="button google" onClick={() => google()}>
+        <img src={googleLogo} alt="google"/>
+            Continue with Google
+            </button>
+
+        {/* Apple Login Button */}
+        <button 
+            type="button" 
+            className="button apple" 
+            onClick={handleAppleSignIn}
+        >
+            <Icon icon="mdi:apple" />
+            Continue with Apple
+        </button>
 
         <div className="divider">
             <hr/>

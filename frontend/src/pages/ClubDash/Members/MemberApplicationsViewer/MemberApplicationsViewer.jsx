@@ -210,15 +210,10 @@ function MemberApplicationsViewer({ org }) {
     if (applicationsError) {
         return (
             <div className="member-applications-viewer">
-                <HeaderContainer 
-                    header='Member applications'
-                    icon='mdi:account-group'
-                >
                     <ErrorState 
                         error={applicationsError} 
                         onRetry={refetchApplications}
                     />
-                </HeaderContainer>
             </div>
         );
     }
@@ -227,32 +222,21 @@ function MemberApplicationsViewer({ org }) {
     if (applications.length === 0) {
         return (
             <div className="member-applications-viewer">
-                <HeaderContainer 
-                    header='Member applications'
-                    icon='mdi:account-group'
-                >
-                    <EmptyState />
-                </HeaderContainer>
+                <EmptyState />
             </div>
         );
     }
 
     return (
         <div className="member-applications-viewer">
-            <HeaderContainer 
-                header='Member applications'
-                icon='mdi:account-group'
-                subheaderRow={
-                    <div className="row subheader">
-                        <div className={`column ${selectedTab === 'current' ? 'selected' : ''}`}>
-                            <p onClick={() => {setSelectedApplicationId(pendingApplications[0]?._id); setSelectedTab('current')}}>Current Applications ({pendingApplications.length})</p>
-                        </div>
-                        <div className={`column ${selectedTab === 'past' ? 'selected' : ''}`}>
-                            <p onClick={() => {setSelectedApplicationId(processedApplications[0]?._id); setSelectedTab('past')}}>Past Applications ({processedApplications.length})</p>
-                        </div>
+                <div className="tab-head">
+                    <div className={`tab-header ${selectedTab === 'current' ? 'selected' : ''}`} onClick={() => setSelectedTab('current')}>
+                        <p>Current Applications</p>
                     </div>
-                }
-            >
+                    <div className={`tab-header ${selectedTab === 'past' ? 'selected' : ''}`} onClick={() => setSelectedTab('past')}>
+                        <p>Past Applications</p>
+                    </div>
+                </div>
                 <div className="member-applications-content">
                     <div className="applicants">
                         {selectedTab === 'current' && (     
@@ -302,7 +286,6 @@ function MemberApplicationsViewer({ org }) {
                         ) }
                     </div>
                 </div>
-            </HeaderContainer>
         </div>
     );
 }

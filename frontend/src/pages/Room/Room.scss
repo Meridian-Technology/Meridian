@@ -12,6 +12,8 @@
         .calendar-container{
             width:100%;
             box-shadow: none;
+            padding:20px;
+            box-sizing: border-box;
         }
     }
 
@@ -54,10 +56,10 @@
     width:100%;
     height:calc(100% - 115px);
     max-height:calc(100% - 115px);
-    padding: 20px 20px 40px 20px;
+    // padding: 20px 20px 40px 20px;
     box-sizing: border-box;
 }
-.right{
+.room .right{
     display:flex;
     flex-direction: column;
     justify-content: flex-start;
@@ -86,7 +88,7 @@
     /* transform: translate(-1px,-1px); */
 }
 
-select{
+.room select{
     border-radius: 10px;
     border: 1px solid #B0AFAF;
     font-family: 'Satoshi';

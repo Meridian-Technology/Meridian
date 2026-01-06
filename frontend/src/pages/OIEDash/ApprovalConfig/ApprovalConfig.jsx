@@ -14,7 +14,8 @@ import postRequest from '../../../utils/postRequest';
 
 const ApprovalConfig = ({ approvalId }) => {
     const approvalGroupsData = useFetch('/approval-groups');
-    const approvalFlowData = useFetch('/get-approval-flow');
+    const approvalFlowData = useFetch('/api/event-system-config/get-approval-flow');
+    const eventSystemConfigData = useFetch('/api/event-system-config');
     const [approvalGroups, setApprovalGroups] = useState([]);
     const [steps, setSteps] = useState([]);
     const [fieldDefinitions, setFieldDefinitions] = useState([]);
@@ -25,6 +26,7 @@ const ApprovalConfig = ({ approvalId }) => {
     const [currentForm, setCurrentForm] = useState(null);
     const [hasChanges, setHasChanges] = useState(false);
     const [pendingChanges, setPendingChanges] = useState({});
+    const [systemConfig, setSystemConfig] = useState(null);
 
     const [saveButton, setSaveButton] = useState(0);
 
@@ -64,6 +66,15 @@ const ApprovalConfig = ({ approvalId }) => {
         }
     },[approvalFlowData.data, approvalGroups]);
 
+    useEffect(()=>{
+        if(eventSystemConfigData.data){
+            setSystemConfig(eventSystemConfigData.data.data);
+        }
+        if(eventSystemConfigData.error){
+            console.log(eventSystemConfigData.error);
+        }
+    },[eventSystemConfigData.data]);
+
     useEffect(()=> {console.log(selectedStep)}, [selectedStep])
 
     const handleFormSave = (form) => {
@@ -84,22 +95,44 @@ const ApprovalConfig = ({ approvalId }) => {
     };
 
     const handleSave = async () => {
-        if (!selectedStep || !hasChanges) return;
+        if (!selectedStep || !hasChanges || !systemConfig) return;
 
         try {
-            const response = await postRequest('/update-approval-flow', {
-                stepIndex: steps.findIndex(step => step.role === selectedStep.role),
-                updates: pendingChanges
+            // Find the domain that matches this approval group
+            const matchingOrg = approvalGroups.find(org => org.org_name === approvalId);
+            if (!matchingOrg) {
+                console.error('Matching organization not found');
+                return;
+            }
+
+            // Find the domain in system config
+            const domain = systemConfig.domains.find(d => d.domainId === matchingOrg._id);
+            if (!domain) {
+                console.error('Domain not found in system config');
+                return;
+            }
+
+            // Update the approval workflow for this domain
+            const response = await postRequest(`/api/event-system-config/approval-workflow/${matchingOrg._id}`, {
+                ...domain.domainSettings.approvalWorkflow,
+                stakeholderRoles: domain.domainSettings.approvalWorkflow.stakeholderRoles.map(roleRef => {
+                    if (roleRef.stakeholderRoleId === selectedStep.role) {
+                        return {
+                            ...roleRef,
+                            conditionGroups: pendingChanges.conditionGroups || roleRef.conditionGroups,
+                            groupLogicalOperators: pendingChanges.groupLogicalOperators || roleRef.groupLogicalOperators
+                        };
+                    }
+                    return roleRef;
+                })
             });
 
             if (response.success) {
                 setHasChanges(false);
                 setPendingChanges({});
-                // Update local state with the response data
-                setSelectedStep(prev => ({
-                    ...prev,
-                    ...response.data
-                }));
+                // Refetch the data to get updated state
+                approvalFlowData.refetch();
+                eventSystemConfigData.refetch();
             } else {
                 console.error('Failed to save changes:', response.message);
             }

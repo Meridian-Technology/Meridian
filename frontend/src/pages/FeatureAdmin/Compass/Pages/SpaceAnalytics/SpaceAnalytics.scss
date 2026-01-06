@@ -1,0 +1,467 @@
+.space-analytics {
+    
+
+    .analytics-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top:20px;
+
+        h2 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .time-range-selector {
+            select {
+                padding: 8px 12px;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                background: var(--background);
+                color: var(--text);
+                font-size: 14px;
+                cursor: pointer;
+
+                &:focus {
+                    outline: none;
+                    border-color: var(--primary);
+                }
+            }
+        }
+    }
+
+    .analytics-grid {
+        padding:0 40px;
+
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    .overview-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+
+        .overview-card {
+            background: var(--card-background);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+
+            .card-icon {
+                width: 48px;
+                height: 48px;
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--primary-light);
+                color: var(--primary);
+
+                svg {
+                    width: 24px;
+                    height: 24px;
+                }
+
+                &.occupied {
+                    background: #e8f5e8;
+                    color: #4caf50;
+                }
+
+                &.available {
+                    background: #e3f2fd;
+                    color: #2196f3;
+                }
+
+                &.maintenance {
+                    background: #ffebee;
+                    color: #f44336;
+                }
+            }
+
+            .card-content {
+                flex: 1;
+
+                .card-number {
+                    font-size: 28px;
+                    font-weight: 700;
+                    color: var(--text);
+                    line-height: 1;
+                    margin-bottom: 4px;
+                }
+
+                .card-label {
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: var(--text);
+                    margin-bottom: 2px;
+                }
+
+                .card-subtitle {
+                    font-size: 12px;
+                    color: var(--lighter-text);
+                }
+            }
+        }
+    }
+
+    .charts-section {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 16px;
+
+        .chart-card {
+            background: var(--card-background);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+
+            h3 {
+                margin: 0 0 16px 0;
+                font-size: 18px;
+                font-weight: 600;
+                color: var(--text);
+            }
+
+            .utilization-chart {
+                height: 200px;
+                display: flex;
+                align-items: end;
+                gap: 4px;
+                padding: 16px 0;
+
+                .utilization-bar {
+                    justify-content: flex-end;
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    height: 100%;
+
+                    .bar {
+                        width: 100%;
+                        border-radius: 4px 4px 0 0;
+                        transition: all 0.3s ease;
+                        min-height: 20px;
+
+                        &.low {
+                            background: linear-gradient(to top, #fff3e0, #ffe0b2);
+                        }
+
+                        &.medium {
+                            background: linear-gradient(to top, #fff8e1, #ffecb3);
+                        }
+
+                        &.high {
+                            background: linear-gradient(to top, #ffebee, #ffcdd2);
+                        }
+                    }
+
+                    .bar-label {
+                        font-size: 10px;
+                        color: var(--lighter-text);
+                        margin-top: 8px;
+                        transform: rotate(-45deg);
+                        white-space: nowrap;
+                    }
+
+                    .bar-value {
+                        font-size: 10px;
+                        color: var(--text);
+                        font-weight: 500;
+                        margin-top: 4px;
+                    }
+                }
+            }
+
+            .peak-hours {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+
+                .peak-hour-item {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 12px 16px;
+                    background: var(--background);
+                    border-radius: 8px;
+                    border-left: 4px solid var(--primary);
+
+                    .peak-hour-time {
+                        font-size: 14px;
+                        font-weight: 500;
+                        color: var(--text);
+                    }
+
+                    .peak-hour-utilization {
+                        font-size: 16px;
+                        font-weight: 600;
+                        color: var(--primary);
+                    }
+                }
+            }
+        }
+    }
+
+    .building-performance {
+        background: var(--card-background);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+
+        h3 {
+            margin: 0 0 16px 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .building-stats-table {
+            .table-header {
+                display: grid;
+                grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
+                gap: 16px;
+                padding: 12px 0;
+                border-bottom: 1px solid var(--border);
+                font-weight: 600;
+                color: var(--text);
+                font-size: 14px;
+            }
+
+            .table-row {
+                display: grid;
+                grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
+                gap: 16px;
+                padding: 12px 0;
+                border-bottom: 1px solid var(--border-light);
+                font-size: 14px;
+                color: var(--text);
+
+                &:last-child {
+                    border-bottom: none;
+                }
+
+                .col {
+                    display: flex;
+                    align-items: center;
+
+                    &.building-name {
+                        font-weight: 500;
+                    }
+
+                    &.occupied {
+                        color: #4caf50;
+                        font-weight: 500;
+                    }
+
+                    &.available {
+                        color: #2196f3;
+                        font-weight: 500;
+                    }
+
+                    &.utilization {
+                        font-weight: 500;
+
+                        &.low {
+                            color: #ff9800;
+                        }
+
+                        &.medium {
+                            color: #ff5722;
+                        }
+
+                        &.high {
+                            color: #f44336;
+                        }
+                    }
+
+                    &.trend {
+                        font-weight: 600;
+
+                        &.positive {
+                            color: #4caf50;
+                        }
+
+                        &.negative {
+                            color: #f44336;
+                        }
+
+                        &.neutral {
+                            color: var(--lighter-text);
+                        }
+                    }
+
+                    &.efficiency {
+                        font-weight: 500;
+                        color: var(--primary);
+                    }
+                }
+            }
+        }
+    }
+
+    .room-types {
+        background: var(--card-background);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+
+        h3 {
+            margin: 0 0 16px 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .room-types-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+
+            .room-type-card {
+                padding: 16px;
+                background: var(--background);
+                border-radius: 8px;
+                border: 1px solid var(--border-light);
+
+                .room-type-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 12px;
+
+                    h4 {
+                        color: var(--text);
+                        font-size: 14px;
+                        font-weight: 600;
+                        margin: 0;
+                    }
+
+                    .room-count {
+                        font-size: 12px;
+                        color: var(--lighter-text);
+                        background: var(--card-background);
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                    }
+                }
+
+                .room-type-metrics {
+                    margin-bottom: 12px;
+
+                    .metric-row {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 6px;
+
+                        .metric-label {
+                            font-size: 12px;
+                            color: var(--lighter-text);
+                        }
+
+                        .metric-value {
+                            font-size: 12px;
+                            font-weight: 500;
+                            color: var(--text);
+
+                            &.trend {
+                                font-weight: 600;
+
+                                &.positive {
+                                    color: #4caf50;
+                                }
+
+                                &.negative {
+                                    color: #f44336;
+                                }
+
+                                &.neutral {
+                                    color: var(--lighter-text);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                .utilization-bar-horizontal {
+                    height: 6px;
+                    background: var(--border-light);
+                    border-radius: 3px;
+                    overflow: hidden;
+                    margin-bottom: 8px;
+
+                    .bar-fill {
+                        height: 100%;
+                        border-radius: 3px;
+                        transition: width 0.3s ease;
+
+                        &.low {
+                            background: linear-gradient(to right, #fff3e0, #ffe0b2);
+                        }
+
+                        &.medium {
+                            background: linear-gradient(to right, #fff8e1, #ffecb3);
+                        }
+
+                        &.high {
+                            background: linear-gradient(to right, #ffebee, #ffcdd2);
+                        }
+                    }
+                }
+
+                .utilization-percentage {
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: var(--text);
+                    text-align: right;
+                }
+            }
+        }
+    }
+}
+
+@media (max-width: 768px) {
+    .space-analytics {
+        .overview-cards {
+            grid-template-columns: 1fr;
+        }
+
+        .charts-section {
+            grid-template-columns: 1fr;
+        }
+
+        .building-performance {
+            .building-stats-table {
+                .table-header,
+                .table-row {
+                    grid-template-columns: 1fr;
+                    gap: 8px;
+
+                    .col {
+                        padding: 4px 0;
+                        border-bottom: 1px solid var(--border-light);
+
+                        &:before {
+                            content: attr(data-label);
+                            font-weight: 600;
+                            margin-right: 8px;
+                            min-width: 80px;
+                        }
+                    }
+                }
+            }
+        }
+
+        .room-types-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+}

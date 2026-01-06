@@ -12,13 +12,13 @@ function Layout() {
   },[]);
   
   return (
-    <div style={{height:viewport, position: 'relative', overflow: 'hidden'}}>
+    <div style={{minHeight: viewport, position: 'relative', overflowX: 'hidden', width: '100%'}}>
       {/* The Banner is rendered here and will appear across all pages */}
       <Banner visible={visible} setVisible={setVisible} bannerType="default" />
       
       {/* This will render the content of the page (children) */}
-      <main style={{height:viewport}}>
-        <div className="out" style={{height:viewport}}>
+      <main style={{minHeight: viewport, overflowX: 'hidden', width: '100%'}}>
+        <div className="out" style={{minHeight: viewport, overflowX: 'hidden', width: '100%'}}>
             <Outlet />      
         </div>
       </main>

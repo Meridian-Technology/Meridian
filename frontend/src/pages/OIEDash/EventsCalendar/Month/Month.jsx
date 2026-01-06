@@ -14,7 +14,7 @@ const getMonthName = (month) => {
     return months[month - 1];
 };
 
-function Month({ height, changeToWeek, filter, showSwitch = true, setView = () => {}, view = 0 }) {
+function Month({ height, changeToWeek, filter, showSwitch = true, setView = () => {}, view = 0, blockedEvents = [] }) {
 
     const [month, setMonth] = useState(new Date().getMonth() + 1);
     const [year, setYear] = useState(2025);
@@ -35,6 +35,18 @@ function Month({ height, changeToWeek, filter, showSwitch = true, setView = () =
         setMonth(month === 1 ? 12 : month - 1);
         setYear(month === 1 ? year - 1 : year);
     }
+
+    // Filter blocked events to only show those within the current month
+    const monthBlockedEvents = blockedEvents.filter(event => {
+        const eventStart = new Date(event.start_time);
+        return eventStart.getMonth() + 1 === month && eventStart.getFullYear() === year;
+    });
+
+    // Combine regular events with blocked events
+    const combinedEvents = [
+        ...(events.data?.events || []),
+        ...monthBlockedEvents
+    ];
 
     const handleKeyDown = (event, direction) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -95,7 +107,7 @@ function Month({ height, changeToWeek, filter, showSwitch = true, setView = () =
             <MonthDisplay 
                 month={month}
                 year={year}
-                events={events.data?.events}
+                events={combinedEvents}
                 height={height}
                 currentMonth={currentMonth}
                 currentYear={currentYear}

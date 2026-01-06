@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './FlowAnalytics.scss';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
+import KpiCard from '../../../../components/Analytics/Dashboard/KpiCard';
 
 function FlowAnalytics({ approvalGroups, approvalFlow }) {
     const [timeRange, setTimeRange] = useState('7d');
@@ -51,49 +52,36 @@ function FlowAnalytics({ approvalGroups, approvalFlow }) {
 
             <div className="analytics-grid">
                 <div className="overview-cards">
-                    <div className="overview-card">
-                        <div className="card-icon">
-                            <Icon icon="mdi:check-circle" />
-                        </div>
-                        <div className="card-content">
-                            <div className="card-number">{mockAnalytics.totalApprovals}</div>
-                            <div className="card-label">Total Approvals</div>
-                            <div className="card-subtitle">{getTimeRangeLabel(timeRange)}</div>
-                        </div>
-                    </div>
+                    <KpiCard
+                        value={mockAnalytics.totalApprovals}
+                        title="Total Approvals"
+                        subtitle={getTimeRangeLabel(timeRange)}
+                        icon="mdi:check-circle"
+                    />
 
-                    <div className="overview-card">
-                        <div className="card-icon approved">
-                            <Icon icon="mdi:check" />
-                        </div>
-                        <div className="card-content">
-                            <div className="card-number">{mockAnalytics.approvedCount}</div>
-                            <div className="card-label">Approved</div>
-                            <div className="card-subtitle">{mockAnalytics.approvalRate}% approval rate</div>
-                        </div>
-                    </div>
+                    <KpiCard
+                        value={mockAnalytics.approvedCount}
+                        title="Approved"
+                        subtitle={`${mockAnalytics.approvalRate}% approval rate`}
+                        icon="mdi:check"
+                        iconVariant="approved"
+                    />
 
-                    <div className="overview-card">
-                        <div className="card-icon rejected">
-                            <Icon icon="mdi:close" />
-                        </div>
-                        <div className="card-content">
-                            <div className="card-number">{mockAnalytics.rejectedCount}</div>
-                            <div className="card-label">Rejected</div>
-                            <div className="card-subtitle">{(100 - mockAnalytics.approvalRate).toFixed(1)}% rejection rate</div>
-                        </div>
-                    </div>
+                    <KpiCard
+                        value={mockAnalytics.rejectedCount}
+                        title="Rejected"
+                        subtitle={`${(100 - mockAnalytics.approvalRate).toFixed(1)}% rejection rate`}
+                        icon="mdi:close"
+                        iconVariant="rejected"
+                    />
 
-                    <div className="overview-card">
-                        <div className="card-icon pending">
-                            <Icon icon="mdi:clock" />
-                        </div>
-                        <div className="card-content">
-                            <div className="card-number">{mockAnalytics.pendingCount}</div>
-                            <div className="card-label">Pending</div>
-                            <div className="card-subtitle">Awaiting review</div>
-                        </div>
-                    </div>
+                    <KpiCard
+                        value={mockAnalytics.pendingCount}
+                        title="Pending"
+                        subtitle="Awaiting review"
+                        icon="mdi:clock"
+                        iconVariant="pending"
+                    />
                 </div>
 
                 <div className="charts-section">

@@ -37,7 +37,7 @@ const handleMulterError = (err, req, res, next) => {
 };
 
 //Route to get a specific org by name
-router.get("/get-org/:id", verifyToken, async (req, res) => {
+router.get("/get-org/:id", async (req, res) => {
     //May eventually change login permissions
     const { Org } = getModels(req, "Org");
 
@@ -68,7 +68,7 @@ router.get("/get-org/:id", verifyToken, async (req, res) => {
     }
 });
 
-router.get("/get-org-by-name/:name", verifyToken, async (req, res) => {
+router.get("/get-org-by-name/:name", verifyToken,  async (req, res) => {
     const { Org, OrgMember, OrgFollower, Event, User, OrgMemberApplication } = getModels(req, "Org", "OrgMember", "OrgFollower", "Event", "User", "OrgMemberApplication");
     const { exhaustive } = req.query;
 
@@ -102,6 +102,7 @@ router.get("/get-org-by-name/:name", verifyToken, async (req, res) => {
         //check if the user has applied to the org
         const user = await User.findById(req.user.userId);
         const existingApplication = await OrgMemberApplication.findOne({org_id: org._id, user_id: user._id, status: "pending"});
+        console.log(orgMembers)
         const isMember = orgMembers.some(member => member.user_id._id.toString() === user._id.toString());
         const isFollower = orgFollowers.some(follower => follower.user_id._id.toString() === user._id.toString());
         const isPending = existingApplication ? true : false;

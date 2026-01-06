@@ -71,6 +71,8 @@
         margin-bottom: 3rem;
     }
 
+    // KpiCard styles are now in components/Analytics/Dashboard/KpiCard.scss
+
     .analytics-sections {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));

@@ -22,7 +22,7 @@ export default function AnimatedPageWrapper({ children, watchFullPath = false })
         initial="initial"
         animate="animate"
         exit="exit"
-        style={{ position: 'absolute', width: '100%' }}
+        style={{ position: 'absolute', width: '100%', height: '100%' }}
       >
         {children}
       </motion.div>
