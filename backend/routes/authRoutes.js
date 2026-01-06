@@ -9,7 +9,7 @@ const { isProfane } = require('../services/profanityFilterService');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 
-const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser } = require('../services/userServices.js');
+const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser, authenticateWithGoogleIdToken } = require('../services/userServices.js');
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getModels = require('../services/getModelService.js');
 
@@ -402,17 +402,33 @@ router.post('/verify-email', async (req, res) => {
   });
 
 router.post('/google-login', async (req, res) => {
-    const { code, isRegister, url } = req.body;
+    const { code, codeVerifier, isRegister, url, idToken } = req.body;
 
-    if (!code) {
+    // Handle two different flows:
+    // 1. ID Token flow (native SDKs) - no PKCE needed
+    // 2. Authorization code flow (expo-auth-session) - requires PKCE
+    
+    if (!code && !idToken) {
         return res.status(400).json({
             success: false,
-            message: 'No authorization code provided'
+            message: 'No authorization code or ID token provided'
         });
     }
 
     try {
-        const { user } = await authenticateWithGoogle(code, isRegister, url, req);
+        let user;
+        
+        // Use ID token flow if idToken is provided (native SDKs)
+        if (idToken) {
+            console.log('Using Google ID token authentication flow');
+            const result = await authenticateWithGoogleIdToken(idToken, url, req);
+            user = result.user;
+        } else {
+            // Use authorization code flow (expo-auth-session with PKCE)
+            console.log('Using Google authorization code authentication flow');
+            const result = await authenticateWithGoogle(code, isRegister, url, req, codeVerifier);
+            user = result.user;
+        }
         
         // Generate both tokens
         const accessToken = jwt.sign(

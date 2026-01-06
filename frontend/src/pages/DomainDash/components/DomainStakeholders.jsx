@@ -7,6 +7,7 @@ import postRequest from '../../../utils/postRequest';
 import Popup from '../../../components/Popup/Popup';
 import NewStakeholderRole from '../../RootDash/ManageFlow/NewStakeholderRole/NewStakeholderRole';
 import '../DomainDashboard.scss';
+import EditStakeholderRole from './EditStakeholderRole/EditStakeholderRole';
 
 function DomainStakeholders() {
     const { domainId } = useParams();
@@ -14,6 +15,7 @@ function DomainStakeholders() {
     
     const stakeholderRolesData = useFetch(`/api/stakeholder-roles/domain/${domainId}`);
     const [popupOpen, setPopupOpen] = useState(false);
+    const [editPopupOpen, setEditPopupOpen] = useState(false);
     const [loading, setLoading] = useState(false);
 
     const stakeholderRoles = stakeholderRolesData.data?.data || [];
@@ -67,6 +69,10 @@ function DomainStakeholders() {
                 />
             </Popup>
 
+            <Popup onClose={() => setEditPopupOpen(false)} isOpen={editPopupOpen} defaultStyling={false} customClassName="wide-content">
+                <EditStakeholderRole />
+            </Popup>
+
             <div className="stakeholders-header">
                 <h2>Stakeholder Roles</h2>
                 <button 
@@ -107,11 +113,7 @@ function DomainStakeholders() {
                                 <button 
                                     className="edit-btn"
                                     onClick={() => {
-                                        addNotification({
-                                            title: 'Feature Coming Soon',
-                                            message: 'Stakeholder role editing will be available soon',
-                                            type: 'info'
-                                        });
+                                        setEditPopupOpen(true);
                                     }}
                                 >
                                     <Icon icon="mdi:pencil" />
