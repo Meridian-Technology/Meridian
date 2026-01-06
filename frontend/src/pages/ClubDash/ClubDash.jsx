@@ -288,6 +288,7 @@ function ClubDash(){
         secondaryColor="#EDF6EE" 
         primaryColor="#4DAA57"
         enableSubSidebar={true}
+        onBack={() => navigate('/events-dashboard')}
         >
         </Dashboard>
     )

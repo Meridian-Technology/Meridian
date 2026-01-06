@@ -500,9 +500,8 @@ router.delete("/delete-org/:orgId", verifyToken, async (req, res) => {
     }
 });
 
-// UNUSED: No current frontend references; consider deprecating in favor of a future follow system
 router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
-    const { Org, Follower } = getModels(req, "Org", "Follower");
+    const { Org, OrgFollower } = getModels(req, "Org", "OrgFollower");
     try {
         const { orgId } = req.params;
         const userId = req.user.userId;
@@ -514,7 +513,7 @@ router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
             return res.status(404).json({ success: false, message: "Org not found" });
         }
 
-        const alreadyFollowing = await Follower.findOne({
+        const alreadyFollowing = await OrgFollower.findOne({
             user_id: userId,
             org_id: orgId,
         }); //Check if the user is already following the org
@@ -527,7 +526,7 @@ router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
                 });
         }
 
-        const newFollower = new Follower({
+        const newFollower = new OrgFollower({
             user_id: userId,
             org_id: orgId,
         });
@@ -547,9 +546,8 @@ router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
     }
 });
 
-// UNUSED: No current frontend references; consider deprecating in favor of a future follow system
 router.post("/unfollow-org/:orgId", verifyToken, async (req, res) => {
-    const { Org, Follower } = getModels(req, "Org", "Follower");
+    const { Org, OrgFollower } = getModels(req, "Org", "OrgFollower");
     try {
         const { orgId } = req.params;
         const userId = req.user.userId;
@@ -561,14 +559,14 @@ router.post("/unfollow-org/:orgId", verifyToken, async (req, res) => {
             return res.status(404).json({ success: false, message: "Org not found" });
         }
 
-        const follower = await Follower.findOne({ user_id: userId, org_id: orgId }); //Check if the user is already following the org
+        const follower = await OrgFollower.findOne({ user_id: userId, org_id: orgId }); //Check if the user is already following the org
         if (!follower) {
             return res
                 .status(400)
                 .json({ success: false, message: "You are not following this org" });
         }
 
-        await Follower.findByIdAndDelete(follower._id);
+        await OrgFollower.findByIdAndDelete(follower._id);
 
         console.log(`POST: /unfollow-org`);
         res.json({ success: true, message: "Org unfollowed successfully" });
@@ -585,11 +583,11 @@ router.post("/unfollow-org/:orgId", verifyToken, async (req, res) => {
 });
 
 router.get("/get-followed-orgs", verifyToken, async (req, res) => {
-    const { Follower } = getModels(req, "Follower");
+    const { OrgFollower } = getModels(req, "OrgFollower");
     try {
         const userId = req.user.userId;
 
-        const followedOrgs = await Follower.find({ user_id: userId }).populate(
+        const followedOrgs = await OrgFollower.find({ user_id: userId }).populate(
             "org_id"
         );
         console.log(`GET: /get-followed-orgs`);
@@ -751,6 +749,47 @@ router.post("/:orgId/apply-to-org", verifyToken, async (req, res) => {
 
 // UNUSED: Superseded by DELETE /org-roles/:orgId/members/:userId
 
+// Leave organization (self-removal)
+router.post("/leave-org/:orgId", verifyToken, async (req, res) => {
+    const { Org, OrgMember } = getModels(req, "Org", "OrgMember");
+    try {
+        const { orgId } = req.params;
+        const userId = req.user.userId;
+
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: "Org not found" });
+        }
+
+        // Check if user is the owner
+        if (org.owner.toString() === userId) {
+            return res.status(400).json({
+                success: false,
+                message: "Organization owner cannot leave. Please transfer ownership first."
+            });
+        }
+
+        const member = await OrgMember.findOne({ org_id: orgId, user_id: userId });
+        if (!member) {
+            return res.status(400).json({
+                success: false,
+                message: "You are not a member of this organization"
+            });
+        }
+
+        await OrgMember.deleteOne({ _id: member._id });
+
+        console.log(`POST: /leave-org/${orgId}`);
+        res.json({ success: true, message: "You have left the organization successfully" });
+    } catch (error) {
+        console.log(`POST: /leave-org failed`, error);
+        return res.status(500).json({
+            success: false,
+            message: "Error leaving organization",
+            error: error.message,
+        });
+    }
+});
 
 router.post("/check-org-name", verifyToken, async (req, res) => {
     const { Org } = getModels(req, "Org");
