@@ -9,7 +9,7 @@ const { isProfane } = require('../services/profanityFilterService');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 
-const { authenticateWithGoogle, loginUser, registerUser } = require('../services/userServices.js');
+const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser } = require('../services/userServices.js');
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getModels = require('../services/getModelService.js');
 
@@ -470,6 +470,185 @@ router.post('/google-login', async (req, res) => {
             success: false,
             message: `Google login failed, error: ${error.message}`
         });
+    }
+});
+
+router.post('/apple-login', async (req, res) => {
+    const { idToken, user } = req.body;
+
+    if (!idToken) {
+        return res.status(400).json({
+            success: false,
+            message: 'No ID token provided'
+        });
+    }
+
+    try {
+        const { user: authenticatedUser } = await authenticateWithApple(idToken, user, req);
+        
+        // Generate both tokens
+        const accessToken = jwt.sign(
+            { userId: authenticatedUser._id, roles: authenticatedUser.roles }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
+        );
+        
+        const refreshToken = jwt.sign(
+            { userId: authenticatedUser._id, type: 'refresh' }, 
+            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
+            { expiresIn: REFRESH_TOKEN_EXPIRY }
+        );
+
+        // Store refresh token in database
+        const {User} = getModels(req, 'User');
+        await User.findByIdAndUpdate(authenticatedUser._id, { 
+            refreshToken: refreshToken 
+        });
+
+        // Set both cookies
+        res.cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
+            path: '/'
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: REFRESH_TOKEN_EXPIRY_MS, // 2 days
+            path: '/'
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Apple login successful',
+            data: {
+                user: authenticatedUser
+            }
+        });
+
+    } catch (error) {
+        if (error.message === 'Email already exists') {
+            return res.status(409).json({
+                success: false,
+                message: 'Email already exists'
+            });
+        }
+        console.log('Apple login failed:', error);
+        res.status(500).json({
+            success: false,
+            message: `Apple login failed, error: ${error.message}`
+        });
+    }
+});
+
+// Apple Sign In callback endpoint (handles POST from Apple)
+router.post('/auth/apple/callback', async (req, res) => {
+    const idToken = req.body.id_token || req.body.idToken;
+    const user = req.body.user; // JSON string with user info
+    const state = req.body.state; // Contains redirect destination
+    
+    if (!idToken) {
+        const frontendUrl = process.env.NODE_ENV === 'production' 
+            ? 'https://meridian.study'
+            : 'http://localhost:3000';
+        return res.redirect(`${frontendUrl}/login?error=no_token`);
+    }
+
+    try {
+        // Parse user info if provided
+        let userInfo = null;
+        if (user) {
+            try {
+                userInfo = typeof user === 'string' ? JSON.parse(decodeURIComponent(user)) : user;
+            } catch (e) {
+                console.error('Failed to parse user info:', e);
+            }
+        }
+
+        const { user: authenticatedUser } = await authenticateWithApple(idToken, userInfo, req);
+        
+        // Generate both tokens
+        const accessToken = jwt.sign(
+            { userId: authenticatedUser._id, roles: authenticatedUser.roles }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
+        );
+        
+        const refreshToken = jwt.sign(
+            { userId: authenticatedUser._id, type: 'refresh' }, 
+            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
+            { expiresIn: REFRESH_TOKEN_EXPIRY }
+        );
+
+        // Store refresh token in database
+        const {User} = getModels(req, 'User');
+        await User.findByIdAndUpdate(authenticatedUser._id, { 
+            refreshToken: refreshToken 
+        });
+
+        // Set both cookies
+        res.cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: ACCESS_TOKEN_EXPIRY_MS,
+            path: '/'
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: REFRESH_TOKEN_EXPIRY_MS,
+            path: '/'
+        });
+
+        // Determine redirect destination
+        const frontendUrl = process.env.NODE_ENV === 'production' 
+            ? 'https://meridian.study'
+            : 'http://localhost:3000';
+        
+        let redirectTo = '/events-dashboard';
+        
+        // Parse state if provided
+        if (state) {
+            try {
+                const stateData = typeof state === 'string' ? JSON.parse(decodeURIComponent(state)) : state;
+                if (stateData && stateData.redirect) {
+                    redirectTo = stateData.redirect;
+                }
+            } catch (e) {
+                // If state is just a path, use it directly
+                if (typeof state === 'string' && state.startsWith('/')) {
+                    redirectTo = state;
+                }
+            }
+        }
+        
+        // Redirect admin users to admin dashboard
+        if (authenticatedUser.roles && authenticatedUser.roles.includes('admin')) {
+            redirectTo = '/admin';
+        }
+
+        // Redirect to frontend
+        res.redirect(`${frontendUrl}${redirectTo}`);
+
+    } catch (error) {
+        console.log('Apple callback failed:', error);
+        const frontendUrl = process.env.NODE_ENV === 'production' 
+            ? 'https://meridian.study'
+            : 'http://localhost:3000';
+        
+        let errorMessage = 'Apple authentication failed';
+        if (error.message === 'Email already exists') {
+            errorMessage = 'email_exists';
+        }
+        
+        res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(errorMessage)}`);
     }
 });
 

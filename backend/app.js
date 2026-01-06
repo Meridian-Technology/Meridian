@@ -120,6 +120,8 @@ const notificationRoutes = require('./routes/notificationRoutes.js');
 const qrRoutes = require('./routes/qrRoutes.js');
 const eventAnalyticsRoutes = require('./routes/eventAnalyticsRoutes.js');
 const orgEventManagementRoutes = require('./routes/orgEventManagementRoutes.js');
+const formRoutes = require('./routes/formRoutes.js');
+
 const inngestRoutes = require('./routes/inngestRoutes.js');
 
 // Inngest integration
@@ -142,6 +144,7 @@ app.use(ratingRoutes);
 app.use(searchRoutes);
 
 
+
 app.use(orgRoutes);
 app.use('/org-roles', orgRoleRoutes);
 app.use('/org-management', orgManagementRoutes);
@@ -149,7 +152,7 @@ app.use('/org-messages', orgMessageRoutes);
 app.use('/org-event-management', orgEventManagementRoutes);
 app.use('/admin', roomRoutes);
 app.use(adminRoutes);
-
+app.use(formRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/api/qr', qrRoutes);
 app.use(contactRoutes);
@@ -166,6 +169,7 @@ app.use('/study-sessions', studySessionRoutes);
 app.use('/availability-polls', availabilityPollRoutes);
 
 app.use('/feedback', feedbackRoutes);
+
 
 // Serve static files from the React app in production
 if (process.env.NODE_ENV === 'production') {

@@ -1,32 +1,112 @@
 .form-viewer {
   max-width: 800px;
+  width: 100%;
   margin: 0 auto;
-  padding: 20px;
+  padding: 0;
   background-color: var(--background);
   border-radius: 15px;
-
+  overflow-x: hidden;
+  overflow-y: visible;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
 
   .form-header {
-    margin-bottom: 30px;
+    padding: 40px 30px;
+    margin-bottom: 0;
     text-align: center;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 15px 15px 0 0;
 
     h1 {
-      font-size: 24px;
-      color: var(--text);
-      margin-bottom: 10px;
+      font-size: 32px;
+      color: white;
+      margin-bottom: 12px;
+      font-weight: 600;
     }
 
     p {
-      color: var(--text);
-      opacity: 0.8;
+      color: rgba(255, 255, 255, 0.9);
       font-size: 16px;
+      margin-bottom: 16px;
+    }
+
+    .form-owner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.85);
+
+      .owner-icon {
+        font-size: 20px;
+      }
+    }
+  }
+
+  .form-scenario-screen {
+    padding: 60px 30px;
+    padding-bottom: 80px;
+    text-align: center;
+    background-color: var(--background);
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+
+    .scenario-icon {
+      font-size: 80px;
+      color: var(--text-secondary, #999);
+      margin-bottom: 24px;
+
+      &.success {
+        color: #28a745;
+      }
+    }
+
+    h2 {
+      font-size: 24px;
+      color: var(--text);
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    p {
+      font-size: 16px;
+      color: var(--text-secondary, #666);
+      margin-bottom: 24px;
+      max-width: 400px;
+    }
+
+    .login-button {
+      display: inline-block;
+      padding: 12px 24px;
+      background-color: var(--primary, #007bff);
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 500;
+      transition: opacity 0.2s;
+
+      &:hover {
+        opacity: 0.9;
+      }
     }
   }
   
-  form{
+  form {
+    padding: 30px;
+    padding-bottom: 40px;
     display: flex;
     flex-direction: column;
     gap: 15px;
+    box-sizing: border-box;
   }
 
   .submit-button {

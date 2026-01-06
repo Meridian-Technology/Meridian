@@ -45,8 +45,14 @@ import HeaderContainer from '../HeaderContainer/HeaderContainer';
  * }
  */
 
-const FormBuilder = ({ initialForm = { title: '', description: '', questions: [] }, onSave, handleClose = null }) => {
-    const [form, setForm] = useState(initialForm);
+const FormBuilder = ({ initialForm = { title: '', description: '', questions: [] }, onSave, handleClose = null, menuComponent = null }) => {
+    const [form, setForm] = useState({
+        allowMultipleResponses: true,
+        requireAuth: true,
+        acceptingResponses: true,
+        headerColor: null,
+        ...initialForm
+    });
     const [editingQuestion, setEditingQuestion] = useState(null);
 
     const addQuestion = (type) => {
@@ -238,6 +244,11 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
     return (
         <HeaderContainer header="Form Builder" classN="form-builder-header">
         <div className="form-builder">
+            {menuComponent && (
+                <div className="form-builder-menu">
+                    {React.cloneElement(menuComponent, { form, onConfigChange: setForm })}
+                </div>
+            )}
             <div className="workspace">
                 <div className="form-container">
                     <div className="form-header">

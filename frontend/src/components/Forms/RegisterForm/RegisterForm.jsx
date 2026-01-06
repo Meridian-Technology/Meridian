@@ -9,7 +9,7 @@ import { generalIcons } from '../../../Icons';
 import Flag from '../../Flag/Flag';
 
 function RegisterForm() {
-    const { isAuthenticated, googleLogin, login } = useAuth();
+    const { isAuthenticated, googleLogin, appleLogin, login } = useAuth();
     const [valid, setValid] = useState(false);
     const [formData, setFormData] = useState({
         username: '',
@@ -122,9 +122,35 @@ function RegisterForm() {
         onFailure: () => { console.log("failed") },
     });
 
+    // Initialize Apple Sign In
+    useEffect(() => {
+        if (window.AppleID) {
+            window.AppleID.auth.init({
+                clientId: 'com.meridian.auth',
+                scope: 'name email',
+                redirectURI: window.location.origin + '/auth/apple/callback',
+                usePopup: false // Use redirect mode
+            });
+        }
+    }, []);
+
+    const handleAppleSignIn = () => {
+        if (!window.AppleID) {
+            failed("Apple Sign In is not available. Please check your browser compatibility.");
+            return;
+        }
+
+        // Store redirect path in state for callback to use
+        const redirectState = JSON.stringify({ redirect: '/events-dashboard' });
+        
+        // Initiate Apple Sign In - will redirect to callback URL
+        window.AppleID.auth.signIn({
+            state: redirectState
+        });
+    };
 
     function failed(message){
-        navigate('/login');
+        navigate('/register');
         setErrorText(message);
     }
 
@@ -143,6 +169,18 @@ function RegisterForm() {
                 <Flag text={errorText} img={circleWarning} color={"#FD5858"} primary={"rgba(250, 117, 109, 0.16)"} accent={"#FD5858"} /> 
             }
             <button type="button" className="button google" onClick={() => google()}>Continue with Google<img src={googleLogo} alt="google" /></button>
+            
+            {/* Apple Login Button */}
+            <button 
+                type="button" 
+                className="button apple" 
+                onClick={handleAppleSignIn}
+            >
+                Continue with Apple
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: '8px' }}>
+                    <path d="M13.5625 0C13.6875 0.9375 13.5 1.875 13.0625 2.625C12.5625 3.4375 11.625 4.125 10.6875 4.0625C10.5625 3.1875 10.75 2.25 11.1875 1.5C11.75 0.75 12.625 0.1875 13.5625 0ZM13.5 4.875C14.4375 4.875 15.5625 4.125 16.125 4.125C16.75 4.125 17.4375 4.6875 17.4375 4.6875C17.4375 4.6875 16.875 5.25 16.3125 6C15.9375 6.5625 15.5 7.5 16.125 8.4375C16.75 9.375 17.25 9.75 17.25 10.5C17.25 11.25 16.75 11.8125 16.25 12.375C15.75 12.9375 15.1875 13.5 14.4375 13.5C13.6875 13.5 13.5 13.125 12.5625 13.125C11.625 13.125 11.4375 13.5 10.6875 13.5C9.9375 13.5 9.375 12.9375 8.8125 12.375C8.0625 11.625 7.3125 10.3125 7.3125 9.1875C7.3125 8.0625 7.875 7.3125 8.4375 6.75C8.8125 6.375 9.1875 6 9.5625 5.625C10.125 5.0625 10.875 4.875 11.4375 4.875C12.1875 4.875 12.75 4.875 13.5 4.875Z" fill="currentColor"/>
+                </svg>
+            </button>
             
             <div className="divider">
                 <hr />

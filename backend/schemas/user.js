@@ -7,6 +7,11 @@ const userSchema = new mongoose.Schema({
         required: false,
         trim: true, // trims whitespace
     },
+    appleId: {
+        type: String,
+        required: false,
+        trim: true, // trims whitespace
+    },
     // SAML-related fields
     samlId: {
         type: String,
@@ -143,6 +148,7 @@ userSchema.pre('save', async function (next) {
 // Indexes for performance optimization
 userSchema.index({ email: 1 }); // For email lookups
 userSchema.index({ googleId: 1 }); // For Google OAuth
+userSchema.index({ appleId: 1 }); // For Apple Sign In
 userSchema.index({ samlId: 1, samlProvider: 1 }); // For SAML authentication
 userSchema.index({ username: 1 }); // For username lookups
 userSchema.index({ roles: 1 }); // For role-based queries
