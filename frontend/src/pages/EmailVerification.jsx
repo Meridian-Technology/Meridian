@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
-import logo from '../assets/red_logo.svg';
+import logo from '../assets/Brand Image/BEACON.svg';
 import { useNotification } from '../NotificationContext';
 import './Login.scss';
 import postRequest from '../utils/postRequest';

@@ -57,7 +57,7 @@ router.post('/request', verifyToken, async (req, res) => {
         }));
 
         const { data, error } = await resend.emails.send({
-            from: "Study Compass <support@study-compass.com>",
+            from: "Meridian <support@meridian.study>",
             to: [email],
             subject: "Verify Your .edu Email",
             html: emailHTML,
@@ -157,6 +157,7 @@ router.post('/unlink', verifyToken, async (req, res) => {
         }
 
         user.affiliatedEmail = null;
+        user.affiliatedEmailVerified = false;
         await user.save();
 
         console.log(`POST: /unlink-school-email school email unlinked for user ${user.username}`);

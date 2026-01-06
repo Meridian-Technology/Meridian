@@ -14,6 +14,8 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import ImageUpload from '../ImageUpload/ImageUpload';
 import axios from 'axios';
 import GradientHeader from '../../assets/Gradients/ApprovalGrad.png';
+import { useNavigate } from 'react-router-dom';
+import postRequest from '../../utils/postRequest';
 
 
 function AccountSettings({ userInfo }) {
@@ -295,6 +297,34 @@ function AccountSettings({ userInfo }) {
 
                         </div>
                     </div>
+
+                    <h2>Connected Accounts</h2>
+                <div className='connected-accounts'>
+                    <div className="school">
+                        {
+                            userInfo.affiliatedEmail ? 
+                            <>
+                                <div className="content">
+                                    <h3><Icon icon="gridicons:institution"/>School Verification</h3>
+                                    <p className='verified'>connected to {userInfo.affiliatedEmail}</p>
+                                </div>
+                                <div className="actions">
+                                    <button onClick={unlinkSchoolEmail}><Icon icon="ci:link-break"/> unlink</button>
+                                </div>
+                            </>
+                            :
+                            <>
+                                <div className="content">
+                                    <h3><Icon icon="gridicons:institution"/>School Verification</h3>
+                                    <p className='unverified'> <Icon icon="fontisto:broken-link" /> connect your school email to verify your account</p>
+                                </div>
+                                <div className="actions">
+                                    <button onClick={() => navigate('/verify-email')}>connect</button>
+                                </div>
+                            </>
+                        }
+                    </div>
+                </div>
 
                     <h2>danger zone</h2>
                     <hr />
