@@ -27,6 +27,7 @@ const Org = ({ orgData, refetch }) => {
     const { addNotification } = useNotification();
     const [isLoading, setIsLoading] = useState({ join: false, follow: false, leave: false });
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
     console.log(orgData);
 
     const handleApply = async (formAnswers = null) => {
@@ -214,45 +215,56 @@ const Org = ({ orgData, refetch }) => {
                 <FormViewer form={overview.memberForm} onSubmit={handleFormSubmit} /> 
             </Popup>
             <div className='org-content'>
-                <div className="top-header-box">
-                    <div className="org-logo">
-                        <div className="img-container">
-                            <img src={overview.org_profile_image ? overview.org_profile_image : rpiLogo} alt=""/>
+                <div className="org-header-container">
+                    <div className="top-header-box">
+                    </div>
+
+                    <div className="org-info">
+                        <div className="org-logo">
+                            <div className="img-container">
+                                <img src={overview.org_profile_image ? overview.org_profile_image : rpiLogo} alt=""/>
+                            </div>
+                        </div>
+                        <div className="org-content-section">
+                            <div className="org-header-row">
+                                <div className="title-row">
+                                    <h2 className="name">{overview.org_name}</h2>
+                                    <div className="verification-badge">
+                                        <Icon icon="material-symbols:verified-rounded" />
+                                    </div>
+                                </div>
+                                <div className="header-stats">
+                                    <img src = {person} alt =""/>
+                                    <span>{orgData?.org?.members?.length}</span>
+                                </div>
+                            </div>
+                            <p className="description desktop-description">
+                                {overview.org_description}
+                            </p>
                         </div>
                     </div>
                 </div>
 
-                <div className="org-info">
-                    <div className="col">
-                        <div className="org-header">
-                            <h2 className="name">{overview.org_name}</h2>
-                            {/* <h2 className="name"> Name </h2> */}
-                            <div className="verification-badge">
-                                <Icon icon="material-symbols:verified-rounded" />
-                                <p>Union Recognized</p>
-                            </div>
-                        </div>
-
-                        <p className="description">
+                <div 
+                    className={`mobile-description-box ${isDescriptionExpanded ? 'expanded' : 'collapsed'}`}
+                    onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+                >
+                    <div className="mobile-description-header">
+                        <span>Description</span>
+                        <Icon 
+                            icon={isDescriptionExpanded ? "material-symbols:expand-less" : "material-symbols:expand-more"} 
+                            className="expand-icon"
+                        />
+                    </div>
+                    <div className="mobile-description-wrapper">
+                        <p className="description mobile-description">
                             {overview.org_description}
                         </p>
                     </div>
-                    
-                    <p className="stats">
-                        <img src = {person} alt =""/>
-                        <p>
-                            {orgData?.org?.followers?.length} {orgData?.org?.followers?.length === 1 ? "follower" : "followers"} • {orgData?.org?.members?.length} {orgData?.org?.members?.length === 1 ? "member" : "members"}
-                        </p>
-                        
-                        {!orgData.org.isMember && (
-                            <>
-                                <img src = {profile} className='mutuals' alt =""/>
-                                <img src = {profile} alt =""/>
-                                Friend and 1 other are members
-                            </>
-                        )}
-                    </p>
-                    {/* 2 base states: joined, not joined */}
+                </div>
+
+                {/* 2 base states: joined, not joined */}
+                <div className="actions-container">
                     <div className="actions">
                         {/* {
                             overview.requireApprovalForJoin ? (
@@ -290,16 +302,29 @@ const Org = ({ orgData, refetch }) => {
                         >
                             <Icon icon={orgData.org.isFollower ? "material-symbols:notifications-active" : "material-symbols:notifications-outline"} />
                         </button>
-                        {
-                            user.clubAssociations.find(club => club.org_name === overview.org_name) && (
-                                <button onClick={()=>{
-                                    navigate(`/club-dashboard/${overview.org_name}`);
-                                }}>To Dashboard</button>
-                            ) 
-                        }
                     </div>
-
+                    {
+                        user.clubAssociations.find(club => club.org_name === overview.org_name) && (
+                            <button 
+                                className="dashboard-button"
+                                onClick={()=>{
+                                    navigate(`/club-dashboard/${overview.org_name}`);
+                                }}
+                            >
+                                <Icon icon="material-symbols:admin-panel-settings" />
+                                Dashboard
+                            </button>
+                        ) 
+                    }
                 </div>
+
+                {!orgData.org.isMember && (
+                    <p className="mutuals-stats">
+                        <img src = {profile} className='mutuals' alt =""/>
+                        <img src = {profile} alt =""/>
+                        Friend and 1 other are members
+                    </p>
+                )}
 
                 <div className="org-dashboard">
                     <div className="filter-buttons">
