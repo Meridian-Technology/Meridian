@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './ClubForms.scss';
 import { useFetch } from '../../../hooks/useFetch';
-import OrgGrad from '../../../assets/Gradients/OrgGrad.png';
+import {useGradient} from '../../../hooks/useGradient';
 import FormBuilder from '../../../components/FormBuilder/FormBuilder';
 import FormConfigMenu from '../../../components/FormBuilder/FormConfigMenu';
 import FormViewer from '../../../components/FormViewer/FormViewer';
@@ -25,6 +25,7 @@ const ClubForms = ({ org }) => {
     const [responsesLoading, setResponsesLoading] = useState(false);
     const { showOverlay, hideOverlay } = useDashboard();
     const [viewingResponseList, setViewingResponseList] = useState(true); // true = list view, false = detail view
+    const { OrgGrad } = useGradient();
     
     // Extract forms from the API response
     const forms = formsData?.forms || [];
