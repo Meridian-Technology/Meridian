@@ -19,13 +19,15 @@ import GradientHeader from '../../assets/Gradients/ApprovalGrad.png';
 function AccountSettings({ userInfo }) {
 
     const { validateToken } = useAuth();
-
+    const navigate = useNavigate();
     // const [active, setActive] = useState(false);
 
     // const [changeUsername, setChangeUsername] = 
     const [name, setName] = useState(userInfo.name);
     const [username, setUsername] = useState(userInfo.username);
     const [editUsername, setEditUsername] = useState(false);
+    const [editName, setEditName] = useState(false);
+    const [editEmail, setEditEmail] = useState(false);
 
     const [usernameValid, setUsernameValid] = useState(1);
     const { addNotification } = useNotification();
@@ -37,7 +39,6 @@ function AccountSettings({ userInfo }) {
     const [isUploading, setIsUploading] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     
-    const [editEmail, setEditEmail] = useState(false);
     const [email, setEmail] = useState(userInfo.email);
     
     const handleFileSelect = (file) => {
@@ -146,7 +147,18 @@ function AccountSettings({ userInfo }) {
         try{
             saveUser(name, null, null, null, null, null);
             setInitialName(name);
+            setEditName(false);
             addNotification({title: 'Name saved', message: 'Your name has been changed successfully', type: 'success'});
+        } catch (error) {
+            addNotification({title: 'Error saving user', message: error.message, type: 'error'});
+        }
+    };
+
+    const saveEmail = () => {
+        try{
+            saveUser(null, null, email, null, null, null);
+            setEditEmail(false);
+            addNotification({title: 'Email saved', message: 'Your email has been changed successfully', type: 'success'});
         } catch (error) {
             addNotification({title: 'Error saving user', message: error.message, type: 'error'});
         }
@@ -156,6 +168,23 @@ function AccountSettings({ userInfo }) {
         addNotification({title: 'Interanl Error', message: 'an internal error occurred', type: 'error'});
     };
     
+    const unlinkSchoolEmail = async () => {
+        try {
+            // Call API to unlink school email
+            const response = await postRequest('/verify-affiliated-email/unlink');
+            
+            if (response.success) {
+                addNotification({title: 'School Email Unlinked', message: 'Your school email has been successfully unlinked', type: 'success'});
+                // Refresh user data or update state
+                validateToken();
+            } else {
+                addNotification({title: 'Unlink Failed', message: response.message || 'Failed to unlink school email', type: 'error'});
+            }
+        } catch (error) {
+            console.error('Error unlinking school email:', error);
+            addNotification({title: 'Unlink Error', message: error.message || 'Error unlinking school email', type: 'error'});
+        }
+    };
 
     const uploadPfpToggle = () => {
         setUploadPfp(!uploadPfp);

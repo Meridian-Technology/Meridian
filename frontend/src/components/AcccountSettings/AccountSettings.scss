@@ -5,6 +5,7 @@
         .name-settings{
             .picture-container{
                 position:relative;
+                width:fit-content;
                 .add-picture{
                     position: absolute;
                     bottom:-2px;
@@ -35,16 +36,78 @@
             padding:5px;
             box-sizing: border-box;
             width:60%;
-            margin-top:30px;
             img:not(.clear){
                 width:50px;
                 height:50px;
                 border-radius: 50%;
             }
             &.active{
+                margin-top:30px;
                 opacity: 1;
                 height:140px;
                 pointer-events: all;
+            }
+
+        }
+        .connected-accounts{
+            width:100%;
+            .school{
+                box-shadow: var(--shadow);
+                border:1px solid var(--lighterborder);
+                border-radius: 10px;
+                padding:6px 20px;
+                width:100%;
+                box-sizing: border-box;
+                display:flex;
+                align-items: center;
+                justify-content: space-between;
+                h3{
+                    display:flex;
+                    align-items: center;
+                    gap:5px;
+                    font-size: 14px;
+                    font-weight: 600;
+                    iconify-icon{
+                        font-size: 18px;
+                    }
+                }
+                p{
+                    iconify-icon{
+                        font-size: 18px;
+                    }
+                    &.unverified{
+                        color: var(--red);
+                        display:flex;
+                        align-items: center;
+                        gap:5px;
+                    }
+                    &.verified{
+                        color: var(--green);
+                        display:flex;
+                        align-items: center;
+                        gap:5px;
+                    }
+                }
+                .actions{
+                    button{
+                        background-color: var(--light);
+                        color:var(--text);
+                        align-items: center;
+                        display: flex;
+                        align-items: center;
+                        gap:5px;
+                    }
+                }
+            }
+        }
+    }
+}
+
+@media (max-width: 768px) {
+    .settings-right{
+        .profile{
+            .pfp-upload{
+                width: 100%;
             }
         }
     }

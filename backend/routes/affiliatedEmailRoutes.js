@@ -4,20 +4,20 @@ const { verifyToken } = require('../middlewares/verifyToken');
 const { Resend } = require('resend');
 const { render } = require('@react-email/render');
 const React = require('react');
-const ForgotEmail = require('../emails/ForgotEmail').default;
+const EmailVerification = require('../emails/EmailVerification').default;
 const resend = new Resend(process.env.RESEND_API_KEY);
 const getModels  = require('../services/getModelService.js');
 
-// Store verification codes temporarily (in production, use Redis or similar)
+//store verification codes temporarily, may have to change to redis in production
 const verificationCodes = new Map();
 
-// Request verification code
+//request verification code
 router.post('/request', verifyToken, async (req, res) => {
     const { email } = req.body;
     const userId = req.user.userId;
 
     try {
-        // Validate email format
+        //validate email format
         if (!email.endsWith('.edu')) {
             return res.status(400).json({
                 success: false,
@@ -27,7 +27,7 @@ router.post('/request', verifyToken, async (req, res) => {
 
         const { User } = getModels(req, 'User');
 
-        // Check if email is already verified by another user
+        //check if email is already verified by another user
         const existingUser = await User.findOne({ 
             affiliatedEmail: email,
             affiliatedEmailVerified: true
@@ -40,18 +40,18 @@ router.post('/request', verifyToken, async (req, res) => {
             });
         }
 
-        // Generate a 6-digit verification code
+        //generate a 6-digit verification code
         const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
         
-        // Store the code with the user ID and an expiration time (30 minutes)
+        //store the code with the user ID and an expiration time (30 minutes)
         verificationCodes.set(email, {
             code: verificationCode,
             userId: userId,
             expiresAt: Date.now() + 30 * 60 * 1000 // 30 minutes
         });
 
-        // Send email with verification code
-        const emailHTML = await render(React.createElement(ForgotEmail, { 
+        //send email with verification code
+        const emailHTML = await render(React.createElement(EmailVerification, { 
             name: req.user.username || 'User', 
             code: verificationCode 
         }));
@@ -87,13 +87,11 @@ router.post('/request', verifyToken, async (req, res) => {
     }
 });
 
-// Verify code
 router.post('/verify', verifyToken, async (req, res) => {
     const { email, code } = req.body;
     const userId = req.user.userId;
 
     try {
-        // Check if the code exists and is valid
         const storedData = verificationCodes.get(email);
         
         if (!storedData) {
@@ -120,13 +118,12 @@ router.post('/verify', verifyToken, async (req, res) => {
 
         const { User } = getModels(req, 'User');
 
-        // Update user's affiliated email
         await User.findByIdAndUpdate(userId, {
             affiliatedEmail: email,
             affiliatedEmailVerified: true
         });
 
-        // Remove the used code
+        //remove the used code
         verificationCodes.delete(email);
 
         console.log(`POST: /verify-affiliated-email/verify email verified for user ${userId}`);
@@ -139,6 +136,39 @@ router.post('/verify', verifyToken, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error verifying email',
+            error: error.message
+        });
+    }
+});
+
+
+router.post('/unlink', verifyToken, async (req, res) => {
+    try {
+        const { User } = getModels(req, 'User');
+        
+        // Find user by ID
+        const user = await User.findById(req.user.userId);
+        
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        user.affiliatedEmail = null;
+        await user.save();
+
+        console.log(`POST: /unlink-school-email school email unlinked for user ${user.username}`);
+        res.status(200).json({
+            success: true,
+            message: 'School email unlinked successfully'
+        });
+    } catch (error) {
+        console.log(`POST: /unlink-school-email failed`, error);
+        res.status(500).json({
+            success: false,
+            message: 'Error unlinking school email',
             error: error.message
         });
     }
