@@ -4,31 +4,35 @@
   margin: 0 auto;
   padding: 0;
   background-color: var(--background);
-  border-radius: 15px;
+  border-radius: 20px;
   overflow-x: hidden;
   overflow-y: visible;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   box-sizing: border-box;
 
   .form-header {
     padding: 40px 30px;
     margin-bottom: 0;
     text-align: center;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #6D8EFA 0%, #5b7bef 100%);
     color: white;
-    border-radius: 15px 15px 0 0;
+    border-radius: 20px 20px 0 0;
+    position: relative;
 
     h1 {
       font-size: 32px;
       color: white;
       margin-bottom: 12px;
       font-weight: 600;
+      font-family: 'Satoshi', sans-serif;
     }
 
     p {
       color: rgba(255, 255, 255, 0.9);
       font-size: 16px;
       margin-bottom: 16px;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.5;
     }
 
     .form-owner {
@@ -41,6 +45,7 @@
       border-top: 1px solid rgba(255, 255, 255, 0.2);
       font-size: 14px;
       color: rgba(255, 255, 255, 0.85);
+      font-family: 'Inter', sans-serif;
 
       .owner-icon {
         font-size: 20px;
@@ -75,6 +80,7 @@
       color: var(--text);
       margin-bottom: 12px;
       font-weight: 600;
+      font-family: 'Satoshi', sans-serif;
     }
 
     p {
@@ -82,20 +88,25 @@
       color: var(--text-secondary, #666);
       margin-bottom: 24px;
       max-width: 400px;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.5;
     }
 
     .login-button {
       display: inline-block;
       padding: 12px 24px;
-      background-color: var(--primary, #007bff);
+      background: linear-gradient(135deg, #6D8EFA, #5b7bef);
       color: white;
       text-decoration: none;
-      border-radius: 6px;
-      font-weight: 500;
-      transition: opacity 0.2s;
+      border-radius: 12px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(109, 142, 250, 0.3);
 
       &:hover {
-        opacity: 0.9;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(109, 142, 250, 0.4);
       }
     }
   }
@@ -105,24 +116,31 @@
     padding-bottom: 40px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 20px;
     box-sizing: border-box;
   }
 
   .submit-button {
     width: 100%;
-    padding: 12px;
-    background-color: var(--red);
+    padding: 14px 24px;
+    background: linear-gradient(135deg, #6D8EFA, #5b7bef);
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 12px;
     font-size: 16px;
-    font-weight: bold;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(109, 142, 250, 0.3);
 
     &:hover {
-      opacity: 0.9;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(109, 142, 250, 0.4);
+    }
+
+    &:active {
+      transform: translateY(0);
     }
   }
 }
