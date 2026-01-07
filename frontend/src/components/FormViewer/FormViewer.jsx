@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './FormViewer.scss';
 import './Question.scss'
 import { Icon } from '@iconify-icon/react';
@@ -6,6 +6,7 @@ import useAuth from '../../hooks/useAuth';
 
 const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAuthenticated, formConfig}) => {
   const [responses, setResponses] = useState({});
+  const [animatedPercentage, setAnimatedPercentage] = useState(0);
   const { isAuthenticated: authStatus, isAuthenticating } = useAuth();
 
   const handleResponseChange = (questionId, value) => {
@@ -14,6 +15,73 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
       [questionId]: value
     }));
   };
+
+  // Check if all required fields are completed
+  const areAllRequiredFieldsCompleted = () => {
+    if (!form || !form.questions) return false;
+    
+    const requiredQuestions = form.questions.filter(q => q.required);
+    if (requiredQuestions.length === 0) return true; // No required fields, allow submission
+    
+    return requiredQuestions.every(q => {
+      const response = responses[q._id];
+      if (Array.isArray(response)) {
+        return response.length > 0;
+      }
+      return response !== undefined && response !== null && response !== '';
+    });
+  };
+
+  // Calculate completion percentage for required questions
+  const getCompletionPercentage = () => {
+    if (!form || !form.questions) return 0;
+    
+    const requiredQuestions = form.questions.filter(q => q.required);
+    if (requiredQuestions.length === 0) return 100; // No required fields, show as complete
+    
+    const completedCount = requiredQuestions.filter(q => {
+      const response = responses[q._id];
+      if (Array.isArray(response)) {
+        return response.length > 0;
+      }
+      return response !== undefined && response !== null && response !== '';
+    }).length;
+    
+    return Math.round((completedCount / requiredQuestions.length) * 100);
+  };
+
+  // Calculate current completion percentage
+  const completionPercentage = getCompletionPercentage();
+
+  // Animate percentage smoothly to match progress bar animation (0.5s ease)
+  useEffect(() => {
+    const targetPercentage = completionPercentage;
+    const startPercentage = animatedPercentage;
+    const difference = targetPercentage - startPercentage;
+    const duration = 500; // 0.5s in milliseconds
+    const startTime = performance.now();
+
+    if (difference === 0) return;
+
+    const animate = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Ease function (ease-out) - matches CSS ease timing
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+      
+      const currentPercentage = Math.round(startPercentage + (difference * easeProgress));
+      setAnimatedPercentage(currentPercentage);
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        setAnimatedPercentage(targetPercentage);
+      }
+    };
+
+    requestAnimationFrame(animate);
+  }, [completionPercentage]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -230,9 +298,18 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
             {renderQuestion(question)}
           </div>
         ))}
-
-        <button type="submit" className="submit-button">Submit</button>
       </form>
+      <button 
+        type="submit" 
+        className={`submit-button ${animatedPercentage === 100 ? 'complete' : ''}`}
+        onClick={handleSubmit}
+        disabled={!areAllRequiredFieldsCompleted()}
+        style={{ '--progress': `${getCompletionPercentage()}%` }}
+      >
+        <span className="button-text">
+          {animatedPercentage === 100 ? 'Submit' : `${animatedPercentage}%`}
+        </span>
+      </button>
     </div>
   );
 };
