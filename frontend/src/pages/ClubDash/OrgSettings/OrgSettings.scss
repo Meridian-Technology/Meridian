@@ -201,6 +201,8 @@
 
                     .current-image {
                         margin-bottom: 16px;
+                        position: relative;
+                        display: inline-block;
 
                         img {
                             width: 100px;
@@ -208,6 +210,32 @@
                             border-radius: 50%;
                             object-fit: cover;
                             border: 3px solid #e9ecef;
+                            transition: filter 0.3s ease;
+                        }
+
+                        &.profile-image-editable {
+                            &:hover {
+                                img {
+                                    filter: blur(4px);
+                                }
+
+                                .edit-icon {
+                                    opacity: 1;
+                                }
+                            }
+                        }
+
+                        .edit-icon {
+                            position: absolute;
+                            top: 50%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            font-size: 24px;
+                            color: white;
+                            opacity: 0;
+                            transition: opacity 0.3s ease;
+                            pointer-events: none;
+                            z-index: 1;
                         }
                     }
                 }
@@ -365,5 +393,21 @@
                 }
             }
         }
+    }
+}
+
+// Image upload popup styles
+.image-upload-popup-content {
+    padding: 30px;
+    background: white;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 100%;
+
+    h2 {
+        margin: 0 0 20px 0;
+        font-size: 24px;
+        font-weight: 600;
+        color: #333;
     }
 } 

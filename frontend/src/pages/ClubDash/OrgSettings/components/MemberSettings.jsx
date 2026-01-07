@@ -25,10 +25,23 @@ function MemberSettings({org}){
     const { saveOrgSettings } = useOrgSave(org);
 
     // Original data for comparison
-    const originalData = {
-        requireApprovalForJoin: org.requireApprovalForJoin,
-        memberForm: org.memberForm ? org.memberForm : null,
-    };
+    const [originalData, setOriginalData] = useState({
+        requireApprovalForJoin: org?.requireApprovalForJoin || false,
+        memberForm: org?.memberForm ? org.memberForm : null,
+    });
+
+    useEffect(() => {
+        if (org) {
+            setOriginalData({
+                requireApprovalForJoin: org.requireApprovalForJoin,
+                memberForm: org.memberForm ? org.memberForm : null,
+            });
+            setFormData({
+                requireApprovalForJoin: org.requireApprovalForJoin,
+                memberForm: org.memberForm ? org.memberForm : null,
+            });
+        }
+    }, [org]);
 
     const handleSave = async () => {
         console.log(formData);
@@ -51,15 +64,17 @@ function MemberSettings({org}){
             memberForm: formData.memberForm ? formWithoutNewIds : null,
         });
         
+        if (success) {
+            // Update originalData to match the saved formData
+            setOriginalData({ ...formData });
+        }
+        
         return success;
     };
 
     const handleDiscard = () => {
         // Reset to original values
-        setFormData({
-            requireApprovalForJoin: org.requireApprovalForJoin,
-            memberForm: org.memberForm ? org.memberForm : null,
-        });
+        setFormData({ ...originalData });
     };
 
     const { hasChanges, saving, handleSave: saveChanges, handleDiscard: discardChanges } = useUnsavedChanges(

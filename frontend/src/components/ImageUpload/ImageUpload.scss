@@ -13,13 +13,14 @@
     align-items: center;
     padding-top: 20px;
     position: relative;
+    max-width: 100%;
 
     iconify-icon {
         font-size: 30px;
-        color: var(--red);
+        color: var(--dark-blue);
         transition: all 0.3s;
         padding: 15px;
-        background-color: var(--red-transparent);
+        background-color: rgba(109, 142, 250, 0.1);
         border-radius: 15px;
         margin-bottom: 10px;
 
@@ -28,10 +29,87 @@
         }
     }
 
-    img {
-        max-width: 80%;
+    .preview-container {
+        position: relative;
+        display: inline-block;
+        margin-bottom: 10px;
+    }
+
+    img.preview {
         border-radius: 10px;
         box-shadow: var(--shadow);
+        object-fit: cover;
+        display: block;
+        transition: all 0.3s;
+        
+        // Default: constrain to reasonable preview size, crop if larger
+        width: 200px;
+        height: 200px;
+        max-width: 200px;
+        max-height: 200px;
+        
+        &.preview-circle {
+            border-radius: 50%;
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            max-width: 100px;
+            max-height: 100px;
+        }
+        
+        &.preview-square {
+            border-radius: 10px;
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            max-width: 100px;
+            max-height: 100px;
+        }
+        
+        &.preview-rectangle {
+            border-radius: 10px;
+            width: 300px;
+            height: 150px;
+            object-fit: cover;
+            max-width: 300px;
+            max-height: 150px;
+        }
+    }
+
+    .clear-preview-button {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: white;
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.3s ease, border-color 0.3s ease;
+        z-index: 10;
+        padding: 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+
+        iconify-icon {
+            color: #333;
+            font-size: 20px;
+            padding: 0;
+            background: none;
+            margin: 0;
+            transition: all 0.3s;
+        }
+
+        &:hover {
+
+            iconify-icon {
+                color: var(--red);
+            }
+        }
     }
 
     h3.upload-text {
@@ -44,7 +122,7 @@
         margin-top: 10px;
         text-align: center;
         label.browse{
-            color: var(--red);  
+            color: var(--dark-blue);  
             cursor: pointer;
             font-weight: 600;
         }
@@ -56,8 +134,16 @@
         font-size: calc(var(--text-size) - 1px);
         color: var(--darkborder);
         margin: calc(var(--text-size) - 2px);
-                margin-left: 5px;
+        text-align: center;
+    }
 
+    p.preview-message {
+        font-family: 'Inter';
+        font-weight: 500;
+        font-size: calc(var(--text-size) - 1px);
+        color: var(--dark-blue);
+        margin: calc(var(--text-size) - 2px);
+        text-align: center;
     }
 
     .upload-button{
@@ -65,18 +151,18 @@
         font-weight: 600;
         border-radius: 5px;
         padding: 3px 12px;
-        background-color: var(--red);
+        background-color: var(--dark-blue);
         color: white;
         font-size: 13px;
         transition: all 0.3s;
         border:none;
         outline:none;
         &:hover{
-            background-color: var(--lightborder);
+            background-color: rgba(109, 142, 250, 0.8);
         }
         
         &:active{
-            background-color: rgba(250,117, 109,0.74);
+            background-color: rgba(109, 142, 250, 0.7);
         }
     }
 
@@ -93,7 +179,7 @@
         }
         
         &:active{
-            background-color: rgba(250,117, 109,0.74);
+            background-color: rgba(109, 142, 250, 0.74);
         }
     }
     
@@ -109,17 +195,31 @@
     }
 
     &.active {
-        background-color: var(--translucent);
+        background-color: var(--background);
+        border: 2px dashed var(--dark-blue);
+        
+        img.preview {
+            outline: 2px solid var(--dark-blue);
+            outline-offset: 4px;
+        }
+
+        &:hover .clear-preview-button {
+            opacity: 1;
+        }
     }
 
     &.drag-over,
     &:hover {
         cursor: pointer;
-        background-color: var(--red-transparent);
-        border: 2px dashed var(--red);
+        background-color: rgba(109, 142, 250, 0.1);
+        border: 2px dashed var(--dark-blue);
 
         iconify-icon {
-            color: var(--red);
+            color: var(--dark-blue);
+        }
+
+        .clear-preview-button {
+            opacity: 1;
         }
     }
 }

@@ -10,6 +10,13 @@ const RolesSettings = ({ org, expandedClass }) => {
         weekly_meeting: '',
         positions: []
     });
+    const [originalData, setOriginalData] = useState({
+        org_name: '',
+        org_description: '',
+        org_profile_image: '',
+        weekly_meeting: '',
+        positions: []
+    });
     const [saving, setSaving] = useState(false);
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [canManageSettings, setCanManageSettings] = useState(false);
@@ -34,13 +41,15 @@ const RolesSettings = ({ org, expandedClass }) => {
 
     const initializeFormData = () => {
         if (org) {
-            setFormData({
+            const initialData = {
                 org_name: org.org_name || '',
                 org_description: org.org_description || '',
                 org_profile_image: org.org_profile_image || '',
                 weekly_meeting: org.weekly_meeting || '',
                 positions: org.positions || []
-            });
+            };
+            setFormData(initialData);
+            setOriginalData(initialData);
         }
     };
 
@@ -60,8 +69,8 @@ const RolesSettings = ({ org, expandedClass }) => {
         try {
             const success = await saveOrgSettings(formData);
             if (success) {
-                // Optionally refresh the org data or update local state
-                initializeFormData();
+                // Update originalData to match the saved formData
+                setOriginalData({ ...formData });
             }
         } finally {
             setSaving(false);

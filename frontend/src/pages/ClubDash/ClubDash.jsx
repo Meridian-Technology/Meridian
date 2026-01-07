@@ -24,7 +24,6 @@ import ClubAnnouncements from './ClubAnnouncements/ClubAnnouncements';
 import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
 import { 
     GeneralSettings, 
-    AppearanceSettings, 
     RolesSettings, 
     DangerZone,
     MemberSettings
@@ -235,11 +234,6 @@ function ClubDash(){
                     label: 'General',
                     icon: 'mdi:cog',
                     element: <GeneralSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
-                },
-                {
-                    label: 'Appearance',
-                    icon: 'mdi:palette',
-                    element: <AppearanceSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
                 },
                 {
                     label: 'Roles & Permissions',
