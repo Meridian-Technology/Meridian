@@ -28,11 +28,19 @@
     
     .top-header-box {
         width: 100%;
-        height: 100px;
+        height: 200px;
         background-color: var(--dark-blue);
         color: #fff;
         box-sizing: border-box;
-    
+        position: relative;
+        overflow: hidden;
+        
+        img.banner-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
     }
     
     .org-info{

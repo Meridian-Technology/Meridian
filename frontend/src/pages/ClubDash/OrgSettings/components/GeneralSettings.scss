@@ -9,7 +9,11 @@
             display: block;
         }
 
-        &:hover{
+        &.read-only {
+            pointer-events: none;
+        }
+
+        &:hover:not(.read-only){
             img{
                 filter: blur(4px);
             }
@@ -85,6 +89,51 @@
                     box-shadow: 0 0 0 3px rgba(250, 117, 109, 0.2);
                 }
             }
+        }
+    }
+
+    .banner-image-editable {
+        .banner-container {
+            width: 100%;
+            display: block;
+            
+            img.banner-preview {
+                width: 100%;
+                height: 200px;
+                min-height: 200px;
+                object-fit: cover;
+                border-radius: 10px !important;
+                transition: all 0.3s;
+                display: block;
+            }
+
+            &.read-only {
+                pointer-events: none;
+            }
+        }
+
+        &:hover {
+            .banner-container:not(.read-only) {
+                img.banner-preview {
+                    filter: blur(4px);
+                }
+                .edit-icon {
+                    opacity: 1;
+                }
+            }
+        }
+
+        &.invalid-image {
+            .banner-container {
+                img.banner-preview {
+                    border: 3px solid var(--red);
+                    box-shadow: 0 0 0 3px rgba(250, 117, 109, 0.2);
+                }
+            }
+        }
+
+        .invalid-image-overlay {
+            border-radius: 10px;
         }
     }
 

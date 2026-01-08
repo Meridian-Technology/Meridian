@@ -15,6 +15,7 @@ const GeneralSettings = ({ org, expandedClass }) => {
         org_name: '',
         org_description: '',
         org_profile_image: '',
+        org_banner_image: '',
         weekly_meeting: '',
         positions: []
     });
@@ -22,9 +23,13 @@ const GeneralSettings = ({ org, expandedClass }) => {
     const [canManageSettings, setCanManageSettings] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedBannerFile, setSelectedBannerFile] = useState(null);
     const [imagePreview, setImagePreview] = useState('');
+    const [bannerPreview, setBannerPreview] = useState('');
     const [showImageUploadPopup, setShowImageUploadPopup] = useState(false);
+    const [showBannerUploadPopup, setShowBannerUploadPopup] = useState(false);
     const [isInvalidImageType, setIsInvalidImageType] = useState(false);
+    const [isInvalidBannerImageType, setIsInvalidBannerImageType] = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
     const {AtlasMain} = useGradient();
     const { checkUserPermissions } = useOrgPermissions(org);
@@ -48,6 +53,7 @@ const GeneralSettings = ({ org, expandedClass }) => {
         org_name: '',
         org_description: '',
         org_profile_image: '',
+        org_banner_image: '',
         weekly_meeting: '',
         positions: []
     });
@@ -58,12 +64,14 @@ const GeneralSettings = ({ org, expandedClass }) => {
                 org_name: org.org_name || '',
                 org_description: org.org_description || '',
                 org_profile_image: org.org_profile_image || '',
+                org_banner_image: org.org_banner_image || '',
                 weekly_meeting: org.weekly_meeting || '',
                 positions: org.positions || []
             };
             setFormData(initialData);
             setOriginalData(initialData);
             setImagePreview(org.org_profile_image || '');
+            setBannerPreview(org.org_banner_image || '');
         }
     };
 
@@ -135,12 +143,57 @@ const GeneralSettings = ({ org, expandedClass }) => {
         }
     };
 
+    const handleBannerFileSelect = (file) => {
+        if (!file) return;
+        
+        // Validate image type
+        const isValidType = validateImageType(file);
+        setIsInvalidBannerImageType(!isValidType);
+        
+        if (!isValidType) {
+            // Still show preview but mark as invalid
+            const reader = new FileReader();
+            reader.onload = () => {
+                setBannerPreview(reader.result);
+            };
+            reader.readAsDataURL(file);
+            setSelectedBannerFile(file); // Keep file so user can see the error
+            return;
+        }
+        
+        // Valid file - clear any previous errors
+        setIsInvalidBannerImageType(false);
+        setSelectedBannerFile(file);
+        const reader = new FileReader();
+        reader.onload = () => {
+            setBannerPreview(reader.result);
+        };
+        reader.readAsDataURL(file);
+        
+        // Clear banner image field error if it exists
+        if (fieldErrors.org_banner_image) {
+            setFieldErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors.org_banner_image;
+                return newErrors;
+            });
+        }
+    };
+
+    const handleBannerImageUploadFromPopup = (file) => {
+        handleBannerFileSelect(file);
+        // Don't close popup if invalid image type so user can see the error
+        if (file && validateImageType(file)) {
+            setShowBannerUploadPopup(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!canManageSettings) {
             return false;
         }
 
-        // Validate image type before saving
+        // Validate image types before saving
         if (selectedFile && !validateImageType(selectedFile)) {
             setFieldErrors(prev => ({
                 ...prev,
@@ -150,13 +203,22 @@ const GeneralSettings = ({ org, expandedClass }) => {
             return false;
         }
 
+        if (selectedBannerFile && !validateImageType(selectedBannerFile)) {
+            setFieldErrors(prev => ({
+                ...prev,
+                org_banner_image: 'Invalid file type. Only JPEG, PNG, and WebP images are allowed.'
+            }));
+            setIsInvalidBannerImageType(true);
+            return false;
+        }
+
         // Clear any previous field errors
         setFieldErrors({});
 
         const oldOrgName = originalData.org_name;
         const newOrgName = formData.org_name;
 
-        const result = await saveOrgSettings(formData, selectedFile);
+        const result = await saveOrgSettings(formData, selectedFile, selectedBannerFile);
         
         // Check if result contains error information
         if (result && typeof result === 'object' && result.error) {
@@ -169,7 +231,11 @@ const GeneralSettings = ({ org, expandedClass }) => {
                 
                 // If it's an image error, mark image as invalid
                 if (result.field === 'org_profile_image' || result.message?.toLowerCase().includes('image') || result.message?.toLowerCase().includes('file type')) {
-                    setIsInvalidImageType(true);
+                    if (result.field === 'org_banner_image') {
+                        setIsInvalidBannerImageType(true);
+                    } else {
+                        setIsInvalidImageType(true);
+                    }
                 }
             }
             return false;
@@ -181,27 +247,36 @@ const GeneralSettings = ({ org, expandedClass }) => {
                 ? result.org_name 
                 : newOrgName;
             
-            // Get the updated image URL from the response if available
+            // Get the updated image URLs from the response if available
             const savedImageUrl = (result && typeof result === 'object' && result.org_profile_image)
                 ? result.org_profile_image
                 : (selectedFile ? imagePreview : formData.org_profile_image);
             
+            const savedBannerUrl = (result && typeof result === 'object' && result.org_banner_image)
+                ? result.org_banner_image
+                : (selectedBannerFile ? bannerPreview : formData.org_banner_image);
+            
             // Update originalData to match the saved formData so unsaved changes banner disappears
             const updatedFormData = (result && typeof result === 'object' && result.org_name)
-                ? { ...formData, org_name: savedOrgName, org_profile_image: savedImageUrl }
-                : { ...formData, org_profile_image: savedImageUrl };
+                ? { ...formData, org_name: savedOrgName, org_profile_image: savedImageUrl, org_banner_image: savedBannerUrl }
+                : { ...formData, org_profile_image: savedImageUrl, org_banner_image: savedBannerUrl };
             
             setOriginalData(updatedFormData);
             setFormData(updatedFormData);
             
-            // Clear selectedFile after successful save
+            // Clear selectedFiles after successful save
             setSelectedFile(null);
+            setSelectedBannerFile(null);
             setIsInvalidImageType(false);
+            setIsInvalidBannerImageType(false);
             // Clear any field errors on successful save
             setFieldErrors({});
-            // Update imagePreview to use the actual URL if we got one from the response
+            // Update imagePreviews to use the actual URLs if we got them from the response
             if (result && typeof result === 'object' && result.org_profile_image) {
                 setImagePreview(result.org_profile_image);
+            }
+            if (result && typeof result === 'object' && result.org_banner_image) {
+                setBannerPreview(result.org_banner_image);
             }
             
             // If the org name changed, navigate to the new route with a full page reload
@@ -228,14 +303,17 @@ const GeneralSettings = ({ org, expandedClass }) => {
         // Reset to original values
         setFormData({ ...originalData });
         setSelectedFile(null);
+        setSelectedBannerFile(null);
         setImagePreview(originalData.org_profile_image || '');
+        setBannerPreview(originalData.org_banner_image || '');
         setIsInvalidImageType(false);
+        setIsInvalidBannerImageType(false);
         setFieldErrors({});
     };
 
     // Enhanced change detection that includes file uploads
     const hasFormChanges = JSON.stringify(originalData) !== JSON.stringify(formData);
-    const hasFileChanges = selectedFile !== null;
+    const hasFileChanges = selectedFile !== null || selectedBannerFile !== null;
     const hasChanges = hasFormChanges || hasFileChanges;
 
     const [saving, setSaving] = useState(false);
@@ -329,7 +407,7 @@ const GeneralSettings = ({ org, expandedClass }) => {
             )
         },
         {
-            title: 'Weekly Meeting Time',
+            title: 'Weekly Meeting Time - NOTE: on reoccuring meeting refactor replace this with a create event button that creates popup for event creation w/ reoccurance embeded.',
             subtitle: 'The time of your weekly meeting',
             action: (
                 <div className="form-group">
@@ -359,23 +437,59 @@ const GeneralSettings = ({ org, expandedClass }) => {
                         onClick={() => canManageSettings && setShowImageUploadPopup(true)}
                         style={{ cursor: canManageSettings ? 'pointer' : 'default' }}
                     >
-                        {canManageSettings && (
-                            <div className="edit-icon-container">
-                                <img 
-                                    src={imagePreview || '/Logo.svg'} 
-                                    alt="Organization profile" 
-                                />
-                                <Icon icon="mdi:pencil" className="edit-icon" />
-                                {isInvalidImageType && (
-                                    <div className="invalid-image-overlay">
-                                        <p className="invalid-image-message">improper image type</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        <div className={`edit-icon-container ${canManageSettings ? '' : 'read-only'}`}>
+                            <img 
+                                src={imagePreview || '/Logo.svg'} 
+                                alt="Organization profile" 
+                            />
+                            {canManageSettings && (
+                                <>
+                                    <Icon icon="mdi:pencil" className="edit-icon" />
+                                    {isInvalidImageType && (
+                                        <div className="invalid-image-overlay">
+                                            <p className="invalid-image-message">improper image type</p>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
                     </div>
                     {fieldErrors.org_profile_image && (
                         <span className="error-message">{fieldErrors.org_profile_image}</span>
+                    )}
+                </div>
+            )
+        },
+        {
+            title: 'Banner Image',
+            subtitle: 'Upload a banner image for your organization',
+            action: (
+                <div className="form-group">
+                    <div 
+                        className={`current-image banner-image-editable ${isInvalidBannerImageType || fieldErrors.org_banner_image ? 'invalid-image' : ''}`}
+                        onClick={() => canManageSettings && setShowBannerUploadPopup(true)}
+                        style={{ cursor: canManageSettings ? 'pointer' : 'default' }}
+                    >
+                        <div className={`edit-icon-container banner-container ${canManageSettings ? '' : 'read-only'}`}>
+                            <img 
+                                src={bannerPreview || '/Logo.svg'} 
+                                alt="Organization banner" 
+                                className="banner-preview"
+                            />
+                            {canManageSettings && (
+                                <>
+                                    <Icon icon="mdi:pencil" className="edit-icon" />
+                                    {isInvalidBannerImageType && (
+                                        <div className="invalid-image-overlay">
+                                            <p className="invalid-image-message">improper image type</p>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    {fieldErrors.org_banner_image && (
+                        <span className="error-message">{fieldErrors.org_banner_image}</span>
                     )}
                 </div>
             )
@@ -423,6 +537,37 @@ const GeneralSettings = ({ org, expandedClass }) => {
                         showActions={false}
                     />
                     {isInvalidImageType && (
+                        <div className="popup-error-message">
+                            <Icon icon="mdi:alert-circle" />
+                            <span>Invalid file type. Only JPEG, PNG, and WebP images are allowed.</span>
+                        </div>
+                    )}
+                </div>
+            </Popup>
+
+            <Popup
+                isOpen={showBannerUploadPopup}
+                onClose={() => {
+                    setShowBannerUploadPopup(false);
+                    // Clear invalid image state when closing popup if no file selected
+                    if (!selectedBannerFile) {
+                        setIsInvalidBannerImageType(false);
+                    }
+                }}
+                customClassName="image-upload-popup"
+                defaultStyling={false}
+            >
+                <div className="image-upload-popup-content">
+                    <h2>Upload Banner Image</h2>
+                    <ImageUpload
+                        onFileSelect={handleBannerImageUploadFromPopup}
+                        uploadText="Upload new banner image"
+                        maxSize={5}
+                        showPrompt={true}
+                        previewImageParams={{ shape: 'rectangle' }}
+                        showActions={false}
+                    />
+                    {isInvalidBannerImageType && (
                         <div className="popup-error-message">
                             <Icon icon="mdi:alert-circle" />
                             <span>Invalid file type. Only JPEG, PNG, and WebP images are allowed.</span>

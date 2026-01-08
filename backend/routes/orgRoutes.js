@@ -314,12 +314,16 @@ router.post("/create-org", verifyToken, upload.single('image'), handleMulterErro
     }
 });
 //add org perms
-router.post("/edit-org", verifyToken, upload.single('image'), handleMulterError, async (req, res) => {
+router.post("/edit-org", verifyToken, upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'bannerImage', maxCount: 1 }
+]), handleMulterError, async (req, res) => {
     const { Org, Form } = getModels(req, "Org", "Form");
     try {
         const {
             orgId,
             org_profile_image,
+            org_banner_image,
             org_description,
             positions,
             weekly_meeting,
@@ -328,7 +332,8 @@ router.post("/edit-org", verifyToken, upload.single('image'), handleMulterError,
             memberForm,
         } = req.body;
         const userId = req.user?.userId;
-        const file = req.file;
+        const profileFile = req.files?.image?.[0];
+        const bannerFile = req.files?.bannerImage?.[0];
 
         // Validate that the essential fields are present
         if (!orgId) {
@@ -395,15 +400,27 @@ router.post("/edit-org", verifyToken, upload.single('image'), handleMulterError,
             org.org_description = cleanOrgDescription;
         }
 
-        // Handle image upload if file is present
-        if (file) {
-            console.log('Uploading new image');
-            const fileExtension = path.extname(file.originalname);
-            const fileName = `${org._id}${fileExtension}`;
-            const imageUrl = await uploadImageToS3(file, 'orgs', fileName);
+        // Handle profile image upload if file is present
+        if (profileFile) {
+            console.log('Uploading new profile image');
+            const fileExtension = path.extname(profileFile.originalname);
+            const fileName = `${org._id}_profile${fileExtension}`;
+            const imageUrl = await uploadImageToS3(profileFile, 'orgs', fileName);
             org.org_profile_image = imageUrl;
         } else if (org_profile_image) {
             org.org_profile_image = org_profile_image;
+        }
+
+        // Handle banner image upload if file is present
+        if (bannerFile) {
+            console.log('Uploading new banner image');
+            const fileExtension = path.extname(bannerFile.originalname);
+            const fileName = `${org._id}_banner${fileExtension}`;
+            const bannerUrl = await uploadImageToS3(bannerFile, 'orgs', fileName);
+            org.org_banner_image = bannerUrl;
+        } else if (org_banner_image !== undefined) {
+            // Only update if explicitly provided (allows clearing banner by sending empty string)
+            org.org_banner_image = org_banner_image || null;
         }
 
         // Update other fields only if they are provided

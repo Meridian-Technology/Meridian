@@ -241,15 +241,15 @@ function ClubDash(){
                     element:  <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview} refetch={orgData.refetch}/>
                 },
                 {
-                    label: 'Membership',
-                    icon: 'mdi:account-group',
+                    label: 'Application Process',
+                    icon: 'mdi:form-select',
                     element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
                 },
-                {
-                    label: 'Verification Requests',
-                    icon: 'mdi:shield-check',
-                    element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
-                },
+                // {
+                //     label: 'Verification Requests',
+                //     icon: 'mdi:shield-check',
+                //     element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                // },
                 {
                     label: 'Danger Zone',
                     icon: 'mdi:alert-circle',

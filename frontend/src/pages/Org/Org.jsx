@@ -217,6 +217,13 @@ const Org = ({ orgData, refetch }) => {
             <div className='org-content'>
                 <div className="org-header-container">
                     <div className="top-header-box">
+                        {overview.org_banner_image ? (
+                            <img 
+                                src={overview.org_banner_image} 
+                                alt={`${overview.org_name} banner`}
+                                className="banner-image"
+                            />
+                        ) : null}
                     </div>
 
                     <div className="org-info">

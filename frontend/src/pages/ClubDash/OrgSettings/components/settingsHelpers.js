@@ -55,7 +55,7 @@ export const useOrgPermissions = (org) => {
 export const useOrgSave = (org) => {
     const { addNotification } = useNotification();
     
-    const saveOrgSettings = async (formData, selectedFile = null) => {
+    const saveOrgSettings = async (formData, selectedFile = null, selectedBannerFile = null) => {
         try {
             const formDataToSend = new FormData();
             // formDataToSend.append('orgId', org._id);
@@ -82,6 +82,10 @@ export const useOrgSave = (org) => {
                 formDataToSend.append('image', selectedFile);
             }
 
+            if (selectedBannerFile) {
+                formDataToSend.append('bannerImage', selectedBannerFile);
+            }
+
             const response = await apiRequest('/edit-org', formDataToSend, {
                 method: 'POST',
                 headers: {
@@ -104,7 +108,9 @@ export const useOrgSave = (org) => {
                 // Try to determine which field has the error
                 let errorField = null;
                 const message = response.message.toLowerCase();
-                if (message.includes('image') || message.includes('file type') || message.includes('invalid file')) {
+                if (message.includes('banner') && (message.includes('image') || message.includes('file type') || message.includes('invalid file'))) {
+                    errorField = 'org_banner_image';
+                } else if (message.includes('image') || message.includes('file type') || message.includes('invalid file')) {
                     errorField = 'org_profile_image';
                 } else if (message.includes('name') || message.includes('org name')) {
                     errorField = 'org_name';
@@ -129,7 +135,9 @@ export const useOrgSave = (org) => {
             // Try to determine which field has the error from error message
             let errorField = null;
             const message = errorMessage.toLowerCase();
-            if (message.includes('image') || message.includes('file type') || message.includes('invalid file')) {
+            if (message.includes('banner') && (message.includes('image') || message.includes('file type') || message.includes('invalid file'))) {
+                errorField = 'org_banner_image';
+            } else if (message.includes('image') || message.includes('file type') || message.includes('invalid file')) {
                 errorField = 'org_profile_image';
             } else if (message.includes('name') || message.includes('org name')) {
                 errorField = 'org_name';
