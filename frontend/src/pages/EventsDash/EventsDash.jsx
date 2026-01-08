@@ -191,12 +191,12 @@ function EventsDash({}){
                 //     icon: 'mingcute:chart-fill',
                 //     element: <EventsAnalytics />
                 // });
-                items.push({
-                    label: 'Orgs',
-                    icon: 'mingcute:group-2-fill',
-                    element: <Orgs />
-                });
             }
+            items.push({
+                label: 'Orgs',
+                icon: 'mingcute:group-2-fill',
+                element: <Orgs />
+            });
         }
         
         return items;

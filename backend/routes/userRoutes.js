@@ -653,4 +653,43 @@ router.post('/get-user-by-username', verifyToken, async (req, res) => {
     }
 });
 
+// Register push notification token
+router.post('/register-push-token', verifyToken, async (req, res) => {
+    const { User } = getModels(req, 'User');
+    const { pushToken } = req.body;
+    
+    try {
+        if (!pushToken) {
+            return res.status(400).json({
+                success: false,
+                message: 'Push token is required'
+            });
+        }
+
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        user.pushToken = pushToken;
+        await user.save();
+
+        console.log(`POST: /register-push-token ${req.user.userId} successful`);
+        return res.status(200).json({
+            success: true,
+            message: 'Push token registered successfully'
+        });
+    } catch (error) {
+        console.log(`POST: /register-push-token ${req.user.userId} failed:`, error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error registering push token',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;
