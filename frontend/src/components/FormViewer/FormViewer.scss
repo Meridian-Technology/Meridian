@@ -1,48 +1,191 @@
 .form-viewer {
   max-width: 800px;
+  width: 100%;
+  height: 100%;
   margin: 0 auto;
-  padding: 20px;
-  background-color: var(--background);
-  border-radius: 15px;
+  padding: 0;
+  background-color: transparent;
+  overflow-x: hidden;
+  overflow-y: visible;
+  
+  box-sizing: border-box;
+
+  scrollbar-width: none;
+
 
 
   .form-header {
-    margin-bottom: 30px;
+    padding: 40px 30px;
+    margin-bottom: 0;
     text-align: center;
+    background: linear-gradient(135deg, #6D8EFA 0%, #5b7bef 100%);
+    color: white;
+    border-radius: 20px;
+    position: relative;
 
     h1 {
-      font-size: 24px;
-      color: var(--text);
-      margin-bottom: 10px;
+      font-size: 32px;
+      color: white;
+      margin-bottom: 12px;
+      font-weight: 600;
+      font-family: 'Satoshi', sans-serif;
     }
 
     p {
-      color: var(--text);
-      opacity: 0.8;
+      color: rgba(255, 255, 255, 0.9);
       font-size: 16px;
+      margin-bottom: 16px;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.5;
+    }
+
+
+    .form-owner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.85);
+      font-family: 'Inter', sans-serif;
+
+      .owner-icon {
+        font-size: 20px;
+      }
+    }
+  }
+
+  .form-scenario-screen {
+    padding: 60px 30px;
+    padding-bottom: 80px;
+    text-align: center;
+    background-color: var(--background);
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+
+    .scenario-icon {
+      font-size: 80px;
+      color: var(--text-secondary, #999);
+      margin-bottom: 24px;
+
+      &.success {
+        color: #28a745;
+      }
+    }
+
+    h2 {
+      font-size: 24px;
+      color: var(--text);
+      margin-bottom: 12px;
+      font-weight: 600;
+      font-family: 'Satoshi', sans-serif;
+    }
+
+    p {
+      font-size: 16px;
+      color: var(--text-secondary, #666);
+      margin-bottom: 24px;
+      max-width: 400px;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.5;
+    }
+
+    .login-button {
+      display: inline-block;
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #6D8EFA, #5b7bef);
+      color: white;
+      text-decoration: none;
+      border-radius: 12px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(109, 142, 250, 0.3);
+
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(109, 142, 250, 0.4);
+      }
     }
   }
   
-  form{
+  form {
+    padding: 30px;
+    padding-bottom: 50px; // Extra padding to account for fixed submit button
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 20px;
+    box-sizing: border-box;
   }
 
   .submit-button {
-    width: 100%;
-    padding: 12px;
-    background-color: var(--red);
-    color: white;
+    position: fixed;
+    bottom: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 60px);
+    max-width: 740px; // Matches form content width (800px - 60px padding)
+    padding: 14px 24px;
+    background: var(--light);
+    color: var(--text, #000);
     border: none;
-    border-radius: 4px;
+    border-radius: 12px;
     font-size: 16px;
-    font-weight: bold;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 4px 15px rgba(109, 142, 250, 0.3);
+    z-index: 1000;
+    box-sizing: border-box;
+    overflow: hidden;
 
-    &:hover {
-      opacity: 0.9;
+    // Progress bar overlay
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: var(--progress, 0%);
+      height: 100%;
+      background: linear-gradient(135deg, #6D8EFA, #5b7bef);
+      transition: width 0.5s ease;
+      z-index: 0;
+      border-radius: 12px;
+    }
+
+    // Button text wrapper - ensures text appears above gradient
+    .button-text {
+      position: relative;
+      z-index: 1;
+      transition: opacity 0.3s ease;
+      display: inline-block;
+    }
+
+    &:hover:not(:disabled) {
+      transform: translateX(-50%) translateY(-2px);
+      box-shadow: 0 6px 20px rgba(109, 142, 250, 0.4);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    // When complete (100%), change text to white
+    &.complete {
+      color: white;
     }
   }
 }

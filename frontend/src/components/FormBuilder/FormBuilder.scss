@@ -17,6 +17,15 @@
     // border-radius: 15px;
     // box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
+    .form-builder-menu {
+        padding: 20px;
+        border-right: 1px solid var(--lighterborder);
+        min-width: 280px;
+        max-width: 280px;
+        overflow-y: auto;
+        background-color: var(--background);
+    }
+
     .workspace{
         display: flex;
         flex-direction: column;

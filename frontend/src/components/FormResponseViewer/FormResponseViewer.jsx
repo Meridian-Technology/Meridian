@@ -1,7 +1,10 @@
 import React from 'react';
 import './FormResponseViewer.scss';
+import { Icon } from '@iconify-icon/react';
+import { useDashboard } from '../../contexts/DashboardContext';
 
 const FormResponseViewer = ({ formResponse }) => {
+  const { hideOverlay } = useDashboard();
   // Extract form data from the snapshot
   const form = formResponse.formSnapshot;
   const answers = formResponse.answers;
@@ -32,6 +35,7 @@ const FormResponseViewer = ({ formResponse }) => {
 
   return (
     <div className="form-response-viewer">
+
       <div className="form-header">
         <h2>{form.title}</h2>
         {form.description && <p className="form-description">{form.description}</p>}

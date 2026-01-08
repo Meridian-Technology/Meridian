@@ -13,7 +13,9 @@ const ImageUpload = ({
     uploadMessage = "Maximum size: 5MB",
     fontSize = 15,
     showPrompt = true,
-    orientation = "vertical"
+    orientation = "vertical",
+    previewImageParams = {}, // { shape: 'circle' | 'square' | 'rectangle' }
+    showActions = true // Enable/disable upload/cancel buttons
 }) => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [message, setMessage] = useState('');
@@ -61,13 +63,20 @@ const ImageUpload = ({
         setIsDragging(false);
     };
 
-    const handleClear = () => {
+    const handleClear = (e) => {
+        e.stopPropagation(); // Prevent triggering file input
         setSelectedFile(null);
         setFileName('');
         setMessage('');
         setImage(null);
         if (fileInputRef.current) fileInputRef.current.value = null;
         onFileClear?.();
+    };
+
+    const handleBoxClick = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
     };
 
     const handleUpload = () => {
@@ -82,9 +91,30 @@ const ImageUpload = ({
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
+            onClick={handleBoxClick}
             style={{ '--text-size': `${fontSize}px` }}
         >   
-            {image ? <img src={image} alt="preview" className="preview" /> : <Icon className={`upload-icon ${isDragging ? 'drag-over' : ''}`} icon="famicons:images" />}
+            {image ? (
+                <div className="preview-container">
+                    <img 
+                        src={image} 
+                        alt="preview" 
+                        className={`preview ${previewImageParams.shape ? `preview-${previewImageParams.shape}` : ''}`}
+                    />
+                    {!showActions && (
+                        <button 
+                            className="clear-preview-button"
+                            onClick={handleClear}
+                            aria-label="Clear image"
+                            type="button"
+                        >
+                            <Icon icon="mdi:close" />
+                        </button>
+                    )}
+                </div>
+            ) : (
+                <Icon className={`upload-icon ${isDragging ? 'drag-over' : ''}`} icon="famicons:images" />
+            )}
             <div className="text-container">
                 <h3 className="upload-text">
                     {selectedFile ? fileName : uploadText}
@@ -107,11 +137,12 @@ const ImageUpload = ({
                     style={{ display: 'none' }}
                 />
                 {
-                    selectedFile && showPrompt ? 
-                    <div className="upload-actions">
+                    selectedFile && showPrompt && showActions ? 
+                    <div className="upload-actions" onClick={(e) => e.stopPropagation()}>
                         <button
                             className="clear-button"
                             onClick={handleClear}
+                            type="button"
                         >
                             Clear
                         </button>
@@ -119,6 +150,7 @@ const ImageUpload = ({
                             className="upload-button" 
                             onClick={handleUpload}
                             disabled={isUploading}
+                            type="button"
                         >
                             {isUploading ? 'Uploading...' : 'Upload'}
                         </button>
@@ -126,7 +158,11 @@ const ImageUpload = ({
                     </div>
                     :
                     <>
-                        <p className="upload-message">{message || uploadMessage}</p>
+                        {selectedFile && !showActions ? (
+                            <p className="preview-message">Drag a new image to replace, or click outside to save</p>
+                        ) : (
+                            <p className="upload-message">{message || uploadMessage}</p>
+                        )}
                     </>
                 }
             </div>

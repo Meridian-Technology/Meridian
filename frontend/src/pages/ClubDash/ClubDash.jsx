@@ -19,11 +19,11 @@ import apiRequest from '../../utils/postRequest';
 import { useLocation } from 'react-router-dom';
 import EventsPanel from './EventsPanel/EventsPanel';
 import EventsManagement from './EventsManagement/EventsManagement';
+import ClubForms from './ClubForms/ClubForms';
 import ClubAnnouncements from './ClubAnnouncements/ClubAnnouncements';
 import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
 import { 
     GeneralSettings, 
-    AppearanceSettings, 
     RolesSettings, 
     DangerZone,
     MemberSettings
@@ -212,6 +212,12 @@ function ClubDash(){
             requiresPermission: 'canManageMembers',
             element: <Members expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
         },
+        { 
+            label: 'Forms', 
+            icon: 'mdi:file-document', 
+            key: 'forms',
+            element: <ClubForms expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
+        },
         // { 
         //     label: 'Roles', 
         //     icon: 'mdi:shield-account', 
@@ -230,25 +236,20 @@ function ClubDash(){
                     element: <GeneralSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
                 },
                 {
-                    label: 'Appearance',
-                    icon: 'mdi:palette',
-                    element: <AppearanceSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
-                },
-                {
                     label: 'Roles & Permissions',
                     icon: 'mdi:shield-account',
                     element:  <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview} refetch={orgData.refetch}/>
                 },
                 {
-                    label: 'Membership',
-                    icon: 'mdi:account-group',
+                    label: 'Application Process',
+                    icon: 'mdi:form-select',
                     element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
                 },
-                {
-                    label: 'Verification Requests',
-                    icon: 'mdi:shield-check',
-                    element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
-                },
+                // {
+                //     label: 'Verification Requests',
+                //     icon: 'mdi:shield-check',
+                //     element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                // },
                 {
                     label: 'Danger Zone',
                     icon: 'mdi:alert-circle',
@@ -288,6 +289,7 @@ function ClubDash(){
         secondaryColor="#EDF6EE" 
         primaryColor="#4DAA57"
         enableSubSidebar={true}
+        onBack={() => navigate('/events-dashboard')}
         >
         </Dashboard>
     )

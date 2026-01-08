@@ -314,12 +314,16 @@ router.post("/create-org", verifyToken, upload.single('image'), handleMulterErro
     }
 });
 //add org perms
-router.post("/edit-org", verifyToken, upload.single('image'), handleMulterError, async (req, res) => {
+router.post("/edit-org", verifyToken, upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'bannerImage', maxCount: 1 }
+]), handleMulterError, async (req, res) => {
     const { Org, Form } = getModels(req, "Org", "Form");
     try {
         const {
             orgId,
             org_profile_image,
+            org_banner_image,
             org_description,
             positions,
             weekly_meeting,
@@ -328,7 +332,8 @@ router.post("/edit-org", verifyToken, upload.single('image'), handleMulterError,
             memberForm,
         } = req.body;
         const userId = req.user?.userId;
-        const file = req.file;
+        const profileFile = req.files?.image?.[0];
+        const bannerFile = req.files?.bannerImage?.[0];
 
         // Validate that the essential fields are present
         if (!orgId) {
@@ -395,15 +400,27 @@ router.post("/edit-org", verifyToken, upload.single('image'), handleMulterError,
             org.org_description = cleanOrgDescription;
         }
 
-        // Handle image upload if file is present
-        if (file) {
-            console.log('Uploading new image');
-            const fileExtension = path.extname(file.originalname);
-            const fileName = `${org._id}${fileExtension}`;
-            const imageUrl = await uploadImageToS3(file, 'orgs', fileName);
+        // Handle profile image upload if file is present
+        if (profileFile) {
+            console.log('Uploading new profile image');
+            const fileExtension = path.extname(profileFile.originalname);
+            const fileName = `${org._id}_profile${fileExtension}`;
+            const imageUrl = await uploadImageToS3(profileFile, 'orgs', fileName);
             org.org_profile_image = imageUrl;
         } else if (org_profile_image) {
             org.org_profile_image = org_profile_image;
+        }
+
+        // Handle banner image upload if file is present
+        if (bannerFile) {
+            console.log('Uploading new banner image');
+            const fileExtension = path.extname(bannerFile.originalname);
+            const fileName = `${org._id}_banner${fileExtension}`;
+            const bannerUrl = await uploadImageToS3(bannerFile, 'orgs', fileName);
+            org.org_banner_image = bannerUrl;
+        } else if (org_banner_image !== undefined) {
+            // Only update if explicitly provided (allows clearing banner by sending empty string)
+            org.org_banner_image = org_banner_image || null;
         }
 
         // Update other fields only if they are provided
@@ -500,9 +517,8 @@ router.delete("/delete-org/:orgId", verifyToken, async (req, res) => {
     }
 });
 
-// UNUSED: No current frontend references; consider deprecating in favor of a future follow system
 router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
-    const { Org, Follower } = getModels(req, "Org", "Follower");
+    const { Org, OrgFollower } = getModels(req, "Org", "OrgFollower");
     try {
         const { orgId } = req.params;
         const userId = req.user.userId;
@@ -514,7 +530,7 @@ router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
             return res.status(404).json({ success: false, message: "Org not found" });
         }
 
-        const alreadyFollowing = await Follower.findOne({
+        const alreadyFollowing = await OrgFollower.findOne({
             user_id: userId,
             org_id: orgId,
         }); //Check if the user is already following the org
@@ -527,7 +543,7 @@ router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
                 });
         }
 
-        const newFollower = new Follower({
+        const newFollower = new OrgFollower({
             user_id: userId,
             org_id: orgId,
         });
@@ -547,9 +563,8 @@ router.post("/follow-org/:orgId", verifyToken, async (req, res) => {
     }
 });
 
-// UNUSED: No current frontend references; consider deprecating in favor of a future follow system
 router.post("/unfollow-org/:orgId", verifyToken, async (req, res) => {
-    const { Org, Follower } = getModels(req, "Org", "Follower");
+    const { Org, OrgFollower } = getModels(req, "Org", "OrgFollower");
     try {
         const { orgId } = req.params;
         const userId = req.user.userId;
@@ -561,14 +576,14 @@ router.post("/unfollow-org/:orgId", verifyToken, async (req, res) => {
             return res.status(404).json({ success: false, message: "Org not found" });
         }
 
-        const follower = await Follower.findOne({ user_id: userId, org_id: orgId }); //Check if the user is already following the org
+        const follower = await OrgFollower.findOne({ user_id: userId, org_id: orgId }); //Check if the user is already following the org
         if (!follower) {
             return res
                 .status(400)
                 .json({ success: false, message: "You are not following this org" });
         }
 
-        await Follower.findByIdAndDelete(follower._id);
+        await OrgFollower.findByIdAndDelete(follower._id);
 
         console.log(`POST: /unfollow-org`);
         res.json({ success: true, message: "Org unfollowed successfully" });
@@ -585,11 +600,11 @@ router.post("/unfollow-org/:orgId", verifyToken, async (req, res) => {
 });
 
 router.get("/get-followed-orgs", verifyToken, async (req, res) => {
-    const { Follower } = getModels(req, "Follower");
+    const { OrgFollower } = getModels(req, "OrgFollower");
     try {
         const userId = req.user.userId;
 
-        const followedOrgs = await Follower.find({ user_id: userId }).populate(
+        const followedOrgs = await OrgFollower.find({ user_id: userId }).populate(
             "org_id"
         );
         console.log(`GET: /get-followed-orgs`);
@@ -751,6 +766,47 @@ router.post("/:orgId/apply-to-org", verifyToken, async (req, res) => {
 
 // UNUSED: Superseded by DELETE /org-roles/:orgId/members/:userId
 
+// Leave organization (self-removal)
+router.post("/leave-org/:orgId", verifyToken, async (req, res) => {
+    const { Org, OrgMember } = getModels(req, "Org", "OrgMember");
+    try {
+        const { orgId } = req.params;
+        const userId = req.user.userId;
+
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: "Org not found" });
+        }
+
+        // Check if user is the owner
+        if (org.owner.toString() === userId) {
+            return res.status(400).json({
+                success: false,
+                message: "Organization owner cannot leave. Please transfer ownership first."
+            });
+        }
+
+        const member = await OrgMember.findOne({ org_id: orgId, user_id: userId });
+        if (!member) {
+            return res.status(400).json({
+                success: false,
+                message: "You are not a member of this organization"
+            });
+        }
+
+        await OrgMember.deleteOne({ _id: member._id });
+
+        console.log(`POST: /leave-org/${orgId}`);
+        res.json({ success: true, message: "You have left the organization successfully" });
+    } catch (error) {
+        console.log(`POST: /leave-org failed`, error);
+        return res.status(500).json({
+            success: false,
+            message: "Error leaving organization",
+            error: error.message,
+        });
+    }
+});
 
 router.post("/check-org-name", verifyToken, async (req, res) => {
     const { Org } = getModels(req, "Org");
@@ -941,6 +997,148 @@ router.post('/:orgId/edit-member-form', verifyToken, requireMemberManagement(), 
     }
 })
 
+// Create a new form for the organization
+router.post('/:orgId/forms', verifyToken, requireMemberManagement(), async (req, res) => {
+    const { Org, Form } = getModels(req, 'Org', 'Form');
+    const { orgId } = req.params;
+    const { form } = req.body;
+    
+    try {
+        // Verify organization exists
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        // Add organization and user context to the form
+        const formData = {
+            ...form,
+            createdBy: req.user.userId,
+            formOwner: orgId,
+            formOwnerType: 'Org'
+        };
+
+        // Remove temporary IDs from questions
+        const processedForm = {
+            ...formData,
+            questions: formData.questions.map(q => {
+                if (q._id && q._id.startsWith('NEW_QUESTION_')) {
+                    const { _id, ...questionWithoutId } = q;
+                    return questionWithoutId;
+                }
+                return q;
+            })
+        };
+
+        const newForm = new Form(processedForm);
+        await newForm.save();
+
+        console.log('POST: /:orgId/forms successful');
+        return res.status(200).json({
+            success: true,
+            message: "Form created successfully",
+            form: newForm
+        });
+    } catch (error) {
+        console.log('Error creating form:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Update a form for the organization
+router.put('/:orgId/forms/:formId', verifyToken, requireMemberManagement(), async (req, res) => {
+    const { Org, Form } = getModels(req, 'Org', 'Form');
+    const { orgId, formId } = req.params;
+    const { form } = req.body;
+    
+    try {
+        // Verify organization exists
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        // Verify form exists and belongs to organization
+        const existingForm = await Form.findOne({
+            _id: formId,
+            formOwner: orgId,
+            formOwnerType: 'Org'
+        });
+
+        if (!existingForm) {
+            return res.status(404).json({
+                success: false,
+                message: 'Form not found or access denied'
+            });
+        }
+
+        // Remove temporary IDs from questions
+        const processedForm = {
+            ...form,
+            questions: form.questions.map(q => {
+                if (q._id && q._id.startsWith('NEW_QUESTION_')) {
+                    const { _id, ...questionWithoutId } = q;
+                    return questionWithoutId;
+                }
+                return q;
+            })
+        };
+
+        const updatedForm = await Form.findByIdAndUpdate(
+            formId,
+            { ...processedForm, updatedAt: Date.now() },
+            { new: true }
+        );
+
+        console.log('PUT: /:orgId/forms/:formId successful');
+        return res.status(200).json({
+            success: true,
+            message: "Form updated successfully",
+            form: updatedForm
+        });
+    } catch (error) {
+        console.log('Error updating form:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// // Get all forms for the organization
+// router.get('/:orgId/forms', verifyToken, requireMemberManagement(), async (req, res) => {
+//     const { Form } = getModels(req, 'Form');
+//     const { orgId } = req.params;
+    
+//     try {
+//         const forms = await Form.find({
+//             formOwner: orgId,
+//             formOwnerType: 'Org'
+//         }).sort({ createdAt: -1 });
+
+//         console.log('GET: /:orgId/forms successful');
+//         return res.status(200).json({
+//             success: true,
+//             forms: forms
+//         });
+//     } catch (error) {
+//         console.log('Error retrieving forms:', error);
+//         res.status(500).json({
+//             success: false,
+//             message: error.message
+//         });
+//     }
+// });
+
 // Update approval settings for approval groups
 router.post('/:orgId/approval-settings', verifyToken, requireMemberManagement(), async (req, res) => {
     const { Org } = getModels(req, 'Org');
@@ -988,6 +1186,20 @@ router.post('/:orgId/approval-settings', verifyToken, requireMemberManagement(),
     }
 })
 
-
+router.get('/:orgId/forms', verifyToken, async (req, res) => {
+    const { Form } = getModels(req, 'Form');
+    const { orgId } = req.params;
+    try{
+        const forms = await Form.find({formOwner: orgId, formOwnerType: 'Org'});
+        console.log('GET: /forms successful');
+        res.status(200).json({success: true, forms});
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
 
 module.exports = router;

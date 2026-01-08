@@ -3,7 +3,7 @@ import './Orgs.scss'
 import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import OrgResult from './OrgResult/OrgResult';
-import AdminGradient from '../../../assets/Gradients/AdminGrad.png';
+import AtlasGradient from '../../../assets/Gradients/ATLAS/Main1.png';
 
 const Orgs = ({}) => {
     const orgs = useFetch('/get-orgs');
@@ -13,7 +13,7 @@ const Orgs = ({}) => {
     return(
         <div className="orgs dash">
             <header className="header">
-                <img src={AdminGradient} alt="" />
+                <img src={AtlasGradient} alt="" />
                 <h1>Organizations</h1>
                 <p>Explore organizations at RPI</p>
             </header>

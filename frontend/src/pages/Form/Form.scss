@@ -1,0 +1,181 @@
+.form-page{
+    min-height: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px;
+    padding-bottom: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    box-sizing: border-box;
+    
+    // Custom scrollbar styling
+    &::-webkit-scrollbar {
+        width: 10px;
+    }
+    
+    &::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 5px;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+        
+        &:hover {
+            background: rgba(0, 0, 0, 0.5);
+        }
+    }
+
+    .loading-container,
+    .error-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 60vh;
+        
+        p {
+            font-size: 1.2rem;
+            color: var(--text-secondary, #666);
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    }
+
+    .error-container p {
+        color: #dc3545;
+    }
+
+    .submit-success,
+    .submit-error {
+        width: 100%;
+        max-width: 600px;
+        margin: 20px auto;
+        padding: 16px 20px;
+        border-radius: 8px;
+        text-align: center;
+        font-size: 1rem;
+        font-weight: 500;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        animation: slideDown 0.3s ease-out;
+    }
+
+    .submit-success {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+
+    .submit-error {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+
+    .form-submitted {
+        width: 100%;
+        max-width: 600px;
+        margin: 40px auto;
+        padding: 60px 40px;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        text-align: center;
+        animation: fadeInUp 0.5s ease-out;
+
+        &::before {
+            content: '✓';
+            display: block;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            color: white;
+            font-size: 48px;
+            line-height: 80px;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #333;
+            margin: 0 0 16px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        p {
+            font-size: 1.1rem;
+            color: #666;
+            margin: 0;
+            line-height: 1.6;
+        }
+    }
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        transform: translateY(30px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .form-page {
+        padding: 15px;
+
+        .form-submitted {
+            padding: 40px 25px;
+            margin: 20px auto;
+
+            &::before {
+                width: 60px;
+                height: 60px;
+                font-size: 36px;
+                line-height: 60px;
+                margin-bottom: 20px;
+            }
+
+            h2 {
+                font-size: 1.5rem;
+            }
+
+            p {
+                font-size: 1rem;
+            }
+        }
+
+        .submit-success,
+        .submit-error {
+            margin: 15px auto;
+            padding: 12px 16px;
+            font-size: 0.9rem;
+        }
+    }
+}

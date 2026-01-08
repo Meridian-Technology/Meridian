@@ -12,6 +12,7 @@ import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
 import apiRequest from '../../utils/postRequest';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import useAuth from '../../hooks/useAuth';
+import { useNotification } from '../../NotificationContext';
 import './Org.scss';
 import { useNavigate } from 'react-router-dom';
 
@@ -23,14 +24,42 @@ const Org = ({ orgData, refetch }) => {
     const {user} = useAuth();
     const [activeTab, setActiveTab] = useState('home');
     const navigate = useNavigate();
+    const { addNotification } = useNotification();
+    const [isLoading, setIsLoading] = useState({ join: false, follow: false, leave: false });
+    const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
     console.log(orgData);
 
-    const handleApply = async (formAnswers) => {
-        const response = await apiRequest(`/${overview._id}/apply-to-org`, {
-            formResponse: formAnswers
-        });
-        console.log(response);
-        refetch();
+    const handleApply = async (formAnswers = null) => {
+        try {
+            setIsLoading({ ...isLoading, join: true });
+            // Only include formResponse in request body if formAnswers is provided
+            const requestBody = formAnswers ? { formResponse: formAnswers } : {};
+            const response = await apiRequest(`/${overview._id}/apply-to-org`, requestBody);
+            
+            if (response.error) {
+                addNotification({
+                    title: 'Error',
+                    message: response.error,
+                    type: 'error'
+                });
+            } else {
+                addNotification({
+                    title: 'Success',
+                    message: response.message || (overview.requireApprovalForJoin ? 'Application submitted successfully' : 'You are now a member'),
+                    type: 'success'
+                });
+                refetch();
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: 'Failed to submit application. Please try again.',
+                type: 'error'
+            });
+        } finally {
+            setIsLoading({ ...isLoading, join: false });
+        }
     }
     
     useEffect(()=>{
@@ -43,18 +72,141 @@ const Org = ({ orgData, refetch }) => {
             if(overview.memberForm) {
                 setShowForm(true);
             } else {
-                // setIsMember(true);
-                //pending approval
-                handleApply();
-
+                // No form but approval required - apply without form
+                handleApply(null);
             }
         } else {
-            setIsMember(true);
+            // No approval needed - join directly
+            handleApply(null);
         }
     }
 
     const handleFormSubmit = (answers) => {
+        setShowForm(false);
         handleApply(answers);
+    }
+
+    const handleFollow = async () => {
+        // Optimistically update the UI immediately
+        orgData.org.isFollower = true;
+        
+        try {
+            const response = await apiRequest(`/follow-org/${overview._id}`);
+            
+            if (response.error) {
+                // Revert on error
+                orgData.org.isFollower = false;
+                addNotification({
+                    title: 'Error',
+                    message: response.error,
+                    type: 'error'
+                });
+                // Refetch to sync state
+                setTimeout(() => refetch(), 100);
+            } else {
+                addNotification({
+                    title: 'Success',
+                    message: 'You are now following this organization',
+                    type: 'success'
+                });
+                // Refetch in background to sync state
+                setTimeout(() => refetch(), 100);
+            }
+        } catch (error) {
+            // Revert on error
+            orgData.org.isFollower = false;
+            addNotification({
+                title: 'Error',
+                message: 'Failed to follow organization. Please try again.',
+                type: 'error'
+            });
+            // Refetch to sync state
+            setTimeout(() => refetch(), 100);
+        }
+    }
+
+    const handleUnfollow = async () => {
+        // Optimistically update the UI immediately
+        orgData.org.isFollower = false;
+        
+        try {
+            const response = await apiRequest(`/unfollow-org/${overview._id}`);
+            
+            if (response.error) {
+                // Revert on error
+                orgData.org.isFollower = true;
+                addNotification({
+                    title: 'Error',
+                    message: response.error,
+                    type: 'error'
+                });
+                // Refetch to sync state
+                setTimeout(() => refetch(), 100);
+            } else {
+                addNotification({
+                    title: 'Success',
+                    message: 'You have unfollowed this organization',
+                    type: 'success'
+                });
+                // Refetch in background to sync state
+                setTimeout(() => refetch(), 100);
+            }
+        } catch (error) {
+            // Revert on error
+            orgData.org.isFollower = true;
+            addNotification({
+                title: 'Error',
+                message: 'Failed to unfollow organization. Please try again.',
+                type: 'error'
+            });
+            // Refetch to sync state
+            setTimeout(() => refetch(), 100);
+        }
+    }
+
+    const handleFollowToggle = () => {
+        if (orgData.org.isFollower) {
+            handleUnfollow();
+        } else {
+            handleFollow();
+        }
+    }
+
+    const handleLeave = async () => {
+        try {
+            setIsLoading({ ...isLoading, leave: true });
+            const response = await apiRequest(`/leave-org/${overview._id}`);
+            
+            if (response.error) {
+                addNotification({
+                    title: 'Error',
+                    message: response.error,
+                    type: 'error'
+                });
+            } else {
+                addNotification({
+                    title: 'Success',
+                    message: response.message || 'You have left the organization',
+                    type: 'success'
+                });
+                refetch();
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: 'Failed to leave organization. Please try again.',
+                type: 'error'
+            });
+        } finally {
+            setIsLoading({ ...isLoading, leave: false });
+            setShowLeaveConfirm(false);
+        }
+    }
+
+    const handleLeaveClick = () => {
+        if (window.confirm(`Are you sure you want to leave ${overview.org_name}?`)) {
+            handleLeave();
+        }
     }
     
     return (
@@ -63,44 +215,63 @@ const Org = ({ orgData, refetch }) => {
                 <FormViewer form={overview.memberForm} onSubmit={handleFormSubmit} /> 
             </Popup>
             <div className='org-content'>
-                <div className="top-header-box">
-                    <div className="org-logo">
-                        <div className="img-container">
-                            <img src={overview.org_profile_image ? overview.org_profile_image : rpiLogo} alt=""/>
+                <div className="org-header-container">
+                    <div className="top-header-box">
+                        {overview.org_banner_image ? (
+                            <img 
+                                src={overview.org_banner_image} 
+                                alt={`${overview.org_name} banner`}
+                                className="banner-image"
+                            />
+                        ) : null}
+                    </div>
+
+                    <div className="org-info">
+                        <div className="org-logo">
+                            <div className="img-container">
+                                <img src={overview.org_profile_image ? overview.org_profile_image : rpiLogo} alt=""/>
+                            </div>
+                        </div>
+                        <div className="org-content-section">
+                            <div className="org-header-row">
+                                <div className="title-row">
+                                    <h2 className="name">{overview.org_name}</h2>
+                                    <div className="verification-badge">
+                                        <Icon icon="material-symbols:verified-rounded" />
+                                    </div>
+                                </div>
+                                <div className="header-stats">
+                                    <img src = {person} alt =""/>
+                                    <span>{orgData?.org?.members?.length}</span>
+                                </div>
+                            </div>
+                            <p className="description desktop-description">
+                                {overview.org_description}
+                            </p>
                         </div>
                     </div>
                 </div>
 
-                <div className="org-info">
-                    <div className="col">
-                        <div className="org-header">
-                            <h2 className="name">{overview.org_name}</h2>
-                            {/* <h2 className="name"> Name </h2> */}
-                            <div className="verification-badge">
-                                <Icon icon="material-symbols:verified-rounded" />
-                                <p>Union Recognized</p>
-                            </div>
-                        </div>
-
-                        <p className="description">
+                <div 
+                    className={`mobile-description-box ${isDescriptionExpanded ? 'expanded' : 'collapsed'}`}
+                    onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+                >
+                    <div className="mobile-description-header">
+                        <span>Description</span>
+                        <Icon 
+                            icon={isDescriptionExpanded ? "material-symbols:expand-less" : "material-symbols:expand-more"} 
+                            className="expand-icon"
+                        />
+                    </div>
+                    <div className="mobile-description-wrapper">
+                        <p className="description mobile-description">
                             {overview.org_description}
                         </p>
                     </div>
-                    
-                    <p className="stats">
-                        <img src = {person} alt =""/>
-                        <p>
-                            {orgData?.org?.followers?.length} {orgData?.org?.followers?.length === 1 ? "follower" : "followers"} • {orgData?.org?.members?.length} {orgData?.org?.members?.length === 1 ? "member" : "members"}
-                        </p>
-                        
-                        {
+                </div>
 
-                        }
-                        <img src = {profile} className='mutuals' alt =""/>
-                        <img src = {profile} alt =""/>
-                        Friend and 1 other are members
-                    </p>
-                    {/* 2 base states: joined, not joined */}
+                {/* 2 base states: joined, not joined */}
+                <div className="actions-container">
                     <div className="actions">
                         {/* {
                             overview.requireApprovalForJoin ? (
@@ -111,41 +282,83 @@ const Org = ({ orgData, refetch }) => {
                         } */}
                         {
                             orgData.org.isMember ? (
-                                <button className="no-action"><Icon icon="material-symbols:check-rounded" />Joined</button>
+                                <button 
+                                    className="no-action joined" 
+                                    onClick={handleLeaveClick}
+                                    disabled={isLoading.leave}
+                                >
+                                    <Icon icon="material-symbols:check-rounded" />
+                                    {isLoading.leave ? 'Leaving...' : 'Joined'}
+                                </button>
                             ) : orgData.org.isPending ? (
                                 <button disabled={true}>Pending...</button>
                             ) : overview.requireApprovalForJoin ? (
-                                <button onClick={initiateApply}>Apply</button>
+                                <button onClick={initiateApply} disabled={isLoading.join}>
+                                    {isLoading.join ? 'Applying...' : 'Apply'}
+                                </button>
                             ) : (
-                                <button onClick={initiateApply}>Join</button>
+                                <button onClick={initiateApply} disabled={isLoading.join}>
+                                    {isLoading.join ? 'Joining...' : 'Join'}
+                                </button>
                             )
                         }
-                        <button>Follow</button>
-                        {
-                            user.clubAssociations.find(club => club.org_name === overview.org_name) && (
-                                <button onClick={()=>{
-                                    navigate(`/club-dashboard/${overview.org_name}`);
-                                }}>To Dashboard</button>
-                            ) 
-                        }
+                        <button 
+                            onClick={handleFollowToggle} 
+                            className={`follow-button ${orgData.org.isFollower ? 'following' : 'not-following'}`}
+                            title={orgData.org.isFollower ? 'Unfollow' : 'Follow'}
+                        >
+                            <Icon icon={orgData.org.isFollower ? "material-symbols:notifications-active" : "material-symbols:notifications-outline"} />
+                        </button>
                     </div>
-
+                    {
+                        user.clubAssociations.find(club => club.org_name === overview.org_name) && (
+                            <button 
+                                className="dashboard-button"
+                                onClick={()=>{
+                                    navigate(`/club-dashboard/${overview.org_name}`);
+                                }}
+                            >
+                                <Icon icon="material-symbols:admin-panel-settings" />
+                                Dashboard
+                            </button>
+                        ) 
+                    }
                 </div>
 
+                {!orgData.org.isMember && (
+                    <p className="mutuals-stats">
+                        <img src = {profile} className='mutuals' alt =""/>
+                        <img src = {profile} alt =""/>
+                        Friend and 1 other are members
+                    </p>
+                )}
+
                 <div className="org-dashboard">
-                    <div className="org-content-header">
-                        <div className="header-option">
-                            <h2 className={activeTab === 'home' ? 'active' : ''} onClick={() => setActiveTab('home')}>Home</h2>
-                        </div>
-                        <div className="header-option">
-                            <h2 className={activeTab === 'events' ? 'active' : ''} onClick={() => setActiveTab('events')}>Events</h2>
-                        </div>
-                        <div className="header-option">
-                            <h2 className={activeTab === 'members' ? 'active' : ''} onClick={() => setActiveTab('members')}>Members</h2>
-                        </div>
-                        <div className="header-option">
-                            <h2 className={activeTab === 'announcements' ? 'active' : ''} onClick={() => setActiveTab('announcements')}>Announcements</h2>
-                        </div>
+                    <div className="filter-buttons">
+                        <button
+                            className={`filter-button ${activeTab === 'home' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('home')}
+                        >
+                            Home
+                        </button>
+                        <button
+                            className={`filter-button ${activeTab === 'events' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('events')}
+                        >
+                            Events
+                        </button>
+                        <button
+                            className={`filter-button ${activeTab === 'members' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('members')}
+                        >
+                            Members
+                        </button>
+                        <button
+                            className={`filter-button ${activeTab === 'announcements' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('announcements')}
+                        >
+                            Announcements
+                        </button>
                     </div>
                 </div>
                 {

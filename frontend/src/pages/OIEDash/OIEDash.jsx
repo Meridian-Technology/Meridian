@@ -14,7 +14,6 @@ import Members from '../ClubDash/Members/Members';
 import Roles from '../ClubDash/Roles/Roles';
 import { 
     GeneralSettings, 
-    AppearanceSettings, 
     DangerZone,
     MemberSettings
 } from '../ClubDash/OrgSettings/components';
@@ -221,11 +220,6 @@ function OIEDash(){
                     label: 'General',
                     icon: 'mdi:cog',
                     element: approvalGroup ? <GeneralSettings org={approvalGroup} expandedClass={expandedClass} /> : <div>Loading...</div>
-                },
-                {
-                    label: 'Appearance',
-                    icon: 'mdi:palette',
-                    element: approvalGroup ? <AppearanceSettings org={approvalGroup} expandedClass={expandedClass} /> : <div>Loading...</div>
                 },
                 {
                     label: 'Roles & Permissions',

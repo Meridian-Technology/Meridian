@@ -55,7 +55,7 @@ export const useOrgPermissions = (org) => {
 export const useOrgSave = (org) => {
     const { addNotification } = useNotification();
     
-    const saveOrgSettings = async (formData, selectedFile = null) => {
+    const saveOrgSettings = async (formData, selectedFile = null, selectedBannerFile = null) => {
         try {
             const formDataToSend = new FormData();
             // formDataToSend.append('orgId', org._id);
@@ -65,13 +65,25 @@ export const useOrgSave = (org) => {
             // formDataToSend.append('positions', JSON.stringify(formData.positions));
             formDataToSend.append('orgId', org._id);
             Object.entries(formData).forEach(([key, value]) => {
-                if(value) {
+                // Skip null, undefined, and empty strings (but allow empty arrays and other falsy values like 0 or false)
+                if(value === null || value === undefined || value === '') {
+                    return;
+                }
+                
+                // Only JSON.stringify arrays and objects, not strings, numbers, or booleans
+                if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
                     formDataToSend.append(key, JSON.stringify(value));
+                } else {
+                    formDataToSend.append(key, value);
                 }
             });
 
             if (selectedFile) {
                 formDataToSend.append('image', selectedFile);
+            }
+
+            if (selectedBannerFile) {
+                formDataToSend.append('bannerImage', selectedBannerFile);
             }
 
             const response = await apiRequest('/edit-org', formDataToSend, {
@@ -87,17 +99,65 @@ export const useOrgSave = (org) => {
                     message: 'Organization settings updated successfully',
                     type: 'success'
                 });
-                return true;
+                // Return the updated org if available, otherwise return true
+                return response.org || true;
             }
+            
+            // Return error information if available
+            if (response.message) {
+                // Try to determine which field has the error
+                let errorField = null;
+                const message = response.message.toLowerCase();
+                if (message.includes('banner') && (message.includes('image') || message.includes('file type') || message.includes('invalid file'))) {
+                    errorField = 'org_banner_image';
+                } else if (message.includes('image') || message.includes('file type') || message.includes('invalid file')) {
+                    errorField = 'org_profile_image';
+                } else if (message.includes('name') || message.includes('org name')) {
+                    errorField = 'org_name';
+                } else if (message.includes('description')) {
+                    errorField = 'org_description';
+                } else if (message.includes('meeting')) {
+                    errorField = 'weekly_meeting';
+                }
+                
+                return {
+                    error: true,
+                    message: response.message,
+                    field: errorField
+                };
+            }
+            
             return false;
         } catch (error) {
             console.error('Error saving settings:', error);
+            const errorMessage = error.message || 'Failed to save settings';
+            
+            // Try to determine which field has the error from error message
+            let errorField = null;
+            const message = errorMessage.toLowerCase();
+            if (message.includes('banner') && (message.includes('image') || message.includes('file type') || message.includes('invalid file'))) {
+                errorField = 'org_banner_image';
+            } else if (message.includes('image') || message.includes('file type') || message.includes('invalid file')) {
+                errorField = 'org_profile_image';
+            } else if (message.includes('name') || message.includes('org name')) {
+                errorField = 'org_name';
+            } else if (message.includes('description')) {
+                errorField = 'org_description';
+            } else if (message.includes('meeting')) {
+                errorField = 'weekly_meeting';
+            }
+            
             addNotification({
                 title: 'Error',
-                message: error.message || 'Failed to save settings',
+                message: errorMessage,
                 type: 'error'
             });
-            return false;
+            
+            return {
+                error: true,
+                message: errorMessage,
+                field: errorField
+            };
         }
     };
 
