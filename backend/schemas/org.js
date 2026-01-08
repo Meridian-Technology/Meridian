@@ -241,6 +241,34 @@ const OrgSchema= new Schema({
             min: 100,
             max: 2000
         }
+    },
+    // Social links and external links (Linktree-like)
+    socialLinks: {
+        type: [{
+            type: {
+                type: String,
+                enum: ['instagram', 'youtube', 'tiktok', 'website'],
+                required: true
+            },
+            username: {
+                type: String,
+                required: false // Required for social media types
+            },
+            url: {
+                type: String,
+                required: false // Required for website type
+            },
+            title: {
+                type: String,
+                required: false // Required for website type
+            },
+            order: {
+                type: Number,
+                default: 0
+            }
+        }],
+        default: [],
+        required: false
     }
 });
 

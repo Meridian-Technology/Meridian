@@ -219,6 +219,7 @@
         display: flex;
         gap: 10px;
         position: relative;
+        align-items: center;
     
         button{
             padding: 6px 40px;
@@ -277,6 +278,38 @@
                 }
                 &.following{
                     color: var(--dark-blue);
+                }
+            }
+        }
+        
+        .social-links-pips {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-left: auto;
+            
+            .social-link-pip {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                background-color: var(--light);
+                color: var(--text);
+                text-decoration: none;
+                transition: all 0.2s ease;
+                border: 1px solid var(--lighterborder);
+                
+                iconify-icon {
+                    font-size: 18px;
+                }
+                
+                &:hover {
+                    background-color: var(--dark-blue);
+                    color: white;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
                 }
             }
         }
@@ -649,6 +682,7 @@
                 width: 100%;
                 display: flex;
                 gap: 10px;
+                flex-wrap: wrap;
                 
                 button:not(.follow-button) {
                     flex: 1;
@@ -657,6 +691,13 @@
                 
                 .follow-button {
                     flex-shrink: 0;
+                }
+                
+                .social-links-pips {
+                    margin-left: 0;
+                    width: 100%;
+                    justify-content: center;
+                    margin-top: 8px;
                 }
             }
             

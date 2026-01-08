@@ -67,7 +67,7 @@ function MyEvents({ onRoomNavigation }){
     }, [isAuthenticated]);
 
     const handleAddFriends = () => {
-        navigate('/events-dashboard?page=2');
+        navigate('/events-dashboard?page=3');
     };
 
     const handleSearchFocus = () => {

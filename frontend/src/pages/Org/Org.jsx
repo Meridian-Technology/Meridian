@@ -309,6 +309,48 @@ const Org = ({ orgData, refetch }) => {
                         >
                             <Icon icon={orgData.org.isFollower ? "material-symbols:notifications-active" : "material-symbols:notifications-outline"} />
                         </button>
+                        {overview.socialLinks && overview.socialLinks.length > 0 && (
+                            <div className="social-links-pips">
+                                {overview.socialLinks
+                                    .sort((a, b) => (a.order || 0) - (b.order || 0))
+                                    .map((link, index) => {
+                                        let url, icon, label;
+                                        
+                                        if (link.type === 'website') {
+                                            url = link.url;
+                                            icon = 'mdi:link';
+                                            label = link.title || 'Website';
+                                        } else {
+                                            const baseUrls = {
+                                                instagram: 'https://instagram.com/',
+                                                youtube: 'https://youtube.com/@',
+                                                tiktok: 'https://tiktok.com/@'
+                                            };
+                                            url = `${baseUrls[link.type]}${link.username}`;
+                                            const icons = {
+                                                instagram: 'mdi:instagram',
+                                                youtube: 'mdi:youtube',
+                                                tiktok: 'simple-icons:tiktok'
+                                            };
+                                            icon = icons[link.type];
+                                            label = `${link.type.charAt(0).toUpperCase() + link.type.slice(1)}: ${link.username}`;
+                                        }
+                                        
+                                        return (
+                                            <a
+                                                key={index}
+                                                href={url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="social-link-pip"
+                                                title={label}
+                                            >
+                                                <Icon icon={icon} />
+                                            </a>
+                                        );
+                                    })}
+                            </div>
+                        )}
                     </div>
                     {
                         user.clubAssociations.find(club => club.org_name === overview.org_name) && (

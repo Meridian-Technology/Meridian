@@ -330,6 +330,7 @@ router.post("/edit-org", verifyToken, upload.fields([
             org_name,
             requireApprovalForJoin,
             memberForm,
+            socialLinks,
         } = req.body;
         const userId = req.user?.userId;
         const profileFile = req.files?.image?.[0];
@@ -455,6 +456,46 @@ router.post("/edit-org", verifyToken, upload.fields([
         }
         if (weekly_meeting) {
             org.weekly_meeting = weekly_meeting;
+        }
+        if (socialLinks !== undefined) {
+            try {
+                // Parse socialLinks if it's a JSON string
+                const parsedSocialLinks = typeof socialLinks === 'string' ? JSON.parse(socialLinks) : socialLinks;
+                // Validate social links structure
+                if (Array.isArray(parsedSocialLinks)) {
+                    // Validate each link
+                    for (const link of parsedSocialLinks) {
+                        if (!link.type || !['instagram', 'youtube', 'tiktok', 'website'].includes(link.type)) {
+                            return res.status(400).json({
+                                success: false,
+                                message: "Invalid social link type"
+                            });
+                        }
+                        if (link.type === 'website') {
+                            if (!link.url || !link.title) {
+                                return res.status(400).json({
+                                    success: false,
+                                    message: "Website links must have both url and title"
+                                });
+                            }
+                        } else {
+                            if (!link.username) {
+                                return res.status(400).json({
+                                    success: false,
+                                    message: `Social media link (${link.type}) must have a username`
+                                });
+                            }
+                        }
+                    }
+                    org.socialLinks = parsedSocialLinks;
+                }
+            } catch (error) {
+                console.error('Error parsing socialLinks:', error);
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid socialLinks data format"
+                });
+            }
         }
 
         // Save the updated org

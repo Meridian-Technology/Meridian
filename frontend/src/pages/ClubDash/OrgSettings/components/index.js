@@ -3,3 +3,4 @@ export { default as RolesSettings } from './RolesSettings';
 export { default as DangerZone } from './DangerZone';
 export { default as SettingsWrapper } from './SettingsWrapper';
 export { default as MemberSettings } from './MemberSettings';
+export { default as SocialLinksSettings } from './SocialLinksSettings';
