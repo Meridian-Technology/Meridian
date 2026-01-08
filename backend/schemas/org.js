@@ -21,6 +21,10 @@ const OrgSchema= new Schema({
         type: String,
         required: true
     },
+    org_banner_image:{
+        type: String,
+        required: false
+    },
     org_description:{
         type: String,
         required: true

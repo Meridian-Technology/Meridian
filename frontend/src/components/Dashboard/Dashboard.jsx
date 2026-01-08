@@ -26,6 +26,7 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
     const [isInitialized, setIsInitialized] = useState(false); // Track if URL params have been processed
     const hasInitializedRef = useRef(false); // Track if we've already processed URL params
     const [overlayContent, setOverlayContent] = useState(null);
+    const prevDisplayRef = useRef(null);
     
     const [width, setWidth] = useState(window.innerWidth);
     useEffect(() => { //useEffect for window resizing
@@ -60,6 +61,15 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isMobileMenuOpen, width]);
+
+    // Close overlay when navigating to a different tab
+    useEffect(() => {
+        // Only close overlay if currentDisplay actually changed (not on initial render)
+        if (prevDisplayRef.current !== null && prevDisplayRef.current !== currentDisplay && overlayContent) {
+            setOverlayContent(null);
+        }
+        prevDisplayRef.current = currentDisplay;
+    }, [currentDisplay, overlayContent]);
 
     // Close mobile menu when navigating
     const handleMobileNavigation = (callback) => {

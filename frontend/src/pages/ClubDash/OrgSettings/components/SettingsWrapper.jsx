@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import GeneralSettings from './GeneralSettings';
-import AppearanceSettings from './AppearanceSettings';
 import RolesSettings from './RolesSettings';
 import DangerZone from './DangerZone';
 import './SettingsWrapper.scss';
@@ -11,7 +10,6 @@ const SettingsWrapper = ({ org, expandedClass }) => {
 
     const sections = [
         { key: 'general', label: 'General', icon: 'mdi:cog', component: GeneralSettings },
-        { key: 'appearance', label: 'Appearance', icon: 'mdi:palette', component: AppearanceSettings },
         { key: 'roles', label: 'Roles & Permissions', icon: 'mdi:shield-account', component: RolesSettings },
         { key: 'danger', label: 'Danger Zone', icon: 'mdi:alert-circle', component: DangerZone },
     ];

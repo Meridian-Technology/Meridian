@@ -4,10 +4,11 @@
     padding: 20px;
     border: 1px solid var(--lightborder);
 
+    box-shadow: var(--shadow);
     .question-header {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 3px;
         margin-bottom: 15px;
         padding: 0;
         h3 {
@@ -37,7 +38,7 @@
         
         &:focus {
             outline: none;
-            border-color: var(--primary);
+            border-color: var(--dark-blue);
         }
     }
 
@@ -63,6 +64,26 @@
                 width: 18px;
                 height: 18px;
                 cursor: pointer;
+                accent-color: var(--dark-blue);
+                
+                &:checked {
+                    accent-color: var(--dark-blue);
+                }
+            }
+
+            input[type="checkbox"] {
+                &:checked {
+                    background-color: var(--dark-blue);
+                    border-color: var(--dark-blue);
+                    accent-color: var(--dark-blue);
+                }
+            }
+
+            input[type="radio"] {
+                &:checked {
+                    accent-color: var(--dark-blue);
+                    border-color: var(--dark-blue);
+                }
             }
         }
     }
