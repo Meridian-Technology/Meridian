@@ -4,6 +4,7 @@ import person from "../../assets/Icons/Profile.svg";
 import calendar from "../../assets/Icons/Calendar.svg";
 import locate from "../../assets/Icons/Locate.svg";
 import profile from "../../assets/Icons/Profile2.svg";
+import defaultAvatar from "../../assets/defaultAvatar.svg";
 import FormViewer from '../../components/FormViewer/FormViewer';
 import Header from '../../components/Header/Header';
 import Popup from '../../components/Popup/Popup';
@@ -13,6 +14,7 @@ import apiRequest from '../../utils/postRequest';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
+import { useCache } from '../../CacheContext';
 import './Org.scss';
 import { useNavigate } from 'react-router-dom';
 
@@ -28,7 +30,40 @@ const Org = ({ orgData, refetch }) => {
     const [isLoading, setIsLoading] = useState({ join: false, follow: false, leave: false });
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
     const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+    const { getFriends } = useCache();
+    const [friendsData, setFriendsData] = useState(null);
     console.log(orgData);
+
+    // Fetch friends using cache
+    useEffect(() => {
+        const fetchFriends = async () => {
+            const data = await getFriends();
+            setFriendsData(data);
+        };
+        fetchFriends();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only fetch once on mount, cache handles subsequent calls
+
+    // Calculate mutual friends (friends who are members)
+    const mutualFriends = React.useMemo(() => {
+        if (!friendsData?.success || !members || !Array.isArray(members)) {
+            return [];
+        }
+        
+        const friendIds = new Set(friendsData.data.map(friend => friend._id.toString()));
+        
+        return members
+            .filter(member => {
+                const memberUserId = member.user_id?._id?.toString() || member.user_id?.toString();
+                return memberUserId && friendIds.has(memberUserId);
+            })
+            .map(member => ({
+                _id: member.user_id?._id || member.user_id,
+                name: member.user_id?.name || '',
+                username: member.user_id?.username || '',
+                picture: member.user_id?.picture || null
+            }));
+    }, [friendsData, members]);
 
     const handleApply = async (formAnswers = null) => {
         try {
@@ -367,12 +402,28 @@ const Org = ({ orgData, refetch }) => {
                     }
                 </div>
 
-                {!orgData.org.isMember && (
-                    <p className="mutuals-stats">
-                        <img src = {profile} className='mutuals' alt =""/>
-                        <img src = {profile} alt =""/>
-                        Friend and 1 other are members
-                    </p>
+                {!orgData.org.isMember && mutualFriends.length > 0 && (
+                    <div className="mutuals-stats">
+                        <div className="mutual-friends-avatars">
+                            {mutualFriends.slice(0, 3).map((friend, index) => (
+                                <img 
+                                    key={friend._id} 
+                                    src={friend.picture || defaultAvatar} 
+                                    alt={friend.name || friend.username}
+                                    className="mutual-avatar"
+                                    style={{ zIndex: 3 - index }}
+                                />
+                            ))}
+                        </div>
+                        <span className="mutual-friends-text">
+                            {mutualFriends.length === 1 
+                                ? `${mutualFriends[0].name || mutualFriends[0].username} is already a member`
+                                : mutualFriends.length === 2
+                                ? `${mutualFriends[0].name || mutualFriends[0].username} and ${mutualFriends[1].name || mutualFriends[1].username} are already members`
+                                : `${mutualFriends.slice(0, 2).map(f => f.name || f.username).join(' and ')}, and ${mutualFriends.length - 2} other friend${mutualFriends.length - 2 === 1 ? '' : 's'} ${mutualFriends.length - 2 === 1 ? 'is' : 'are'} already members`
+                            }
+                        </span>
+                    </div>
                 )}
 
                 <div className="org-dashboard">

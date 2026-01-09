@@ -189,6 +189,32 @@
         padding-left: 0;
         margin-left: 0;
         flex-wrap: wrap;
+        gap: 10px;
+        
+        .mutual-friends-avatars {
+            display: flex;
+            align-items: center;
+            position: relative;
+            height: 24px;
+            
+            .mutual-avatar {
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                border: 2px solid var(--background);
+                object-fit: cover;
+                position: relative;
+                
+                &:not(:first-child) {
+                    margin-left: -8px;
+                }
+            }
+        }
+        
+        .mutual-friends-text {
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
         
         img{
             height: 15px;

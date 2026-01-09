@@ -14,6 +14,7 @@ import useClickOutside from '../../hooks/useClickOutside.js';
 import useOutsideClick from '../../hooks/useClickOutside.js';
 import EventsGrad from '../../assets/Gradients/EventsGrad.png';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
+import { useCache } from '../../CacheContext';
 
 function Friends() {
     const { isAuthenticated, isAuthenticating, user, checkedIn } = useAuth();
@@ -30,6 +31,7 @@ function Friends() {
     const wrapperRef = useRef(null);
     
     const { addNotification } = useNotification();
+    const { refreshFriends } = useCache();
 
     useEffect(() => {
         console.log(isAuthenticating);
@@ -44,11 +46,18 @@ function Friends() {
     useEffect(() => {
         const fetchFriends = async () => {
             try{
-                const result = await getFriends();
-                setFriends(result);
+                // Refresh friends cache when navigating to Friends page
+                const refreshedData = await refreshFriends();
+                if(refreshedData?.success) {
+                    setFriends(refreshedData.data);
+                } else {
+                    // Fallback to regular getFriends if refresh fails
+                    const result = await getFriends();
+                    setFriends(result);
+                }
             } catch (error){
                 console.error('Error fetching friends:', error);
-                if(error.response.status === 403){
+                if(error.response?.status === 403){
                     navigate('/login');
                 }
             }
@@ -60,7 +69,7 @@ function Friends() {
                 setFriendRequests(result);
             } catch (error){
                 console.error('Error fetching friend requests:', error);
-                if(error.response.status === 403){
+                if(error.response?.status === 403){
                     navigate('/login');
                 }
             }
@@ -70,7 +79,8 @@ function Friends() {
             fetchFriends();
             fetchFriendRequests();
         }
-    }, [isAuthenticated, reload]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated, reload]); // refreshFriends is stable from context, navigate is stable
 
     useEffect(() => {
         const search = async () => {
