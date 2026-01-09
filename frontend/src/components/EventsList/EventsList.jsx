@@ -80,14 +80,14 @@ const EventsList = ({
 
     return (
         <div className="events-list" role="list" aria-label="Events list">
-            {hasFriendsFilter && (
+  {/* I'm not sure why we added this i ndicator, i'm removing it for now but leaving as a comment encase the format was wanted elsewhere -Raven */}
+            {/* {hasFriendsFilter && (
                 <div className="friends-filter-indicator">
                     <div className="indicator-content">
-                        <span className="icon">👥</span>
                         <span className="text">Showing events where your friends are going</span>
                     </div>
                 </div>
-            )}
+            )} */}
             {groupedEvents.map(({ date, events }, groupIndex) => (
                 <div key={date.toISOString()} className="date-group" role="group" aria-label={`Events on ${formatDate(date)}`}>
                     <div className="date-separator" role="heading" aria-level="2">{formatDate(date)}</div>

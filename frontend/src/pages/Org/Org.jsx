@@ -257,6 +257,8 @@ const Org = ({ orgData, refetch }) => {
     }
 
     // Get role order for sorting
+
+    // Note: we likely need to refactor custome roles a bit to apply ordering
     const getRoleOrder = (roleName) => {
         // Default role order mapping
         const defaultOrder = {
@@ -554,18 +556,11 @@ const Org = ({ orgData, refetch }) => {
                         >
                             Members
                         </button>
-                        <button
-                            className={`filter-button ${activeTab === 'announcements' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('announcements')}
-                        >
-                            Announcements
-                        </button>
                     </div>
                 </div>
                 {
                     activeTab === 'events' ? (
                         <div className="events-content">
-                            <h1>Upcoming Events for {overview.org_name}</h1>
                             <OrgEvents orgId={overview?._id} />
                         </div>
                     ) : activeTab === 'members' ? (
