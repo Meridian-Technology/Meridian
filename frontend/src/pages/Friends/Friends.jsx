@@ -31,7 +31,7 @@ function Friends() {
     const wrapperRef = useRef(null);
     
     const { addNotification } = useNotification();
-    const { refreshFriends } = useCache();
+    const { refreshFriends, getFriends: getFriendsFromCache } = useCache();
 
     useEffect(() => {
         console.log(isAuthenticating);
@@ -51,12 +51,28 @@ function Friends() {
                 if(refreshedData?.success) {
                     setFriends(refreshedData.data);
                 } else {
-                    // Fallback to regular getFriends if refresh fails
-                    const result = await getFriends();
-                    setFriends(result);
+                    // Fallback to cached getFriends if refresh fails
+                    const cachedData = await getFriendsFromCache();
+                    if(cachedData?.success) {
+                        setFriends(cachedData.data);
+                    } else {
+                        // Final fallback to FriendsHelpers version
+                        const result = await getFriends();
+                        setFriends(result);
+                    }
                 }
             } catch (error){
                 console.error('Error fetching friends:', error);
+                // Fallback to FriendsHelpers version on error
+                try {
+                    const result = await getFriends();
+                    setFriends(result);
+                } catch (fallbackError) {
+                    console.error('Fallback getFriends also failed:', fallbackError);
+                    if(fallbackError.response?.status === 403){
+                        navigate('/login');
+                    }
+                }
                 if(error.response?.status === 403){
                     navigate('/login');
                 }

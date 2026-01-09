@@ -212,6 +212,50 @@ export const CacheProvider = ({children}) =>{
         }
     }
 
+    const getFriends = async () => {
+        try {
+            const cacheKey = '/getFriends';
+            if(cache[cacheKey]){
+                return cache[cacheKey];
+            }
+            
+            const responseBody = await apiRequest('/getFriends', null, {
+                method: 'GET'
+            });
+            
+            if(!responseBody.success){
+                console.error('Error fetching friends:', responseBody.message);
+                return { success: false, data: [] };
+            }
+            
+            cache[cacheKey] = responseBody;
+            return responseBody;
+        } catch (error){
+            console.error('Error fetching friends:', error);
+            return { success: false, data: [] };
+        }
+    };
+
+    const refreshFriends = async () => {
+        try {
+            const cacheKey = '/getFriends';
+            const responseBody = await apiRequest('/getFriends', null, {
+                method: 'GET'
+            });
+            
+            if(!responseBody.success){
+                console.error('Error refreshing friends:', responseBody.message);
+                return { success: false, data: [] };
+            }
+            
+            cache[cacheKey] = responseBody;
+            return responseBody;
+        } catch (error){
+            console.error('Error refreshing friends:', error);
+            return { success: false, data: [] };
+        }
+    };
+
     function debounce(func, wait) { //move logic to other file
         let timeout;
         return function executedFunction(...args) {
@@ -226,7 +270,7 @@ export const CacheProvider = ({children}) =>{
 
 
     return (
-        <CacheContext.Provider value={{ getRooms, getRoom, getRoomUpdate, getFreeRooms, getBatch, search, allSearch, debounce }}>
+        <CacheContext.Provider value={{ getRooms, getRoom, getRoomUpdate, getFreeRooms, getBatch, search, allSearch, getFriends, refreshFriends, debounce }}>
             {children}
         </CacheContext.Provider>
     );
