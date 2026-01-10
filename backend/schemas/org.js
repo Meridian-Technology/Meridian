@@ -67,6 +67,11 @@ const OrgSchema= new Schema({
             order: {
                 type: Number,
                 default: 0
+            },
+            color: {
+                type: String,
+                required: false,
+                default: null
             }
         }],
         required: true,
@@ -80,29 +85,8 @@ const OrgSchema= new Schema({
                 canManageRoles: true,
                 canManageEvents: true,
                 canViewAnalytics: true,
-                order: 0
-            },
-            {
-                name: 'admin',
-                displayName: 'Administrator',
-                permissions: ['manage_members', 'manage_events', 'view_analytics'],
-                isDefault: false,
-                canManageMembers: true,
-                canManageRoles: false,
-                canManageEvents: true,
-                canViewAnalytics: true,
-                order: 1
-            },
-            {
-                name: 'officer',
-                displayName: 'Officer',
-                permissions: ['manage_events'],
-                isDefault: false,
-                canManageMembers: false,
-                canManageRoles: false,
-                canManageEvents: true,
-                canViewAnalytics: false,
-                order: 2
+                order: 0,
+                color: '#dc2626'
             },
             {
                 name: 'member',
@@ -113,7 +97,8 @@ const OrgSchema= new Schema({
                 canManageRoles: false,
                 canManageEvents: false,
                 canViewAnalytics: false,
-                order: 3
+                order: 1,
+                color: '#6b7280'
             }
         ]
     },

@@ -5,8 +5,12 @@ import RoleManager from '../../../../components/RoleManager/RoleManager';
 const Roles = ({ formData, setFormData, onComplete }) => {
     const [customRoles, setCustomRoles] = useState(formData.customRoles || []);
 
+    // Update formData when customRoles change
     useEffect(() => {
-        setFormData(prev => ({ ...prev, customRoles }));
+        setFormData(prev => ({ 
+            ...prev, 
+            customRoles
+        }));
     }, [customRoles, setFormData]);
 
     useEffect(() => {
@@ -22,8 +26,10 @@ const Roles = ({ formData, setFormData, onComplete }) => {
     return (
         <div className="roles-step">
             <div className="form-section">
-                <h3>Define custom roles (optional)</h3>
-                <p>Create custom roles for your organization members. You can always add or modify these later.</p>
+                <div className="roles-header">
+                    <h3>Define roles for your organization</h3>
+                    <p>Create custom roles for your organization members. You can always add or modify these later.</p>
+                </div>
                 
                 <div className="role-manager-container">
                     <RoleManager
@@ -38,4 +44,3 @@ const Roles = ({ formData, setFormData, onComplete }) => {
 };
 
 export default Roles;
-

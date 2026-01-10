@@ -11,7 +11,6 @@ import BasicInfo from './Steps/BasicInfo/BasicInfo';
 import ProfileImage from './Steps/ProfileImage/ProfileImage';
 import BannerImage from './Steps/BannerImage/BannerImage';
 import SocialLinks from './Steps/SocialLinks/SocialLinks';
-import Roles from './Steps/Roles/Roles';
 import InviteMembers from './Steps/InviteMembers/InviteMembers';
 
 const CreateOrg = () => {
@@ -25,7 +24,6 @@ const CreateOrg = () => {
         profileImage: null,
         bannerImage: null,
         socialLinks: [],
-        customRoles: [],
         invitedMembers: []
     });
 
@@ -56,12 +54,6 @@ const CreateOrg = () => {
         },
         {
             id: 4,
-            title: 'Custom Roles',
-            description: 'Define custom roles for your organization',
-            component: Roles,
-        },
-        {
-            id: 5,
             title: 'Invite Members',
             description: 'Invite friends to join your organization',
             component: InviteMembers,
@@ -77,8 +69,7 @@ const CreateOrg = () => {
             case 1: // ProfileImage - optional, marked complete when visited
             case 2: // BannerImage - optional, marked complete when visited
             case 3: // SocialLinks - optional, marked complete when visited
-            case 4: // Roles - optional, marked complete when visited
-            case 5: // InviteMembers - optional, marked complete when visited
+            case 4: // InviteMembers - optional, marked complete when visited
                 return false; // Don't mark as complete until step component calls onComplete
             default:
                 return false;
@@ -92,11 +83,6 @@ const CreateOrg = () => {
             // Append basic fields
             submitData.append('org_name', formData.name);
             submitData.append('org_description', formData.description);
-            
-            // Append custom roles if provided
-            if (formData.customRoles && formData.customRoles.length > 0) {
-                submitData.append('custom_roles', JSON.stringify(formData.customRoles));
-            }
             
             // Append social links if provided
             if (formData.socialLinks && formData.socialLinks.length > 0) {

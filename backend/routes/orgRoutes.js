@@ -192,7 +192,7 @@ router.post("/create-org", verifyToken, upload.fields([
 
         const cleanOrgDescription = clean(org_description);
 
-        // Prepare default roles
+        // Prepare default roles (only owner and member)
         const defaultRoles = [
             {
                 name: 'owner',
@@ -203,29 +203,8 @@ router.post("/create-org", verifyToken, upload.fields([
                 canManageRoles: true,
                 canManageEvents: true,
                 canViewAnalytics: true,
-                order: 0
-            },
-            {
-                name: 'admin',
-                displayName: 'Administrator',
-                permissions: ['manage_members', 'manage_events', 'view_analytics'],
-                isDefault: false,
-                canManageMembers: true,
-                canManageRoles: false,
-                canManageEvents: true,
-                canViewAnalytics: true,
-                order: 1
-            },
-            {
-                name: 'officer',
-                displayName: 'Officer',
-                permissions: ['manage_events'],
-                isDefault: false,
-                canManageMembers: false,
-                canManageRoles: false,
-                canManageEvents: true,
-                canViewAnalytics: false,
-                order: 2
+                order: 0,
+                color: '#dc2626'
             },
             {
                 name: 'member',
@@ -236,23 +215,31 @@ router.post("/create-org", verifyToken, upload.fields([
                 canManageRoles: false,
                 canManageEvents: false,
                 canViewAnalytics: false,
-                order: 3
+                order: 1,
+                color: '#6b7280'
             }
         ];
 
-        // Parse and merge custom roles if provided
+        // Start with default roles
         let allRoles = [...defaultRoles];
+        let nextOrder = defaultRoles.length;
+
+        // Parse and merge custom roles if provided
         if (custom_roles) {
             try {
                 const parsedCustomRoles = JSON.parse(custom_roles);
                 if (Array.isArray(parsedCustomRoles)) {
                     // Add custom roles with proper order
-                    parsedCustomRoles.forEach((customRole, index) => {
+                    parsedCustomRoles.forEach((customRole) => {
                         const roleWithOrder = {
                             ...customRole,
-                            order: defaultRoles.length + index,
+                            order: nextOrder++,
                             isDefault: false
                         };
+                        // Ensure color is set (use default if not provided)
+                        if (!roleWithOrder.color) {
+                            roleWithOrder.color = '#a855f7'; // Default purple for custom roles
+                        }
                         allRoles.push(roleWithOrder);
                     });
                 }

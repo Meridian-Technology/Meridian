@@ -575,8 +575,9 @@ const Org = ({ orgData, refetch }) => {
                                         const isPending = isPendingFriendRequest(memberUser);
                                         const isLoading = friendRequestLoading[memberUserIdStr];
                                         const role = member.role || 'member';
-                                        const roleColor = getOrgRoleColor(role, 1);
-                                        const roleBgColor = getOrgRoleColor(role, 0.1);
+                                        const rolesArray = overview?.positions || [];
+                                        const roleColor = getOrgRoleColor(role, 1, rolesArray);
+                                        const roleBgColor = getOrgRoleColor(role, 0.1, rolesArray);
                                         
                                         return (
                                             <div key={member._id || memberUserIdStr} className="member-card">
