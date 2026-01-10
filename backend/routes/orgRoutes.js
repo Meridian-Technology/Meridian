@@ -135,16 +135,21 @@ router.get("/get-org-by-name/:name", verifyToken,  async (req, res) => {
     }
 });
 
-router.post("/create-org", verifyToken, upload.single('image'), handleMulterError, async (req, res) => {
+router.post("/create-org", verifyToken, upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'bannerImage', maxCount: 1 }
+]), handleMulterError, async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, "Org", "OrgMember", "User");
     const {
         org_name,
         org_description,
         positions,
         weekly_meeting,
-        custom_roles
+        custom_roles,
+        socialLinks
     } = req.body;
-    const file = req.file;
+    const profileFile = req.files?.image?.[0];
+    const bannerFile = req.files?.bannerImage?.[0];
 
     try {
         //Verify user and have their orgs saved under them
@@ -257,25 +262,49 @@ router.post("/create-org", verifyToken, upload.single('image'), handleMulterErro
             }
         }
 
+        // Parse social links if provided
+        let parsedSocialLinks = [];
+        if (socialLinks) {
+            try {
+                parsedSocialLinks = typeof socialLinks === 'string' ? JSON.parse(socialLinks) : socialLinks;
+                if (!Array.isArray(parsedSocialLinks)) {
+                    parsedSocialLinks = [];
+                }
+            } catch (error) {
+                console.error('Error parsing social links:', error);
+                parsedSocialLinks = [];
+            }
+        }
+
         const newOrg = new Org({
             org_name: cleanOrgName,
             org_description: cleanOrgDescription,
             positions: allRoles,
             weekly_meeting: weekly_meeting || null,
+            socialLinks: parsedSocialLinks,
             //Owner is the user
             owner: userId,
         });
 
-        // Handle image upload if file is present
-        if (file) {
-            console.log('Uploading image');
-            const fileExtension = path.extname(file.originalname);
+        // Handle profile image upload if file is present
+        if (profileFile) {
+            console.log('Uploading profile image');
+            const fileExtension = path.extname(profileFile.originalname);
             const fileName = `${newOrg._id}${fileExtension}`;
-            const imageUrl = await uploadImageToS3(file, 'orgs', fileName);
+            const imageUrl = await uploadImageToS3(profileFile, 'orgs', fileName);
             newOrg.org_profile_image = imageUrl;
         } else {
             // Set default image if no file uploaded
             newOrg.org_profile_image = '/Logo.svg';
+        }
+
+        // Handle banner image upload if file is present
+        if (bannerFile) {
+            console.log('Uploading banner image');
+            const fileExtension = path.extname(bannerFile.originalname);
+            const fileName = `${newOrg._id}_banner${fileExtension}`;
+            const bannerUrl = await uploadImageToS3(bannerFile, 'orgs', fileName);
+            newOrg.org_banner_image = bannerUrl;
         }
 
         const newMember = new OrgMember({

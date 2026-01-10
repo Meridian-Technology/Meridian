@@ -1,0 +1,53 @@
+.roles-step {
+    min-height: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    max-width: 100%;
+    box-sizing: border-box;
+
+    .form-section {
+        min-height: 0;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        overflow: hidden;
+        max-width: 100%;
+        box-sizing: border-box;
+
+        h3 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin: 0;
+        }
+
+        p {
+            font-size: 16px;
+            color: #6b7280;
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        .role-manager-container {
+            width: 100%;
+            min-height: 0;
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            max-width: 100%;
+            box-sizing: border-box;
+            
+            .role-manager {
+                border: 1px solid #e5e7eb;
+                background: #fff;
+                padding: 20px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                border-radius: 10px;
+            }
+        }
+    }
+}
+
