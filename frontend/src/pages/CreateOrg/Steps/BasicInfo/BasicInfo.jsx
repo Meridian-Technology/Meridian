@@ -141,19 +141,19 @@ const BasicInfo = ({ formData, setFormData, onComplete }) => {
                                 {nameValid === 0 && (
                                     <div className="checking">
                                         <img src={waiting} alt="" />
-                                        <p>checking name...</p>
+                                        <p className="checking-text">checking name...</p>
                                     </div>
                                 )}
                                 {nameValid === 1 && (
                                     <div className="available">
                                         <img src={check} alt="" />
-                                        <p>name is available</p>
+                                        <p className="checking-text">name is available</p>
                                     </div>
                                 )}
                                 {nameValid === 3 && (
                                     <div className="invalid">
                                         <img src={error} alt="" />
-                                        <p>{nameError}</p>
+                                        <p className="checking-text">{nameError}</p>
                                     </div>
                                 )}
                             </div>

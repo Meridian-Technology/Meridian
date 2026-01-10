@@ -48,9 +48,35 @@
                         border: 2px solid #e5e7eb;
                     }
 
+                    .upload-placeholder {
+                        width: 200px;
+                        height: 200px;
+                        border-radius: 50%;
+                        border: 2px dashed #d1d5db;
+                        background-color: #f9fafb;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        transition: all 0.3s;
+                        z-index: 1;
+
+                        .upload-placeholder-icon {
+                            font-size: 64px;
+                            color: #9ca3af;
+                        }
+                    }
+
                     &:hover {
                         img {
                             filter: blur(4px);
+                        }
+                        .upload-placeholder {
+                            border-color: #6d8efa;
+                            background-color: #f0f4ff;
+                            
+                            .upload-placeholder-icon {
+                                color: #6d8efa;
+                            }
                         }
                         .edit-icon {
                             opacity: 1;

@@ -59,10 +59,16 @@ const ProfileImage = ({ formData, setFormData, onComplete }) => {
                         onClick={() => setShowImageUploadPopup(true)}
                     >
                         <div className="edit-icon-container">
-                            <img 
-                                src={imagePreview || '/Logo.svg'} 
-                                alt="Organization profile" 
-                            />
+                            {imagePreview ? (
+                                <img 
+                                    src={imagePreview} 
+                                    alt="Organization profile" 
+                                />
+                            ) : (
+                                <div className="upload-placeholder">
+                                    <Icon icon="mdi:image-plus" className="upload-placeholder-icon" />
+                                </div>
+                            )}
                             <Icon icon="mdi:pencil" className="edit-icon" />
                             {imagePreview && (
                                 <button 

@@ -87,6 +87,11 @@
                         display: flex;
                         align-items: center;
                         gap: 8px;
+
+                        .checking-text {
+                            align-self: center;
+                            margin-bottom: 0;
+                        }
                     }
 
                     .available {
@@ -94,6 +99,12 @@
                         display: flex;
                         align-items: center;
                         gap: 8px;
+
+
+                        .checking-text {
+                            align-self: center;
+                            margin-bottom: 0;
+                        }
                     }
 
                     .invalid {
@@ -101,6 +112,11 @@
                         display: flex;
                         align-items: center;
                         gap: 8px;
+
+                        .checking-text {
+                            align-self: center;
+                            margin-bottom: 0;
+                        }
                     }
                 }
             }

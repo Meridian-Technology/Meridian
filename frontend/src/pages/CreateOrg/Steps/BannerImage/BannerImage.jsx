@@ -59,11 +59,17 @@ const BannerImage = ({ formData, setFormData, onComplete }) => {
                         onClick={() => setShowBannerUploadPopup(true)}
                     >
                         <div className="edit-icon-container banner-container">
-                            <img 
-                                src={imagePreview || '/Logo.svg'} 
-                                alt="Organization banner" 
-                                className="banner-preview"
-                            />
+                            {imagePreview ? (
+                                <img 
+                                    src={imagePreview} 
+                                    alt="Organization banner" 
+                                    className="banner-preview"
+                                />
+                            ) : (
+                                <div className="upload-placeholder banner-placeholder">
+                                    <Icon icon="mdi:image-plus" className="upload-placeholder-icon" />
+                                </div>
+                            )}
                             <Icon icon="mdi:pencil" className="edit-icon" />
                             {imagePreview && (
                                 <button 
