@@ -16,6 +16,7 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [checkedIn, setCheckedIn] = useState(null);
     const [authMethod, setAuthMethod] = useState(null); // 'google', 'saml', 'email'
+    const [friendRequests, setFriendRequests] = useState({ received: [], sent: [] });
 
     const { addNotification } = useNotification();
 
@@ -28,7 +29,14 @@ export const AuthProvider = ({ children }) => {
             // Handle response...
             if (response.success) {
                 setUser(response.data.user);
-                // Determine auth method from user data
+                // Set friend requests if provided
+                if (response.data.friendRequests) {
+                    setFriendRequests({
+                        received: response.data.friendRequests.received || [],
+                        sent: response.data.friendRequests.sent || []
+                    });
+                }
+                // Determine auth method frwom user data
                 if (response.data.user.samlProvider) {
                     setAuthMethod('saml');
                 } else if (response.data.user.googleId) {
@@ -67,6 +75,13 @@ export const AuthProvider = ({ children }) => {
                 setIsAuthenticated(true);
                 setUser(response.data.data.user);
                 setAuthMethod('email');
+                // Set friend requests if provided (may not be included in login response)
+                if (response.data.data.friendRequests) {
+                    setFriendRequests({
+                        received: response.data.data.friendRequests.received || [],
+                        sent: response.data.data.friendRequests.sent || []
+                    });
+                }
                 console.log(response.data);
                 addNotification({ title:'Logged in successfully',type: 'success'});
                 
@@ -204,6 +219,21 @@ export const AuthProvider = ({ children }) => {
         }
     }
 
+    const refreshFriendRequests = async () => {
+        try {
+            const response = await apiRequest('/friend-requests', null, { method: 'GET' });
+            if (response.success) {
+                setFriendRequests({
+                    received: response.data.received || [],
+                    sent: response.data.sent || []
+                });
+                return response.data;
+            }
+        } catch (error) {
+            console.error('Error refreshing friend requests:', error);
+        }
+    };
+
     return (
         <AuthContext.Provider value={{ 
             isAuthenticated, 
@@ -218,7 +248,9 @@ export const AuthProvider = ({ children }) => {
             getDeveloper, 
             checkedIn, 
             getCheckedIn,
-            authMethod 
+            authMethod,
+            friendRequests,
+            refreshFriendRequests
         }}>
             {children}
         </AuthContext.Provider>

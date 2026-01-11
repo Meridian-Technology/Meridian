@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './ImageUpload.scss';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import CircleX from '../../assets/Icons/Circle-X.svg';
@@ -15,14 +15,45 @@ const ImageUpload = ({
     showPrompt = true,
     orientation = "vertical",
     previewImageParams = {}, // { shape: 'circle' | 'square' | 'rectangle' }
-    showActions = true // Enable/disable upload/cancel buttons
+    showActions = true, // Enable/disable upload/cancel buttons
+    previewMessage = "Drag a new image to replace, or click outside to save", // Custom message when image is selected
+    value = null // Initial file value to restore preview
 }) => {
-    const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedFile, setSelectedFile] = useState(value);
     const [message, setMessage] = useState('');
-    const [fileName, setFileName] = useState('');
+    const [fileName, setFileName] = useState(value?.name || '');
     const [isDragging, setIsDragging] = useState(false);
     const [image, setImage] = useState(null);
     const fileInputRef = useRef(null);
+
+    // Helper function to compare files by properties (not reference)
+    const filesEqual = (file1, file2) => {
+        if (!file1 && !file2) return true;
+        if (!file1 || !file2) return false;
+        return file1.name === file2.name && 
+               file1.size === file2.size && 
+               file1.lastModified === file2.lastModified;
+    };
+
+    // Restore preview when value prop changes (e.g., navigating back to step)
+    useEffect(() => {
+        if (value && !filesEqual(value, selectedFile)) {
+            setSelectedFile(value);
+            setFileName(value.name || '');
+            // Create preview from File object
+            const reader = new FileReader();
+            reader.onload = () => {
+                setImage(reader.result);
+            };
+            reader.readAsDataURL(value);
+        } else if (!value && selectedFile) {
+            // Clear if value is null but we have a selected file
+            setSelectedFile(null);
+            setFileName('');
+            setImage(null);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [value]);
 
     const onFileChange = event => {
         const file = event.target.files[0];
@@ -159,7 +190,7 @@ const ImageUpload = ({
                     :
                     <>
                         {selectedFile && !showActions ? (
-                            <p className="preview-message">Drag a new image to replace, or click outside to save</p>
+                            <p className="preview-message">{previewMessage}</p>
                         ) : (
                             <p className="upload-message">{message || uploadMessage}</p>
                         )}

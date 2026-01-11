@@ -217,12 +217,16 @@ function Members({ expandedClass, org }) {
     };
 
     const getRoleColor = (roleName) => {
-        const roleColors = {
-            'owner': '#dc2626',
-            'admin': '#ea580c',
-            'officer': '#d97706',
+        // Try to find the role object and use its color property
+        const role = roles.find(r => r.name === roleName);
+        if (role && role.color) {
+            return role.color;
+        }
+
+        const roleColors = {'owner': '#dc2626',
             'member': '#059669'
-        };
+        }
+   
         return roleColors[roleName] || '#6b7280';
     };
 
@@ -338,7 +342,7 @@ function Members({ expandedClass, org }) {
                                         )}
                                     </div>
                                     
-                                    <div className="role-badge" style={{ backgroundColor: getOrgRoleColor(member.role, 0.1), color: getOrgRoleColor(member.role, 1) }}>
+                                    <div className="role-badge" style={{ backgroundColor: getOrgRoleColor(member.role, 0.1, roles), color: getOrgRoleColor(member.role, 1, roles) }}>
                                         {getRoleDisplayName(member.role)}
                                     </div>
                                     
@@ -494,36 +498,78 @@ function Members({ expandedClass, org }) {
                     }}
                     title="Assign Role"
                     size="medium"
+                    customClassName="role-assignment-modal"
                 >
                     {selectedMember && (
                         <>
                             <div className="member-summary">
-                                <h4>Assigning role for:</h4>
-                                <p>{selectedMember.user_id?.name} (@{selectedMember.user_id?.username})</p>
-                                <p>Current role: <span style={{ color: getRoleColor(selectedMember.role) }}>
-                                    {getRoleDisplayName(selectedMember.role)}
-                                </span></p>
+                                <div className="member-summary-header">
+                                    <div className="member-avatar-summary">
+                                        {selectedMember.user_id?.picture ? (
+                                            <img src={selectedMember.user_id.picture} alt={selectedMember.user_id.name} />
+                                        ) : (
+                                            <div className="avatar-placeholder">
+                                                {selectedMember.user_id?.name?.charAt(0) || 'U'}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="member-summary-info">
+                                        <h4>{selectedMember.user_id?.name || 'Unknown User'}</h4>
+                                        <p className="member-username">@{selectedMember.user_id?.username}</p>
+                                    </div>
+                                </div>
+                                <div className="current-role-display">
+                                    <span className="current-role-label">Current Role:</span>
+                                    <div 
+                                        className="current-role-badge"
+                                        style={{ 
+                                            backgroundColor: getOrgRoleColor(selectedMember.role, 0.1, roles),
+                                            color: getOrgRoleColor(selectedMember.role, 1, roles)
+                                        }}
+                                    >
+                                        <div 
+                                            className="role-color-indicator"
+                                            style={{ backgroundColor: getOrgRoleColor(selectedMember.role, 1, roles) }}
+                                        />
+                                        {getRoleDisplayName(selectedMember.role)}
+                                    </div>
+                                </div>
                             </div>
                             
                             <div className="role-selection">
-                                <h4>Select New Role:</h4>
+                                <h4>Select New Role</h4>
                                 <div className="role-options">
-                                    {roles.map(role => (
-                                        <button
-                                            key={role.name}
-                                            className={`role-option ${selectedMember.role === role.name ? 'current' : ''}`}
-                                            onClick={() => handleRoleAssignment(selectedMember.user_id._id, role.name)}
-                                            disabled={role.name === 'owner' && selectedMember.role !== 'owner'}
-                                        >
-                                            <div className="role-info">
-                                                <h5>{role.displayName}</h5>
-                                                <p>{role.permissions.join(', ') || 'No specific permissions'}</p>
-                                            </div>
-                                            {selectedMember.role === role.name && (
-                                                <Icon icon="ic:round-check" className="current-indicator" />
-                                            )}
-                                        </button>
-                                    ))}
+                                    {roles.map(role => {
+                                        const isCurrentRole = selectedMember.role === role.name;
+                                        const isDisabled = role.name === 'owner' && selectedMember.role !== 'owner';
+                                        
+                                        return (
+                                            <button
+                                                key={role.name}
+                                                className={`role-option ${isCurrentRole ? 'current' : ''} ${isDisabled ? 'disabled' : ''}`}
+                                                onClick={() => !isDisabled && handleRoleAssignment(selectedMember.user_id._id, role.name)}
+                                                disabled={isDisabled}
+                                            >
+                                                <div className="role-option-content">
+                                                    <div 
+                                                        className="role-color-indicator"
+                                                        style={{ backgroundColor: getOrgRoleColor(role, 1, roles) }}
+                                                    />
+                                                    <div className="role-info">
+                                                        <h5>{role.displayName || role.name}</h5>
+                                                        <p>
+                                                            {role.permissions && role.permissions.length > 0 
+                                                                ? role.permissions.slice(0, 3).join(', ') + (role.permissions.length > 3 ? '...' : '')
+                                                                : 'No specific permissions'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {isCurrentRole && (
+                                                    <Icon icon="mdi:check-circle" className="current-indicator" />
+                                                )}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </>

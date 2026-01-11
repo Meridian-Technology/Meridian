@@ -5,6 +5,7 @@ const friendshipSchema = require('../schemas/friendship');
 const userSchema = require('../schemas/user');
 const getModels = require('../services/getModelService');
 const NotificationService = require('../services/notificationService');
+const { getFriendRequests } = require('../utilities/friendUtils');
 
 
 router.get('/user-search/:searchTerm', verifyToken, async (req, res) => {
@@ -120,14 +121,12 @@ router.get('/friend-requests', verifyToken, async (req, res) => {
     const userId = req.user.userId;
 
     try {
-        const requests = await Friendship.find({
-            recipient: userId,
-            status: 'pending'   
-        }).populate('requester');
+        const friendRequests = await getFriendRequests(Friendship, userId);
+        
         res.json({
             success: true,
             message: 'Friend requests found',
-            data: requests
+            data: friendRequests
         });
     } catch (error) {
         res.json({

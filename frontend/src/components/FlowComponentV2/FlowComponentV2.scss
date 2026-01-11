@@ -278,7 +278,16 @@
             justify-content: flex-start;
             min-height: 0; // Important for flex child to shrink
             overflow-y: auto; // Allow content to scroll if needed
+            overflow-x: hidden; // Prevent horizontal overflow
             margin-bottom: 20px; // Space before navigation buttons
+            max-width: 100%; // Ensure content doesn't exceed container width
+            box-sizing: border-box;
+            
+            // Ensure all direct children respect width constraints
+            > * {
+                max-width: 100%;
+                box-sizing: border-box;
+            }
         }
 
         .navigation-buttons {

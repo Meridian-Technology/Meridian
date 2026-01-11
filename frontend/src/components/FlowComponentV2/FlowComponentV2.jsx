@@ -54,17 +54,13 @@ const FlowComponentV2 = ({
         }
     };
 
-    // Initialize validation state based on existing form data
+    // Initialize validation state - start with all steps as incomplete
+    // Steps will be marked as complete when their onComplete callback is called
     useEffect(() => {
-        const initialValidation = steps.map((step, index) => isStepCompleted(index));
+        const initialValidation = steps.map(() => false);
         setStepValidation(initialValidation);
-    }, [formData, steps.length]);
-
-    // Update validation when formData changes
-    useEffect(() => {
-        const newValidation = steps.map((step, index) => isStepCompleted(index));
-        setStepValidation(newValidation);
-    }, [formData, steps.length]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [steps.length]);
 
     const handleStepComplete = (stepIndex, isValid) => {
         setStepValidation(prev => {
@@ -125,8 +121,8 @@ const FlowComponentV2 = ({
             return missingFields.length === 0;
         }
         
-        // Fallback to step validation
-        return steps.every((_, index) => isStepCompleted(index));
+        // Fallback to step validation - check stepValidation first (set by onComplete), then validation function
+        return steps.every((_, index) => stepValidation[index] || isStepCompleted(index));
     }
     
     // Get missing fields for display
@@ -144,7 +140,8 @@ const FlowComponentV2 = ({
     }
 
     const CurrentStepComponent = steps[currentStep].component;
-    const canProceed = isStepCompleted(currentStep);
+    // Check stepValidation first (set by onComplete callback), then fall back to validation function
+    const canProceed = stepValidation[currentStep] || isStepCompleted(currentStep);
     const isLastStep = currentStep === steps.length - 1;
 
     return (
@@ -183,7 +180,8 @@ const FlowComponentV2 = ({
                     
                     <div className="steps-list">
                         {steps.map((step, index) => {
-                            const isCompleted = isStepCompleted(index);
+                            // Check stepValidation first (set by onComplete callback), then fall back to validation function
+                            const isCompleted = stepValidation[index] || isStepCompleted(index);
                             return (
                                 <div 
                                     key={step.id}
@@ -273,7 +271,9 @@ const FlowComponentV2 = ({
                                                 <h3 style={{ margin: 0 }}>Missing Required Fields</h3>
                                             </div>
                                             <p style={{ marginBottom: '1.5rem', color: '#666' }}>
-                                                Please complete the following required fields before publishing your event:
+                                                {getMissingFields && formConfig 
+                                                    ? 'Please complete the following required fields before publishing:'
+                                                    : 'Please complete all required steps before submitting:'}
                                             </p>
                                             {missingFields.length > 0 ? (
                                                 <div style={{ marginBottom: '1.5rem', maxHeight: '400px', overflowY: 'auto' }}>
@@ -319,7 +319,7 @@ const FlowComponentV2 = ({
                                                 </div>
                                             ) : (
                                                 <p style={{ color: '#6c757d', fontStyle: 'italic' }}>
-                                                    Unable to determine missing fields. Please check all steps are completed.
+                                                    Please ensure all required steps are completed before submitting.
                                                 </p>
                                             )}
                                             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>

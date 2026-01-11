@@ -858,10 +858,8 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
             {/* Empty State */}
             {events.length === 0 && !loading && (
                 <div className="empty-state">
-                    <div className="empty-icon">
-                        <Icon icon="mingcute:calendar-fill" />
-                    </div>
-                    <h3>No Events Found</h3>
+                    
+                    <h3>No Upcoming Events</h3>
                     <p>
                         {hasActiveFilters 
                             ? "No events match your current filters. Try adjusting your search criteria."

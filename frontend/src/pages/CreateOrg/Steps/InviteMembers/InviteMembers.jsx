@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import './Invite.scss';
+import './InviteMembers.scss';
 import { Icon } from '@iconify-icon/react';
-import { useCache } from '../../../../../CacheContext';
+import { useCache } from '../../../../CacheContext';
 
-const Invite = ({ formData, setFormData, onComplete }) => {
+const InviteMembers = ({ formData, setFormData, onComplete }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [allFriends, setAllFriends] = useState([]);
     const [filteredFriends, setFilteredFriends] = useState([]);
-    const [selectedUsers, setSelectedUsers] = useState(formData.invitedUsers || []);
-    const [hasVisited, setHasVisited] = useState(false);
+    const [selectedUsers, setSelectedUsers] = useState(formData.invitedMembers || []);
     const [friendsLoading, setFriendsLoading] = useState(true);
     const { getFriends } = useCache();
 
-    // Get all friends using cache
     useEffect(() => {
         const fetchFriends = async () => {
             try {
@@ -29,10 +27,8 @@ const Invite = ({ formData, setFormData, onComplete }) => {
             }
         };
         fetchFriends();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Only fetch once on mount, cache handles subsequent calls
+    }, []);
 
-    // Filter friends based on search term
     useEffect(() => {
         if (searchTerm.trim() === '') {
             setFilteredFriends(allFriends);
@@ -48,21 +44,15 @@ const Invite = ({ formData, setFormData, onComplete }) => {
     useEffect(() => {
         setFormData(prev => ({
             ...prev,
-            invitedUsers: selectedUsers
+            invitedMembers: selectedUsers
         }));
     }, [selectedUsers, setFormData]);
 
-    // Mark as visited when component mounts
     useEffect(() => {
-        setHasVisited(true);
-        // Mark this step as visited in the form data
-        setFormData(prev => ({
-            ...prev,
-            inviteStepVisited: true
-        }));
-        // Call onComplete once when visited, not in a reactive useEffect
+        // Inviting members is optional, so always allow proceeding once component is mounted (user has visited this step)
         onComplete(true);
-    }, [setFormData]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleUserSelect = (user) => {
         if (!selectedUsers.find(u => u._id === user._id)) {
@@ -80,10 +70,10 @@ const Invite = ({ formData, setFormData, onComplete }) => {
     };
 
     return (
-        <div className="invite-step">
+        <div className="invite-members-step">
             <div className="form-section">
-                <h3>Invite Friends</h3>
-                <p>Invite friends to join your study session. This is optional - you can always send invites later!</p>
+                <h3>Invite existing members (optional)</h3>
+                <p>Invite friends to join your organization. You can always send invites later!</p>
                 
                 <div className="search-section">
                     <div className="search-input-container">
@@ -103,7 +93,6 @@ const Invite = ({ formData, setFormData, onComplete }) => {
                     </div>
                 </div>
 
-                {/* Fixed height container for friends grid */}
                 <div className="friends-container">
                     {filteredFriends.length > 0 && !friendsLoading && (
                         <div className="friends-grid">
@@ -142,7 +131,7 @@ const Invite = ({ formData, setFormData, onComplete }) => {
                     {allFriends.length === 0 && !friendsLoading && (
                         <div className="no-results">
                             <Icon icon="mingcute:group-line" />
-                            <p>You don't have any friends yet. Add some friends first to invite them to study sessions!</p>
+                            <p>You don't have any friends yet. Add some friends first to invite them to your organization!</p>
                         </div>
                     )}
 
@@ -154,13 +143,12 @@ const Invite = ({ formData, setFormData, onComplete }) => {
                     )}
                 </div>
 
-                {/* Always show selection summary */}
                 <div className={`selection-summary ${selectedUsers.length > 0 ? 'has-selections' : 'empty'}`}>
                     <Icon icon="mingcute:group-fill" />
                     <span>
                         {selectedUsers.length > 0 
                             ? `${selectedUsers.length} friend${selectedUsers.length !== 1 ? 's' : ''} selected`
-                            : "No friends invited, pick someone to study with!"
+                            : "No friends invited, pick someone to join your organization!"
                         }
                     </span>
                 </div>
@@ -169,4 +157,5 @@ const Invite = ({ formData, setFormData, onComplete }) => {
     );
 };
 
-export default Invite;
+export default InviteMembers;
+

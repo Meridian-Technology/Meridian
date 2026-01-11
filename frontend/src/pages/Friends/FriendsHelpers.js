@@ -99,7 +99,9 @@ const getFriendRequests = async () => {
             console.error('Error fetching friend requests:', responseBody.message);
             return [];
         } else {
-            return responseBody.data;
+            // Return received requests (backward compatibility)
+            // Response structure: { received: [], sent: [] }
+            return responseBody.data?.received || responseBody.data || [];
         }
     } catch (error){
         throw error;

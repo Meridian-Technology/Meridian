@@ -12,6 +12,7 @@ const { verifyToken } = require('../middlewares/verifyToken.js');
 const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser, authenticateWithGoogleIdToken } = require('../services/userServices.js');
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getModels = require('../services/getModelService.js');
+const { getFriendRequests } = require('../utilities/friendUtils');
 
 const { Resend } = require('resend');
 const { render } = require('@react-email/render')
@@ -356,7 +357,7 @@ router.post('/logout', async (req, res) => {
 
 router.get('/validate-token', verifyToken, async (req, res) => {
     try {
-        const {User} = getModels(req, 'User');
+        const {User, Friendship} = getModels(req, 'User', 'Friendship');
 
         const user = await User.findById(req.user.userId)
             .select('-password -refreshToken') // Add fields you want to exclude
@@ -367,12 +368,21 @@ router.get('/validate-token', verifyToken, async (req, res) => {
             console.log(`GET: /validate-token token is invalid`);
             return res.status(404).json({ success: false, message: 'User not found' });
         }
+
+        // Fetch friend requests (both sent and received) using utility
+        const friendRequests = await getFriendRequests(Friendship, req.user.userId, {
+            receivedFields: 'username name picture _id',
+            sentFields: 'username name picture _id',
+            lean: true
+        });
+
         console.log(`GET: /validate-token token is valid for user ${user.username}`)
         res.json({
             success: true,
             message: 'Token is valid',
             data: {
-                user : user
+                user: user,
+                friendRequests: friendRequests
             }
         });
     } catch (error) {

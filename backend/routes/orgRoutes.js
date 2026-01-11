@@ -135,16 +135,21 @@ router.get("/get-org-by-name/:name", verifyToken,  async (req, res) => {
     }
 });
 
-router.post("/create-org", verifyToken, upload.single('image'), handleMulterError, async (req, res) => {
+router.post("/create-org", verifyToken, upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'bannerImage', maxCount: 1 }
+]), handleMulterError, async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, "Org", "OrgMember", "User");
     const {
         org_name,
         org_description,
         positions,
         weekly_meeting,
-        custom_roles
+        custom_roles,
+        socialLinks
     } = req.body;
-    const file = req.file;
+    const profileFile = req.files?.image?.[0];
+    const bannerFile = req.files?.bannerImage?.[0];
 
     try {
         //Verify user and have their orgs saved under them
@@ -187,7 +192,7 @@ router.post("/create-org", verifyToken, upload.single('image'), handleMulterErro
 
         const cleanOrgDescription = clean(org_description);
 
-        // Prepare default roles
+        // Prepare default roles (only owner and member)
         const defaultRoles = [
             {
                 name: 'owner',
@@ -198,29 +203,8 @@ router.post("/create-org", verifyToken, upload.single('image'), handleMulterErro
                 canManageRoles: true,
                 canManageEvents: true,
                 canViewAnalytics: true,
-                order: 0
-            },
-            {
-                name: 'admin',
-                displayName: 'Administrator',
-                permissions: ['manage_members', 'manage_events', 'view_analytics'],
-                isDefault: false,
-                canManageMembers: true,
-                canManageRoles: false,
-                canManageEvents: true,
-                canViewAnalytics: true,
-                order: 1
-            },
-            {
-                name: 'officer',
-                displayName: 'Officer',
-                permissions: ['manage_events'],
-                isDefault: false,
-                canManageMembers: false,
-                canManageRoles: false,
-                canManageEvents: true,
-                canViewAnalytics: false,
-                order: 2
+                order: 0,
+                color: '#dc2626'
             },
             {
                 name: 'member',
@@ -231,23 +215,31 @@ router.post("/create-org", verifyToken, upload.single('image'), handleMulterErro
                 canManageRoles: false,
                 canManageEvents: false,
                 canViewAnalytics: false,
-                order: 3
+                order: 1,
+                color: '#6b7280'
             }
         ];
 
-        // Parse and merge custom roles if provided
+        // Start with default roles
         let allRoles = [...defaultRoles];
+        let nextOrder = defaultRoles.length;
+
+        // Parse and merge custom roles if provided
         if (custom_roles) {
             try {
                 const parsedCustomRoles = JSON.parse(custom_roles);
                 if (Array.isArray(parsedCustomRoles)) {
                     // Add custom roles with proper order
-                    parsedCustomRoles.forEach((customRole, index) => {
+                    parsedCustomRoles.forEach((customRole) => {
                         const roleWithOrder = {
                             ...customRole,
-                            order: defaultRoles.length + index,
+                            order: nextOrder++,
                             isDefault: false
                         };
+                        // Ensure color is set (use default if not provided)
+                        if (!roleWithOrder.color) {
+                            roleWithOrder.color = '#a855f7'; // Default purple for custom roles
+                        }
                         allRoles.push(roleWithOrder);
                     });
                 }
@@ -257,25 +249,49 @@ router.post("/create-org", verifyToken, upload.single('image'), handleMulterErro
             }
         }
 
+        // Parse social links if provided
+        let parsedSocialLinks = [];
+        if (socialLinks) {
+            try {
+                parsedSocialLinks = typeof socialLinks === 'string' ? JSON.parse(socialLinks) : socialLinks;
+                if (!Array.isArray(parsedSocialLinks)) {
+                    parsedSocialLinks = [];
+                }
+            } catch (error) {
+                console.error('Error parsing social links:', error);
+                parsedSocialLinks = [];
+            }
+        }
+
         const newOrg = new Org({
             org_name: cleanOrgName,
             org_description: cleanOrgDescription,
             positions: allRoles,
             weekly_meeting: weekly_meeting || null,
+            socialLinks: parsedSocialLinks,
             //Owner is the user
             owner: userId,
         });
 
-        // Handle image upload if file is present
-        if (file) {
-            console.log('Uploading image');
-            const fileExtension = path.extname(file.originalname);
+        // Handle profile image upload if file is present
+        if (profileFile) {
+            console.log('Uploading profile image');
+            const fileExtension = path.extname(profileFile.originalname);
             const fileName = `${newOrg._id}${fileExtension}`;
-            const imageUrl = await uploadImageToS3(file, 'orgs', fileName);
+            const imageUrl = await uploadImageToS3(profileFile, 'orgs', fileName);
             newOrg.org_profile_image = imageUrl;
         } else {
             // Set default image if no file uploaded
             newOrg.org_profile_image = '/Logo.svg';
+        }
+
+        // Handle banner image upload if file is present
+        if (bannerFile) {
+            console.log('Uploading banner image');
+            const fileExtension = path.extname(bannerFile.originalname);
+            const fileName = `${newOrg._id}_banner${fileExtension}`;
+            const bannerUrl = await uploadImageToS3(bannerFile, 'orgs', fileName);
+            newOrg.org_banner_image = bannerUrl;
         }
 
         const newMember = new OrgMember({
@@ -330,6 +346,7 @@ router.post("/edit-org", verifyToken, upload.fields([
             org_name,
             requireApprovalForJoin,
             memberForm,
+            socialLinks,
         } = req.body;
         const userId = req.user?.userId;
         const profileFile = req.files?.image?.[0];
@@ -455,6 +472,46 @@ router.post("/edit-org", verifyToken, upload.fields([
         }
         if (weekly_meeting) {
             org.weekly_meeting = weekly_meeting;
+        }
+        if (socialLinks !== undefined) {
+            try {
+                // Parse socialLinks if it's a JSON string
+                const parsedSocialLinks = typeof socialLinks === 'string' ? JSON.parse(socialLinks) : socialLinks;
+                // Validate social links structure
+                if (Array.isArray(parsedSocialLinks)) {
+                    // Validate each link
+                    for (const link of parsedSocialLinks) {
+                        if (!link.type || !['instagram', 'youtube', 'tiktok', 'website'].includes(link.type)) {
+                            return res.status(400).json({
+                                success: false,
+                                message: "Invalid social link type"
+                            });
+                        }
+                        if (link.type === 'website') {
+                            if (!link.url || !link.title) {
+                                return res.status(400).json({
+                                    success: false,
+                                    message: "Website links must have both url and title"
+                                });
+                            }
+                        } else {
+                            if (!link.username) {
+                                return res.status(400).json({
+                                    success: false,
+                                    message: `Social media link (${link.type}) must have a username`
+                                });
+                            }
+                        }
+                    }
+                    org.socialLinks = parsedSocialLinks;
+                }
+            } catch (error) {
+                console.error('Error parsing socialLinks:', error);
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid socialLinks data format"
+                });
+            }
         }
 
         // Save the updated org

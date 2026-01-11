@@ -26,7 +26,8 @@ import {
     GeneralSettings, 
     RolesSettings, 
     DangerZone,
-    MemberSettings
+    MemberSettings,
+    SocialLinksSettings
 } from './OrgSettings/components';
 import VerificationRequest from './Settings/VerificationRequest/VerificationRequest';
 
@@ -177,7 +178,7 @@ function ClubDash(){
     }
 
     function openMembers(){
-        const newPath = `/club-dashboard/${clubId}?page=2`;
+        const newPath = `/club-dashboard/${clubId}?page=3`;
         navigate(newPath);
     }
 
@@ -244,6 +245,11 @@ function ClubDash(){
                     label: 'Application Process',
                     icon: 'mdi:form-select',
                     element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                },
+                {
+                    label: 'Social Links',
+                    icon: 'mdi:link-variant',
+                    element: <SocialLinksSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
                 },
                 // {
                 //     label: 'Verification Requests',
