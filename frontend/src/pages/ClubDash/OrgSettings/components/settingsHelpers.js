@@ -168,8 +168,14 @@ export const useOrgSave = (org) => {
 export const useOrgDelete = () => {
     const { addNotification } = useNotification();
     
-    const deleteOrganization = async (orgId) => {
-        if (!window.confirm('Are you sure you want to delete this organization? This action cannot be undone.')) {
+    const deleteOrganization = async (orgId, orgName, confirmText) => {
+        // Check if user typed the correct organization name
+        if (confirmText !== orgName) {
+            addNotification({
+                title: 'Error',
+                message: 'Organization name does not match. Please type the exact organization name to confirm deletion.',
+                type: 'error'
+            });
             return false;
         }
 
