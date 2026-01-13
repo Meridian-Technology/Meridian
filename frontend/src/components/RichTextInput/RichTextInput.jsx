@@ -34,30 +34,123 @@ const RichTextInput = ({
     const editorRef = useRef(null);
     const [isFocused, setIsFocused] = useState(false);
     const [mentionState, setMentionState] = useState(null); // { trigger: '@' | '#', search: string, position: number }
+    const [currentText, setCurrentText] = useState(value); // Track current text for embeds
 
     const isInternalUpdateRef = useRef(false);
     const isUpdatingRef = useRef(false);
     const lastValueRef = useRef(value);
+    const pendingCursorOffsetRef = useRef(null);
+    const highlightTimeoutRef = useRef(null);
+    const isTypingRef = useRef(false);
 
     // Get cursor position as character offset in plain text
+    // Simplified: use simple textContent while typing, only map when necessary
     const getCursorOffset = useCallback(() => {
         if (!editorRef.current) return 0;
         const selection = window.getSelection();
-        if (selection.rangeCount === 0) return editorRef.current.textContent.length;
+        if (selection.rangeCount === 0) {
+            // While typing, use textContent length; otherwise use stored value
+            return isTypingRef.current 
+                ? editorRef.current.textContent.length 
+                : (lastValueRef.current?.length || 0);
+        }
         
         const range = selection.getRangeAt(0);
+        if (!editorRef.current.contains(range.commonAncestorContainer)) {
+            return isTypingRef.current 
+                ? editorRef.current.textContent.length 
+                : (lastValueRef.current?.length || 0);
+        }
+        
+        // While typing - use simple textContent, let browser handle cursor naturally
+        if (isTypingRef.current) {
+            const preCaretRange = range.cloneRange();
+            preCaretRange.selectNodeContents(editorRef.current);
+            preCaretRange.setEnd(range.endContainer, range.endOffset);
+            return preCaretRange.toString().length;
+        }
+        
+        // After highlights applied - map from displayed to actual text
+        // Only needed when cursor might be inside a mention span
         const preCaretRange = range.cloneRange();
         preCaretRange.selectNodeContents(editorRef.current);
         preCaretRange.setEnd(range.endContainer, range.endOffset);
-        return preCaretRange.toString().length;
+        const displayedText = preCaretRange.toString();
+        
+        // Check if cursor is inside a mention span
+        const container = range.commonAncestorContainer;
+        const isInMention = container.nodeType === Node.ELEMENT_NODE && 
+                           container.classList.contains('rich-text-mention');
+        
+        if (!isInMention) {
+            // Not in mention - use displayed text length (matches stored text for non-mentions)
+            return displayedText.length;
+        }
+        
+        // Cursor is inside a mention - need to map to actual text position
+        const actualText = lastValueRef.current || '';
+        let actualPos = 0;
+        let displayPos = 0;
+        
+        const walker = document.createTreeWalker(
+            editorRef.current,
+            NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+            null
+        );
+        
+        let node;
+        while (node = walker.nextNode()) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const len = node.textContent.length;
+                if (displayPos + len >= displayedText.length) {
+                    const offset = displayedText.length - displayPos;
+                    actualPos += offset;
+                    break;
+                }
+                displayPos += len;
+                actualPos += len;
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const isMentionNode = node.classList.contains('rich-text-mention');
+                const isLinkNode = node.classList.contains('rich-text-link');
+                
+                if (isMentionNode || isLinkNode) {
+                    const displayLen = node.textContent.length;
+                    const eventId = node.getAttribute('data-event-id');
+                    
+                    if (eventId) {
+                        // Map @event:Name display to @event:ID actual
+                        const actualMention = `@event:${eventId}`;
+                        const actualLen = actualMention.length;
+                        
+                        if (displayPos + displayLen >= displayedText.length) {
+                            // Cursor is in this mention - place at end of actual mention
+                            actualPos += actualLen;
+                            break;
+                        }
+                        displayPos += displayLen;
+                        actualPos += actualLen;
+                    } else {
+                        // Regular mention/link
+                        if (displayPos + displayLen >= displayedText.length) {
+                            actualPos += displayLen;
+                            break;
+                        }
+                        displayPos += displayLen;
+                        actualPos += displayLen;
+                    }
+                }
+            }
+        }
+        
+        return Math.min(actualPos, actualText.length);
     }, []);
 
-    // Set cursor position by character offset
+    // Set cursor position by character offset - improved version
     const setCursorOffset = useCallback((offset) => {
         if (!editorRef.current) return;
         
         const text = editorRef.current.textContent;
-        const targetOffset = Math.min(offset, text.length);
+        const targetOffset = Math.min(Math.max(0, offset), text.length);
         
         // Walk through nodes to find the right position
         const walker = document.createTreeWalker(
@@ -83,12 +176,38 @@ const RichTextInput = ({
         
         // If we didn't find a node, place at end
         if (!targetNode) {
+            // Find last text node or create one
             const lastNode = editorRef.current.lastChild;
             if (lastNode && lastNode.nodeType === Node.TEXT_NODE) {
                 targetNode = lastNode;
                 targetNodeOffset = lastNode.textContent.length;
+            } else if (lastNode && lastNode.nodeType === Node.ELEMENT_NODE) {
+                // Try to find text node in last element
+                const textNodes = [];
+                const nodeWalker = document.createTreeWalker(
+                    lastNode,
+                    NodeFilter.SHOW_TEXT,
+                    null
+                );
+                let textNode;
+                while (textNode = nodeWalker.nextNode()) {
+                    textNodes.push(textNode);
+                }
+                if (textNodes.length > 0) {
+                    targetNode = textNodes[textNodes.length - 1];
+                    targetNodeOffset = targetNode.textContent.length;
+                } else {
+                    // No text nodes, place at end of container
+                    const range = document.createRange();
+                    range.selectNodeContents(editorRef.current);
+                    range.collapse(false);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    return;
+                }
             } else {
-                // No text nodes, place at end of container
+                // No nodes at all, place at end
                 const range = document.createRange();
                 range.selectNodeContents(editorRef.current);
                 range.collapse(false);
@@ -107,8 +226,23 @@ const RichTextInput = ({
             const selection = window.getSelection();
             selection.removeAllRanges();
             selection.addRange(range);
+            // Ensure editor has focus
+            if (document.activeElement !== editorRef.current) {
+                editorRef.current.focus();
+            }
         } catch (e) {
-            // Ignore selection errors
+            console.warn('Error setting cursor position:', e);
+            // Fallback: place at end
+            try {
+                const range = document.createRange();
+                range.selectNodeContents(editorRef.current);
+                range.collapse(false);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            } catch (e2) {
+                // Ignore
+            }
         }
     }, []);
 
@@ -222,6 +356,9 @@ const RichTextInput = ({
                 span.setAttribute('data-event-name', eventMentionAtPos.event.name);
                 span.setAttribute('data-event-id', eventMentionAtPos.event._id || '');
                 span.setAttribute('data-mention-type', eventMentionAtPos.type);
+                span.setAttribute('data-mention', 'true');
+                // Make mention atomic - non-editable
+                span.contentEditable = 'false';
                 fragment.appendChild(span);
                 i = eventMentionAtPos.end;
                 continue;
@@ -236,11 +373,21 @@ const RichTextInput = ({
         editorRef.current.appendChild(fragment);
     }, [events]);
 
+    // Cleanup timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (highlightTimeoutRef.current) {
+                clearTimeout(highlightTimeoutRef.current);
+            }
+        };
+    }, []);
+
     // Initialize content on mount
     useEffect(() => {
         if (editorRef.current && value && !editorRef.current.textContent) {
             setPlainTextContent(value);
             lastValueRef.current = value;
+            setCurrentText(value); // Initialize state for embeds
         }
     }, [setPlainTextContent, value]); // Only on mount
 
@@ -249,11 +396,24 @@ const RichTextInput = ({
         if (editorRef.current && !isInternalUpdateRef.current && lastValueRef.current !== value) {
             const currentText = editorRef.current.textContent || '';
             if (currentText !== value) {
+                // Save cursor position before update
                 const cursorOffset = getCursorOffset();
+                pendingCursorOffsetRef.current = cursorOffset;
+                
+                isUpdatingRef.current = true;
                 setPlainTextContent(value);
                 lastValueRef.current = value;
+                setCurrentText(value); // Update state for embeds
+                
+                // Restore cursor position after update
                 requestAnimationFrame(() => {
-                    setCursorOffset(cursorOffset);
+                    requestAnimationFrame(() => {
+                        if (pendingCursorOffsetRef.current !== null) {
+                            setCursorOffset(pendingCursorOffsetRef.current);
+                            pendingCursorOffsetRef.current = null;
+                        }
+                        isUpdatingRef.current = false;
+                    });
                 });
             }
         }
@@ -268,31 +428,37 @@ const RichTextInput = ({
 
     // Handle input
     const handleInput = useCallback((e) => {
-        if (isUpdatingRef.current) return;
+        // Prevent handling if we're in the middle of an update
+        if (isUpdatingRef.current) {
+            return;
+        }
         
         isInternalUpdateRef.current = true;
+        isTypingRef.current = true;
         const plainText = getPlainText();
+        
+        // Update last value and current text state immediately
         lastValueRef.current = plainText;
+        setCurrentText(plainText); // Update state for embeds to re-render
         
-        // Save cursor position as character offset
+        // IMMEDIATE mention detection - no debounce
+        // Get cursor position for mention detection only
         const cursorOffset = getCursorOffset();
-        
-        // Check for mention triggers
         const textBeforeCursor = plainText.substring(0, cursorOffset);
         
         // Check if we're inside or right after a complete @event: mention
-        // Complete pattern: @event: followed by exactly 24 hex chars, optionally followed by space/end
-        const completeEventMentionPattern = /@event:[a-fA-F0-9]{24}(\s|$)/;
+        const completeEventMentionPattern = /@event:[a-fA-F0-9]{24}([\s\n\r@#.,!?;:]|$)/;
         const isAfterCompleteEventMention = completeEventMentionPattern.test(textBeforeCursor);
         
         // Check if we're in the middle of typing an @event: mention (partial)
         const partialEventMentionPattern = /@event:[a-fA-F0-9]{0,23}$/;
         const isInPartialEventMention = partialEventMentionPattern.test(textBeforeCursor);
         
+        // Only check for new mentions if we're not in an event mention
         if (!isAfterCompleteEventMention && !isInPartialEventMention) {
             const mentionMatch = textBeforeCursor.match(/([@#])([^@#\s]*)$/);
             
-            if (mentionMatch) {
+            if (mentionMatch && mentionMatch[2] !== 'event') {
                 const trigger = mentionMatch[1];
                 const search = mentionMatch[2];
                 
@@ -306,14 +472,12 @@ const RichTextInput = ({
                     onMentionTrigger({ trigger, search, position: textBeforeCursor.length - search.length - 1 });
                 }
             } else {
-                // Check if we just typed a space or newline (close mentions)
                 const lastChar = textBeforeCursor.slice(-1);
                 if (lastChar === ' ' || lastChar === '\n') {
                     setMentionState(null);
                 } else if (mentionState) {
-                    // Update search if we're still in mention mode
                     const newMatch = textBeforeCursor.match(/([@#])([^@#\s]*)$/);
-                    if (newMatch) {
+                    if (newMatch && newMatch[2] !== 'event') {
                         setMentionState({
                             ...mentionState,
                             search: newMatch[2]
@@ -324,21 +488,43 @@ const RichTextInput = ({
                 }
             }
         } else {
-            // We're inside or right after an @event: mention, close any open mention state
             setMentionState(null);
         }
 
-        // Apply highlighting
-        isUpdatingRef.current = true;
-        setPlainTextContent(plainText);
-        
-        // Restore cursor position after highlighting
-        requestAnimationFrame(() => {
-            setCursorOffset(cursorOffset);
-            isUpdatingRef.current = false;
-        });
+        // Clear any pending highlight update
+        if (highlightTimeoutRef.current) {
+            clearTimeout(highlightTimeoutRef.current);
+        }
 
-        // Notify parent of change
+        // Debounce highlighting updates only - preserve existing highlights
+        highlightTimeoutRef.current = setTimeout(() => {
+            isTypingRef.current = false;
+            
+            // Only update highlights if text actually changed
+            if (plainText !== lastValueRef.current) {
+                // Save cursor position before updating highlights
+                const currentCursorOffset = getCursorOffset();
+                pendingCursorOffsetRef.current = currentCursorOffset;
+                
+                isUpdatingRef.current = true;
+                
+                // Apply highlighting
+                setPlainTextContent(plainText);
+                
+                // Restore cursor position after highlighting
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        if (pendingCursorOffsetRef.current !== null) {
+                            setCursorOffset(pendingCursorOffsetRef.current);
+                            pendingCursorOffsetRef.current = null;
+                        }
+                        isUpdatingRef.current = false;
+                    });
+                });
+            }
+        }, 300); // 300ms debounce for highlighting
+
+        // Notify parent of change immediately
         if (onChange) {
             onChange(plainText);
         }
@@ -355,8 +541,16 @@ const RichTextInput = ({
     const insertMention = useCallback((mentionOption) => {
         if (!editorRef.current || !mentionState || isUpdatingRef.current) return;
 
+        // Clear any pending highlight updates
+        if (highlightTimeoutRef.current) {
+            clearTimeout(highlightTimeoutRef.current);
+            highlightTimeoutRef.current = null;
+        }
+
         isInternalUpdateRef.current = true;
         isUpdatingRef.current = true;
+        isTypingRef.current = false; // Not typing when inserting mention
+        
         // Use getMentionText if provided, otherwise try to get ID or fall back to name
         let mentionText;
         if (getMentionText) {
@@ -366,6 +560,7 @@ const RichTextInput = ({
         } else {
             mentionText = `@event:${mentionOption.name || mentionOption}`;
         }
+        
         const currentText = getPlainText();
         const cursorOffset = getCursorOffset();
         
@@ -379,15 +574,24 @@ const RichTextInput = ({
             const textAfterCursor = currentText.substring(cursorOffset);
             const newText = currentText.substring(0, mentionStart) + mentionText + ' ' + textAfterCursor;
             lastValueRef.current = newText;
+            setCurrentText(newText); // Update state for embeds
             
-            // Update content
+            // Calculate new cursor position (after mention + space)
+            const newPosition = mentionStart + mentionText.length + 1;
+            pendingCursorOffsetRef.current = newPosition;
+            
+            // Update content immediately (no debounce for mention insertion)
             setPlainTextContent(newText);
             
-            // Set cursor after mention
-            const newPosition = mentionStart + mentionText.length + 1;
+            // Set cursor after mention using double RAF for reliability
             requestAnimationFrame(() => {
-                setCursorOffset(newPosition);
-                isUpdatingRef.current = false;
+                requestAnimationFrame(() => {
+                    if (pendingCursorOffsetRef.current !== null) {
+                        setCursorOffset(pendingCursorOffsetRef.current);
+                        pendingCursorOffsetRef.current = null;
+                    }
+                    isUpdatingRef.current = false;
+                });
             });
             
             if (onChange) {
@@ -415,9 +619,61 @@ const RichTextInput = ({
             return;
         }
 
+        // Handle backspace on atomic mentions - delete whole mention
+        if (e.key === 'Backspace' && !isUpdatingRef.current) {
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                const container = range.commonAncestorContainer;
+                
+                // Check if cursor is at start of a mention or inside a mention
+                let mentionNode = null;
+                if (container.nodeType === Node.ELEMENT_NODE && container.classList.contains('rich-text-mention')) {
+                    mentionNode = container;
+                } else if (container.nodeType === Node.TEXT_NODE && container.parentElement?.classList.contains('rich-text-mention')) {
+                    mentionNode = container.parentElement;
+                }
+                
+                if (mentionNode) {
+                    e.preventDefault();
+                    
+                    // Get the actual mention text from data attribute
+                    const eventId = mentionNode.getAttribute('data-event-id');
+                    const actualMentionText = eventId ? `@event:${eventId}` : mentionNode.textContent;
+                    
+                    // Remove the mention from DOM
+                    const currentText = getPlainText();
+                    const mentionText = mentionNode.textContent;
+                    const mentionIndex = currentText.indexOf(mentionText);
+                    
+                    if (mentionIndex !== -1) {
+                        // Replace mention with empty string in stored text
+                        const newText = currentText.substring(0, mentionIndex) + currentText.substring(mentionIndex + mentionText.length);
+                        lastValueRef.current = newText;
+                        setCurrentText(newText); // Update state for embeds
+                        
+                        // Update content
+                        isUpdatingRef.current = true;
+                        setPlainTextContent(newText);
+                        
+                        // Set cursor at position where mention was
+                        requestAnimationFrame(() => {
+                            setCursorOffset(mentionIndex);
+                            isUpdatingRef.current = false;
+                        });
+                        
+                        if (onChange) {
+                            onChange(newText);
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
         // Allow Shift+Enter for newline, Enter will bubble up to form (for submission)
         // We don't prevent default for Enter when not in mention mode
-    }, [mentionState, mentionOptions, insertMention]);
+    }, [mentionState, mentionOptions, insertMention, getPlainText, setPlainTextContent, setCursorOffset, onChange]);
 
     // Get event type color
     const getEventTypeColor = (eventType) => {
@@ -433,11 +689,12 @@ const RichTextInput = ({
     };
 
     // Extract mentioned events from content (ID-based only)
+    // Use currentText state which updates immediately when typing
     const getMentionedEvents = useCallback(() => {
-        if (!value || !events || events.length === 0) return [];
+        const text = currentText || '';
+        if (!text || !events || events.length === 0) return [];
         
         const mentionedEvents = [];
-        const text = value;
         
         // Create a map of event IDs for quick lookup
         const eventMap = new Map();
@@ -461,7 +718,7 @@ const RichTextInput = ({
         
         // Remove duplicates
         return Array.from(new Map(mentionedEvents.map(e => [e._id || e.id, e])).values());
-    }, [value, events]);
+    }, [currentText, events]);
     
     const mentionedEvents = getMentionedEvents();
 

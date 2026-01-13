@@ -383,6 +383,7 @@ router.get('/:orgId/messages', verifyToken, async (req, res) => {
         const total = await OrgMessage.countDocuments(totalQuery);
 
         console.log(`GET: /${orgId}/messages`);
+        console.log(messagesWithRoles);
         res.json({
             success: true,
             messages: messagesWithRoles,
