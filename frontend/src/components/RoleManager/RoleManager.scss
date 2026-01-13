@@ -1,4 +1,22 @@
 .role-manager {
+    // Color Variables
+    --rm-border-color: #e5e7eb;
+    --rm-background: #fff;
+    --rm-background-secondary: #f9fafb;
+    --rm-background-tertiary: #f3f4f6;
+    --rm-text-primary: #1f2937;
+    --rm-text-secondary: #374151;
+    --rm-text-tertiary: #6b7280;
+    --rm-text-quaternary: #9ca3af;
+    --rm-primary: #6d8efa;
+    --rm-primary-light: rgba(109, 142, 250, 0.02);
+    --rm-primary-medium: rgba(109, 142, 250, 0.05);
+    --rm-primary-shadow: rgba(109, 142, 250, 0.1);
+    --rm-primary-selected-bg: #F2F4FC;
+    --rm-primary-border-hover: #6d8efa9b;
+    --rm-error: #ef4444;
+    --rm-error-light: rgba(239, 68, 68, 0.1);
+
     width: 100%;
     margin: 0 auto;
     font-family: 'Inter', sans-serif;
@@ -8,37 +26,39 @@
         display: flex;
         height: 100%;
         gap: 0;
-        border: 2px solid #e5e7eb;
-        border-radius: 12px;
+        border: 1px solid var(--rm-border-color);
         overflow: hidden;
-        background: #fff;
+        background: var(--rm-background);
+        border-left: none;
+        border-right: none;
+        box-sizing: border-box;
     }
 
     // Left Column: Role List
     .role-list-column {
-        width: 280px;
-        min-width: 280px;
-        border-right: 2px solid #e5e7eb;
+        width: 240px;
+        min-width: 240px;
+        border-right: 1px solid var(--rm-border-color);
         display: flex;
         flex-direction: column;
-        background: #f9fafb;
+        background: var(--rm-background-secondary);
 
         .role-list-header {
-            padding: 16px;
-            border-bottom: 2px solid #e5e7eb;
+            padding: 12px;
+            border-bottom: 1px solid var(--rm-border-color);
 
         .add-role-btn {
                 width: 100%;
             display: flex;
             align-items: center;
                 justify-content: center;
-                gap: 8px;
-                padding: 12px;
+                gap: 6px;
+                padding: 10px;
                 background: var(--org-primary, #64AB6C);
             color: white;
             border: none;
-            border-radius: 8px;
-                font-size: 14px;
+            border-radius: 10px;
+                font-size: 13px;
                 font-weight: 600;
             cursor: pointer;
         transition: all 0.2s ease;
@@ -49,7 +69,7 @@
                 }
 
                 svg {
-                    font-size: 18px;
+                    font-size: 16px;
                 }
             }
         }
@@ -57,25 +77,25 @@
         .role-list {
             flex: 1;
             overflow-y: auto;
-            padding: 8px;
+            padding: 6px;
 
             .no-roles {
             display: flex;
                 flex-direction: column;
                 align-items: center;
                 justify-content: center;
-                padding: 48px 24px;
+                padding: 32px 16px;
                 text-align: center;
-                color: #6b7280;
+                color: var(--rm-text-tertiary);
 
                 svg {
-                    font-size: 48px;
-                    margin-bottom: 16px;
+                    font-size: 36px;
+                    margin-bottom: 12px;
                     opacity: 0.5;
                 }
 
                 p {
-                    font-size: 14px;
+                    font-size: 13px;
                     margin: 0;
                 }
             }
@@ -84,35 +104,66 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: 12px;
-                margin-bottom: 4px;
-                border-radius: 8px;
+                padding: 10px;
+                margin-bottom: 3px;
+                border-radius: 10px;
                 cursor: pointer;
                 transition: all 0.2s ease;
-                background: #fff;
-                border: 1px solid transparent;
+                background: var(--rm-background);
+                border: 1px solid var(--rm-border-color);
 
-                    &:hover {
-                    background: #f3f4f6;
-                    border-color: #e5e7eb;
+                &:hover {
+                    background: transparent;
+                    border-color: var(--rm-primary-border-hover);
                 }
 
                 &.selected {
-                    background: var(--org-primary-transparent, rgba(100, 171, 108, 0.1));
-                    border-color: var(--org-primary, #64AB6C);
-                    box-shadow: 0 0 0 2px rgba(100, 171, 108, 0.15);
+                    background: var(--rm-primary-selected-bg);
+                    border-color: var(--rm-primary);
+                    box-shadow: 0 0 0 3px var(--rm-primary-shadow);
+
+                    &:hover {
+                        background: var(--rm-primary-selected-bg);
+                        border-color: var(--rm-primary);
+                        box-shadow: 0 0 0 3px var(--rm-primary-shadow);
+                    }
+                }
+
+                .drag-handle {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: var(--rm-text-quaternary);
+                    cursor: grab;
+                    padding: 4px;
+                    margin-right: 8px;
+                    flex-shrink: 0;
+                    transition: color 0.2s ease;
+
+                    &:active {
+                        cursor: grabbing;
+                    }
+
+                    &:hover {
+                        color: var(--rm-text-tertiary);
+                    }
+
+                    iconify-icon,
+                    svg {
+                        font-size: 18px;
+                    }
                 }
 
                 .role-list-item-content {
                     display: flex;
                     align-items: center;
-                    gap: 12px;
+                    gap: 10px;
                     flex: 1;
                     min-width: 0;
 
                     .role-color-indicator {
-                        width: 12px;
-                        height: 12px;
+                        width: 10px;
+                        height: 10px;
                         border-radius: 50%;
                         flex-shrink: 0;
                     }
@@ -120,14 +171,14 @@
                     .role-list-item-info {
                         display: flex;
                         align-items: center;
-                        gap: 8px;
+                        gap: 6px;
                         min-width: 0;
                         flex: 1;
 
                         .role-list-item-name {
-                            font-size: 14px;
+                            font-size: 13px;
                             font-weight: 500;
-                            color: #1f2937;
+                            color: var(--rm-text-primary);
                             white-space: nowrap;
                             overflow: hidden;
                             text-overflow: ellipsis;
@@ -136,10 +187,10 @@
                         .role-list-item-badge {
                             font-size: 11px;
                             font-weight: 600;
-                            color: #6b7280;
+                            color: var(--rm-text-tertiary);
                             text-transform: uppercase;
                             padding: 2px 6px;
-                            background: #f3f4f6;
+                            background: var(--rm-background-tertiary);
                             border-radius: 4px;
                         }
                     }
@@ -152,60 +203,25 @@
                     opacity: 0;
                     transition: opacity 0.2s ease;
 
-                    .rank-controls {
-                        display: flex;
-                        flex-direction: column;
-                        gap: 2px;
-
-                        .rank-btn {
-                            width: 20px;
-                            height: 20px;
-                            padding: 0;
-                            border: none;
-                            background: transparent;
-                            color: #6b7280;
-                            cursor: pointer;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            border-radius: 4px;
-                            transition: all 0.2s ease;
-
-                            &:hover:not(:disabled) {
-                                background: #e5e7eb;
-                                color: #374151;
-                            }
-
-                            &:disabled {
-                                opacity: 0.3;
-                                cursor: not-allowed;
-                            }
-
-                            svg {
-                                font-size: 16px;
-                            }
-                        }
-                    }
-
                     .delete-btn {
                         width: 24px;
                         height: 24px;
                         padding: 0;
-                border: none;
-                background: transparent;
-                        color: #ef4444;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                        border-radius: 4px;
-                transition: all 0.2s ease;
+                        border: none;
+                        background: transparent;
+                        color: var(--rm-error);
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        border-radius: 8px;
+                        transition: all 0.2s ease;
 
-                &:hover {
-                            background: rgba(239, 68, 68, 0.1);
-                }
+                        &:hover {
+                            background: var(--rm-error-light);
+                        }
 
-                svg {
+                        svg {
                             font-size: 18px;
                         }
                     }
@@ -213,6 +229,19 @@
 
                 &:hover .role-list-item-actions {
                     opacity: 1;
+                }
+            }
+
+            // Styles for draggable items
+            .draggable-list {
+                width: 100%;
+
+                .draggable-item {
+                    cursor: grab;
+                    
+                    &:active {
+                        cursor: grabbing;
+                    }
                 }
             }
         }
@@ -223,7 +252,7 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        background: #fff;
+        background: var(--rm-background);
         overflow: hidden;
 
         .role-editor {
@@ -233,9 +262,9 @@
             overflow-y: auto;
 
             .role-editor-header {
-                padding: 24px;
-                border-bottom: 2px solid #e5e7eb;
-                background: #fff;
+                padding: 16px 20px;
+                border-bottom: 1px solid var(--rm-border-color);
+                background: var(--rm-background);
                 position: sticky;
                 top: 0;
                 z-index: 10;
@@ -243,59 +272,61 @@
                 h3 {
                     font-size: 20px;
                     font-weight: 700;
-                    color: #1f2937;
+                    color: var(--rm-text-primary);
                     margin: 0;
                 }
             }
 
             .role-editor-content {
                 flex: 1;
-                padding: 24px;
+                padding: 20px;
                 overflow-y: auto;
 
             .form-group {
-                    margin-bottom: 32px;
+                    margin-bottom: 20px;
+                    position: relative;
 
                 label {
                     display: block;
-                        font-size: 14px;
+                        font-size: 13px;
                     font-weight: 600;
-                        color: #374151;
-                        margin-bottom: 8px;
+                        color: var(--rm-text-secondary);
+                        margin-bottom: 6px;
                 }
 
                     .text-input {
                     width: 100%;
-                        padding: 12px 16px;
-                        border: 2px solid #e5e7eb;
-                        border-radius: 12px;
-                        font-size: 16px;
+                        padding: 10px 14px;
+                        border: 1px solid var(--rm-border-color);
+                        border-radius: 10px;
+                        font-size: 14px;
                         transition: all 0.2s ease;
                         box-sizing: border-box;
                         font-family: inherit;
 
                     &:focus {
                         outline: none;
-                            border-color: #6d8efa;
-                            box-shadow: 0 0 0 3px rgba(109, 142, 250, 0.1);
+                            border-color: var(--rm-primary);
+                            box-shadow: 0 0 0 3px var(--rm-primary-shadow);
                     }
 
                     &:disabled {
-                            background: #f9fafb;
-                            color: #9ca3af;
+                            background: var(--rm-background-secondary);
+                            color: var(--rm-text-quaternary);
                         cursor: not-allowed;
                         }
 
                         &::placeholder {
-                            color: #9ca3af;
+                            color: var(--rm-text-quaternary);
                         }
                     }
 
                     small {
                         display: block;
                         font-size: 12px;
-                        color: #9ca3af;
-                        margin-top: 8px;
+                        color: var(--rm-text-tertiary);
+                        margin-top: 6px;
+                        line-height: 1.4;
                     }
                 }
 
@@ -303,27 +334,27 @@
                     .color-palette {
                         display: flex;
                         flex-wrap: wrap;
-                        gap: 8px;
-                        margin-bottom: 16px;
+                        gap: 6px;
+                        margin-bottom: 12px;
 
                         .color-swatch {
-                            width: 40px;
-                            height: 40px;
-                            border: 2px solid #e5e7eb;
-                            border-radius: 8px;
+                            width: 32px;
+                            height: 32px;
+                            border: 1px solid var(--rm-border-color);
+                            border-radius: 10px;
                             cursor: pointer;
                             transition: all 0.2s ease;
                             padding: 0;
 
                             &:hover {
-                                transform: scale(1.1);
-                                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+                                border-color: var(--rm-primary);
+                                background: var(--rm-primary-light);
                             }
 
                             &.selected {
-                                border-color: #6d8efa;
-                                border-width: 3px;
-                                box-shadow: 0 0 0 3px rgba(109, 142, 250, 0.2);
+                                border-color: var(--rm-primary);
+                                border-width: 1px;
+                                box-shadow: 0 0 0 3px var(--rm-primary-shadow);
                             }
                         }
                     }
@@ -331,26 +362,26 @@
                     .custom-color-input {
                         label {
                     display: block;
-                            font-size: 14px;
+                            font-size: 13px;
                             font-weight: 600;
-                            color: #374151;
-                            margin-bottom: 8px;
+                            color: var(--rm-text-secondary);
+                            margin-bottom: 6px;
                         }
 
                         .color-input-wrapper {
                             display: flex;
                             align-items: center;
-                            gap: 12px;
+                            gap: 10px;
 
                             .text-input {
                                 flex: 1;
                             }
 
                             .color-preview {
-                                width: 40px;
-                                height: 40px;
-                                border: 2px solid #e5e7eb;
-                                border-radius: 8px;
+                                width: 32px;
+                                height: 32px;
+                                border: 1px solid var(--rm-border-color);
+                                border-radius: 10px;
                                 flex-shrink: 0;
                             }
                         }
@@ -359,40 +390,41 @@
 
             .permissions-grid {
                 display: grid;
-                gap: 12px;
+                gap: 10px;
 
                 .permission-item {
-                    padding: 16px;
-                    border: 2px solid var(--lighterborder, #e5e7eb);
-                    border-radius: 12px;
+                    padding: 12px;
+                    border: 2px solid var(--rm-border-color);
+                    border-radius: 10px;
                     cursor: pointer;
                     transition: all 0.2s ease;
-                    background: var(--background, #fff);
+                    background: var(--rm-background);
                     position: relative;
 
                     &:hover:not(.coming-soon) {
-                        border-color: var(--org-primary, #64AB6C);
-                        background: var(--org-primary-transparent, rgba(100, 171, 108, 0.1));
+                        border-color: var(--rm-primary);
+                        background: var(--rm-primary-light);
                     }
 
                     &.selected {
-                        border-color: var(--org-primary, #64AB6C);
-                        background: var(--org-primary-transparent, rgba(100, 171, 108, 0.15));
+                        border-color: var(--rm-primary);
+                        background: var(--rm-primary-medium);
+                        box-shadow: 0 0 0 3px var(--rm-primary-shadow);
                         
                         .permission-label {
-                            color: var(--org-primary, #64AB6C);
-                            font-weight: 700;
+                            color: var(--rm-text-primary);
+                            font-weight: 600;
                         }
                     }
 
                     &.coming-soon {
                         cursor: not-allowed;
                         opacity: 0.7;
-                        background: var(--background-secondary, #f9fafb);
+                        background: var(--rm-background-secondary);
                         
                         &:hover {
-                            border-color: var(--lighterborder, #e5e7eb);
-                            background: var(--background-secondary, #f9fafb);
+                            border-color: var(--rm-border-color);
+                            background: var(--rm-background-secondary);
                         }
                     }
 
@@ -403,13 +435,13 @@
                             display: flex;
                             align-items: center;
                             justify-content: space-between;
-                            margin-bottom: 6px;
-                            gap: 8px;
+                            margin-bottom: 4px;
+                            gap: 6px;
 
                             .permission-label {
                                 font-size: 14px;
                                 font-weight: 600;
-                                color: var(--text, #1f2937);
+                                color: var(--rm-text-primary);
                                 font-family: 'Inter', sans-serif;
                                 transition: all 0.2s ease;
                             }
@@ -417,11 +449,11 @@
                             .coming-soon-badge {
                                 font-size: 10px;
                                 font-weight: 700;
-                                color: var(--light-text, #6b7280);
+                                color: var(--rm-text-tertiary);
                                 text-transform: uppercase;
                                 letter-spacing: 0.5px;
                                 padding: 2px 8px;
-                                background: var(--background-secondary, #f3f4f6);
+                                background: var(--rm-background-tertiary);
                                 border-radius: 12px;
                                 font-family: 'Inter', sans-serif;
                                 white-space: nowrap;
@@ -432,14 +464,14 @@
                         .permission-description {
                             display: block;
                             font-size: 12px;
-                            color: var(--light-text, #6b7280);
-                            line-height: 1.5;
+                            color: var(--rm-text-tertiary);
+                            line-height: 1.4;
                             font-family: 'Inter', sans-serif;
                         }
                     }
 
                     &:focus {
-                        outline: 2px solid var(--org-primary, #64AB6C);
+                        outline: 2px solid var(--rm-primary);
                         outline-offset: 2px;
                     }
 
@@ -451,15 +483,15 @@
             }
 
             .role-editor-create-action {
-                padding: 24px;
+                padding: 16px 20px;
                 display: flex;
                 justify-content: flex-end;
                 align-items: center;
 
                 .create-btn {
-                    padding: 12px 24px;
-                    border-radius: 8px;
-                    font-size: 14px;
+                    padding: 10px 20px;
+                    border-radius: 10px;
+                    font-size: 13px;
                     font-weight: 600;
                     cursor: pointer;
                     transition: all 0.2s ease;
@@ -486,36 +518,36 @@
             align-items: center;
                 justify-content: center;
             height: 100%;
-            padding: 48px;
+            padding: 32px;
             text-align: center;
-            color: #6b7280;
+            color: var(--rm-text-tertiary);
 
             svg {
-                font-size: 64px;
-                margin-bottom: 24px;
+                font-size: 48px;
+                margin-bottom: 16px;
                 opacity: 0.5;
             }
 
             h3 {
-                font-size: 20px;
+                font-size: 18px;
                 font-weight: 600;
-                color: #1f2937;
-                margin: 0 0 8px 0;
+                color: var(--rm-text-primary);
+                margin: 0 0 6px 0;
             }
 
             p {
-                font-size: 14px;
-                margin: 0 0 24px 0;
-                color: #6b7280;
+                font-size: 13px;
+                margin: 0 0 20px 0;
+                color: var(--rm-text-tertiary);
             }
 
             .add-first-role-btn {
-                padding: 12px 24px;
+                padding: 10px 20px;
                 background: var(--org-primary, #64AB6C);
                 color: white;
                 border: none;
-                border-radius: 8px;
-                font-size: 14px;
+                border-radius: 10px;
+                font-size: 13px;
                 font-weight: 600;
                 cursor: pointer;
                 transition: all 0.2s ease;
@@ -541,7 +573,7 @@
             width: 100%;
             min-width: 100%;
             border-right: none;
-            border-bottom: 2px solid #e5e7eb;
+            border-bottom: 1px solid var(--rm-border-color);
             max-height: 300px;
         }
 

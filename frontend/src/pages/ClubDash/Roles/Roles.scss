@@ -99,9 +99,8 @@
 
     .role-manager-container {
         flex: 1;
-        overflow-y: auto;
-        padding-right: 10px;
-        padding: 0 40px 20px 40px;
+        overflow-y: hidden;
+        // padding: 0 40px 20px 40px;
 
         // Customize RoleManager styles to match ClubDash theme
         .role-manager {
