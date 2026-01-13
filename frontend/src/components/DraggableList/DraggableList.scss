@@ -1,0 +1,26 @@
+.draggable-list {
+    width: 100%;
+
+    .draggable-list-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .draggable-item {
+        cursor: grab;
+        user-select: none;
+        
+        &:active {
+            cursor: grabbing;
+        }
+
+        &[data-dragging="true"] {
+            opacity: 0.8;
+        }
+    }
+}
+

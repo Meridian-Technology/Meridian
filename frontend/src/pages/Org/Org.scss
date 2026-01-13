@@ -189,8 +189,40 @@
         padding-left: 0;
         margin-left: 0;
         flex-wrap: wrap;
+        gap: 10px;
         
-        img{
+        .mutual-friends-avatars {
+            display: flex;
+            align-items: center;
+            position: relative;
+            height: 24px;
+            
+            .mutual-avatar {
+                width: 24px;
+                height: 24px;
+                min-width: 24px;
+                min-height: 24px;
+                border-radius: 50%;
+                border: 2px solid var(--background);
+                object-fit: cover;
+                position: relative;
+                display: block;
+                padding: 0;
+                flex-shrink: 0;
+                
+                &:not(:first-child) {
+                    margin-left: -8px;
+                }
+            }
+        }
+        
+        .mutual-friends-text {
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        
+        // General img selector - exclude mutual avatars
+        img:not(.mutual-avatar){
             height: 15px;
             padding-right: 10px;
             flex-shrink: 0;
@@ -219,6 +251,7 @@
         display: flex;
         gap: 10px;
         position: relative;
+        align-items: center;
     
         button{
             padding: 6px 40px;
@@ -277,6 +310,38 @@
                 }
                 &.following{
                     color: var(--dark-blue);
+                }
+            }
+        }
+        
+        .social-links-pips {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-left: auto;
+            
+            .social-link-pip {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                background-color: var(--light);
+                color: var(--text);
+                text-decoration: none;
+                transition: all 0.2s ease;
+                border: 1px solid var(--lighterborder);
+                
+                iconify-icon {
+                    font-size: 18px;
+                }
+                
+                &:hover {
+                    background-color: var(--dark-blue);
+                    color: white;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
                 }
             }
         }
@@ -421,6 +486,157 @@
             margin: 0 0 20px 0;
             color: var(--text);
         }
+    }
+
+    .members-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        width: 100%;
+    }
+
+    .member-card {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        background-color: var(--background);
+        border: 1px solid var(--lighterborder);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        transition: all 0.2s ease;
+
+        &:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+    }
+
+    .member-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .member-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+        border: 2px solid var(--lighterborder);
+    }
+
+    .member-details {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .member-name {
+        font-family: 'Inter';
+        font-weight: 600;
+        font-size: 16px;
+        margin: 0;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .member-username {
+        font-family: 'Inter';
+        font-weight: 300;
+        font-size: 12px;
+        margin: 0;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        opacity: 0.7;
+    }
+
+    .member-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+    }
+
+    .member-role {
+        font-family: 'Inter';
+        font-weight: 500;
+        font-size: 14px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        background-color: var(--secondary-color);
+        color: var(--primary);
+        text-transform: capitalize;
+        white-space: nowrap;
+    }
+
+    .add-friend-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 8px;
+        background-color: var(--background);
+        color: var(--text);
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        iconify-icon {
+            font-size: 20px;
+        }
+
+        &:hover:not(:disabled) {
+            background-color: var(--light);
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        &.already-friend {
+            background-color: var(--background);
+            color: var(--green);
+            cursor: default;
+
+            &:hover {
+                background-color: var(--background);
+            }
+        }
+
+        &.pending {
+            background-color: var(--background);
+            color: var(--text-secondary);
+            cursor: default;
+
+            iconify-icon {
+                color: var(--text-secondary);
+            }
+
+            &:hover {
+                background-color: var(--background);
+            }
+        }
+    }
+
+    .no-members {
+        font-family: 'Inter';
+        font-weight: 400;
+        font-size: 16px;
+        color: var(--text-secondary);
+        text-align: center;
+        padding: 40px 20px;
     }
     
     .meeting-schedule{
@@ -649,6 +865,7 @@
                 width: 100%;
                 display: flex;
                 gap: 10px;
+                flex-wrap: wrap;
                 
                 button:not(.follow-button) {
                     flex: 1;
@@ -657,6 +874,13 @@
                 
                 .follow-button {
                     flex-shrink: 0;
+                }
+                
+                .social-links-pips {
+                    margin-left: 0;
+                    width: 100%;
+                    justify-content: center;
+                    margin-top: 8px;
                 }
             }
             

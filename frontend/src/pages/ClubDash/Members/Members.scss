@@ -439,6 +439,240 @@
     }
 }
 
+// Role Assignment Modal Styles
+.popup-overlay .popup-content.role-assignment-modal {
+    background-color: var(--background, #fff) !important;
+    padding: 0 !important;
+    border: 2px solid var(--lighterborder, #e5e7eb) !important;
+    border-radius: 15px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
+    overflow: hidden !important;
+}
+
+.role-assignment-modal {
+    &.popup-content {
+        background-color: var(--background, #fff) !important;
+        padding: 0 !important;
+        border: 2px solid var(--lighterborder, #e5e7eb) !important;
+        border-radius: 15px !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
+        overflow: hidden !important;
+    }
+
+    .modal {
+        background: var(--background, #fff) !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }
+
+    .modal-container {
+        background: var(--background, #fff);
+        border-radius: 15px;
+        overflow: hidden;
+        
+        .modal-header {
+            background: var(--background, #fff);
+            border-bottom: 2px solid var(--lighterborder, #e5e7eb);
+        }
+
+        .modal-body {
+            background: var(--background, #fff);
+        }
+    }
+}
+
+.member-summary {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 2px solid #e5e7eb;
+
+    .member-summary-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+
+        .member-avatar-summary {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+            border: 2px solid #e5e7eb;
+
+            img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+
+            .avatar-placeholder {
+                width: 100%;
+                height: 100%;
+                background: var(--red);
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-family: 'Inter', sans-serif;
+                font-weight: 600;
+                font-size: 1.5rem;
+            }
+        }
+
+        .member-summary-info {
+            flex: 1;
+
+            h4 {
+                font-family: 'Satoshi', sans-serif;
+                font-size: 18px;
+                font-weight: 700;
+                color: var(--text);
+                margin: 0 0 4px 0;
+            }
+
+            .member-username {
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                color: var(--light-text);
+                margin: 0;
+            }
+        }
+    }
+
+    .current-role-display {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        .current-role-label {
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .current-role-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+
+            .role-color-indicator {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+        }
+    }
+}
+
+.role-selection {
+    h4 {
+        font-family: 'Inter', sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text);
+        margin: 0 0 16px 0;
+    }
+
+    .role-options {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+
+        .role-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            background: #fff;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+            width: 100%;
+
+            &:hover:not(:disabled) {
+                border-color: var(--org-primary, #64AB6C);
+                background: var(--org-primary-transparent, rgba(100, 171, 108, 0.1));
+                transform: translateY(-1px);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            }
+
+            &.current {
+                border-color: var(--org-primary, #64AB6C);
+                background: var(--org-primary-transparent, rgba(100, 171, 108, 0.15));
+                box-shadow: 0 0 0 3px rgba(100, 171, 108, 0.2);
+            }
+
+            &.disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+                background: #f9fafb;
+
+                &:hover {
+                    border-color: #e5e7eb;
+                    background: #f9fafb;
+                    transform: none;
+                    box-shadow: none;
+                }
+            }
+
+            .role-option-content {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                flex: 1;
+
+                .role-color-indicator {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    flex-shrink: 0;
+                    border: 2px solid rgba(255, 255, 255, 0.3);
+                    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+                }
+
+                .role-info {
+                    flex: 1;
+                    min-width: 0;
+
+                    h5 {
+                        font-family: 'Inter', sans-serif;
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: var(--text);
+                        margin: 0 0 4px 0;
+                    }
+
+                    p {
+                        font-family: 'Inter', sans-serif;
+                        font-size: 13px;
+                        color: var(--light-text);
+                        margin: 0;
+                        line-height: 1.4;
+                    }
+                }
+            }
+
+            .current-indicator {
+                font-size: 24px;
+                color: var(--org-primary, #64AB6C);
+                flex-shrink: 0;
+                margin-left: 12px;
+            }
+        }
+    }
+}
+
 @keyframes spin {
     from {
         transform: rotate(0deg);

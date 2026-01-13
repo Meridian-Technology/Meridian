@@ -99,9 +99,8 @@
 
     .role-manager-container {
         flex: 1;
-        overflow-y: auto;
-        padding-right: 10px;
-        padding: 0 40px 20px 40px;
+        overflow-y: hidden;
+        // padding: 0 40px 20px 40px;
 
         // Customize RoleManager styles to match ClubDash theme
         .role-manager {
@@ -331,6 +330,149 @@
     }
 }
 
+// Delete Confirmation Popup Styles
+.delete-role-confirm-popup {
+    .delete-role-confirm-content {
+        background: var(--background);
+        border-radius: 12px;
+        padding: 24px;
+        max-width: 500px;
+        width: 100%;
+
+        .delete-role-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+
+            .warning-icon {
+                font-size: 32px;
+                color: #ef4444;
+            }
+
+            h2 {
+                font-family: 'Satoshi', sans-serif;
+                font-size: 24px;
+                font-weight: 700;
+                color: var(--text);
+                margin: 0;
+            }
+        }
+
+        .delete-role-warning {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+
+            p {
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                color: var(--text);
+                margin: 0 0 8px 0;
+                line-height: 1.5;
+
+                &:last-child {
+                    margin-bottom: 0;
+                }
+
+                strong {
+                    color: #ef4444;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        .delete-role-form {
+            margin-bottom: 24px;
+
+            label {
+                display: block;
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--text);
+                margin-bottom: 8px;
+
+                strong {
+                    color: #ef4444;
+                }
+            }
+
+            .text-input {
+                width: 100%;
+                padding: 12px 16px;
+                border: 2px solid var(--lighterborder);
+                border-radius: 8px;
+                font-size: 16px;
+                font-family: 'Inter', sans-serif;
+                background: var(--background);
+                color: var(--text);
+                transition: all 0.2s ease;
+                box-sizing: border-box;
+
+                &:focus {
+                    outline: none;
+                    border-color: var(--red);
+                    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+                }
+
+                &::placeholder {
+                    color: var(--light-text);
+                }
+            }
+        }
+
+        .delete-role-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+
+            button {
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                font-family: 'Inter', sans-serif;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                &.cancel-btn {
+                    background: transparent;
+                    border: 2px solid var(--lighterborder);
+                    color: var(--text);
+
+                    &:hover:not(:disabled) {
+                        background: var(--club-dark);
+                        border-color: var(--lighterborder);
+                    }
+
+                    &:disabled {
+                        opacity: 0.6;
+                        cursor: not-allowed;
+                    }
+                }
+
+                &.delete-btn {
+                    background: #ef4444;
+                    border: none;
+                    color: white;
+
+                    &:hover:not(:disabled) {
+                        background: #dc2626;
+                    }
+
+                    &:disabled {
+                        opacity: 0.6;
+                        cursor: not-allowed;
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Responsive design
 @media (max-width: 768px) {
     .roles {
@@ -341,6 +483,20 @@
 
             h1 {
                 font-size: 1.5rem;
+            }
+        }
+    }
+
+    .delete-role-confirm-popup {
+        .delete-role-confirm-content {
+            padding: 20px;
+
+            .delete-role-actions {
+                flex-direction: column-reverse;
+
+                button {
+                    width: 100%;
+                }
             }
         }
     }
