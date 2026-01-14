@@ -245,6 +245,11 @@ app.get('/api/greet', (req, res) => {
 io.on('connection', (socket) => {
     console.log('Client connected');
 
+    // Heartbeat mechanism - declare early so it can be cleared on disconnect
+    const heartbeatInterval = setInterval(() => {
+        socket.emit('ping');
+    }, 25000); // Send ping every 25 seconds
+
     socket.on('message', (message) => {
         console.log(`Received: ${message}`);
         socket.emit('message', `Echo: ${message}`);
@@ -252,6 +257,8 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log('Client disconnected');
+        // Clear the heartbeat interval to prevent memory leak
+        clearInterval(heartbeatInterval);
     });
 
     // Example: Custom event for friend requests
@@ -270,11 +277,6 @@ io.on('connection', (socket) => {
         socket.leave(classroomId);
         console.log(`User left classroom: ${classroomId}`);
     });
-
-    // Heartbeat mechanism
-    setInterval(() => {
-        socket.emit('ping');
-    }, 25000); // Send ping every 25 seconds
 
     socket.on('pong', () => {
         // console.log('Heartbeat pong received');
