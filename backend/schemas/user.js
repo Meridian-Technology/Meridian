@@ -130,6 +130,12 @@ const userSchema = new mongoose.Schema({
         required: false,
         default: null
     },
+    pushToken: {
+        type: String,
+        required: false,
+        default: null,
+        trim: true
+    },
 
     
     // you can add more fields here if needed, like 'createdAt', 'updatedAt', etc.

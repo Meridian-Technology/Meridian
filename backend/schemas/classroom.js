@@ -29,6 +29,10 @@ const classroomSchema = new Schema({
         default:true,
         required:true
     },
+    building:{
+        type:String,
+        required:false
+    }
 });
 
 module.exports = classroomSchema;

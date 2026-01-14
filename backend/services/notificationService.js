@@ -181,12 +181,193 @@ class NotificationService {
     }
 
     /**
-     * Send push notification
+     * Send push notification via Expo Push Notification API
      */
     async sendPushNotification(notification) {
-        // TODO: Implement push notification service
-        console.log(`Sending push notification: ${notification.title}`);
-        return Promise.resolve();
+        try {
+            const { User } = this.getModels();
+            
+            // Get recipient user to fetch push token
+            let recipient;
+            const recipientId = notification.recipient?._id || notification.recipient;
+            const recipientModel = notification.recipientModel;
+            
+            if (recipientModel === 'User') {
+                recipient = await User.findById(recipientId);
+            } else {
+                // For other recipient types, we might need to handle differently
+                console.warn(`Push notifications not supported for recipient model: ${recipientModel}`);
+                return Promise.resolve(); // Don't fail, just skip
+            }
+
+            if (!recipient) {
+                console.warn(`Recipient not found for notification ${notification._id}`);
+                return Promise.resolve(); // Don't fail, just skip
+            }
+
+            if (!recipient.pushToken) {
+                console.warn(`User ${recipient._id} does not have a push token registered`);
+                return Promise.resolve(); // Don't fail, just skip
+            }
+
+            // Strip HTML tags from message for push notification body
+            const stripHtml = (html) => {
+                if (!html) return '';
+                return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+            };
+
+            // Build navigation instructions from notification
+            const navigationInstructions = this.buildNavigationInstructions(notification);
+            console.log(`📱 [PushNotification] Building navigation for notification ${notification._id}:`, {
+                notificationType: notification.type,
+                hasMetadataNavigation: !!(notification.metadata && notification.metadata.navigation),
+                builtNavigation: navigationInstructions,
+                metadata: notification.metadata
+            });
+
+            // Prepare notification payload for Expo
+            const expoPushMessage = {
+                to: recipient.pushToken,
+                sound: 'default',
+                title: notification.title || 'Notification',
+                body: stripHtml(notification.message) || '',
+                data: {
+                    notificationId: notification._id?.toString() || notification._id,
+                    type: notification.type || 'system',
+                    navigation: navigationInstructions, // Backend-controlled navigation
+                    ...(notification.metadata || {}),
+                    ...(notification.actions ? { actions: notification.actions } : {})
+                },
+                badge: notification.priority === 'high' || notification.priority === 'urgent' ? 1 : undefined,
+                priority: notification.priority === 'urgent' ? 'high' : 'default',
+                channelId: 'default'
+            };
+
+            // Send to Expo Push Notification API
+            const expoPushUrl = 'https://exp.host/--/api/v2/push/send';
+            const response = await axios.post(expoPushUrl, expoPushMessage, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Accept-Encoding': 'gzip, deflate'
+                }
+            });
+
+            // Check response for errors
+            if (response.data && response.data.data) {
+                const result = response.data.data;
+                if (result.status === 'error') {
+                    console.error('Expo push notification error:', result.message);
+                    // Handle specific error cases
+                    if (result.message && result.message.includes('InvalidCredentials')) {
+                        console.error('Invalid Expo push token - user may need to re-register');
+                    }
+                    return Promise.resolve(); // Don't throw - allow other channels to still work
+                }
+            }
+
+            console.log(`Push notification sent successfully to ${recipient._id}`);
+            return Promise.resolve();
+        } catch (error) {
+            console.error('Error sending push notification:', error);
+            // Don't throw - allow other channels to still work
+            return Promise.resolve();
+        }
+    }
+
+    /**
+     * Build navigation instructions for mobile app from notification
+     * This allows the backend to control what happens when a notification is tapped
+     */
+    buildNavigationInstructions(notification) {
+        console.log(`🧭 [Backend] buildNavigationInstructions called for notification:`, {
+            notificationId: notification._id,
+            notificationType: notification.type,
+            hasMetadata: !!notification.metadata,
+            metadataNavigation: notification.metadata?.navigation,
+        });
+        
+        // If navigation is explicitly set in metadata, use it
+        if (notification.metadata && notification.metadata.navigation) {
+            console.log(`🧭 [Backend] Using explicit navigation from metadata:`, notification.metadata.navigation);
+            return notification.metadata.navigation;
+        }
+        
+        console.log(`🧭 [Backend] Building navigation from notification type:`, notification.type);
+
+        // Otherwise, build navigation based on notification type and metadata
+        const navigation = {
+            type: 'navigate', // 'navigate', 'deep_link', 'api_call', or 'none'
+            route: null,
+            params: {},
+            deepLink: null
+        };
+
+        // Build navigation based on notification type
+        switch (notification.type) {
+            case 'event':
+            case 'event_reminder':
+            case 'event_update':
+                if (notification.metadata && notification.metadata.eventId) {
+                    navigation.route = 'EventDetails';
+                    navigation.params = { eventId: notification.metadata.eventId };
+                    navigation.deepLink = `meridian://event/${notification.metadata.eventId}`;
+                }
+                break;
+
+            case 'org':
+            case 'membership':
+                if (notification.metadata && notification.metadata.orgId) {
+                    navigation.route = 'OrganizationProfile';
+                    navigation.params = { orgId: notification.metadata.orgId };
+                    navigation.deepLink = `meridian://organization/${notification.metadata.orgId}`;
+                }
+                break;
+
+            case 'friend_request':
+                navigation.route = 'MainTabs';
+                navigation.params = { 
+                    screen: 'Friends',
+                    params: { initialTab: 'requests' }
+                };
+                navigation.deepLink = 'meridian://friends/requests';
+                console.log(`🧭 [Backend] Built friend_request navigation:`, navigation);
+                break;
+
+            case 'friend_accepted':
+            case 'friend_activity':
+                navigation.route = 'MainTabs';
+                navigation.params = { 
+                    screen: 'Friends'
+                };
+                navigation.deepLink = 'meridian://friends';
+                break;
+
+            case 'room':
+            case 'room_availability':
+                if (notification.metadata && notification.metadata.roomId) {
+                    navigation.route = 'RoomDetails';
+                    navigation.params = { roomId: notification.metadata.roomId };
+                    navigation.deepLink = `meridian://room/${notification.metadata.roomId}`;
+                }
+                break;
+
+            case 'system':
+            case 'system_update':
+                if (notification.metadata && notification.metadata.settings) {
+                    navigation.route = 'Profile';
+                    navigation.params = { screen: 'Settings' };
+                    navigation.deepLink = 'meridian://settings';
+                }
+                break;
+
+            default:
+                // Default to home/events screen
+                navigation.route = 'Events';
+                navigation.deepLink = 'meridian://';
+        }
+
+        return navigation;
     }
 
     /**
@@ -482,7 +663,11 @@ class NotificationService {
                 },
                 actions: template.actions ? this.interpolateObject(template.actions, variables) : [],
                 priority: template.priority || 'normal',
-                channels: template.channels || ['in_app']
+                channels: template.channels || ['in_app'],
+                metadata: {
+                    ...(template.navigation ? { navigation: this.interpolateObject(template.navigation, variables) } : {}),
+                    ...(variables.metadata || {})
+                }
             };
             
             // Add sender fields if they exist in the template
@@ -553,9 +738,19 @@ class NotificationService {
                 message: '<strong>{{senderName|capitalize}}</strong> has sent you a friend request.',
                 version: '1.0',
                 priority: 'normal',
-                channels: ['in_app'],
+                channels: ['in_app', 'push'],
                 sender: '{{sender}}',
                 senderModel: 'User',
+                // Backend-controlled navigation: navigate to MainTabs -> Friends screen with requests tab
+                navigation: {
+                    type: 'navigate',
+                    route: 'MainTabs',
+                    params: {
+                        screen: 'Friends',
+                        params: { initialTab: 'requests' }
+                    },
+                    deepLink: 'meridian://friends/requests'
+                },
                 actions: [
                     {
                         id: 'accept_friend_request',
@@ -582,9 +777,17 @@ class NotificationService {
                 message: '<strong>{{senderName|capitalize}}</strong> has applied to join <strong>{{orgName}}</strong>.',
                 version: '1.0',
                 priority: 'normal',
-                channels: ['in_app'],
+                channels: ['in_app', 'push'],
                 sender: '{{sender}}',
                 senderModel: 'User',
+                // Backend-controlled navigation: navigate to organization profile
+                // Note: orgId should be provided in variables when creating notification
+                navigation: {
+                    type: 'navigate',
+                    route: 'OrganizationProfile',
+                    params: { orgId: '{{orgId}}' },
+                    deepLink: 'meridian://organization/{{orgId}}'
+                },
                 actions: [
                     {
                         id: 'go_to_application',
@@ -601,6 +804,16 @@ class NotificationService {
                 version: '1.0',
                 priority: 'high',
                 channels: ['in_app', 'push'],
+                // Backend-controlled navigation: navigate to event details
+                navigation: {
+                    type: 'navigate',
+                    route: 'Events',
+                    params: {
+                        screen: 'EventDetails',
+                        params: { eventId: '{{eventId}}' }
+                    },
+                    deepLink: 'meridian://events/{{eventId}}'
+                },
                 actions: [
                     {
                         id: 'view_event',
@@ -787,7 +1000,11 @@ class NotificationService {
                 },
                 actions: template.actions ? this.interpolateObject(template.actions, variables) : [],
                 priority: template.priority || 'normal',
-                channels: template.channels || ['in_app']
+                channels: template.channels || ['in_app'],
+                metadata: {
+                    ...(template.navigation ? { navigation: this.interpolateObject(template.navigation, variables) } : {}),
+                    ...(variables.metadata || {})
+                }
             };
             
             // Add sender fields if they exist in the template

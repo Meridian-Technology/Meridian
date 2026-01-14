@@ -1022,7 +1022,13 @@ router.post('/:orgId/create-member-form', verifyToken, requireMemberManagement()
     const { Org, Form } = getModels(req, 'Org', 'Form');
     const { form, orgId } = req.body;
     try{
-        const newForm = new Form(form);
+        const newForm = new Form({
+            ...form,
+            createdBy: orgId,
+            createdType: 'Org',
+            formOwner: orgId,
+            formOwnerType: 'Org'
+        });
         await newForm.save();
         const org = await Org.findOneAndUpdate({_id: orgId}, {$set: {memberForm: newForm._id}});
         if(!org) return res.status(404);
@@ -1074,6 +1080,7 @@ router.post('/:orgId/forms', verifyToken, requireMemberManagement(), async (req,
         const formData = {
             ...form,
             createdBy: req.user.userId,
+            createdType: 'User',
             formOwner: orgId,
             formOwnerType: 'Org'
         };

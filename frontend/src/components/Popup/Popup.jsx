@@ -63,15 +63,14 @@ const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName
 
   return ReactDOM.createPortal(
     <div className={`popup-overlay ${show ? 'fade-in' : 'fade-out'}`}>
-        
+        {popout && <Icon icon="ep:close-bold" onClick={handleClose} className={`close-popup popout`} style={{left:rightPosition + 10, top:topPosition}}  />}
         
       <div className={`popup-content ${show ? 'slide-in' : 'slide-out'} ${defaultStyling ? "" : "no-styling"} ${customClassName}`} ref={ref}>
-    
+      {!popout && <Icon icon="ep:close-bold" onClick={handleClose} className={`close-popup`} />}
       {renderChildrenWithClose()} {/* Render children with handleClose prop */}
       </div>
     </div>,
-    document.body // Render the popup outside the root component for proper overlaying
-  );
+    document.body   );
 };
 
 export default Popup;

@@ -94,6 +94,7 @@ def migrateClassrooms(uri, db):
     for classroom in all_classes:
         # Check if the classroom already exists in collection1
         existing_classroom = collection1.find_one({'name': classroom['name']})
+        print(f"Classroom '{classroom['name']}' building: {classroom.get('building', None)}")
         if existing_classroom is None:
             # Insert the classroom into collection1 if it doesn't exist
             classroom1 = {
@@ -104,10 +105,15 @@ def migrateClassrooms(uri, db):
                 'average_rating': 0,
                 'checked_in':[],
                 'mainSearch': True,
+                'building': classroom['building']
             }
             collection1.insert_one(classroom1)
             print(f"Classroom '{classroom['name']}' and its schedule were migrated.")
         else:
+            # add building to existing classroom
+            collection1.update_one({'name': classroom['name']}, {'$set': {'building': classroom.get('building', None)}})
+            if classroom.get('building', None) is None:
+                print(f"Classroom '{classroom['name']}' has no building.")
             print(f"Classroom '{classroom['name']}' already exists in 'classrooms1'.")
 
         new_classroom = collection1.find_one({'name': classroom['name']})
@@ -307,7 +313,7 @@ def renameField(uri, collection, previousName, newName):
 
 def load_json_to_mongo(json_file, uri):
     client = MongoClient(uri, server_api=ServerApi('1')) 
-    db = client['ucb']
+    db = client['testing']
     collection = db['classrooms']
 
     with open(json_file, 'r') as file:
@@ -317,12 +323,13 @@ def load_json_to_mongo(json_file, uri):
             # Prepare the document to insert
             document = {
                 "name": room_data["name"],
-                "weekly_schedule": room_data["weekly_schedule"]
+                "weekly_schedule": room_data["weekly_schedule"],
+                "building": room_data["building"],
             }
             
             # Check if the room already exists and update it, or insert a new one
             result = collection.update_one(
-                {"room_name": room_name},
+                {"name": room_name},
                 {"$set": document},
                 upsert=True
             )
@@ -352,7 +359,7 @@ def load_json_to_mongo(json_file, uri):
 # forceUpdate('users', {'visited': [], 'partners': [], 'sessions': [], 'hours': 0, 'contributions': 0})
 # updateImages()
 
-# load_json_to_mongo("classes.json", "mongodb://127.0.0.1:27017/studycompass" )
+# load_json_to_mongo("classes.json", "mongodb://127.0.0.1:27017/testing" )
 # migrateClassrooms('mongodb://127.0.0.1:27017/ucb', 'ucb')
-migrateClassrooms('mongodb://127.0.0.1:27017/studycompass', 'studycompass')
+migrateClassrooms('mongodb://127.0.0.1:27017', 'studycompass')
 # migrateClassrooms('mongodb+srv://jbliu88:1CLPY0FGxc1Etx5l@studycompass.m1gjmdo.mongodb.net/studycompass?retryWrites=true&w=majority', 'studycompass')
