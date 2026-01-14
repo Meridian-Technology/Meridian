@@ -187,29 +187,55 @@ router.post('/track-rsvp/:eventId', verifyToken, async (req, res) => {
 // Get analytics overview (admin only)
 router.get('/overview', verifyToken, authorizeRoles('admin'), async (req, res) => {
     const { EventAnalytics, Event, User } = getModels(req, 'EventAnalytics', 'Event', 'User');
-    const { timeRange = '30d' } = req.query;
+    const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
     try {
         const now = new Date();
-        let startDate;
+        let startDate, endDate;
         
-        switch (timeRange) {
-            case '7d':
-                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                break;
-            case '30d':
-                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                break;
-            case '90d':
-                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-                break;
-            default:
-                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        // If explicit dates are provided, use them
+        if (startDateParam && endDateParam) {
+            startDate = new Date(startDateParam);
+            endDate = new Date(endDateParam);
+        } else {
+            // Otherwise, calculate based on timeRange
+            switch (timeRange) {
+                case '7d':
+                    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case '30d':
+                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case '90d':
+                    startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case 'month':
+                    // Current calendar month
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                    break;
+                case 'week':
+                    // Current calendar week (Sunday to Saturday)
+                    const dayOfWeek = now.getDay();
+                    startDate = new Date(now);
+                    startDate.setDate(now.getDate() - dayOfWeek);
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate = new Date(startDate);
+                    endDate.setDate(startDate.getDate() + 6);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                default:
+                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+            }
         }
 
         // Get total events
         const totalEvents = await Event.countDocuments({ 
-            createdAt: { $gte: startDate },
+            createdAt: { $gte: startDate, $lte: endDate },
             isDeleted: false 
         });
 
@@ -217,7 +243,7 @@ router.get('/overview', verifyToken, authorizeRoles('admin'), async (req, res) =
         const analytics = await EventAnalytics.aggregate([
             {
                 $match: {
-                    'viewHistory.timestamp': { $gte: startDate }
+                    'viewHistory.timestamp': { $gte: startDate, $lte: endDate }
                 }
             },
             {
@@ -237,7 +263,7 @@ router.get('/overview', verifyToken, authorizeRoles('admin'), async (req, res) =
         const topEventsByViews = await EventAnalytics.aggregate([
             {
                 $match: {
-                    'viewHistory.timestamp': { $gte: startDate }
+                    'viewHistory.timestamp': { $gte: startDate, $lte: endDate }
                 }
             },
             {
@@ -303,24 +329,50 @@ router.get('/overview', verifyToken, authorizeRoles('admin'), async (req, res) =
 router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, res) => {
     const { EventAnalytics, Event } = getModels(req, 'EventAnalytics', 'Event');
     const { eventId } = req.params;
-    const { timeRange = '30d' } = req.query;
+    const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
     try {
         const now = new Date();
-        let startDate;
+        let startDate, endDate;
         
-        switch (timeRange) {
-            case '7d':
-                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                break;
-            case '30d':
-                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                break;
-            case '90d':
-                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-                break;
-            default:
-                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        // If explicit dates are provided, use them
+        if (startDateParam && endDateParam) {
+            startDate = new Date(startDateParam);
+            endDate = new Date(endDateParam);
+        } else {
+            // Otherwise, calculate based on timeRange
+            switch (timeRange) {
+                case '7d':
+                    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case '30d':
+                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case '90d':
+                    startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case 'month':
+                    // Current calendar month
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                    break;
+                case 'week':
+                    // Current calendar week (Sunday to Saturday)
+                    const dayOfWeek = now.getDay();
+                    startDate = new Date(now);
+                    startDate.setDate(now.getDate() - dayOfWeek);
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate = new Date(startDate);
+                    endDate.setDate(startDate.getDate() + 6);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                default:
+                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+            }
         }
 
         const event = await Event.findById(eventId);
@@ -355,10 +407,10 @@ router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, 
 
         // Filter history by time range
         const filteredViewHistory = analytics.viewHistory.filter(view => 
-            view.timestamp >= startDate
+            view.timestamp >= startDate && view.timestamp <= endDate
         );
         const filteredRsvpHistory = analytics.rsvpHistory.filter(rsvp => 
-            rsvp.timestamp >= startDate
+            rsvp.timestamp >= startDate && rsvp.timestamp <= endDate
         );
 
         // Calculate engagement rate
@@ -400,24 +452,50 @@ router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, 
 // Get daily analytics (admin only)
 router.get('/daily', verifyToken, authorizeRoles('admin'), async (req, res) => {
     const { EventAnalytics } = getModels(req, 'EventAnalytics');
-    const { timeRange = '30d' } = req.query;
+    const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
     try {
         const now = new Date();
-        let startDate;
+        let startDate, endDate;
         
-        switch (timeRange) {
-            case '7d':
-                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                break;
-            case '30d':
-                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                break;
-            case '90d':
-                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-                break;
-            default:
-                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        // If explicit dates are provided, use them
+        if (startDateParam && endDateParam) {
+            startDate = new Date(startDateParam);
+            endDate = new Date(endDateParam);
+        } else {
+            // Otherwise, calculate based on timeRange
+            switch (timeRange) {
+                case '7d':
+                    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case '30d':
+                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case '90d':
+                    startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+                    break;
+                case 'month':
+                    // Current calendar month
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                    break;
+                case 'week':
+                    // Current calendar week (Sunday to Saturday)
+                    const dayOfWeek = now.getDay();
+                    startDate = new Date(now);
+                    startDate.setDate(now.getDate() - dayOfWeek);
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate = new Date(startDate);
+                    endDate.setDate(startDate.getDate() + 6);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                default:
+                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    endDate = now;
+            }
         }
 
         // Aggregate daily data
@@ -427,7 +505,7 @@ router.get('/daily', verifyToken, authorizeRoles('admin'), async (req, res) => {
             },
             {
                 $match: {
-                    'viewHistory.timestamp': { $gte: startDate }
+                    'viewHistory.timestamp': { $gte: startDate, $lte: endDate }
                 }
             },
             {

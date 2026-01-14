@@ -26,13 +26,28 @@ function Analytics() {
         if (rangeMode === 'all') {
             return { range: 'all' };
         } else {
-            let endDate;
-            if (rangeMode === 'month') endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 28);
-            if (rangeMode === 'week') endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 7);
-            if (rangeMode === 'day') endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 1);
+            let start, end;
+            if (rangeMode === 'month') {
+                start = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+                end = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0, 23, 59, 59, 999);
+            } else if (rangeMode === 'week') {
+                const weekStart = new Date(startDate);
+                weekStart.setDate(startDate.getDate() - startDate.getDay()); // Start of week (Sunday)
+                weekStart.setHours(0, 0, 0, 0);
+                const weekEnd = new Date(weekStart);
+                weekEnd.setDate(weekStart.getDate() + 6); // End of week (Saturday)
+                weekEnd.setHours(23, 59, 59, 999);
+                start = weekStart;
+                end = weekEnd;
+            } else { // day
+                start = new Date(startDate);
+                start.setHours(0, 0, 0, 0);
+                end = new Date(startDate);
+                end.setHours(23, 59, 59, 999);
+            }
             return {
-                startDate: startDate.toISOString().slice(0,10),
-                endDate: endDate.toISOString().slice(0,10)
+                startDate: start.toISOString().slice(0,10),
+                endDate: end.toISOString().slice(0,10)
             };
         }
     }, [isAuthenticated, rangeMode, startDate]);
