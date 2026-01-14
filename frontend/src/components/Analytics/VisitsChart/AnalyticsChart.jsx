@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import apiRequest from '../../../utils/postRequest';
-import { format, addWeeks, addDays, subWeeks, subDays, subMonths, subYears } from 'date-fns'; // Import date manipulation functions
+import { format, addWeeks, addDays, subWeeks, subDays, subMonths, subYears, startOfMonth, endOfMonth, addMonths, startOfWeek, endOfWeek } from 'date-fns'; // Import date manipulation functions
 import './AnalyticsChart.scss';
 import Stats from '../../../assets/Icons/Stats.svg';
 // removed per-chart date navigation
@@ -102,11 +102,15 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
       } else if (previousPeriodMode === 'adjacent') {
         // Adjacent previous period
         if (mode === 'month') {
-          prevStartDate = subWeeks(anchorDate, 4);
-          prevEndDate = anchorDate;
+          // Previous calendar month
+          const prevMonth = subMonths(startOfMonth(anchorDate), 1);
+          prevStartDate = startOfMonth(prevMonth);
+          prevEndDate = endOfMonth(prevMonth);
         } else if (mode === 'week') {
-          prevStartDate = subWeeks(anchorDate, 1);
-          prevEndDate = anchorDate;
+          // Previous calendar week
+          const prevWeekStart = subWeeks(startOfWeek(anchorDate, { weekStartsOn: 0 }), 1);
+          prevStartDate = startOfWeek(prevWeekStart, { weekStartsOn: 0 });
+          prevEndDate = endOfWeek(prevWeekStart, { weekStartsOn: 0 });
         } else if (mode === 'day') {
           prevStartDate = subDays(anchorDate, 1);
           prevEndDate = anchorDate;
@@ -122,22 +126,29 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
 
     // Fetch data based on viewMode
     const fetchVisitData = async (mode, anchorDate) => {
-      let endDate;
+      let startDate, endDate;
       let routeSuffix;
       if (mode === 'all') {
         routeSuffix = 'all';
-      } else if (mode === 'month' || mode === 'week') {
-        // both use -by-day
+      } else if (mode === 'month') {
+        // Calendar month boundaries
         routeSuffix = 'day';
-        endDate = mode === 'month' ? addWeeks(anchorDate, 4) : addWeeks(anchorDate, 1);
+        startDate = startOfMonth(anchorDate);
+        endDate = endOfMonth(anchorDate);
+      } else if (mode === 'week') {
+        // Calendar week boundaries
+        routeSuffix = 'day';
+        startDate = startOfWeek(anchorDate, { weekStartsOn: 0 });
+        endDate = endOfWeek(anchorDate, { weekStartsOn: 0 });
       } else {
         // day view uses -by-hour
         routeSuffix = 'hour';
+        startDate = anchorDate;
         endDate = addDays(anchorDate, 1);
       }
 
       const params = routeSuffix === 'all' ? {} : {
-        startDate: format(anchorDate, 'yyyy-MM-dd'),
+        startDate: format(startDate, 'yyyy-MM-dd'),
         endDate: format(endDate, 'yyyy-MM-dd'),
       };
 
@@ -147,14 +158,15 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
         if (data && !data.error) {
           const labels = data.map(item => {
             if (routeSuffix === 'day') {
-              const date = addDays(new Date(item.date + 'T00:00:00Z'), 1);
+              // Parse date string directly to avoid timezone issues
+              const date = new Date(item.date + 'T00:00:00');
               return format(date, 'MMM dd');
             } else {
               if (routeSuffix === 'hour') {
                 return format(new Date(item.hour), 'H:mm');
               }
               // all
-              const date = addDays(new Date(item.date + 'T00:00:00Z'), 1);
+              const date = new Date(item.date + 'T00:00:00');
               return format(date, 'MMM yyyy');
             }
           });
@@ -170,7 +182,7 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
           let previousCounts = null;
           let previousLabels = null;
           if (previousPeriodMode && previousPeriodMode !== 'none' && mode !== 'all') {
-            const prevPeriod = calculatePreviousPeriod(mode, anchorDate, endDate);
+            const prevPeriod = calculatePreviousPeriod(mode, startDate, endDate);
             if (prevPeriod) {
               try {
                 // For hour-based queries, only pass startDate; for others, pass both dates
@@ -184,7 +196,8 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
                 if (prevData && !prevData.error) {
                   previousLabels = prevData.map(item => {
                     if (routeSuffix === 'day') {
-                      const date = addDays(new Date(item.date + 'T00:00:00Z'), 1);
+                      // Parse date string directly to avoid timezone issues
+                      const date = new Date(item.date + 'T00:00:00');
                       return format(date, 'MMM dd');
                     } else if (routeSuffix === 'hour') {
                       return format(new Date(item.hour), 'H:mm');
@@ -314,11 +327,16 @@ const AnalyticsChart = ({endpoint, heading, color, externalViewMode, externalSta
                         ticks: {
                           color: '#666',
                           autoSkip: true,
-                          maxTicksLimit: lastRoute === 'all' ? 8 : 12,
+                          maxTicksLimit: lastRoute === 'all' ? 8 : lastRoute === 'day' ? 8 : 6,
                           callback: function(value, index, ticks) {
                             const total = chartData.labels ? chartData.labels.length : 0;
                             if (lastRoute === 'all' && total > 0) {
                               const step = Math.ceil(total / 8);
+                              return index % step === 0 ? this.getLabelForValue(value) : '';
+                            }
+                            // For month/week views, show fewer ticks to avoid crowding
+                            if (lastRoute === 'day' && total > 0) {
+                              const step = Math.ceil(total / 6);
                               return index % step === 0 ? this.getLabelForValue(value) : '';
                             }
                             return this.getLabelForValue(value);

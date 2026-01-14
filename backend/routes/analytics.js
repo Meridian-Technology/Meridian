@@ -54,17 +54,20 @@ router.get('/visits-by-day', async (req, res) => {
         const parsedStartDate = parseISO(startDate);
         const parsedEndDate = endDate && isValid(parseISO(endDate)) ? parseISO(endDate) : new Date();
 
-        const startOfWeekDate = startOfWeek(parsedStartDate, { weekStartsOn: 0 }); // 1 = Monday
-        const endOfWeekDate = endOfWeek(parsedStartDate, { weekStartsOn: 0 });        //print for debugging
+        // Use the actual date range provided, not week boundaries
+        // Set start to beginning of day and end to end of day
+        const startOfRange = new Date(parsedStartDate);
+        startOfRange.setHours(0, 0, 0, 0);
+        const endOfRange = new Date(parsedEndDate);
+        endOfRange.setHours(23, 59, 59, 999);
 
-
-        // Query visits within the week range and group by day
+        // Query visits within the date range and group by day
         const visitsByDay = await Visit.aggregate([
             {
                 $match: {
                     timestamp: {
-                        $gte: startOfWeekDate,
-                        $lt: endOfWeekDate
+                        $gte: startOfRange,
+                        $lte: endOfRange
                     }
                 }
             },
@@ -83,10 +86,10 @@ router.get('/visits-by-day', async (req, res) => {
             }
         ]);
 
-        // Generate an array with all days within the week range
+        // Generate an array with all days within the date range
         const daysInRange = eachDayOfInterval({
-            start: startOfWeekDate,
-            end: endOfWeekDate,
+            start: startOfRange,
+            end: endOfRange,
         });
 
         // Format and pad the result
@@ -271,16 +274,20 @@ router.get('/users-by-day', async (req, res) => {
         const parsedStartDate = parseISO(startDate);
         const parsedEndDate = endDate && isValid(parseISO(endDate)) ? parseISO(endDate) : new Date();
 
-        const startOfWeekDate = startOfWeek(parsedStartDate, { weekStartsOn: 0 }); // 0 = Sunday
-        const endOfWeekDate = endOfWeek(parsedStartDate, { weekStartsOn: 0 });
+        // Use the actual date range provided, not week boundaries
+        // Set start to beginning of day and end to end of day
+        const startOfRange = new Date(parsedStartDate);
+        startOfRange.setHours(0, 0, 0, 0);
+        const endOfRange = new Date(parsedEndDate);
+        endOfRange.setHours(23, 59, 59, 999);
 
-        // Query users created within the week range and group by day
+        // Query users created within the date range and group by day
         const usersByDay = await User.aggregate([
             {
                 $match: {
                     createdAt: {
-                        $gte: startOfWeekDate,
-                        $lt: endOfWeekDate
+                        $gte: startOfRange,
+                        $lte: endOfRange
                     }
                 }
             },
@@ -299,10 +306,10 @@ router.get('/users-by-day', async (req, res) => {
             }
         ]);
 
-        // Generate an array with all days within the week range
+        // Generate an array with all days within the date range
         const daysInRange = eachDayOfInterval({
-            start: startOfWeekDate,
-            end: endOfWeekDate,
+            start: startOfRange,
+            end: endOfRange,
         });
 
         // Format and pad the result
@@ -537,17 +544,20 @@ router.get('/searches-by-day', async (req, res) => {
         const parsedStartDate = parseISO(startDate);
         const parsedEndDate = endDate && isValid(parseISO(endDate)) ? parseISO(endDate) : new Date();
 
-        const startOfWeekDate = startOfWeek(parsedStartDate, { weekStartsOn: 0 }); // 1 = Monday
-        const endOfWeekDate = endOfWeek(parsedStartDate, { weekStartsOn: 0 });        //print for debugging
+        // Use the actual date range provided, not week boundaries
+        // Set start to beginning of day and end to end of day
+        const startOfRange = new Date(parsedStartDate);
+        startOfRange.setHours(0, 0, 0, 0);
+        const endOfRange = new Date(parsedEndDate);
+        endOfRange.setHours(23, 59, 59, 999);
 
-
-        // Query visits within the week range and group by day
+        // Query searches within the date range and group by day
         const visitsByDay = await Search.aggregate([
             {
                 $match: {
                     timestamp: {
-                        $gte: startOfWeekDate,
-                        $lt: endOfWeekDate
+                        $gte: startOfRange,
+                        $lte: endOfRange
                     }
                 }
             },
@@ -566,10 +576,10 @@ router.get('/searches-by-day', async (req, res) => {
             }
         ]);
 
-        // Generate an array with all days within the week range
+        // Generate an array with all days within the date range
         const daysInRange = eachDayOfInterval({
-            start: startOfWeekDate,
-            end: endOfWeekDate,
+            start: startOfRange,
+            end: endOfRange,
         });
 
         // Format and pad the result
@@ -754,16 +764,20 @@ router.get('/repeated-visits-by-day', async (req, res) => {
         const parsedStartDate = parseISO(startDate);
         const parsedEndDate = endDate && isValid(parseISO(endDate)) ? parseISO(endDate) : new Date();
 
-        const startOfWeekDate = startOfWeek(parsedStartDate, { weekStartsOn: 0 });
-        const endOfWeekDate = endOfWeek(parsedStartDate, { weekStartsOn: 0 });
+        // Use the actual date range provided, not week boundaries
+        // Set start to beginning of day and end to end of day
+        const startOfRange = new Date(parsedStartDate);
+        startOfRange.setHours(0, 0, 0, 0);
+        const endOfRange = new Date(parsedEndDate);
+        endOfRange.setHours(23, 59, 59, 999);
 
         const visitsByDay = await RepeatedVisit.aggregate([
             { $unwind: '$visits' },
             {
                 $match: {
                     visits: {
-                        $gte: startOfWeekDate,
-                        $lt: endOfWeekDate,
+                        $gte: startOfRange,
+                        $lte: endOfRange,
                     },
                 },
             },
@@ -780,7 +794,7 @@ router.get('/repeated-visits-by-day', async (req, res) => {
             { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
         ]);
 
-        const daysInRange = eachDayOfInterval({ start: startOfWeekDate, end: endOfWeekDate });
+        const daysInRange = eachDayOfInterval({ start: startOfRange, end: endOfRange });
 
         const formattedResult = daysInRange.map((day) => {
             const formattedDate = formatISO(day, { representation: 'date' });
