@@ -52,6 +52,17 @@ const userSchema = new mongoose.Schema({
         trim: true,
         // add validation for email
     },
+    affiliatedEmail: {
+        type: String,
+        required: false,
+        unique: true,
+        trim: true,
+        sparse: true // allows null/undefined values to not be considered for uniqueness
+    },
+    affiliatedEmailVerified: {
+        type: Boolean,
+        default: false
+    },
     password: {
         type: String,
         required: false,

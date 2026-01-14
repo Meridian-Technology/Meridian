@@ -66,6 +66,7 @@ app.use(session({
 // Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(express.urlencoded({ extended: true }));
 
 // if (process.env.NODE_ENV === 'production') {
 //     mongoose.connect(process.env.MONGO_URL);
@@ -130,6 +131,7 @@ const studySessionRoutes = require('./routes/studySessionRoutes.js');
 const availabilityPollRoutes = require('./routes/availabilityPollRoutes.js');
 const feedbackRoutes = require('./routes/feedbackRoutes.js');
 const contactRoutes = require('./routes/contactRoutes.js');
+const affiliatedEmailRoutes = require('./routes/affiliatedEmailRoutes.js');
 
 app.use(authRoutes);
 app.use('/auth/saml', samlRoutes);
@@ -170,6 +172,8 @@ app.use('/availability-polls', availabilityPollRoutes);
 
 app.use('/feedback', feedbackRoutes);
 
+
+app.use('/verify-affiliated-email', affiliatedEmailRoutes);
 
 // Serve static files from the React app in production
 if (process.env.NODE_ENV === 'production') {
