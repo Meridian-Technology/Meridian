@@ -1,54 +1,17 @@
-.create-org{
-    .yellow-red{
-        height:50%;
+.create-org-flow {
+    height: 100vh;
+    width: 100%;
+    
+    .shared-flow-manager {
+        height: 100%;
     }
-    .purple{
-        height:50%;
-    }
-    h2{
-        b{
-            background: -webkit-linear-gradient(135deg, #F8A185 , #F34237);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-    }
-    .content{
-        textarea.text-input{
-            width:100%;
-            height:100px;
-            overflow-y: auto;
-        }
-        .file-upload{
-            width:100%;
-            img{
-                width:50px;
-                height:50px;
-                object-fit: cover;
-                border-radius: 50%;
-            }
-        }
-        .role-manager{
-            border: 1px solid var(--lighterborder);
-            background: var(--background);
-            padding: 20px;
-            box-shadow:var(--shadow);
-            max-height:40vh;
-            overflow-y: auto;
-            box-sizing: border-box;
-            border-radius: 10px;
-            margin-top: 10px;
-            .role-container{
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            }
-        }
-        .status{
-            bottom:-30px;
-        }
-        .username-input{
-            margin-bottom:30px;
-        }
-    }
+}
 
+.create-org-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-size: 18px;
+    color: #6b7280;
 }

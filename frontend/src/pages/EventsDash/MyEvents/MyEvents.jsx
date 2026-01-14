@@ -4,7 +4,7 @@ import useAuth from '../../../hooks/useAuth';
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
-import { getFriends } from '../../../pages/Friends/FriendsHelpers.js';
+import { useCache } from '../../../CacheContext';
 import Search from '../../../components/Search/Search';
 import { useFetch } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
@@ -21,6 +21,7 @@ function MyEvents({ onRoomNavigation }){
     const { user, isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const { addNotification } = useNotification();
+    const { getFriends } = useCache();
     const [friends, setFriends] = useState([]);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [searching, setSearching] = useState(false);
@@ -55,8 +56,10 @@ function MyEvents({ onRoomNavigation }){
         const fetchFriends = async () => {
             if (isAuthenticated) {
                 try {
-                    const result = await getFriends();
-                    setFriends(result);
+                    const friendsData = await getFriends();
+                    if (friendsData && friendsData.success) {
+                        setFriends(friendsData.data || []);
+                    }
                 } catch (error) {
                     console.error('Error fetching friends:', error);
                 }
@@ -64,10 +67,11 @@ function MyEvents({ onRoomNavigation }){
         };
         
         fetchFriends();
-    }, [isAuthenticated]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated]); // getFriends is stable from context
 
     const handleAddFriends = () => {
-        navigate('/events-dashboard?page=2');
+        navigate('/events-dashboard?page=3');
     };
 
     const handleSearchFocus = () => {

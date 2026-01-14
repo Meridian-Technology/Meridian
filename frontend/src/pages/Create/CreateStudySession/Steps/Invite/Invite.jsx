@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Invite.scss';
 import { Icon } from '@iconify-icon/react';
-import { useFetch } from '../../../../../hooks/useFetch';
+import { useCache } from '../../../../../CacheContext';
 
 const Invite = ({ formData, setFormData, onComplete }) => {
     const [searchTerm, setSearchTerm] = useState('');
@@ -9,16 +9,28 @@ const Invite = ({ formData, setFormData, onComplete }) => {
     const [filteredFriends, setFilteredFriends] = useState([]);
     const [selectedUsers, setSelectedUsers] = useState(formData.invitedUsers || []);
     const [hasVisited, setHasVisited] = useState(false);
+    const [friendsLoading, setFriendsLoading] = useState(true);
+    const { getFriends } = useCache();
 
-    // Get all friends at once
-    const { data: friendsData, loading: friendsLoading } = useFetch('/getFriends', { method: 'GET' });
-
+    // Get all friends using cache
     useEffect(() => {
-        if (friendsData && friendsData.success) {
-            setAllFriends(friendsData.data || []);
-            setFilteredFriends(friendsData.data || []);
-        }
-    }, [friendsData]);
+        const fetchFriends = async () => {
+            try {
+                setFriendsLoading(true);
+                const friendsData = await getFriends();
+                if (friendsData && friendsData.success) {
+                    setAllFriends(friendsData.data || []);
+                    setFilteredFriends(friendsData.data || []);
+                }
+            } catch (error) {
+                console.error('Error fetching friends:', error);
+            } finally {
+                setFriendsLoading(false);
+            }
+        };
+        fetchFriends();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only fetch once on mount, cache handles subsequent calls
 
     // Filter friends based on search term
     useEffect(() => {

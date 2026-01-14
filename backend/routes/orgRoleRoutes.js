@@ -45,7 +45,7 @@ router.get('/:orgId/roles', verifyToken, requireOrgPermission('view_roles'), asy
 router.post('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, res) => {
     const { Org } = getModels(req, 'Org');
     const { orgId } = req.params;
-    const { name, displayName, permissions, canManageMembers, canManageRoles, canManageEvents, canViewAnalytics } = req.body;
+    const { name, displayName, permissions, canManageMembers, canManageRoles, canManageEvents, canViewAnalytics, color, order } = req.body;
 
     try {
         const org = await Org.findById(orgId);
@@ -73,6 +73,14 @@ router.post('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, r
             });
         }
 
+        // Validate color format if provided
+        if (color && !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid color format. Must be a valid hex color code (e.g., #3b82f6)'
+            });
+        }
+
         // Create new role
         const newRole = {
             name,
@@ -82,7 +90,9 @@ router.post('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, r
             canManageRoles: canManageRoles || false,
             canManageEvents: canManageEvents || false,
             canViewAnalytics: canViewAnalytics || false,
-            isDefault: false
+            isDefault: false,
+            color: color || null,
+            order: order !== undefined ? order : org.positions.length
         };
 
         await org.addCustomRole(newRole);
@@ -169,6 +179,14 @@ router.put('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), asyn
             });
         }
 
+        // Validate color format if provided
+        if (updates.color && !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(updates.color)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid color format. Must be a valid hex color code (e.g., #3b82f6)'
+            });
+        }
+
         // Update role
         await org.updateRole(roleName, updates);
 
@@ -188,7 +206,7 @@ router.put('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), asyn
 
 // Delete a custom role
 router.delete('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), async (req, res) => {
-    const { Org, OrgMember } = getModels(req, 'Org');
+    const { Org, OrgMember } = getModels(req, 'Org', 'OrgMember');
     const { orgId, roleName } = req.params;
 
     try {
@@ -202,11 +220,12 @@ router.delete('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), a
 
         // Check if any members have this role
         const membersWithRole = await OrgMember.find({ org_id: orgId, role: roleName });
+        
+        // Reassign all members with this role to 'member' role
         if (membersWithRole.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: `Cannot delete role: ${membersWithRole.length} member(s) currently have this role`
-            });
+            for (const member of membersWithRole) {
+                await member.changeRole('member', req.user.userId, `Role "${roleName}" was deleted`);
+            }
         }
 
         // Delete role
@@ -214,7 +233,8 @@ router.delete('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), a
 
         res.status(200).json({
             success: true,
-            message: 'Role deleted successfully'
+            message: `Role deleted successfully. ${membersWithRole.length} member(s) have been reassigned to the member role.`,
+            reassignedCount: membersWithRole.length
         });
     } catch (error) {
         console.error('Error deleting role:', error);
