@@ -17,6 +17,7 @@ const searchSchema = require('../schemas/search');
 const studyHistorySchema = require('../schemas/studyHistory');
 const userSchema = require('../schemas/user');
 const visitSchema = require('../schemas/visit');
+const sessionSchema = require('../schemas/session');
 const orgMemberApplicationSchema = require('../schemas/orgMemberApplication');
 const samlConfigSchema = require('../schemas/samlConfig');
 const notificationSchema = require('../schemas/notification');
@@ -44,6 +45,7 @@ const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
 const eventSystemConfigSchema = require('../events/schemas/eventSystemConfig');
 const stakeholderRoleSchema = require('../events/schemas/stakeholderRole');
 const domainSchema = require('../events/schemas/domain');
+const analyticsEventSchema = require('../events/schemas/analyticsEvent');
 
 
 
@@ -69,6 +71,7 @@ const getModels = (req, ...names) => {
         StudyHistory: req.db.model('StudyHistory', studyHistorySchema, 'studyHistories'),
         User: req.db.model('User', userSchema, 'users'),
         Visit: req.db.model('Visit', visitSchema, 'visits'),
+        Session: req.db.model('Session', sessionSchema, 'sessions'),
         ApprovalFlow: req.db.model('ApprovalFlow', approvalFlowDefinition, 'approvalFlows'),
         ApprovalInstance: req.db.model('ApprovalInstance', approvalFlowInstance, 'approvalInstances'),
         RssFeed: req.db.model('RssFeed', rssFeedSchema, 'rssFeeds'),
@@ -96,6 +99,7 @@ const getModels = (req, ...names) => {
         StakeholderRole: req.db.model('StakeholderRole', stakeholderRoleSchema, 'stakeholderRoles'),
         Domain: req.db.model('Domain', domainSchema, 'domains'),
         ContactRequest: req.db.model('ContactRequest', contactRequestSchema, 'contactRequests'),
+        AnalyticsEvent: req.db.model('AnalyticsEvent', analyticsEventSchema, 'analytics_events'),
     };
 
     return names.reduce((acc, name) => {

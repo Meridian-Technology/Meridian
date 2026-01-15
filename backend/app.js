@@ -8,7 +8,8 @@ const session = require('express-session');
 const passport = require('passport');
 require('dotenv').config();
 const { createServer } = require('http');
-const { Server } = require('socket.io');
+// WEBSOCKET DISABLED - Uncomment to enable WebSocket functionality
+// const { Server } = require('socket.io');
 const enforce = require('express-sslify');
 const { connectToDatabase } = require('./connectionsManager');
 
@@ -18,17 +19,18 @@ const app = express();
 const port = process.env.PORT || 5001;
 
 const server = createServer(app);
-const io = new Server(server, {
-    transports: ['websocket', 'polling'], // WebSocket first, fallback to polling if necessary
-    cors: {
-        origin: process.env.NODE_ENV === 'production'
-            ? ['https://www.meridian.study', 'https://meridian.study']
-            : 'http://localhost:3000',  // Allow localhost during development
-        methods: ['GET', 'POST'],
-        allowedHeaders: ['Content-Type'],
-        credentials: true
-    }
-});
+// WEBSOCKET DISABLED - Uncomment to enable WebSocket functionality
+// const io = new Server(server, {
+//     transports: ['websocket', 'polling'], // WebSocket first, fallback to polling if necessary
+//     cors: {
+//         origin: process.env.NODE_ENV === 'production'
+//             ? ['https://www.meridian.study', 'https://meridian.study']
+//             : 'http://localhost:3000',  // Allow localhost during development
+//         methods: ['GET', 'POST'],
+//         allowedHeaders: ['Content-Type'],
+//         credentials: true
+//     }
+// });
 
 // Configure CORS for cookie-based authentication
 const corsOptions = {
@@ -82,10 +84,17 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(async (req, res, next) => {
     try {
+        // Debug logging to identify polling routes
+        // const timestamp = new Date().toISOString();
+        // const method = req.method;
+        // const path = req.path || req.url;
+        // const userAgent = req.get('user-agent') || 'unknown';
+        
+        // console.log(`[${timestamp}] ${method}: ${path} | School: ${req.headers.host?.split('.')[0] || 'unknown'} | User-Agent: ${userAgent.substring(0, 50)}`);
+        
         const subdomain = req.headers.host.split('.')[0]; // Extract subdomain (e.g., 'ucb')
         req.db = await connectToDatabase(subdomain);
         req.school = !subdomain.includes('localhost') ? subdomain : 'rpi';
-        console.log(req.school);
         next();
     } catch (error) {
         console.error('Error establishing database connection:', error);
@@ -245,49 +254,50 @@ app.get('/api/greet', (req, res) => {
 // fetch('/api/greet').then(response => response.text()).then(data => console.log(data));
 
 
+// WEBSOCKET DISABLED - Uncomment to enable WebSocket functionality
 // Socket.io functionality
-io.on('connection', (socket) => {
-    console.log('Client connected');
+// io.on('connection', (socket) => {
+//     console.log('Client connected');
 
-    // Heartbeat mechanism - declare early so it can be cleared on disconnect
-    const heartbeatInterval = setInterval(() => {
-        socket.emit('ping');
-    }, 25000); // Send ping every 25 seconds
+//     // Heartbeat mechanism - declare early so it can be cleared on disconnect
+//     const heartbeatInterval = setInterval(() => {
+//         socket.emit('ping');
+//     }, 25000); // Send ping every 25 seconds
 
-    socket.on('message', (message) => {
-        console.log(`Received: ${message}`);
-        socket.emit('message', `Echo: ${message}`);
-    });
+//     socket.on('message', (message) => {
+//         console.log(`Received: ${message}`);
+//         socket.emit('message', `Echo: ${message}`);
+//     });
 
-    socket.on('disconnect', () => {
-        console.log('Client disconnected');
-        // Clear the heartbeat interval to prevent memory leak
-        clearInterval(heartbeatInterval);
-    });
+//     socket.on('disconnect', () => {
+//         console.log('Client disconnected');
+//         // Clear the heartbeat interval to prevent memory leak
+//         clearInterval(heartbeatInterval);
+//     });
 
-    // Example: Custom event for friend requests
-    socket.on('friendRequest', (data) => {
-        console.log('Friend request received:', data);
-        // Handle friend request
-        io.emit('friendRequest', data); // Broadcast to all connected clients
-    });
+//     // Example: Custom event for friend requests
+//     socket.on('friendRequest', (data) => {
+//         console.log('Friend request received:', data);
+//         // Handle friend request
+//         io.emit('friendRequest', data); // Broadcast to all connected clients
+//     });
 
-    socket.on('join-classroom', (classroomId) => {
-        socket.join(classroomId);
-        console.log(`User joined classroom: ${classroomId}`);
-    });
+//     socket.on('join-classroom', (classroomId) => {
+//         socket.join(classroomId);
+//         console.log(`User joined classroom: ${classroomId}`);
+//     });
 
-    socket.on('leave-classroom', (classroomId) => {
-        socket.leave(classroomId);
-        console.log(`User left classroom: ${classroomId}`);
-    });
+//     socket.on('leave-classroom', (classroomId) => {
+//         socket.leave(classroomId);
+//         console.log(`User left classroom: ${classroomId}`);
+//     });
 
-    socket.on('pong', () => {
-        // console.log('Heartbeat pong received');
-    });
-});
+//     socket.on('pong', () => {
+//         // console.log('Heartbeat pong received');
+//     });
+// });
 
-app.set('io', io);
+// app.set('io', io);
 
 // Start the server
 server.listen(port, () => {
