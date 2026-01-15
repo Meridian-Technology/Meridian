@@ -33,6 +33,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import PrivacyPolicy from './pages/PrivacyPolicy/PrivacyPolicy';
 import SAMLCallback from './components/SAMLCallback/SAMLCallback';
+import EmailVerification from './pages/EmailVerification';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
 import { CacheProvider } from './CacheContext';
@@ -156,6 +157,7 @@ function App() {
                                                 {/* <Route path="/friends" element={<AnimatedPageWrapper><Friends/></AnimatedPageWrapper>}/> */}
                                                 <Route path="/settings" element={<AnimatedPageWrapper><Settings/></AnimatedPageWrapper>}/>
                                                 <Route path="/developer-onboarding" element={<AnimatedPageWrapper><DeveloperOnboard/></AnimatedPageWrapper>}/>
+                                                <Route path="/verify-email" element={<EmailVerification/>}/>
                                             </Route>
 
                                             <Route path="/org/:name" element={<AnimatedPageWrapper><OrgDisplay/></AnimatedPageWrapper>}/>

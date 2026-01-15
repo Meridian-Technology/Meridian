@@ -9,6 +9,7 @@ require('dotenv').config();
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 const getModels = require('../services/getModelService.js');
+const { createSession, deleteSession } = require('../utilities/sessionUtils');
 
 // Token configuration
 const ACCESS_TOKEN_EXPIRY_MINUTES = 1;
@@ -204,11 +205,9 @@ router.post('/callback', async (req, res) => {
                     { expiresIn: REFRESH_TOKEN_EXPIRY }
                 );
 
-                //store refresh token in database
-                const { User } = getModels({ school }, 'User');
-                await User.findByIdAndUpdate(user._id, { 
-                    refreshToken: refreshToken 
-                });
+                // Create session instead of storing refresh token directly on user
+                // req should already have db from middleware in app.js
+                await createSession(user._id, refreshToken, req);
 
                 //set cookies
                 res.cookie('accessToken', accessToken, {
@@ -266,11 +265,11 @@ router.post('/logout', verifyToken, async (req, res) => {
         res.clearCookie('accessToken');
         res.clearCookie('refreshToken');
         
-        //clear refresh token from database
-        const { User } = getModels({ school }, 'User');
-        await User.findByIdAndUpdate(req.user.userId, { 
-            refreshToken: null 
-        });
+        // Delete the specific session instead of clearing user's refreshToken
+        const refreshToken = req.cookies.refreshToken;
+        if (refreshToken) {
+            await deleteSession(refreshToken, req);
+        }
         
         //if SAML logout URL is configured, redirect to it
         if (config.logoutUrl) {

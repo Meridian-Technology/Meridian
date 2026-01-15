@@ -13,6 +13,7 @@ const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser, 
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getModels = require('../services/getModelService.js');
 const { getFriendRequests } = require('../utilities/friendUtils');
+const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, deleteSessionById } = require('../utilities/sessionUtils');
 
 const { Resend } = require('resend');
 const { render } = require('@react-email/render')
@@ -111,10 +112,8 @@ router.post('/register', async (req, res) => {
             { expiresIn: REFRESH_TOKEN_EXPIRY }
         );
 
-        // Store refresh token in database
-        await User.findByIdAndUpdate(user._id, { 
-            refreshToken: refreshToken 
-        });
+        // Create session instead of storing refresh token directly on user
+        await createSession(user._id, refreshToken, req);
 
         // Set both cookies
         res.cookie('accessToken', accessToken, {
@@ -188,11 +187,8 @@ router.post('/login', async (req, res) => {
             { expiresIn: REFRESH_TOKEN_EXPIRY }
         );
 
-        // Store refresh token in database
-        const {User} = getModels(req, 'User');
-        await User.findByIdAndUpdate(user._id, { 
-            refreshToken: refreshToken 
-        });
+        // Create session instead of storing refresh token directly on user
+        await createSession(user._id, refreshToken, req);
 
         // Set both cookies
         res.cookie('accessToken', accessToken, {
@@ -244,27 +240,18 @@ router.post('/refresh-token', async (req, res) => {
     }
 
     try {
-        // Verify refresh token
-        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
-        // time left for refresh token
-        const timeLeft = decoded.exp - Date.now() / 1000;
-        // console.log('✅ Refresh token verified for user:', decoded.userId);
-        // console.log('🕒 Refresh token valid for:', timeLeft);
+        // Validate session using session utilities
+        const validation = await validateSession(refreshToken, req);
         
-        // Check if refresh token exists in database
-        const { User } = getModels(req, 'User');
-        const user = await User.findById(decoded.userId);
-        // console.log('🔄 Refresh token user:', user);
-        // console.log('🔄 Refresh token refreshToken:', user.refreshToken);
-        // console.log('🔄 Refresh token refreshToken:', refreshToken);    
-        
-        if (!user || user.refreshToken !== refreshToken) {
-            console.log('POST: /refresh-token 401 refresh token not found in database or mismatch');
+        if (!validation.valid) {
+            console.log('POST: /refresh-token 401', validation.error);
             return res.status(401).json({
                 success: false,
-                message: 'Invalid refresh token'
+                message: validation.error || 'Invalid refresh token'
             });
         }
+        
+        const { user, session } = validation;
 
         // Generate new access token
         const newAccessToken = jwt.sign(
@@ -325,14 +312,10 @@ router.post('/logout', async (req, res) => {
     
     if (refreshToken) {
         try {
-            // Invalidate refresh token in database
-            const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
-            const { User } = getModels(req, 'User');
-            await User.findByIdAndUpdate(decoded.userId, { 
-                refreshToken: null 
-            });
+            // Delete the specific session instead of clearing user's refreshToken
+            await deleteSession(refreshToken, req);
         } catch (error) {
-            console.log('Error invalidating refresh token:', error);
+            console.log('Error deleting session:', error);
         }
     }
 
@@ -453,11 +436,8 @@ router.post('/google-login', async (req, res) => {
             { expiresIn: REFRESH_TOKEN_EXPIRY }
         );
 
-        // Store refresh token in database
-        const {User} = getModels(req, 'User');
-        await User.findByIdAndUpdate(user._id, { 
-            refreshToken: refreshToken 
-        });
+        // Create session instead of storing refresh token directly on user
+        await createSession(user._id, refreshToken, req);
 
         // Set both cookies
         res.cookie('accessToken', accessToken, {
@@ -525,11 +505,8 @@ router.post('/apple-login', async (req, res) => {
             { expiresIn: REFRESH_TOKEN_EXPIRY }
         );
 
-        // Store refresh token in database
-        const {User} = getModels(req, 'User');
-        await User.findByIdAndUpdate(authenticatedUser._id, { 
-            refreshToken: refreshToken 
-        });
+        // Create session instead of storing refresh token directly on user
+        await createSession(authenticatedUser._id, refreshToken, req);
 
         // Set both cookies
         res.cookie('accessToken', accessToken, {
@@ -610,11 +587,8 @@ router.post('/auth/apple/callback', async (req, res) => {
             { expiresIn: REFRESH_TOKEN_EXPIRY }
         );
 
-        // Store refresh token in database
-        const {User} = getModels(req, 'User');
-        await User.findByIdAndUpdate(authenticatedUser._id, { 
-            refreshToken: refreshToken 
-        });
+        // Create session instead of storing refresh token directly on user
+        await createSession(authenticatedUser._id, refreshToken, req);
 
         // Set both cookies
         res.cookie('accessToken', accessToken, {
@@ -850,5 +824,96 @@ router.post('/reset-password', async (req, res) => {
         });
     }
 });
+
+// Get all active sessions for the current user
+router.get('/sessions', verifyToken, async (req, res) => {
+    try {
+        const sessions = await getUserSessions(req.user.userId, req);
+        
+        // Format sessions for response (exclude sensitive info)
+        const formattedSessions = sessions.map(session => ({
+            id: session._id,
+            deviceInfo: session.deviceInfo,
+            clientType: session.clientType,
+            ipAddress: session.ipAddress,
+            lastUsed: session.lastUsed,
+            createdAt: session.createdAt,
+            expiresAt: session.expiresAt,
+            isCurrent: req.cookies.refreshToken === session.refreshToken
+        }));
+        
+        console.log(`GET: /sessions user ${req.user.userId} retrieved ${formattedSessions.length} sessions`);
+        res.json({
+            success: true,
+            data: {
+                sessions: formattedSessions
+            }
+        });
+    } catch (error) {
+        console.log(`GET: /sessions failed`, error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching sessions',
+            error: error.message
+        });
+    }
+});
+
+// Revoke a specific session
+router.delete('/sessions/:sessionId', verifyToken, async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const deleted = await deleteSessionById(sessionId, req.user.userId, req);
+        
+        if (deleted) {
+            console.log(`DELETE: /sessions/${sessionId} session revoked by user ${req.user.userId}`);
+            res.json({
+                success: true,
+                message: 'Session revoked successfully'
+            });
+        } else {
+            res.status(404).json({
+                success: false,
+                message: 'Session not found or you do not have permission to revoke it'
+            });
+        }
+    } catch (error) {
+        console.log(`DELETE: /sessions/${req.params.sessionId} failed`, error);
+        res.status(500).json({
+            success: false,
+            message: 'Error revoking session',
+            error: error.message
+        });
+    }
+});
+
+// Revoke all other sessions (keep current one)
+router.post('/sessions/revoke-all-others', verifyToken, async (req, res) => {
+    try {
+        const currentRefreshToken = req.cookies.refreshToken;
+        const allSessions = await getUserSessions(req.user.userId, req);
+        
+        // Delete all sessions except the current one
+        const { Session } = getModels(req, 'Session');
+        await Session.deleteMany({
+            userId: req.user.userId,
+            refreshToken: { $ne: currentRefreshToken }
+        });
+        
+        console.log(`POST: /sessions/revoke-all-others user ${req.user.userId} revoked ${allSessions.length - 1} other sessions`);
+        res.json({
+            success: true,
+            message: 'All other sessions revoked successfully'
+        });
+    } catch (error) {
+        console.log(`POST: /sessions/revoke-all-others failed`, error);
+        res.status(500).json({
+            success: false,
+            message: 'Error revoking sessions',
+            error: error.message
+        });
+    }
+});
+
 
 module.exports = router;
