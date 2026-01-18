@@ -44,6 +44,12 @@ const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
 const eventSystemConfigSchema = require('../events/schemas/eventSystemConfig');
 const stakeholderRoleSchema = require('../events/schemas/stakeholderRole');
 const domainSchema = require('../events/schemas/domain');
+const eventAgendaSchema = require('../schemas/EventAgenda');
+const eventJobSchema = require('../schemas/EventJob');
+const orgEventRoleSchema = require('../schemas/OrgEventRole');
+const volunteerSignupSchema = require('../schemas/VolunteerSignup');
+const eventEquipmentSchema = require('../schemas/EventEquipment');
+const orgEquipmentSchema = require('../schemas/OrgEquipment');
 
 
 
@@ -96,6 +102,12 @@ const getModels = (req, ...names) => {
         StakeholderRole: req.db.model('StakeholderRole', stakeholderRoleSchema, 'stakeholderRoles'),
         Domain: req.db.model('Domain', domainSchema, 'domains'),
         ContactRequest: req.db.model('ContactRequest', contactRequestSchema, 'contactRequests'),
+        EventAgenda: req.db.model('EventAgenda', eventAgendaSchema, 'eventAgendas'),
+        EventJob: req.db.model('EventJob', eventJobSchema, 'eventRoles'),
+        OrgEventRole: req.db.model('OrgEventRole', orgEventRoleSchema, 'orgEventRoles'),
+        VolunteerSignup: req.db.model('VolunteerSignup', volunteerSignupSchema, 'volunteerSignups'),
+        EventEquipment: req.db.model('EventEquipment', eventEquipmentSchema, 'eventEquipment'),
+        OrgEquipment: req.db.model('OrgEquipment', orgEquipmentSchema, 'orgEquipment'),
     };
 
     return names.reduce((acc, name) => {

@@ -18,6 +18,12 @@
         // }
     }
 
+    .popup-content {
+        border: 1px solid var(--lighterborder);
+        box-shadow: var(--shadow);
+        background: var(--background);
+    }
+
     .loading {
         display: flex;
         align-items: center;

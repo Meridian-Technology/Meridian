@@ -14,13 +14,11 @@ import EventsOverview from './components/EventsOverview';
 import EventsAnalytics from './components/EventsAnalytics';
 import EventsList from './components/EventsManagementList';
 import EventTemplates from './components/EventTemplates';
-import BulkOperations from './components/BulkOperations';
 
 function EventsManagement({ orgId, expandedClass }) {
     const { addNotification } = useNotification();
-    const { showEventViewer, hideOverlay } = useDashboardOverlay();
+    const { showEventDashboard, hideOverlay } = useDashboardOverlay();
     const [activeTab, setActiveTab] = useState('overview');
-    const [selectedEvents, setSelectedEvents] = useState([]);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const {AtlasMain} = useGradient();
     // Fetch organization data
@@ -34,21 +32,18 @@ function EventsManagement({ orgId, expandedClass }) {
     };
 
     const handleViewEvent = (event) => {
-        showEventViewer(event, {
-            showBackButton: true,
-            showAnalytics: true,
-            showEventsByCreator: false,
-            className: 'full-width-event-viewer'
-        });
+        const orgIdForDashboard = orgData?.org?.overview?._id;
+        if (orgIdForDashboard) {
+            showEventDashboard(event, orgIdForDashboard, {
+                className: 'full-width-event-dashboard'
+            });
+        }
     };
 
     const handleBackFromEventViewer = () => {
         hideOverlay();
     };
 
-    const handleEventSelection = (eventIds) => {
-        setSelectedEvents(eventIds);
-    };
 
     const tabs = [
         // {
@@ -84,8 +79,6 @@ function EventsManagement({ orgId, expandedClass }) {
                         orgName={orgData?.org?.overview?.org_name}
                         refreshTrigger={refreshTrigger}
                         onRefresh={handleRefresh}
-                        onEventSelection={handleEventSelection}
-                        selectedEvents={selectedEvents}
                         onViewEvent={handleViewEvent}
                     />
         },
@@ -153,15 +146,6 @@ function EventsManagement({ orgId, expandedClass }) {
                     {renderTabContent()}
                 </div> */}
 
-                {/* Bulk Operations Panel */}
-                {selectedEvents.length > 0 && (
-                    <BulkOperations
-                        orgId={orgData?.org?.overview?._id}
-                        selectedEvents={selectedEvents}
-                        onClose={() => setSelectedEvents([])}
-                        onSuccess={handleRefresh}
-                    />
-                )}
 
             </container>
             <TabbedContainer

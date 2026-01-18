@@ -213,5 +213,7 @@ module.exports = {
     requireRoleManagement,
     requireMemberManagement,
     requireEventManagement,
-    requireAnalyticsAccess
+    requireAnalyticsAccess,
+    requireEquipmentManagement: (orgParam = 'orgId') => requireOrgPermission('manage_equipment', orgParam),
+    requireEquipmentModification: (orgParam = 'orgId') => requireOrgPermission('modify_equipment', orgParam)
 }; 

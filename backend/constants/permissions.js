@@ -8,6 +8,8 @@ const ORG_PERMISSIONS = {
     MANAGE_EVENTS: 'manage_events',       // Can create, edit, delete events
     VIEW_ANALYTICS: 'view_analytics',     // Can view organization analytics
     VIEW_EVENTS: 'view_events',           // Can view organization events
+    MANAGE_EQUIPMENT: 'manage_equipment', // Can assign/checkout equipment
+    MODIFY_EQUIPMENT: 'modify_equipment', // Can create/edit org equipment inventory
     
     // Content management
     MANAGE_CONTENT: 'manage_content',     // Can edit organization description, images
@@ -95,6 +97,8 @@ const PERMISSION_DESCRIPTIONS = {
     [ORG_PERMISSIONS.MANAGE_EVENTS]: 'Can create, edit, and delete organization events',
     [ORG_PERMISSIONS.VIEW_ANALYTICS]: 'Can view organization analytics and reports',
     [ORG_PERMISSIONS.VIEW_EVENTS]: 'Can view organization events',
+    [ORG_PERMISSIONS.MANAGE_EQUIPMENT]: 'Can assign and check out equipment',
+    [ORG_PERMISSIONS.MODIFY_EQUIPMENT]: 'Can create and edit organization equipment inventory',
     [ORG_PERMISSIONS.MANAGE_CONTENT]: 'Can edit organization description and images',
     [ORG_PERMISSIONS.MANAGE_SETTINGS]: 'Can change organization settings',
     [ORG_PERMISSIONS.SEND_ANNOUNCEMENTS]: 'Can send organization-wide announcements',

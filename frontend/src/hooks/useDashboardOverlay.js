@@ -67,10 +67,35 @@ export const useDashboardOverlay = () => {
         });
     };
 
+    /**
+     * Show an EventDashboard overlay
+     * @param {Object} event - The event object to display
+     * @param {string} orgId - The organization ID
+     * @param {Object} options - Options for the EventDashboard
+     */
+    const showEventDashboard = (event, orgId, options = {}) => {
+        const {
+            className = 'full-width-event-dashboard'
+        } = options;
+
+        // Import EventDashboard dynamically to avoid circular dependencies
+        import('../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboard').then(({ default: EventDashboard }) => {
+            showOverlay(
+                <EventDashboard 
+                    event={event}
+                    orgId={orgId}
+                    onClose={hide}
+                    className={className}
+                />
+            );
+        });
+    };
+
     return {
         showOverlay: show,
         hideOverlay: hide,
         showEventViewer,
-        showEventWorkspace
+        showEventWorkspace,
+        showEventDashboard
     };
 };

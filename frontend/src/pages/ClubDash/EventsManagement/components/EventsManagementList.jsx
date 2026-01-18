@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../hooks/useFetch';
-import { useNotification } from '../../../../NotificationContext';
-import apiRequest from '../../../../utils/postRequest';
 import './EventsManagementList.scss';
 
-function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelection, selectedEvents, onViewEvent }) {
-    const { addNotification } = useNotification();
+function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent }) {
     const [filters, setFilters] = useState({
         status: 'all',
         type: 'all',
@@ -19,7 +16,6 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
     const [page, setPage] = useState(1);
     const [showFilters, setShowFilters] = useState(false);
     const [viewMode, setViewMode] = useState('list'); // 'list' or 'card'
-    const [isBulkActionLoading, setIsBulkActionLoading] = useState(false);
     const [quickFilter, setQuickFilter] = useState(null); // For quick status filters
     const searchTimeoutRef = useRef(null);
     
@@ -111,72 +107,11 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
         return colors[type] || '#6c757d';
     }, []);
 
-    // Memoized event handlers
-    const handleEventSelect = useCallback((eventId) => {
-        const newSelection = selectedEvents.includes(eventId)
-            ? selectedEvents.filter(id => id !== eventId)
-            : [...selectedEvents, eventId];
-        onEventSelection(newSelection);
-    }, [selectedEvents, onEventSelection]);
-
-    const handleSelectAll = useCallback(() => {
-        const events = eventsData?.data?.events || [];
-        if (selectedEvents.length === events.length && events.length > 0) {
-            onEventSelection([]);
-        } else {
-            const allEventIds = events.map(event => event._id);
-            onEventSelection(allEventIds);
-        }
-    }, [selectedEvents, eventsData?.data?.events, onEventSelection]);
-
     const handleViewEvent = useCallback((event) => {
         if (onViewEvent) {
             onViewEvent(event);
         }
     }, [onViewEvent]);
-
-    const handleBulkAction = useCallback(async (action) => {
-        if (selectedEvents.length === 0) {
-            addNotification({
-                title: 'No Events Selected',
-                message: 'Please select events to perform bulk actions',
-                type: 'warning'
-            });
-            return;
-        }
-
-        setIsBulkActionLoading(true);
-        try {
-            const response = await apiRequest(
-                `/org-event-management/${orgId}/events/bulk-action`,
-                {
-                    action,
-                    eventIds: selectedEvents
-                },
-                { method: 'POST' }
-            );
-
-            if (response.success) {
-                addNotification({
-                    title: 'Success',
-                    message: response.message,
-                    type: 'success'
-                });
-                onEventSelection([]);
-                onRefresh();
-            } else {
-                throw new Error(response.message || 'Action failed');
-            }
-        } catch (error) {
-            addNotification({
-                title: 'Error',
-                message: error.message || 'Failed to perform bulk action',
-                type: 'error'
-            });
-        } finally {
-            setIsBulkActionLoading(false);
-        }
-    }, [selectedEvents, orgId, addNotification, onEventSelection, onRefresh]);
 
     const handleFilterChange = useCallback((key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
@@ -221,10 +156,6 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
         filters.timeRange !== 'all' || 
         filters.search !== ''
     , [filters]);
-    const allSelected = useMemo(() => 
-        events.length > 0 && selectedEvents.length === events.length
-    , [events.length, selectedEvents.length]);
-
     // Count events by status for quick filters
     const statusCounts = useMemo(() => {
         const counts = { pending: 0, approved: 0, rejected: 0 };
@@ -486,62 +417,12 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                 </div>
             )}
 
-            {/* Bulk Actions */}
-            {selectedEvents.length > 0 && (
-                <div className="bulk-actions">
-                    <div className="bulk-info">
-                        <Icon icon="mdi:checkbox-marked-circle" />
-                        <span>{selectedEvents.length} event{selectedEvents.length !== 1 ? 's' : ''} selected</span>
-                        <button 
-                            className="deselect-all"
-                            onClick={() => onEventSelection([])}
-                            title="Deselect all"
-                        >
-                            <Icon icon="mdi:close" />
-                        </button>
-                    </div>
-                    <div className="bulk-buttons">
-                        <button 
-                            className="bulk-btn approve"
-                            onClick={() => handleBulkAction('approve')}
-                            disabled={isBulkActionLoading}
-                        >
-                            <Icon icon="mdi:check" />
-                            <span>Approve</span>
-                        </button>
-                        <button 
-                            className="bulk-btn reject"
-                            onClick={() => handleBulkAction('reject')}
-                            disabled={isBulkActionLoading}
-                        >
-                            <Icon icon="mdi:close" />
-                            <span>Reject</span>
-                        </button>
-                        <button 
-                            className="bulk-btn delete"
-                            onClick={() => handleBulkAction('delete')}
-                            disabled={isBulkActionLoading}
-                        >
-                            <Icon icon="mdi:delete" />
-                            <span>Delete</span>
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {/* Events Display - Modern List or Card View */}
             {viewMode === 'list' ? (
             <div className="events-list-view">
                 {/* List Header with Sort Options */}
                 <div className="list-header">
                     <div className="list-header-left">
-                        <input 
-                            type="checkbox"
-                            checked={allSelected}
-                            onChange={handleSelectAll}
-                            title={allSelected ? "Deselect all" : "Select all"}
-                            className="select-all-checkbox"
-                        />
                         <div className="sort-options">
                             <button 
                                 className={`sort-btn ${sortBy === 'start_time' ? 'active' : ''}`}
@@ -582,17 +463,9 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                     {events.map((event) => (
                         <div 
                             key={event._id} 
-                            className={`list-item ${selectedEvents.includes(event._id) ? 'selected' : ''}`}
+                            className="list-item"
                             onClick={() => handleViewEvent(event)}
                         >
-                            <div className="list-item-checkbox" onClick={(e) => e.stopPropagation()}>
-                                <input 
-                                    type="checkbox"
-                                    checked={selectedEvents.includes(event._id)}
-                                    onChange={() => handleEventSelect(event._id)}
-                                />
-                            </div>
-                            
                             <div className="list-item-content">
                                 <div className="list-item-header">
                                     <div className="list-item-title-row">
@@ -665,18 +538,10 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                     {events.map((event) => (
                         <div 
                             key={event._id} 
-                            className={`event-card ${selectedEvents.includes(event._id) ? 'selected' : ''}`}
-                            onClick={() => handleEventSelect(event._id)}
+                            className="event-card"
+                            onClick={() => handleViewEvent(event)}
                         >
                             <div className="card-header">
-                                <div className="card-checkbox">
-                                    <input 
-                                        type="checkbox"
-                                        checked={selectedEvents.includes(event._id)}
-                                        onChange={() => handleEventSelect(event._id)}
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
-                                </div>
                                 <div className="card-status">
                                     <span 
                                         className="status-badge"
