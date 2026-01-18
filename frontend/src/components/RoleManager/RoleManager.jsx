@@ -2,6 +2,7 @@ import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'rea
 import './RoleManager.scss';
 import { Icon } from '@iconify-icon/react';
 import { getOrgRoleColor } from '../../utils/orgUtils';
+import DraggableList from '../DraggableList/DraggableList';
 
 const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEditable = true, roleHighlight = false, saveImmediately = false, onDraftChange }, ref) => {
     const [customRoles, setCustomRoles] = useState(roles || []);
@@ -183,29 +184,23 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
         }
     };
 
-    const handleMoveRole = (roleName, direction) => {
-        const roleIndex = customRoles.findIndex(r => r.name === roleName);
-        if (roleIndex === -1) return;
-
-        // Don't allow moving owner or member roles
-        if (customRoles[roleIndex].name === 'owner' || customRoles[roleIndex].name === 'member') {
-            return;
-        }
-
-        const newIndex = direction === 'up' ? roleIndex - 1 : roleIndex + 1;
+    const handleReorder = (newOrderedRoles) => {
+        // Filter out owner and member from the reordered list to maintain their positions
+        const ownerRole = customRoles.find(r => r.name === 'owner');
+        const memberRole = customRoles.find(r => r.name === 'member');
         
-        // Bounds check
-        if (newIndex < 0 || newIndex >= customRoles.length) return;
-
-        // Don't allow moving past owner or member
-        const targetRole = customRoles[newIndex];
-        if (targetRole.name === 'owner' || targetRole.name === 'member') {
-            return;
-        }
-
-        // Create new array with swapped roles
-        const updatedRoles = [...customRoles];
-        [updatedRoles[roleIndex], updatedRoles[newIndex]] = [updatedRoles[newIndex], updatedRoles[roleIndex]];
+        // Reconstruct the full roles array with owner first, reordered roles in middle, member last
+        const updatedRoles = [];
+        if (ownerRole) updatedRoles.push(ownerRole);
+        
+        // Add reordered roles (which should not include owner or member)
+        newOrderedRoles.forEach((role) => {
+            if (role.name !== 'owner' && role.name !== 'member') {
+                updatedRoles.push(role);
+            }
+        });
+        
+        if (memberRole) updatedRoles.push(memberRole);
 
         // Update order values (excluding owner and member from ordering)
         let orderCounter = 0;
@@ -422,69 +417,74 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                             <div className="no-roles">
                                 <Icon icon="mdi:account-group-outline" />
                                 <p>No roles yet</p>
-                                    </div>
+                            </div>
                         ) : (
-                            editableRoles.map((role, index) => {
-                                // Can move up if not first and not member
-                                const canMoveUp = index > 0 && isEditable && role.name !== 'member';
-                                // Can move down if not last (and not member, and next item is not member)
-                                const canMoveDown = index < editableRoles.length - 1 && 
-                                                    isEditable && 
-                                                    role.name !== 'member' &&
-                                                    editableRoles[index + 1]?.name !== 'member';
-                                const isSelected = selectedRole?.name === role.name;
-                                
-                                return (
-                                    <div 
-                                        key={role.name} 
-                                        className={`role-list-item ${isSelected ? 'selected' : ''}`}
-                                        onClick={() => handleRoleSelect(role)}
-                                    >
-                                        <div className="role-list-item-content">
+                            <>
+                                <DraggableList
+                                    items={editableRoles.filter(role => role.name !== 'member')}
+                                    onReorder={handleReorder}
+                                    getItemId={(role) => role.name}
+                                    disabled={!isEditable}
+                                    renderItem={(role, index) => {
+                                        const isSelected = selectedRole?.name === role.name;
+                                        
+                                        return (
                                             <div 
-                                                className="role-color-indicator"
-                                                style={{ backgroundColor: getOrgRoleColor(role, 1, customRoles) }}
-                                            />
-                                            <div className="role-list-item-info">
-                                                <span className="role-list-item-name">{role.displayName || role.name}</span>
-                                            </div>
-                                    </div>
-                                    {isEditable && (
-                                            <div className="role-list-item-actions" onClick={(e) => e.stopPropagation()}>
-                                                {role.name !== 'member' && (
-                                                    <>
-                                                        <div className="rank-controls">
-                                            <button 
-                                                                className="rank-btn"
-                                                                onClick={() => handleMoveRole(role.name, 'up')}
-                                                                disabled={!canMoveUp}
-                                                                title="Move up"
-                                                            >
-                                                                <Icon icon="mdi:chevron-up" />
-                                            </button>
-                                                            <button 
-                                                                className="rank-btn"
-                                                                onClick={() => handleMoveRole(role.name, 'down')}
-                                                                disabled={!canMoveDown}
-                                                                title="Move down"
-                                                            >
-                                                                <Icon icon="mdi:chevron-down" />
-                                                            </button>
-                                                        </div>
-                                                        <button 
-                                                className="delete-btn"
-                                                onClick={() => handleDelete(role.name)}
-                                                                title="Delete role"
+                                                className={`role-list-item ${isSelected ? 'selected' : ''}`}
+                                                onClick={() => handleRoleSelect(role)}
                                             >
-                                                <Icon icon="mdi:delete" />
-                                            </button>
-                                                    </>
+                                                {isEditable && (
+                                                    <div className="drag-handle" onClick={(e) => e.stopPropagation()}>
+                                                        <Icon icon="mdi:drag" />
+                                                    </div>
                                                 )}
+                                                <div className="role-list-item-content">
+                                                    <div 
+                                                        className="role-color-indicator"
+                                                        style={{ backgroundColor: getOrgRoleColor(role, 1, customRoles) }}
+                                                    />
+                                                    <div className="role-list-item-info">
+                                                        <span className="role-list-item-name">{role.displayName || role.name}</span>
+                                                    </div>
+                                                </div>
+                                                {isEditable && (
+                                                    <div className="role-list-item-actions" onClick={(e) => e.stopPropagation()}>
+                                                        <button 
+                                                            className="delete-btn"
+                                                            onClick={() => handleDelete(role.name)}
+                                                            title="Delete role"
+                                                        >
+                                                            <Icon icon="mdi:delete" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    }}
+                                />
+                                {/* Always render member role separately at the bottom (non-draggable) */}
+                                {(() => {
+                                    const memberRole = editableRoles.find(role => role.name === 'member');
+                                    return memberRole ? (
+                                        <div 
+                                            className={`role-list-item ${selectedRole?.name === 'member' ? 'selected' : ''}`}
+                                            onClick={() => handleRoleSelect(memberRole)}
+                                        >
+                                            <div className="role-list-item-content">
+                                                <div 
+                                                    className="role-color-indicator"
+                                                    style={{ backgroundColor: getOrgRoleColor(memberRole, 1, customRoles) }}
+                                                />
+                                                <div className="role-list-item-info">
+                                                    <span className="role-list-item-name">
+                                                        {memberRole.displayName || 'member'}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-                                );
-                            })
+                                    ) : null;
+                                })()}
+                            </>
                         )}
                     </div>
             </div>

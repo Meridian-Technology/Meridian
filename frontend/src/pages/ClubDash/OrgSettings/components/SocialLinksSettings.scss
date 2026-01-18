@@ -15,6 +15,14 @@
                 gap: 12px;
                 margin-bottom: 24px;
                 
+                .draggable-item {
+                    cursor: grab;
+                    
+                    &:active {
+                        cursor: grabbing;
+                    }
+                }
+                
                 .link-row {
                     display: flex;
                     align-items: center;
@@ -26,37 +34,26 @@
                     width: 100%;
                     position: relative;
                     
-                    .link-controls {
+                    .drag-handle {
                         display: flex;
-                        flex-direction: column;
-                        gap: 4px;
+                        align-items: center;
+                        justify-content: center;
+                        color: var(--text-secondary, #9ca3af);
+                        cursor: grab;
+                        padding: 4px;
                         flex-shrink: 0;
-                        
-                        .move-btn {
-                            background: none;
-                            border: none;
-                            padding: 4px;
-                            cursor: pointer;
-                            color: var(--text-secondary, #6c757d);
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            transition: color 0.2s;
-                            width: 24px;
-                            height: 24px;
-                            
-                            &:hover:not(:disabled) {
-                                color: var(--primary-color, #4DAA57);
-                            }
-                            
-                            &:disabled {
-                                opacity: 0.3;
-                                cursor: not-allowed;
-                            }
-                            
-                            iconify-icon {
-                                font-size: 18px;
-                            }
+                        transition: color 0.2s ease;
+
+                        &:active {
+                            cursor: grabbing;
+                        }
+
+                        &:hover {
+                            color: var(--text, #6b7280);
+                        }
+
+                        iconify-icon {
+                            font-size: 18px;
                         }
                     }
                     

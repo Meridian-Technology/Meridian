@@ -4,6 +4,7 @@ import { useOrgPermissions, useOrgSave } from './settingsHelpers';
 import { useGradient } from '../../../../hooks/useGradient';
 import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
 import { Icon } from '@iconify-icon/react';
+import DraggableList from '../../../../components/DraggableList/DraggableList';
 import './SocialLinksSettings.scss';
 
 const SocialLinksSettings = ({ org, expandedClass }) => {
@@ -33,18 +34,33 @@ const SocialLinksSettings = ({ org, expandedClass }) => {
         setPermissionsChecked(true);
     };
 
+    // Generate a stable unique ID for links that don't have one
+    const ensureLinkId = (link, index) => {
+        // If link already has an id or _id, use it
+        if (link.id) return link;
+        if (link._id) return { ...link, id: link._id };
+        
+        // For existing links without IDs, create a stable ID based on content
+        // This ensures the same link always gets the same ID
+        const stableId = link.type === 'website' 
+            ? `link-website-${link.url || link.title || index}`
+            : `link-${link.type}-${link.username || index}`;
+        return { ...link, id: stableId };
+    };
+
     const initializeFormData = () => {
         if (org) {
             const links = (org.socialLinks || []).sort((a, b) => (a.order || 0) - (b.order || 0));
             // Strip https:// from website URLs for display (we'll add it back on save)
-            const processedLinks = links.map(link => {
+            const processedLinks = links.map((link, index) => {
+                let processedLink = ensureLinkId(link, index);
                 if (link.type === 'website' && link.url) {
-                    return {
-                        ...link,
+                    processedLink = {
+                        ...processedLink,
                         url: link.url.replace(/^https?:\/\//i, '')
                     };
                 }
-                return link;
+                return processedLink;
             });
             setFormData(processedLinks);
             setOriginalData(processedLinks);
@@ -71,6 +87,7 @@ const SocialLinksSettings = ({ org, expandedClass }) => {
 
     const handleAddLink = (type) => {
         const newLink = {
+            id: `link-${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             type,
             username: type !== 'website' ? '' : undefined,
             url: type === 'website' ? '' : undefined,
@@ -122,26 +139,13 @@ const SocialLinksSettings = ({ org, expandedClass }) => {
         }
     };
 
-    const handleMoveUp = (index) => {
-        if (index === 0) return;
-        const newLinks = [...formData];
-        [newLinks[index - 1], newLinks[index]] = [newLinks[index], newLinks[index - 1]];
-        // Update order values
-        newLinks.forEach((link, i) => {
-            link.order = i;
-        });
-        setFormData(newLinks);
-    };
-
-    const handleMoveDown = (index) => {
-        if (index === formData.length - 1) return;
-        const newLinks = [...formData];
-        [newLinks[index], newLinks[index + 1]] = [newLinks[index + 1], newLinks[index]];
-        // Update order values
-        newLinks.forEach((link, i) => {
-            link.order = i;
-        });
-        setFormData(newLinks);
+    const handleReorder = (newOrderedLinks) => {
+        // Update order values based on new order, preserving IDs
+        const updatedLinks = newOrderedLinks.map((link, index) => ({
+            ...link,
+            order: index
+        }));
+        setFormData(updatedLinks);
     };
 
     const validateLinks = () => {
@@ -367,30 +371,20 @@ const SocialLinksSettings = ({ org, expandedClass }) => {
                 <div className="social-links-section">
                     <div className="social-links-container">
                         {formData.length > 0 && (
-                            <div className="links-list">
-                                {formData.map((link, index) => (
-                                    <div key={index} className="link-row" data-link-type={link.type}>
-                                        <div className="link-controls">
-                                            <button
-                                                type="button"
-                                                className="move-btn move-up"
-                                                onClick={() => handleMoveUp(index)}
-                                                disabled={index === 0 || !canManageSettings}
-                                                title="Move up"
-                                            >
-                                                <Icon icon="mdi:chevron-up" />
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="move-btn move-down"
-                                                onClick={() => handleMoveDown(index)}
-                                                disabled={index === formData.length - 1 || !canManageSettings}
-                                                title="Move down"
-                                            >
-                                                <Icon icon="mdi:chevron-down" />
-                                            </button>
-                                        </div>
-                                        
+                            <DraggableList
+                                items={formData}
+                                onReorder={handleReorder}
+                                getItemId={(link) => link.id || link._id || `link-${link.type}-${link.order}`}
+                                disabled={!canManageSettings}
+                                className="links-list"
+                                gap="12px"
+                                renderItem={(link, index) => (
+                                    <div className="link-row" data-link-type={link.type}>
+                                        {canManageSettings && (
+                                            <div className="drag-handle">
+                                                <Icon icon="mdi:drag" />
+                                            </div>
+                                        )}
                                         <div className="link-icon-container">
                                             <Icon icon={getTypeIcon(link.type)} className="link-icon" />
                                         </div>
@@ -458,8 +452,8 @@ const SocialLinksSettings = ({ org, expandedClass }) => {
                                             </div>
                                         )}
                                     </div>
-                                ))}
-                            </div>
+                                )}
+                            />
                         )}
                         
                         {canAddMore && (
