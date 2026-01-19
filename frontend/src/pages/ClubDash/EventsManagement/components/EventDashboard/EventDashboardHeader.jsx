@@ -12,34 +12,11 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
     const { showOverlay, hideOverlay } = useDashboardOverlay();
     const [editing, setEditing] = useState(false);
 
-    const getStatusColor = (status) => {
-        const colors = {
-            'approved': '#28a745',
-            'pending': '#ffc107',
-            'rejected': '#dc3545',
-            'not-applicable': '#6c757d',
-            'draft': '#6c757d',
-            'published': '#17a2b8',
-            'active': '#28a745',
-            'completed': '#6c757d',
-            'cancelled': '#dc3545'
-        };
-        return colors[status] || '#6c757d';
-    };
-
-    const getStatusLabel = (status) => {
-        const labels = {
-            'approved': 'Approved',
-            'pending': 'Pending',
-            'rejected': 'Rejected',
-            'not-applicable': 'Not Applicable',
-            'draft': 'Draft',
-            'published': 'Published',
-            'active': 'Active',
-            'completed': 'Completed',
-            'cancelled': 'Cancelled'
-        };
-        return labels[status] || status;
+    const getEventStatus = () => {
+        if (!event?.start_time) return null;
+        const now = new Date();
+        const start = new Date(event.start_time);
+        return start > now ? 'upcoming' : 'passed';
     };
 
     const formatDate = (dateString) => {
@@ -111,6 +88,8 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
         });
     };
 
+    const eventStatus = getEventStatus();
+
     return (
         <div className="event-dashboard-header">
             <div className="header-background">
@@ -140,15 +119,9 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                     <div className="event-title-section">
                         <h1>{event?.name || 'Event'}</h1>
                         <div className="event-meta">
-                            <span 
-                                className="status-badge"
-                                style={{ backgroundColor: getStatusColor(event?.status) }}
-                            >
-                                {getStatusLabel(event?.status)}
-                            </span>
-                            {stats?.operationalStatus && (
-                                <span className="operational-status">
-                                    {stats.operationalStatus}
+                            {eventStatus && (
+                                <span className={`event-status-bubble ${eventStatus}`}>
+                                    {eventStatus === 'upcoming' ? 'Upcoming' : 'Passed'}
                                 </span>
                             )}
                         </div>
@@ -159,13 +132,6 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                             <div className="stat-content">
                                 <span className="stat-value">{stats?.rsvps?.going || 0}</span>
                                 <span className="stat-label">RSVPs</span>
-                            </div>
-                        </div>
-                        <div className="stat-item">
-                            <Icon icon="mdi:account-check" className="stat-icon" />
-                            <div className="stat-content">
-                                <span className="stat-value">{stats?.volunteers?.confirmed || 0}</span>
-                                <span className="stat-label">Volunteers</span>
                             </div>
                         </div>
                         <div className="stat-item">
