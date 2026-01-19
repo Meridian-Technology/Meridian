@@ -124,7 +124,9 @@
                         transform: translateY(-2px);
                     }
 
-                    &.refresh {
+                    &.refresh,
+                    &.preview,
+                    &.share {
                         padding: 0.5rem;
                     }
 

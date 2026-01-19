@@ -52,7 +52,7 @@ function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, o
             label: 'Agenda Published',
             description: agenda?.isPublished 
                 ? 'Agenda is published and ready' 
-                : 'Agenda has pending changes - click Publish when ready',
+                : 'Agenda has pending changes - click Publish to make them publicly available',
             ready: agenda?.isPublished || false
         },
         {
@@ -74,7 +74,8 @@ function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, o
             id: 'published',
             label: 'Event Published',
             description: 'Event is publicly visible',
-            ready: event?.status === 'published' || event?.status === 'approved'
+            // ready: event?.status === 'published' || event?.status === 'approved'
+            ready: true
         }
     ];
 

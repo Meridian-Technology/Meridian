@@ -6,6 +6,8 @@ import apiRequest from '../../../../../../utils/postRequest';
 import DraggableList from '../../../../../../components/DraggableList/DraggableList';
 import AgendaItem from './AgendaItem';
 import AgendaItemEditor from './AgendaItemEditor';
+import PublishConfirmModal from './PublishConfirmModal';
+import DeleteConfirmModal from '../../../../../../components/DeleteConfirmModal/DeleteConfirmModal';
 import './AgendaBuilder.scss';
 
 function AgendaBuilder({ event, orgId, onRefresh }) {
@@ -15,6 +17,9 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
     const [saving, setSaving] = useState(false);
     const [isPublished, setIsPublished] = useState(false);
     const [publishing, setPublishing] = useState(false);
+    const [showPublishModal, setShowPublishModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [itemToDelete, setItemToDelete] = useState(null);
 
     // Fetch agenda
     const { data: agendaData, loading, refetch } = useFetch(
@@ -97,20 +102,23 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
         setEditingItem(item);
     };
 
-    const handleDeleteItem = async (itemId) => {
-        if (!window.confirm('Are you sure you want to delete this agenda item?')) return;
+    const handleDeleteItem = (itemId) => {
+        setItemToDelete(itemId);
+        setShowDeleteModal(true);
+    };
 
-        if (!event?._id || !orgId) return;
+    const confirmDeleteItem = async () => {
+        if (!itemToDelete || !event?._id || !orgId) return;
 
         try {
             const response = await apiRequest(
-                `/org-event-management/${orgId}/events/${event._id}/agenda/items/${itemId}`,
+                `/org-event-management/${orgId}/events/${event._id}/agenda/items/${itemToDelete}`,
                 {},
                 { method: 'DELETE' }
             );
 
             if (response.success) {
-                setItems(items.filter(item => item.id !== itemId));
+                setItems(items.filter(item => item.id !== itemToDelete));
                 // When items are deleted, agenda becomes unpublished
                 setIsPublished(false);
                 if (onRefresh) onRefresh();
@@ -128,6 +136,9 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                 message: error.message || 'Failed to delete agenda item',
                 type: 'error'
             });
+        } finally {
+            setShowDeleteModal(false);
+            setItemToDelete(null);
         }
     };
 
@@ -149,7 +160,33 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
         await saveAgenda(updatedItems);
     };
 
-    const handlePublish = async () => {
+    // Calculate agenda duration and compare with event time
+    const calculateTimeDifference = () => {
+        if (!event?.start_time || !event?.end_time || items.length === 0) {
+            return null;
+        }
+
+        const agendaDuration = items.reduce((total, item) => {
+            const duration = parseInt(item.durationMinutes, 10) || 0;
+            return total + duration;
+        }, 0);
+
+        const eventStart = new Date(event.start_time);
+        const eventEnd = new Date(event.end_time);
+        const eventDuration = Math.round((eventEnd - eventStart) / 60000); // Convert to minutes
+
+        const difference = agendaDuration - eventDuration;
+        return {
+            agendaDuration,
+            eventDuration,
+            difference,
+            isOver: difference > 0,
+            isUnder: difference < 0,
+            isExact: difference === 0
+        };
+    };
+
+    const handlePublish = () => {
         if (!event?._id || !orgId) return;
         if (items.length === 0) {
             addNotification({
@@ -160,20 +197,36 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
             return;
         }
 
+        // Show modal if there's a time difference, otherwise publish directly
+        const timeDiff = calculateTimeDifference();
+        if (timeDiff && !timeDiff.isExact) {
+            setShowPublishModal(true);
+        } else {
+            publishAgenda();
+        }
+    };
+
+    const publishAgenda = async (newEndTime = null) => {
+        if (!event?._id || !orgId) return;
+
         setPublishing(true);
         try {
+            const requestBody = newEndTime ? { newEndTime } : {};
             const response = await apiRequest(
                 `/org-event-management/${orgId}/events/${event._id}/agenda/publish`,
-                {},
+                requestBody,
                 { method: 'POST' }
             );
 
             if (response.success) {
                 setIsPublished(true);
+                setShowPublishModal(false);
                 if (onRefresh) onRefresh();
                 addNotification({
                     title: 'Success',
-                    message: 'Agenda published successfully',
+                    message: newEndTime 
+                        ? 'Agenda published and event time adjusted successfully'
+                        : 'Agenda published successfully',
                     type: 'success'
                 });
             } else {
@@ -188,6 +241,14 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
         } finally {
             setPublishing(false);
         }
+    };
+
+    const handlePublishConfirm = (newEndTime) => {
+        publishAgenda(newEndTime);
+    };
+
+    const handlePublishWithoutAdjusting = () => {
+        publishAgenda();
     };
 
     if (loading) {
@@ -221,6 +282,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
     };
 
     const agendaTimes = computeAgendaTimes();
+    const timeDiff = calculateTimeDifference();
 
     return (
         <div className="agenda-builder">
@@ -232,6 +294,15 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                     </h3>
                     <div className="header-meta">
                         <p>{items.length} item{items.length !== 1 ? 's' : ''}</p>
+                        {timeDiff && !timeDiff.isExact && (
+                            <span className={`time-warning ${timeDiff.isOver ? 'over' : 'under'}`}>
+                                <Icon icon={timeDiff.isOver ? "mdi:alert-circle" : "mdi:alert-circle-outline"} />
+                                {timeDiff.isOver 
+                                    ? `${Math.abs(timeDiff.difference)} min over`
+                                    : `${Math.abs(timeDiff.difference)} min under`
+                                }
+                            </span>
+                        )}
                         {isPublished ? (
                             <span className="publish-status published">
                                 <Icon icon="mdi:check-circle" />
@@ -306,6 +377,29 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                     onCancel={() => setEditingItem(null)}
                 />
             )}
+
+            {showPublishModal && timeDiff && (
+                <PublishConfirmModal
+                    event={event}
+                    orgId={orgId}
+                    timeDifference={timeDiff}
+                    onConfirm={handlePublishConfirm}
+                    onCancel={() => setShowPublishModal(false)}
+                    onPublishWithoutAdjusting={handlePublishWithoutAdjusting}
+                />
+            )}
+
+            <DeleteConfirmModal
+                isOpen={showDeleteModal}
+                onConfirm={confirmDeleteItem}
+                onCancel={() => {
+                    setShowDeleteModal(false);
+                    setItemToDelete(null);
+                }}
+                title="Delete Agenda Item"
+                message="Are you sure you want to delete this agenda item? This will remove the item from the agenda."
+                warningDetails="This action cannot be undone."
+            />
 
         </div>
     );

@@ -82,6 +82,41 @@
                         }
                     }
                 }
+
+                .time-warning {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                    padding: 0.35rem 0.75rem;
+                    border-radius: 12px;
+                    font-size: 0.85rem;
+                    font-weight: 500;
+                    border: 2px solid;
+
+                    iconify-icon {
+                        font-size: 1rem;
+                    }
+
+                    &.over {
+                        background: #ffebee;
+                        color: #c62828;
+                        border-color: #c62828;
+
+                        iconify-icon {
+                            color: #c62828;
+                        }
+                    }
+
+                    &.under {
+                        background: #fff3cd;
+                        color: #f57c00;
+                        border-color: #f57c00;
+
+                        iconify-icon {
+                            color: #f57c00;
+                        }
+                    }
+                }
             }
         }
 

@@ -4,6 +4,7 @@ import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
 import Popup from '../../../../../../components/Popup/Popup';
+import DeleteConfirmModal from '../../../../../../components/DeleteConfirmModal/DeleteConfirmModal';
 import JobShiftScheduler from './JobShiftScheduler';
 import JobSignup from './JobSignup';
 import MemberDropdown from './MemberDropdown';
@@ -40,6 +41,8 @@ function JobsManager({ event, orgId, onRefresh }) {
     const [newJobTemplate, setNewJobTemplate] = useState({ name: '', description: '' });
     const [loading, setLoading] = useState(true);
     const [assigningMembers, setAssigningMembers] = useState({}); // Track which roles are currently assigning
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [roleToDelete, setRoleToDelete] = useState(null);
 
     // Fetch roles
     const { data: rolesData, refetch: refetchRoles } = useFetch(
@@ -94,20 +97,23 @@ function JobsManager({ event, orgId, onRefresh }) {
         setShowJobPicker(true);
     };
 
-    const handleDeleteRole = async (roleId) => {
-        if (!window.confirm('Are you sure you want to delete this job? All assignments will be removed.')) return;
+    const handleDeleteRole = (roleId) => {
+        setRoleToDelete(roleId);
+        setShowDeleteModal(true);
+    };
 
-        if (!event?._id || !orgId) return;
+    const confirmDeleteRole = async () => {
+        if (!roleToDelete || !event?._id || !orgId) return;
 
         try {
             const response = await apiRequest(
-                `/org-event-management/${orgId}/events/${event._id}/roles/${roleId}`,
+                `/org-event-management/${orgId}/events/${event._id}/roles/${roleToDelete}`,
                 {},
                 { method: 'DELETE' }
             );
 
             if (response.success) {
-                setRoles(roles.filter(role => role._id !== roleId));
+                setRoles(roles.filter(role => role._id !== roleToDelete));
                 refetchRoles();
                 if (onRefresh) onRefresh();
                 addNotification({
@@ -124,6 +130,9 @@ function JobsManager({ event, orgId, onRefresh }) {
                 message: error.message || 'Failed to delete job',
                 type: 'error'
             });
+        } finally {
+            setShowDeleteModal(false);
+            setRoleToDelete(null);
         }
     };
 
@@ -624,6 +633,18 @@ function JobsManager({ event, orgId, onRefresh }) {
                     }}
                 />
             )}
+
+            <DeleteConfirmModal
+                isOpen={showDeleteModal}
+                onConfirm={confirmDeleteRole}
+                onCancel={() => {
+                    setShowDeleteModal(false);
+                    setRoleToDelete(null);
+                }}
+                title="Delete Job"
+                message="Are you sure you want to delete this job? All assignments will be removed."
+                warningDetails="All assigned members will be removed from this job."
+            />
         </div>
     );
 }

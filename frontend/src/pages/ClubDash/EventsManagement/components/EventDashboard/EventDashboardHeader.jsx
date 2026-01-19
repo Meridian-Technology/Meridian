@@ -88,6 +88,48 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
         });
     };
 
+    const handlePreview = () => {
+        if (!event?._id) return;
+        const eventUrl = `${window.location.origin}/event/${event._id}`;
+        window.open(eventUrl, '_blank', 'noopener,noreferrer');
+    };
+
+    const handleShare = async () => {
+        if (!event?._id) return;
+        const eventUrl = `${window.location.origin}/event/${event._id}`;
+        try {
+            await navigator.clipboard.writeText(eventUrl);
+            addNotification({
+                title: 'Success',
+                message: 'Event link copied to clipboard',
+                type: 'success'
+            });
+        } catch (err) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = eventUrl;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                addNotification({
+                    title: 'Success',
+                    message: 'Event link copied to clipboard',
+                    type: 'success'
+                });
+            } catch (err) {
+                addNotification({
+                    title: 'Error',
+                    message: 'Failed to copy link to clipboard',
+                    type: 'error'
+                });
+            }
+            document.body.removeChild(textArea);
+        }
+    };
+
     const eventStatus = getEventStatus();
 
     return (
@@ -105,13 +147,29 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                             <Icon icon="mdi:refresh" />
                         </button>
                         <button 
-                            className="action-btn edit" 
+                            className="action-btn refresh" 
                             title="Edit Event"
                             onClick={handleEdit}
                             disabled={editing}
                         >
                             <Icon icon={editing ? "mdi:loading" : "mdi:pencil"} className={editing ? "spinner" : ""} />
-                            <span>{editing ? 'Loading...' : 'Edit'}</span>
+                        </button>
+                        <button 
+                            className="action-btn share" 
+                            onClick={handleShare}
+                            title="Copy Event Link"
+                            disabled={!event?._id}
+                        >
+                            <Icon icon="mdi:share-variant" />
+                        </button>
+                        <button 
+                            className="action-btn preview" 
+                            onClick={handlePreview}
+                            title="Preview Event"
+                            disabled={!event?._id}
+                        >
+                            <Icon icon="mdi:open-in-new" />
+                            <span>Preview</span>
                         </button>
                     </div>
                 </div>

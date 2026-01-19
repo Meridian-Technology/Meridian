@@ -3,6 +3,7 @@ const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken');
 const getModels  = require('../services/getModelService');
 const { requireEventManagement, requireOrgPermission } = require('../middlewares/orgPermissions');
+const StudySessionService = require('../services/studySessionService');
 
 // ==================== ORGANIZATION EVENT ANALYTICS ====================
 
@@ -864,10 +865,64 @@ router.put('/:orgId/events/:eventId/agenda/items/:itemId', verifyToken, requireE
     }
 });
 
+// Check room availability for event
+router.post('/:orgId/events/:eventId/check-room-availability', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event } = getModels(req, 'Event');
+    const { orgId, eventId } = req.params;
+    const { startTime, endTime } = req.body;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+
+        if (!event) {
+            return res.status(404).json({
+                success: false,
+                message: 'Event not found'
+            });
+        }
+
+        if (!event.classroom_id) {
+            // No room reserved, skip check
+            return res.status(200).json({
+                success: true,
+                data: { isAvailable: true, reason: 'No room reserved for this event' }
+            });
+        }
+
+        const studySessionService = new StudySessionService(req);
+        const availability = await studySessionService.checkRoomAvailabilityByClassroomId(
+            startTime || event.start_time,
+            endTime || event.end_time,
+            event.classroom_id,
+            eventId
+        );
+
+        console.log(`POST: /org-event-management/${orgId}/events/${eventId}/check-room-availability`);
+        res.status(200).json({
+            success: true,
+            data: availability
+        });
+
+    } catch (error) {
+        console.error('Error checking room availability:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error checking room availability',
+            error: error.message
+        });
+    }
+});
+
 // Publish agenda
 router.post('/:orgId/events/:eventId/agenda/publish', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventAgenda } = getModels(req, 'EventAgenda');
+    const { EventAgenda, Event } = getModels(req, 'EventAgenda', 'Event');
     const { orgId, eventId } = req.params;
+    const { newEndTime } = req.body;
 
     try {
         const agenda = await EventAgenda.findOne({ eventId, orgId });
@@ -884,6 +939,40 @@ router.post('/:orgId/events/:eventId/agenda/publish', verifyToken, requireEventM
                 success: false,
                 message: 'Cannot publish an empty agenda'
             });
+        }
+
+        // If newEndTime is provided, check room availability and update event
+        if (newEndTime) {
+            const event = await Event.findById(eventId);
+            if (!event) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Event not found'
+                });
+            }
+
+            // Only check room availability if event has a classroom_id
+            if (event.classroom_id) {
+                const studySessionService = new StudySessionService(req);
+                const availability = await studySessionService.checkRoomAvailabilityByClassroomId(
+                    event.start_time,
+                    new Date(newEndTime),
+                    event.classroom_id,
+                    eventId
+                );
+
+                if (!availability.isAvailable) {
+                    return res.status(409).json({
+                        success: false,
+                        message: availability.reason || 'Room is unavailable for the requested time',
+                        conflicts: availability.conflicts
+                    });
+                }
+            }
+
+            // Update event end_time
+            event.end_time = new Date(newEndTime);
+            await event.save();
         }
 
         agenda.isPublished = true;
