@@ -1,0 +1,178 @@
+.member-dropdown {
+    position: relative;
+    -webkit-user-select: none;
+    user-select: none;
+    width: 100%;
+    min-width: 160px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--background);
+    border: 1px solid var(--lighterborder);
+    box-shadow: var(--shadow);
+    height: fit-content;
+    padding: 0.4rem 0.6rem;
+    box-sizing: border-box;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+        border-color: #4DAA57;
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    img {
+        height: 24px;
+        width: 24px;
+        border-radius: 50%;
+        background: var(--lightbackground);
+        object-fit: cover;
+        flex-shrink: 0;
+    }
+
+    h1 {
+        font-family: 'Inter';
+        font-size: 0.8rem;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin: 0;
+        color: var(--light-text);
+        font-weight: 500;
+    }
+
+    iconify-icon {
+        flex-shrink: 0;
+        color: var(--light-text);
+    }
+
+    .dropdown {
+        position: absolute;
+        top: calc(100% + 5px);
+        left: 0;
+        width: 100%;
+        min-width: 200px;
+        max-width: 300px;
+        box-sizing: border-box;
+        animation: dropdownFadeIn 0.25s ease-out forwards;
+        transform-origin: top;
+        z-index: 1000;
+
+        @keyframes dropdownFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        &.dropdown-exit {
+            animation: dropdownFadeOut 0.2s ease-in forwards;
+        }
+
+        @keyframes dropdownFadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+        }
+
+        .member-list {
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            padding: 5px;
+            background-color: var(--background);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+
+            .no-members {
+                padding: 1rem;
+                text-align: center;
+
+                p {
+                    color: var(--light-text);
+                    font-size: 0.85rem;
+                    margin: 0;
+                }
+            }
+
+            .drop-option {
+                padding: 8px 12px;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: flex;
+                gap: 10px;
+                border-radius: 5px;
+                align-items: center;
+                -webkit-user-select: none;
+                user-select: none;
+
+                img {
+                    height: 32px;
+                    width: 32px;
+                    border-radius: 50%;
+                    background: var(--lightbackground);
+                    object-fit: cover;
+                    flex-shrink: 0;
+                }
+
+                .member-info {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    min-width: 0;
+
+                    p {
+                        font-family: 'Inter';
+                        font-weight: 500;
+                        color: var(--text);
+                        font-size: 0.85rem;
+                        transition: all 0.2s;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        margin: 0;
+                    }
+
+                    .member-role {
+                        font-size: 0.75rem;
+                        color: var(--light-text);
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    }
+                }
+
+                &:hover {
+                    background-color: #f0f7f0;
+                }
+
+                &.selected {
+                    background-color: #e8f5e9;
+
+                    &:hover {
+                        background-color: #e8f5e9;
+                    }
+                }
+            }
+        }
+    }
+}

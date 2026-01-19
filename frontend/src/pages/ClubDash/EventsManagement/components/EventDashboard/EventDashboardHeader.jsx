@@ -10,7 +10,6 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
     const { AtlasMain } = useGradient();
     const { addNotification } = useNotification();
     const { showOverlay, hideOverlay } = useDashboardOverlay();
-    const [duplicating, setDuplicating] = useState(false);
     const [editing, setEditing] = useState(false);
 
     const getStatusColor = (status) => {
@@ -112,41 +111,6 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
         });
     };
 
-    const handleDuplicate = async () => {
-        if (!event?._id || !orgId) return;
-
-        setDuplicating(true);
-        try {
-            const response = await apiRequest(
-                `/org-event-management/${orgId}/events/${event._id}/duplicate`,
-                {},
-                { method: 'POST' }
-            );
-
-            if (response.success) {
-                addNotification({
-                    title: 'Success',
-                    message: 'Event duplicated successfully',
-                    type: 'success'
-                });
-                // Optionally refresh or navigate to the new event
-                if (onRefresh) {
-                    onRefresh();
-                }
-            } else {
-                throw new Error(response.message || 'Failed to duplicate event');
-            }
-        } catch (error) {
-            addNotification({
-                title: 'Error',
-                message: error.message || 'Failed to duplicate event',
-                type: 'error'
-            });
-        } finally {
-            setDuplicating(false);
-        }
-    };
-
     return (
         <div className="event-dashboard-header">
             <div className="header-background">
@@ -169,15 +133,6 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                         >
                             <Icon icon={editing ? "mdi:loading" : "mdi:pencil"} className={editing ? "spinner" : ""} />
                             <span>{editing ? 'Loading...' : 'Edit'}</span>
-                        </button>
-                        <button 
-                            className="action-btn duplicate" 
-                            title="Duplicate Event"
-                            onClick={handleDuplicate}
-                            disabled={duplicating}
-                        >
-                            <Icon icon={duplicating ? "mdi:loading" : "mdi:content-copy"} className={duplicating ? "spinner" : ""} />
-                            <span>{duplicating ? 'Duplicating...' : 'Duplicate'}</span>
                         </button>
                     </div>
                 </div>

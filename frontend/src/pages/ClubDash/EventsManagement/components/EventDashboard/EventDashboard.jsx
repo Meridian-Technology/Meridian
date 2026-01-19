@@ -8,8 +8,10 @@ import EventDashboardHeader from './EventDashboardHeader';
 import EventOverview from './EventOverview';
 import AgendaBuilder from './EventAgendaBuilder/AgendaBuilder';
 import JobsManager from './EventJobsManager/JobsManager';
-import EquipmentManager from './EventEquipment/EquipmentManager';
 import EventAnalyticsDetail from './EventAnalyticsDetail';
+import ComingSoon from './ComingSoon';
+// Temporarily disabled - EquipmentManager functionality commented out
+// import EquipmentManager from './EventEquipment/EquipmentManager';
 import './EventDashboard.scss';
 
 function EventDashboard({ event, orgId, onClose, className = '' }) {
@@ -82,6 +84,10 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             content: <EventOverview 
                         event={dashboardData.event}
                         stats={dashboardData.stats}
+                        agenda={dashboardData.agenda}
+                        roles={dashboardData.roles}
+                        equipment={dashboardData.equipment}
+                        orgId={orgId}
                         onRefresh={handleRefresh}
                     />
         },
@@ -108,17 +114,6 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                     />
         },
         {
-            id: 'equipment',
-            label: 'Equipment',
-            icon: 'mdi:package-variant',
-            description: 'Manage equipment checkout and tracking',
-            content: <EquipmentManager
-                        event={dashboardData.event}
-                        orgId={orgId}
-                        onRefresh={handleRefresh}
-                    />
-        },
-        {
             id: 'analytics',
             label: 'Analytics',
             icon: 'mingcute:chart-line-fill',
@@ -128,6 +123,37 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         orgId={orgId}
                         onRefresh={handleRefresh}
                     />
+        },
+        {
+            id: 'equipment',
+            label: 'Equipment',
+            icon: 'mdi:package-variant',
+            description: 'Manage equipment checkout and tracking',
+            comingSoon: true,
+            content: <ComingSoon feature="Equipment" />
+            // Temporarily disabled - EquipmentManager functionality commented out
+            // content: (
+            //     <div className="equipment-coming-soon-wrapper">
+            //         <div className="equipment-disabled-overlay">
+            //             <ComingSoon feature="Equipment" />
+            //         </div>
+            //         <div className="equipment-manager-disabled">
+            //             <EquipmentManager
+            //                 event={dashboardData.event}
+            //                 orgId={orgId}
+            //                 onRefresh={handleRefresh}
+            //             />
+            //         </div>
+            //     </div>
+            // )
+        },
+        {
+            id: 'communications',
+            label: 'Communications',
+            icon: 'mdi:message-text',
+            description: 'Message volunteers and attendees',
+            comingSoon: true,
+            content: <ComingSoon feature="Communications" />
         }
     ];
 

@@ -1,11 +1,8 @@
 import React from 'react';
-import { Reorder } from 'framer-motion';
-import { useMotionValue } from 'framer-motion';
 import { Icon } from '@iconify-icon/react';
 import './AgendaBuilder.scss';
 
 function AgendaItem({ item, computedStart, computedEnd, onEdit, onDelete }) {
-    const y = useMotionValue(0);
 
     const formatTime = (date) => {
         if (!date) return 'TBD';
@@ -43,7 +40,7 @@ function AgendaItem({ item, computedStart, computedEnd, onEdit, onDelete }) {
     };
 
     return (
-        <Reorder.Item value={item} id={item.id} style={{ y }} className="agenda-item">
+        <div className="agenda-item">
             <div className="item-drag-handle">
                 <Icon icon="mdi:drag" />
             </div>
@@ -93,7 +90,7 @@ function AgendaItem({ item, computedStart, computedEnd, onEdit, onDelete }) {
                     <Icon icon="mdi:delete" />
                 </button>
             </div>
-        </Reorder.Item>
+        </div>
     );
 }
 

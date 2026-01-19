@@ -671,63 +671,6 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
     }
 });
 
-// Duplicate event
-router.post('/:orgId/events/:eventId/duplicate', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { Event } = getModels(req, 'Event');
-    const { orgId, eventId } = req.params;
-    const { name, start_time, end_time } = req.body;
-
-    try {
-        const originalEvent = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
-
-        if (!originalEvent) {
-            return res.status(404).json({
-                success: false,
-                message: 'Event not found'
-            });
-        }
-
-        // Create new event based on original
-        const eventData = originalEvent.toObject();
-        delete eventData._id;
-        delete eventData.createdAt;
-        delete eventData.updatedAt;
-        delete eventData.approvalReference;
-        delete eventData.going;
-        delete eventData.attendees;
-        delete eventData.rsvpStats;
-
-        // Override with provided values or add "Copy of" prefix
-        eventData.name = name || `Copy of ${originalEvent.name}`;
-        eventData.start_time = start_time ? new Date(start_time) : new Date(originalEvent.start_time);
-        eventData.end_time = end_time ? new Date(end_time) : new Date(originalEvent.end_time);
-        eventData.status = 'draft'; // New events start as draft
-
-        const newEvent = new Event(eventData);
-        await newEvent.save();
-
-        console.log(`POST: /org-event-management/${orgId}/events/${eventId}/duplicate`);
-        res.status(201).json({
-            success: true,
-            message: 'Event duplicated successfully',
-            data: { event: newEvent }
-        });
-
-    } catch (error) {
-        console.error('Error duplicating event:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error duplicating event',
-            error: error.message
-        });
-    }
-});
-
 // Update event status
 router.put('/:orgId/events/:eventId/status', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { Event } = getModels(req, 'Event');
@@ -831,7 +774,11 @@ router.post('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagemen
 
         if (agenda) {
             // Update existing agenda
-            if (items) agenda.items = items;
+            if (items) {
+                agenda.items = items;
+                // When items are updated, set isPublished to false
+                agenda.isPublished = false;
+            }
             if (publicNotes !== undefined) agenda.publicNotes = publicNotes;
             if (internalNotes !== undefined) agenda.internalNotes = internalNotes;
             await agenda.save();
@@ -842,7 +789,8 @@ router.post('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagemen
                 orgId,
                 items: items || [],
                 publicNotes,
-                internalNotes
+                internalNotes,
+                isPublished: false
             });
             await agenda.save();
         }
@@ -895,6 +843,8 @@ router.put('/:orgId/events/:eventId/agenda/items/:itemId', verifyToken, requireE
             }
         });
 
+        // When item is updated, set isPublished to false
+        agenda.isPublished = false;
         await agenda.save();
 
         console.log(`PUT: /org-event-management/${orgId}/events/${eventId}/agenda/items/${itemId}`);
@@ -909,6 +859,48 @@ router.put('/:orgId/events/:eventId/agenda/items/:itemId', verifyToken, requireE
         res.status(500).json({
             success: false,
             message: 'Error updating agenda item',
+            error: error.message
+        });
+    }
+});
+
+// Publish agenda
+router.post('/:orgId/events/:eventId/agenda/publish', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventAgenda } = getModels(req, 'EventAgenda');
+    const { orgId, eventId } = req.params;
+
+    try {
+        const agenda = await EventAgenda.findOne({ eventId, orgId });
+
+        if (!agenda) {
+            return res.status(404).json({
+                success: false,
+                message: 'Agenda not found'
+            });
+        }
+
+        if (!agenda.items || agenda.items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot publish an empty agenda'
+            });
+        }
+
+        agenda.isPublished = true;
+        await agenda.save();
+
+        console.log(`POST: /org-event-management/${orgId}/events/${eventId}/agenda/publish`);
+        res.status(200).json({
+            success: true,
+            message: 'Agenda published successfully',
+            data: { agenda }
+        });
+
+    } catch (error) {
+        console.error('Error publishing agenda:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error publishing agenda',
             error: error.message
         });
     }
@@ -930,6 +922,8 @@ router.delete('/:orgId/events/:eventId/agenda/items/:itemId', verifyToken, requi
         }
 
         agenda.items = agenda.items.filter(item => item.id !== itemId);
+        // When items are deleted, set isPublished to false
+        agenda.isPublished = false;
         await agenda.save();
 
         console.log(`DELETE: /org-event-management/${orgId}/events/${eventId}/agenda/items/${itemId}`);
@@ -1319,9 +1313,10 @@ router.post('/:orgId/events/:eventId/assignments', verifyToken, requireEventMana
 
         role.assignments.push({
             memberId,
-            status: status || 'assigned',
+            status: status || 'confirmed', // Default to confirmed instead of assigned
             notes,
-            assignedAt: new Date()
+            assignedAt: new Date(),
+            confirmedAt: status === 'confirmed' || !status ? new Date() : undefined
         });
 
         await role.save();
@@ -1382,6 +1377,44 @@ router.put('/:orgId/events/:eventId/assignments/:assignmentId', verifyToken, req
         res.status(500).json({
             success: false,
             message: 'Error updating assignment',
+            error: error.message
+        });
+    }
+});
+
+// Delete assignment
+router.delete('/:orgId/events/:eventId/assignments/:assignmentId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventJob } = getModels(req, 'EventJob');
+    const { orgId, eventId, assignmentId } = req.params;
+
+    try {
+        const role = await EventJob.findOne({
+            eventId,
+            orgId,
+            'assignments._id': assignmentId
+        });
+
+        if (!role) {
+            return res.status(404).json({
+                success: false,
+                message: 'Assignment not found'
+            });
+        }
+
+        role.assignments.pull(assignmentId);
+        await role.save();
+
+        console.log(`DELETE: /org-event-management/${orgId}/events/${eventId}/assignments/${assignmentId}`);
+        res.status(200).json({
+            success: true,
+            message: 'Assignment deleted successfully'
+        });
+
+    } catch (error) {
+        console.error('Error deleting assignment:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error deleting assignment',
             error: error.message
         });
     }
@@ -1882,6 +1915,305 @@ router.post('/:orgId/equipment/:equipmentId/member-checkin', verifyToken, requir
 });
 
 // ==================== ANALYTICS ====================
+
+// Get event RSVP growth data
+router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, EventAnalytics } = getModels(req, 'Event', 'EventAnalytics');
+    const { orgId, eventId } = req.params;
+
+    try {
+        // Fetch event and analytics in parallel for better performance
+        const [event, analytics] = await Promise.all([
+            Event.findOne({
+                _id: eventId,
+                hostingId: orgId,
+                hostingType: 'Org',
+                isDeleted: false
+            }),
+            EventAnalytics.findOne({ eventId })
+        ]);
+
+        if (!event) {
+            return res.status(404).json({
+                success: false,
+                message: 'Event not found'
+            });
+        }
+
+        const eventStart = new Date(event.start_time);
+        const eventCreated = new Date(event.createdAt);
+        const now = new Date();
+        
+        // Chart always shows from creation to the day before the event
+        // For past events, freeze at the day before event start
+        // For future events, show projections all the way to the day before event
+        const eventCreatedNormalized = new Date(eventCreated);
+        eventCreatedNormalized.setHours(0, 0, 0, 0);
+        
+        const dayBeforeEvent = new Date(eventStart);
+        dayBeforeEvent.setDate(dayBeforeEvent.getDate() - 1);
+        dayBeforeEvent.setHours(23, 59, 59, 999);
+        
+        // Normalize dayBeforeEvent to start of day for comparison
+        const dayBeforeEventNormalized = new Date(dayBeforeEvent);
+        dayBeforeEventNormalized.setHours(0, 0, 0, 0);
+        
+        // For past events, end date is the day before event (frozen)
+        // For future events, end date is the day before event (shows projections)
+        let endDate = dayBeforeEvent;
+        
+        // Ensure endDate is not before eventCreated
+        if (dayBeforeEventNormalized < eventCreatedNormalized) {
+            endDate = new Date(eventCreatedNormalized);
+            endDate.setHours(23, 59, 59, 999);
+        }
+        
+        // Calculate total days from creation to end date (inclusive)
+        // Use normalized dates for accurate day count
+        // We want to include both the creation day and the day before event
+        const endDateNormalized = new Date(dayBeforeEventNormalized);
+        const totalDays = Math.max(0, Math.floor((endDateNormalized - eventCreatedNormalized) / (1000 * 60 * 60 * 24)));
+        
+        // Get all RSVPs with "going" status
+        // For past events, only count RSVPs up to event start date
+        // For future events, count all RSVPs up to and including today
+        // Note: RSVPs cannot happen in the future, so we only include up to the cutoff date
+        const cutoffDate = eventStart < now ? eventStart : now;
+        const cutoffDateNormalized = new Date(cutoffDate);
+        cutoffDateNormalized.setHours(23, 59, 59, 999);
+        
+        // For future events, also include any RSVPs that happen "today" even if timestamp is slightly ahead
+        // This handles timezone/server clock differences
+        // We'll include RSVPs up to end of today + 1 hour buffer for safety
+        const maxAllowedDate = eventStart < now 
+            ? cutoffDateNormalized 
+            : new Date(now.getTime() + 60 * 60 * 1000); // Today + 1 hour buffer
+        
+        // Use EventAnalytics.rsvpHistory as primary source for timestamps (indexed, accurate)
+        // Cross-reference with Event.attendees for guestCount
+        const attendees = event.attendees || [];
+        const rsvpHistory = analytics?.rsvpHistory || [];
+        const rsvpStatsGoing = event.rsvpStats?.going || 0;
+        
+        // Debug: Check if we have rsvpHistory data
+        if (rsvpHistory.length === 0 && rsvpStatsGoing > 0) {
+            console.log(`Warning: No rsvpHistory found but rsvpStats shows ${rsvpStatsGoing} going RSVPs. This may indicate rsvpHistory wasn't tracked.`);
+        }
+        
+        // Create a map of userId -> attendee for quick guestCount lookup
+        const attendeeMap = new Map();
+        attendees.forEach(attendee => {
+            if (attendee && attendee.userId) {
+                const userIdStr = attendee.userId.toString();
+                // Keep the most recent attendee record (in case of duplicates)
+                if (!attendeeMap.has(userIdStr) || 
+                    (attendee.rsvpDate && new Date(attendee.rsvpDate) > new Date(attendeeMap.get(userIdStr).rsvpDate || 0))) {
+                    attendeeMap.set(userIdStr, attendee);
+                }
+            }
+        });
+        
+        // Filter rsvpHistory for "going" status and within cutoff date
+        // Use rsvpHistory timestamps (more accurate and indexed)
+        // This will include ALL RSVPs that happened on or before the cutoff date
+        // For future events: includes all RSVPs up to today (with small buffer for timezone differences)
+        // For past events: includes all RSVPs up to event start date
+        const goingRSVPsFromHistory = rsvpHistory.filter(rsvp => {
+            if (rsvp.status !== 'going') return false;
+            const rsvpTimestamp = new Date(rsvp.timestamp);
+            // Include RSVPs that happened on or before the max allowed date
+            // This ensures we capture all valid RSVPs while excluding any future-dated entries
+            return rsvpTimestamp <= maxAllowedDate;
+        });
+        
+        // Group RSVPs by day using rsvpHistory timestamps
+        const rsvpsByDay = {};
+        goingRSVPsFromHistory.forEach(rsvp => {
+            const rsvpTimestamp = new Date(rsvp.timestamp);
+            const dayKey = rsvpTimestamp.toISOString().split('T')[0];
+            
+            // Get guestCount from attendee map, default to 1
+            const attendee = attendeeMap.get(rsvp.userId.toString());
+            const guestCount = attendee?.guestCount || 1;
+            
+            if (!rsvpsByDay[dayKey]) {
+                rsvpsByDay[dayKey] = 0;
+            }
+            rsvpsByDay[dayKey] += guestCount;
+        });
+        
+        // Fallback: If no rsvpHistory but we have attendees with rsvpDate, use those
+        if (goingRSVPsFromHistory.length === 0 && attendees.length > 0) {
+            attendees.forEach(attendee => {
+                if (!attendee || attendee.status !== 'going') return;
+                
+                // Use rsvpDate from attendee if available
+                const rsvpDate = attendee.rsvpDate ? new Date(attendee.rsvpDate) : new Date(eventCreated);
+                if (rsvpDate > cutoffDateNormalized) return;
+                
+                const dayKey = rsvpDate.toISOString().split('T')[0];
+                if (!rsvpsByDay[dayKey]) {
+                    rsvpsByDay[dayKey] = 0;
+                }
+                rsvpsByDay[dayKey] += attendee.guestCount || 1;
+            });
+        }
+        
+        // Final fallback: If we have rsvpStats but no history/attendees, distribute evenly
+        const totalRSVPsFromData = Object.values(rsvpsByDay).reduce((sum, count) => sum + count, 0);
+        if (totalRSVPsFromData === 0 && rsvpStatsGoing > 0 && eventCreated <= cutoffDateNormalized) {
+            const daysFromCreation = Math.max(1, Math.ceil((cutoffDateNormalized - eventCreatedNormalized) / (1000 * 60 * 60 * 24)));
+            const rsvpsPerDay = Math.ceil(rsvpStatsGoing / daysFromCreation);
+            let remainingRSVPs = rsvpStatsGoing;
+            
+            for (let i = 0; i < daysFromCreation && remainingRSVPs > 0; i++) {
+                const currentDate = new Date(eventCreatedNormalized);
+                currentDate.setDate(currentDate.getDate() + i);
+                if (currentDate > cutoffDateNormalized) break;
+                
+                const dayKey = currentDate.toISOString().split('T')[0];
+                const rsvpsForDay = Math.min(rsvpsPerDay, remainingRSVPs);
+                if (!rsvpsByDay[dayKey]) {
+                    rsvpsByDay[dayKey] = 0;
+                }
+                rsvpsByDay[dayKey] += rsvpsForDay;
+                remainingRSVPs -= rsvpsForDay;
+            }
+        }
+
+        // Generate daily data from creation to end date (inclusive)
+        // This includes both past days (with actual RSVP data) and future days (projections)
+        const dailyData = [];
+        let cumulativeRSVPs = 0;
+        
+        // Use normalized dayBeforeEvent for comparison (this is the actual end date we want)
+        const endDateForComparison = new Date(dayBeforeEventNormalized);
+        
+        for (let i = 0; i <= totalDays; i++) {
+            const currentDate = new Date(eventCreatedNormalized);
+            currentDate.setDate(currentDate.getDate() + i);
+            currentDate.setHours(0, 0, 0, 0);
+            
+            // Only include days up to and including the day before event
+            // Break if we've gone past the day before event
+            if (currentDate > endDateForComparison) break;
+            
+            const dayKey = currentDate.toISOString().split('T')[0];
+            // Only count RSVPs for days that have passed (up to cutoff date)
+            const dailyRSVPs = currentDate <= cutoffDateNormalized ? (rsvpsByDay[dayKey] || 0) : 0;
+            cumulativeRSVPs += dailyRSVPs;
+            
+            dailyData.push({
+                date: dayKey,
+                dailyRSVPs: dailyRSVPs,
+                cumulativeRSVPs: cumulativeRSVPs
+            });
+        }
+
+        // Calculate dynamic required growth based on actual RSVPs received
+        // Past days use their ORIGINAL prediction (not actual RSVPs)
+        // Future days recalculate: if behind, rate increases; if ahead, rate levels off
+        const targetAttendance = event.expectedAttendance || 0;
+        const actualDays = dailyData.length;
+        const originalRequiredPerDay = actualDays > 0 ? targetAttendance / actualDays : 0;
+        
+        // Calculate cumulative actual RSVPs and original targets for past days
+        let cumulativeActual = 0;
+        let cumulativeOriginalTarget = 0;
+        let pastDaysCount = 0;
+        
+        const requiredGrowth = [];
+        
+        for (let i = 0; i < dailyData.length; i++) {
+            const day = dailyData[i];
+            const currentDate = new Date(day.date);
+            const isPastDay = currentDate <= cutoffDateNormalized;
+            
+            if (isPastDay) {
+                // Past day: use original prediction (not actual RSVPs)
+                pastDaysCount++;
+                cumulativeActual += day.dailyRSVPs; // Track actual for future calculations
+                cumulativeOriginalTarget += originalRequiredPerDay;
+                
+                requiredGrowth.push({
+                    date: day.date,
+                    required: cumulativeOriginalTarget // Use original prediction for past days
+                });
+            } else {
+                // Future day: recalculate based on remaining target needed
+                // Remaining = totalTarget - original targets for past days - actual RSVPs received
+                // If ahead (actual > original): remaining is less, so rate levels off
+                // If behind (actual < original): remaining is more, so rate increases
+                const remainingNeeded = targetAttendance - cumulativeOriginalTarget - cumulativeActual;
+                const remainingDays = dailyData.length - pastDaysCount;
+                const requiredPerRemainingDay = remainingDays > 0 ? Math.max(0, remainingNeeded) / remainingDays : 0;
+                
+                // Cumulative target = original targets for past days + (required per remaining day * number of future days up to and including this one)
+                const futureDaysUpToThis = i - pastDaysCount + 1;
+                const cumulativeRequired = cumulativeOriginalTarget + (requiredPerRemainingDay * futureDaysUpToThis);
+                
+                // Ensure we reach the total target by the last day
+                requiredGrowth.push({
+                    date: day.date,
+                    required: i === dailyData.length - 1 ? targetAttendance : Math.min(cumulativeRequired, targetAttendance)
+                });
+            }
+        }
+        
+        // Calculate average required per day for daily view (for reference)
+        const requiredPerDay = originalRequiredPerDay;
+        
+        // Debug logging
+        console.log(`RSVP Growth Data:`, {
+            eventId,
+            totalAttendees: event.attendees?.length || 0,
+            rsvpHistoryCount: rsvpHistory.length,
+            goingRSVPsFromHistory: goingRSVPsFromHistory.length,
+            rsvpsByDay,
+            dailyDataLength: dailyData.length,
+            totalDays,
+            targetAttendance,
+            eventStart: eventStart.toISOString(),
+            eventCreated: eventCreated.toISOString(),
+            endDate: endDate.toISOString(),
+            endDateNormalized: endDateNormalized.toISOString(),
+            dayBeforeEvent: dayBeforeEvent.toISOString(),
+            cutoffDate: cutoffDate.toISOString(),
+            now: now.toISOString(),
+            firstDay: dailyData[0]?.date,
+            lastDay: dailyData[dailyData.length - 1]?.date,
+            sampleRSVPTimestamps: goingRSVPsFromHistory.slice(0, 5).map(r => ({
+                timestamp: r.timestamp,
+                status: r.status,
+                userId: r.userId
+            }))
+        });
+
+        console.log(`GET: /org-event-management/${orgId}/events/${eventId}/rsvp-growth`);
+        res.status(200).json({
+            success: true,
+            data: {
+                dailyData,
+                requiredGrowth,
+                targetAttendance,
+                totalDays,
+                requiredPerDay,
+                eventStart: eventStart.toISOString(),
+                eventCreated: eventCreated.toISOString(),
+                isFrozen: eventStart < now // Event has passed
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching RSVP growth data:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching RSVP growth data',
+            error: error.message
+        });
+    }
+});
+
 
 // Get detailed event analytics
 router.get('/:orgId/events/:eventId/analytics', verifyToken, requireEventManagement('orgId'), async (req, res) => {

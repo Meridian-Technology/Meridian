@@ -32,17 +32,56 @@
                 font-size: 1.5rem;
                 font-weight: 600;
                 color: var(--text);
-                margin: 0 0 0.25rem 0;
+                margin: 0 0 0.5rem 0;
 
                 iconify-icon {
                     color: #4DAA57;
                 }
             }
 
-            p {
-                color: var(--light-text);
-                margin: 0;
-                font-size: 0.9rem;
+            .header-meta {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                flex-wrap: wrap;
+
+                p {
+                    color: var(--light-text);
+                    margin: 0;
+                    font-size: 0.9rem;
+                }
+
+                .publish-status {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                    padding: 0.35rem 0.75rem;
+                    border-radius: 12px;
+                    font-size: 0.85rem;
+                    font-weight: 500;
+
+                    iconify-icon {
+                        font-size: 1rem;
+                    }
+
+                    &.published {
+                        background: #e8f5e9;
+                        color: #2e7d32;
+
+                        iconify-icon {
+                            color: #4caf50;
+                        }
+                    }
+
+                    &.pending {
+                        background: #fff3cd;
+                        color: #856404;
+
+                        iconify-icon {
+                            color: #ffc107;
+                        }
+                    }
+                }
             }
         }
 
@@ -86,6 +125,39 @@
 
                 &:hover {
                     background: var(--lighterborder);
+                }
+            }
+
+            .btn-publish {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.75rem 1.25rem;
+                border: none;
+                border-radius: 8px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                background: #1976d2;
+                color: white;
+
+                &:hover:not(:disabled) {
+                    background: #1565c0;
+                    transform: translateY(-2px);
+                }
+
+                &:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+
+                iconify-icon {
+                    font-size: 1.1rem;
+
+                    &.spinner {
+                        animation: spin 1s linear infinite;
+                    }
                 }
             }
 
@@ -157,6 +229,19 @@
         display: flex;
         flex-direction: column;
         gap: 1rem;
+
+        // Styles for draggable items
+        .draggable-list {
+            width: 100%;
+
+            .draggable-item {
+                cursor: grab;
+                
+                &:active {
+                    cursor: grabbing;
+                }
+            }
+        }
     }
 
     .agenda-item {
@@ -167,12 +252,7 @@
         background: var(--lightbackground);
         border: 1px solid var(--lighterborder);
         border-radius: 12px;
-        cursor: grab;
         transition: all 0.2s ease;
-
-        &:active {
-            cursor: grabbing;
-        }
 
         &:hover {
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);

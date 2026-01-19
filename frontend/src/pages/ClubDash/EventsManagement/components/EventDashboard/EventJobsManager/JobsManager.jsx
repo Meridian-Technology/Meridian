@@ -3,25 +3,43 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
-import JobEditor from './JobEditor';
 import Popup from '../../../../../../components/Popup/Popup';
 import JobShiftScheduler from './JobShiftScheduler';
-import JobAssignment from './JobAssignment';
 import JobSignup from './JobSignup';
+import MemberDropdown from './MemberDropdown';
 import './JobsManager.scss';
 
 function JobsManager({ event, orgId, onRefresh }) {
     const { addNotification } = useNotification();
+    const [copiedEmail, setCopiedEmail] = useState(null);
+
+    const handleCopyEmail = async (email) => {
+        try {
+            await navigator.clipboard.writeText(email);
+            setCopiedEmail(email);
+            addNotification({
+                title: 'Copied',
+                message: 'Email copied to clipboard',
+                type: 'success'
+            });
+            setTimeout(() => setCopiedEmail(null), 2000);
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: 'Failed to copy email',
+                type: 'error'
+            });
+        }
+    };
     const [roles, setRoles] = useState([]);
     const [signups, setSignups] = useState([]);
     const [orgRoles, setOrgRoles] = useState([]);
-    const [editingRole, setEditingRole] = useState(null);
-    const [assigningRole, setAssigningRole] = useState(null);
     const [showVolunteerSignup, setShowVolunteerSignup] = useState(false);
     const [showJobPicker, setShowJobPicker] = useState(false);
     const [creatingJobTemplate, setCreatingJobTemplate] = useState(false);
     const [newJobTemplate, setNewJobTemplate] = useState({ name: '', description: '' });
     const [loading, setLoading] = useState(true);
+    const [assigningMembers, setAssigningMembers] = useState({}); // Track which roles are currently assigning
 
     // Fetch roles
     const { data: rolesData, refetch: refetchRoles } = useFetch(
@@ -37,6 +55,13 @@ function JobsManager({ event, orgId, onRefresh }) {
     const { data: orgRolesData } = useFetch(
         orgId ? `/org-event-management/${orgId}/event-roles` : null
     );
+
+    // Fetch org members for assignment
+    const { data: membersData } = useFetch(
+        orgId ? `/org-roles/${orgId}/members` : null
+    );
+
+    const members = membersData?.members || [];
 
     useEffect(() => {
         if (rolesData?.success) {
@@ -69,10 +94,6 @@ function JobsManager({ event, orgId, onRefresh }) {
         setShowJobPicker(true);
     };
 
-    const handleEditRole = (role) => {
-        setEditingRole(role);
-    };
-
     const handleDeleteRole = async (roleId) => {
         if (!window.confirm('Are you sure you want to delete this job? All assignments will be removed.')) return;
 
@@ -101,48 +122,6 @@ function JobsManager({ event, orgId, onRefresh }) {
             addNotification({
                 title: 'Error',
                 message: error.message || 'Failed to delete job',
-                type: 'error'
-            });
-        }
-    };
-
-    const handleSaveRole = async (roleData) => {
-        if (!event?._id || !orgId) return;
-
-        try {
-            let response;
-            if (roleData._id) {
-                // Update existing
-                response = await apiRequest(
-                    `/org-event-management/${orgId}/events/${event._id}/roles/${roleData._id}`,
-                    roleData,
-                    { method: 'PUT' }
-                );
-            } else {
-                // Create new
-                response = await apiRequest(
-                    `/org-event-management/${orgId}/events/${event._id}/roles`,
-                    roleData,
-                    { method: 'POST' }
-                );
-            }
-
-            if (response.success) {
-                setEditingRole(null);
-                refetchRoles();
-                if (onRefresh) onRefresh();
-                addNotification({
-                    title: 'Success',
-                    message: 'Job saved successfully',
-                    type: 'success'
-                });
-            } else {
-                throw new Error(response.message || 'Failed to save job');
-            }
-        } catch (error) {
-            addNotification({
-                title: 'Error',
-                message: error.message || 'Failed to save job',
                 type: 'error'
             });
         }
@@ -268,8 +247,91 @@ function JobsManager({ event, orgId, onRefresh }) {
         }
     };
 
-    const handleAssignRole = (role) => {
-        setAssigningRole(role);
+    const handleAssignMember = async (role, memberId) => {
+        if (!memberId || !event?._id || !orgId || !role?._id) return;
+
+        // Check if member is already assigned to this role
+        const alreadyAssigned = role.assignments?.some(
+            a => a.memberId?._id?.toString() === memberId || a.memberId?.toString() === memberId
+        );
+
+        if (alreadyAssigned) {
+            addNotification({
+                title: 'Already Assigned',
+                message: 'This member is already assigned to this job',
+                type: 'warning'
+            });
+            return;
+        }
+
+        setAssigningMembers(prev => ({ ...prev, [role._id]: true }));
+
+        try {
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/events/${event._id}/assignments`,
+                {
+                    roleId: role._id,
+                    memberId: memberId,
+                    status: 'confirmed' // Always start as confirmed
+                },
+                { method: 'POST' }
+            );
+
+            if (response.success) {
+                refetchRoles();
+                if (onRefresh) onRefresh();
+                addNotification({
+                    title: 'Success',
+                    message: 'Member assigned successfully',
+                    type: 'success'
+                });
+            } else {
+                throw new Error(response.message || 'Failed to assign member');
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: error.message || 'Failed to assign member',
+                type: 'error'
+            });
+        } finally {
+            setAssigningMembers(prev => ({ ...prev, [role._id]: false }));
+        }
+    };
+
+    const handleRemoveAssignment = async (role, assignmentId) => {
+        if (!window.confirm('Are you sure you want to remove this member from this job?')) return;
+        if (!event?._id || !orgId || !role?._id || !assignmentId) return;
+
+        setAssigningMembers(prev => ({ ...prev, [role._id]: true }));
+
+        try {
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/events/${event._id}/assignments/${assignmentId}`,
+                {},
+                { method: 'DELETE' }
+            );
+
+            if (response.success) {
+                refetchRoles();
+                if (onRefresh) onRefresh();
+                addNotification({
+                    title: 'Success',
+                    message: 'Member removed successfully',
+                    type: 'success'
+                });
+            } else {
+                throw new Error(response.message || 'Failed to remove member');
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: error.message || 'Failed to remove member',
+                type: 'error'
+            });
+        } finally {
+            setAssigningMembers(prev => ({ ...prev, [role._id]: false }));
+        }
     };
 
 
@@ -322,56 +384,37 @@ function JobsManager({ event, orgId, onRefresh }) {
             {roles.length === 0 ? (
                 <div className="empty-roles">
                     <Icon icon="mdi:account-group-outline" />
-                    <h4>No jobs assigned yet</h4>
-                    <p>Add org jobs to create slots for this event</p>
-                    <button className="btn-primary" onClick={handleAddRole}>
-                        <Icon icon="mdi:plus" />
-                        <span>Add First Job</span>
-                    </button>
+                    <h4>No event jobs assigned yet</h4>
+                    <p>Add event jobs to keep everyone organized.</p>
+  
                 </div>
             ) : (
                 <div className="roles-list">
-                    {roles.map(role => (
-                        <div key={role._id} className="role-card">
-                            <div className="role-header">
-                                <div className="role-info">
-                                    <h4>{role.name}</h4>
-                                    {role.description && (
-                                        <p>{role.description}</p>
-                                    )}
+                    {roles.map(role => {
+                        const confirmedCount = role.assignments?.filter(a => a.status === 'confirmed').length || 0;
+                        const isFullyStaffed = confirmedCount >= role.requiredCount;
+                        
+                        return (
+                            <div key={role._id} className={`role-card ${isFullyStaffed ? 'fully-staffed' : ''}`}>
+                                <div className="role-header">
+                                    <div className="role-info">
+                                        <h4>{role.name}</h4>
+                                        {role.description && (
+                                            <p>{role.description}</p>
+                                        )}
+                                    </div>
+                                    <div className="role-actions">
+                                        <button 
+                                            className="action-btn delete"
+                                            onClick={() => handleDeleteRole(role._id)}
+                                            title="Delete Job"
+                                        >
+                                            <Icon icon="mdi:delete" />
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="role-actions">
-                                    <button 
-                                        className="action-btn assign"
-                                        onClick={() => handleAssignRole(role)}
-                                        title="Assign Members"
-                                    >
-                                        <Icon icon="mdi:account-plus" />
-                                    </button>
-                                    <button 
-                                        className="action-btn edit"
-                                        onClick={() => handleEditRole(role)}
-                                        title="Edit Job"
-                                    >
-                                        <Icon icon="mdi:pencil" />
-                                    </button>
-                                    <button 
-                                        className="action-btn delete"
-                                        onClick={() => handleDeleteRole(role._id)}
-                                        title="Delete Job"
-                                    >
-                                        <Icon icon="mdi:delete" />
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="role-stats">
-                                <div className="stat-item">
-                                    <Icon icon="mdi:account-multiple" />
-                                    <span>
-                                        {role.assignments?.filter(a => a.status === 'confirmed').length || 0} / {role.requiredCount} assigned
-                                    </span>
-                                </div>
-                                {role.shiftStart && role.shiftEnd && (
+                            {role.shiftStart && role.shiftEnd && (
+                                <div className="role-stats">
                                     <div className="stat-item">
                                         <Icon icon="mdi:clock-outline" />
                                         <span>
@@ -379,41 +422,97 @@ function JobsManager({ event, orgId, onRefresh }) {
                                             {new Date(role.shiftEnd).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                                         </span>
                                     </div>
-                                )}
-                            </div>
-                            {role.assignments && role.assignments.length > 0 && (
-                                <div className="role-assignments">
-                                    <h5>Assignments:</h5>
-                                    <div className="assignments-list">
-                                        {role.assignments.map((assignment, index) => (
-                                            <div key={index} className="assignment-item">
-                                                <span className="member-name">
-                                                    {assignment.memberId?.name || 'Unknown'}
-                                                </span>
-                                                <span className={`status-badge ${assignment.status}`}>
-                                                    {assignment.status}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
                                 </div>
                             )}
+                                <div className="role-assignments">
+                                    <div className="assignments-header">
+                                        <h5>Assignments ({confirmedCount} / {role.requiredCount})</h5>
+                                        {!isFullyStaffed && (
+                                            <div className="member-selector">
+                                                <MemberDropdown
+                                                    members={members.filter(member => {
+                                                        // Filter out already assigned members
+                                                        const memberId = member.user_id._id.toString();
+                                                        return !role.assignments?.some(
+                                                            a => (a.memberId?._id?.toString() || a.memberId?.toString()) === memberId
+                                                        );
+                                                    })}
+                                                    onMemberSelect={(memberId) => {
+                                                        if (memberId) {
+                                                            handleAssignMember(role, memberId);
+                                                        }
+                                                    }}
+                                                    disabled={assigningMembers[role._id]}
+                                                    placeholder="Select member"
+                                                />
+                                            </div>
+                                        )}
+                                        {isFullyStaffed && (
+                                            <span className="fully-staffed-badge">
+                                                <Icon icon="mdi:check-circle" />
+                                                Fully Staffed
+                                            </span>
+                                        )}
+                                    </div>
+                                <div className="assignments-list">
+                                    {/* Show confirmed assignments */}
+                                    {role.assignments
+                                        ?.filter(a => a.status === 'confirmed')
+                                        .map((assignment, index) => (
+                                            <div key={`assigned-${index}`} className="assignment-item">
+                                                <div className="member-info">
+                                                    <span className="member-name">
+                                                        {assignment.memberId?.name || 'Unknown'}
+                                                    </span>
+                                                    {assignment.memberId?.email && (
+                                                        <span 
+                                                            className="member-email clickable"
+                                                            onClick={() => handleCopyEmail(assignment.memberId.email)}
+                                                            title="Click to copy email"
+                                                        >
+                                                            {assignment.memberId.email}
+                                                            <Icon 
+                                                                icon={copiedEmail === assignment.memberId.email ? "mdi:check" : "mdi:content-copy"} 
+                                                                className="copy-icon"
+                                                            />
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="assignment-actions">
+                                                    <span className={`status-badge ${assignment.status || 'confirmed'}`}>
+                                                        {assignment.status || 'confirmed'}
+                                                    </span>
+                                                    <button
+                                                        className="remove-assignment-btn"
+                                                        onClick={() => handleRemoveAssignment(role, assignment._id)}
+                                                        title="Remove member"
+                                                        disabled={assigningMembers[role._id]}
+                                                    >
+                                                        <Icon icon="mdi:close" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    
+                                    {/* Show placeholder slots for unfilled positions */}
+                                    {Array.from({ length: Math.max(0, role.requiredCount - confirmedCount) }).map((_, index) => (
+                                        <div key={`placeholder-${index}`} className="assignment-item placeholder-slot">
+                                            <div className="member-info">
+                                                <Icon icon="mdi:account-outline" className="placeholder-icon" />
+                                                <span className="placeholder-text">Open slot</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
-                    ))}
+                    );
+                    })}
                 </div>
             )}
 
             <JobShiftScheduler roles={roles} event={event} />
 
-            {editingRole && (
-                <JobEditor
-                    role={editingRole}
-                    event={event}
-                    orgRoles={orgRoles}
-                    onSave={handleSaveRole}
-                    onCancel={() => setEditingRole(null)}
-                />
-            )}
 
             {showJobPicker && (
                 <Popup
@@ -510,19 +609,6 @@ function JobsManager({ event, orgId, onRefresh }) {
                         </div>
                     </div>
                 </Popup>
-            )}
-
-            {assigningRole && (
-                <JobAssignment
-                    role={assigningRole}
-                    event={event}
-                    orgId={orgId}
-                    onClose={() => setAssigningRole(null)}
-                    onSuccess={() => {
-                        refetchRoles();
-                        if (onRefresh) onRefresh();
-                    }}
-                />
             )}
 
             {showVolunteerSignup && (

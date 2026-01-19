@@ -1,161 +1,138 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icon } from '@iconify-icon/react';
+import { useFetch } from '../../../../../hooks/useFetch';
+import RSVPGrowthChart from './RSVPGrowthChart';
 import './EventDashboard.scss';
 
-function EventOverview({ event, stats, onRefresh }) {
-    const formatDate = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-        });
-    };
+function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, orgId, onRefresh }) {
+    const [rolesData, setRolesData] = useState([]);
+    
+    // Fetch full roles data to check job fill status
+    const { data: rolesResponse } = useFetch(
+        event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/roles` : null
+    );
 
-    const formatTime = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        return date.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
-
-    const getDuration = () => {
-        if (!event?.start_time || !event?.end_time) return 'N/A';
-        const start = new Date(event.start_time);
-        const end = new Date(event.end_time);
-        const diff = end - start;
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        
-        if (hours > 0 && minutes > 0) {
-            return `${hours}h ${minutes}m`;
-        } else if (hours > 0) {
-            return `${hours}h`;
-        } else {
-            return `${minutes}m`;
+    useEffect(() => {
+        if (rolesResponse?.success) {
+            setRolesData(rolesResponse.data.roles || []);
         }
+    }, [rolesResponse]);
+
+    // Calculate jobs filled status
+    const calculateJobsFilled = () => {
+        if (rolesData.length === 0) return { ready: false, filled: 0, required: 0 };
+        
+        let totalRequired = 0;
+        let totalFilled = 0;
+        
+        rolesData.forEach(role => {
+            const required = role.requiredCount || 0;
+            const confirmed = role.assignments?.filter(a => a.status === 'confirmed').length || 0;
+            totalRequired += required;
+            totalFilled += confirmed;
+        });
+        
+        return {
+            ready: totalRequired > 0 && totalFilled >= totalRequired,
+            filled: totalFilled,
+            required: totalRequired
+        };
     };
+
+    const jobsStatus = calculateJobsFilled();
+    const jobsPercentage = jobsStatus.required > 0 
+        ? Math.round((jobsStatus.filled / jobsStatus.required) * 100) 
+        : 0;
+    const jobsLowCoverage = jobsPercentage < 50;
+
+    // Readiness checks
+    const readinessChecks = [
+        {
+            id: 'agenda',
+            label: 'Agenda Published',
+            description: agenda?.isPublished 
+                ? 'Agenda is published and ready' 
+                : 'Agenda has pending changes - click Publish when ready',
+            ready: agenda?.isPublished || false
+        },
+        {
+            id: 'jobs',
+            label: 'Jobs Filled',
+            description: jobsStatus.required > 0 
+                ? `${jobsStatus.filled} of ${jobsStatus.required} positions filled`
+                : 'No jobs defined',
+            ready: jobsStatus.ready,
+            showProgress: jobsStatus.required > 0,
+            progressData: {
+                filled: jobsStatus.filled,
+                required: jobsStatus.required,
+                percentage: jobsPercentage,
+                lowCoverage: jobsLowCoverage
+            }
+        },
+        {
+            id: 'published',
+            label: 'Event Published',
+            description: 'Event is publicly visible',
+            ready: event?.status === 'published' || event?.status === 'approved'
+        }
+    ];
+
+    const readyCount = readinessChecks.filter(check => check.ready).length;
+    const totalChecks = readinessChecks.length;
 
     return (
         <div className="event-overview">
-            <div className="overview-grid">
-                <div className="overview-card timeline-card">
-                    <h3>
-                        <Icon icon="mdi:timeline" />
-                        Event Timeline
-                    </h3>
-                    <div className="timeline-content">
-                        <div className="timeline-item">
-                            <div className="timeline-marker start"></div>
-                            <div className="timeline-content-item">
-                                <span className="timeline-label">Start</span>
-                                <span className="timeline-value">
-                                    {formatDate(event?.start_time)} at {formatTime(event?.start_time)}
-                                </span>
-                            </div>
-                        </div>
-                        <div className="timeline-item">
-                            <div className="timeline-marker end"></div>
-                            <div className="timeline-content-item">
-                                <span className="timeline-label">End</span>
-                                <span className="timeline-value">
-                                    {formatDate(event?.end_time)} at {formatTime(event?.end_time)}
-                                </span>
-                            </div>
-                        </div>
-                        <div className="timeline-item duration">
-                            <Icon icon="mdi:clock-outline" />
-                            <span>Duration: {getDuration()}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="overview-card stats-card">
-                    <h3>
-                        <Icon icon="mingcute:chart-bar-fill" />
-                        Quick Stats
-                    </h3>
-                    <div className="stats-grid">
-                        <div className="stat-box">
-                            <div className="stat-icon-wrapper" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-                                <Icon icon="mingcute:user-group-fill" />
-                            </div>
-                            <div className="stat-box-content">
-                                <span className="stat-box-value">{stats?.rsvps?.going || 0}</span>
-                                <span className="stat-box-label">RSVPs</span>
-                            </div>
-                        </div>
-                        <div className="stat-box">
-                            <div className="stat-icon-wrapper" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
-                                <Icon icon="mdi:account-check" />
-                            </div>
-                            <div className="stat-box-content">
-                                <span className="stat-box-value">{stats?.volunteers?.confirmed || 0}</span>
-                                <span className="stat-box-label">Volunteers</span>
-                            </div>
-                        </div>
-                        <div className="stat-box">
-                            <div className="stat-icon-wrapper" style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' }}>
-                                <Icon icon="mdi:account-multiple-check" />
-                            </div>
-                            <div className="stat-box-content">
-                                <span className="stat-box-value">{stats?.volunteers?.checkedIn || 0}</span>
-                                <span className="stat-box-label">Checked In</span>
-                            </div>
-                        </div>
-                        <div className="stat-box">
-                            <div className="stat-icon-wrapper" style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' }}>
-                                <Icon icon="mdi:account-question" />
-                            </div>
-                            <div className="stat-box-content">
-                                <span className="stat-box-value">{stats?.rsvps?.maybe || 0}</span>
-                                <span className="stat-box-label">Maybe</span>
-                            </div>
+            <div className="overview-layout">
+                {/* Left Column: Readiness (1/3 width) */}
+                <div className="overview-left-column">
+                    <div className="overview-card readiness-card">
+                        <h3>
+                            <Icon icon="mdi:clipboard-check-outline" />
+                            Event Readiness
+                            <span className="readiness-count">{readyCount}/{totalChecks}</span>
+                        </h3>
+                        <div className="readiness-list">
+                            {readinessChecks.map(check => (
+                                <div key={check.id} className={`readiness-item ${check.ready ? 'ready' : 'pending'} ${check.progressData?.lowCoverage ? 'low-coverage' : ''}`}>
+                                    <Icon icon={check.ready ? 'mdi:check-circle' : 'mdi:alert-circle-outline'} />
+                                    <div className="readiness-content">
+                                        <div className="readiness-header">
+                                            <span className="readiness-label">{check.label}</span>
+                                            {check.showProgress && check.progressData && (
+                                                <span className="readiness-stats">
+                                                    {check.progressData.filled} / {check.progressData.required} ({check.progressData.percentage}%)
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="readiness-description">{check.description}</span>
+                                        {check.showProgress && check.progressData && (
+                                            <div className="readiness-progress">
+                                                <div className="readiness-progress-bar">
+                                                    <div 
+                                                        className={`readiness-progress-fill ${check.progressData.lowCoverage ? 'low' : ''}`}
+                                                        style={{ width: `${Math.min(check.progressData.percentage, 100)}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
 
-                <div className="overview-card description-card">
-                    <h3>
-                        <Icon icon="mdi:text" />
-                        Description
-                    </h3>
-                    <p>{event?.description || 'No description provided.'}</p>
-                </div>
-
-                <div className="overview-card details-card">
-                    <h3>
-                        <Icon icon="mdi:information" />
-                        Event Details
-                    </h3>
-                    <div className="details-list">
-                        <div className="detail-row">
-                            <Icon icon="mdi:tag" />
-                            <span className="detail-label">Type:</span>
-                            <span className="detail-value">{event?.type || 'N/A'}</span>
-                        </div>
-                        <div className="detail-row">
-                            <Icon icon="mdi:eye" />
-                            <span className="detail-label">Visibility:</span>
-                            <span className="detail-value">{event?.visibility || 'N/A'}</span>
-                        </div>
-                        <div className="detail-row">
-                            <Icon icon="mingcute:user-group-fill" />
-                            <span className="detail-label">Expected Attendance:</span>
-                            <span className="detail-value">{event?.expectedAttendance || 0}</span>
-                        </div>
-                        {event?.contact && (
-                            <div className="detail-row">
-                                <Icon icon="mdi:email" />
-                                <span className="detail-label">Contact:</span>
-                                <span className="detail-value">{event.contact}</span>
-                            </div>
-                        )}
+                {/* Right Column: Chart (2/3 width) */}
+                {event?._id && orgId && event?.expectedAttendance > 0 && (
+                    <div className="overview-right-column">
+                        <RSVPGrowthChart 
+                            eventId={event._id}
+                            orgId={orgId}
+                            expectedAttendance={event.expectedAttendance}
+                        />
                     </div>
-                </div>
+                )}
             </div>
         </div>
     );

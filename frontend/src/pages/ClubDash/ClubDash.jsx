@@ -22,7 +22,8 @@ import EventsManagement from './EventsManagement/EventsManagement';
 import ClubForms from './ClubForms/ClubForms';
 import ClubAnnouncements from './ClubAnnouncements/ClubAnnouncements';
 import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
-import OrgEquipment from './Equipment/OrgEquipment';
+// Temporarily disabled - Equipment functionality commented out
+// import OrgEquipment from './Equipment/OrgEquipment';
 import { 
     GeneralSettings, 
     RolesSettings, 
@@ -245,7 +246,10 @@ function ClubDash(){
                 {
                     label: 'Equipment',
                     icon: 'mdi:package-variant-closed',
-                    element: <OrgEquipment expandedClass={expandedClass} org={orgData.data?.org?.overview} />
+                    comingSoon: true,
+                    element: null
+                    // Temporarily disabled - Equipment functionality commented out
+                    // element: <OrgEquipment expandedClass={expandedClass} org={orgData.data?.org?.overview} />
                 },
                 {
                     label: 'Application Process',

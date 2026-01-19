@@ -62,6 +62,10 @@ const EventAgendaSchema = new Schema({
     internalNotes: {
         type: String,
         trim: true
+    },
+    isPublished: {
+        type: Boolean,
+        default: false
     }
 }, {
     timestamps: true

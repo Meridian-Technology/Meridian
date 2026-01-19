@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Reorder } from 'framer-motion';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
+import DraggableList from '../../../../../../components/DraggableList/DraggableList';
 import AgendaItem from './AgendaItem';
 import AgendaItemEditor from './AgendaItemEditor';
 import './AgendaBuilder.scss';
@@ -13,6 +13,8 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
     const [items, setItems] = useState([]);
     const [editingItem, setEditingItem] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [isPublished, setIsPublished] = useState(false);
+    const [publishing, setPublishing] = useState(false);
 
     // Fetch agenda
     const { data: agendaData, loading, refetch } = useFetch(
@@ -21,7 +23,9 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
 
     useEffect(() => {
         if (agendaData?.success && agendaData.data?.agenda) {
-            const agendaItems = (agendaData.data.agenda.items || []).map(item => {
+            const agenda = agendaData.data.agenda;
+            setIsPublished(agenda.isPublished || false);
+            const agendaItems = (agenda.items || []).map(item => {
                 if (!item.durationMinutes && item.startTime && item.endTime) {
                     const start = new Date(item.startTime);
                     const end = new Date(item.endTime);
@@ -57,6 +61,8 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
             );
 
             if (response.success) {
+                // When items are saved, agenda becomes unpublished
+                setIsPublished(false);
                 if (onRefresh) onRefresh();
             } else {
                 throw new Error(response.message || 'Failed to save agenda');
@@ -105,6 +111,8 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
 
             if (response.success) {
                 setItems(items.filter(item => item.id !== itemId));
+                // When items are deleted, agenda becomes unpublished
+                setIsPublished(false);
                 if (onRefresh) onRefresh();
                 addNotification({
                     title: 'Success',
@@ -139,6 +147,47 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
         setItems(updatedItems);
         setEditingItem(null);
         await saveAgenda(updatedItems);
+    };
+
+    const handlePublish = async () => {
+        if (!event?._id || !orgId) return;
+        if (items.length === 0) {
+            addNotification({
+                title: 'Error',
+                message: 'Cannot publish an empty agenda',
+                type: 'error'
+            });
+            return;
+        }
+
+        setPublishing(true);
+        try {
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/events/${event._id}/agenda/publish`,
+                {},
+                { method: 'POST' }
+            );
+
+            if (response.success) {
+                setIsPublished(true);
+                if (onRefresh) onRefresh();
+                addNotification({
+                    title: 'Success',
+                    message: 'Agenda published successfully',
+                    type: 'success'
+                });
+            } else {
+                throw new Error(response.message || 'Failed to publish agenda');
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: error.message || 'Failed to publish agenda',
+                type: 'error'
+            });
+        } finally {
+            setPublishing(false);
+        }
     };
 
     if (loading) {
@@ -181,7 +230,20 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                         <Icon icon="mdi:calendar-clock" />
                         Event Agenda
                     </h3>
-                    <p>{items.length} item{items.length !== 1 ? 's' : ''}</p>
+                    <div className="header-meta">
+                        <p>{items.length} item{items.length !== 1 ? 's' : ''}</p>
+                        {isPublished ? (
+                            <span className="publish-status published">
+                                <Icon icon="mdi:check-circle" />
+                                Published
+                            </span>
+                        ) : (
+                            <span className="publish-status pending">
+                                <Icon icon="mdi:clock-outline" />
+                                Pending
+                            </span>
+                        )}
+                    </div>
                 </div>
                 <div className="header-actions">
                     <button 
@@ -191,6 +253,16 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                         <Icon icon="mdi:plus" />
                         <span>Add Item</span>
                     </button>
+                    {!isPublished && items.length > 0 && (
+                        <button 
+                            className="btn-publish"
+                            onClick={handlePublish}
+                            disabled={publishing}
+                        >
+                            <Icon icon={publishing ? "mdi:loading" : "mdi:publish"} className={publishing ? "spinner" : ""} />
+                            <span>{publishing ? 'Publishing...' : 'Publish'}</span>
+                        </button>
+                    )}
                     {saving && (
                         <span className="saving-indicator">
                             <Icon icon="mdi:loading" className="spinner" />
@@ -205,25 +277,25 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                     <Icon icon="mdi:calendar-blank" />
                     <h4>No agenda items yet</h4>
                     <p>Start building your event agenda by adding items</p>
-                    <button className="btn-primary" onClick={handleAddItem}>
-                        <Icon icon="mdi:plus" />
-                        <span>Add First Item</span>
-                    </button>
+
                 </div>
             ) : (
                 <div className="agenda-items-container">
-                    <Reorder.Group axis="y" values={items} onReorder={handleReorder}>
-                        {items.map((item) => (
+                    <DraggableList
+                        items={items}
+                        onReorder={handleReorder}
+                        getItemId={(item) => item.id}
+                        renderItem={(item) => (
                             <AgendaItem
-                                key={item.id}
                                 item={item}
                                 computedStart={agendaTimes[item.id]?.start}
                                 computedEnd={agendaTimes[item.id]?.end}
                                 onEdit={() => handleEditItem(item)}
                                 onDelete={() => handleDeleteItem(item.id)}
                             />
-                        ))}
-                    </Reorder.Group>
+                        )}
+                        gap="1rem"
+                    />
                 </div>
             )}
 
