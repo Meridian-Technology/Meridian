@@ -43,9 +43,40 @@ router.get('/featured-all', async (req, res) => {
         // Get 5 random events
         //prioritize events that have an image
         //no past events, choose from events in the next 2 weeks
+        //populate hostingId, org or user
         const events = await Event.aggregate([
             { $match: { start_time: { $gte: new Date(), $lte: new Date(Date.now() + 2 * 7 * 24 * 60 * 60 * 1000) } }, },
-            { $sample: { size: 5 } },
+            { $sample: { size: 3 } },
+            // Lookup user host
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "hostingId",
+                    foreignField: "_id",
+                    as: "userHost"
+                }
+            },
+            // Lookup org host
+            {
+                $lookup: {
+                    from: "orgs",
+                    localField: "hostingId",
+                    foreignField: "_id",
+                    as: "orgHost"
+                }
+            },
+            // Overwrite hostingId with the correct document based on hostingType
+            {
+                $addFields: {
+                    hostingId: {
+                        $cond: {
+                            if: { $eq: ["$hostingType", "User"] },
+                            then: { $arrayElemAt: ["$userHost", 0] },
+                            else: { $arrayElemAt: ["$orgHost", 0] }
+                        }
+                    }
+                }
+            },
             {
                 $project: {
                     _id: 1,
@@ -56,6 +87,13 @@ router.get('/featured-all', async (req, res) => {
                     location: 1,
                     image: 1,
                     type: 1,
+                    hostingId: {
+                        name: 1,
+                        org_name: 1,
+                        image: 1,
+                        org_profile_image: 1
+                    },
+                    hostingType: 1,
                     rsvp_count: 1,
                     max_capacity: 1
                 }

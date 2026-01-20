@@ -254,7 +254,7 @@ const OrgSchema= new Schema({
         }],
         default: [],
         required: false
-    }
+    },
 });
 
 // Add methods for role management

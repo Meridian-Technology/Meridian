@@ -101,16 +101,6 @@ function MyEvents({ onRoomNavigation }){
         }
     };
 
-    // Handle event press
-    const handleEventPress = (event) => {
-        console.log('Event pressed:', event);
-        addNotification({
-            title: 'Event Selected',
-            message: `Opening ${event.title}`,
-            type: 'info'
-        });
-    };
-
     // Handle room press
     const handleRoomPress = (room) => {
         // Navigate to Rooms tab (index 2 for authenticated users, index 1 for non-authenticated)
