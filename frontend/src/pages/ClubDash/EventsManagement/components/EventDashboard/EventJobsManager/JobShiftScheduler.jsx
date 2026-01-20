@@ -22,7 +22,7 @@ function JobShiftScheduler({ roles, event }) {
                     <Icon icon="mdi:calendar-clock" />
                     Shift Schedule
                 </h4>
-                <p className="no-shifts">No shifts scheduled yet. Add shift times to jobs to see the schedule.</p>
+                <p className="no-shifts">Shift Scheduling Coming Soon.</p>
             </div>
         );
     }
