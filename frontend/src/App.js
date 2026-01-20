@@ -58,6 +58,7 @@ import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
 import Form from './pages/Form/Form';
+import Support from './pages/Support/Support';
 function App() {
     useEffect(() => {
         // check if the user has already visited
@@ -138,6 +139,7 @@ function App() {
                                             <Route path="/register" element={<AnimatedPageWrapper><Register /></AnimatedPageWrapper>}/>
                                             <Route path="/login" element={<AnimatedPageWrapper><Login /></AnimatedPageWrapper>}/>
                                             <Route path="/contact" element={<AnimatedPageWrapper><Contact /></AnimatedPageWrapper>}/>
+                                            <Route path="/support" element={<AnimatedPageWrapper><Support /></AnimatedPageWrapper>}/>
                                             <Route path="/booking" element={<AnimatedPageWrapper><Booking /></AnimatedPageWrapper>}/>
                                             <Route path="/privacy-policy" element={<AnimatedPageWrapper><PrivacyPolicy /></AnimatedPageWrapper>}/>
                                             <Route path="/terms-of-service" element={<AnimatedPageWrapper><TermsOfService /></AnimatedPageWrapper>}/>
