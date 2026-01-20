@@ -32,6 +32,8 @@ const server = createServer(app);
 //     }
 // });
 
+
+
 // Configure CORS for cookie-based authentication
 const corsOptions = {
     origin: process.env.NODE_ENV === 'production'
@@ -92,9 +94,17 @@ app.use(async (req, res, next) => {
         
         // console.log(`[${timestamp}] ${method}: ${path} | School: ${req.headers.host?.split('.')[0] || 'unknown'} | User-Agent: ${userAgent.substring(0, 50)}`);
         
-        const subdomain = req.headers.host.split('.')[0]; // Extract subdomain (e.g., 'ucb')
+        const host = req.headers.host || '';
+        // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' or IP -> 'rpi'
+        let subdomain = host.split('.')[0];
+        
+        // In development, if host is localhost or an IP address, default to 'rpi'
+        if (host.includes('localhost') || /^\d+\.\d+\.\d+\.\d+/.test(subdomain) || !host.includes('.')) {
+            subdomain = 'rpi';
+        }
+        
         req.db = await connectToDatabase(subdomain);
-        req.school = !subdomain.includes('localhost') ? subdomain : 'rpi';
+        req.school = subdomain;
         next();
     } catch (error) {
         console.error('Error establishing database connection:', error);
@@ -141,6 +151,7 @@ const availabilityPollRoutes = require('./routes/availabilityPollRoutes.js');
 const feedbackRoutes = require('./routes/feedbackRoutes.js');
 const contactRoutes = require('./routes/contactRoutes.js');
 const affiliatedEmailRoutes = require('./routes/affiliatedEmailRoutes.js');
+const resourcesRoutes = require('./routes/resourcesRoutes.js');
 
 app.use(authRoutes);
 app.use('/auth/saml', samlRoutes);
@@ -181,6 +192,7 @@ app.use('/availability-polls', availabilityPollRoutes);
 
 app.use('/feedback', feedbackRoutes);
 
+app.use('/api/resources', resourcesRoutes);
 
 app.use('/verify-affiliated-email', affiliatedEmailRoutes);
 

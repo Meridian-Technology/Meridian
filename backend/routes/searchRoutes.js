@@ -396,4 +396,172 @@ router.get('/all-purpose-search', verifyTokenOptional, async (req, res) => {
 
 
 
+// Unified search endpoint - searches across events, rooms, organizations, and users
+router.get('/unified-search', verifyTokenOptional, async (req, res) => {
+    const { Classroom, Event, Org, User, Schedule } = getModels(req, 'Classroom', 'Event', 'Org', 'User', 'Schedule');
+    const { query, nameOnly = 'false', limit = 20 } = req.query;
+    const userId = req.user ? req.user.userId : null;
+    const searchNameOnly = nameOnly === 'true';
+
+    if (!query || query.trim().length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'Search query is required'
+        });
+    }
+
+    try {
+        const searchTerm = query.trim();
+        // Escape regex special characters
+        const escapedQuery = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapedQuery, 'i');
+
+        // Build search queries based on nameOnly flag
+        let eventQuery, roomQuery, orgQuery, userQuery;
+
+        if (searchNameOnly) {
+            // Only search in names
+            eventQuery = { name: regex };
+            roomQuery = { name: regex };
+            orgQuery = { org_name: regex };
+            userQuery = {
+                $or: [
+                    { username: regex },
+                    { name: regex }
+                ]
+            };
+        } else {
+            // Search in names and descriptions/other fields
+            eventQuery = {
+                $or: [
+                    { name: regex },
+                    { description: regex },
+                    { location: regex }
+                ]
+            };
+            roomQuery = {
+                $or: [
+                    { name: regex },
+                    { attributes: regex }
+                ]
+            };
+            orgQuery = {
+                $or: [
+                    { org_name: regex },
+                    { org_description: regex }
+                ]
+            };
+            userQuery = {
+                $or: [
+                    { username: regex },
+                    { name: regex }
+                ]
+            };
+        }
+
+        // Execute searches in parallel
+        const [events, rooms, orgs, users] = await Promise.all([
+            // Events - only future events
+            Event.find({
+                ...eventQuery,
+                start_time: { $gte: new Date() }
+            })
+                .populate('hostingId', 'name username org_name org_profile_image')
+                .populate('classroom_id', 'name')
+                .limit(parseInt(limit))
+                .lean(),
+
+            // Rooms
+            Classroom.find(roomQuery)
+                .limit(parseInt(limit))
+                .lean(),
+
+            // Organizations
+            Org.find(orgQuery)
+                .limit(parseInt(limit))
+                .lean(),
+
+            // Users (only if authenticated)
+            userId ? User.find(userQuery)
+                .select('_id username name email picture partners')
+                .limit(parseInt(limit))
+                .lean() : Promise.resolve([])
+        ]);
+
+        // Transform rooms to include schedule if needed
+        const roomsWithSchedule = await Promise.all(
+            rooms.map(async (room) => {
+                const schedule = await Schedule.findOne({ classroom_id: room._id });
+                return {
+                    ...room,
+                    schedule: schedule ? schedule.toObject() : null
+                };
+            })
+        );
+
+        // Transform organizations to match expected format
+        let transformedOrgs = orgs.map(org => ({
+            _id: org._id,
+            org_name: org.org_name,
+            org_description: org.org_description,
+            org_profile_image: org.org_profile_image,
+            org_banner_image: org.org_banner_image,
+            memberCount: org.memberCount || 0,
+            followerCount: org.followerCount || 0,
+            eventCount: org.eventCount || 0,
+            verified: org.verified || false,
+            verificationType: org.verificationType,
+            isFollowing: false,
+            isMember: false,
+            isPending: false,
+            userRole: undefined,
+        }));
+
+        // Add user relationship data if authenticated
+        if (userId) {
+            const { OrgMember, OrgFollower, OrgMemberApplication } = getModels(req, 'OrgMember', 'OrgFollower', 'OrgMemberApplication');
+            const orgIds = orgs.map(org => org._id);
+            
+            const [memberships, followers, applications] = await Promise.all([
+                OrgMember.find({ org_id: { $in: orgIds }, user_id: userId, status: 'active' }).lean(),
+                OrgFollower.find({ org_id: { $in: orgIds }, user_id: userId }).lean(),
+                OrgMemberApplication.find({ org_id: { $in: orgIds }, user_id: userId, status: 'pending' }).lean(),
+            ]);
+
+            const membershipMap = new Map(memberships.map(m => [m.org_id.toString(), m]));
+            const followerMap = new Map(followers.map(f => [f.org_id.toString(), true]));
+            const applicationMap = new Map(applications.map(a => [a.org_id.toString(), true]));
+
+            transformedOrgs = transformedOrgs.map(org => {
+                const orgIdStr = org._id.toString();
+                const membership = membershipMap.get(orgIdStr);
+                return {
+                    ...org,
+                    isFollowing: followerMap.has(orgIdStr),
+                    isMember: !!membership,
+                    isPending: applicationMap.has(orgIdStr),
+                    userRole: membership?.role || undefined,
+                };
+            });
+        }
+
+        console.log(`GET: /unified-search?query=${searchTerm}&nameOnly=${nameOnly} - Found ${events.length} events, ${rooms.length} rooms, ${orgs.length} orgs, ${users.length} users`);
+
+        res.json({
+            success: true,
+            events: events,
+            rooms: roomsWithSchedule,
+            organizations: transformedOrgs,
+            users: users
+        });
+    } catch (error) {
+        console.error('GET: /unified-search failed', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error performing unified search',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;

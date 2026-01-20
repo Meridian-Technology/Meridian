@@ -105,7 +105,9 @@ router.post("/check-in", verifyToken, async (req, res) => {
         }
 
         const io = req.app.get('io');
-        io.to(classroomId).emit('check-in', { classroomId, userId: req.user.userId });
+        if (io) {
+            io.to(classroomId).emit('check-in', { classroomId, userId: req.user.userId });
+        }
 
         // Send Inngest event to schedule auto-checkout after 2 hours
         // await sendRoomCheckinEvent(req.user.userId, classroomId, new Date());
@@ -173,7 +175,9 @@ router.post("/check-out", verifyToken, async (req, res) => {
             }
         }
         const io = req.app.get('io');
-        io.to(classroomId).emit('check-out', { classroomId, userId: req.user.userId });
+        if (io) {
+            io.to(classroomId).emit('check-out', { classroomId, userId: req.user.userId });
+        }
         console.log(`POST: /check-out ${req.user.userId} from ${classroom.name} successful`);
         if (req.user.userId !== "65f474445dca7aca4fb5acaf") {
             sendDiscordMessage(`User check-out`, `user ${req.user.userId} checked out of ${classroom.name}`, "normal");

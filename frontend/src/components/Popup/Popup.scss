@@ -4,9 +4,9 @@
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(0, 0, 0, 0.1);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.5);
+    // -webkit-backdrop-filter: blur(8px);
+    // backdrop-filter: blur(8px);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -39,7 +39,7 @@
 
   
   .popup-overlay .popup-content {
-    background-color: transparent;
+    background-color: var(--background);
     padding: 20px;
     border-radius: 10px;
     position: relative;

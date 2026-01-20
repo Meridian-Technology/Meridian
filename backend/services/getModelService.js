@@ -23,6 +23,7 @@ const samlConfigSchema = require('../schemas/samlConfig');
 const notificationSchema = require('../schemas/notification');
 const orgMessageSchema = require('../schemas/orgMessage');
 const contactRequestSchema = require('../schemas/contactRequest');
+const resourcesConfigSchema = require('../schemas/resources');
 // Study Sessions
 const studySessionSchema = require('../schemas/studySession');
 const availabilityPollSchema = require('../schemas/availabilityPoll');
@@ -100,6 +101,7 @@ const getModels = (req, ...names) => {
         Domain: req.db.model('Domain', domainSchema, 'domains'),
         ContactRequest: req.db.model('ContactRequest', contactRequestSchema, 'contactRequests'),
         AnalyticsEvent: req.db.model('AnalyticsEvent', analyticsEventSchema, 'analytics_events'),
+        ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
     };
 
     return names.reduce((acc, name) => {

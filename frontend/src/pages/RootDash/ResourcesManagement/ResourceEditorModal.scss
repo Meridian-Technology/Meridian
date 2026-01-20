@@ -1,0 +1,417 @@
+// Modern B2B SaaS Resource Editor Modal - Self-contained styling
+.resource-editor-modal {
+  width: 100%;
+  max-width: 920px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+
+  // Header
+  .resource-editor-header {
+    padding: 32px 40px 24px;
+    border-bottom: 1px solid #f1f5f9;
+    background: #ffffff;
+    flex-shrink: 0;
+
+    .resource-editor-header-content {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+
+      .resource-editor-header-icon {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        flex-shrink: 0;
+
+        .iconify {
+          font-size: 24px;
+          color: #3b82f6;
+        }
+      }
+
+      .resource-editor-header-text {
+        flex: 1;
+
+        h2 {
+          margin: 0 0 6px 0;
+          font-size: 24px;
+          font-weight: 600;
+          color: #0f172a;
+          letter-spacing: -0.025em;
+          line-height: 1.2;
+        }
+
+        p {
+          margin: 0;
+          font-size: 14px;
+          color: #64748b;
+          line-height: 1.5;
+        }
+      }
+    }
+  }
+
+  // Form Body
+  .resource-editor-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 40px;
+    background: #f8fafc;
+  }
+
+  // Form Sections
+  .resource-editor-section {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    .resource-editor-section-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #f1f5f9;
+
+      .resource-editor-section-number {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #eff6ff;
+        color: #3b82f6;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+
+      .resource-editor-section-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #0f172a;
+        flex: 1;
+      }
+
+      .resource-editor-optional {
+        padding: 4px 10px;
+        background: #f1f5f9;
+        color: #64748b;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+    }
+  }
+
+  // Form Grid
+  .resource-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  // Form Fields
+  .resource-editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    &.resource-editor-field-full {
+      grid-column: 1 / -1;
+    }
+
+    .resource-editor-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      letter-spacing: 0.01em;
+      line-height: 1.4;
+
+      .resource-editor-required {
+        color: #ef4444;
+        margin-left: 2px;
+      }
+    }
+
+    .resource-editor-input {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #0f172a;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      transition: all 0.15s ease;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Roboto', sans-serif;
+      box-sizing: border-box;
+
+      &:hover {
+        border-color: #94a3b8;
+      }
+
+      &:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+
+      &::placeholder {
+        color: #94a3b8;
+      }
+
+      &.resource-editor-input-error {
+        border-color: #ef4444;
+
+        &:focus {
+          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        }
+      }
+
+      &.resource-editor-textarea {
+        resize: vertical;
+        min-height: 88px;
+        font-family: inherit;
+      }
+
+      &.resource-editor-select {
+        cursor: pointer;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23475569' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+        padding-right: 40px;
+      }
+    }
+
+    .resource-editor-error {
+      font-size: 12px;
+      color: #ef4444;
+      font-weight: 500;
+      margin-top: -4px;
+    }
+
+    .resource-editor-help {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: -4px;
+    }
+  }
+
+  // Icon Field
+  .resource-editor-icon-field {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+
+    .resource-editor-icon-preview {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      flex-shrink: 0;
+
+      .iconify {
+        font-size: 22px;
+        color: #475569;
+      }
+    }
+
+    .resource-editor-input {
+      flex: 1;
+    }
+  }
+
+  // Color Field
+  .resource-editor-color-field {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+
+    .resource-editor-color-preview-wrapper {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+
+      .resource-editor-color-preview {
+        width: 100%;
+        height: 100%;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+      }
+
+      .resource-editor-color-picker {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+      }
+
+      &:hover .resource-editor-color-preview {
+        border-color: #3b82f6;
+      }
+    }
+
+    .resource-editor-input {
+      flex: 1;
+    }
+  }
+
+  // Type Selector
+  .resource-editor-type-selector {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 8px;
+
+    .resource-editor-type-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 16px;
+      background: #ffffff;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+      font-family: inherit;
+
+      &:hover {
+        border-color: #3b82f6;
+        background: #f8fafc;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+
+      &.resource-editor-type-active {
+        border-color: #3b82f6;
+        background: #eff6ff;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+
+        .resource-editor-type-icon .iconify {
+          color: #3b82f6;
+        }
+
+        .resource-editor-type-name {
+          color: #3b82f6;
+        }
+      }
+
+      .resource-editor-type-icon {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8fafc;
+        border-radius: 8px;
+
+        .iconify {
+          font-size: 20px;
+          color: #64748b;
+          transition: color 0.15s;
+        }
+      }
+
+      .resource-editor-type-content {
+        flex: 1;
+        width: 100%;
+
+        .resource-editor-type-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: #0f172a;
+          margin-bottom: 4px;
+          transition: color 0.15s;
+        }
+
+        .resource-editor-type-desc {
+          font-size: 12px;
+          color: #64748b;
+          line-height: 1.4;
+        }
+      }
+    }
+  }
+
+  // Footer
+  .resource-editor-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 20px 40px;
+    background: #ffffff;
+    border-top: 1px solid #f1f5f9;
+    flex-shrink: 0;
+  }
+
+  // Buttons
+  .resource-editor-btn {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Roboto', sans-serif;
+
+    &.resource-editor-btn-secondary {
+      background: #ffffff;
+      color: #475569;
+      border-color: #cbd5e1;
+
+      &:hover {
+        background: #f8fafc;
+        border-color: #94a3b8;
+      }
+    }
+
+    &.resource-editor-btn-primary {
+      background: #3b82f6;
+      color: #ffffff;
+      border-color: #3b82f6;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+      &:hover {
+        background: #2563eb;
+        border-color: #2563eb;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+
+      &:active {
+        transform: scale(0.98);
+      }
+    }
+  }
+}
+
