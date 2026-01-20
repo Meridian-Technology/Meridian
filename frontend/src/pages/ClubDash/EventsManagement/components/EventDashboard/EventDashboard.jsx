@@ -6,6 +6,7 @@ import { useGradient } from '../../../../../hooks/useGradient';
 import TabbedContainer from '../../../../../components/TabbedContainer';
 import EventDashboardHeader from './EventDashboardHeader';
 import EventOverview from './EventOverview';
+import EventEditorTab from './EventEditorTab/EventEditorTab';
 import AgendaBuilder from './EventAgendaBuilder/AgendaBuilder';
 import JobsManager from './EventJobsManager/JobsManager';
 import EventAnalyticsDetail from './EventAnalyticsDetail';
@@ -119,6 +120,17 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             icon: 'mingcute:chart-line-fill',
             description: 'Detailed event analytics and insights',
             content: <EventAnalyticsDetail
+                        event={dashboardData.event}
+                        orgId={orgId}
+                        onRefresh={handleRefresh}
+                    />
+        },
+        {
+            id: 'edit',
+            label: 'Edit',
+            icon: 'mdi:pencil',
+            description: 'Edit event details and settings',
+            content: <EventEditorTab
                         event={dashboardData.event}
                         orgId={orgId}
                         onRefresh={handleRefresh}

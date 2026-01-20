@@ -1,16 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useGradient } from '../../../../../hooks/useGradient';
 import { useNotification } from '../../../../../NotificationContext';
-import { useDashboardOverlay } from '../../../../../hooks/useDashboardOverlay';
-import apiRequest from '../../../../../utils/postRequest';
 import './EventDashboard.scss';
 
 function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
     const { AtlasMain } = useGradient();
     const { addNotification } = useNotification();
-    const { showOverlay, hideOverlay } = useDashboardOverlay();
-    const [editing, setEditing] = useState(false);
 
     const getEventStatus = () => {
         if (!event?.start_time) return null;
@@ -60,32 +56,6 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
         } else {
             return `${minutes} minute${minutes !== 1 ? 's' : ''} until event`;
         }
-    };
-
-    const handleEdit = () => {
-        setEditing(true);
-        // Dynamically import EventEditor to avoid circular dependencies
-        import('../../../../../components/EventEditor/EventEditor').then(({ default: EventEditor }) => {
-            showOverlay(
-                <div className="event-editor-overlay">
-                    <EventEditor
-                        event={event}
-                        onUpdate={(updatedEvent) => {
-                            addNotification({
-                                title: 'Success',
-                                message: 'Event updated successfully',
-                                type: 'success'
-                            });
-                            if (onRefresh) onRefresh();
-                            hideOverlay();
-                            setEditing(false);
-                        }}
-                    />
-                </div>
-            );
-        }).catch(() => {
-            setEditing(false);
-        });
     };
 
     const handlePreview = () => {
@@ -145,14 +115,6 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                     <div className="header-actions">
                         <button className="action-btn refresh" onClick={onRefresh} title="Refresh">
                             <Icon icon="mdi:refresh" />
-                        </button>
-                        <button 
-                            className="action-btn refresh" 
-                            title="Edit Event"
-                            onClick={handleEdit}
-                            disabled={editing}
-                        >
-                            <Icon icon={editing ? "mdi:loading" : "mdi:pencil"} className={editing ? "spinner" : ""} />
                         </button>
                         <button 
                             className="action-btn share" 
