@@ -43,6 +43,8 @@ function JobsManager({ event, orgId, onRefresh }) {
     const [assigningMembers, setAssigningMembers] = useState({}); // Track which roles are currently assigning
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [roleToDelete, setRoleToDelete] = useState(null);
+    const [showRemoveAssignmentModal, setShowRemoveAssignmentModal] = useState(false);
+    const [assignmentToRemove, setAssignmentToRemove] = useState(null); // { role, assignmentId, memberName }
 
     // Fetch roles
     const { data: rolesData, refetch: refetchRoles } = useFetch(
@@ -308,10 +310,17 @@ function JobsManager({ event, orgId, onRefresh }) {
         }
     };
 
-    const handleRemoveAssignment = async (role, assignmentId) => {
-        if (!window.confirm('Are you sure you want to remove this member from this job?')) return;
-        if (!event?._id || !orgId || !role?._id || !assignmentId) return;
+    const handleRemoveAssignment = (role, assignmentId) => {
+        const assignment = role.assignments?.find(a => a._id === assignmentId);
+        const memberName = assignment?.memberId?.name || 'this member';
+        setAssignmentToRemove({ role, assignmentId, memberName });
+        setShowRemoveAssignmentModal(true);
+    };
 
+    const confirmRemoveAssignment = async () => {
+        if (!assignmentToRemove || !event?._id || !orgId || !assignmentToRemove.role?._id || !assignmentToRemove.assignmentId) return;
+
+        const { role, assignmentId } = assignmentToRemove;
         setAssigningMembers(prev => ({ ...prev, [role._id]: true }));
 
         try {
@@ -340,6 +349,8 @@ function JobsManager({ event, orgId, onRefresh }) {
             });
         } finally {
             setAssigningMembers(prev => ({ ...prev, [role._id]: false }));
+            setShowRemoveAssignmentModal(false);
+            setAssignmentToRemove(null);
         }
     };
 
@@ -644,6 +655,19 @@ function JobsManager({ event, orgId, onRefresh }) {
                 title="Delete Job"
                 message="Are you sure you want to delete this job? All assignments will be removed."
                 warningDetails="All assigned members will be removed from this job."
+            />
+
+            <DeleteConfirmModal
+                isOpen={showRemoveAssignmentModal}
+                onConfirm={confirmRemoveAssignment}
+                onCancel={() => {
+                    setShowRemoveAssignmentModal(false);
+                    setAssignmentToRemove(null);
+                }}
+                title="Remove Assignment"
+                message={`Are you sure you want to remove ${assignmentToRemove?.memberName || 'this member'} from this job?`}
+                warningDetails="The member will be unassigned from this job slot."
+                confirmLabel="Remove"
             />
         </div>
     );

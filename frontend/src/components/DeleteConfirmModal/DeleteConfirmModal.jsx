@@ -13,6 +13,28 @@ function DeleteConfirmModal({
     confirmLabel = 'Delete',
     cancelLabel = 'Cancel'
 }) {
+    const handleConfirm = async (e) => {
+        e.stopPropagation();
+        try {
+            // Call onConfirm and wait for it if it's async
+            const result = onConfirm();
+            if (result && typeof result.then === 'function') {
+                await result;
+            }
+        } catch (error) {
+            // If onConfirm throws, let the parent handle it
+            // The parent's error handling will still close the modal in finally block
+        }
+        // onCancel will set parent state to false, which triggers Popup to close via useEffect
+        onCancel();
+    };
+
+    const handleCancel = (e) => {
+        e.stopPropagation();
+        // onCancel will set parent state to false, which triggers Popup to close via useEffect
+        onCancel();
+    };
+
     return (
         <Popup 
             isOpen={isOpen} 
@@ -42,20 +64,14 @@ function DeleteConfirmModal({
                     <button 
                         type="button"
                         className="btn-cancel" 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onCancel();
-                        }}
+                        onClick={handleCancel}
                     >
                         {cancelLabel}
                     </button>
                     <button 
                         type="button"
                         className="btn-confirm" 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onConfirm();
-                        }}
+                        onClick={handleConfirm}
                     >
                         <Icon icon="mdi:delete" />
                         {confirmLabel}
