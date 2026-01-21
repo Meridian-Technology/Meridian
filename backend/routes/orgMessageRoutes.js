@@ -200,8 +200,8 @@ router.post('/:orgId/messages', verifyToken, async (req, res) => {
         const notificationSettings = systemConfig?.messaging?.notificationSettings;
         if (notificationSettings?.notifyOnNewMessage) {
             try {
-                const { Notification, OrgFollower } = getModels(req, 'Notification', 'OrgFollower');
-                const notificationService = NotificationService.withModels({ Notification });
+                const { Notification, OrgFollower, User } = getModels(req, 'Notification', 'OrgFollower', 'User');
+                const notificationService = NotificationService.withModels({ Notification, User });
                 
                 const recipients = [];
                 

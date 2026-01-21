@@ -772,6 +772,30 @@ class NotificationService {
                     }
                 ]
             },
+            'org_message_new':{
+                title: '{{orgName}} has posted a new announcement',
+                message: '{{messagePreview}}',
+                version: '1.0',
+                priority: 'normal',
+                channels: ['in_app', 'push'],
+                // Backend-controlled navigation: navigate to organization profile
+                // Note: orgId should be provided in variables when creating notification
+                navigation: {
+                    type: 'navigate',
+                    route: 'OrganizationProfile',
+                    params: { orgId: '{{orgId}}' },
+                    deepLink: 'meridian://organization/{{orgId}}'
+                },
+                actions: [
+                    {
+                        id: 'view_announcement',
+                        label: 'View Announcement',
+                        type: 'link',
+                        url: 'meridian://organization/{{orgId}}',
+                        style: 'primary'
+                    }
+                ]
+            },
             'org_member_applied': {
                 title: 'New Member Applied',
                 message: '<strong>{{senderName|capitalize}}</strong> has applied to join <strong>{{orgName}}</strong>.',

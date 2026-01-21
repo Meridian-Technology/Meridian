@@ -5,9 +5,22 @@ import useAuth from '../../hooks/useAuth';
 import { Icon } from '@iconify-icon/react';
 import ProfilePopup from '../ProfilePopup/ProfilePopup';
 import { DashboardProvider } from '../../contexts/DashboardContext';
+import NotificationInbox from '../NotificationInbox/NotificationInbox';
 import './Dashboard.scss'
 
-function Dashboard({ menuItems, children, additionalClass = '', middleItem=null, logo, primaryColor, secondaryColor, enableSubSidebar = false, defaultPage = 0, onBack=null} ) {
+function Dashboard({ 
+    menuItems, 
+    children, 
+    additionalClass = '', 
+    middleItem=null, 
+    logo, 
+    primaryColor, 
+    secondaryColor, 
+    enableSubSidebar = false, 
+    defaultPage = 0, 
+    onBack=null, 
+    notificationInbox=false
+} ) {
     const [expanded, setExpanded] = useState(false);
     const [expandedClass, setExpandedClass] = useState("");
     const [currentDisplay, setCurrentDisplay] = useState(null); // Initialize as null to prevent flash
@@ -516,6 +529,9 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
                     
                 </div>
                 <div className="bottom">
+                    {notificationInbox && user && (
+                        <NotificationInbox position="bottom-left" />
+                    )}
                     {
                         user && (
                         <ProfilePopup 

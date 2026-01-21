@@ -36,32 +36,9 @@ const server = createServer(app);
 
 // Configure CORS for cookie-based authentication
 const corsOptions = {
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps, Postman, curl, etc.)
-        // Mobile apps typically don't send an Origin header
-        if (!origin) {
-            return callback(null, true);
-        }
-        
-        // In production, allow web origins
-        if (process.env.NODE_ENV === 'production') {
-            const allowedOrigins = ['https://www.meridian.study', 'https://meridian.study'];
-            if (allowedOrigins.indexOf(origin) !== -1) {
-                callback(null, true);
-            } else {
-                // Reject unknown origins in production for security
-                callback(new Error('Not allowed by CORS'));
-            }
-        } else {
-            // In development, allow localhost and requests with no origin
-            if (origin === 'http://localhost:3000' || !origin) {
-                callback(null, true);
-            } else {
-                // In development, be more permissive
-                callback(null, true);
-            }
-        }
-    },
+    origin: process.env.NODE_ENV === 'production'
+        ? ['https://www.meridian.study', 'https://meridian.study']
+        : 'http://localhost:3000',
     credentials: true, // This is crucial for cookies
     optionsSuccessStatus: 200 // for legacy browser support
 };
