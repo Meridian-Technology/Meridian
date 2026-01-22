@@ -591,6 +591,8 @@ router.get('/availability-poll/:id', verifyTokenOptional, async (req, res) => {
             .populate('creatorId', 'username name picture email')
             .populate('invitedUsers', 'username name picture email');
 
+            console.log(poll);
+
 
         // If not found, try to find by study session ID
         if (!poll) {
