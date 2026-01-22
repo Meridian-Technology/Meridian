@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import './RoleManager.scss';
 import { Icon } from '@iconify-icon/react';
 import { getOrgRoleColor } from '../../utils/orgUtils';
 import DraggableList from '../DraggableList/DraggableList';
 
-const RoleManager = ({ roles, onRolesChange, onDeleteRequest, isEditable = true, roleHighlight = false, saveImmediately = false }) => {
+const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEditable = true, roleHighlight = false, saveImmediately = false, onDraftChange }, ref) => {
     const [customRoles, setCustomRoles] = useState(roles || []);
     const [selectedRole, setSelectedRole] = useState(null);
     const [formData, setFormData] = useState({
@@ -37,6 +37,8 @@ const RoleManager = ({ roles, onRolesChange, onDeleteRequest, isEditable = true,
         { key: 'manage_events', label: 'Manage Events', description: 'Can create, edit, and delete events' },
         { key: 'manage_members', label: 'Manage Members', description: 'Can add, remove, and change member roles' },
         { key: 'manage_roles', label: 'Manage Roles', description: 'Can add, remove, and change role permissions' },
+        { key: 'manage_equipment', label: 'Manage Equipment', description: 'Can assign and check out equipment' },
+        { key: 'modify_equipment', label: 'Modify Equipment', description: 'Can create and edit equipment inventory' },
         { key: 'view_analytics', label: 'View Analytics', description: 'Can view organization analytics' },
         { key: 'manage_content', label: 'Manage Content', description: 'Can edit organization description and images' },
         { key: 'send_announcements', label: 'Send Announcements', description: 'Can send organization-wide messages' },
@@ -58,6 +60,15 @@ const RoleManager = ({ roles, onRolesChange, onDeleteRequest, isEditable = true,
             }
         }
     }, [roles]);
+
+    useEffect(() => {
+        if (!onDraftChange) return;
+        if (selectedRole?.isNew) {
+            onDraftChange(true);
+        } else {
+            onDraftChange(false);
+        }
+    }, [selectedRole, onDraftChange]);
 
     // Auto-select first editable role if none selected
     useEffect(() => {
@@ -264,18 +275,18 @@ const RoleManager = ({ roles, onRolesChange, onDeleteRequest, isEditable = true,
         return () => clearTimeout(timeoutId);
     }, [formData.name, formData.permissions, formData.color]);
 
-    const handleCreateRole = () => {
+    const createDraftRole = () => {
         const roleName = formData.name.trim().toLowerCase().replace(/\s+/g, '_');
         const displayName = formData.name.trim();
 
         if (!roleName || !displayName) {
-            return;
+            return { success: false, reason: 'empty' };
         }
 
         // Check if role name already exists
         const existingRole = customRoles.find(role => role.name === roleName);
         if (existingRole) {
-            return;
+            return { success: false, reason: 'duplicate' };
         }
 
         // Filter out coming soon permissions before creating role
@@ -305,12 +316,21 @@ const RoleManager = ({ roles, onRolesChange, onDeleteRequest, isEditable = true,
             order: maxOrder + 1
         };
 
-            const updatedRoles = [...customRoles, newRole];
-            setCustomRoles(updatedRoles);
-            onRolesChange(updatedRoles);
+        const updatedRoles = [...customRoles, newRole];
+        setCustomRoles(updatedRoles);
+        onRolesChange(updatedRoles);
         setSelectedRole(newRole);
         resetForm();
+        return { success: true, roles: updatedRoles };
     };
+
+    const handleCreateRole = () => {
+        createDraftRole();
+    };
+
+    useImperativeHandle(ref, () => ({
+        createDraftRole
+    }));
 
     const handleRoleSelect = (role) => {
         setSelectedRole(role);
@@ -596,6 +616,6 @@ const RoleManager = ({ roles, onRolesChange, onDeleteRequest, isEditable = true,
             </div>
         </div>
     );
-};
+});
 
 export default RoleManager; 

@@ -22,6 +22,8 @@ import EventsManagement from './EventsManagement/EventsManagement';
 import ClubForms from './ClubForms/ClubForms';
 import ClubAnnouncements from './ClubAnnouncements/ClubAnnouncements';
 import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
+// Temporarily disabled - Equipment functionality commented out
+// import OrgEquipment from './Equipment/OrgEquipment';
 import { 
     GeneralSettings, 
     RolesSettings, 
@@ -242,6 +244,14 @@ function ClubDash(){
                     element:  <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview} refetch={orgData.refetch}/>
                 },
                 {
+                    label: 'Equipment',
+                    icon: 'mdi:package-variant-closed',
+                    comingSoon: true,
+                    element: null
+                    // Temporarily disabled - Equipment functionality commented out
+                    // element: <OrgEquipment expandedClass={expandedClass} org={orgData.data?.org?.overview} />
+                },
+                {
                     label: 'Application Process',
                     icon: 'mdi:form-select',
                     element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
@@ -260,6 +270,12 @@ function ClubDash(){
                     label: 'Danger Zone',
                     icon: 'mdi:alert-circle',
                     element: <DangerZone org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                },
+                {
+                    label: 'Audit Log',
+                    icon: 'mdi:clipboard-text-clock',
+                    comingSoon: true,
+                    element: null
                 },
             ]
         },

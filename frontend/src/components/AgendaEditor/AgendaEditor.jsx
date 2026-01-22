@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useNotification } from '../../NotificationContext';
 import apiRequest from '../../utils/postRequest';
-import DateTimePicker from '../DateTimePicker/DateTimePicker';
 import './AgendaEditor.scss';
 
 function AgendaEditor({ event, onUpdate }) {
@@ -14,7 +13,18 @@ function AgendaEditor({ event, onUpdate }) {
 
     useEffect(() => {
         if (event?.agenda) {
-            setAgenda([...event.agenda].sort((a, b) => (a.order || 0) - (b.order || 0)));
+            const normalized = [...event.agenda]
+                .sort((a, b) => (a.order || 0) - (b.order || 0))
+                .map(item => {
+                    if (!item.durationMinutes && item.startTime && item.endTime) {
+                        const start = new Date(item.startTime);
+                        const end = new Date(item.endTime);
+                        const diffMinutes = Math.max(1, Math.round((end - start) / 60000));
+                        return { ...item, durationMinutes: diffMinutes };
+                    }
+                    return item;
+                });
+            setAgenda(normalized);
         } else {
             setAgenda([]);
         }
@@ -24,8 +34,7 @@ function AgendaEditor({ event, onUpdate }) {
         setAgenda([...agenda, {
             title: '',
             description: '',
-            startTime: null,
-            endTime: null,
+            durationMinutes: 30,
             location: '',
             speaker: '',
             track: '',
@@ -59,7 +68,6 @@ function AgendaEditor({ event, onUpdate }) {
     };
 
     const handleSave = async () => {
-        // Validate agenda items
         for (let i = 0; i < agenda.length; i++) {
             const item = agenda[i];
             if (!item.title || item.title.trim() === '') {
@@ -70,59 +78,27 @@ function AgendaEditor({ event, onUpdate }) {
                 });
                 return;
             }
-            
-            // Validate times are within event duration
-            if (item.startTime) {
-                const startTime = new Date(item.startTime);
-                const eventStart = new Date(event.start_time);
-                const eventEnd = new Date(event.end_time);
-                
-                if (startTime < eventStart || startTime > eventEnd) {
-                    addNotification({
-                        title: 'Validation Error',
-                        message: `Agenda item ${i + 1} start time must be within the event duration.`,
-                        type: 'error'
-                    });
-                    return;
-                }
-            }
-            
-            if (item.endTime) {
-                const endTime = new Date(item.endTime);
-                const eventStart = new Date(event.start_time);
-                const eventEnd = new Date(event.end_time);
-                
-                if (endTime < eventStart || endTime > eventEnd) {
-                    addNotification({
-                        title: 'Validation Error',
-                        message: `Agenda item ${i + 1} end time must be within the event duration.`,
-                        type: 'error'
-                    });
-                    return;
-                }
-            }
-            
-            // Validate end time is after start time
-            if (item.startTime && item.endTime) {
-                const startTime = new Date(item.startTime);
-                const endTime = new Date(item.endTime);
-                
-                if (endTime <= startTime) {
-                    addNotification({
-                        title: 'Validation Error',
-                        message: `Agenda item ${i + 1} end time must be after start time.`,
-                        type: 'error'
-                    });
-                    return;
-                }
+
+            const duration = parseInt(item.durationMinutes, 10);
+            if (!duration || duration <= 0) {
+                addNotification({
+                    title: 'Validation Error',
+                    message: `Agenda item ${i + 1} must have a duration in minutes.`,
+                    type: 'error'
+                });
+                return;
             }
         }
 
         setIsSaving(true);
         try {
+            const sanitizedAgenda = agenda.map(({ startTime, endTime, durationMinutes, ...rest }) => ({
+                ...rest,
+                durationMinutes: durationMinutes ? parseInt(durationMinutes, 10) : null
+            }));
             const response = await apiRequest(
                 `/update-event-agenda/${event._id}`,
-                { agenda },
+                { agenda: sanitizedAgenda },
                 { method: 'POST' }
             );
 
@@ -166,9 +142,9 @@ function AgendaEditor({ event, onUpdate }) {
         setEditingIndex(null);
     };
 
-    const formatTime = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
+    const formatTime = (dateValue) => {
+        if (!dateValue) return '';
+        const date = new Date(dateValue);
         return date.toLocaleTimeString('en-US', {
             hour: 'numeric',
             minute: '2-digit',
@@ -176,15 +152,28 @@ function AgendaEditor({ event, onUpdate }) {
         });
     };
 
-    const formatDate = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
+    const computeAgendaTimes = () => {
+        if (!event?.start_time) return {};
+        const start = new Date(event.start_time);
+        const ordered = [...agenda].sort((a, b) => (a.order || 0) - (b.order || 0));
+        let cursor = new Date(start);
+        const times = {};
+        ordered.forEach((item, index) => {
+            const duration = parseInt(item.durationMinutes, 10);
+            if (!duration || duration <= 0) {
+                times[index] = { start: null, end: null };
+                return;
+            }
+            const itemStart = new Date(cursor);
+            const itemEnd = new Date(cursor);
+            itemEnd.setMinutes(itemEnd.getMinutes() + duration);
+            times[index] = { start: itemStart, end: itemEnd };
+            cursor = new Date(itemEnd);
         });
+        return times;
     };
+
+    const agendaTimes = computeAgendaTimes();
 
     if (!event) return null;
 
@@ -237,34 +226,15 @@ function AgendaEditor({ event, onUpdate }) {
                                     </div>
                                     <div className="agenda-editor__form-row">
                                         <div className="agenda-editor__form-group">
-                                            <DateTimePicker
-                                                label="Start Time"
-                                                value={item.startTime}
-                                                onChange={(value) => {
-                                                    handleUpdateItem(index, 'startTime', value);
-                                                    // If end time is before new start time, update it
-                                                    if (item.endTime && value && new Date(item.endTime) <= new Date(value)) {
-                                                        const newEndTime = new Date(value);
-                                                        newEndTime.setMinutes(newEndTime.getMinutes() + 30); // Default 30 min duration
-                                                        if (newEndTime <= new Date(event.end_time)) {
-                                                            handleUpdateItem(index, 'endTime', newEndTime.toISOString());
-                                                        }
-                                                    }
-                                                }}
-                                                minDateTime={event.start_time}
-                                                maxDateTime={event.end_time}
-                                                placeholder="Select start time"
+                                            <label>Duration (minutes) *</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={item.durationMinutes || ''}
+                                                onChange={(e) => handleUpdateItem(index, 'durationMinutes', e.target.value)}
+                                                placeholder="e.g., 30"
                                             />
-                                        </div>
-                                        <div className="agenda-editor__form-group">
-                                            <DateTimePicker
-                                                label="End Time"
-                                                value={item.endTime}
-                                                onChange={(value) => handleUpdateItem(index, 'endTime', value)}
-                                                minDateTime={item.startTime || event.start_time}
-                                                maxDateTime={event.end_time}
-                                                placeholder="Select end time"
-                                            />
+                                            <p className="help-text">Times are calculated from the event start.</p>
                                         </div>
                                     </div>
                                     <div className="agenda-editor__form-row">
@@ -326,13 +296,19 @@ function AgendaEditor({ event, onUpdate }) {
                                             <p className="agenda-editor__item-description">{item.description}</p>
                                         )}
                                         <div className="agenda-editor__item-meta">
-                                            {item.startTime && (
+                                            {agendaTimes[index]?.start && (
                                                 <div className="agenda-editor__meta-item">
                                                     <Icon icon="mdi:clock-outline" />
                                                     <span>
-                                                        {formatTime(item.startTime)}
-                                                        {item.endTime && ` - ${formatTime(item.endTime)}`}
+                                                        {formatTime(agendaTimes[index]?.start)}
+                                                        {agendaTimes[index]?.end && ` - ${formatTime(agendaTimes[index]?.end)}`}
                                                     </span>
+                                                </div>
+                                            )}
+                                            {item.durationMinutes && (
+                                                <div className="agenda-editor__meta-item">
+                                                    <Icon icon="mdi:timer-outline" />
+                                                    <span>{item.durationMinutes} min</span>
                                                 </div>
                                             )}
                                             {item.location && (

@@ -335,8 +335,11 @@ function Dashboard({
             <ul>
                 {items.map((item, index) => (
                     <li key={index} 
-                        className={`${currentDisplay === index ? "selected" : ""}`} 
+                        className={`${currentDisplay === index ? "selected" : ""} ${item.comingSoon ? "coming-soon" : ""}`} 
                         onClick={() => {
+                            // Don't allow clicking on coming soon items
+                            if (item.comingSoon) return;
+                            
                             if (isSubMenu) {
                                 // Handle sub-sub items if they exist
                                 if (enableSubSidebar && item.subItems && item.subItems.length > 0) {
@@ -372,6 +375,9 @@ function Dashboard({
                         }}>
                         <Icon icon={item.icon} />
                         <p>{item.label}</p>
+                        {item.comingSoon && (
+                            <span className="coming-soon-badge">Soon</span>
+                        )}
                         {enableSubSidebar && item.subItems && item.subItems.length > 0 && (
                             <Icon icon="material-symbols:chevron-right" className="sub-indicator" />
                         )}

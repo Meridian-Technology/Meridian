@@ -31,10 +31,27 @@ function RegisterForm() {
     useEffect(() => {
         async function google(code) {
             try{
-                const codeResponse = await googleLogin(code, true);
+                // Try to retrieve code verifier from sessionStorage
+                let codeVerifier = sessionStorage.getItem('code_verifier') || 
+                                 sessionStorage.getItem('google_code_verifier') ||
+                                 localStorage.getItem('code_verifier') ||
+                                 null;
+                
+                const queryParams = new URLSearchParams(location.search);
+                const verifierFromUrl = queryParams.get('code_verifier');
+                if (verifierFromUrl) {
+                    codeVerifier = verifierFromUrl;
+                }
+                
+                const codeResponse = await googleLogin(code, true, codeVerifier);
                 console.log("codeResponse: " + codeResponse);
+                
+                // Clear code verifier after use
+                sessionStorage.removeItem('code_verifier');
+                sessionStorage.removeItem('google_code_verifier');
+                localStorage.removeItem('code_verifier');
             } catch (error){
-                if(error.response.status  === 409){
+                if(error.response?.status === 409){
                     failed("Email already exists");
                 } else {
                     console.error("Google login failed:", error);
@@ -116,10 +133,19 @@ function RegisterForm() {
     }
     // codeResponse => responseGoogle1(codeResponse)
     const google = useGoogleLogin({
-        onSuccess: () => { console.log("succeeded") },
+        onSuccess: (codeResponse) => { 
+            console.log("Google OAuth succeeded", codeResponse);
+            // Store code verifier if provided by the library
+            if (codeResponse.code_verifier) {
+                sessionStorage.setItem('code_verifier', codeResponse.code_verifier);
+            }
+        },
         flow: 'auth-code',
         ux_mode: 'redirect',
-        onFailure: () => { console.log("failed") },
+        onFailure: (error) => {
+            console.error("Google login failed:", error);
+            failed("Google login failed. Please try again");
+        },
     });
 
     // Initialize Apple Sign In
