@@ -19,6 +19,7 @@ const EventsList = ({
     useEffect(() => {
         if (loading) return;
 
+        // Use document as root for normal page scrolling
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries[0].isIntersecting && hasMore) {
@@ -28,7 +29,7 @@ const EventsList = ({
                 }
             },
             {
-                root: null,
+                root: null, // null means viewport/document
                 rootMargin: '100px', // Start loading 100px before reaching the bottom
                 threshold: 0.1
             }
@@ -81,30 +82,38 @@ const EventsList = ({
                     </div>
                 </div>
             )} */}
-            {groupedEvents.map(({ date, events }, groupIndex) => (
-                <div key={date.toISOString()} className="date-group" role="group" aria-label={`Events on ${formatDate(date)}`}>
-                    <div className="date-separator" role="heading" aria-level="2">{formatDate(date)}</div>
-                    {events.map((event, eventIndex) => {
-                        const isLastElement = groupIndex === groupedEvents.length - 1 && 
-                                           eventIndex === events.length - 1;
-                        return (
-                            <div 
-                                key={`${event._id}-${eventIndex}`}
-                                ref={isLastElement ? setLastEventElementRef : null}
-                                role="listitem"
-                                className="event-item-wrapper"
-                            >
-                                <Event 
-                                    event={event} 
-                                    hasFriendsFilter={hasFriendsFilter}
-                                    showRSVP={false}
-                                />
+            <div className="timeline-container">
+                <div className="timeline-line"></div>
+                {groupedEvents.map(({ date, events }, groupIndex) => {
+                    const isLastGroup = groupIndex === groupedEvents.length - 1;
+                    const isLastElement = isLastGroup && events.length > 0;
+                    return (
+                        <div key={date.toISOString()} className="date-group" role="group" aria-label={`Events on ${formatDate(date)}`}>
+                            <div className="date-separator" role="heading" aria-level="2">
+                                <div className="timeline-dot"></div>
+                                {formatDate(date)}
                             </div>
-                        );
-                    })}
-                </div>
-            ))}
-
+                            {events.map((event, eventIndex) => {
+                                const isLastEvent = isLastGroup && eventIndex === events.length - 1;
+                                return (
+                                    <div 
+                                        key={`${event._id}-${eventIndex}`}
+                                        ref={isLastEvent ? setLastEventElementRef : null}
+                                        role="listitem"
+                                        className="event-item-wrapper"
+                                    >
+                                        <Event 
+                                            event={event} 
+                                            hasFriendsFilter={hasFriendsFilter}
+                                            showRSVP={false}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 };

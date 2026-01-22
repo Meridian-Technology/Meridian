@@ -1,0 +1,179 @@
+.events-page-header {
+    width: 100%;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    &.sticky {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+    }
+    
+        &.compressed {
+        .cover-image {
+            height: 120px;
+            
+            // Adjust gradient height for compressed state
+            &::after {
+                height: 60px;
+            }
+            
+            .cover-overlay {
+                padding: 20px 48px;
+            }
+            
+            .header-content {
+                h1 {
+                    font-size: 28px;
+                    margin: 0;
+                }
+            }
+        }
+        
+        .header-content.no-image {
+            padding: 16px 0;
+            
+            h1 {
+                font-size: 24px;
+                margin: 0;
+            }
+        }
+    }
+    
+    .cover-image {
+        position: relative;
+        width: 100%;
+        height: 400px;
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        overflow: hidden;
+        transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        
+        // White gradient fade at the bottom
+        &::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 80px;
+            background: linear-gradient(
+                to bottom,
+                transparent 0%,
+                rgba(255, 255, 255, 1) 100%
+            );
+            pointer-events: none;
+            z-index: 1;
+        }
+        
+        .cover-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                to bottom,
+                rgba(0, 0, 0, 0.2) 0%,
+                rgba(0, 0, 0, 0.4) 100%
+            );
+            display: flex;
+            align-items: flex-end;
+            padding: 48px;
+            z-index: 0;
+        }
+        
+        .cover-overlay {
+            transition: padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .header-content {
+            width: 100%;
+            color: #ffffff;
+            position: relative;
+            z-index: 2; // Ensure content is above the white gradient
+            
+            h1 {
+                font-size: 48px;
+                font-weight: 700;
+                margin: 0 0 8px 0;
+                font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+                letter-spacing: -0.02em;
+                transition: font-size 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            
+            .subtitle {
+                font-size: 18px;
+                font-weight: 400;
+                margin: 0;
+                opacity: 0.95;
+                text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+        }
+    }
+    
+    .header-content.no-image {
+        padding: 32px 0 24px 0;
+        transition: padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        
+        h1 {
+            font-size: 36px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: rgba(0, 0, 0, 0.9);
+            letter-spacing: -0.02em;
+            transition: font-size 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .subtitle {
+            font-size: 16px;
+            font-weight: 400;
+            margin: 0;
+            color: rgba(0, 0, 0, 0.6);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .events-page-header {
+        margin-bottom: 24px;
+        
+        .cover-image {
+            height: 280px;
+            
+            .cover-overlay {
+                padding: 32px 24px;
+            }
+            
+            .header-content {
+                h1 {
+                    font-size: 32px;
+                }
+                
+                .subtitle {
+                    font-size: 16px;
+                }
+            }
+        }
+        
+        .header-content.no-image {
+            padding: 24px 0 16px 0;
+            
+            h1 {
+                font-size: 28px;
+            }
+            
+            .subtitle {
+                font-size: 14px;
+            }
+        }
+    }
+}
+

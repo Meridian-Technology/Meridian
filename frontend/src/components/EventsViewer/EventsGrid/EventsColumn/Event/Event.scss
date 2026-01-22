@@ -309,10 +309,9 @@
 
 @media (max-width: 768px) {
     .event-component{
-        flex-direction: column;
         .info{
+            padding: 10px 15px;
             .event-header{
-                flex-direction: column;
             }
         }
         .quick-look-btn{

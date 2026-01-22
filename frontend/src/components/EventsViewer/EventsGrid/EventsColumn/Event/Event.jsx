@@ -141,7 +141,6 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
                 <div className="row event-header">
                     <div className="col">
                         <div className="row">
-                            <Icon icon="heroicons:calendar-16-solid" aria-hidden="true" />
                             <time dateTime={date.toISOString()}>
                                 <strong>{formatTime(date)}</strong> {formatDate(date)}
                             </time>
@@ -207,7 +206,7 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
                 )}
                 
                 {/* RSVP Stats Preview - show when RSVP buttons are hidden */}
-                {!showRSVP && event.rsvpEnabled && event.rsvpStats && (
+                {/* {!showRSVP && event.rsvpEnabled && event.rsvpStats && (
                     <div className="rsvp-stats-preview">
                         {event.rsvpStats.going > 0 && (
                             <span className="rsvp-stat">
@@ -220,7 +219,7 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
                             </span>
                         )}
                     </div>
-                )}
+                )} */}
                 
                 {/* Quick Look Button */}
 
