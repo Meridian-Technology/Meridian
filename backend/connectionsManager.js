@@ -21,7 +21,7 @@ const connectToDatabase = async (school) => {
 
 const getDbUriForSchool = (school) => {
     const schoolDbMap = {
-        berkeley: process.env.MONGO_URI_BERKELEY,
+        // berkeley: process.env.MONGO_URI_BERKELEY,
         rpi: process.env.MONGO_URI_RPI,
         // Add more schools here
     };
