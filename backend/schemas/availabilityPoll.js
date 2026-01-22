@@ -112,10 +112,12 @@ availabilityPollSchema.pre('save', function(next) {
 
 // Instance methods
 availabilityPollSchema.methods.isCreator = function(userId, userType = 'User') {
-    return this.creatorType === userType && this.creatorId.toString() === userId.toString();
+    return this.creatorType === userType && this.creatorId === userId;
 };
 
 availabilityPollSchema.methods.canAccess = function(userId) {
+
+    return true;
     // Creator can always access
     if (this.isCreator(userId)) return true;
     

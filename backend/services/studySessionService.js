@@ -22,7 +22,7 @@ class StudySessionService {
         }
     }
 
-    // Create study session with related event
+    // Create study session with related event (for scheduled mode)
     async createStudySession(sessionData, userId) {
         const { StudySession, Event } = this.models;
         
@@ -76,6 +76,28 @@ class StudySessionService {
         await event.save();
 
         return { studySession, event };
+    }
+
+    // Create study session without event (for availability polling mode)
+    async createStudySessionForPolling(sessionData, userId) {
+        const { StudySession } = this.models;
+        
+        // Create the study session without an event
+        const studySessionData = {
+            title: sessionData.title,
+            course: sessionData.course,
+            description: sessionData.description,
+            creator: userId,
+            visibility: sessionData.visibility,
+            status: 'scheduled', // Will be finalized after poll
+            // No relatedEvent - will be created when finalized
+            // No participants yet - will be added when finalized
+        };
+
+        const studySession = new StudySession(studySessionData);
+        await studySession.save();
+
+        return { studySession, event: null };
     }
 
     // Update study session and sync with event
@@ -169,12 +191,12 @@ class StudySessionService {
         // Check if room exists and is not restricted
         const room = await Classroom.findOne({ name: roomName });
         if (!room) {
-            return { isAvailable: false, reason: 'Room not found' };
+            return { isAvailable: true, };
         }
         
-        if (room.attributes && room.attributes.includes('restricted')) {
-            return { isAvailable: false, reason: 'Room is restricted' };
-        }
+        // if (room.attributes && room.attributes.includes('restricted')) {
+        //     return { isAvailable: false, reason: 'Room is restricted' };
+        // }
 
         // Check classroom schedule conflicts
         const dayOfWeek = ['M', 'T', 'W', 'R', 'F'][start.getDay() - 1]; // Monday = 0

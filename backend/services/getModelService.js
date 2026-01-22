@@ -39,7 +39,6 @@ const approvalFlowInstance = require('../events/schemas/approvalInstance');
 const eventSchema = require('../events/schemas/event');
 const formSchema = require('../events/schemas/form');
 const formResponseSchema = require('../events/schemas/formResponse');
-const studySessionSchema = require('../events/schemas/studySession');
 const orgVerificationSchema = require('../schemas/orgVerification');
 const orgManagementConfigSchema = require('../schemas/orgManagementConfig');
 const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
