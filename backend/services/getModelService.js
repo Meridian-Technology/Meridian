@@ -39,6 +39,7 @@ const approvalFlowInstance = require('../events/schemas/approvalInstance');
 const eventSchema = require('../events/schemas/event');
 const formSchema = require('../events/schemas/form');
 const formResponseSchema = require('../events/schemas/formResponse');
+const studySessionSchema = require('../events/schemas/studySession');
 const orgVerificationSchema = require('../schemas/orgVerification');
 const orgManagementConfigSchema = require('../schemas/orgManagementConfig');
 const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
@@ -77,6 +78,7 @@ const getModels = (req, ...names) => {
         RssFeed: req.db.model('RssFeed', rssFeedSchema, 'rssFeeds'),
         Form: req.db.model('Form', formSchema, 'forms'),    
         FormResponse: req.db.model('FormResponse', formResponseSchema, 'formResponses'),
+        StudySession: req.db.model('StudySession', studySessionSchema, 'studySessions'),
         OrgVerification: req.db.model('OrgVerification', orgVerificationSchema, 'orgVerifications'),
         OrgManagementConfig: req.db.model('OrgManagementConfig', orgManagementConfigSchema, 'orgManagementConfigs'),
         OrgMemberApplication: req.db.model('OrgMemberApplication', orgMemberApplicationSchema, 'orgMemberApplications'),

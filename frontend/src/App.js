@@ -57,6 +57,7 @@ import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
 import Form from './pages/Form/Form';
+import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 function App() {
     useEffect(() => {
         // check if the user has already visited
@@ -178,7 +179,8 @@ function App() {
                                                 <Route path="/domain-dashboard/:domainId" element={<AnimatedPageWrapper><DomainDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
                                             <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsDash/></AnimatedPageWrapper>}/>
-                                            <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
+                                            <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>}
+                                            <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId/workspace" element={<AnimatedPageWrapper><EventWorkspace/></AnimatedPageWrapper>}/>
 
                                             {/* oie routes */}
