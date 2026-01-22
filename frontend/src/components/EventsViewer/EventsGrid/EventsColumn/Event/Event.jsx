@@ -9,7 +9,7 @@ import useAuth from '../../../../../hooks/useAuth';
 import RSVPButton from '../../../../RSVPButton/RSVPButton';
 import { useFetch } from '../../../../../hooks/useFetch';
 
-function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate}){
+function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate, showRSVP = true}){
     const [optimisticEvent, setOptimisticEvent] = useState(event);
     const { user } = useAuth();
     
@@ -196,13 +196,31 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate}
                 )}
                 
                 
-                {/* RSVP Button */}
-                <RSVPButton 
-                    event={optimisticEvent} 
-                    onRSVPUpdate={handleRSVPUpdate} 
-                    rsvpStatus={rsvpStatus}
-                    onRSVPStatusUpdate={onRSVPStatusUpdate}
-                />
+                {/* RSVP Button - only show if showRSVP is true */}
+                {showRSVP && (
+                    <RSVPButton 
+                        event={optimisticEvent} 
+                        onRSVPUpdate={handleRSVPUpdate} 
+                        rsvpStatus={rsvpStatus}
+                        onRSVPStatusUpdate={onRSVPStatusUpdate}
+                    />
+                )}
+                
+                {/* RSVP Stats Preview - show when RSVP buttons are hidden */}
+                {!showRSVP && event.rsvpEnabled && event.rsvpStats && (
+                    <div className="rsvp-stats-preview">
+                        {event.rsvpStats.going > 0 && (
+                            <span className="rsvp-stat">
+                                <strong>{event.rsvpStats.going}</strong> going
+                            </span>
+                        )}
+                        {event.rsvpStats.maybe > 0 && (
+                            <span className="rsvp-stat">
+                                <strong>{event.rsvpStats.maybe}</strong> maybe
+                            </span>
+                        )}
+                    </div>
+                )}
                 
                 {/* Quick Look Button */}
 

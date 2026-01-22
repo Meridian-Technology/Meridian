@@ -210,6 +210,29 @@
         }
     }
     
+    .rsvp-stats-preview {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--lighterborder);
+        
+        .rsvp-stat {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 14px;
+            color: var(--text);
+            font-family: 'Inter';
+            
+            strong {
+                font-weight: 600;
+                color: var(--text);
+            }
+        }
+    }
+    
     .quick-look-btn {
         display: flex;
         align-items: center;
