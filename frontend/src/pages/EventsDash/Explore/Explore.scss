@@ -101,7 +101,7 @@ body {
             gap: 20px;
             box-shadow: var(--shadow);
             position: sticky;
-            top: 0;
+            top: 20px;
             align-self: flex-start;
             max-height: calc(100vh - 20px);
             overflow-y: auto;
@@ -265,7 +265,6 @@ body {
     .explore{
         .explore-content{
             border:none;
-            box-shadow: var(--shadow);
 
             .sidebar{
                 width:120px;
@@ -275,7 +274,6 @@ body {
 }
 @media (max-width: 768px) {
     .explore{
-        background-color: var(--red);
         padding:0;
         gap:10px;
 
@@ -320,7 +318,9 @@ body {
                 padding:10px;
                 
             }
+            .sidebar,
             .mobile-sidebar{
+                position: static; // Remove sticky positioning on mobile
                 width:100%;
                 border:none;
                 box-shadow: none;
@@ -328,6 +328,8 @@ body {
                 box-sizing: border-box;
                 margin:0;
                 padding-bottom:0;
+                max-height: none; // Remove max-height constraint on mobile
+                overflow-y: visible; // Remove scroll on mobile
                 .sidebar-header{
                     justify-content: space-between;
                     width:100%;

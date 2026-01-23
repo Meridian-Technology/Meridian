@@ -2,6 +2,7 @@
     width: 100%;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     
+    
     &.sticky {
         position: sticky;
         top: 0;
@@ -92,6 +93,8 @@
             color: #ffffff;
             position: relative;
             z-index: 2; // Ensure content is above the white gradient
+            margin-bottom: 30px;
+            margin-left:50px;
             
             h1 {
                 font-size: 48px;
@@ -153,6 +156,7 @@
             }
             
             .header-content {
+                margin-left:0;
                 h1 {
                     font-size: 32px;
                 }

@@ -1,6 +1,7 @@
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import Event from '../EventsViewer/EventsGrid/EventsColumn/Event/Event';
 import Loader from '../Loader/Loader';
+import Switch from '../Switch/Switch';
 import './EventsList.scss';
 
 const EventsList = ({ 
@@ -14,6 +15,17 @@ const EventsList = ({
 }) => {
     const observerRef = useRef();
     const lastEventElementRef = useRef();
+    
+    // Load view preference from localStorage
+    const [viewType, setViewType] = useState(() => {
+        const saved = localStorage.getItem('eventsListViewType');
+        return saved === 'compact' ? 1 : 0; // 0 = regular, 1 = compact
+    });
+    
+    // Save preference to localStorage when it changes
+    useEffect(() => {
+        localStorage.setItem('eventsListViewType', viewType === 1 ? 'compact' : 'regular');
+    }, [viewType]);
 
     // Handle intersection observer for infinite scroll
     useEffect(() => {
@@ -73,7 +85,7 @@ const EventsList = ({
     }
 
     return (
-        <div className="events-list" role="list" aria-label="Events list">
+        <div className={`events-list ${viewType === 1 ? 'compact' : 'regular'}`} role="list" aria-label="Events list">
   {/* I'm not sure why we added this i ndicator, i'm removing it for now but leaving as a comment encase the format was wanted elsewhere -Raven */}
             {/* {hasFriendsFilter && (
                 <div className="friends-filter-indicator">
@@ -89,9 +101,20 @@ const EventsList = ({
                     const isLastElement = isLastGroup && events.length > 0;
                     return (
                         <div key={date.toISOString()} className="date-group" role="group" aria-label={`Events on ${formatDate(date)}`}>
-                            <div className="date-separator" role="heading" aria-level="2">
+                            <div className={`date-separator ${viewType === 1 ? 'compact' : 'regular'}`} role="heading" aria-level="2">
                                 <div className="timeline-dot"></div>
-                                {formatDate(date)}
+                                <span className="date-text">{formatDate(date)}</span>
+                                {groupIndex === 0 && (
+                                    <div className="view-toggle">
+                                        <Switch
+                                            options={['regular', 'compact']}
+                                            selectedPass={viewType}
+                                            setSelectedPass={setViewType}
+                                            onChange={setViewType}
+                                            ariaLabel="View type selection"
+                                        />
+                                    </div>
+                                )}
                             </div>
                             {events.map((event, eventIndex) => {
                                 const isLastEvent = isLastGroup && eventIndex === events.length - 1;
@@ -106,6 +129,7 @@ const EventsList = ({
                                             event={event} 
                                             hasFriendsFilter={hasFriendsFilter}
                                             showRSVP={false}
+                                            variant={viewType === 1 ? 'compact' : 'regular'}
                                         />
                                     </div>
                                 );

@@ -55,6 +55,7 @@
     
     // Date group styling - Luma-inspired clean design
     .date-group {
+        margin-bottom:10px;
         position: relative;
         z-index: 1;
         display: flex;
@@ -67,14 +68,19 @@
             font-weight: 600;
             color: var(--text);
             padding: 12px 0 8px 0;
-            text-transform: uppercase;
-            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: 'OpenSauce';
+            font-weight: 700;
             letter-spacing: 0.5px;
             margin: 0;
             position: relative;
             color: rgba(0, 0, 0, 0.6);
             display: flex;
             align-items: center;
+            justify-content: space-between;
+            
+            .date-text {
+                flex: 1;
+            }
             
             // Timeline dot - one per day
             .timeline-dot {
@@ -92,9 +98,28 @@
                 flex-shrink: 0;
                 transition: all 0.2s ease;
             }
+            
+            // View toggle switch
+            .view-toggle {
+                margin-left: auto;
+                margin-right: 0;
+                position: relative;
+                z-index: 10;
+                
+                :global(.switch) {
+                    font-size: 12px;
+                    min-width: 140px;
+                    
+                    .switch-option {
+                        padding: 6px 10px;
+                        font-size: 11px;
+                        white-space: nowrap;
+                    }
+                }
+            }
                         
             // Subtle underline accent
-            &::before {
+            &.regular::before {
                 content: '';
                 display: block;
                 width: 40px;
@@ -106,6 +131,19 @@
                 border-radius: 2px;
                 animation: underline-expand 0.6s ease-out;
             }
+            &.compact::before {
+                content: '';
+                display: block;
+                width: 100%;
+                height: 1px;
+                background-color: var(--lightborder);
+                position: absolute;
+                bottom: -2px;
+                left: 0;
+                border-radius: 2px;
+                animation: underline-expand 0.6s ease-out;
+            }
+
         }
     }
     
@@ -120,220 +158,42 @@
         &:last-child {
             margin-bottom: 0;
         }
+    }
+    
+    // Compact view styles
+    &.compact {
+        gap: 12px;
         
-        .event-component {
-            flex: 1;
-            background: #ffffff;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 16px;
-            padding: 0;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            overflow: hidden;
-            cursor: pointer;
+        .date-group {
+            gap: 8px;
             
-            &:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-                border-color: rgba(0, 0, 0, 0.12);
+            .date-separator {
+                padding: 8px 0 6px 0;
+            }
+        }
+        
+        .event-item-wrapper {
+            gap: 12px;
+        }
+        
+        .timeline-container {
+            padding-left: 0;
+            
+            .timeline-line {
+                display: none;
             }
             
-            // Event image styling - Luma style
-            img {
-                width: 100%;
-                height: 240px;
-                object-fit: cover;
-                border-radius: 0;
-                margin: 0;
-                box-shadow: none;
+            .date-group:first-child::before {
+                display: none;
             }
             
-            // Info section styling
-            .info {
-                padding: 10px 15px;
-                gap: 10px;
-            
-                .row.event-header {
-                    margin-bottom: 4px;
-                    
-                    .col {
-                        gap: 0px;
-                        
-                        // Date/time styling
-                        .row {
-                            display: flex;
-                            align-items: center;
-                            gap: 6px;
-                            margin-bottom: 8px;
-                            
-                            iconify-icon {
-                                font-size: 14px;
-                                color: rgba(0, 0, 0, 0.5);
-                            }
-                            
-                            time {
-                                font-size: 13px;
-                                color: rgba(0, 0, 0, 0.7);
-                                font-weight: 500;
-                                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                                
-                                strong {
-                                    font-size:16px;
-                                    color: var(--primary);
-                                    font-weight: 700;
-                                    margin-right:4px;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Event title - Luma style
-                h2 {
-                    font-size: 20px;
-                    font-weight: 600;
-                    margin: 0 0 6px 0;
-                    font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                    color: rgba(0, 0, 0, 0.9);
-                    line-height: 1.3;
-                    letter-spacing: -0.01em;
-                }
-                
-                // Hosting status - cleaner design
-                .row.hosting {
-                    margin-bottom: 12px;
-                    
-                    img {
-                        width: 20px;
-                        height: 20px;
-                        border-radius: 50%;
-                        margin-right: 6px;
-                        border: 1.5px solid rgba(0, 0, 0, 0.08);
-                    }
-                    
-                    .user-name {
-                        font-weight: 500;
-                        font-size: 14px;
-                        color: rgba(0, 0, 0, 0.7);
-                    }
-                    
-                    .level {
-                        font-size: 10px;
-                        font-weight: 600;
-                        padding: 2px 8px;
-                        border-radius: 12px;
-                        margin-left: 8px;
-                        text-transform: uppercase;
-                        letter-spacing: 0.3px;
-                    }
-                }
-                
-                // Description styling
-                .row.event-description {
-                    margin: 0 0 6px 0;
-                    
-                    p {
-                        font-size: 14px;
-                        line-height: 1.5;
-                        color: rgba(0, 0, 0, 0.65);
-                        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                        -webkit-line-clamp: 2;
-                        display: -webkit-box;
-                        -webkit-box-orient: vertical;
-                        overflow: hidden;
-                    }
-                }
-                
-                // Location styling
-                .row {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    margin-bottom: 8px;
-                    
-                    iconify-icon {
-                        font-size: 14px;
-                        color: rgba(0, 0, 0, 0.5);
-                    }
-                    
-                    address {
-                        font-size: 13px;
-                        color: rgba(0, 0, 0, 0.65);
-                        font-style: normal;
-                        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                    }
-                }
-                
-                // Friends indicator - refined styling
-                .friends-indicator {
-                    margin-top: 8px;
-                    padding: 6px 12px;
-                    background: rgba(76, 175, 80, 0.08);
-                    border-radius: 8px;
-                    font-size: 12px;
-                    font-weight: 500;
-                    color: #4CAF50;
-                    
-                    .friends-indicator-pictures {
-                        img {
-                            width: 16px;
-                            height: 16px;
-                            border: 1.5px solid #ffffff;
-                            margin-right: -4px;
-                        }
-                    }
-                    
-                    &.login-prompt {
-                        background: rgba(255, 152, 0, 0.08);
-                        color: #FF9800;
-                    }
-                    
-                    &.no-friends {
-                        background: rgba(158, 158, 158, 0.08);
-                        color: #9E9E9E;
-                    }
-                }
-                
-                // RSVP stats preview - Luma style
-                .rsvp-stats-preview {
-                    margin-top: 12px;
-                    padding-top: 12px;
-                    border-top: 1px solid rgba(0, 0, 0, 0.06);
-                    
-                    .rsvp-stat {
-                        font-size: 13px;
-                        color: rgba(0, 0, 0, 0.6);
-                        
-                        strong {
-                            font-weight: 600;
-                            color: rgba(0, 0, 0, 0.8);
-                        }
-                    }
-                }
+            .date-group:last-child .date-separator::after {
+                display: none;
             }
             
-            // Ongoing event styling
-            &.ongoing {
-                border-color: rgba(253, 30, 134, 0.2);
-                
-                &::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    height: 3px;
-                    background: linear-gradient(90deg, #FD1E86, #FCD38C);
-                    z-index: 1;
-                }
-            }
-            
-            // Inactive event styling
-            &.inactive {
-                opacity: 0.5;
-                
-                img {
-                    filter: grayscale(100%);
+            .date-separator {
+                .timeline-dot {
+                    display: none;
                 }
             }
         }
@@ -434,21 +294,6 @@
         .event-item-wrapper {
             gap: 12px;
             margin-bottom: 12px;
-            
-            .event-component {
-                border-radius: 12px;
-                
-                img {
-                    height: 200px;
-                }
-                
-                .info {
-                    
-                    h2 {
-                        font-size: 18px;
-                    }
-                }
-            }
         }
     }
 }
