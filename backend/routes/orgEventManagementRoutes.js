@@ -577,7 +577,7 @@ router.get('/:orgId/event-templates', verifyToken, requireEventManagement('orgId
 
 // Create event from template
 router.post('/:orgId/events/from-template/:templateId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { Event, EventTemplate } = getModels(req, 'Event', 'EventTemplate');
+    const { Event, EventTemplate, EventAgenda } = getModels(req, 'Event', 'EventTemplate', 'EventAgenda');
     const { orgId, templateId } = req.params;
     const { startTime, endTime, customizations = {} } = req.body;
 
@@ -608,6 +608,20 @@ router.post('/:orgId/events/from-template/:templateId', verifyToken, requireEven
         const event = new Event(eventData);
         await event.save();
 
+        // Create default EventAgenda for the new event
+        try {
+            const agenda = new EventAgenda({
+                eventId: event._id,
+                orgId: orgId,
+                items: [],
+                isPublished: false
+            });
+            await agenda.save();
+        } catch (agendaError) {
+            console.error('Error creating default EventAgenda:', agendaError);
+            // Don't fail the event creation if agenda creation fails
+        }
+
         console.log(`POST: /org-event-management/${orgId}/events/from-template/${templateId} - Event created from template`);
         res.status(201).json({
             success: true,
@@ -627,7 +641,7 @@ router.post('/:orgId/events/from-template/:templateId', verifyToken, requireEven
 
 // Update single event
 router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { Event } = getModels(req, 'Event');
+    const { Event, EventAgenda } = getModels(req, 'Event', 'EventAgenda');
     const { orgId, eventId } = req.params;
     const updateData = req.body;
 
@@ -654,6 +668,23 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
         });
 
         await event.save();
+
+        // Ensure EventAgenda exists for this event (create if it doesn't exist)
+        try {
+            let agenda = await EventAgenda.findOne({ eventId, orgId });
+            if (!agenda) {
+                agenda = new EventAgenda({
+                    eventId: event._id,
+                    orgId: orgId,
+                    items: [],
+                    isPublished: false
+                });
+                await agenda.save();
+            }
+        } catch (agendaError) {
+            console.error('Error ensuring EventAgenda exists:', agendaError);
+            // Don't fail the event update if agenda check fails
+        }
 
         console.log(`PUT: /org-event-management/${orgId}/events/${eventId}`);
         res.status(200).json({
