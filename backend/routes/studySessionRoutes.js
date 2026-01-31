@@ -17,16 +17,44 @@ const withStudySessionService = (req, res, next) => {
 // Get user's study sessions
 router.get('/', verifyToken, withStudySessionService, async (req, res) => {
     try {
-        const { status = 'scheduled', limit = 20, skip = 0 } = req.query;
-        const sessions = await req.studySessionService.getUserStudySessions(
-            req.user.userId,
-            { status, limit: parseInt(limit), skip: parseInt(skip) }
-        );
+        const { status = 'all', limit = 100, skip = 0 } = req.query;
+        const { StudySession, AvailabilityPoll } = getModels(req, 'StudySession', 'AvailabilityPoll');
+        
+        // If creator param is provided, filter by creator
+        const query = {};
+
+        query.$or = [
+            { creator: req.user.userId },
+            // { 'participants.user': req.user.userId }
+        ];
+        
+        if (status !== 'all') {
+            query.status = status;
+        }
+        
+        // Use Mongoose populate for efficient querying with nested populations
+        const sessions = await StudySession.find(query)
+            .populate('relatedEvent', 'start_time end_time location name')
+            .populate('creator', 'name email picture')
+            .populate({
+                path: 'availabilityPoll',
+                populate: {
+                    path: 'responses.user',
+                    select: '_id name username picture'
+                }
+            })
+            // .populate({
+            //     path: 'participants.user',
+            //     select: 'name picture'
+            // })
+            .sort({ createdAt: -1 })
+            .skip(parseInt(skip))
+            .limit(parseInt(limit));
         
         console.log(`GET: /study-sessions for user ${req.user.userId}`);
         res.json({
             success: true,
-            data: sessions,
+            sessions: sessions,
             pagination: {
                 limit: parseInt(limit),
                 skip: parseInt(skip),
@@ -195,14 +223,31 @@ router.get('/:id', verifyTokenOptional, withStudySessionService, async (req, res
             return res.status(403).json({ success: false, message: 'Access denied' });
         }
 
+        // Get poll link if available
+        let pollLink = null;
+        if (session.availabilityPoll) {
+            const { AvailabilityPoll } = getModels(req, 'AvailabilityPoll');
+            const poll = await AvailabilityPoll.findById(session.availabilityPoll);
+            if (poll) {
+                const baseUrl = process.env.NODE_ENV === 'production' 
+                    ? `https://${req.school}.meridian.study` 
+                    : 'http://localhost:3000';
+                pollLink = `${baseUrl}/study-session-callback?id=${poll._id}`;
+            }
+        }
+
         console.log(`GET: /study-sessions/${req.params.id}`);
         res.json({
             success: true,
-            data: session,
+            data: {
+                ...session.toObject(),
+                pollLink: pollLink
+            },
             userPermissions: {
                 canEdit: isCreator && session.status === 'scheduled',
                 canRsvp: userId && !isCreator,
-                canInvite: isCreator
+                canInvite: isCreator,
+                canViewResponses: isCreator && session.availabilityPoll
             }
         });
 
@@ -564,11 +609,19 @@ router.post('/:id/create-availability-poll', [
         session.availabilityPoll = poll._id;
         await session.save();
 
+        // Generate shareable link
+        const baseUrl = process.env.NODE_ENV === 'production' 
+            ? `https://${req.school}.meridian.study` 
+            : 'http://localhost:3000';
+        const pollLink = `${baseUrl}/study-session-callback?id=${poll._id}`;
+
         console.log(`POST: /study-sessions/${req.params.id}/create-availability-poll - Created poll ${poll._id}`);
         res.status(201).json({
             success: true,
             data: poll,
-            message: 'Availability poll created successfully'
+            message: 'Availability poll created successfully',
+            pollLink: pollLink,
+            shareableLink: pollLink
         });
 
     } catch (error) {
@@ -584,13 +637,10 @@ router.get('/availability-poll/:id', verifyTokenOptional, async (req, res) => {
         const { id } = req.params;
         const userId = req.user?.userId;
 
-        console.log(id);
-
         // Try to find by poll ID first
         let poll = await AvailabilityPoll.findById(id)
             .populate('creatorId', 'username name picture email')
             .populate('invitedUsers', 'username name picture email');
-
 
         // If not found, try to find by study session ID
         if (!poll) {
@@ -658,6 +708,13 @@ router.get('/availability-poll/:id', verifyTokenOptional, async (req, res) => {
                 };
             }
         }
+
+        // Add shareable link to response
+        const baseUrl = process.env.NODE_ENV === 'production' 
+            ? `https://${req.school}.meridian.study` 
+            : 'http://localhost:3000';
+        response.pollLink = `${baseUrl}/study-session-callback?id=${poll._id}`;
+        response.shareableLink = response.pollLink;
 
         res.json(response);
 
@@ -789,6 +846,282 @@ router.post('/availability-poll/:id/reply', [
     }
 });
 
+// Get shareable link for availability poll
+router.get('/availability-poll/:id/share-link', verifyTokenOptional, async (req, res) => {
+    try {
+        const { AvailabilityPoll, StudySession } = getModels(req, 'AvailabilityPoll', 'StudySession');
+        const { id } = req.params;
+        const userId = req.user?.userId;
+
+        // Find poll
+        let poll = await AvailabilityPoll.findById(id);
+        
+        if (!poll) {
+            const session = await StudySession.findById(id);
+            if (session && session.availabilityPoll) {
+                poll = await AvailabilityPoll.findById(session.availabilityPoll);
+            }
+        }
+
+        if (!poll) {
+            return res.status(404).json({
+                success: false,
+                message: 'Availability poll not found'
+            });
+        }
+
+        // Check access (creator or invited user can get link)
+        if (userId && !poll.isCreator(userId) && !poll.invitedUsers.includes(userId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have access to this poll'
+            });
+        }
+
+        const baseUrl = process.env.NODE_ENV === 'production' 
+            ? `https://${req.school}.meridian.study` 
+            : 'http://localhost:3000';
+        const pollLink = `${baseUrl}/study-session-callback?id=${poll._id}`;
+
+        res.json({
+            success: true,
+            pollLink: pollLink,
+            shareableLink: pollLink,
+            pollId: poll._id
+        });
+
+    } catch (error) {
+        console.error('GET /study-sessions/availability-poll/:id/share-link failed:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting shareable link',
+            error: error.message
+        });
+    }
+});
+
+// Get poll responses (creator only)
+router.get('/:id/availability-poll/responses', verifyToken, async (req, res) => {
+    try {
+        const { AvailabilityPoll, StudySession, User } = getModels(req, 'AvailabilityPoll', 'StudySession', 'User');
+        const { id } = req.params;
+        const userId = req.user.userId;
+
+        // Find study session
+        const session = await StudySession.findById(id);
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                message: 'Study session not found'
+            });
+        }
+
+        // Verify user is creator
+        if (!session.isCreator(userId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only the creator can view poll responses'
+            });
+        }
+
+        // Find poll
+        let poll = null;
+        if (session.availabilityPoll) {
+            poll = await AvailabilityPoll.findById(session.availabilityPoll);
+        }
+
+        if (!poll) {
+            return res.status(404).json({
+                success: false,
+                message: 'Availability poll not found for this study session'
+            });
+        }
+
+        // Populate responses with user data
+        const populatedPoll = await AvailabilityPoll.findById(poll._id)
+            .populate('responses.user', 'name username picture email');
+
+        const responses = populatedPoll.responses.map(response => ({
+            user: response.user,
+            selectedBlocks: response.selectedBlocks,
+            submittedAt: response.submittedAt
+        }));
+
+        res.json({
+            success: true,
+            poll: {
+                _id: poll._id,
+                timeSlotOptions: poll.timeSlotOptions,
+                expiresAt: poll.expiresAt,
+                isFinalized: poll.isFinalized,
+                finalizedChoice: poll.finalizedChoice
+            },
+            responses: responses
+        });
+
+    } catch (error) {
+        console.error('GET /study-sessions/:id/availability-poll/responses failed:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching poll responses',
+            error: error.message
+        });
+    }
+});
+
+// Finalize poll time (creator only)
+router.post('/availability-poll/:id/finalize', [
+    verifyToken,
+    body('startTime').isISO8601().withMessage('Valid start time is required'),
+    body('endTime').isISO8601().withMessage('Valid end time is required')
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation errors',
+                errors: errors.array()
+            });
+        }
+
+        const { AvailabilityPoll, StudySession } = getModels(req, 'AvailabilityPoll', 'StudySession');
+        const { id } = req.params;
+        const { startTime, endTime } = req.body;
+        const userId = req.user.userId;
+
+        // Find poll
+        let poll = await AvailabilityPoll.findById(id);
+        
+        if (!poll) {
+            return res.status(404).json({
+                success: false,
+                message: 'Availability poll not found'
+            });
+        }
+
+        // Verify user is creator
+        if (!poll.isCreator(userId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only the creator can finalize the poll time'
+            });
+        }
+
+        if (poll.isFinalized) {
+            return res.status(400).json({
+                success: false,
+                message: 'Poll has already been finalized'
+            });
+        }
+
+        // Validate time is within poll options
+        const timeInOptions = poll.timeSlotOptions.some(option => {
+            const optionStart = new Date(option.startTime);
+            const optionEnd = new Date(option.endTime);
+            const selectedStart = new Date(startTime);
+            const selectedEnd = new Date(endTime);
+            
+            return selectedStart >= optionStart && selectedEnd <= optionEnd;
+        });
+
+        if (!timeInOptions) {
+            return res.status(400).json({
+                success: false,
+                message: 'Selected time must be within the poll time options'
+            });
+        }
+
+        // Finalize the poll
+        poll.isFinalized = true;
+        poll.finalizedChoice = {
+            startTime: new Date(startTime),
+            endTime: new Date(endTime)
+        };
+        await poll.save();
+
+        // Find associated study session
+        const session = await StudySession.findOne({ availabilityPoll: poll._id });
+        
+        if (session) {
+            // Update study session with finalized time
+            session.startTime = new Date(startTime);
+            session.endTime = new Date(endTime);
+            await session.save();
+
+            // Create event for the study session
+            const StudySessionService = require('../services/studySessionService').StudySessionService;
+            const { Event } = getModels(req, 'Event');
+            const service = new StudySessionService(req);
+
+            try {
+                const { event } = await service.createEventForStudySession(session._id, userId);
+                
+                // Send notifications to all participants who haven't declined
+                const NotificationService = require('../services/notificationService');
+                const { Notification, User: NotificationUser } = getModels(req, 'Notification', 'User');
+                const notificationService = new NotificationService({ Notification, User: NotificationUser });
+                
+                const baseUrl = process.env.NODE_ENV === 'production' 
+                    ? `https://${req.school}.meridian.study` 
+                    : 'http://localhost:3000';
+                
+                // Get all users who responded (and haven't declined)
+                const participants = poll.responses.map(r => r.user).filter(Boolean);
+                
+                for (const participantId of participants) {
+                    await notificationService.createNotification({
+                        recipient: participantId,
+                        recipientModel: 'User',
+                        sender: userId,
+                        senderModel: 'User',
+                        title: `Study Session Time Finalized: ${session.title}`,
+                        message: `The study session time has been finalized. Check your events for details.`,
+                        type: 'event',
+                        priority: 'normal',
+                        channels: ['in_app', 'email'],
+                        actions: [
+                            {
+                                id: 'view_event',
+                                label: 'View Event',
+                                type: 'link',
+                                url: `${baseUrl}/events-dashboard`,
+                                style: 'primary',
+                                order: 1
+                            }
+                        ],
+                        metadata: {
+                            studySessionId: session._id.toString(),
+                            eventId: event?._id?.toString()
+                        }
+                    });
+                }
+            } catch (eventError) {
+                console.error('Error creating event or sending notifications:', eventError);
+                // Don't fail the finalization if event creation fails
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Poll time finalized successfully',
+            poll: {
+                _id: poll._id,
+                isFinalized: poll.isFinalized,
+                finalizedChoice: poll.finalizedChoice
+            }
+        });
+
+    } catch (error) {
+        console.error('POST /study-sessions/availability-poll/:id/finalize failed:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error finalizing poll time',
+            error: error.message
+        });
+    }
+});
+
 // Send invites for availability poll (with email and notifications)
 router.post('/availability-poll/:id/send-invites', verifyToken, async (req, res) => {
     try {
@@ -841,16 +1174,16 @@ router.post('/availability-poll/:id/send-invites', verifyToken, async (req, res)
         
         // Send notifications to each invited user
         const notifications = [];
+        const pollLink = `${baseUrl}/study-session-callback?id=${poll._id}`;
+        
         for (const invitedUserId of poll.invitedUsers) {
-            const inviteUrl = `${baseUrl}/study-session-callback?id=${poll._id}`;
-            
             const notification = await notificationService.createNotification({
                 recipient: invitedUserId,
                 recipientModel: 'User',
                 sender: userId,
                 senderModel: 'User',
                 title: `Study Session Availability: ${session?.title || 'New Study Session'}`,
-                message: `${session?.creator?.name || 'Someone'} invited you to fill out your availability for a study session. Click to select your available times.`,
+                message: `${session?.creator?.name || 'Someone'} invited you to fill out your availability for a study session. Click to select your available times.\n\nShare this link: ${pollLink}`,
                 type: 'event',
                 priority: 'normal',
                 channels: ['in_app', 'email'],
@@ -859,15 +1192,25 @@ router.post('/availability-poll/:id/send-invites', verifyToken, async (req, res)
                         id: 'reply_availability',
                         label: 'Fill Availability',
                         type: 'link',
-                        url: inviteUrl,
+                        url: pollLink,
                         style: 'primary',
                         order: 1
+                    },
+                    {
+                        id: 'share_poll',
+                        label: 'Share Link',
+                        type: 'link',
+                        url: pollLink,
+                        style: 'secondary',
+                        order: 2
                     }
                 ],
                 metadata: {
                     studySessionId: session?._id?.toString(),
                     pollId: poll._id.toString(),
-                    title: session?.title
+                    pollLink: pollLink,
+                    title: session?.title,
+                    shareableLink: pollLink
                 }
             });
             
@@ -877,7 +1220,9 @@ router.post('/availability-poll/:id/send-invites', verifyToken, async (req, res)
         res.json({
             success: true,
             message: `Invites sent to ${notifications.length} users`,
-            notificationsSent: notifications.length
+            notificationsSent: notifications.length,
+            pollLink: pollLink,
+            shareableLink: pollLink
         });
 
     } catch (error) {
