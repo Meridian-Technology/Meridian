@@ -5,7 +5,7 @@ import useOutsideClick from '../../hooks/useClickOutside';
 import X from '../../assets/x.svg';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 
-const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName="", popout=false, waitForLoad=false}) => {
+const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName="", popout=false, waitForLoad=false, disableOutsideClick=false}) => {
     const [render, setRender] = useState(isOpen);
     const [show, setShow] = useState(false);
 
@@ -15,7 +15,9 @@ const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName
   const ref = useRef();
 
   useOutsideClick(ref, ()=>{
-    handleClose();
+    if (!disableOutsideClick) {
+      handleClose();
+    }
   });
 
   useEffect(() => {

@@ -4,6 +4,9 @@ import FlowComponentV2 from '../../../components/FlowComponentV2/FlowComponentV2
 import { useNotification } from '../../../NotificationContext';
 import useAuth from '../../../hooks/useAuth';
 import postRequest from '../../../utils/postRequest';
+import Popup from '../../../components/Popup/Popup';
+import { Icon } from '@iconify-icon/react';
+import './CreateStudySession.scss';
 
 // Step components
 import ModeSelection from './Steps/ModeSelection/ModeSelection';
@@ -31,6 +34,10 @@ const CreateStudySession = ({ onClose }) => {
         invitedUsers: [],
         inviteStepVisited: false
     });
+    
+    const [showPollLinkModal, setShowPollLinkModal] = useState(false);
+    const [pollLinkData, setPollLinkData] = useState(null);
+    const [copied, setCopied] = useState(false);
 
     useEffect(() => {
         console.log(formData);
@@ -192,17 +199,39 @@ const CreateStudySession = ({ onClose }) => {
                         
                         if (pollResponse.success) {
                             const pollId = pollResponse.data?._id || pollResponse.data?.data?._id;
+                            const pollLink = pollResponse.pollLink || pollResponse.shareableLink || 
+                                           `${window.location.origin}/study-session-callback?id=${pollId}`;
                             
-                            // Send invites if provided
+                            // Show poll link modal immediately
+                            setPollLinkData({
+                                pollLink,
+                                pollId,
+                                studySessionId,
+                                hasInvites: formData.invitedUsers && formData.invitedUsers.length > 0,
+                                inviteCount: formData.invitedUsers?.length || 0
+                            });
+                            setShowPollLinkModal(true);
+                            
+                            // Send invites if provided (in background)
                             if (pollId && formData.invitedUsers && formData.invitedUsers.length > 0) {
-                                await postRequest(`/study-sessions/availability-poll/${pollId}/send-invites`, {});
+                                postRequest(`/study-sessions/availability-poll/${pollId}/send-invites`, {})
+                                    .then((inviteResponse) => {
+                                        if (inviteResponse.success) {
+                                            addNotification({
+                                                title: 'Invites Sent',
+                                                message: `Invites sent to ${formData.invitedUsers.length} member(s).`,
+                                                type: 'success'
+                                            });
+                                        }
+                                    })
+                                    .catch(err => console.error('Error sending invites:', err));
                             }
                             
-                            addNotification({
-                                title: 'Availability Poll Created',
-                                message: 'Your study session poll has been created! Invited members can now vote on their preferred times.',
-                                type: 'success'
-                            });
+                            // Store link in formData
+                            setFormData(prev => ({
+                                ...prev,
+                                pollLink: pollLink
+                            }));
                         } else {
                             throw new Error('Failed to create availability poll');
                         }
@@ -281,21 +310,123 @@ const CreateStudySession = ({ onClose }) => {
     }
 
     return (
-        <FlowComponentV2
-            steps={steps}
-            formData={formData}
-            setFormData={setFormData}
-            onSubmit={handleSubmit}
-            onError={handleError}
-            headerTitle="Create Study Session"
-            headerSubtitle={formData.sessionMode === 'poll' 
-                ? "Poll for availability and finalize later" 
-                : "Organize a study group in just a few steps!"}
-            submitButtonText={formData.sessionMode === 'poll' ? 'Create Poll' : 'Create Study Session'}
-            submittingButtonText={formData.sessionMode === 'poll' ? 'Creating Poll...' : 'Creating...'}
-            className="create-study-session-flow"
-            validationFunction={validateStudySessionStep}
-        />
+        <>
+            <FlowComponentV2
+                steps={steps}
+                formData={formData}
+                setFormData={setFormData}
+                onSubmit={handleSubmit}
+                onError={handleError}
+                headerTitle="Create Study Session"
+                headerSubtitle={formData.sessionMode === 'poll' 
+                    ? "Poll for availability and finalize later" 
+                    : "Organize a study group in just a few steps!"}
+                submitButtonText={formData.sessionMode === 'poll' ? 'Create Poll' : 'Create Study Session'}
+                submittingButtonText={formData.sessionMode === 'poll' ? 'Creating Poll...' : 'Creating...'}
+                className="create-study-session-flow"
+                validationFunction={validateStudySessionStep}
+            />
+            
+            {/* Poll Link Modal */}
+            <Popup 
+                isOpen={showPollLinkModal} 
+                onClose={() => {
+                    // Only close via Done button - this handler won't be called due to disableOutsideClick
+                }}
+                customClassName="poll-link-modal"
+                disableOutsideClick={true}
+            >
+                <div 
+                    className="poll-link-modal-content" 
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <div className="modal-header">
+                        <h2>Poll Link Ready!</h2>
+                        <p>Your availability poll has been created. Share this link with participants.</p>
+                    </div>
+                    
+                    {pollLinkData && (
+                        <>
+                            <div className="link-section">
+                                <label>Poll Link:</label>
+                                <div className="link-input-group">
+                                    <input 
+                                        type="text" 
+                                        value={pollLinkData.pollLink} 
+                                        readOnly 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.target.select();
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                    />
+                                    <button 
+                                        className="copy-button"
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            try {
+                                                await navigator.clipboard.writeText(pollLinkData.pollLink);
+                                                setCopied(true);
+                                                addNotification({
+                                                    title: 'Link Copied!',
+                                                    message: 'Poll link copied to clipboard',
+                                                    type: 'success'
+                                                });
+                                                setTimeout(() => setCopied(false), 2000);
+                                            } catch (error) {
+                                                console.error('Failed to copy:', error);
+                                            }
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                    >
+                                        <Icon icon={copied ? "mdi:check" : "mdi:content-copy"} />
+                                        <span>{copied ? 'Copied!' : 'Copy'}</span>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div className="modal-actions">
+                                <button 
+                                    className="view-responses-button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setShowPollLinkModal(false);
+                                        navigate(`/study-session/${pollLinkData.studySessionId}/responses`);
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                    <Icon icon="mdi:chart-box" />
+                                    <span>View Responses</span>
+                                </button>
+                                <button 
+                                    className="close-button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setShowPollLinkModal(false);
+                                        if (onClose) onClose();
+                                        navigate('/events-dashboard?page=0');
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                    <span>Done</span>
+                                </button>
+                            </div>
+                            
+                            {pollLinkData.hasInvites && (
+                                <div className="invite-info">
+                                    <Icon icon="mdi:information" />
+                                    <span>Invites are being sent to {pollLinkData.inviteCount} participant(s).</span>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            </Popup>
+        </>
     );
 };
 
