@@ -1,8 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Icon } from '@iconify-icon/react';
+import StudySessionDrafts from '../../Components/StudySessionDrafts/StudySessionDrafts';
+import useAuth from '../../../../../hooks/useAuth';
 import './ModeSelection.scss';
 
 const ModeSelection = ({ formData, setFormData, onComplete }) => {
+    const { user } = useAuth();
+    const onCompleteRef = useRef(onComplete);
+    
+    // Keep ref updated
+    useEffect(() => {
+        onCompleteRef.current = onComplete;
+    }, [onComplete]);
     
     const handleModeChange = (mode) => {
         setFormData(prev => ({
@@ -14,11 +23,11 @@ const ModeSelection = ({ formData, setFormData, onComplete }) => {
     // Call onComplete once mode is selected
     useEffect(() => {
         if (formData.sessionMode) {
-            onComplete(true);
+            onCompleteRef.current(true);
         } else {
-            onComplete(false);
+            onCompleteRef.current(false);
         }
-    }, [formData.sessionMode, onComplete]);
+    }, [formData.sessionMode]);
 
     return (
         <div className="mode-selection-step">
@@ -63,6 +72,9 @@ const ModeSelection = ({ formData, setFormData, onComplete }) => {
                         </div>
                     </div>
                 </div>
+                
+                {/* Study Session Drafts */}
+                <StudySessionDrafts userId={user?.userId || user?._id} />
             </div>
         </div>
     );

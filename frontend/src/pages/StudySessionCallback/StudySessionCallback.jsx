@@ -15,6 +15,8 @@ function StudySessionCallback() {
     const { addNotification } = useNotification();
     const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
     const [submitting, setSubmitting] = useState(false);
+    const [showShareLink, setShowShareLink] = useState(false);
+    const [copied, setCopied] = useState(false);
     
     // Get study session ID from query params (could be 'id' or 'token')
     const sessionId = searchParams.get('id') || searchParams.get('token');
@@ -196,6 +198,30 @@ function StudySessionCallback() {
     }
 
     const timeWindows = studySession.timeWindows || studySession.availableTimeWindows || [];
+    const pollLink = sessionData?.pollLink || sessionData?.shareableLink || 
+                     (sessionId ? `${window.location.origin}/study-session-callback?id=${sessionId}` : null);
+
+    const handleCopyLink = async () => {
+        if (pollLink) {
+            try {
+                await navigator.clipboard.writeText(pollLink);
+                setCopied(true);
+                addNotification({
+                    title: 'Link Copied!',
+                    message: 'Poll link copied to clipboard',
+                    type: 'success'
+                });
+                setTimeout(() => setCopied(false), 2000);
+            } catch (error) {
+                console.error('Failed to copy link:', error);
+                addNotification({
+                    title: 'Copy Failed',
+                    message: 'Please copy the link manually',
+                    type: 'error'
+                });
+            }
+        }
+    };
 
     return (
         <div className="study-session-callback">
@@ -211,6 +237,40 @@ function StudySessionCallback() {
                         <div className="subject-badge">
                             <Icon icon="mdi:book-open-variant" />
                             <span>{studySession.subject}</span>
+                        </div>
+                    )}
+                    
+                    {/* Share Link Button */}
+                    {pollLink && (
+                        <div className="share-link-section">
+                            <button 
+                                className="share-link-button"
+                                onClick={() => setShowShareLink(!showShareLink)}
+                            >
+                                <Icon icon="mdi:share-variant" />
+                                <span>Share Poll Link</span>
+                            </button>
+                            
+                            {showShareLink && (
+                                <div className="share-link-container">
+                                    <div className="share-link-input-group">
+                                        <input 
+                                            type="text" 
+                                            value={pollLink} 
+                                            readOnly 
+                                            onClick={(e) => e.target.select()}
+                                        />
+                                        <button 
+                                            className="copy-button"
+                                            onClick={handleCopyLink}
+                                        >
+                                            <Icon icon={copied ? "mdi:check" : "mdi:content-copy"} />
+                                            <span>{copied ? 'Copied!' : 'Copy'}</span>
+                                        </button>
+                                    </div>
+                                    <p className="share-help-text">Share this link with others so they can vote on their availability</p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

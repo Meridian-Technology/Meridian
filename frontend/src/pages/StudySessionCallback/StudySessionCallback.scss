@@ -69,6 +69,92 @@
                     font-size: 1.2rem;
                 }
             }
+            
+            .share-link-section {
+                position: relative;
+                z-index: 1;
+                margin-top: 1rem;
+                
+                .share-link-button {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    padding: 0.5rem 1rem;
+                    background: rgba(109, 142, 250, 0.1);
+                    color: #6D8EFA;
+                    border: 1px solid rgba(109, 142, 250, 0.3);
+                    border-radius: 8px;
+                    font-weight: 500;
+                    font-size: 0.9rem;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    
+                    &:hover {
+                        background: rgba(109, 142, 250, 0.2);
+                        border-color: #6D8EFA;
+                    }
+                    
+                    svg {
+                        font-size: 1.2rem;
+                    }
+                }
+                
+                .share-link-container {
+                    margin-top: 1rem;
+                    padding: 1rem;
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                    border: 1px solid #e0e0e0;
+                    
+                    .share-link-input-group {
+                        display: flex;
+                        gap: 0.5rem;
+                        margin-bottom: 0.5rem;
+                        
+                        input {
+                            flex: 1;
+                            padding: 0.75rem;
+                            border: 1px solid #e0e0e0;
+                            border-radius: 6px;
+                            font-size: 0.9rem;
+                            background: white;
+                            
+                            &:focus {
+                                outline: none;
+                                border-color: #6D8EFA;
+                            }
+                        }
+                        
+                        .copy-button {
+                            display: flex;
+                            align-items: center;
+                            gap: 0.5rem;
+                            padding: 0.75rem 1rem;
+                            background: #6D8EFA;
+                            color: white;
+                            border: none;
+                            border-radius: 6px;
+                            font-weight: 500;
+                            cursor: pointer;
+                            transition: all 0.3s ease;
+                            
+                            &:hover {
+                                background: #5a7ae8;
+                            }
+                            
+                            svg {
+                                font-size: 1.1rem;
+                            }
+                        }
+                    }
+                    
+                    .share-help-text {
+                        font-size: 0.85rem;
+                        color: #666;
+                        margin: 0;
+                    }
+                }
+            }
         }
         
         .description-section {
