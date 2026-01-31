@@ -100,6 +100,80 @@ class StudySessionService {
         return { studySession, event: null };
     }
 
+    // Create event for study session after finalizing poll
+    async createEventForStudySession(sessionId, userId) {
+        const { StudySession, Event, AvailabilityPoll } = this.models;
+        
+        const session = await StudySession.findById(sessionId);
+        if (!session) {
+            throw new Error('Study session not found');
+        }
+
+        if (!session.isCreator(userId)) {
+            throw new Error('Only the creator can create the event');
+        }
+
+        if (session.relatedEvent) {
+            throw new Error('Event already exists for this study session');
+        }
+
+        if (!session.startTime || !session.endTime) {
+            throw new Error('Study session must have start and end times');
+        }
+
+        // Get poll to find participants
+        let poll = null;
+        if (session.availabilityPoll) {
+            poll = await AvailabilityPoll.findById(session.availabilityPoll)
+                .populate('responses.user', '_id');
+        }
+
+        // Get participants from poll responses (users who haven't declined)
+        const participantIds = poll ? poll.responses.map(r => r.user._id).filter(Boolean) : [];
+        
+        // Create the event
+        const eventData = {
+            name: `${session.title} - Study Session`,
+            type: "study",
+            hostingId: userId,
+            hostingType: "User",
+            location: session.location,
+            start_time: new Date(session.startTime),
+            end_time: new Date(session.endTime),
+            description: session.description || `Study session for ${session.course}`,
+            visibility: "internal", // Never public - keeps off main calendar
+            status: "not-applicable", // Bypasses approval workflow
+            going: [userId, ...participantIds], // Creator and all poll respondents
+            attendees: [],
+            rsvpEnabled: true,
+            rsvpRequired: false,
+            expectedAttendance: participantIds.length + 1,
+            isStudySession: true,
+            isDeleted: false
+        };
+
+        const event = new Event(eventData);
+        await event.save();
+
+        // Link event to study session
+        session.relatedEvent = event._id;
+        session.status = 'scheduled';
+        
+        // Add participants
+        session.participants = [
+            { user: userId, status: 'going' },
+            ...participantIds.map(id => ({ user: id, status: 'going' }))
+        ];
+        
+        await session.save();
+
+        // Link back to study session in event
+        event.studySessionId = session._id;
+        await event.save();
+
+        return { studySession: session, event };
+    }
+
     // Update study session and sync with event
     async updateStudySession(sessionId, updateData, userId) {
         const { StudySession, Event } = this.models;
