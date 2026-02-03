@@ -24,6 +24,7 @@ const notificationSchema = require('../schemas/notification');
 const orgMessageSchema = require('../schemas/orgMessage');
 const contactRequestSchema = require('../schemas/contactRequest');
 const resourcesConfigSchema = require('../schemas/resources');
+const bugReportSchema = require('../schemas/bugReport');
 // Study Sessions
 const studySessionSchema = require('../schemas/studySession');
 const availabilityPollSchema = require('../schemas/availabilityPoll');
@@ -85,6 +86,7 @@ const getModels = (req, ...names) => {
         Notification: req.db.model('Notification', notificationSchema, 'notifications'),
         OrgMessage: req.db.model('OrgMessage', orgMessageSchema, 'orgMessages'),
         EventAnalytics: req.db.model('EventAnalytics', eventAnalyticsSchema, 'eventAnalytics'),
+        BugReport: req.db.model('BugReport', bugReportSchema, 'bugReports'),
 
         // Study Sessions
         StudySession: req.db.model('StudySession', studySessionSchema, 'studySessions'),
