@@ -35,14 +35,14 @@ const EventsPageHeader = ({
                     <div className="cover-overlay">
                         <div className="header-content">
                             {title && <h1 style={titleStyles}>{title}</h1>}
-                            {!isCompressed && subtitle && <p className="subtitle" style={subtitleStyles}>{subtitle}</p>}
+                            {subtitle && <p className="subtitle" style={subtitleStyles}>{subtitle}</p>}
                         </div>
                     </div>
                 </div>
             ) : (
                 <div className="header-content no-image">
                     {title && <h1 style={titleStyles}>{title}</h1>}
-                    {!isCompressed && subtitle && <p className="subtitle" style={subtitleStyles}>{subtitle}</p>}
+                    {subtitle && <p className="subtitle" style={subtitleStyles}>{subtitle}</p>}
                 </div>
             )}
         </header>

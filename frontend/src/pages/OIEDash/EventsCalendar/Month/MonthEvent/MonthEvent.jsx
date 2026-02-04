@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import './MonthEvent.scss';
 import ReactDOM from "react-dom";
 import OIEEvent from '../../../OIEEventsComponents/Event/OIEEvent';
+import { getEventBackgroundColor, getEventBorderColor } from '../../eventTypeColors';
 
 function MonthEvent({ event }) {
     const [showHover, setShowHover] = useState(false);
@@ -63,38 +64,6 @@ function MonthEvent({ event }) {
         setShowHover(false);
     };
 
-    const getColor = (event) => {
-        if(event.type === 'study'){
-            return '#000000';
-        } else if(event.type === 'campus'){
-            return '#D3DDFD';
-        } else if(event.type === 'alumni'){
-            return '#D6D6D6';
-        } else if(event.type === 'sports'){
-            return '#D3E8CF';
-        } else if(event.type === 'arts'){
-            return '#FBEBBB';
-        } else {
-            return '#FBD8D6';
-        }
-    }
-
-    const getBorderColor = (event) => {
-        if(event.type === 'study'){
-            return '#000000';
-        } else if(event.type === 'campus'){
-            return '#6D8EFA';
-        } else if(event.type === 'alumni'){
-            return '#5C5C5C';
-        } else if(event.type === 'sports'){
-            return '#6EB25F';
-        } else if(event.type === 'arts'){
-            return '#FBBC05';
-        } else {
-            return 'rgba(250, 117, 109, 1)';
-        }
-    }
-
     return (
         <div
             className="month-event"
@@ -102,8 +71,8 @@ function MonthEvent({ event }) {
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
             style={{
-                '--color': getColor(event),
-                '--border-color': getBorderColor(event),
+                '--color': getEventBackgroundColor(event),
+                '--border-color': getEventBorderColor(event),
             }}
         >
             <div className="event-info">

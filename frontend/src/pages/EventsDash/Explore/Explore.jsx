@@ -17,6 +17,7 @@ import { useNotification } from '../../../NotificationContext';
 import Loader from '../../../components/Loader/Loader';
 import eventsLogo from '../../../assets/Brand Image/EventsLogo.svg';
 import exploreBackgroundGradient from '../../../assets/Gradients/ExploreBackgroundGradient.png';
+import { analytics } from '../../../services/analytics/analytics';
 
 const getSunday = () => {
     const today = new Date();
@@ -41,6 +42,11 @@ function Explore(){
     const [width, setWidth] = useState(window.innerWidth);
     const [isHeaderCompressed, setIsHeaderCompressed] = useState(false);
     const exploreContentRef = useRef(null);
+    
+    // Track page view on component mount
+    useEffect(() => {
+        analytics.screen('Explore');
+    }, []); // Only track on initial mount
     
     useEffect(() => { //useEffect for window resizing
         function handleResize() {

@@ -22,11 +22,10 @@
                 padding: 20px 48px;
             }
             
-            .header-content {
-                h1 {
-                    font-size: 28px;
-                    margin: 0;
-                }
+            .header-content{
+                transform: scale(0.6);
+                margin-bottom:0;
+                margin-left:-50px;
             }
         }
         
@@ -146,7 +145,6 @@
 // Responsive design
 @media (max-width: 768px) {
     .events-page-header {
-        margin-bottom: 24px;
         
         .cover-image {
             height: 280px;
