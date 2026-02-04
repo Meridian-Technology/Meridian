@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from './NotificationContext';
 import apiRequest from './utils/postRequest';
+import { analytics } from './services/analytics/analytics';
 
 /** 
 documentation:
@@ -46,6 +47,10 @@ export const AuthProvider = ({ children }) => {
                 } else {
                     setAuthMethod('email');
                 }
+                // Identify user in analytics
+                if (response.data.user._id) {
+                    analytics.identify(response.data.user._id);
+                }
                 // console.log(response.data.user);
                 setIsAuthenticated(true);
                 setIsAuthenticating(false);
@@ -75,6 +80,10 @@ export const AuthProvider = ({ children }) => {
                 setIsAuthenticated(true);
                 setUser(response.data.data.user);
                 setAuthMethod('email');
+                // Identify user in analytics
+                if (response.data.data.user._id) {
+                    analytics.identify(response.data.data.user._id);
+                }
                 // Set friend requests if provided (may not be included in login response)
                 if (response.data.data.friendRequests) {
                     setFriendRequests({
@@ -114,6 +123,10 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(true);
             setUser(response.data.data.user);
             setAuthMethod('google');
+            // Identify user in analytics
+            if (response.data.data.user._id) {
+                analytics.identify(response.data.data.user._id);
+            }
             // addNotification({title: 'Logged in successfully',type: 'success'});
             
             // Redirect admin users to admin dashboard
@@ -139,6 +152,10 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(true);
             setUser(response.data.data.user);
             setAuthMethod('apple');
+            // Identify user in analytics
+            if (response.data.data.user._id) {
+                analytics.identify(response.data.data.user._id);
+            }
             addNotification({ title: 'Logged in successfully', type: 'success' });
             
             // Redirect admin users to admin dashboard
@@ -180,6 +197,8 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(false);
             setUser(null);
             setAuthMethod(null);
+            // Reset analytics user identification
+            analytics.reset();
             addNotification({title: 'Logged out successfully',type: 'success'});
         }
     };
