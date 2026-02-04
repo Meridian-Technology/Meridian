@@ -6,6 +6,7 @@ import RPIlogo from '../../../assets/Schools/RPI.svg';
 import compass from '../../../assets/Brand Image/discover.svg';
 import FilterPanel from '../../../components/FilterPanel/FilterPanel';
 import EventsList from '../../../components/EventsList/EventsList';
+import EventsPageHeader from '../../../components/EventsPageHeader/EventsPageHeader';
 import Switch from '../../../components/Switch/Switch';
 import Month from '../../../pages/OIEDash/EventsCalendar/Month/Month';
 import Week from '../../../pages/OIEDash/EventsCalendar/Week/Week';
@@ -16,6 +17,7 @@ import { useNotification } from '../../../NotificationContext';
 import Loader from '../../../components/Loader/Loader';
 import eventsLogo from '../../../assets/Brand Image/EventsLogo.svg';
 import exploreBackgroundGradient from '../../../assets/Gradients/ExploreBackgroundGradient.png';
+import { analytics } from '../../../services/analytics/analytics';
 
 const getSunday = () => {
     const today = new Date();
@@ -38,6 +40,14 @@ function Explore(){
     const [selectedDate, setSelectedDate] = useState(new Date());
 
     const [width, setWidth] = useState(window.innerWidth);
+    const [isHeaderCompressed, setIsHeaderCompressed] = useState(false);
+    const exploreContentRef = useRef(null);
+    
+    // Track page view on component mount
+    useEffect(() => {
+        analytics.screen('Explore');
+    }, []); // Only track on initial mount
+    
     useEffect(() => { //useEffect for window resizing
         function handleResize() {
           setWidth(window.innerWidth);
@@ -47,6 +57,33 @@ function Explore(){
   
         return () => window.removeEventListener('resize', handleResize);
       }, []);
+    
+    // Compress header when switching to calendar view
+    useEffect(() => {
+        if (viewType === 1) {
+            setIsHeaderCompressed(true);
+        } else {
+            setIsHeaderCompressed(false);
+        }
+    }, [viewType]);
+    
+    // Handle scroll for header compression (only for calendar view)
+    useEffect(() => {
+        if (viewType !== 1) return; // Only compress for calendar view
+        
+        const handleScroll = () => {
+            if (exploreContentRef.current) {
+                const scrollTop = exploreContentRef.current.scrollTop;
+                setIsHeaderCompressed(scrollTop > 100);
+            }
+        };
+        
+        const contentElement = exploreContentRef.current;
+        if (contentElement) {
+            contentElement.addEventListener('scroll', handleScroll, { passive: true });
+            return () => contentElement.removeEventListener('scroll', handleScroll);
+        }
+    }, [viewType]);
 
     // Define our available filter options.
     const filterOptions = {
@@ -158,13 +195,19 @@ function Explore(){
         const isToday = eventDate.toDateString() === today.toDateString();
         const isTomorrow = eventDate.toDateString() === tomorrow.toDateString();
         
-        if (isToday) return 'Today';
-        if (isTomorrow) return 'Tomorrow';
+        if (isToday) return `Today, ${eventDate.toLocaleDateString('en-US', { 
+                month: 'long', 
+                day: 'numeric' 
+        })}`;
+        if (isTomorrow) return `Tomorrow, ${eventDate.toLocaleDateString('en-US', { 
+                month: 'long', 
+                day: 'numeric' 
+        })}`;
         
-        return eventDate.toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            month: 'long', 
-            day: 'numeric' 
+            return eventDate.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                month: 'long', 
+                day: 'numeric' 
         });
     };
 
@@ -217,142 +260,171 @@ function Explore(){
     };
 
     const groupedEvents = groupEventsByDate(events);
+    
+    // Fetch page settings for cover image
+    const { data: pageSettingsData } = useFetch('/api/event-system-config');
+    const pageSettings = pageSettingsData?.success && pageSettingsData?.data?.pageSettings 
+        ? pageSettingsData.data.pageSettings 
+        : null;
+
+    // Render sidebar content
+    const renderSidebar = () => (
+        width > 768 ? (
+            <aside className="sidebar" role="complementary" aria-label="Event filters and view options">
+                <div className="sidebar-header">
+                    <h2>Events at</h2>
+                    <img src={RPIlogo} alt="RPI Logo" />
+                </div>
+                <Switch
+                    options={['list', 'calendar']}
+                    selectedPass={viewType}
+                    setSelectedPass={setViewType}
+                    onChange={setViewType}
+                    ariaLabel="View type selection"
+                />
+                {
+                    viewType === 1 && (
+                        <section className="legend" aria-labelledby="legend-header">
+                            <div className="legend-header">
+                                <p id="legend-header">color legend</p>
+                            </div>
+                            <div className="legend-content" role="list" aria-label="Event type color legend">
+                                <div className="legend-item" role="listitem">
+                                    <div className="legend-item-color" style={{backgroundColor: '#6D8EFA'}} aria-label="Campus event color"></div>
+                                    <p>campus</p>
+                                </div>
+                                <div className="legend-item" role="listitem">
+                                    <div className="legend-item-color" style={{backgroundColor: '#5C5C5C'}} aria-label="Alumni event color"></div>
+                                    <p>alumni</p>
+                                </div>
+                                <div className="legend-item" role="listitem">
+                                    <div className="legend-item-color" style={{backgroundColor: '#6EB25F'}} aria-label="Athletics event color"></div>
+                                    <p>athletics</p>
+                                </div>
+                                <div className="legend-item" role="listitem">
+                                    <div className="legend-item-color" style={{backgroundColor: '#FBEBBB'}} aria-label="Arts event color"></div>
+                                    <p>arts</p>
+                                </div>
+                            </div>
+                        </section>
+                    )
+                }
+                <FilterPanel 
+                    filterOptions={filterOptions}
+                    filters={filters}
+                    onFilterToggle={toggleFilter}
+                />
+            </aside>
+        ) : (
+            <aside className="sidebar mobile-sidebar" role="complementary" aria-label="Event filters and view options">
+                <div className="sidebar-header">
+                    <div className="logo">
+                        <h2>Events at</h2>
+                        <img src={RPIlogo} alt="RPI Logo" />
+                    </div>
+                    <Switch
+                        options={['list', 'calendar']}
+                        selectedPass={viewType}
+                        setSelectedPass={setViewType}
+                        onChange={setViewType}
+                        ariaLabel="View type selection"
+                    />
+                </div>
+            </aside>
+        )
+    );
+
+    // Render events content
+    const renderEventsContent = () => (
+        <section className="explore-events" role="region" aria-label="Events display" ref={viewType === 1 ? exploreContentRef : null}>
+            {loading && page === 1 ? (
+                <div className="loading" role="status" aria-live="polite">
+                    <Icon icon="mdi:loading" />
+                    <p>Loading events...</p>
+                </div>
+            ) : error ? (
+                <div className="error" role="alert">Error loading events</div>
+            ) : viewType === 0 ? (
+                <EventsList 
+                    groupedEvents={groupedEvents}
+                    loading={loading}
+                    page={page}
+                    hasMore={hasMore}
+                    onLoadMore={handleLoadMore}
+                    formatDate={formatDate}
+                    hasFriendsFilter={hasFriendsFilter}
+                />
+            ) : (
+                view === 0 ?
+                <Month 
+                    height={'calc(100% - 44px)'} 
+                    filter={filterParam} 
+                    changeToWeek={(date) => {
+                        setSelectedDate(date);
+                        setView(1);
+                    }} 
+                    view={view} 
+                    setView={changeView}
+                />
+                : view === 1 ?
+                <Week 
+                    height={'calc(100% - 44px)'} 
+                    filter={filterParam} 
+                    start={selectedDate}
+                    changeToDay={(date) => {
+                        setSelectedDate(date);
+                        setView(2);
+                    }} 
+                    view={view} 
+                    setView={changeView}
+                />
+                :
+                <Day 
+                    height={'calc(100% - 44px)'} 
+                    filter={filterParam} 
+                    start={selectedDate}
+                    view={view} 
+                    setView={changeView}
+                />
+            )}
+        </section>
+    );
 
     return(
         <main className="explore" role="main" aria-label="Explore events">
-            {/* <header className="heading">
-                <img src={RPIlogo} alt="RPI Logo" />
-                <h1>Explore Events</h1>
-            </header> */}
-            <div className="explore-content">
-                {
-                    width > 768 ? (
-                        <aside className="sidebar" role="complementary" aria-label="Event filters and view options">
-                            <div className="sidebar-header">
-                                <h2>Events at</h2>
-                                <img src={RPIlogo} alt="RPI Logo" />
-                            </div>
-                            <Switch
-                                options={['list', 'calendar']}
-                                selectedPass={viewType}
-                                setSelectedPass={setViewType}
-                                onChange={setViewType}
-                                ariaLabel="View type selection"
-                            />
-                            {
-                                viewType === 1 && (
-                                    <section className="legend" aria-labelledby="legend-header">
-                                        <div className="legend-header">
-                                            <p id="legend-header">color legend</p>
-                                        </div>
-                                        <div className="legend-content" role="list" aria-label="Event type color legend">
-                                            <div className="legend-item" role="listitem">
-                                                <div className="legend-item-color" style={{backgroundColor: '#6D8EFA'}} aria-label="Campus event color"></div>
-                                                <p>campus</p>
-                                            </div>
-                                            <div className="legend-item" role="listitem">
-                                                <div className="legend-item-color" style={{backgroundColor: '#5C5C5C'}} aria-label="Alumni event color"></div>
-                                                <p>alumni</p>
-                                            </div>
-                                            <div className="legend-item" role="listitem">
-                                                <div className="legend-item-color" style={{backgroundColor: '#6EB25F'}} aria-label="Athletics event color"></div>
-                                                <p>athletics</p>
-                                            </div>
-                                            <div className="legend-item" role="listitem">
-                                                <div className="legend-item-color" style={{backgroundColor: '#FBEBBB'}} aria-label="Arts event color"></div>
-                                                <p>arts</p>
-                                            </div>
-                                        </div>
-                                    </section>
-
-                                )
-                            }
-                            <FilterPanel 
-                                filterOptions={filterOptions}
-                                filters={filters}
-                                onFilterToggle={toggleFilter}
-                            />
-                        </aside>
-                    )
-                    :
-                    (
-                        <aside className="sidebar mobile-sidebar" role="complementary" aria-label="Event filters and view options">
-                            <div className="sidebar-header">
-                                <div className="logo">
-                                    <h2>Events at</h2>
-                                    <img src={RPIlogo} alt="RPI Logo" />
-                                </div>
-                                <Switch
-                                    options={['list', 'calendar']}
-                                    selectedPass={viewType}
-                                    setSelectedPass={setViewType}
-                                    onChange={setViewType}
-                                    ariaLabel="View type selection"
-                                />
-                            </div>
-                            {/* <FilterPanel 
-                                filterOptions={filterOptions}
-                                filters={filters}
-                                onFilterToggle={toggleFilter}
-                            /> */}
-
-                        </aside>
-
-                    )
-                }
-                <section className="explore-events" role="region" aria-label="Events display">
-                    {loading && page === 1 ? (
-                        <div className="loading" role="status" aria-live="polite">
-                            <Icon icon="mdi:loading" />
-                            <p>Loading events...</p>
-                        </div>
-                    ) : error ? (
-                        <div className="error" role="alert">Error loading events</div>
-                    ) : viewType === 0 ? (
-                        <EventsList 
-                            groupedEvents={groupedEvents}
-                            loading={loading}
-                            page={page}
-                            hasMore={hasMore}
-                            onLoadMore={handleLoadMore}
-                            formatDate={formatDate}
-                            hasFriendsFilter={hasFriendsFilter}
-                        />
-                    ) : (
-                        view === 0 ?
-                        <Month 
-                            height={'calc(100% - 44px)'} 
-                            filter={filterParam} 
-                            changeToWeek={(date) => {
-                                setSelectedDate(date);
-                                setView(1);
-                            }} 
-                            view={view} 
-                            setView={changeView}
-                        />
-                        : view === 1 ?
-                        <Week 
-                            height={'calc(100% - 44px)'} 
-                            filter={filterParam} 
-                            start={selectedDate}
-                            changeToDay={(date) => {
-                                setSelectedDate(date);
-                                setView(2);
-                            }} 
-                            view={view} 
-                            setView={changeView}
-                        />
-                        :
-                        <Day 
-                            height={'calc(100% - 44px)'} 
-                            filter={filterParam} 
-                            start={selectedDate}
-                            view={view} 
-                            setView={changeView}
-                        />
-                    )}
-                </section>
-            </div>
+            {viewType === 1 ? (
+                <>
+                    <EventsPageHeader 
+                        coverImage={pageSettings?.explorePage?.coverImage}
+                        title={pageSettings?.explorePage?.title || 'Events'}
+                        subtitle={pageSettings?.explorePage?.subtitle}
+                        titleStyle={pageSettings?.explorePage?.titleStyle}
+                        subtitleStyle={pageSettings?.explorePage?.subtitleStyle}
+                        isCompressed={isHeaderCompressed}
+                        isSticky={true}
+                    />
+                    <div className="explore-content">
+                        {renderSidebar()}
+                        {renderEventsContent()}
+                    </div>
+                </>
+            ) : (
+                <div className="explore-content-with-header">
+                    <EventsPageHeader 
+                        coverImage={pageSettings?.explorePage?.coverImage}
+                        title={pageSettings?.explorePage?.title || 'Events'}
+                        subtitle={pageSettings?.explorePage?.subtitle}
+                        titleStyle={pageSettings?.explorePage?.titleStyle}
+                        subtitleStyle={pageSettings?.explorePage?.subtitleStyle}
+                        isCompressed={false}
+                        isSticky={false}
+                    />
+                    <div className="explore-content">
+                        {renderSidebar()}
+                        {renderEventsContent()}
+                    </div>
+                </div>
+            )}
         </main>
     )
 }

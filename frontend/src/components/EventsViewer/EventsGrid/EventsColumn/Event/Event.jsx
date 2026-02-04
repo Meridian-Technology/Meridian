@@ -9,7 +9,7 @@ import useAuth from '../../../../../hooks/useAuth';
 import RSVPButton from '../../../../RSVPButton/RSVPButton';
 import { useFetch } from '../../../../../hooks/useFetch';
 
-function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate}){
+function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate, showRSVP = true, variant = 'regular'}){
     const [optimisticEvent, setOptimisticEvent] = useState(event);
     const { user } = useAuth();
     
@@ -123,7 +123,7 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate}
 
     return(
         <article 
-            className={`event-component ${eventStatus}`} 
+            className={`event-component ${eventStatus} ${variant}`} 
             onClick={() => handleEventClick(event)}
             onKeyDown={handleKeyDown}
             tabIndex={0}
@@ -136,77 +136,106 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate}
                     <FullEvent event={event}/>
                 </div>  
             </Popup>
-            {event.image && <img src={event.image} alt={`Event image for ${event.name}`} />}
-            <div className="info">
-                <div className="row event-header">
+            {
+                variant === 'regular' ? (
+                    <>
+                        {event.image && <img src={event.image} alt={`Event image for ${event.name}`} />}
+                            <div className="info">
+                                <div className="row event-header">
+                                    <div className="col">
+                                        <div className="row">
+                                            <time dateTime={date.toISOString()}>
+                                                <strong>{formatTime(date)}</strong> {formatDate(date)}
+                                            </time>
+                                        </div>
+                                        <h2>{event.name}</h2>
+                                        {renderHostingStatus()}
+                                    </div>
+                                    <div className="col">
+                                        <button 
+                                            className="quick-look-btn"
+                                            onClick={handleQuickLook}
+                                            aria-label="Quick look at event details"
+                                        >
+                                            <Icon icon="mdi:eye" />
+                                            Quick Look
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="row event-description" id={`event-description-${event._id}`}>
+                                    <p>{event.description}</p>
+                                </div>
+                                <div className="row">
+                                    <Icon icon="fluent:location-28-filled" aria-hidden="true" />
+                                    <address>{event.location}</address>
+                                </div>
+                                
+                                {/* Friends going indicator */}
+                                {friendsGoing > 0 && (
+                                    <div className="friends-indicator">
+                                        <div className="friends-indicator-pictures">
+                                        {event.friendsGoingProfilePictures.map(picture => <img src={picture} alt="Friend profile picture" />)}
+                                        </div>
+                                        <span>{friendsGoing} friend{friendsGoing !== 1 ? 's' : ''} going</span>
+                                    </div>
+                                )}
+                                
+                                {/* Show login prompt if user is not authenticated and hasFriendsFilter is true */}
+                                {!user && hasFriendsFilter && (
+                                    <div className="friends-indicator login-prompt">
+                                        <Icon icon="mdi:account-group" />
+                                        <span>Login to see friends going</span>
+                                    </div>
+                                )}
+                                
+                                {/* Show message when user is authenticated but no friends are going */}
+                                {user && hasFriendsFilter && friendsGoing === 0 && event.rsvpStats && event.rsvpStats.going > 0 && (
+                                    <div className="friends-indicator no-friends">
+                                        <Icon icon="mdi:account-group" />
+                                        <span>No friends going yet</span>
+                                    </div>
+                                )}
+                                {/* RSVP Button - only show if showRSVP is true */}
+                                {showRSVP && (
+                                    <RSVPButton 
+                                        event={optimisticEvent} 
+                                        onRSVPUpdate={handleRSVPUpdate} 
+                                        rsvpStatus={rsvpStatus}
+                                        onRSVPStatusUpdate={onRSVPStatusUpdate}
+                                    />
+                                )}
+
+                            </div>
+
+                    </>
+                
+            ) : (
+                <>
+                <div className="info compact row">
                     <div className="col">
-                        <div className="row">
-                            <Icon icon="heroicons:calendar-16-solid" aria-hidden="true" />
+                        <div className="row event-time">
                             <time dateTime={date.toISOString()}>
-                                <strong>{formatTime(date)}</strong> {formatDate(date)}
+                                <strong>{formatTime(date)}</strong>
                             </time>
                         </div>
-                        <h2>{event.name}</h2>
-                        {renderHostingStatus()}
                     </div>
                     <div className="col">
-                        <button 
-                            className="quick-look-btn"
-                            onClick={handleQuickLook}
-                            aria-label="Quick look at event details"
-                        >
-                            <Icon icon="mdi:eye" />
-                            Quick Look
-                        </button>
-                    </div>
-                </div>
-
-                <div className="row event-description" id={`event-description-${event._id}`}>
-                    <p>{event.description}</p>
-                </div>
-                <div className="row">
-                    <Icon icon="fluent:location-28-filled" aria-hidden="true" />
-                    <address>{event.location}</address>
-                </div>
-                
-                {/* Friends going indicator */}
-                {friendsGoing > 0 && (
-                    <div className="friends-indicator">
-                        <div className="friends-indicator-pictures">
-                        {event.friendsGoingProfilePictures.map(picture => <img src={picture} alt="Friend profile picture" />)}
+                        <div className="event-name">
+                            <h2>{event.name}</h2>
                         </div>
-                        <span>{friendsGoing} friend{friendsGoing !== 1 ? 's' : ''} going</span>
+                        <div className="row">
+                            <p>{event.description.slice(0,80)}</p>
+                        </div>
+                        <div className="row">
+                            <Icon icon="fluent:location-28-filled" aria-hidden="true" />
+                            <address>{event.location}</address>
+                        </div>
                     </div>
-                )}
+                </div>
                 
-                {/* Show login prompt if user is not authenticated and hasFriendsFilter is true */}
-                {!user && hasFriendsFilter && (
-                    <div className="friends-indicator login-prompt">
-                        <Icon icon="mdi:account-group" />
-                        <span>Login to see friends going</span>
-                    </div>
-                )}
-                
-                {/* Show message when user is authenticated but no friends are going */}
-                {user && hasFriendsFilter && friendsGoing === 0 && event.rsvpStats && event.rsvpStats.going > 0 && (
-                    <div className="friends-indicator no-friends">
-                        <Icon icon="mdi:account-group" />
-                        <span>No friends going yet</span>
-                    </div>
-                )}
-                
-                
-                {/* RSVP Button */}
-                <RSVPButton 
-                    event={optimisticEvent} 
-                    onRSVPUpdate={handleRSVPUpdate} 
-                    rsvpStatus={rsvpStatus}
-                    onRSVPStatusUpdate={onRSVPStatusUpdate}
-                />
-                
-                {/* Quick Look Button */}
-
-            </div>
+                </>
+            )}
         </article>
     );
 

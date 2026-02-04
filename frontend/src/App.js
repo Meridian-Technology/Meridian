@@ -4,6 +4,7 @@ import './assets/fonts.css';
 import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
+import { analytics } from './services/analytics/analytics';
 
 import Room from './pages/Room/Room';
 import Room1 from './pages/Room/Room1';
@@ -61,6 +62,22 @@ import Booking from './pages/Booking/Booking';
 import Form from './pages/Form/Form';
 import Support from './pages/Support/Support';
 function App() {
+    // Initialize analytics on app start
+    useEffect(() => {
+        const initAnalytics = async () => {
+            const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
+            await analytics.init({
+                env,
+                appVersion: '0.1.0',
+                build: '1',
+            });
+        };
+
+        initAnalytics().catch(error => {
+            console.error('Failed to initialize analytics:', error);
+        });
+    }, []);
+
     useEffect(() => {
         // check if the user has already visited
         //don't do anything if /qr
