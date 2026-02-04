@@ -174,6 +174,7 @@ const qrRoutes = require('./routes/qrRoutes.js');
 const eventAnalyticsRoutes = require('./routes/eventAnalyticsRoutes.js');
 const orgEventManagementRoutes = require('./routes/orgEventManagementRoutes.js');
 const formRoutes = require('./routes/formRoutes.js');
+const bugReportRoutes = require('./routes/bugReportRoutes.js');
 
 const inngestRoutes = require('./routes/inngestRoutes.js');
 
@@ -211,6 +212,7 @@ app.use(formRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/api/qr', qrRoutes);
 app.use(contactRoutes);
+app.use(bugReportRoutes);
 
 // Inngest serve handler - this handles all Inngest function execution
 app.use('/api/inngest', inngestServe);
