@@ -1,5 +1,6 @@
 {
   "expo": {
+    "owner": "meridian-technology",
     "extra": {
       "eas": {
         "projectId": "6c3b2737-3034-44b4-8267-983fa2d0dd55"

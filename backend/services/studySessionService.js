@@ -7,8 +7,8 @@ class StudySessionService {
         this.models = getModels(req, 'StudySession', 'Event', 'User', 'Classroom', 'Schedule', 'AvailabilityPoll', 'Notification');
         this.feedbackService = new FeedbackService(req);
     }
-
     // Get current semester end date
+    ß
     getCurrentSemesterEnd() {
         const now = new Date();
         const currentYear = now.getFullYear();

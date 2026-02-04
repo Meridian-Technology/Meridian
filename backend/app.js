@@ -162,6 +162,7 @@ const feedbackRoutes = require('./routes/feedbackRoutes.js');
 const contactRoutes = require('./routes/contactRoutes.js');
 const affiliatedEmailRoutes = require('./routes/affiliatedEmailRoutes.js');
 const resourcesRoutes = require('./routes/resourcesRoutes.js');
+const shuttleConfigRoutes = require('./routes/shuttleConfigRoutes.js');
 
 app.use(authRoutes);
 app.use('/auth/saml', samlRoutes);
@@ -203,6 +204,7 @@ app.use('/availability-polls', availabilityPollRoutes);
 app.use('/feedback', feedbackRoutes);
 
 app.use('/api/resources', resourcesRoutes);
+app.use('/api/shuttle-config', shuttleConfigRoutes);
 
 app.use('/verify-affiliated-email', affiliatedEmailRoutes);
 

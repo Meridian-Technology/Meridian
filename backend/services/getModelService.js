@@ -24,6 +24,7 @@ const notificationSchema = require('../schemas/notification');
 const orgMessageSchema = require('../schemas/orgMessage');
 const contactRequestSchema = require('../schemas/contactRequest');
 const resourcesConfigSchema = require('../schemas/resources');
+const shuttleConfigSchema = require('../schemas/shuttleConfig');
 // Study Sessions
 const studySessionSchema = require('../schemas/studySession');
 const availabilityPollSchema = require('../schemas/availabilityPoll');
@@ -114,6 +115,7 @@ const getModels = (req, ...names) => {
         OrgEquipment: req.db.model('OrgEquipment', orgEquipmentSchema, 'orgEquipment'),
         AnalyticsEvent: req.db.model('AnalyticsEvent', analyticsEventSchema, 'analytics_events'),
         ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
+        ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
     };
 
     return names.reduce((acc, name) => {
