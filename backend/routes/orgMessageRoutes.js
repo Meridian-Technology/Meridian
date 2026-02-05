@@ -761,7 +761,7 @@ router.post('/:orgId/messages/:messageId/reply', verifyToken, async (req, res) =
  * Edit a message (author only, within 15 minutes)
  */
 router.put('/:orgId/messages/:messageId', verifyToken, async (req, res) => {
-    const { OrgMessage, Org, Event, OrgManagementConfig } = getModels(req, 'OrgMessage', 'Org', 'Event', 'OrgManagementConfig');
+    const { OrgMessage, Org, OrgMember, Event, OrgManagementConfig } = getModels(req, 'OrgMessage', 'Org', 'OrgMember', 'Event', 'OrgManagementConfig');
     const { orgId, messageId } = req.params;
     const { content } = req.body;
     const userId = req.user.userId;

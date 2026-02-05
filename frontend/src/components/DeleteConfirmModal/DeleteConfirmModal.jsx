@@ -39,7 +39,7 @@ function DeleteConfirmModal({
         <Popup 
             isOpen={isOpen} 
             onClose={onCancel}
-            defaultStyling={false}
+            defaultStyling={true}
             customClassName="delete-confirm-modal-popup"
         >
             <div className="delete-confirm-modal">

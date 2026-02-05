@@ -234,8 +234,16 @@ router.put('/verification-requests/:requestId', verifyToken, authorizeRoles('adm
 
 // ==================== CONFIGURATION MANAGEMENT ====================
 
-// Get management configuration
-router.get('/config', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+// Messaging defaults from orgManagementConfig schema (so clients always get min/max limits)
+const MESSAGING_SCHEMA_DEFAULTS = {
+    minCharacterLimit: 100,
+    maxCharacterLimit: 2000,
+    defaultCharacterLimit: 500,
+    defaultVisibility: 'members_and_followers'
+};
+
+// Get management configuration (readable by any authenticated user for messaging limits etc.; write remains admin/root)
+router.get('/config', verifyToken, async (req, res) => {
     const { OrgManagementConfig } = getModels(req, 'OrgManagementConfig');
 
     try {
@@ -247,10 +255,17 @@ router.get('/config', verifyToken, authorizeRoles('admin', 'root'), async (req, 
             await config.save();
         }
 
+        const data = config.toObject ? config.toObject() : config;
+        if (!data.messaging || typeof data.messaging !== 'object') {
+            data.messaging = { ...MESSAGING_SCHEMA_DEFAULTS };
+        } else {
+            data.messaging = { ...MESSAGING_SCHEMA_DEFAULTS, ...data.messaging };
+        }
+
         console.log(`GET: /org-management/config`);
         res.status(200).json({
             success: true,
-            data: config
+            data
         });
     } catch (error) {
         console.error('Error fetching management config:', error);
