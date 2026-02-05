@@ -11,13 +11,6 @@
         padding: 3rem;
     }
 
-    container.content{
-        padding: 0 40px 10px 40px;
-        // .actions{
-        //     margin-bottom: 20px;
-        // }
-    }
-
     .popup-content {
         border: 1px solid var(--lighterborder);
         box-shadow: var(--shadow);
@@ -36,7 +29,7 @@
             display: flex;
             align-items: center;
             gap: 1rem;
-            color: #6c757d;
+            color: var(--light-text);
 
             .spinner {
                 font-size: 2rem;
@@ -59,102 +52,57 @@
             h1 {
                 font-size: 2.5rem;
                 font-weight: 700;
-                color: #2c3e50;
+                color: var(--text);
                 margin: 0 0 0.5rem 0;
+                font-family: 'Satoshi', sans-serif;
             }
 
             p {
                 font-size: 1.1rem;
-                color: #6c757d;
+                color: var(--light-text);
                 margin: 0;
-            }
-        }
-
-        .header-actions {
-            display: flex;
-            gap: 1rem;
-
-            .refresh-btn {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 48px;
-                height: 48px;
-                background: #4DAA57;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                font-size: 1.2rem;
-
-                &:hover {
-                    background: #45a049;
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 12px rgba(77, 170, 87, 0.3);
-                }
-
-                &:active {
-                    transform: translateY(0);
-                }
-            }
-        }
-    }
-    .events-management-content{
-        padding: 0 20px;
-    }
-    .events-management-tabs {
-        margin-bottom: 2rem;
-
-        .tab-navigation {
-            display: flex;
-            background: var(--background);
-            border-radius: 12px;
-            padding: 0.3rem;
-            box-shadow: var(--shadow);
-            gap: 0.5rem;
-            border: 1px solid var(--lighterborder);
-            
-
-            .tab-button {
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                padding: 8px 12px;
-                background: transparent;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                font-size: 15px;
-                font-weight: 500;
-                color: var(--lighter-text);
-                flex: 1;
-                justify-content: center;
-
-                &:hover {
-                    background: #f8f9fa;
-                    color: #4DAA57;
-                }
-
-                &.active {
-                    background: #4DAA57;
-                    color: white;
-                    box-shadow: 0 2px 8px rgba(77, 170, 87, 0.3);
-                }
-
-                svg {
-                    font-size: 1.2rem;
-                }
             }
         }
     }
 
     .events-management-content {
-        background: var(--background);
-        border-radius: 12px;
-        min-height: 600px;
-        overflow: hidden;
+        padding: 0 40px 40px 40px;
+
+        .content-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 1.5rem;
+
+            .refresh-btn {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.625rem 1rem;
+                background: var(--background);
+                color: var(--lighter-text);
+                border: 1px solid var(--lightborder);
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                font-size: 0.875rem;
+                font-weight: 500;
+                font-family: 'Inter', sans-serif;
+
+                iconify-icon {
+                    font-size: 1rem;
+                }
+
+                &:hover {
+                    background: var(--lighter);
+                    border-color: var(--lightborder);
+                    color: var(--text);
+                }
+
+                &:active {
+                    transform: scale(0.98);
+                }
+            }
+        }
     }
 }
 
@@ -169,7 +117,7 @@
 
 // Responsive design
 @media (max-width: 768px) {
-    .events-management {
+    .club-dash .dash.events-management {
         padding: 1rem;
 
         .events-management-header {
@@ -182,20 +130,18 @@
             }
         }
 
-        .events-management-tabs {
-            .tab-navigation {
-                flex-direction: column;
+        .events-management-content {
+            padding: 0 1rem 2rem 1rem;
 
-                .tab-button {
-                    justify-content: flex-start;
-                }
+            .content-actions {
+                justify-content: center;
             }
         }
     }
 }
 
 @media (max-width: 480px) {
-    .events-management {
+    .club-dash .dash.events-management {
         padding: 0.5rem;
 
         .events-management-header {
@@ -208,6 +154,10 @@
             .header-content p {
                 font-size: 1rem;
             }
+        }
+
+        .events-management-content {
+            padding: 0 0.5rem 1rem 0.5rem;
         }
     }
 }
