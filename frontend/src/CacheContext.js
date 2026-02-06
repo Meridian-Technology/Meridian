@@ -256,6 +256,137 @@ export const CacheProvider = ({children}) =>{
         }
     };
 
+    const getOrgEvents = async (orgId) => {
+        try {
+            if (!orgId) {
+                return { success: false, data: { events: [], pagination: {} } };
+            }
+            
+            const cacheKey = `/org-event-management/${orgId}/events-all`;
+            if(cache[cacheKey]){
+                return cache[cacheKey];
+            }
+            
+            // Fetch all events without pagination/filtering (we'll filter client-side)
+            const responseBody = await apiRequest(`/org-event-management/${orgId}/events`, null, {
+                method: 'GET',
+                params: {
+                    page: 1,
+                    limit: 10000, // Large limit to get all events
+                    status: 'all',
+                    type: 'all',
+                    timeRange: 'all',
+                    sortBy: 'start_time',
+                    sortOrder: 'asc',
+                    search: ''
+                }
+            });
+            
+            if(!responseBody.success){
+                console.error('Error fetching org events:', responseBody.message);
+                return { success: false, data: { events: [], pagination: {} } };
+            }
+            
+            cache[cacheKey] = responseBody;
+            return responseBody;
+        } catch (error){
+            console.error('Error fetching org events:', error);
+            return { success: false, data: { events: [], pagination: {} } };
+        }
+    };
+
+    const refreshOrgEvents = async (orgId) => {
+        try {
+            if (!orgId) {
+                return { success: false, data: { events: [], pagination: {} } };
+            }
+            
+            const cacheKey = `/org-event-management/${orgId}/events-all`;
+            const responseBody = await apiRequest(`/org-event-management/${orgId}/events`, null, {
+                method: 'GET',
+                params: {
+                    page: 1,
+                    limit: 10000,
+                    status: 'all',
+                    type: 'all',
+                    timeRange: 'all',
+                    sortBy: 'start_time',
+                    sortOrder: 'asc',
+                    search: ''
+                }
+            });
+            
+            if(!responseBody.success){
+                console.error('Error refreshing org events:', responseBody.message);
+                return { success: false, data: { events: [], pagination: {} } };
+            }
+            
+            cache[cacheKey] = responseBody;
+            return responseBody;
+        } catch (error){
+            console.error('Error refreshing org events:', error);
+            return { success: false, data: { events: [], pagination: {} } };
+        }
+    };
+
+    const getOrgEventAnalytics = async (orgId, timeRange = '30d') => {
+        try {
+            if (!orgId) {
+                return { success: false, data: { overview: {} } };
+            }
+            
+            const cacheKey = `/org-event-management/${orgId}/analytics-${timeRange}`;
+            if(cache[cacheKey]){
+                return cache[cacheKey];
+            }
+            
+            const responseBody = await apiRequest(`/org-event-management/${orgId}/analytics`, null, {
+                method: 'GET',
+                params: {
+                    timeRange: timeRange
+                }
+            });
+            
+            if(!responseBody.success){
+                console.error('Error fetching org event analytics:', responseBody.message);
+                return { success: false, data: { overview: {} } };
+            }
+            
+            cache[cacheKey] = responseBody;
+            return responseBody;
+        } catch (error){
+            console.error('Error fetching org event analytics:', error);
+            return { success: false, data: { overview: {} } };
+        }
+    };
+
+    const refreshOrgEventAnalytics = async (orgId, timeRange = '30d') => {
+        try {
+            if (!orgId) {
+                return { success: false, data: { overview: {} } };
+            }
+            
+            const cacheKey = `/org-event-management/${orgId}/analytics-${timeRange}`;
+            const responseBody = await apiRequest(`/org-event-management/${orgId}/analytics`, null, {
+                method: 'GET',
+                params: {
+                    timeRange: timeRange
+                }
+            });
+            
+            if(!responseBody.success){
+                console.error('Error refreshing org event analytics:', responseBody.message);
+                return { success: false, data: { overview: {} } };
+            }
+            
+            cache[cacheKey] = responseBody;
+            return responseBody;
+        } catch (error){
+            console.error('Error refreshing org event analytics:', error);
+            return { success: false, data: { overview: {} } };
+        }
+    };
+
     function debounce(func, wait) { //move logic to other file
         let timeout;
         return function executedFunction(...args) {
@@ -270,7 +401,7 @@ export const CacheProvider = ({children}) =>{
 
 
     return (
-        <CacheContext.Provider value={{ getRooms, getRoom, getRoomUpdate, getFreeRooms, getBatch, search, allSearch, getFriends, refreshFriends, debounce }}>
+        <CacheContext.Provider value={{ getRooms, getRoom, getRoomUpdate, getFreeRooms, getBatch, search, allSearch, getFriends, refreshFriends, getOrgEvents, refreshOrgEvents, getOrgEventAnalytics, refreshOrgEventAnalytics, debounce }}>
             {children}
         </CacheContext.Provider>
     );
