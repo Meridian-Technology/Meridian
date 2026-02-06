@@ -56,6 +56,7 @@ import RebrandingNotice from './components/RebrandingNotice/RebrandingNotice';
 import Beacon from './pages/FeatureAdmin/Beacon/Beacon';
 import Compass from './pages/FeatureAdmin/Compass/Compass';
 import Atlas from './pages/FeatureAdmin/Atlas/Atlas';
+import AnalyticsDashboard from './pages/FeatureAdmin/AnalyticsDashboard/AnalyticsDashboard';
 import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
@@ -189,6 +190,7 @@ function App() {
                                             {/* admin routes */}
                                             <Route element={ <ProtectedRoute authorizedRoles={['admin']}/> }>
                                                 <Route path="/admin" element={<AnimatedPageWrapper><Admin/></AnimatedPageWrapper>}/>
+                                                <Route path="/analytics-dashboard" element={<AnimatedPageWrapper><AnalyticsDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
 
                                             {/* features under development */}
