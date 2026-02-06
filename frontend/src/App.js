@@ -4,6 +4,7 @@ import './assets/fonts.css';
 import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
+import { analytics } from './services/analytics/analytics';
 
 import Room from './pages/Room/Room';
 import Room1 from './pages/Room/Room1';
@@ -32,6 +33,8 @@ import OrgManagement from './pages/FeatureAdmin/OrgManagement/Atlas';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import PrivacyPolicy from './pages/PrivacyPolicy/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService/TermsOfService';
+import ChildSafetyStandards from './pages/ChildSafetyStandards/ChildSafetyStandards';
 import SAMLCallback from './components/SAMLCallback/SAMLCallback';
 import EmailVerification from './pages/EmailVerification';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
@@ -57,9 +60,26 @@ import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
 import Form from './pages/Form/Form';
+import Support from './pages/Support/Support';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
 function App() {
+    // Initialize analytics on app start
+    useEffect(() => {
+        const initAnalytics = async () => {
+            const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
+            await analytics.init({
+                env,
+                appVersion: '0.1.0',
+                build: '1',
+            });
+        };
+
+        initAnalytics().catch(error => {
+            console.error('Failed to initialize analytics:', error);
+        });
+    }, []);
+
     useEffect(() => {
         // check if the user has already visited
         //don't do anything if /qr
@@ -139,8 +159,11 @@ function App() {
                                             <Route path="/register" element={<AnimatedPageWrapper><Register /></AnimatedPageWrapper>}/>
                                             <Route path="/login" element={<AnimatedPageWrapper><Login /></AnimatedPageWrapper>}/>
                                             <Route path="/contact" element={<AnimatedPageWrapper><Contact /></AnimatedPageWrapper>}/>
+                                            <Route path="/support" element={<AnimatedPageWrapper><Support /></AnimatedPageWrapper>}/>
                                             <Route path="/booking" element={<AnimatedPageWrapper><Booking /></AnimatedPageWrapper>}/>
                                             <Route path="/privacy-policy" element={<AnimatedPageWrapper><PrivacyPolicy /></AnimatedPageWrapper>}/>
+                                            <Route path="/terms-of-service" element={<AnimatedPageWrapper><TermsOfService /></AnimatedPageWrapper>}/>
+                                            <Route path="/child-safety-standards" element={<AnimatedPageWrapper><ChildSafetyStandards /></AnimatedPageWrapper>}/>
                                             <Route path="/forgot-password" element={<AnimatedPageWrapper><ForgotPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/reset-password" element={<AnimatedPageWrapper><ResetPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>

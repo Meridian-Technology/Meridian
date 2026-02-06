@@ -953,7 +953,87 @@ router.post('/send-email', async (req,res) => {
 
 router.get('/get-orgs', async (req, res) => {
     try{
-        const { Org } = getModels(req, 'Org');
+        const {exhaustive} = req.query;
+        const { Org, OrgMember, OrgFollower, Event } = getModels(req, 'Org', 'OrgMember', 'OrgFollower', 'Event');
+        
+        //if exhaustive, return org stats like memberCount, followerCount, eventCount, using aggregate using efficeint query
+        if(exhaustive){
+            const orgs = await Org.aggregate([
+                // Lookup members and count them (only active members)
+                {
+                    $lookup: {
+                        from: 'members', // Collection name for OrgMember
+                        let: { orgId: '$_id' },
+                        pipeline: [
+                            {
+                                $match: {
+                                    $expr: {
+                                        $and: [
+                                            { $eq: ['$org_id', '$$orgId'] },
+                                            { $eq: ['$status', 'active'] }
+                                        ]
+                                    }
+                                }
+                            }
+                        ],
+                        as: 'members'
+                    }
+                },
+                // Lookup followers and count them
+                {
+                    $lookup: {
+                        from: 'followers', // Collection name for OrgFollower
+                        localField: '_id',
+                        foreignField: 'org_id',
+                        as: 'followers'
+                    }
+                },
+                // Lookup events and count them
+                {
+                    $lookup: {
+                        from: 'events', // Collection name for Event
+                        let: { orgId: '$_id' },
+                        pipeline: [
+                            {
+                                $match: {
+                                    $expr: {
+                                        $and: [
+                                            { $eq: ['$hostingId', '$$orgId'] },
+                                            { $eq: ['$hostingType', 'Org'] },
+                                            { $ne: ['$isDeleted', true] }
+                                        ]
+                                    }
+                                }
+                            }
+                        ],
+                        as: 'events'
+                    }
+                },
+                // Project the counts
+                {
+                    $project: {
+                        _id: 1,
+                        org_name: 1,
+                        org_profile_image: 1,
+                        org_banner_image: 1,
+                        org_description: 1,
+                        positions: 1,
+                        owner: 1,
+                        verified: 1,
+                        verificationType: 1,
+                        verificationStatus: 1,
+                        memberCount: { $size: '$members' },
+                        followerCount: { $size: '$followers' },
+                        eventCount: { $size: '$events' }
+                    }
+                }
+            ]);
+            console.log('orgs', orgs[0]);
+            return res.status(200).json({
+                success: true,
+                orgs: orgs
+            });
+        }
         const orgs = await Org.find();
         console.log('GET: /get-orgs successful')
         res.status(200).json({
@@ -964,7 +1044,7 @@ router.get('/get-orgs', async (req, res) => {
         console.log('GET: /get-orgs failed', error);
         res.status(500).json({
             sucess:false,
-            
+            message: error.message
         })
     }
 });

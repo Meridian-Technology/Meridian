@@ -17,9 +17,9 @@ const getMonthName = (month) => {
 function Month({ height, changeToWeek, filter, showSwitch = true, setView = () => {}, view = 0, blockedEvents = [] }) {
 
     const [month, setMonth] = useState(new Date().getMonth() + 1);
-    const [year, setYear] = useState(2025);
-    // const filterParam = encodeURIComponent(JSON.stringify(filter)); this caused some problems
-    const url = `/get-events-by-month?month=${month}&year=${year}&filter=${JSON.stringify(filter)}`;
+    const [year, setYear] = useState(new Date().getFullYear());
+    const filterParam = filter ? encodeURIComponent(JSON.stringify(filter)) : '';
+    const url = `/get-events-by-month?month=${month}&year=${year}${filterParam ? `&filter=${filterParam}` : ''}`;
     const events = useFetch(url);
     
     const currentMonth = new Date().getMonth() + 1;

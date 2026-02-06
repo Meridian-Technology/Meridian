@@ -136,13 +136,13 @@ router.post('/register', async (req, res) => {
         sendDiscordMessage(`New user registered`, `user ${username} registered`, "newUser");
         
         // Send Inngest event for user registration
-        await sendUserRegisteredEvent({
-            id: user._id,
-            email: user.email,
-            username: user.username,
-            name: user.name,
-            school: req.school
-        });
+        // await sendUserRegisteredEvent({
+        //     id: user._id,
+        //     email: user.email,
+        //     username: user.username,
+        //     name: user.name,
+        //     school: req.school
+        // });
         
         // Send the response without tokens in body
         res.status(201).json({

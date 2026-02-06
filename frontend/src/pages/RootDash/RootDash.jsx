@@ -5,6 +5,7 @@ import RootManagement from './RootManagement/RootManagement';
 import ManageFlow from './ManageFlow/ManageFlow';
 import RSSManagement from './RSSManagement/RSSManagement';
 import RoomManager from './RoomManager/RoomManager';
+import ResourcesManagement from './ResourcesManagement/ResourcesManagement';
 // import BadgeManager from './BadgeManager/BadgeManager';
 import eventsLogo from '../../assets/Brand Image/EventsLogo.svg';
 
@@ -30,6 +31,11 @@ function RootDash(){
             label: 'Room Manager', 
             icon: 'mdi:home-city',
             element: <RoomManager/>
+        },
+        { 
+            label: 'Resources', 
+            icon: 'mdi:book-open-variant',
+            element: <ResourcesManagement/>
         },
     ];
 

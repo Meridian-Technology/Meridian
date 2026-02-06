@@ -11,6 +11,7 @@ import IntegrationManager from './IntegrationManager/IntegrationManager';
 import AnalyticsConfig from './AnalyticsConfig/AnalyticsConfig';
 import ApprovalFlowConfig from './ApprovalFlowConfig/ApprovalFlowConfig';
 import FormConfig from './FormConfig/FormConfig';
+import EventsCoverConfig from './EventsCoverConfig/EventsCoverConfig';
 import { useNotification } from '../../../../NotificationContext';
 import { useGradient } from '../../../../hooks/useGradient';
 
@@ -198,6 +199,13 @@ const EventSystemConfig = () => {
                     <Icon icon="mdi:form-select" />
                     Form Config
                 </button>
+                <button 
+                    className={`tab ${activeTab === 'cover' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('cover')}
+                >
+                    <Icon icon="mdi:image" />
+                    Page Header
+                </button>
             </div>
             
             <div className="config-content">
@@ -251,6 +259,21 @@ const EventSystemConfig = () => {
                             setConfig(prev => ({
                                 ...prev,
                                 formConfig: updates.formConfig
+                            }));
+                        }}
+                    />
+                )}
+                
+                {activeTab === 'cover' && (
+                    <EventsCoverConfig
+                        config={config.pageSettings}
+                        onChange={(updates) => {
+                            setConfig(prev => ({
+                                ...prev,
+                                pageSettings: {
+                                    ...prev.pageSettings,
+                                    ...updates
+                                }
                             }));
                         }}
                     />

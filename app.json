@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "6c3b2737-3034-44b4-8267-983fa2d0dd55"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.isekouyo.meridian",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
