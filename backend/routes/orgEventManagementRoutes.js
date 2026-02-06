@@ -463,8 +463,35 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
             total: (event.rsvpStats?.going || 0) + (event.rsvpStats?.maybe || 0) + (event.rsvpStats?.notGoing || 0)
         };
 
-        // Calculate check-ins (from attendees or volunteer signups)
+        // Volunteer check-ins (from job/role signups)
         const checkedInCount = signups.filter(s => s.checkedIn).length;
+
+        // Event check-in stats (QR/link/on-page check-in feature) – from event.attendees
+        let eventCheckIn = null;
+        if (event.checkInEnabled && event.attendees && Array.isArray(event.attendees)) {
+            const totalCheckedIn = event.attendees.filter(a => a.checkedIn).length;
+            const totalRSVPs = (event.rsvpStats?.going || 0) + (event.rsvpStats?.maybe || 0);
+            eventCheckIn = {
+                totalCheckedIn,
+                totalRSVPs,
+                checkInRate: totalRSVPs > 0 ? ((totalCheckedIn / totalRSVPs) * 100).toFixed(1) : '0'
+            };
+            console.log('[dashboard] event check-in stats', {
+                eventId,
+                checkInEnabled: event.checkInEnabled,
+                attendeesTotal: event.attendees.length,
+                totalCheckedIn,
+                totalRSVPs,
+                checkInRate: eventCheckIn.checkInRate
+            });
+        } else {
+            console.log('[dashboard] event check-in skipped', {
+                eventId,
+                checkInEnabled: event.checkInEnabled,
+                hasAttendees: !!(event.attendees && Array.isArray(event.attendees)),
+                attendeesLength: event.attendees?.length ?? 0
+            });
+        }
 
         // Determine event status based on dates
         const now = new Date();
@@ -502,7 +529,8 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
                         confirmed: confirmedVolunteers,
                         checkedIn: checkedInCount
                     },
-                    operationalStatus
+                    operationalStatus,
+                    checkIn: eventCheckIn
                 }
             }
         });
@@ -660,9 +688,28 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
             });
         }
 
-        // Update event fields
+        // Handle check-in settings separately
+        if (updateData.checkInEnabled !== undefined) {
+            event.checkInEnabled = updateData.checkInEnabled;
+            // Generate token if enabling check-in and token doesn't exist
+            if (updateData.checkInEnabled && !event.checkInToken) {
+                const crypto = require('crypto');
+                event.checkInToken = crypto.randomBytes(32).toString('hex');
+            }
+        }
+
+        if (updateData.checkInSettings !== undefined) {
+            event.checkInSettings = {
+                ...event.checkInSettings,
+                ...updateData.checkInSettings
+            };
+        }
+
+        // Update other event fields
         Object.keys(updateData).forEach(key => {
-            if (updateData[key] !== undefined) {
+            if (updateData[key] !== undefined && 
+                key !== 'checkInEnabled' && 
+                key !== 'checkInSettings') {
                 event[key] = updateData[key];
             }
         });

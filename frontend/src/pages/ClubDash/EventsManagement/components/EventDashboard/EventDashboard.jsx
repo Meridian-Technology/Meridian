@@ -10,6 +10,7 @@ import EventEditorTab from './EventEditorTab/EventEditorTab';
 import AgendaBuilder from './EventAgendaBuilder/AgendaBuilder';
 import JobsManager from './EventJobsManager/JobsManager';
 import EventAnalyticsDetail from './EventAnalyticsDetail';
+import EventCheckInTab from './EventCheckInTab/EventCheckInTab';
 import ComingSoon from './ComingSoon';
 // Temporarily disabled - EquipmentManager functionality commented out
 // import EquipmentManager from './EventEquipment/EquipmentManager';
@@ -131,6 +132,17 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             icon: 'mdi:pencil',
             description: 'Edit event details and settings',
             content: <EventEditorTab
+                        event={dashboardData.event}
+                        orgId={orgId}
+                        onRefresh={handleRefresh}
+                    />
+        },
+        {
+            id: 'checkin',
+            label: 'Check-In',
+            icon: 'mdi:qrcode-scan',
+            description: 'Manage event check-in and attendance',
+            content: <EventCheckInTab
                         event={dashboardData.event}
                         orgId={orgId}
                         onRefresh={handleRefresh}

@@ -10,10 +10,12 @@ import { useFetch } from '../../hooks/useFetch';
 import Loader from '../../components/Loader/Loader';
 import Header from '../../components/Header/Header';
 import RSVPSection from '../../components/RSVPSection/RSVPSection';
+import EventCheckInButton from '../../components/EventCheckInButton/EventCheckInButton';
 import EventsByCreator from '../../components/EventsByCreator/EventsByCreator';
 import Logo from '../../assets/Brand Image/BEACON.svg';
 import EventAnalytics from '../../components/EventAnalytics/EventAnalytics';
 import AgendaEditor from '../../components/AgendaEditor/AgendaEditor';
+import { useEventRoom } from '../../WebSocketContext';
 
 function EventPage() {
     const { eventId } = useParams();
@@ -26,6 +28,11 @@ function EventPage() {
     const { data: eventData, loading: eventLoading, error: eventError, refetch: refetchEvent } = useFetch(
         eventId ? `/get-event/${eventId}` : null
     );
+
+    // Live updates: only connect when on this event page; refetch when someone checks in
+    useEventRoom(eventId || null, () => {
+        refetchEvent?.();
+    });
 
     // RSVP functionality now handled by RSVPSection component
 
@@ -154,6 +161,7 @@ function EventPage() {
                         </div>
                     )}
                     <RSVPSection event={eventData.event} />
+                    <EventCheckInButton event={eventData.event} onCheckedIn={refetchEvent} />
                     
                     {/* Agenda Editor
                     <AgendaEditor event={eventData.event} onUpdate={(updatedEvent) => {

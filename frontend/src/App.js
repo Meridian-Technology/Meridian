@@ -61,6 +61,7 @@ import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
 import Form from './pages/Form/Form';
 import Support from './pages/Support/Support';
+import CheckInConfirmation from './pages/CheckIn/CheckInConfirmation';
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -151,6 +152,7 @@ function App() {
                                         <Route path='/' element={<Layout/>}>
                                             {/* publicly accessible pages */}
                                             <Route path="/qr/:id" element={<QR/>}/>
+                                            <Route path="/check-in/:eventId/:token" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route index element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />
                                             <Route path="/room/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/room1/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>

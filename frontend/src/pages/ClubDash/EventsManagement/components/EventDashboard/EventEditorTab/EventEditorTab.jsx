@@ -55,7 +55,7 @@ function LocationTimePopupContent({
                             <button 
                                 className="popup-button primary" 
                                 onClick={onLocationSelected}
-                                disabled={!popupFormData.selectedRoomIds || popupFormData.selectedRoomIds.length === 0}
+                                disabled={(!popupFormData.selectedRoomIds || popupFormData.selectedRoomIds.length === 0) && (!popupFormData.location || !popupFormData.location.trim())}
                             >
                                 Next: Select Time
                             </button>
@@ -116,6 +116,11 @@ function EventEditorTab({ event, orgId, onRefresh }) {
         rsvpRequired: false,
         rsvpDeadline: null,
         maxAttendees: null,
+        checkInEnabled: false,
+        checkInMethod: 'both',
+        checkInRequireRsvp: false,
+        checkInAutoCheckIn: false,
+        checkInAllowOnPage: true,
         image: null,
         start_time: null,
         end_time: null,
@@ -146,6 +151,11 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                 rsvpRequired: event.rsvpRequired || false,
                 rsvpDeadline: event.rsvpDeadline ? new Date(event.rsvpDeadline) : null,
                 maxAttendees: event.maxAttendees || null,
+                checkInEnabled: event.checkInEnabled || false,
+                checkInMethod: event.checkInSettings?.method || 'both',
+                checkInRequireRsvp: event.checkInSettings?.requireRsvp || false,
+                checkInAutoCheckIn: event.checkInSettings?.autoCheckIn || false,
+                checkInAllowOnPage: event.checkInSettings?.allowOnPageCheckIn !== false,
                 image: null, // Will handle image separately
                 start_time: event.start_time ? new Date(event.start_time) : null,
                 end_time: event.end_time ? new Date(event.end_time) : null,
@@ -221,18 +231,21 @@ function EventEditorTab({ event, orgId, onRefresh }) {
     };
 
     const handleTimeSelected = () => {
-        // Update form data with new location and time
-        // popupFormData should have location and classroom_id set by RoomSelectorV2
-        if (popupFormData.selectedRoomIds && popupFormData.selectedRoomIds.length > 0 && 
-            popupFormData.start_time && popupFormData.end_time) {
-            setFormData(prev => ({
-                ...prev,
-                selectedRoomIds: popupFormData.selectedRoomIds,
-                classroom_id: popupFormData.classroom_id || popupFormData.selectedRoomIds[0],
-                location: popupFormData.location || prev.location,
-                start_time: popupFormData.start_time,
-                end_time: popupFormData.end_time
-            }));
+        // Update time always when set; update location/room only if user selected a room
+        if (popupFormData.start_time && popupFormData.end_time) {
+            setFormData(prev => {
+                const hasRoom = popupFormData.selectedRoomIds && popupFormData.selectedRoomIds.length > 0;
+                return {
+                    ...prev,
+                    start_time: popupFormData.start_time,
+                    end_time: popupFormData.end_time,
+                    ...(hasRoom ? {
+                        selectedRoomIds: popupFormData.selectedRoomIds,
+                        classroom_id: popupFormData.classroom_id || popupFormData.selectedRoomIds[0],
+                        location: popupFormData.location || prev.location
+                    } : {})
+                };
+            });
         }
         handleLocationTimePopupClose();
     };
@@ -256,8 +269,11 @@ function EventEditorTab({ event, orgId, onRefresh }) {
             errors.time = 'Date and time are required';
         }
         
-        if (!formData.selectedRoomIds || formData.selectedRoomIds.length === 0) {
-            errors.location = 'Location is required';
+        // Location can be a selected room OR free text (e.g. external events)
+        const hasRoom = formData.selectedRoomIds && formData.selectedRoomIds.length > 0;
+        const hasLocationText = formData.location && formData.location.trim() !== '';
+        if (!hasRoom && !hasLocationText) {
+            errors.location = 'Location is required (select a room or enter an address/place)';
         }
         
         return errors;
@@ -266,6 +282,7 @@ function EventEditorTab({ event, orgId, onRefresh }) {
     const handleSave = async () => {
         const errors = validateForm();
         if (Object.keys(errors).length > 0) {
+            console.log(errors);
             addNotification({
                 title: 'Validation Error',
                 message: 'Please fix all errors before saving',
@@ -289,6 +306,13 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                 rsvpRequired: formData.rsvpRequired,
                 rsvpDeadline: formData.rsvpDeadline ? formData.rsvpDeadline.toISOString() : null,
                 maxAttendees: formData.maxAttendees || null,
+                checkInEnabled: formData.checkInEnabled,
+                checkInSettings: {
+                    method: formData.checkInMethod,
+                    requireRsvp: formData.checkInRequireRsvp,
+                    autoCheckIn: formData.checkInAutoCheckIn,
+                    allowOnPageCheckIn: formData.checkInAllowOnPage
+                },
                 start_time: formData.start_time.toISOString(),
                 end_time: formData.end_time.toISOString(),
                 classroom_id: formData.classroom_id,
@@ -556,7 +580,16 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                             </div>
                             <div className="field-group">
                                 <label>Location</label>
-                                <div className="read-only-value">{formData.location || 'Not set'}</div>
+                                {isEditing ? (
+                                    <input
+                                        type="text"
+                                        value={formData.location || ''}
+                                        onChange={(e) => handleFieldChange('location', e.target.value)}
+                                        placeholder="e.g. Room 101, Off-campus, or address"
+                                    />
+                                ) : (
+                                    <div className="read-only-value">{formData.location || 'Not set'}</div>
+                                )}
                             </div>
                         </div>
                         {isEditing && (
@@ -691,6 +724,145 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                                                 {formData.maxAttendees || 'No limit'}
                                             </div>
                                         )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+
+                {/* Check-In Settings Section */}
+                <div className="editor-section checkin-settings-section">
+                    <h3>Check-In</h3>
+                    <p className="section-description">
+                        Let attendees mark that they&apos;re here using a QR code, link, or a button on the event page.
+                    </p>
+                    <div className="section-content">
+                        <div className="field-group checkin-master-toggle">
+                            <label className="checkbox-label">
+                                {isEditing ? (
+                                    <>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.checkInEnabled}
+                                            onChange={(e) => handleFieldChange('checkInEnabled', e.target.checked)}
+                                        />
+                                        <span>Enable check-in for this event</span>
+                                    </>
+                                ) : (
+                                    <div className="read-only-value">
+                                        Check-in {formData.checkInEnabled ? 'enabled' : 'disabled'}
+                                    </div>
+                                )}
+                            </label>
+                        </div>
+
+                        {formData.checkInEnabled && (
+                            <>
+                                <div className="checkin-subsection">
+                                    <h4 className="subsection-title">Ways to check in</h4>
+                                    <div className="field-group">
+                                        <label className="field-label">QR code & link</label>
+                                        {isEditing ? (
+                                            <div className="radio-group">
+                                                <label className="radio-label">
+                                                    <input
+                                                        type="radio"
+                                                        name="checkInMethod"
+                                                        value="qr"
+                                                        checked={formData.checkInMethod === 'qr'}
+                                                        onChange={(e) => handleFieldChange('checkInMethod', e.target.value)}
+                                                    />
+                                                    <span>QR code only</span>
+                                                </label>
+                                                <label className="radio-label">
+                                                    <input
+                                                        type="radio"
+                                                        name="checkInMethod"
+                                                        value="link"
+                                                        checked={formData.checkInMethod === 'link'}
+                                                        onChange={(e) => handleFieldChange('checkInMethod', e.target.value)}
+                                                    />
+                                                    <span>Link only</span>
+                                                </label>
+                                                <label className="radio-label">
+                                                    <input
+                                                        type="radio"
+                                                        name="checkInMethod"
+                                                        value="both"
+                                                        checked={formData.checkInMethod === 'both'}
+                                                        onChange={(e) => handleFieldChange('checkInMethod', e.target.value)}
+                                                    />
+                                                    <span>Both</span>
+                                                </label>
+                                            </div>
+                                        ) : (
+                                            <div className="read-only-value">
+                                                {formData.checkInMethod === 'qr' ? 'QR code only' :
+                                                 formData.checkInMethod === 'link' ? 'Link only' : 'Both'}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="field-group">
+                                        <label className="checkbox-label">
+                                            {isEditing ? (
+                                                <>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.checkInAllowOnPage}
+                                                        onChange={(e) => handleFieldChange('checkInAllowOnPage', e.target.checked)}
+                                                    />
+                                                    <span>Allow check-in from event page</span>
+                                                </>
+                                            ) : (
+                                                <div className="read-only-value">
+                                                    Event page check-in: {formData.checkInAllowOnPage ? 'Yes' : 'No'}
+                                                </div>
+                                            )}
+                                        </label>
+                                        <p className="field-hint">Show a &quot;Check in&quot; button on the event page (web &amp; app) during the event.</p>
+                                    </div>
+                                </div>
+
+                                <div className="checkin-subsection">
+                                    <h4 className="subsection-title">Options</h4>
+                                    <div className="field-group">
+                                        <label className="checkbox-label">
+                                            {isEditing ? (
+                                                <>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.checkInRequireRsvp}
+                                                        onChange={(e) => handleFieldChange('checkInRequireRsvp', e.target.checked)}
+                                                    />
+                                                    <span>Require RSVP to check in</span>
+                                                </>
+                                            ) : (
+                                                <div className="read-only-value">
+                                                    Require RSVP: {formData.checkInRequireRsvp ? 'Yes' : 'No'}
+                                                </div>
+                                            )}
+                                        </label>
+                                        <p className="field-hint">Attendees must RSVP (Going or Maybe) before they can check in.</p>
+                                    </div>
+                                    <div className="field-group">
+                                        <label className="checkbox-label">
+                                            {isEditing ? (
+                                                <>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.checkInAutoCheckIn}
+                                                        onChange={(e) => handleFieldChange('checkInAutoCheckIn', e.target.checked)}
+                                                    />
+                                                    <span>Auto check-in when using link or QR</span>
+                                                </>
+                                            ) : (
+                                                <div className="read-only-value">
+                                                    Auto check-in: {formData.checkInAutoCheckIn ? 'On' : 'Off'}
+                                                </div>
+                                            )}
+                                        </label>
+                                        <p className="field-hint">Skip the confirmation page and check in immediately when they open the link or scan the QR.</p>
                                     </div>
                                 </div>
                             </>
