@@ -191,12 +191,118 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d') {
     
     const avgSessionDurationSeconds = sessionDurationResult[0]?.avgDurationSeconds || 0;
     
+    // Web vs Mobile breakdown
+    // Unique users by platform type
+    const platformUsersResult = await AnalyticsEvent.aggregate([
+        { $match: baseMatch },
+        {
+            $group: {
+                _id: {
+                    $cond: [
+                        { $eq: ['$platform', 'web'] },
+                        'web',
+                        'mobile'
+                    ]
+                },
+                users: {
+                    $addToSet: {
+                        $cond: [
+                            { $ne: ['$user_id', null] },
+                            '$user_id',
+                            '$anonymous_id'
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            $project: {
+                platform: '$_id',
+                uniqueUsers: { $size: '$users' },
+                _id: 0
+            }
+        }
+    ]);
+    
+    const webUsers = platformUsersResult.find(p => p.platform === 'web')?.uniqueUsers || 0;
+    const mobileUsers = platformUsersResult.find(p => p.platform === 'mobile')?.uniqueUsers || 0;
+    
+    // Sessions by platform type
+    const platformSessionsResult = await AnalyticsEvent.aggregate([
+        { $match: baseMatch },
+        {
+            $group: {
+                _id: {
+                    $cond: [
+                        { $eq: ['$platform', 'web'] },
+                        'web',
+                        'mobile'
+                    ]
+                },
+                sessions: { $addToSet: '$session_id' }
+            }
+        },
+        {
+            $project: {
+                platform: '$_id',
+                sessions: { $size: '$sessions' },
+                _id: 0
+            }
+        }
+    ]);
+    
+    const webSessions = platformSessionsResult.find(p => p.platform === 'web')?.sessions || 0;
+    const mobileSessions = platformSessionsResult.find(p => p.platform === 'mobile')?.sessions || 0;
+    
+    // Page views by platform type
+    const platformPageViewsResult = await AnalyticsEvent.aggregate([
+        {
+            $match: {
+                ...baseMatch,
+                event: 'page_view'
+            }
+        },
+        {
+            $group: {
+                _id: {
+                    $cond: [
+                        { $eq: ['$platform', 'web'] },
+                        'web',
+                        'mobile'
+                    ]
+                },
+                pageViews: { $sum: 1 }
+            }
+        },
+        {
+            $project: {
+                platform: '$_id',
+                pageViews: 1,
+                _id: 0
+            }
+        }
+    ]);
+    
+    const webPageViews = platformPageViewsResult.find(p => p.platform === 'web')?.pageViews || 0;
+    const mobilePageViews = platformPageViewsResult.find(p => p.platform === 'mobile')?.pageViews || 0;
+    
     return {
         uniqueUsers,
         sessions,
         pageViews,
         bounceRate: Math.round(bounceRate * 100) / 100, // Round to 2 decimals
-        avgSessionDuration: Math.round(avgSessionDurationSeconds)
+        avgSessionDuration: Math.round(avgSessionDurationSeconds),
+        // Web vs Mobile breakdowns
+        web: {
+            uniqueUsers: webUsers,
+            sessions: webSessions,
+            pageViews: webPageViews
+        },
+        mobile: {
+            uniqueUsers: mobileUsers,
+            sessions: mobileSessions,
+            pageViews: mobilePageViews
+        }
     };
 }
 
@@ -255,6 +361,51 @@ async function getRealtimeMetrics(AnalyticsEvent) {
     ]);
     
     const pageViews = pageViewsResult[0]?.pageViews || 0;
+    
+    // Web vs Mobile breakdown for realtime
+    const platformRealtimeResult = await AnalyticsEvent.aggregate([
+        { $match: baseMatch },
+        {
+            $group: {
+                _id: {
+                    $cond: [
+                        { $eq: ['$platform', 'web'] },
+                        'web',
+                        'mobile'
+                    ]
+                },
+                activeUsers: {
+                    $addToSet: {
+                        $cond: [
+                            { $ne: ['$user_id', null] },
+                            '$user_id',
+                            '$anonymous_id'
+                        ]
+                    }
+                },
+                pageViews: {
+                    $sum: {
+                        $cond: [
+                            { $eq: ['$event', 'page_view'] },
+                            1,
+                            0
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            $project: {
+                platform: '$_id',
+                activeUsers: { $size: '$activeUsers' },
+                pageViews: 1,
+                _id: 0
+            }
+        }
+    ]);
+    
+    const webRealtime = platformRealtimeResult.find(p => p.platform === 'web') || { activeUsers: 0, pageViews: 0 };
+    const mobileRealtime = platformRealtimeResult.find(p => p.platform === 'mobile') || { activeUsers: 0, pageViews: 0 };
     
     // Top pages right now (last 15 minutes for "right now")
     const recentStartDate = new Date(now.getTime() - 15 * 60 * 1000);
@@ -333,7 +484,16 @@ async function getRealtimeMetrics(AnalyticsEvent) {
         activeUsers,
         pageViews,
         topPages: topPagesResult,
-        liveEvents: liveEventsResult
+        liveEvents: liveEventsResult,
+        // Web vs Mobile breakdown
+        web: {
+            activeUsers: webRealtime.activeUsers,
+            pageViews: webRealtime.pageViews
+        },
+        mobile: {
+            activeUsers: mobileRealtime.activeUsers,
+            pageViews: mobileRealtime.pageViews
+        }
     };
 }
 

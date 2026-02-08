@@ -98,6 +98,16 @@ function AnalyticsDashboard() {
                             <div className="metric-content">
                                 <p>Unique Users</p>
                                 <h3>{formatNumber(overview.uniqueUsers)}</h3>
+                                {overview.web && overview.mobile && (
+                                    <div className="metric-breakdown">
+                                        <span className="breakdown-item web">
+                                            <Icon icon="mdi:web" /> {formatNumber(overview.web.uniqueUsers)}
+                                        </span>
+                                        <span className="breakdown-item mobile">
+                                            <Icon icon="mdi:cellphone" /> {formatNumber(overview.mobile.uniqueUsers)}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -108,6 +118,16 @@ function AnalyticsDashboard() {
                             <div className="metric-content">
                                 <p>Sessions</p>
                                 <h3>{formatNumber(overview.sessions)}</h3>
+                                {overview.web && overview.mobile && (
+                                    <div className="metric-breakdown">
+                                        <span className="breakdown-item web">
+                                            <Icon icon="mdi:web" /> {formatNumber(overview.web.sessions)}
+                                        </span>
+                                        <span className="breakdown-item mobile">
+                                            <Icon icon="mdi:cellphone" /> {formatNumber(overview.mobile.sessions)}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -118,6 +138,16 @@ function AnalyticsDashboard() {
                             <div className="metric-content">
                                 <p>Page Views</p>
                                 <h3>{formatNumber(overview.pageViews)}</h3>
+                                {overview.web && overview.mobile && (
+                                    <div className="metric-breakdown">
+                                        <span className="breakdown-item web">
+                                            <Icon icon="mdi:web" /> {formatNumber(overview.web.pageViews)}
+                                        </span>
+                                        <span className="breakdown-item mobile">
+                                            <Icon icon="mdi:cellphone" /> {formatNumber(overview.mobile.pageViews)}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -141,6 +171,55 @@ function AnalyticsDashboard() {
                             </div>
                         </div>
                     </div>
+                    
+                    {/* Web vs Mobile Breakdown Section */}
+                    {overview.web && overview.mobile && (
+                        <div className="platform-breakdown">
+                            <h3 className="breakdown-title">Web vs Mobile</h3>
+                            <div className="breakdown-grid">
+                                <div className="breakdown-card web">
+                                    <div className="breakdown-header">
+                                        <Icon icon="mdi:web" />
+                                        <span>Web</span>
+                                    </div>
+                                    <div className="breakdown-metrics">
+                                        <div className="breakdown-metric">
+                                            <span className="metric-label">Users</span>
+                                            <span className="metric-value">{formatNumber(overview.web.uniqueUsers)}</span>
+                                        </div>
+                                        <div className="breakdown-metric">
+                                            <span className="metric-label">Sessions</span>
+                                            <span className="metric-value">{formatNumber(overview.web.sessions)}</span>
+                                        </div>
+                                        <div className="breakdown-metric">
+                                            <span className="metric-label">Page Views</span>
+                                            <span className="metric-value">{formatNumber(overview.web.pageViews)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="breakdown-card mobile">
+                                    <div className="breakdown-header">
+                                        <Icon icon="mdi:cellphone" />
+                                        <span>Mobile</span>
+                                    </div>
+                                    <div className="breakdown-metrics">
+                                        <div className="breakdown-metric">
+                                            <span className="metric-label">Users</span>
+                                            <span className="metric-value">{formatNumber(overview.mobile.uniqueUsers)}</span>
+                                        </div>
+                                        <div className="breakdown-metric">
+                                            <span className="metric-label">Sessions</span>
+                                            <span className="metric-value">{formatNumber(overview.mobile.sessions)}</span>
+                                        </div>
+                                        <div className="breakdown-metric">
+                                            <span className="metric-label">Page Views</span>
+                                            <span className="metric-value">{formatNumber(overview.mobile.pageViews)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </section>
 
                 {/* Realtime Metrics */}
@@ -157,6 +236,16 @@ function AnalyticsDashboard() {
                             <div className="realtime-content">
                                 <p>Active Users</p>
                                 <h3>{formatNumber(realtime.activeUsers)}</h3>
+                                {realtime.web && realtime.mobile && (
+                                    <div className="realtime-breakdown">
+                                        <span className="breakdown-item web">
+                                            <Icon icon="mdi:web" /> {formatNumber(realtime.web.activeUsers)}
+                                        </span>
+                                        <span className="breakdown-item mobile">
+                                            <Icon icon="mdi:cellphone" /> {formatNumber(realtime.mobile.activeUsers)}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -167,6 +256,16 @@ function AnalyticsDashboard() {
                             <div className="realtime-content">
                                 <p>Page Views</p>
                                 <h3>{formatNumber(realtime.pageViews)}</h3>
+                                {realtime.web && realtime.mobile && (
+                                    <div className="realtime-breakdown">
+                                        <span className="breakdown-item web">
+                                            <Icon icon="mdi:web" /> {formatNumber(realtime.web.pageViews)}
+                                        </span>
+                                        <span className="breakdown-item mobile">
+                                            <Icon icon="mdi:cellphone" /> {formatNumber(realtime.mobile.pageViews)}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
