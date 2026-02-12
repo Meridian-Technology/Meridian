@@ -261,8 +261,8 @@ function Explore(){
 
     const groupedEvents = groupEventsByDate(events);
     
-    // Fetch page settings for cover image
-    const { data: pageSettingsData } = useFetch('/api/event-system-config');
+    // Fetch page settings for cover image (public endpoint so Explore works without auth)
+    const { data: pageSettingsData } = useFetch('/api/event-system-config/page-settings');
     const pageSettings = pageSettingsData?.success && pageSettingsData?.data?.pageSettings 
         ? pageSettingsData.data.pageSettings 
         : null;
