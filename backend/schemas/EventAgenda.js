@@ -33,6 +33,14 @@ const EventAgendaSchema = new Schema({
             required: false,
             min: 1
         },
+        startTime: {
+            type: Date,
+            required: false
+        },
+        endTime: {
+            type: Date,
+            required: false
+        },
         type: {
             type: String,
             enum: ['Activity', 'Break', 'Setup', 'Breakdown', 'Transition', 'Speaker', 'Custom'],

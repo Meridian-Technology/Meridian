@@ -395,27 +395,32 @@ router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, 
                     },
                     views: 0,
                     uniqueViews: 0,
-                    rsvps: 0,
-                    uniqueRsvps: 0,
+                    anonymousViews: 0,
+                    uniqueAnonymousViews: 0,
+                    registrations: 0,
+                    uniqueRegistrations: 0,
                     engagementRate: 0,
                     viewHistory: [],
-                    rsvpHistory: [],
+                    registrationHistory: [],
                     timeRange
                 }
             });
         }
 
-        // Filter history by time range
-        const filteredViewHistory = analytics.viewHistory.filter(view => 
+        // Filter history by time range (guard against undefined after migration to registrationHistory)
+        const viewHistory = analytics.viewHistory || [];
+        const rsvpOrRegHistory = analytics.rsvpHistory || analytics.registrationHistory || [];
+        const filteredViewHistory = viewHistory.filter(view => 
             view.timestamp >= startDate && view.timestamp <= endDate
         );
-        const filteredRsvpHistory = analytics.rsvpHistory.filter(rsvp => 
-            rsvp.timestamp >= startDate && rsvp.timestamp <= endDate
+        const filteredRsvpHistory = rsvpOrRegHistory.filter(entry => 
+            entry.timestamp >= startDate && entry.timestamp <= endDate
         );
 
-        // Calculate engagement rate
-        const engagementRate = analytics.views > 0 
-            ? (analytics.rsvps / analytics.views * 100).toFixed(2)
+        const rsvpCount = analytics.registrations ?? analytics.rsvps ?? 0;
+        const uniqueRsvpCount = analytics.uniqueRegistrations ?? analytics.uniqueRsvps ?? 0;
+        const engagementRate = (analytics.views || 0) > 0
+            ? (rsvpCount / analytics.views * 100).toFixed(2)
             : 0;
 
         const eventAnalytics = {
@@ -424,15 +429,15 @@ router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, 
                 start_time: event.start_time,
                 end_time: event.end_time
             },
-            views: analytics.views,
-            uniqueViews: analytics.uniqueViews,
-            anonymousViews: analytics.anonymousViews,
-            uniqueAnonymousViews: analytics.uniqueAnonymousViews,
-            rsvps: analytics.rsvps,
-            uniqueRsvps: analytics.uniqueRsvps,
+            views: analytics.views ?? 0,
+            uniqueViews: analytics.uniqueViews ?? 0,
+            anonymousViews: analytics.anonymousViews ?? 0,
+            uniqueAnonymousViews: analytics.uniqueAnonymousViews ?? 0,
+            registrations: rsvpCount,
+            uniqueRegistrations: uniqueRsvpCount,
             engagementRate: parseFloat(engagementRate),
             viewHistory: filteredViewHistory,
-            rsvpHistory: filteredRsvpHistory,
+            registrationHistory: filteredRsvpHistory,
             timeRange
         };
 

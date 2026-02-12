@@ -79,8 +79,8 @@ router.get('/:orgId/analytics', verifyToken, requireEventManagement('orgId'), as
                     totalViews: { $sum: '$views' },
                     totalUniqueViews: { $sum: '$uniqueViews' },
                     totalAnonymousViews: { $sum: '$anonymousViews' },
-                    totalRsvps: { $sum: '$rsvps' },
-                    totalUniqueRsvps: { $sum: '$uniqueRsvps' },
+                    totalRegistrations: { $sum: '$registrations' },
+                    totalUniqueRegistrations: { $sum: '$uniqueRegistrations' },
                     avgEngagementRate: { $avg: '$engagementRate' }
                 }
             }
@@ -129,7 +129,7 @@ router.get('/:orgId/analytics', verifyToken, requireEventManagement('orgId'), as
                     eventType: '$event.type',
                     startTime: '$event.start_time',
                     views: 1,
-                    rsvps: 1,
+                    registrations: 1,
                     engagementRate: 1
                 }
             },
@@ -153,21 +153,24 @@ router.get('/:orgId/analytics', verifyToken, requireEventManagement('orgId'), as
             { $sort: { '_id.year': 1, '_id.month': 1 } }
         ]);
 
-        // Get member engagement with events
+        // Get member engagement with events (events where member is in attendees)
         const memberEngagement = await OrgMember.aggregate([
             { $match: { org_id: orgId, status: 'active' } },
             {
                 $lookup: {
                     from: 'events',
-                    localField: 'user_id',
-                    foreignField: 'going',
+                    let: { uid: '$user_id' },
+                    pipeline: [
+                        { $match: { hostingId: orgId, hostingType: 'Org', isDeleted: false, $expr: { $in: ['$$uid', '$attendees.userId'] } } },
+                        { $count: 'count' }
+                    ],
                     as: 'attendedEvents'
                 }
             },
             {
                 $project: {
                     userId: '$user_id',
-                    attendedCount: { $size: '$attendedEvents' }
+                    attendedCount: { $ifNull: [{ $arrayElemAt: ['$attendedEvents.count', 0] }, 0] }
                 }
             },
             {
@@ -191,8 +194,8 @@ router.get('/:orgId/analytics', verifyToken, requireEventManagement('orgId'), as
                 avgExpectedAttendance: Math.round(eventStats[0]?.avgExpectedAttendance || 0),
                 totalViews: analyticsData[0]?.totalViews || 0,
                 totalUniqueViews: analyticsData[0]?.totalUniqueViews || 0,
-                totalRsvps: analyticsData[0]?.totalRsvps || 0,
-                totalUniqueRsvps: analyticsData[0]?.totalUniqueRsvps || 0,
+                totalRegistrations: analyticsData[0]?.totalRegistrations || 0,
+                totalUniqueRegistrations: analyticsData[0]?.totalUniqueRegistrations || 0,
                 avgEngagementRate: Math.round(analyticsData[0]?.avgEngagementRate || 0)
             },
             eventsByType,
@@ -391,8 +394,8 @@ router.get('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
                 analytics: analytics || {
                     views: 0,
                     uniqueViews: 0,
-                    rsvps: 0,
-                    uniqueRsvps: 0,
+                    registrations: 0,
+                    uniqueRegistrations: 0,
                     engagementRate: 0
                 }
             }
@@ -455,33 +458,25 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
         // Get equipment
         const equipment = await EventEquipment.findOne({ eventId });
 
-        // Calculate RSVP stats
-        const rsvpStats = {
-            going: event.rsvpStats?.going || 0,
-            maybe: event.rsvpStats?.maybe || 0,
-            notGoing: event.rsvpStats?.notGoing || 0,
-            total: (event.rsvpStats?.going || 0) + (event.rsvpStats?.maybe || 0) + (event.rsvpStats?.notGoing || 0)
-        };
+        const registrationCount = event.registrationCount ?? (event.attendees?.length ?? 0);
 
-        // Volunteer check-ins (from job/role signups)
         const checkedInCount = signups.filter(s => s.checkedIn).length;
 
-        // Event check-in stats (QR/link/on-page check-in feature) – from event.attendees
         let eventCheckIn = null;
         if (event.checkInEnabled && event.attendees && Array.isArray(event.attendees)) {
             const totalCheckedIn = event.attendees.filter(a => a.checkedIn).length;
-            const totalRSVPs = (event.rsvpStats?.going || 0) + (event.rsvpStats?.maybe || 0);
+            const totalRegistrations = event.registrationCount ?? event.attendees.length;
             eventCheckIn = {
                 totalCheckedIn,
-                totalRSVPs,
-                checkInRate: totalRSVPs > 0 ? ((totalCheckedIn / totalRSVPs) * 100).toFixed(1) : '0'
+                totalRegistrations,
+                checkInRate: totalRegistrations > 0 ? ((totalCheckedIn / totalRegistrations) * 100).toFixed(1) : '0'
             };
             console.log('[dashboard] event check-in stats', {
                 eventId,
                 checkInEnabled: event.checkInEnabled,
                 attendeesTotal: event.attendees.length,
                 totalCheckedIn,
-                totalRSVPs,
+                totalRegistrations: eventCheckIn.totalRegistrations,
                 checkInRate: eventCheckIn.checkInRate
             });
         } else {
@@ -510,8 +505,8 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
                 analytics: analytics || {
                     views: 0,
                     uniqueViews: 0,
-                    rsvps: 0,
-                    uniqueRsvps: 0,
+                    registrations: 0,
+                    uniqueRegistrations: 0,
                     engagementRate: 0
                 },
                 agenda: agenda || { items: [] },
@@ -523,7 +518,7 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
                 },
                 equipment: equipment || { items: [] },
                 stats: {
-                    rsvps: rsvpStats,
+                    registrationCount,
                     volunteers: {
                         total: totalVolunteers,
                         confirmed: confirmedVolunteers,
@@ -541,6 +536,326 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
             success: false,
             message: 'Error fetching event dashboard',
             error: error.message
+        });
+    }
+});
+
+// List org forms (for event registration form selector)
+router.get('/:orgId/forms', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Form } = getModels(req, 'Form');
+    const { orgId } = req.params;
+
+    try {
+        const forms = await Form.find({
+            formOwner: orgId,
+            formOwnerType: 'Org'
+        })
+            .select('_id title description questions')
+            .sort({ updatedAt: -1 })
+            .lean();
+
+        res.status(200).json({
+            success: true,
+            data: forms
+        });
+    } catch (error) {
+        console.error('Error listing org forms:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Create org form (for event registration form - event managers can create without member management)
+router.post('/:orgId/forms', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Org, Form } = getModels(req, 'Org', 'Form');
+    const { orgId } = req.params;
+    const { form: formBody } = req.body;
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        const formData = {
+            ...formBody,
+            createdBy: req.user.userId,
+            createdType: 'User',
+            formOwner: orgId,
+            formOwnerType: 'Org'
+        };
+
+        const processedForm = {
+            ...formData,
+            questions: (formData.questions || []).map((q) => {
+                if (q._id && String(q._id).startsWith('NEW_QUESTION_')) {
+                    const { _id, ...rest } = q;
+                    return rest;
+                }
+                return q;
+            })
+        };
+
+        const newForm = new Form(processedForm);
+        await newForm.save();
+
+        res.status(201).json({
+            success: true,
+            message: 'Form created successfully',
+            data: newForm
+        });
+    } catch (error) {
+        console.error('Error creating form:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Update org form (event managers can edit registration forms)
+router.put('/:orgId/forms/:formId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Org, Form } = getModels(req, 'Org', 'Form');
+    const { orgId, formId } = req.params;
+    const { form: formBody } = req.body;
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        const existingForm = await Form.findOne({
+            _id: formId,
+            formOwner: orgId,
+            formOwnerType: 'Org'
+        });
+        if (!existingForm) {
+            return res.status(404).json({
+                success: false,
+                message: 'Form not found or access denied'
+            });
+        }
+
+        const processedForm = {
+            ...formBody,
+            questions: (formBody.questions || []).map((q) => {
+                if (q._id && String(q._id).startsWith('NEW_QUESTION_')) {
+                    const { _id, ...rest } = q;
+                    return rest;
+                }
+                return q;
+            })
+        };
+
+        const updatedForm = await Form.findByIdAndUpdate(
+            formId,
+            { ...processedForm, updatedAt: new Date() },
+            { new: true }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Form updated successfully',
+            data: updatedForm
+        });
+    } catch (error) {
+        console.error('Error updating org form:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Get event registration form responses (for organizers)
+router.get('/:orgId/events/:eventId/registration-responses', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, FormResponse, User, Form } = getModels(req, 'Event', 'FormResponse', 'User', 'Form');
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        })
+            .populate('attendees.userId', 'name username email');
+
+        if (!event) {
+            return res.status(404).json({
+                success: false,
+                message: 'Event not found'
+            });
+        }
+
+        const registrations = (event.attendees || []).map(a => ({
+            userId: a.userId,
+            registeredAt: a.registeredAt,
+            guestCount: a.guestCount,
+            checkedIn: a.checkedIn,
+            checkedInAt: a.checkedInAt
+        }));
+
+        let formResponses = [];
+        if (event.registrationFormId) {
+            const responses = await FormResponse.find({ event: eventId })
+                .populate('submittedBy', 'name username email picture')
+                .sort({ submittedAt: 1 })
+                .lean();
+            formResponses = responses.map(r => ({
+                _id: r._id,
+                submittedBy: r.submittedBy,
+                submittedAt: r.submittedAt,
+                formSnapshot: r.formSnapshot,
+                answers: r.answers
+            }));
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                registrations,
+                formResponses,
+                registrationFormId: event.registrationFormId || null
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching registration responses:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Remove a registration (form response + attendee) - event managers only
+router.delete('/:orgId/events/:eventId/registration-responses/:responseId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, FormResponse, EventAnalytics } = getModels(req, 'Event', 'FormResponse', 'EventAnalytics');
+    const { orgId, eventId, responseId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const formResponse = await FormResponse.findOne({
+            _id: responseId,
+            event: eventId
+        });
+        if (!formResponse) {
+            return res.status(404).json({ success: false, message: 'Registration response not found' });
+        }
+
+        const userId = formResponse.submittedBy?.toString?.() || formResponse.submittedBy;
+        await FormResponse.deleteOne({ _id: responseId });
+
+        const attendees = (event.attendees || []).filter(
+            a => (a.userId?.toString?.() || a.userId) !== userId
+        );
+        const removed = event.attendees.length - attendees.length;
+        event.attendees = attendees;
+        event.registrationCount = Math.max(0, (event.registrationCount || 0) - (removed ? 1 : 0));
+        await event.save();
+
+        try {
+            const analytics = await EventAnalytics.findOne({ eventId });
+            if (analytics && (analytics.registrations ?? analytics.rsvps) > 0) {
+                analytics.registrations = Math.max(0, (analytics.registrations ?? analytics.rsvps ?? 0) - 1);
+                if (analytics.uniqueRegistrations != null) analytics.uniqueRegistrations = Math.max(0, (analytics.uniqueRegistrations - 1));
+                else if (analytics.uniqueRsvps != null) analytics.uniqueRsvps = Math.max(0, (analytics.uniqueRsvps - 1));
+                analytics.registrationHistory = (analytics.registrationHistory || analytics.rsvpHistory || []).filter(
+                    r => (r.userId?.toString?.() || r.userId) !== userId
+                );
+                await analytics.save();
+            }
+        } catch (analyticsErr) {
+            console.error('Error updating analytics after registration removal:', analyticsErr);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Registration removed',
+            data: { removed: true }
+        });
+    } catch (error) {
+        console.error('Error removing registration:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Remove an attendee by userId (for events without a registration form, or bulk remove)
+router.delete('/:orgId/events/:eventId/registrations/:userId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, FormResponse, EventAnalytics } = getModels(req, 'Event', 'FormResponse', 'EventAnalytics');
+    const { orgId, eventId, userId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const attendees = (event.attendees || []).filter(
+            a => (a.userId?.toString?.() || a.userId) !== userId
+        );
+        const removed = event.attendees.length - attendees.length;
+        if (removed === 0) {
+            return res.status(404).json({ success: false, message: 'Registration not found' });
+        }
+
+        event.attendees = attendees;
+        event.registrationCount = Math.max(0, (event.registrationCount || 0) - 1);
+        await event.save();
+
+        await FormResponse.deleteOne({ event: eventId, submittedBy: userId });
+
+        try {
+            const analytics = await EventAnalytics.findOne({ eventId });
+            if (analytics && (analytics.registrations ?? analytics.rsvps) > 0) {
+                analytics.registrations = Math.max(0, (analytics.registrations ?? analytics.rsvps ?? 0) - 1);
+                if (analytics.uniqueRegistrations != null) analytics.uniqueRegistrations = Math.max(0, (analytics.uniqueRegistrations - 1));
+                else if (analytics.uniqueRsvps != null) analytics.uniqueRsvps = Math.max(0, (analytics.uniqueRsvps - 1));
+                analytics.registrationHistory = (analytics.registrationHistory || analytics.rsvpHistory || []).filter(
+                    r => (r.userId?.toString?.() || r.userId) !== userId
+                );
+                await analytics.save();
+            }
+        } catch (analyticsErr) {
+            console.error('Error updating analytics after registration removal:', analyticsErr);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Registration removed',
+            data: { removed: true }
+        });
+    } catch (error) {
+        console.error('Error removing registration:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
         });
     }
 });
@@ -2141,110 +2456,69 @@ router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManag
         const endDateNormalized = new Date(dayBeforeEventNormalized);
         const totalDays = Math.max(0, Math.floor((endDateNormalized - eventCreatedNormalized) / (1000 * 60 * 60 * 24)));
         
-        // Get all RSVPs with "going" status
-        // For past events, only count RSVPs up to event start date
-        // For future events, count all RSVPs up to and including today
-        // Note: RSVPs cannot happen in the future, so we only include up to the cutoff date
         const cutoffDate = eventStart < now ? eventStart : now;
         const cutoffDateNormalized = new Date(cutoffDate);
         cutoffDateNormalized.setHours(23, 59, 59, 999);
-        
-        // For future events, also include any RSVPs that happen "today" even if timestamp is slightly ahead
-        // This handles timezone/server clock differences
-        // We'll include RSVPs up to end of today + 1 hour buffer for safety
-        const maxAllowedDate = eventStart < now 
-            ? cutoffDateNormalized 
-            : new Date(now.getTime() + 60 * 60 * 1000); // Today + 1 hour buffer
-        
-        // Use EventAnalytics.rsvpHistory as primary source for timestamps (indexed, accurate)
-        // Cross-reference with Event.attendees for guestCount
+
+        const maxAllowedDate = eventStart < now
+            ? cutoffDateNormalized
+            : new Date(now.getTime() + 60 * 60 * 1000);
+
         const attendees = event.attendees || [];
-        const rsvpHistory = analytics?.rsvpHistory || [];
-        const rsvpStatsGoing = event.rsvpStats?.going || 0;
-        
-        // Debug: Check if we have rsvpHistory data
-        if (rsvpHistory.length === 0 && rsvpStatsGoing > 0) {
-            console.log(`Warning: No rsvpHistory found but rsvpStats shows ${rsvpStatsGoing} going RSVPs. This may indicate rsvpHistory wasn't tracked.`);
-        }
-        
-        // Create a map of userId -> attendee for quick guestCount lookup
+        const registrationHistory = analytics?.registrationHistory || [];
+        const registrationCountTotal = event.registrationCount ?? 0;
+
         const attendeeMap = new Map();
         attendees.forEach(attendee => {
             if (attendee && attendee.userId) {
                 const userIdStr = attendee.userId.toString();
-                // Keep the most recent attendee record (in case of duplicates)
-                if (!attendeeMap.has(userIdStr) || 
-                    (attendee.rsvpDate && new Date(attendee.rsvpDate) > new Date(attendeeMap.get(userIdStr).rsvpDate || 0))) {
+                const regAt = attendee.registeredAt || attendee.rsvpDate;
+                if (!attendeeMap.has(userIdStr) || (regAt && new Date(regAt) > new Date(attendeeMap.get(userIdStr).registeredAt || attendeeMap.get(userIdStr).rsvpDate || 0))) {
                     attendeeMap.set(userIdStr, attendee);
                 }
             }
         });
-        
-        // Filter rsvpHistory for "going" status and within cutoff date
-        // Use rsvpHistory timestamps (more accurate and indexed)
-        // This will include ALL RSVPs that happened on or before the cutoff date
-        // For future events: includes all RSVPs up to today (with small buffer for timezone differences)
-        // For past events: includes all RSVPs up to event start date
-        const goingRSVPsFromHistory = rsvpHistory.filter(rsvp => {
-            if (rsvp.status !== 'going') return false;
-            const rsvpTimestamp = new Date(rsvp.timestamp);
-            // Include RSVPs that happened on or before the max allowed date
-            // This ensures we capture all valid RSVPs while excluding any future-dated entries
-            return rsvpTimestamp <= maxAllowedDate;
+
+        const registrationsFromHistory = registrationHistory.filter(r => {
+            const ts = new Date(r.timestamp);
+            return ts <= maxAllowedDate;
         });
-        
-        // Group RSVPs by day using rsvpHistory timestamps
+
         const rsvpsByDay = {};
-        goingRSVPsFromHistory.forEach(rsvp => {
-            const rsvpTimestamp = new Date(rsvp.timestamp);
-            const dayKey = rsvpTimestamp.toISOString().split('T')[0];
-            
-            // Get guestCount from attendee map, default to 1
-            const attendee = attendeeMap.get(rsvp.userId.toString());
+        registrationsFromHistory.forEach(r => {
+            const dayKey = new Date(r.timestamp).toISOString().split('T')[0];
+            const attendee = attendeeMap.get(r.userId.toString());
             const guestCount = attendee?.guestCount || 1;
-            
-            if (!rsvpsByDay[dayKey]) {
-                rsvpsByDay[dayKey] = 0;
-            }
+            if (!rsvpsByDay[dayKey]) rsvpsByDay[dayKey] = 0;
             rsvpsByDay[dayKey] += guestCount;
         });
-        
-        // Fallback: If no rsvpHistory but we have attendees with rsvpDate, use those
-        if (goingRSVPsFromHistory.length === 0 && attendees.length > 0) {
+
+        if (registrationsFromHistory.length === 0 && attendees.length > 0) {
             attendees.forEach(attendee => {
-                if (!attendee || attendee.status !== 'going') return;
-                
-                // Use rsvpDate from attendee if available
-                const rsvpDate = attendee.rsvpDate ? new Date(attendee.rsvpDate) : new Date(eventCreated);
-                if (rsvpDate > cutoffDateNormalized) return;
-                
-                const dayKey = rsvpDate.toISOString().split('T')[0];
-                if (!rsvpsByDay[dayKey]) {
-                    rsvpsByDay[dayKey] = 0;
-                }
+                if (!attendee) return;
+                const regAt = attendee.registeredAt || attendee.rsvpDate;
+                const regDate = regAt ? new Date(regAt) : new Date(eventCreated);
+                if (regDate > cutoffDateNormalized) return;
+                const dayKey = regDate.toISOString().split('T')[0];
+                if (!rsvpsByDay[dayKey]) rsvpsByDay[dayKey] = 0;
                 rsvpsByDay[dayKey] += attendee.guestCount || 1;
             });
         }
-        
-        // Final fallback: If we have rsvpStats but no history/attendees, distribute evenly
-        const totalRSVPsFromData = Object.values(rsvpsByDay).reduce((sum, count) => sum + count, 0);
-        if (totalRSVPsFromData === 0 && rsvpStatsGoing > 0 && eventCreated <= cutoffDateNormalized) {
+
+        const totalFromData = Object.values(rsvpsByDay).reduce((sum, c) => sum + c, 0);
+        if (totalFromData === 0 && registrationCountTotal > 0 && eventCreated <= cutoffDateNormalized) {
             const daysFromCreation = Math.max(1, Math.ceil((cutoffDateNormalized - eventCreatedNormalized) / (1000 * 60 * 60 * 24)));
-            const rsvpsPerDay = Math.ceil(rsvpStatsGoing / daysFromCreation);
-            let remainingRSVPs = rsvpStatsGoing;
-            
-            for (let i = 0; i < daysFromCreation && remainingRSVPs > 0; i++) {
+            const perDay = Math.ceil(registrationCountTotal / daysFromCreation);
+            let remaining = registrationCountTotal;
+            for (let i = 0; i < daysFromCreation && remaining > 0; i++) {
                 const currentDate = new Date(eventCreatedNormalized);
                 currentDate.setDate(currentDate.getDate() + i);
                 if (currentDate > cutoffDateNormalized) break;
-                
                 const dayKey = currentDate.toISOString().split('T')[0];
-                const rsvpsForDay = Math.min(rsvpsPerDay, remainingRSVPs);
-                if (!rsvpsByDay[dayKey]) {
-                    rsvpsByDay[dayKey] = 0;
-                }
-                rsvpsByDay[dayKey] += rsvpsForDay;
-                remainingRSVPs -= rsvpsForDay;
+                const forDay = Math.min(perDay, remaining);
+                if (!rsvpsByDay[dayKey]) rsvpsByDay[dayKey] = 0;
+                rsvpsByDay[dayKey] += forDay;
+                remaining -= forDay;
             }
         }
 
@@ -2334,8 +2608,8 @@ router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManag
         console.log(`RSVP Growth Data:`, {
             eventId,
             totalAttendees: event.attendees?.length || 0,
-            rsvpHistoryCount: rsvpHistory.length,
-            goingRSVPsFromHistory: goingRSVPsFromHistory.length,
+            registrationHistoryCount: registrationHistory.length,
+            registrationsFromHistoryCount: registrationsFromHistory.length,
             rsvpsByDay,
             dailyDataLength: dailyData.length,
             totalDays,
@@ -2349,9 +2623,8 @@ router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManag
             now: now.toISOString(),
             firstDay: dailyData[0]?.date,
             lastDay: dailyData[dailyData.length - 1]?.date,
-            sampleRSVPTimestamps: goingRSVPsFromHistory.slice(0, 5).map(r => ({
+            sampleRSVPTimestamps: registrationsFromHistory.slice(0, 5).map(r => ({
                 timestamp: r.timestamp,
-                status: r.status,
                 userId: r.userId
             }))
         });
@@ -2409,8 +2682,8 @@ router.get('/:orgId/events/:eventId/analytics', verifyToken, requireEventManagem
                 analytics: analytics || {
                     views: 0,
                     uniqueViews: 0,
-                    rsvps: 0,
-                    uniqueRsvps: 0,
+                    registrations: 0,
+                    uniqueRegistrations: 0,
                     engagementRate: 0
                 },
                 roles: {
