@@ -143,6 +143,19 @@ const OrgSchema= new Schema({
         enum: ['pending', 'approved', 'rejected', 'conditionally_approved', 'under_review', 'escalated'],
         default: 'pending'
     },
+    // Atlas org approval (new orgs - pending until manual or auto approval)
+    approvalStatus: {
+        type: String,
+        enum: ['pending', 'approved'],
+        default: 'approved'
+    },
+    approvedAt: {
+        type: Date
+    },
+    approvedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'User'
+    },
     // Add metadata for role management
     roleManagement: {
         allowCustomRoles: {

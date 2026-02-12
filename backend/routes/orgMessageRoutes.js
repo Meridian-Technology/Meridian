@@ -118,6 +118,19 @@ router.post('/:orgId/messages', verifyToken, async (req, res) => {
             });
         }
 
+        // Atlas: Check if pending org is allowed to post messages
+        if (org.approvalStatus === 'pending') {
+            const systemConfig = await OrgManagementConfig.findOne();
+            const allowedActions = systemConfig?.orgApproval?.pendingOrgLimits?.allowedActions || [];
+            if (!allowedActions.includes('post_messages')) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Your organization is pending approval and cannot post messages yet.',
+                    code: 'ORG_PENDING_APPROVAL'
+                });
+            }
+        }
+
         // Validate content
         if (!content || !content.trim()) {
             console.log('Message content is required');

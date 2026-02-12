@@ -232,6 +232,41 @@ router.put('/verification-requests/:requestId', verifyToken, authorizeRoles('adm
     }
 });
 
+// ==================== PENDING APPROVALS ====================
+
+// Get orgs pending approval (admin/root only)
+router.get('/pending-approvals', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
+
+    try {
+        const orgs = await Org.find({ approvalStatus: 'pending' })
+            .populate('owner', 'username name email')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const orgsWithCount = await Promise.all(orgs.map(async (org) => {
+            const memberCount = await OrgMember.countDocuments({ org_id: org._id, status: 'active' });
+            return {
+                ...org,
+                memberCount
+            };
+        }));
+
+        console.log(`GET: /org-management/pending-approvals - Retrieved ${orgsWithCount.length} pending orgs`);
+        res.status(200).json({
+            success: true,
+            data: orgsWithCount
+        });
+    } catch (error) {
+        console.error('Error fetching pending approvals:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching pending approvals',
+            error: error.message
+        });
+    }
+});
+
 // ==================== CONFIGURATION MANAGEMENT ====================
 
 // Messaging defaults from orgManagementConfig schema (so clients always get min/max limits)
@@ -558,6 +593,49 @@ router.get('/organizations', verifyToken, authorizeRoles('admin', 'root'), async
         res.status(500).json({
             success: false,
             message: 'Error fetching organizations',
+            error: error.message
+        });
+    }
+});
+
+// Approve a pending organization
+router.put('/organizations/:orgId/approve', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId } = req.params;
+    const adminId = req.user.userId;
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        if (org.approvalStatus !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Organization is not pending approval'
+            });
+        }
+
+        org.approvalStatus = 'approved';
+        org.approvedAt = new Date();
+        org.approvedBy = adminId;
+        await org.save();
+
+        console.log(`PUT: /org-management/organizations/${orgId}/approve - Organization approved`);
+        res.status(200).json({
+            success: true,
+            message: 'Organization approved successfully',
+            data: org
+        });
+    } catch (error) {
+        console.error('Error approving organization:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error approving organization',
             error: error.message
         });
     }

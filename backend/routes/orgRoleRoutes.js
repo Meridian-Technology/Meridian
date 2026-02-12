@@ -318,7 +318,11 @@ router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
             await member.changeRole(role, req.user.userId, reason);
         }
 
-        await member.save();   
+        await member.save();
+
+        // Check auto-approve for org (Atlas: when member count reaches threshold)
+        const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
+        await checkAndAutoApproveOrg(req, orgId);
 
         //for testing
         if(!user.clubAssociations.find(club => club.toString() === orgId)){
@@ -519,6 +523,10 @@ router.post('/:orgId/applications/:applicationId/approve', verifyToken, requireM
         });
 
         await newMember.save();
+
+        // Check auto-approve for org (Atlas: when member count reaches threshold)
+        const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
+        await checkAndAutoApproveOrg(req, orgId);
 
         // Update application status
         application.status = 'approved';
