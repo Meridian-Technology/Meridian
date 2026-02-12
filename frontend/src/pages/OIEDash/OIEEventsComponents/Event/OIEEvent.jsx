@@ -10,7 +10,7 @@ import defaultAvatar from '../../../../assets/defaultAvatar.svg';
 import deleteRequest from '../../../../utils/deleteRequest';
 import apiRequest from '../../../../utils/postRequest';
 
-function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showExpand=true, manage=false, viewingRole, showHosting=true, extraInfo, showHostingType=true}){
+function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showExpand=true, manage=false, viewingRole, showHosting=true, extraInfo, showHostingType=true, onOpenDashboard}){
     const [popupOpen, setPopupOpen] = useState(false);
     const [edited, setEdited] = useState(false);
     const navigate = useNavigate();
@@ -19,8 +19,16 @@ function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showE
     const managePopupRef = useRef(null);
     const [archived, setArchived] = useState(false);
 
-    const handleEventClick = (event) => {
+    const handleEventClick = () => {
         setPopupOpen(true);
+    }
+
+    const handleMainAction = () => {
+        if (onOpenDashboard) {
+            onOpenDashboard(event);
+        } else {
+            handleEventClick();
+        }
     }
 
     const onPopupClose = () => {
@@ -99,7 +107,7 @@ function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showE
     }
 
     return(
-        <div className={`oie-event-component ${managePopupOpen ? "manage" : ""} ${archived && "archived"}`} style={index ? {animationDelay: `${index * 0.1}s`}:{}}>
+        <div className={`oie-event-component ${managePopupOpen ? "manage" : ""} ${archived && "archived"} ${onOpenDashboard ? "has-dashboard" : ""}`} style={index ? {animationDelay: `${index * 0.1}s`}:{}}>
             <Popup isOpen={popupOpen} onClose={onPopupClose} customClassName={"wide-content no-padding no-styling oie"} waitForLoad={true} >
                 {showOIE && !(event.OIEStatus === "Not Applicable") ?
                     <OIEFullEvent event={event} refetch={refetch} setEdited={setEdited} viewingRole={viewingRole}/>
@@ -107,6 +115,11 @@ function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showE
                     <FullEvent event={event}/>
                 }
             </Popup>
+            {onOpenDashboard && (
+                <button type="button" className="quick-look-corner" onClick={(e) => { e.stopPropagation(); handleEventClick(); }} title="Quick look">
+                    <Icon icon="mdi:eye-outline" />
+                </button>
+            )}
             <div className="info">
                 {
                     // showStatus && <div className={`oie-status ${statusMessages[event.OIEStatus][1]}`}><p>{statusMessages[event.OIEStatus][0]}</p></div>
@@ -127,7 +140,7 @@ function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showE
             <div className="event-button-container">
                 {
                     showExpand && 
-                    <button className="button" onClick={() => handleEventClick(event)}>
+                    <button className="button" onClick={handleMainAction}>
                         <Icon icon="material-symbols:expand-content-rounded" />
                         <p>details</p>
                     </button>

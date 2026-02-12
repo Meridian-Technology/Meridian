@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './FormViewer.scss';
 import './Question.scss'
 import { Icon } from '@iconify-icon/react';
@@ -6,7 +6,6 @@ import useAuth from '../../hooks/useAuth';
 
 const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAuthenticated, formConfig}) => {
   const [responses, setResponses] = useState({});
-  const [animatedPercentage, setAnimatedPercentage] = useState(0);
   const { isAuthenticated: authStatus, isAuthenticating } = useAuth();
 
   const handleResponseChange = (questionId, value) => {
@@ -31,57 +30,6 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
       return response !== undefined && response !== null && response !== '';
     });
   };
-
-  // Calculate completion percentage for required questions
-  const getCompletionPercentage = () => {
-    if (!form || !form.questions) return 0;
-    
-    const requiredQuestions = form.questions.filter(q => q.required);
-    if (requiredQuestions.length === 0) return 100; // No required fields, show as complete
-    
-    const completedCount = requiredQuestions.filter(q => {
-      const response = responses[q._id];
-      if (Array.isArray(response)) {
-        return response.length > 0;
-      }
-      return response !== undefined && response !== null && response !== '';
-    }).length;
-    
-    return Math.round((completedCount / requiredQuestions.length) * 100);
-  };
-
-  // Calculate current completion percentage
-  const completionPercentage = getCompletionPercentage();
-
-  // Animate percentage smoothly to match progress bar animation (0.5s ease)
-  useEffect(() => {
-    const targetPercentage = completionPercentage;
-    const startPercentage = animatedPercentage;
-    const difference = targetPercentage - startPercentage;
-    const duration = 500; // 0.5s in milliseconds
-    const startTime = performance.now();
-
-    if (difference === 0) return;
-
-    const animate = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // Ease function (ease-out) - matches CSS ease timing
-      const easeProgress = 1 - Math.pow(1 - progress, 3);
-      
-      const currentPercentage = Math.round(startPercentage + (difference * easeProgress));
-      setAnimatedPercentage(currentPercentage);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        setAnimatedPercentage(targetPercentage);
-      }
-    };
-
-    requestAnimationFrame(animate);
-  }, [completionPercentage]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -213,18 +161,26 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
 
   const scenario = showScenario();
 
-  // Default gradient colors (can be customized via formConfig.headerColor)
-  const headerGradient = (formConfig && formConfig.headerColor) || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+  const renderHeader = () =>
+    form && (
+      <div className="form-viewer-header">
+        <h1>{form.title}</h1>
+        {form.description && <p>{form.description}</p>}
+        {ownerInfo && (
+          <div className="form-viewer-owner">
+            <Icon icon="mdi:account-circle" className="form-viewer-owner-icon" />
+            <span>Created by {ownerInfo.name}</span>
+          </div>
+        )}
+      </div>
+    );
 
   if (scenario === 'closed') {
     return (
       <div className="form-viewer">
-        <div className="form-header" style={{ background: headerGradient }}>
-          <h1>{form?.title || 'Form'}</h1>
-          {form?.description && <p>{form.description}</p>}
-        </div>
-        <div className="form-scenario-screen">
-          <Icon icon="mdi:lock-outline" className="scenario-icon" />
+        {renderHeader()}
+        <div className="form-viewer-scenario">
+          <Icon icon="mdi:lock-outline" className="form-viewer-scenario-icon" />
           <h2>Form Closed</h2>
           <p>This form is no longer accepting responses.</p>
         </div>
@@ -235,15 +191,12 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
   if (scenario === 'login_required') {
     return (
       <div className="form-viewer">
-        <div className="form-header" style={{ background: headerGradient }}>
-          <h1>{form?.title || 'Form'}</h1>
-          {form?.description && <p>{form.description}</p>}
-        </div>
-        <div className="form-scenario-screen">
-          <Icon icon="mdi:account-lock-outline" className="scenario-icon" />
+        {renderHeader()}
+        <div className="form-viewer-scenario">
+          <Icon icon="mdi:account-lock-outline" className="form-viewer-scenario-icon" />
           <h2>Login Required</h2>
           <p>You need to be logged in to respond to this form.</p>
-          <a href="/login" className="login-button">Go to Login</a>
+          <a href="/login" className="form-viewer-btn form-viewer-btn-primary">Go to Login</a>
         </div>
       </div>
     );
@@ -252,12 +205,9 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
   if (scenario === 'already_submitted') {
     return (
       <div className="form-viewer">
-        <div className="form-header" style={{ background: headerGradient }}>
-          <h1>{form?.title || 'Form'}</h1>
-          {form?.description && <p>{form.description}</p>}
-        </div>
-        <div className="form-scenario-screen">
-          <Icon icon="mdi:check-circle-outline" className="scenario-icon success" />
+        {renderHeader()}
+        <div className="form-viewer-scenario">
+          <Icon icon="mdi:check-circle-outline" className="form-viewer-scenario-icon form-viewer-scenario-icon-success" />
           <h2>Already Submitted</h2>
           <p>You have already submitted a response to this form.</p>
         </div>
@@ -268,7 +218,7 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
   if (!form) {
     return (
       <div className="form-viewer">
-        <div className="form-scenario-screen">
+        <div className="form-viewer-scenario">
           <p>Loading form...</p>
         </div>
       </div>
@@ -277,39 +227,29 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
 
   return (
     <div className="form-viewer">
-      <div className="form-header" style={{ background: headerGradient }}>
-        <h1>{form.title}</h1>
-        {form.description && <p>{form.description}</p>}
-        {ownerInfo && (
-          <div className="form-owner">
-            <Icon icon="mdi:account-circle" className="owner-icon" />
-            <span>Created by {ownerInfo.name}</span>
-          </div>
-        )}
-      </div>
-
-      <form onSubmit={handleSubmit}>
-        {form.questions && form.questions.map((question) => (
-          <div key={question._id} className="question-container">
-            <div className="question-header">
-              <h3>{question.question}</h3>
-              {question.required && <span className="required">*</span>}
+      {renderHeader()}
+      <form className="form-viewer-form" onSubmit={handleSubmit}>
+        <div className="form-viewer-body">
+          {form.questions && form.questions.map((question) => (
+            <div key={question._id} className="question-container">
+              <div className="question-header">
+                <h3>{question.question}</h3>
+                {question.required && <span className="required">*</span>}
+              </div>
+              {renderQuestion(question)}
             </div>
-            {renderQuestion(question)}
-          </div>
-        ))}
+          ))}
+        </div>
+        <div className="form-viewer-footer">
+          <button
+            type="submit"
+            className="form-viewer-btn form-viewer-btn-primary"
+            disabled={!areAllRequiredFieldsCompleted()}
+          >
+            Submit
+          </button>
+        </div>
       </form>
-      <button 
-        type="submit" 
-        className={`submit-button ${animatedPercentage === 100 ? 'complete' : ''}`}
-        onClick={handleSubmit}
-        disabled={!areAllRequiredFieldsCompleted()}
-        style={{ '--progress': `${getCompletionPercentage()}%` }}
-      >
-        <span className="button-text">
-          {animatedPercentage === 100 ? 'Submit' : `${animatedPercentage}%`}
-        </span>
-      </button>
     </div>
   );
 };
