@@ -550,7 +550,7 @@ router.get('/:orgId/forms', verifyToken, requireEventManagement('orgId'), async 
             formOwner: orgId,
             formOwnerType: 'Org'
         })
-            .select('_id title description questions')
+            .select('_id title description questions allowAnonymous collectGuestDetails')
             .sort({ updatedAt: -1 })
             .lean();
 
@@ -714,6 +714,8 @@ router.get('/:orgId/events/:eventId/registration-responses', verifyToken, requir
             formResponses = responses.map(r => ({
                 _id: r._id,
                 submittedBy: r.submittedBy,
+                guestName: r.guestName,
+                guestEmail: r.guestEmail ?? r.guestUsername,
                 submittedAt: r.submittedAt,
                 formSnapshot: r.formSnapshot,
                 answers: r.answers
@@ -767,9 +769,9 @@ router.delete('/:orgId/events/:eventId/registration-responses/:responseId', veri
         const attendees = (event.attendees || []).filter(
             a => (a.userId?.toString?.() || a.userId) !== userId
         );
-        const removed = event.attendees.length - attendees.length;
         event.attendees = attendees;
-        event.registrationCount = Math.max(0, (event.registrationCount || 0) - (removed ? 1 : 0));
+        // Always decrement registrationCount (FormResponse = 1 registration, whether anonymous or not)
+        event.registrationCount = Math.max(0, (event.registrationCount || 0) - 1);
         await event.save();
 
         try {
