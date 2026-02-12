@@ -11,6 +11,7 @@ import AgendaBuilder from './EventAgendaBuilder/AgendaBuilder';
 import JobsManager from './EventJobsManager/JobsManager';
 import EventAnalyticsDetail from './EventAnalyticsDetail';
 import EventCheckInTab from './EventCheckInTab/EventCheckInTab';
+import RegistrationsTab from './RegistrationsTab/RegistrationsTab';
 import ComingSoon from './ComingSoon';
 // Temporarily disabled - EquipmentManager functionality commented out
 // import EquipmentManager from './EventEquipment/EquipmentManager';
@@ -132,6 +133,17 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             icon: 'mdi:pencil',
             description: 'Edit event details and settings',
             content: <EventEditorTab
+                        event={dashboardData.event}
+                        orgId={orgId}
+                        onRefresh={handleRefresh}
+                    />
+        },
+        {
+            id: 'registrations',
+            label: 'Registrations',
+            icon: 'mdi:clipboard-list-outline',
+            description: 'View registrations and form responses',
+            content: <RegistrationsTab
                         event={dashboardData.event}
                         orgId={orgId}
                         onRefresh={handleRefresh}

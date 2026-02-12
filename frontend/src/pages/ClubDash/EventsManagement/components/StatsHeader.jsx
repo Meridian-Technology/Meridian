@@ -71,9 +71,9 @@ function StatsHeader({ orgId, refreshTrigger }) {
         },
         {
             icon: 'mingcute:user-add-fill',
-            title: 'Total RSVPs',
-            value: formatNumber(overview.totalRsvps),
-            subtitle: `${formatNumber(overview.totalUniqueRsvps)} unique`
+            title: 'Total Registrations',
+            value: formatNumber(overview.totalRegistrations ?? overview.totalRsvps),
+            subtitle: `${formatNumber(overview.totalUniqueRegistrations ?? overview.totalUniqueRsvps)} unique`
         },
         {
             icon: 'mingcute:trending-up-fill',
