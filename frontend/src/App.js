@@ -47,7 +47,7 @@ import { ProfileCreationProvider } from './ProfileCreationContext';
 import { WebSocketProvider } from './WebSocketContext';
 import Layout from './pages/Layout/Layout';
 import axios from 'axios';
-import CreateEvent from './pages/CreateEventV2/CreateEventV2';
+import CreateEvent from './pages/CreateEventV3/CreateEventV3';
 import EventsDash from './pages/EventsDash/EventsDash';
 import EventPage from './pages/EventPage/EventPage';
 import EventWorkspace from './pages/EventWorkspace/EventWorkspace';

@@ -3,7 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import { formatDistanceToNow } from 'date-fns';
 import './EventCheckIn.scss';
 
-function CheckInList({ attendees, onManualCheckIn, onRemoveCheckIn }) {
+function CheckInList({ attendees, onManualCheckIn, onRemoveCheckIn, onOpenManualCheckInModal }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [filterMethod, setFilterMethod] = useState('all'); // 'all', 'self', 'manual'
 
@@ -161,13 +161,9 @@ function CheckInList({ attendees, onManualCheckIn, onRemoveCheckIn }) {
             </div>
 
             {/* Manual Check-In Button (if onManualCheckIn provided) */}
-            {onManualCheckIn && (
+            {onManualCheckIn && onOpenManualCheckInModal && (
                 <div className="manual-checkin-section">
-                    <button className="manual-checkin-button" onClick={() => {
-                        // This would typically open a modal to select a user
-                        // For now, we'll just show a placeholder
-                        alert('Manual check-in feature - select user from modal');
-                    }}>
+                    <button type="button" className="manual-checkin-button" onClick={onOpenManualCheckInModal}>
                         <Icon icon="mdi:account-plus" />
                         Manually Check In Attendee
                     </button>

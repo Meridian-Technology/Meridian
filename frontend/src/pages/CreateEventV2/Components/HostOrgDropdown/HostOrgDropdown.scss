@@ -1,0 +1,143 @@
+.host-org-dropdown {
+    position: relative;
+    -webkit-user-select: none;
+    user-select: none;
+    width: 180px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+    background-color: var(--background);
+    border: 1px solid var(--lighterborder);
+    box-shadow: var(--shadow);
+    height: fit-content;
+    padding: 6px 10px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    z-index: 1000;
+    margin-bottom: 20px;
+
+    & > * {
+        transition: all 0.2s;
+    }
+
+    .host-org {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    img {
+        height: 24px;
+        width: 24px;
+        border-radius: 50%;
+        background: var(--background);
+        object-fit: cover;
+    }
+
+    h1 {
+        font-family: 'Inter';
+        font-size: 14px;
+        font-weight: 600;
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin: 0;
+        color: var(--text);
+    }
+
+    .dropdown {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        min-width: 100%;
+        box-sizing: border-box;
+        animation: hostOrgDropdownFadeIn 0.25s ease-out forwards;
+        transform-origin: top;
+
+        @keyframes hostOrgDropdownFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        &.dropdown-exit {
+            animation: hostOrgDropdownFadeOut 0.2s ease-in forwards;
+        }
+
+        @keyframes hostOrgDropdownFadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+        }
+
+        .org-list {
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            padding: 6px;
+            background-color: var(--background);
+            border: 1px solid var(--lighterborder);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        .drop-option {
+            padding: 8px 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            gap: 8px;
+            border-radius: 6px;
+            align-items: center;
+            -webkit-user-select: none;
+            user-select: none;
+
+            img {
+                height: 28px;
+                width: 28px;
+                border-radius: 50%;
+                object-fit: cover;
+            }
+
+            p {
+                font-family: 'Inter';
+                font-weight: 600;
+                color: var(--text);
+                font-size: 14px;
+                transition: all 0.2s;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                margin: 0;
+            }
+
+            &:hover {
+                background-color: var(--lightbackground);
+            }
+
+            &.selected {
+                background-color: var(--red-transparent);
+                &:hover {
+                    background-color: var(--red-transparent);
+                }
+            }
+        }
+    }
+}
