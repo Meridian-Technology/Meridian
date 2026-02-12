@@ -28,11 +28,6 @@ const EventAgendaSchema = new Schema({
             type: String,
             trim: true
         },
-        durationMinutes: {
-            type: Number,
-            required: false,
-            min: 1
-        },
         startTime: {
             type: Date,
             required: false

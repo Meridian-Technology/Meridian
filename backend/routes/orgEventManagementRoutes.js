@@ -1164,24 +1164,80 @@ router.post('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagemen
     const { items, publicNotes, internalNotes } = req.body;
 
     try {
+        if (items && Array.isArray(items)) {
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (!item.title || typeof item.title !== 'string' || item.title.trim() === '') {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Agenda item ${i + 1}: title is required.`
+                    });
+                }
+                if (!item.id || typeof item.id !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Agenda item ${i + 1}: id is required.`
+                    });
+                }
+                if (!item.startTime) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Agenda item ${i + 1}: startTime is required.`
+                    });
+                }
+                if (!item.endTime) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Agenda item ${i + 1}: endTime is required.`
+                    });
+                }
+                const startTime = new Date(item.startTime);
+                const endTime = new Date(item.endTime);
+                if (isNaN(startTime.getTime())) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Agenda item ${i + 1}: invalid startTime format.`
+                    });
+                }
+                if (isNaN(endTime.getTime())) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Agenda item ${i + 1}: invalid endTime format.`
+                    });
+                }
+                if (endTime <= startTime) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Agenda item ${i + 1}: endTime must be after startTime.`
+                    });
+                }
+            }
+        }
+
+        const sanitizedItems = (items || []).map((item) => {
+            const { durationMinutes, ...rest } = item;
+            return {
+                ...rest,
+                startTime: new Date(item.startTime),
+                endTime: new Date(item.endTime)
+            };
+        });
+
         let agenda = await EventAgenda.findOne({ eventId, orgId });
 
         if (agenda) {
-            // Update existing agenda
             if (items) {
-                agenda.items = items;
-                // When items are updated, set isPublished to false
+                agenda.items = sanitizedItems;
                 agenda.isPublished = false;
             }
             if (publicNotes !== undefined) agenda.publicNotes = publicNotes;
             if (internalNotes !== undefined) agenda.internalNotes = internalNotes;
             await agenda.save();
         } else {
-            // Create new agenda
             agenda = new EventAgenda({
                 eventId,
                 orgId,
-                items: items || [],
+                items: sanitizedItems,
                 publicNotes,
                 internalNotes,
                 isPublished: false
