@@ -1,11 +1,9 @@
 .event-dashboard {
     width: 100%;
     max-width: 100%;
-    min-height: 100vh;
+    min-height: 100%;
     background: var(--background);
-    display: flex;
-    flex-direction: column;
-    overflow-x: hidden; // Prevent horizontal scrolling
+    display: block;
 
     &.full-width-event-dashboard {
         max-width: 100%;
@@ -50,11 +48,9 @@
     }
 
     .event-dashboard-header {
-        position: relative;
         background: var(--background);
         border-bottom: 1px solid var(--lighterborder);
         padding: 2rem;
-        margin-bottom: 2rem;
 
         .header-background {
             position: absolute;
@@ -267,15 +263,18 @@
     }
 
     .event-dashboard-content {
-        padding: 0 2rem 2rem;
-        flex: 1;
         width: 100%;
         max-width: 100%;
-        overflow-x: hidden; // Prevent horizontal scrolling
+        overflow-x: hidden;
         box-sizing: border-box;
+        background: var(--background);
 
         .event-dashboard-tabs {
             background: var(--background);
+        }
+
+        .event-dashboard-tabs-sticky-spacer {
+            display: none;
         }
     }
 

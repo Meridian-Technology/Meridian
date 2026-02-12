@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
@@ -8,9 +9,18 @@ import AgendaItemEditor from './AgendaItemEditor';
 import AgendaDailyCalendar from './AgendaDailyCalendar/AgendaDailyCalendar';
 import PublishConfirmModal from './PublishConfirmModal';
 import DeleteConfirmModal from '../../../../../../components/DeleteConfirmModal/DeleteConfirmModal';
+import { getStoredAgendaView } from '../../../../../../utils/agendaViewPreferences';
 import './AgendaBuilder.scss';
 
-function AgendaBuilder({ event, orgId, onRefresh }) {
+const MINUTE_HEIGHT_PRESETS = [
+    { id: 'compact', label: 'Compact', value: 1 },
+    { id: 'normal', label: 'Normal', value: 3 },
+    { id: 'expanded', label: 'Expanded', value: 5 }
+];
+
+const AGENDA_VIEW_STORAGE_KEY = 'meridian-agenda-view';
+
+function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
     const { addNotification } = useNotification();
     const [items, setItems] = useState([]);
     const [editingItem, setEditingItem] = useState(null);
@@ -20,7 +30,18 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
     const [showPublishModal, setShowPublishModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [itemToDelete, setItemToDelete] = useState(null);
-    const [viewMode, setViewMode] = useState('creator'); // 'creator' | 'calendar'
+    const [viewMode, setViewMode] = useState(() => getStoredAgendaView().viewMode); // 'creator' | 'calendar'
+    const [calendarMinuteHeight, setCalendarMinuteHeight] = useState(() => getStoredAgendaView().calendarMinuteHeight); // 'compact' | 'normal' | 'expanded'
+
+    useEffect(() => {
+        localStorage.setItem(AGENDA_VIEW_STORAGE_KEY, JSON.stringify({
+            viewMode,
+            calendarMinuteHeight
+        }));
+    }, [viewMode, calendarMinuteHeight]);
+
+    const [headerOutOfView, setHeaderOutOfView] = useState(false);
+    const headerRef = useRef(null);
 
     const { data: agendaData, loading, refetch } = useFetch(
         event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/agenda` : null
@@ -300,6 +321,32 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
         publishAgenda();
     };
 
+    const updateHeaderVisibility = useCallback(() => {
+        const header = headerRef.current;
+        const scrollContainer = header?.closest('.dashboard-overlay') || header?.parentElement;
+        if (!header || !scrollContainer) return;
+
+        const headerRect = header.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const threshold = containerRect.top + 60;
+        setHeaderOutOfView(headerRect.bottom < threshold);
+    }, []);
+
+    useEffect(() => {
+        const header = headerRef.current;
+        const scrollContainer = header?.closest('.dashboard-overlay') || header?.parentElement;
+        if (!scrollContainer) return;
+
+        const runUpdate = () => requestAnimationFrame(updateHeaderVisibility);
+        updateHeaderVisibility();
+        scrollContainer.addEventListener('scroll', runUpdate, { passive: true });
+        window.addEventListener('resize', runUpdate);
+        return () => {
+            scrollContainer.removeEventListener('scroll', runUpdate);
+            window.removeEventListener('resize', runUpdate);
+        };
+    }, [updateHeaderVisibility, loading]);
+
     if (loading) {
         return (
             <div className="agenda-builder loading">
@@ -313,7 +360,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
 
     return (
         <div className="agenda-builder">
-            <div className="agenda-header">
+            <div ref={headerRef} className="agenda-header">
                 <div className="header-left">
                     <h3>
                         <Icon icon="mdi:calendar-clock" />
@@ -330,15 +377,21 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                             </span>
                         )}
                         {isPublished ? (
-                            <span className="publish-status published">
+                            <span className="publish-status published" title="Agenda is visible to attendees">
                                 <Icon icon="mdi:check-circle" />
                                 Published
                             </span>
                         ) : (
-                            <span className="publish-status pending">
-                                <Icon icon="mdi:clock-outline" />
-                                Pending
-                            </span>
+                            <>
+                                <span className="publish-status saved" title="Your changes are saved to the database">
+                                    <Icon icon="mdi:content-save-check" />
+                                    Saved
+                                </span>
+                                <span className="publish-status draft" title="Not visible to attendees. Click Publish when ready.">
+                                    <Icon icon="mdi:eye-off-outline" />
+                                    Draft
+                                </span>
+                            </>
                         )}
                     </div>
                 </div>
@@ -371,6 +424,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                             className="btn-publish"
                             onClick={handlePublish}
                             disabled={publishing}
+                            title="Make the agenda visible to attendees. Your changes are already saved."
                         >
                             <Icon
                                 icon={publishing ? 'mdi:loading' : 'mdi:publish'}
@@ -379,6 +433,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                             <span>{publishing ? 'Publishing...' : 'Publish'}</span>
                         </button>
                     )}
+
                     {saving && (
                         <span className="saving-indicator">
                             <Icon icon="mdi:loading" className="spinner" />
@@ -388,14 +443,50 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                 </div>
             </div>
 
+            {headerOutOfView && isTabActive && createPortal(
+                <div className="agenda-floating-actions">
+                    <button className="btn-primary" onClick={handleAddItem}>
+                        <Icon icon="mdi:plus" />
+                        <span>Add Item</span>
+                    </button>
+                    {!isPublished && items.length > 0 && (
+                        <button
+                            className="btn-publish"
+                            onClick={handlePublish}
+                            disabled={publishing}
+                        >
+                            <Icon
+                                icon={publishing ? 'mdi:loading' : 'mdi:publish'}
+                                className={publishing ? 'spinner' : ''}
+                            />
+                            <span>{publishing ? 'Publishing...' : 'Publish'}</span>
+                        </button>
+                    )}
+                </div>,
+                document.body
+            )}
+
             {viewMode === 'calendar' ? (
                 <div className="agenda-calendar-wrapper">
+                    <div className="calendar-zoom-controls">
+                        <label className="zoom-label">Zoom:</label>
+                        {MINUTE_HEIGHT_PRESETS.map((preset) => (
+                            <button
+                                key={preset.id}
+                                type="button"
+                                className={`zoom-btn ${calendarMinuteHeight === preset.id ? 'active' : ''}`}
+                                onClick={() => setCalendarMinuteHeight(preset.id)}
+                                title={`${preset.label} (${preset.value}px/min)`}
+                            >
+                                {preset.label}
+                            </button>
+                        ))}
+                    </div>
                     <AgendaDailyCalendar
                         agendaItems={items}
                         event={event}
-                        minuteHeight={4}
+                        minuteHeight={MINUTE_HEIGHT_PRESETS.find((p) => p.id === calendarMinuteHeight)?.value ?? 4}
                         onEditItem={handleEditItem}
-                        height="600px"
                     />
                 </div>
             ) : items.length === 0 ? (
@@ -415,7 +506,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                                 onEdit={() => handleEditItem(item)}
                                 onDelete={() => handleDeleteItem(item.id)}
                             />
-                        ))}
+                            ))}
                 </div>
             )}
 

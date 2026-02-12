@@ -160,7 +160,6 @@ function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, o
                         agendaItems={agendaItemsWithTimes}
                         event={event}
                         minuteHeight={2}
-                        height="400px"
                     />
                 </div>
             )}

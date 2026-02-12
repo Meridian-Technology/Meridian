@@ -120,7 +120,7 @@ function PublishConfirmModal({
         <Popup 
             isOpen={isOpen} 
             onClose={onCancel}
-            defaultStyling={false}
+            defaultStyling={true}
             customClassName="publish-confirm-modal-popup"
         >
             <div className="publish-confirm-modal">
@@ -132,6 +132,10 @@ function PublishConfirmModal({
                 </div>
 
                 <div className="modal-content">
+                    <div className="publish-info-note">
+                        <Icon icon="mdi:information-outline" />
+                        <span>Your agenda is already saved. Publishing makes it visible to attendees on the event page.</span>
+                    </div>
                     {isOver && (
                         <div className="time-warning-section over">
                             <Icon icon="mdi:alert-circle" />
@@ -207,18 +211,18 @@ function PublishConfirmModal({
                 <div className="modal-actions">
                     {(isOver || isUnder) && (
                         <button 
-                            className="btn-publish-without" 
-                            onClick={onPublishWithoutAdjusting}
+                            className={`btn-adjust ${roomAvailable === false ? 'disabled' : ''}`}
+                            onClick={handleConfirm}
+                            disabled={roomAvailable === false || checkingAvailability}
                         >
-                            Publish Without Adjusting
+                            Adjust Time & Publish
                         </button>
                     )}
                     <button 
-                        className={`btn-confirm ${roomAvailable === false ? 'disabled' : ''}`}
-                        onClick={handleConfirm}
-                        disabled={roomAvailable === false || checkingAvailability}
+                        className="btn-publish-without" 
+                        onClick={(isOver || isUnder) ? onPublishWithoutAdjusting : handleConfirm}
                     >
-                        {(isOver || isUnder) ? 'Adjust Time & Publish' : 'Publish'}
+                        {(isOver || isUnder) ? 'Publish Without Adjusting' : 'Publish'}
                     </button>
                 </div>
             </div>

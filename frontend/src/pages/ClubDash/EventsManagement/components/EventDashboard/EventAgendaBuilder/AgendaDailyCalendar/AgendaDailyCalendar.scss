@@ -1,12 +1,45 @@
 .agenda-daily-calendar {
-    overflow-y: auto;
+    overflow: visible;
+    border-top: 1px solid var(--lighterborder);
+
+    &.multi-day {
+        .calendar-header {
+            display: none;
+        }
+    }
 
     .calendar-body {
         position: relative;
+        padding-top: 12px;
     }
 
     .day-column {
         position: relative;
+    }
+
+    .day-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, rgba(77, 170, 87, 0.4), rgba(77, 170, 87, 0.15));
+        z-index: 10;
+        pointer-events: none;
+
+        .day-line-label {
+            position: absolute;
+            left: 8px;
+            top: -10px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--text);
+            background: var(--background);
+            padding: 2px 8px;
+            border: 1px solid rgba(77, 170, 87, 0.5);
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+            z-index: 11;
+        }
     }
 
     .event.agenda-event {

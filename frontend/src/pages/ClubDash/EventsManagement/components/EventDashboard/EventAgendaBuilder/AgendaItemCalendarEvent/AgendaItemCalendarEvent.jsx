@@ -38,7 +38,7 @@ function AgendaItemCalendarEvent({ item, onEdit, event }) {
             className={`agenda-item-calendar-event ${onEdit ? 'editable' : ''}`}
             style={{
                 backgroundColor: colors.background,
-                borderLeft: `4px solid ${colors.border}`,
+                border: `1px solid ${colors.border}`,
                 '--event-accent': colors.border
             }}
             onClick={handleClick}

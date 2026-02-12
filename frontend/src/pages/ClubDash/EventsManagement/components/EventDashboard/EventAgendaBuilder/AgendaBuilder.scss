@@ -1,5 +1,65 @@
+// Floating actions rendered via portal to body - must be top-level for position: fixed
+.agenda-floating-actions {
+    position: fixed;
+    top: 60px;
+    right: 2rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    z-index: 1000;
+    padding: 0.5rem;
+    background: var(--background);
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--lighterborder);
+
+    .btn-primary,
+    .btn-publish {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1rem;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        iconify-icon {
+            font-size: 1.1rem;
+        }
+    }
+
+    .btn-primary {
+        background: #4DAA57;
+        color: white;
+
+        &:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+    }
+
+    .btn-publish {
+        background: #1976d2;
+        color: white;
+
+        &:hover:not(:disabled) {
+            background: #1565c0;
+            transform: translateY(-2px);
+        }
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    }
+}
+
 .agenda-builder {
     padding: 1.5rem 0;
+    position: relative;
 
     &.loading {
         display: flex;
@@ -17,12 +77,14 @@
     }
 
     .agenda-header {
+        background: var(--background);
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 1.5rem;
         flex-wrap: wrap;
         gap: 1rem;
+        padding-bottom: 1rem;
 
         .header-left {
             h3 {
@@ -73,13 +135,36 @@
                         }
                     }
 
-                    &.pending {
+                    &.saved {
+                        background: #e8f5e9;
+                        color: #2e7d32;
+
+                        iconify-icon {
+                            color: #4caf50;
+                        }
+                    }
+
+                    &.draft {
                         background: #fff3cd;
                         color: #856404;
 
                         iconify-icon {
                             color: #ffc107;
                         }
+                    }
+                }
+
+                .save-hint {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.35rem;
+                    font-size: 0.8rem;
+                    color: var(--light-text);
+                    margin-left: 0.25rem;
+
+                    iconify-icon {
+                        font-size: 1rem;
+                        opacity: 0.8;
                     }
                 }
 
@@ -262,6 +347,43 @@
 
     .agenda-calendar-wrapper {
         margin-top: 1rem;
+
+        .calendar-zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+
+            .zoom-label {
+                font-size: 0.85rem;
+                font-weight: 500;
+                color: var(--light-text);
+                margin: 0;
+            }
+
+            .zoom-btn {
+                padding: 0.5rem 0.9rem;
+                background: transparent;
+                border: 1px solid var(--lighterborder);
+                border-radius: 6px;
+                color: var(--text);
+                font-size: 0.85rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                &:hover {
+                    background: var(--lightbackground);
+                    border-color: #4DAA57;
+                }
+
+                &.active {
+                    background: #4DAA57;
+                    color: white;
+                    border-color: #4DAA57;
+                }
+            }
+        }
     }
 
     .empty-agenda {
