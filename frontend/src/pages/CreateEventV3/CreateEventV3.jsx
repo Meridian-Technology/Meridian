@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import apiRequest from '../../utils/postRequest';
 import DynamicFormField from '../../components/DynamicFormField/DynamicFormField';
 import { useFetch } from '../../hooks/useFetch';
@@ -31,12 +31,16 @@ const DEFAULT_STEPS = [
 
 const CreateEventV3 = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const formConfigData = useFetch('/api/event-system-config/form-config');
     const formConfig = formConfigData.data?.data ?? formConfigData.data;
 
-    const [selectedHost, setSelectedHost] = useState(null);
+    const initialStateHost = location.state?.selectedOrg
+        ? { id: location.state.selectedOrg._id, type: 'Org' }
+        : null;
+    const [selectedHost, setSelectedHost] = useState(initialStateHost);
     const [formData, setFormData] = useState({
         name: '',
         type: '',
