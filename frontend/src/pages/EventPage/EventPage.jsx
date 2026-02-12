@@ -16,6 +16,9 @@ import Logo from '../../assets/Brand Image/BEACON.svg';
 import EventAnalytics from '../../components/EventAnalytics/EventAnalytics';
 import AgendaEditor from '../../components/AgendaEditor/AgendaEditor';
 import { useEventRoom } from '../../WebSocketContext';
+import Popup from '../../components/Popup/Popup';
+import AgendaDailyCalendar from '../ClubDash/EventsManagement/components/EventDashboard/EventAgendaBuilder/AgendaDailyCalendar/AgendaDailyCalendar';
+import { getStoredMinuteHeightPx } from '../../utils/agendaViewPreferences';
 
 function EventPage() {
     const { eventId } = useParams();
@@ -23,6 +26,7 @@ function EventPage() {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const [activeTab, setActiveTab] = useState('details');
+    const [showAgendaModal, setShowAgendaModal] = useState(false);
     
     // Fetch event data
     const { data: eventData, loading: eventLoading, error: eventError, refetch: refetchEvent } = useFetch(
@@ -187,6 +191,17 @@ function EventPage() {
                                 </a>
                             </div>
                         )}
+                        {event.eventAgenda?.isPublished && event.eventAgenda?.items?.length > 0 && (
+                            <div className="row view-agenda">
+                                <button
+                                    onClick={() => setShowAgendaModal(true)}
+                                    className="btn view-agenda-btn"
+                                >
+                                    <Icon icon="mdi:calendar-clock" />
+                                    <span>View Agenda</span>
+                                </button>
+                            </div>
+                        )}
                         {isLive ? (
                             <div className="event-checkin-and-registration">
                                 <EventCheckInButton event={eventData.event} onCheckedIn={refetchEvent} />
@@ -232,8 +247,36 @@ function EventPage() {
                             </div>
                         )}
                         
+                        {/* Agenda Modal */}
+                        <Popup
+                            isOpen={showAgendaModal}
+                            onClose={() => setShowAgendaModal(false)}
+                            defaultStyling={true}
+                            customClassName="event-agenda-modal-popup"
+                        >
+                            <div className="event-agenda-modal">
+                                <div className="event-agenda-modal-header">
+                                    <h3>
+                                        <Icon icon="mdi:calendar-clock" />
+                                        Event Agenda
+                                    </h3>
+                                </div>
+                                <div className="event-agenda-modal-content">
+                                    <AgendaDailyCalendar
+                                        agendaItems={(event.eventAgenda?.items || []).map((item) => ({
+                                            ...item,
+                                            startTime: item.startTime ? (typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime) : null,
+                                            endTime: item.endTime ? (typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime) : null
+                                        }))}
+                                        event={event}
+                                        minuteHeight={getStoredMinuteHeightPx()}
+                                    />
+                                </div>
+                            </div>
+                        </Popup>
+
                         {/* More Events by This Creator Section */}
-                        {eventData.event && activeTab === 'details' && (
+                        {/* {eventData.event && activeTab === 'details' && (
                             <EventsByCreator 
                                 eventId={eventId}
                                 creatorName={eventData.event.hostingType === "User" 
@@ -249,7 +292,7 @@ function EventPage() {
                                     : "Organization"
                                 }
                             />
-                        )}
+                        )} */}
                     </div>
                 </div>
             </div>

@@ -261,12 +261,11 @@
             min-height: 48px;
             font-weight: 600;
             border-radius: 8px;
-            background: var(--blue, #6D8EFA);
+            background: var(--dark-blue, #6D8EFA);
             color: white;
             border: none;
 
             &:hover:not(:disabled) {
-                background: var(--blue-hover, #5a7ae8);
                 transform: translateY(-1px);
                 box-shadow: 0 4px 12px rgba(109, 142, 250, 0.3);
             }
