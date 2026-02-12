@@ -196,6 +196,56 @@
                 }
             }
 
+            .mode-toggle {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                margin-right: 0.5rem;
+                padding-right: 0.75rem;
+                border-right: 1px solid var(--lighterborder);
+            }
+
+            .mode-label {
+                font-size: 0.85rem;
+                font-weight: 500;
+                color: var(--light-text);
+                margin: 0;
+            }
+
+            .mode-btn {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.5rem 0.9rem;
+                background: transparent;
+                border: 1px solid var(--lighterborder);
+                border-radius: 6px;
+                color: var(--text);
+                font-size: 0.85rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                iconify-icon {
+                    font-size: 1rem;
+                }
+
+                &:hover {
+                    background: var(--lightbackground);
+                    border-color: #4DAA57;
+                }
+
+                &.active {
+                    background: #4DAA57;
+                    color: white;
+                    border-color: #4DAA57;
+
+                    &:hover {
+                        background: #45a049;
+                    }
+                }
+            }
+
             .saving-indicator {
                 display: flex;
                 align-items: center;
@@ -208,6 +258,10 @@
                 }
             }
         }
+    }
+
+    .timeline-agenda-wrapper {
+        margin-top: 1rem;
     }
 
     .empty-agenda {

@@ -6,6 +6,7 @@ import apiRequest from '../../../../../../utils/postRequest';
 import DraggableList from '../../../../../../components/DraggableList/DraggableList';
 import AgendaItem from './AgendaItem';
 import AgendaItemEditor from './AgendaItemEditor';
+import AgendaEditor from '../../../../../../components/AgendaEditor/AgendaEditor';
 import PublishConfirmModal from './PublishConfirmModal';
 import DeleteConfirmModal from '../../../../../../components/DeleteConfirmModal/DeleteConfirmModal';
 import './AgendaBuilder.scss';
@@ -20,6 +21,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
     const [showPublishModal, setShowPublishModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [itemToDelete, setItemToDelete] = useState(null);
+    const [agendaMode, setAgendaMode] = useState('sequential'); // 'sequential' or 'timeline'
 
     // Fetch agenda
     const { data: agendaData, loading, refetch } = useFetch(
@@ -31,15 +33,31 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
             const agenda = agendaData.data.agenda;
             setIsPublished(agenda.isPublished || false);
             const agendaItems = (agenda.items || []).map(item => {
-                if (!item.durationMinutes && item.startTime && item.endTime) {
-                    const start = new Date(item.startTime);
-                    const end = new Date(item.endTime);
-                    const diffMinutes = Math.max(1, Math.round((end - start) / 60000));
-                    return { ...item, durationMinutes: diffMinutes };
+                // Normalize dates to Date objects if they're strings
+                const normalizedItem = { ...item };
+                if (item.startTime && typeof item.startTime === 'string') {
+                    normalizedItem.startTime = new Date(item.startTime);
                 }
-                return item;
+                if (item.endTime && typeof item.endTime === 'string') {
+                    normalizedItem.endTime = new Date(item.endTime);
+                }
+                
+                // Calculate durationMinutes if not present but startTime/endTime are
+                if (!normalizedItem.durationMinutes && normalizedItem.startTime && normalizedItem.endTime) {
+                    const start = new Date(normalizedItem.startTime);
+                    const end = new Date(normalizedItem.endTime);
+                    const diffMinutes = Math.max(1, Math.round((end - start) / 60000));
+                    normalizedItem.durationMinutes = diffMinutes;
+                }
+                return normalizedItem;
             });
             setItems(agendaItems);
+            
+            // Auto-detect mode: if any item has explicit startTime/endTime, use timeline mode
+            const hasExplicitTimes = agendaItems.some(item => item.startTime && item.endTime);
+            if (hasExplicitTimes) {
+                setAgendaMode('timeline');
+            }
         }
     }, [agendaData]);
 
@@ -54,11 +72,34 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
     };
 
     const saveAgenda = async (itemsToSave = items) => {
-        if (!event?._id || !orgId) return;
+        if (!event?._id || !orgId) {
+            return { success: false, message: 'Missing event ID or org ID' };
+        }
 
         setSaving(true);
         try {
-            const sanitizedItems = itemsToSave.map(({ startTime, endTime, ...rest }) => rest);
+            const sanitizedItems = itemsToSave.map(item => {
+                const sanitized = { ...item };
+                
+                if (agendaMode === 'sequential') {
+                    // In sequential mode, remove startTime/endTime and only keep duration
+                    delete sanitized.startTime;
+                    delete sanitized.endTime;
+                } else {
+                    // In timeline mode, include startTime/endTime if they exist
+                    if (item.startTime) {
+                        sanitized.startTime = typeof item.startTime === 'string' 
+                            ? item.startTime 
+                            : new Date(item.startTime).toISOString();
+                    }
+                    if (item.endTime) {
+                        sanitized.endTime = typeof item.endTime === 'string'
+                            ? item.endTime
+                            : new Date(item.endTime).toISOString();
+                    }
+                }
+                return sanitized;
+            });
             const response = await apiRequest(
                 `/org-event-management/${orgId}/events/${event._id}/agenda`,
                 { items: sanitizedItems },
@@ -69,6 +110,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                 // When items are saved, agenda becomes unpublished
                 setIsPublished(false);
                 if (onRefresh) onRefresh();
+                return { success: true };
             } else {
                 throw new Error(response.message || 'Failed to save agenda');
             }
@@ -78,6 +120,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                 message: error.message || 'Failed to save agenda',
                 type: 'error'
             });
+            return { success: false, message: error.message || 'Failed to save agenda' };
         } finally {
             setSaving(false);
         }
@@ -95,6 +138,15 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
             isPublic: true,
             order: items.length
         };
+        
+        // Only set startTime/endTime in timeline mode
+        if (agendaMode === 'timeline' && event?.start_time) {
+            const eventStart = new Date(event.start_time);
+            newItem.startTime = new Date(eventStart);
+            newItem.endTime = new Date(eventStart);
+            newItem.endTime.setMinutes(newItem.endTime.getMinutes() + 30);
+        }
+        
         setEditingItem(newItem);
     };
 
@@ -166,7 +218,16 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
             return null;
         }
 
+        // Calculate agenda duration from items with explicit times or duration
         const agendaDuration = items.reduce((total, item) => {
+            // If item has startTime and endTime, use those
+            if (item.startTime && item.endTime) {
+                const start = new Date(item.startTime);
+                const end = new Date(item.endTime);
+                const duration = Math.round((end - start) / 60000);
+                return total + duration;
+            }
+            // Otherwise use durationMinutes
             const duration = parseInt(item.durationMinutes, 10) || 0;
             return total + duration;
         }, 0);
@@ -266,17 +327,40 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
         const ordered = [...items].sort((a, b) => (a.order || 0) - (b.order || 0));
         let cursor = new Date(start);
         const times = {};
+        
         ordered.forEach(item => {
-            const duration = parseInt(item.durationMinutes, 10);
-            if (!duration || duration <= 0) {
-                times[item.id] = { start: null, end: null };
-                return;
+            if (agendaMode === 'sequential') {
+                // In sequential mode, always compute times from duration
+                const duration = parseInt(item.durationMinutes, 10);
+                if (!duration || duration <= 0) {
+                    times[item.id] = { start: null, end: null };
+                    return;
+                }
+                const itemStart = new Date(cursor);
+                const itemEnd = new Date(cursor);
+                itemEnd.setMinutes(itemEnd.getMinutes() + duration);
+                times[item.id] = { start: itemStart, end: itemEnd };
+                cursor = new Date(itemEnd);
+            } else {
+                // In timeline mode, use explicit times if available, otherwise compute sequentially
+                if (item.startTime && item.endTime) {
+                    times[item.id] = {
+                        start: new Date(item.startTime),
+                        end: new Date(item.endTime)
+                    };
+                } else {
+                    const duration = parseInt(item.durationMinutes, 10);
+                    if (!duration || duration <= 0) {
+                        times[item.id] = { start: null, end: null };
+                        return;
+                    }
+                    const itemStart = new Date(cursor);
+                    const itemEnd = new Date(cursor);
+                    itemEnd.setMinutes(itemEnd.getMinutes() + duration);
+                    times[item.id] = { start: itemStart, end: itemEnd };
+                    cursor = new Date(itemEnd);
+                }
             }
-            const itemStart = new Date(cursor);
-            const itemEnd = new Date(cursor);
-            itemEnd.setMinutes(itemEnd.getMinutes() + duration);
-            times[item.id] = { start: itemStart, end: itemEnd };
-            cursor = new Date(itemEnd);
         });
         return times;
     };
@@ -317,6 +401,62 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                     </div>
                 </div>
                 <div className="header-actions">
+                    <div className="mode-toggle">
+                        <label className="mode-label">Mode:</label>
+                        <button
+                            className={`mode-btn ${agendaMode === 'sequential' ? 'active' : ''}`}
+                            onClick={() => {
+                                // Clear startTime/endTime when switching to sequential mode
+                                if (agendaMode !== 'sequential') {
+                                    const cleanedItems = items.map(item => {
+                                        const cleaned = { ...item };
+                                        delete cleaned.startTime;
+                                        delete cleaned.endTime;
+                                        return cleaned;
+                                    });
+                                    setItems(cleanedItems);
+                                    saveAgenda(cleanedItems);
+                                }
+                                setAgendaMode('sequential');
+                            }}
+                            title="Sequential Mode - Items placed one after another"
+                        >
+                            <Icon icon="mdi:format-list-numbered" />
+                            <span>Sequential</span>
+                        </button>
+                        <button
+                            className={`mode-btn ${agendaMode === 'timeline' ? 'active' : ''}`}
+                            onClick={() => {
+                                // Initialize times for items without them when switching to timeline mode
+                                if (agendaMode !== 'timeline' && event?.start_time) {
+                                    const eventStart = new Date(event.start_time);
+                                    let cursor = new Date(eventStart);
+                                    const updatedItems = items.map((item, index) => {
+                                        if (!item.startTime || !item.endTime) {
+                                            const duration = parseInt(item.durationMinutes, 10) || 30;
+                                            const itemStart = new Date(cursor);
+                                            const itemEnd = new Date(cursor);
+                                            itemEnd.setMinutes(itemEnd.getMinutes() + duration);
+                                            cursor = new Date(itemEnd);
+                                            return {
+                                                ...item,
+                                                startTime: itemStart,
+                                                endTime: itemEnd
+                                            };
+                                        }
+                                        return item;
+                                    });
+                                    setItems(updatedItems);
+                                    saveAgenda(updatedItems);
+                                }
+                                setAgendaMode('timeline');
+                            }}
+                            title="Timeline Mode - Items can overlap and run concurrently"
+                        >
+                            <Icon icon="mdi:view-timeline" />
+                            <span>Timeline</span>
+                        </button>
+                    </div>
                     <button 
                         className="btn-primary"
                         onClick={handleAddItem}
@@ -343,7 +483,62 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
                 </div>
             </div>
 
-            {items.length === 0 ? (
+            {agendaMode === 'timeline' ? (
+                <div className="timeline-agenda-wrapper">
+                    <AgendaEditor
+                        key="timeline-editor"
+                        forceTimelineMode={true}
+                        event={{
+                            ...event,
+                            agenda: items.map(item => ({
+                                ...item,
+                                // Convert EventAgenda format to AgendaEditor format
+                                startTime: item.startTime ? (typeof item.startTime === 'string' ? item.startTime : item.startTime.toISOString()) : null,
+                                endTime: item.endTime ? (typeof item.endTime === 'string' ? item.endTime : item.endTime.toISOString()) : null
+                            }))
+                        }}
+                        customSaveHandler={async (sanitizedAgenda) => {
+                            // Convert AgendaEditor format back to EventAgenda format
+                            const convertedItems = sanitizedAgenda.map((item, index) => {
+                                const converted = {
+                                    id: item.id || `item-${Date.now()}-${index}`,
+                                    title: item.title,
+                                    description: item.description || '',
+                                    durationMinutes: item.durationMinutes,
+                                    type: item.type || 'Activity',
+                                    location: item.location || '',
+                                    isPublic: item.isPublic !== undefined ? item.isPublic : true,
+                                    order: item.order !== undefined ? item.order : index,
+                                    assignedRoles: item.assignedRoles || []
+                                };
+                                
+                                // Add startTime/endTime if they exist
+                                if (item.startTime) {
+                                    converted.startTime = typeof item.startTime === 'string' 
+                                        ? new Date(item.startTime) 
+                                        : item.startTime;
+                                }
+                                if (item.endTime) {
+                                    converted.endTime = typeof item.endTime === 'string'
+                                        ? new Date(item.endTime)
+                                        : item.endTime;
+                                }
+                                
+                                return converted;
+                            });
+                            
+                            setItems(convertedItems);
+                            const result = await saveAgenda(convertedItems);
+                            if (onRefresh) onRefresh();
+                            return { success: true };
+                        }}
+                        onUpdate={async (updatedEvent) => {
+                            // Refresh data after update
+                            if (onRefresh) onRefresh();
+                        }}
+                    />
+                </div>
+            ) : items.length === 0 ? (
                 <div className="empty-agenda">
                     <Icon icon="mdi:calendar-blank" />
                     <h4>No agenda items yet</h4>
@@ -373,6 +568,7 @@ function AgendaBuilder({ event, orgId, onRefresh }) {
             {editingItem && (
                 <AgendaItemEditor
                     item={editingItem}
+                    event={event}
                     onSave={handleSaveItem}
                     onCancel={() => setEditingItem(null)}
                 />
