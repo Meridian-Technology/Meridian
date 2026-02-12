@@ -7,6 +7,7 @@
 const { Server } = require('socket.io');
 
 const ROOM_PREFIX_EVENT = 'event:';
+const ROOM_PREFIX_ORG_APPROVAL = 'org-approval:';
 const PING_INTERVAL_MS = 25000;
 
 let io = null;
@@ -74,6 +75,22 @@ function initSocket(server, corsOptions = {}) {
             socket.leave(room);
         });
 
+        /** Join room for org approval (pending orgs only – client leaves when approved). */
+        socket.on('join-org-approval', (payload) => {
+            const orgId = payload?.orgId;
+            if (!orgId || typeof orgId !== 'string') return;
+            const room = ROOM_PREFIX_ORG_APPROVAL + orgId;
+            socket.join(room);
+        });
+
+        /** Leave org approval room. */
+        socket.on('leave-org-approval', (payload) => {
+            const orgId = payload?.orgId;
+            if (!orgId || typeof orgId !== 'string') return;
+            const room = ROOM_PREFIX_ORG_APPROVAL + orgId;
+            socket.leave(room);
+        });
+
         socket.on('disconnect', (reason) => {
             console.log('[WebSocket] client disconnected', { socketId: socket.id, reason });
             stopHeartbeat();
@@ -103,9 +120,24 @@ function emitToEventRoom(eventId, eventName, payload) {
     io.to(room).emit(eventName, payload);
 }
 
+/**
+ * Emit to all clients in an org-approval room (e.g. when admin manually approves an org).
+ * Only unapproved orgs join this room; they leave after receiving org:approved.
+ * @param {string} orgId - Org ID
+ * @param {string} eventName - Socket event name (e.g. 'org:approved')
+ * @param {object} payload - Data to send
+ */
+function emitToOrgApprovalRoom(orgId, eventName, payload) {
+    if (!io) return;
+    const room = ROOM_PREFIX_ORG_APPROVAL + orgId;
+    io.to(room).emit(eventName, payload);
+}
+
 module.exports = {
     initSocket,
     getIO,
     emitToEventRoom,
+    emitToOrgApprovalRoom,
     ROOM_PREFIX_EVENT,
+    ROOM_PREFIX_ORG_APPROVAL,
 };

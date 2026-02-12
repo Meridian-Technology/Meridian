@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import './ClubDash.scss';
 import useAuth from '../../hooks/useAuth';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -34,6 +34,7 @@ import {
 import VerificationRequest from './Settings/VerificationRequest/VerificationRequest';
 import OrgPendingBanner from '../../components/OrgPendingBanner/OrgPendingBanner';
 import PendingApprovalOverlay from '../../components/PendingApprovalOverlay/PendingApprovalOverlay';
+import { useOrgApprovalRoom } from '../../WebSocketContext';
 
 function ClubDash(){
     const [clubId, setClubId] = useState(useParams().id);
@@ -52,6 +53,8 @@ function ClubDash(){
         canViewAnalytics: false
     });
     const [permissionsChecked, setPermissionsChecked] = useState(false);
+    const [showJustApprovedBanner, setShowJustApprovedBanner] = useState(false);
+    const approvedBannerTimeoutRef = useRef(null);
 
     const orgData = useFetch(`/get-org-by-name/${clubId}?exhaustive=true`);
     const meetings = useFetch(`/get-meetings/${clubId}`);
@@ -298,13 +301,31 @@ function ClubDash(){
 
     
 
+    const orgForApproval = orgData.data?.org?.overview;
+    useOrgApprovalRoom(
+        orgForApproval?.approvalStatus === 'pending' ? orgForApproval?._id : null,
+        () => {
+            addNotification({
+                title: 'Organization approved',
+                message: 'Your organization has been approved. You now have full access.',
+                type: 'success'
+            });
+            setShowJustApprovedBanner(true);
+            if (approvedBannerTimeoutRef.current) clearTimeout(approvedBannerTimeoutRef.current);
+            approvedBannerTimeoutRef.current = setTimeout(() => setShowJustApprovedBanner(false), 4500);
+            orgData.refetch();
+        }
+    );
+
+    useEffect(() => () => {
+        if (approvedBannerTimeoutRef.current) clearTimeout(approvedBannerTimeoutRef.current);
+    }, []);
+
     if(orgData.loading){
         return (
             <div></div>
         );
     }
-
-    
 
     const org = orgData.data?.org?.overview;
     const isPending = org?.approvalStatus === 'pending';
@@ -325,6 +346,12 @@ function ClubDash(){
 
     return (
         <div className="club-dash-with-banner">
+            {showJustApprovedBanner && (
+                <div className="club-dash-approved-notice" role="alert">
+                    <Icon icon="mdi:check-circle" className="club-dash-approved-notice__icon" />
+                    <span className="club-dash-approved-notice__text">Your organization was just approved!</span>
+                </div>
+            )}
             {isPending && (
                 <OrgPendingBanner org={org} orgName={clubId} />
             )}

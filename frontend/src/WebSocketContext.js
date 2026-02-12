@@ -17,6 +17,9 @@ const SOCKET_URL =
 const EVENT_ROOM_JOIN = 'join-event';
 const EVENT_ROOM_LEAVE = 'leave-event';
 const SOCKET_EVENT_CHECK_IN = 'event:check-in';
+const ORG_APPROVAL_JOIN = 'join-org-approval';
+const ORG_APPROVAL_LEAVE = 'leave-org-approval';
+const ORG_APPROVED_EVENT = 'org:approved';
 
 export const useWebSocket = () => useContext(WebSocketContext);
 
@@ -42,6 +45,30 @@ export function useEventRoom(eventId, onEvent) {
       ctx.unsubscribeEvent(eventId);
     };
   }, [eventId, ctx]);
+}
+
+/**
+ * Subscribe to org approval room – only for unapproved orgs.
+ * When admin approves the org, onApproved is called and the client leaves the room (connection can close if no other rooms).
+ * Only call when org.approvalStatus === 'pending' and orgId is set.
+ *
+ * @param {string|null|undefined} orgId - Org ID (only subscribe when truthy and org is pending)
+ * @param {(payload: { orgId: string }) => void} onApproved - Callback when org:approved is received
+ */
+export function useOrgApprovalRoom(orgId, onApproved) {
+  const ctx = useContext(WebSocketContext);
+  const onApprovedRef = useRef(onApproved);
+  onApprovedRef.current = onApproved;
+
+  React.useEffect(() => {
+    if (!orgId || !ctx) return;
+    ctx.subscribeOrgApproval(orgId, (payload) => {
+      if (onApprovedRef.current) onApprovedRef.current(payload);
+    });
+    return () => {
+      ctx.unsubscribeOrgApproval(orgId);
+    };
+  }, [orgId, ctx]);
 }
 
 export const WebSocketProvider = ({ children }) => {
@@ -100,11 +127,47 @@ export const WebSocketProvider = ({ children }) => {
     }
   }, []);
 
+  const orgApprovalRoomsRef = useRef(new Map());
+
+  const subscribeOrgApproval = useCallback((orgId, onApproved) => {
+    const socket = ensureConnected();
+    const handler = (payload) => {
+      try {
+        onApproved(payload);
+      } catch (e) {
+        console.error('WebSocket org approval handler error:', e);
+      }
+    };
+    socket.emit(ORG_APPROVAL_JOIN, { orgId });
+    socket.on(ORG_APPROVED_EVENT, handler);
+    const prev = orgApprovalRoomsRef.current.get(orgId);
+    if (prev) {
+      socket.off(ORG_APPROVED_EVENT, prev.handler);
+    }
+    orgApprovalRoomsRef.current.set(orgId, { handler, count: (prev?.count ?? 0) + 1 });
+  }, [ensureConnected]);
+
+  const unsubscribeOrgApproval = useCallback((orgId) => {
+    const entry = orgApprovalRoomsRef.current.get(orgId);
+    if (!entry) return;
+    entry.count -= 1;
+    if (entry.count <= 0) {
+      orgApprovalRoomsRef.current.delete(orgId);
+      const socket = socketRef.current;
+      if (socket?.connected) {
+        socket.off(ORG_APPROVED_EVENT, entry.handler);
+        socket.emit(ORG_APPROVAL_LEAVE, { orgId });
+      }
+    }
+  }, []);
+
   const value = {
     connected,
     subscribeEvent,
     unsubscribeEvent,
     ensureConnected,
+    subscribeOrgApproval,
+    unsubscribeOrgApproval,
   };
 
   return (

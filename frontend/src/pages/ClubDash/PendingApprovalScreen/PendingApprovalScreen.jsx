@@ -1,16 +1,31 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
+import { useOrgApprovalRoom } from '../../../WebSocketContext';
 import './PendingApprovalScreen.scss';
+
+const APPROVED_DELAY_MS = 1800;
 
 function PendingApprovalScreen() {
     const { id: orgName } = useParams();
     const navigate = useNavigate();
     const orgData = useFetch(`/get-org-by-name/${orgName}?exhaustive=true`);
     const { data: configData } = useFetch('/org-management/config');
+    const [justApproved, setJustApproved] = useState(false);
+    const navigatedRef = useRef(false);
 
     const org = orgData.data?.org?.overview;
+
+    // Only unapproved orgs subscribe; when admin approves, show notice then navigate
+    useOrgApprovalRoom(org?.approvalStatus === 'pending' ? org?._id : null, () => {
+        if (navigatedRef.current) return;
+        setJustApproved(true);
+        setTimeout(() => {
+            navigatedRef.current = true;
+            navigate(`/club-dashboard/${orgName}`, { replace: true });
+        }, APPROVED_DELAY_MS);
+    });
     const config = configData?.data;
     const memberCount = orgData.data?.org?.members?.length ?? 0;
     const threshold = config?.orgApproval?.autoApproveMemberThreshold ?? 5;
@@ -32,6 +47,16 @@ function PendingApprovalScreen() {
 
     return (
         <div className="pending-approval-screen">
+            {justApproved && (
+                <div className="pending-approval-screen__approved" role="alert">
+                    <div className="pending-approval-screen__approved-icon-wrap">
+                        <Icon icon="mdi:check-circle" className="pending-approval-screen__approved-icon" />
+                    </div>
+                    <h2 className="pending-approval-screen__approved-title">Your organization was approved!</h2>
+                    <p className="pending-approval-screen__approved-subtitle">Taking you to your dashboard…</p>
+                </div>
+            )}
+            {!justApproved && (
             <div className="pending-approval-screen__card">
                 <div className="pending-approval-screen__icon-wrap">
                     <Icon icon="mdi:clock-outline" />
@@ -80,6 +105,7 @@ function PendingApprovalScreen() {
                     </button>
                 </div>
             </div>
+            )}
         </div>
     );
 }

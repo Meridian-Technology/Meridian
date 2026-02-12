@@ -195,7 +195,7 @@ function App() {
                                                 <Route path="/club-dashboard/:id/pending-approval" element={<AnimatedPageWrapper><PendingApprovalScreen/></AnimatedPageWrapper>}/>
                                                 <Route path="/club-dashboard/:id" element={<AnimatedPageWrapper><ClubDash/></AnimatedPageWrapper>}/>
                                             {/* features under development */}
-                                            <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer']}/> }>
+                                            <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'beta']}/> }>
                                                 <Route path="/events" element={<AnimatedPageWrapper><Events/></AnimatedPageWrapper>}/>
                                                 <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
                                                 <Route path="/root-dashboard" element={<AnimatedPageWrapper><RootDash/></AnimatedPageWrapper>}/>

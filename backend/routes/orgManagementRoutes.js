@@ -2,6 +2,7 @@ const express = require('express');
 const getModels = require('../services/getModelService');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
 const { uploadImageToS3 } = require('../services/imageUploadService');
+const { emitToOrgApprovalRoom } = require('../socket');
 
 const router = express.Router();
 
@@ -624,6 +625,9 @@ router.put('/organizations/:orgId/approve', verifyToken, authorizeRoles('admin',
         org.approvedAt = new Date();
         org.approvedBy = adminId;
         await org.save();
+
+        // Notify pending-org clients in real time (they leave the room after receiving this)
+        emitToOrgApprovalRoom(orgId, 'org:approved', { orgId });
 
         console.log(`PUT: /org-management/organizations/${orgId}/approve - Organization approved`);
         res.status(200).json({
