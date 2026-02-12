@@ -35,7 +35,8 @@ function EventsManagement({ orgId, expandedClass, orgData: orgDataProp }) {
         const orgIdForDashboard = orgData?.org?.overview?._id;
         if (orgIdForDashboard) {
             showEventDashboard(event, orgIdForDashboard, {
-                className: 'full-width-event-dashboard'
+                className: 'full-width-event-dashboard',
+                persistInUrl: true,
             });
         }
     };

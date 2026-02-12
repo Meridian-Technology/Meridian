@@ -150,8 +150,8 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                         <div className="stat-item">
                             <Icon icon="mingcute:user-group-fill" className="stat-icon" />
                             <div className="stat-content">
-                                <span className="stat-value">{stats?.rsvps?.going || 0}</span>
-                                <span className="stat-label">RSVPs</span>
+                                <span className="stat-value">{stats?.registrationCount ?? 0}</span>
+                                <span className="stat-label">Registrations</span>
                             </div>
                         </div>
                         <div className="stat-item">
