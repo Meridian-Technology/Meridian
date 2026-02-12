@@ -6,6 +6,11 @@ import { Icon } from '@iconify-icon/react';
 import ProfilePopup from '../ProfilePopup/ProfilePopup';
 import { DashboardProvider } from '../../contexts/DashboardContext';
 import NotificationInbox from '../NotificationInbox/NotificationInbox';
+import {
+    getOverlayStateFromParams,
+    restoreOverlay,
+    clearOverlaySearchParams,
+} from '../../utils/overlayRegistry';
 import './Dashboard.scss'
 
 function Dashboard({ 
@@ -30,7 +35,7 @@ function Dashboard({
     const [contentOpacity, setContentOpacity] = useState(1);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const location = useLocation();
     const [transitionDirection, setTransitionDirection] = useState('right');
     const [showBackButton, setShowBackButton] = useState(false);
@@ -40,7 +45,16 @@ function Dashboard({
     const hasInitializedRef = useRef(false); // Track if we've already processed URL params
     const [overlayContent, setOverlayContent] = useState(null);
     const prevDisplayRef = useRef(null);
-    
+    const isRestoringOverlayRef = useRef(false);
+
+    // Wrapper so closing the overlay also clears persist overlay params from the URL
+    const handleSetOverlayContent = useCallback((content) => {
+        setOverlayContent(content);
+        if (content == null) {
+            setSearchParams((prev) => clearOverlaySearchParams(prev), { replace: true });
+        }
+    }, [setSearchParams]);
+
     const [width, setWidth] = useState(window.innerWidth);
     useEffect(() => { //useEffect for window resizing
         function handleResize() {
@@ -79,10 +93,32 @@ function Dashboard({
     useEffect(() => {
         // Only close overlay if currentDisplay actually changed (not on initial render)
         if (prevDisplayRef.current !== null && prevDisplayRef.current !== currentDisplay && overlayContent) {
-            setOverlayContent(null);
+            handleSetOverlayContent(null);
         }
         prevDisplayRef.current = currentDisplay;
-    }, [currentDisplay, overlayContent]);
+    }, [currentDisplay, overlayContent, handleSetOverlayContent]);
+
+    // Restore persistable overlay from URL (e.g. after refresh or direct link)
+    useEffect(() => {
+        const overlayState = getOverlayStateFromParams(searchParams);
+        if (!overlayState || overlayContent !== null || isRestoringOverlayRef.current) return;
+        isRestoringOverlayRef.current = true;
+        const onClose = () => handleSetOverlayContent(null);
+        restoreOverlay(overlayState.key, overlayState.params, {
+            setOverlayContent: handleSetOverlayContent,
+            onClose,
+        }).finally(() => {
+            isRestoringOverlayRef.current = false;
+        });
+    }, [searchParams, overlayContent, handleSetOverlayContent]);
+
+    // Close overlay when URL no longer has overlay params (e.g. user pressed browser Back)
+    useEffect(() => {
+        const overlayState = getOverlayStateFromParams(searchParams);
+        if (!overlayState && overlayContent !== null) {
+            handleSetOverlayContent(null);
+        }
+    }, [searchParams, overlayContent, handleSetOverlayContent]);
 
     // Close mobile menu when navigating
     const handleMobileNavigation = (callback) => {
@@ -456,7 +492,7 @@ function Dashboard({
     }
 
     return (
-        <DashboardProvider setOverlayContent={setOverlayContent}>
+        <DashboardProvider setOverlayContent={handleSetOverlayContent}>
             <div 
                 className={`general-dash ${additionalClass}`} 
                 style={{
