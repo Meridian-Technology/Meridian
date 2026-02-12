@@ -65,9 +65,8 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
     const exportCsv = () => {
         const headers = ['Name', 'Email', 'Registered At', ...questions.map(q => q.question || '')];
         const rows = formResponses.map((r) => {
-            const user = r.submittedBy;
-            const name = user?.name || user?.username || '';
-            const email = user?.email || '';
+            const name = getResponseDisplayName(r);
+            const email = getResponseEmail(r);
             const date = r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '';
             const answers = (r.answers || []).map(a => (Array.isArray(a) ? a.join('; ') : String(a)));
             return [name, email, date, ...answers];
@@ -87,6 +86,29 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
             () => addNotification({ title: 'Copied', message: 'Email copied to clipboard', type: 'success' }),
             () => addNotification({ title: 'Copy failed', message: 'Could not copy to clipboard', type: 'error' })
         );
+    };
+
+    const copyRegistrationLink = async () => {
+        if (!event?._id) return;
+        const eventUrl = `${window.location.origin}/event/${event._id}`;
+        try {
+            await navigator.clipboard.writeText(eventUrl);
+            addNotification({ title: 'Copied', message: 'Registration link copied to clipboard', type: 'success' });
+        } catch {
+            const textArea = document.createElement('textarea');
+            textArea.value = eventUrl;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                addNotification({ title: 'Copied', message: 'Registration link copied to clipboard', type: 'success' });
+            } catch {
+                addNotification({ title: 'Copy failed', message: 'Could not copy link to clipboard', type: 'error' });
+            }
+            document.body.removeChild(textArea);
+        }
     };
 
     const removeRegistration = async (payload) => {
@@ -116,6 +138,9 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
 
     const getDisplayName = (user) => user?.name || user?.username || '—';
     const getEmail = (user) => user?.email || '—';
+    const getResponseDisplayName = (r) =>
+        r.submittedBy ? getDisplayName(r.submittedBy) : (r.guestName || 'Guest');
+    const getResponseEmail = (r) => (r.submittedBy ? getEmail(r.submittedBy) : (r.guestEmail || r.guestUsername || '—'));
 
     if (loading) {
         return (
@@ -267,16 +292,27 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                 </div>
                 <div className="registrations-tab-actions">
                     {registrationEnabled && (
-                        <button
-                            type="button"
-                            className="disable-registration-btn"
-                            onClick={handleDisableRegistration}
-                            disabled={updatingForm}
-                            title="Disable registration"
-                        >
-                            <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:account-off'} className={updatingForm ? 'spin' : ''} />
-                            {updatingForm ? 'Disabling...' : 'Disable'}
-                        </button>
+                        <>
+                            <button
+                                type="button"
+                                className="copy-registration-link-btn"
+                                onClick={copyRegistrationLink}
+                                title="Copy registration link"
+                            >
+                                <Icon icon="mdi:link-variant" />
+                                Copy Link
+                            </button>
+                            <button
+                                type="button"
+                                className="disable-registration-btn"
+                                onClick={handleDisableRegistration}
+                                disabled={updatingForm}
+                                title="Disable registration"
+                            >
+                                <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:account-off'} className={updatingForm ? 'spin' : ''} />
+                                {updatingForm ? 'Disabling...' : 'Disable'}
+                            </button>
+                        </>
                     )}
                     {hasForm && formResponses.length > 0 && (
                         <>
@@ -417,8 +453,8 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                                 <tbody>
                                     {formResponses.map((r, i) => (
                                         <tr key={r._id || i}>
-                                            <td>{getDisplayName(r.submittedBy)}</td>
-                                            <td>{getEmail(r.submittedBy)}</td>
+                                            <td>{getResponseDisplayName(r)}</td>
+                                            <td>{getResponseEmail(r)}</td>
                                             <td>{r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '—'}</td>
                                             {(r.answers || []).map((ans, j) => (
                                                 <td key={j}>
@@ -426,13 +462,13 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                                                 </td>
                                             ))}
                                             <td className="td-actions">
-                                                <button type="button" className="action-btn copy-email" onClick={() => copyEmail(r.submittedBy?.email)} title="Copy email">
+                                                <button type="button" className="action-btn copy-email" onClick={() => copyEmail(r.submittedBy?.email || r.guestEmail)} title="Copy email">
                                                     <Icon icon="mdi:email-outline" />
                                                 </button>
                                                 <button
                                                     type="button"
                                                     className="action-btn remove"
-                                                    onClick={() => setConfirmRemove({ responseId: r._id, name: getDisplayName(r.submittedBy) })}
+                                                    onClick={() => setConfirmRemove({ responseId: r._id, name: getResponseDisplayName(r) })}
                                                     title="Remove registration"
                                                     disabled={removingId === r._id}
                                                 >
@@ -451,20 +487,20 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                                 <div key={r._id || i} className="registration-card">
                                     <div className="registration-card-header">
                                         <div className="registration-card-user">
-                                            <span className="name">{getDisplayName(r.submittedBy)}</span>
-                                            <span className="email">{getEmail(r.submittedBy)}</span>
+                                            <span className="name">{getResponseDisplayName(r)}</span>
+                                            <span className="email">{getResponseEmail(r)}</span>
                                         </div>
                                         <div className="registration-card-meta">
                                             {r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '—'}
                                         </div>
                                         <div className="registration-card-actions">
-                                            <button type="button" className="action-btn copy-email" onClick={() => copyEmail(r.submittedBy?.email)} title="Copy email">
+                                            <button type="button" className="action-btn copy-email" onClick={() => copyEmail(r.submittedBy?.email || r.guestEmail)} title="Copy email">
                                                 <Icon icon="mdi:email-outline" />
                                             </button>
                                             <button
                                                 type="button"
                                                 className="action-btn remove"
-                                                onClick={() => setConfirmRemove({ responseId: r._id, name: getDisplayName(r.submittedBy) })}
+                                                onClick={() => setConfirmRemove({ responseId: r._id, name: getResponseDisplayName(r) })}
                                                 title="Remove registration"
                                                 disabled={removingId === r._id}
                                             >

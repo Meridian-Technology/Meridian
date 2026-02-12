@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Popup from '../../../../../components/Popup/Popup';
 import FormBuilder from '../../../../../components/FormBuilder/FormBuilder';
+import FormConfigMenu from '../../../../../components/FormBuilder/FormConfigMenu';
 import apiRequest from '../../../../../utils/postRequest';
 import { useNotification } from '../../../../../NotificationContext';
 import './CreateRegistrationFormModal.scss';
@@ -62,6 +63,7 @@ export default function CreateRegistrationFormModal({ orgId, onCreated, onClose,
                 initialForm={initialForm || { title: '', description: '', questions: [] }}
                 onSave={handleSave}
                 handleClose={null}
+                menuComponent={<FormConfigMenu />}
             />
         </Popup>
     );

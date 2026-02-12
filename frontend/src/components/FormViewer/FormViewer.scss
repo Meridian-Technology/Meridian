@@ -35,6 +35,24 @@
       line-height: 1.5;
     }
 
+    .form-viewer-signed-in-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: rgba(59, 130, 246, 0.08);
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+
+      .form-viewer-signed-in-icon {
+        font-size: 20px;
+        color: var(--blue);
+      }
+    }
+
     .form-viewer-owner {
       display: flex;
       align-items: center;

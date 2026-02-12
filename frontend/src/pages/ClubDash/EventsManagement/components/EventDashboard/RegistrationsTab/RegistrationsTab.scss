@@ -338,6 +338,25 @@
     }
 }
 
+.copy-registration-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--primary, #4DAA57);
+    border-radius: 9px;
+    background: var(--primary, #4DAA57);
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover {
+        background: rgba(77, 170, 87, 0.9);
+        filter: brightness(1.05);
+    }
+}
+
 .disable-registration-btn {
     display: inline-flex;
     align-items: center;

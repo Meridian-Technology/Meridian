@@ -5,6 +5,7 @@ import { useNotification } from '../../NotificationContext';
 import postRequest from '../../utils/postRequest';
 import Popup from '../Popup/Popup';
 import FormViewer from '../FormViewer/FormViewer';
+import { hasAnonymousRegistration, saveAnonymousRegistration } from '../../utils/anonymousRegistrationStorage';
 import './RSVPButton.scss';
 
 const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => {
@@ -17,7 +18,8 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
     const enabled = event.registrationEnabled ?? event.rsvpEnabled;
     const deadline = event.registrationDeadline ?? event.rsvpDeadline;
     const count = event.registrationCount ?? event.rsvpStats?.going ?? 0;
-    const isRegistered = Boolean(rsvpStatus);
+    const anonymousRegistered = !user && hasAnonymousRegistration(event?._id);
+    const isRegistered = Boolean(rsvpStatus) || anonymousRegistered;
     const hasForm = Boolean(event.registrationFormId);
     const formReady = hasForm && (event.registrationForm || registrationForm);
 
@@ -26,14 +28,22 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
         if (event.registrationForm) setRegistrationForm(event.registrationForm);
     }, [event.registrationForm]);
 
-    const doRegister = async (formAnswers) => {
+    const doRegister = async (formAnswers, { guestName, guestEmail } = {}) => {
         setLoading(true);
         try {
             const response = await postRequest(`/rsvp/${event._id}`, {
                 guestCount: 1,
-                ...(Array.isArray(formAnswers) ? { formAnswers } : {})
+                ...(Array.isArray(formAnswers) ? { formAnswers } : {}),
+                ...(guestName ? { guestName } : {}),
+                ...(guestEmail ? { guestEmail } : {})
             });
             if (response.success) {
+                if (!user) {
+                    saveAnonymousRegistration(event._id, {
+                        guestName: guestName || '',
+                        guestEmail: guestEmail || ''
+                    });
+                }
                 if (onRSVPStatusUpdate) onRSVPStatusUpdate(event._id, {});
                 if (onRSVPUpdate) onRSVPUpdate();
                 addNotification({
@@ -62,7 +72,9 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
 
     const handleRegister = async (e) => {
         if (e) e.stopPropagation();
-        if (!user) {
+        const form = event.registrationForm || registrationForm;
+        const allowAnonymous = form?.allowAnonymous === true;
+        if (!user && !allowAnonymous) {
             addNotification({
                 title: 'Login Required',
                 message: 'Please log in to register for events',
@@ -84,6 +96,14 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                 const data = await postRequest(`/events/${event._id}/registration-form`, null, { method: 'GET' });
                 if (data.success && data.form) {
                     setRegistrationForm(data.form);
+                    if (!user && !data.form?.allowAnonymous) {
+                        addNotification({
+                            title: 'Login Required',
+                            message: 'Please log in to register for this event',
+                            type: 'error'
+                        });
+                        return;
+                    }
                     setShowFormModal(true);
                 } else {
                     addNotification({ title: 'Registration Failed', message: data.message || 'Form unavailable', type: 'error' });
@@ -96,14 +116,18 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
         await doRegister(undefined);
     };
 
-    const handleFormSubmit = (response) => {
+    const handleFormSubmit = (responseOrPayload) => {
         const form = event.registrationForm || registrationForm;
         if (!form || !form.questions) return;
+        const isPayload = responseOrPayload && typeof responseOrPayload === 'object' && 'responses' in responseOrPayload;
+        const responses = isPayload ? responseOrPayload.responses : responseOrPayload;
+        const guestName = isPayload ? responseOrPayload.guestName : undefined;
+        const guestEmail = isPayload ? responseOrPayload.guestEmail : undefined;
         const formAnswers = form.questions.map((q) => {
-            const r = response.find((x) => (x.referenceId || x.questionId) === (q._id?.toString() || q._id));
+            const r = (responses || []).find((x) => (x.referenceId || x.questionId) === (q._id?.toString() || q._id));
             return r != null ? r.answer : '';
         });
-        doRegister(formAnswers);
+        doRegister(formAnswers, { guestName, guestEmail });
     };
 
     if (!enabled) return null;
@@ -165,7 +189,12 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                                 form={form}
                                 onSubmit={handleFormSubmit}
                                 handleClose={null}
-                                formConfig={{ acceptingResponses: true, requireAuth: false }}
+                                formConfig={{
+                                    acceptingResponses: true,
+                                    requireAuth: !form.allowAnonymous,
+                                    allowAnonymous: form.allowAnonymous === true,
+                                    collectGuestDetails: form.collectGuestDetails !== false
+                                }}
                                 hasSubmitted={false}
                             />
                         </div>

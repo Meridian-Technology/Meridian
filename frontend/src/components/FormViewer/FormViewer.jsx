@@ -4,9 +4,12 @@ import './Question.scss'
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 
+const GUEST_NAME_KEY = '__guestName';
+const GUEST_EMAIL_KEY = '__guestEmail';
+
 const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAuthenticated, formConfig}) => {
   const [responses, setResponses] = useState({});
-  const { isAuthenticated: authStatus, isAuthenticating } = useAuth();
+  const { isAuthenticated: authStatus, isAuthenticating, user } = useAuth();
 
   const handleResponseChange = (questionId, value) => {
     setResponses(prev => ({
@@ -15,13 +18,21 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
     }));
   };
 
+  const showGuestFields = !authStatus && formConfig?.collectGuestDetails;
+  const showSignedInBanner = authStatus && user;
+
   // Check if all required fields are completed
   const areAllRequiredFieldsCompleted = () => {
     if (!form || !form.questions) return false;
-    
+    if (showGuestFields) {
+      const guestName = responses[GUEST_NAME_KEY];
+      const guestEmail = responses[GUEST_EMAIL_KEY];
+      if (!guestName || !guestEmail || String(guestName).trim() === '' || String(guestEmail).trim() === '') {
+        return false;
+      }
+    }
     const requiredQuestions = form.questions.filter(q => q.required);
-    if (requiredQuestions.length === 0) return true; // No required fields, allow submission
-    
+    if (requiredQuestions.length === 0 && !showGuestFields) return true;
     return requiredQuestions.every(q => {
       const response = responses[q._id];
       if (Array.isArray(response)) {
@@ -33,40 +44,55 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
-    // Validate required questions
-    const missingRequired = form.questions.filter(q => 
+    if (showGuestFields) {
+      const guestName = responses[GUEST_NAME_KEY];
+      const guestEmail = responses[GUEST_EMAIL_KEY];
+      if (!guestName || !guestEmail || String(guestName).trim() === '' || String(guestEmail).trim() === '') {
+        alert('Please enter your name and email.');
+        return;
+      }
+    }
+    const missingRequired = form.questions.filter(q =>
       q.required && (!responses[q._id] || (Array.isArray(responses[q._id]) && responses[q._id].length === 0))
     );
-
     if (missingRequired.length > 0) {
       alert(`Please answer the following required questions: ${missingRequired.map(q => q.question).join(', ')}`);
       return;
     }
-    // Create response in the format expected by the backend
-    const response = Object.keys(responses).map(key => {
-      const question = form.questions.find(q => q._id === key || q._id?.toString() === key);
-      if (!question) {
-        console.warn(`Question not found for key: ${key}`);
-        return null;
-      }
-      return {
-        question: question.question,
-        referenceId: question._id?.toString() || key,
-        type: question.type,
-        answer: responses[key]
-      };
-    }).filter(r => r !== null); // Remove any null entries
-    
-    if (response.length === 0) {
+    const response = Object.keys(responses)
+      .filter(key => key !== GUEST_NAME_KEY && key !== GUEST_EMAIL_KEY)
+      .map(key => {
+        const question = form.questions.find(q => q._id === key || q._id?.toString() === key);
+        if (!question) return null;
+        return {
+          question: question.question,
+          referenceId: question._id?.toString() || key,
+          type: question.type,
+          answer: responses[key]
+        };
+      })
+      .filter(r => r !== null);
+    if (response.length === 0 && !showGuestFields) {
       alert('No valid responses found. Please try again.');
       return;
     }
-    
-    if(handleClose) {
-      handleClose();
+    if (handleClose) handleClose();
+    if (showGuestFields) {
+      onSubmit({
+        responses: response,
+        guestName: String(responses[GUEST_NAME_KEY] || '').trim(),
+        guestEmail: String(responses[GUEST_EMAIL_KEY] || '').trim()
+      });
+    } else if (formConfig?.collectGuestDetails && authStatus && user) {
+      // Logged-in user: include name/email as fallback in case backend doesn't receive auth token
+      onSubmit({
+        responses: response,
+        guestName: String(user?.name || user?.username || '').trim(),
+        guestEmail: String(user?.email || '').trim()
+      });
+    } else {
+      onSubmit(response);
     }
-    onSubmit(response);
   };
 
   const renderQuestion = (question) => {
@@ -146,8 +172,8 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
       return 'closed';
     }
     
-    // Check if authentication is required but user is not authenticated
-    if (formConfig.requireAuth && !authStatus && !isAuthenticating) {
+    // Check if authentication is required but user is not authenticated (skip when allowAnonymous)
+    if (formConfig.requireAuth && !formConfig.allowAnonymous && !authStatus && !isAuthenticating) {
       return 'login_required';
     }
     
@@ -166,6 +192,12 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
       <div className="form-viewer-header">
         <h1>{form.title}</h1>
         {form.description && <p>{form.description}</p>}
+        {showSignedInBanner && (
+          <div className="form-viewer-signed-in-banner">
+            <Icon icon="mdi:account-circle" className="form-viewer-signed-in-icon" />
+            <span>Signed in as {user?.name || user?.username || 'User'}</span>
+          </div>
+        )}
         {ownerInfo && (
           <div className="form-viewer-owner">
             <Icon icon="mdi:account-circle" className="form-viewer-owner-icon" />
@@ -230,6 +262,34 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
       {renderHeader()}
       <form className="form-viewer-form" onSubmit={handleSubmit}>
         <div className="form-viewer-body">
+          {showGuestFields && (
+            <>
+              <div className="question-container form-viewer-guest-field">
+                <div className="question-header">
+                  <h3>Name</h3>
+                  <span className="required">*</span>
+                </div>
+                <input
+                  type="text"
+                  value={responses[GUEST_NAME_KEY] || ''}
+                  onChange={(e) => handleResponseChange(GUEST_NAME_KEY, e.target.value)}
+                  placeholder="Your name"
+                />
+              </div>
+              <div className="question-container form-viewer-guest-field">
+                <div className="question-header">
+                  <h3>Email</h3>
+                  <span className="required">*</span>
+                </div>
+                <input
+                  type="email"
+                  value={responses[GUEST_EMAIL_KEY] || ''}
+                  onChange={(e) => handleResponseChange(GUEST_EMAIL_KEY, e.target.value)}
+                  placeholder="Your email"
+                />
+              </div>
+            </>
+          )}
           {form.questions && form.questions.map((question) => (
             <div key={question._id} className="question-container">
               <div className="question-header">
