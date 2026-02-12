@@ -1,0 +1,757 @@
+.registrations-tab {
+    padding: 1.5rem 0;
+
+    &.loading,
+    &.error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 200px;
+        gap: 0.75rem;
+        color: var(--text-secondary, #6b7280);
+
+        .spinner {
+            font-size: 2rem;
+            animation: spin 0.8s linear infinite;
+        }
+    }
+
+    &.error {
+        color: var(--error, #dc2626);
+    }
+}
+
+.registrations-disabled-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border, #e5e7eb);
+    border-left: 3px solid var(--warning, #f59e0b);
+    border-radius: 8px;
+    background: var(--bg-subtle, #f9fafb);
+    flex-wrap: wrap;
+
+    .registrations-disabled-content {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        flex: 1;
+        min-width: 0;
+
+        .disabled-icon {
+            font-size: 1.5rem;
+            color: var(--warning, #f59e0b);
+            flex-shrink: 0;
+            margin-top: 0.125rem;
+        }
+
+        .disabled-text {
+            flex: 1;
+            min-width: 0;
+
+            strong {
+                display: block;
+                font-size: 0.9375rem;
+                font-weight: 600;
+                color: var(--text-primary, #111);
+                margin-bottom: 0.25rem;
+            }
+
+            p {
+                margin: 0;
+                font-size: 0.8125rem;
+                color: var(--text-secondary, #6b7280);
+                line-height: 1.4;
+            }
+        }
+    }
+
+    .enable-registration-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.625rem 1rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+        color: #fff;
+        background: var(--primary, #4DAA57);
+        border: 1px solid var(--primary, #4DAA57);
+        transition: all 0.15s ease;
+
+        &:hover:not(:disabled) {
+            background: rgba(77, 170, 87, 0.9);
+            filter: brightness(1.05);
+        }
+
+        &:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .spin {
+            animation: registrations-spin 0.8s linear infinite;
+        }
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.registrations-tab-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.registrations-tab-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.view-mode-toggle {
+    display: flex;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 9px;
+    overflow: hidden;
+    background: var(--bg, #fff);
+
+    button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8125rem;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary, #6b7280);
+        cursor: pointer;
+
+        &:hover {
+            background: var(--bg-subtle, #f3f4f6);
+            color: var(--text-primary, #111);
+        }
+
+        &.active {
+            background: var(--primary, #4DAA57);
+            color: #fff;
+        }
+    }
+}
+
+.registrations-form-selector {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    background: var(--bg-subtle, #f9fafb);
+
+    label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin-bottom: 0.25rem;
+        color: var(--text-secondary, #6b7280);
+    }
+
+    .registrations-form-info {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .registrations-form-info-content {
+        flex: 1;
+        min-width: 0;
+
+        .form-title {
+            display: block;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            color: var(--text-primary, #111);
+            margin-top: 0.25rem;
+        }
+    }
+
+    .registrations-form-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .registrations-form-empty {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .registrations-form-empty-content {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        flex: 1;
+        min-width: 0;
+
+        .empty-icon {
+            font-size: 1.5rem;
+            color: var(--text-secondary, #6b7280);
+            flex-shrink: 0;
+            margin-top: 0.125rem;
+        }
+
+        .empty-text {
+            flex: 1;
+            min-width: 0;
+
+            p {
+                margin: 0.25rem 0 0 0;
+                font-size: 0.8125rem;
+                color: var(--text-secondary, #6b7280);
+                line-height: 1.4;
+            }
+        }
+    }
+
+    .create-form-btn,
+    .edit-form-btn,
+    .delete-form-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+        border: 1px solid transparent;
+        transition: all 0.15s ease;
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    }
+
+    .create-form-btn {
+        color: var(--primary, #4DAA57);
+        background: transparent;
+        border-color: var(--primary, #4DAA57);
+
+        &:hover:not(:disabled) {
+            background: rgba(77, 170, 87, 0.08);
+        }
+    }
+
+    .edit-form-btn {
+        color: var(--text-secondary, #6b7280);
+        background: transparent;
+        border-color: var(--border, #e5e7eb);
+
+        &:hover:not(:disabled) {
+            background: var(--bg-subtle, #f3f4f6);
+            color: var(--text-primary, #111);
+        }
+    }
+
+    .delete-form-btn {
+        color: var(--error, #dc2626);
+        background: transparent;
+        border-color: var(--error, #dc2626);
+
+        &:hover:not(:disabled) {
+            background: rgba(220, 38, 38, 0.08);
+        }
+
+        .spin {
+            animation: registrations-spin 0.8s linear infinite;
+        }
+    }
+
+    .registrations-form-selector-saving {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-top: 0.5rem;
+        font-size: 0.8125rem;
+        color: var(--text-secondary, #6b7280);
+
+        .spin {
+            animation: registrations-spin 0.8s linear infinite;
+        }
+    }
+}
+
+@keyframes registrations-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.registrations-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+
+    .count {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary, #111);
+    }
+
+    .label {
+        margin-left: 0.5rem;
+        font-size: 0.875rem;
+        color: var(--text-secondary, #6b7280);
+    }
+
+    .registration-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.625rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--primary, #4DAA57);
+        background: rgba(77, 170, 87, 0.1);
+        border-radius: 12px;
+        margin-left: 0.5rem;
+    }
+}
+
+.disable-registration-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 9px;
+    background: var(--bg, #fff);
+    color: var(--text-secondary, #6b7280);
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover:not(:disabled) {
+        background: var(--bg-hover, #f9fafb);
+        color: var(--error, #dc2626);
+        border-color: var(--error, #dc2626);
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .spin {
+        animation: registrations-spin 0.8s linear infinite;
+    }
+}
+
+.export-csv-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 9px;
+    background: var(--bg, #fff);
+    color: var(--text, #111);
+    cursor: pointer;
+
+    &:hover {
+        background: var(--bg-hover, #f9fafb);
+    }
+}
+
+.registrations-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    background: var(--bg, #fff);
+}
+
+.registrations-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+
+    th,
+    td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border, #e5e7eb);
+    }
+
+    th {
+        font-weight: 600;
+        color: var(--text-secondary, #6b7280);
+        background: var(--bg-subtle, #f9fafb);
+    }
+
+    th.th-actions,
+    td.td-actions {
+        width: 1%;
+        white-space: nowrap;
+        text-align: right;
+    }
+
+    tr:last-child td {
+        border-bottom: none;
+    }
+
+    tbody tr:hover {
+        background: var(--bg-hover, #f9fafb);
+    }
+}
+
+.action-btn {
+    padding: 0.35rem;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    color: var(--text-secondary, #6b7280);
+    cursor: pointer;
+    margin-left: 0.25rem;
+
+    &:hover:not(:disabled) {
+        background: var(--bg-subtle, #f3f4f6);
+        color: var(--text-primary, #111);
+    }
+
+    &.copy-email:hover:not(:disabled) {
+        color: var(--primary, #4DAA57);
+    }
+
+    &.remove:hover:not(:disabled) {
+        color: var(--error, #dc2626);
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .spin {
+        animation: registrations-spin 0.8s linear infinite;
+    }
+}
+
+.registrations-cards {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.registration-card {
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    background: var(--bg, #fff);
+    overflow: hidden;
+}
+
+.registration-card-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    background: var(--bg-subtle, #f9fafb);
+}
+
+.registration-card-user {
+    flex: 1;
+    min-width: 0;
+
+    .name {
+        display: block;
+        font-weight: 600;
+        color: var(--text-primary, #111);
+    }
+
+    .email {
+        font-size: 0.8125rem;
+        color: var(--text-secondary, #6b7280);
+    }
+}
+
+.registration-card-meta {
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
+}
+
+.registration-card-actions {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.registration-card-answers {
+    padding: 1rem;
+}
+
+.registration-card-answer {
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+
+    &:last-child {
+        margin-bottom: 0;
+    }
+
+    .q {
+        display: block;
+        font-weight: 500;
+        color: var(--text-secondary, #6b7280);
+        margin-bottom: 0.25rem;
+    }
+
+    .a {
+        color: var(--text-primary, #111);
+    }
+}
+
+.registrations-summary-view {
+    max-width: 720px;
+}
+
+.summary-intro {
+    margin: 0 0 1.25rem 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary, #6b7280);
+}
+
+.summary-question-block {
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 10px;
+    padding: 1.25rem;
+    background: var(--bg, #fff);
+    margin-bottom: 1rem;
+
+    &:last-child {
+        margin-bottom: 0;
+    }
+}
+
+.summary-question-title {
+    margin: 0 0 0.25rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary, #111);
+    line-height: 1.35;
+}
+
+.summary-question-meta {
+    margin: 0 0 1rem 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
+}
+
+.summary-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.summary-bar-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px 2.5rem;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.summary-bar-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary, #111);
+}
+
+.summary-bar-track {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--bg-subtle, #f3f4f6);
+    overflow: hidden;
+}
+
+.summary-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--primary, #4DAA57);
+    min-width: 2px;
+    transition: width 0.25s ease;
+}
+
+.summary-bar-count {
+    font-weight: 600;
+    color: var(--text-secondary, #6b7280);
+    text-align: right;
+}
+
+.summary-text-responses {
+    font-size: 0.875rem;
+}
+
+.summary-no-answers {
+    color: var(--text-secondary, #6b7280);
+    font-style: italic;
+}
+
+.summary-text-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    li {
+        padding: 0.4rem 0;
+        border-bottom: 1px solid var(--border, #e5e7eb);
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.5rem;
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+}
+
+.summary-text-answer {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-primary, #111);
+    word-break: break-word;
+}
+
+.summary-text-count {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--text-secondary, #6b7280);
+}
+
+.summary-text-more {
+    margin: 0.5rem 0 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
+}
+
+.registrations-list-simple {
+    .list-actions {
+        display: inline-flex;
+        gap: 0.25rem;
+        margin-left: auto;
+    }
+}
+
+.registrations-confirm-remove-modal {
+    .registrations-confirm-remove-inner {
+        max-width: 400px;
+        padding: 1.25rem;
+        background: var(--bg, #fff);
+        border-radius: 12px;
+    }
+
+    h3 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.125rem;
+    }
+
+    p {
+        margin: 0 0 1.25rem 0;
+        font-size: 0.9375rem;
+        color: var(--text-secondary, #6b7280);
+    }
+}
+
+.registrations-confirm-remove-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+
+    .btn-cancel {
+        padding: 0.5rem 1rem;
+        border: 1px solid var(--border, #e5e7eb);
+        border-radius: 6px;
+        background: var(--bg, #fff);
+        cursor: pointer;
+        font-size: 0.875rem;
+    }
+
+    .btn-remove {
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 6px;
+        background: var(--error, #dc2626);
+        color: #fff;
+        cursor: pointer;
+        font-size: 0.875rem;
+
+        &:hover:not(:disabled) {
+            filter: brightness(1.05);
+        }
+
+        &:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+    }
+}
+
+.registrations-list-simple {
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    background: var(--bg, #fff);
+
+    .empty {
+        padding: 2rem;
+        text-align: center;
+        color: var(--text-secondary, #6b7280);
+    }
+
+    ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border, #e5e7eb);
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+
+    .user {
+        font-weight: 500;
+    }
+
+    .meta {
+        font-size: 0.8125rem;
+        color: var(--text-secondary, #6b7280);
+    }
+}
