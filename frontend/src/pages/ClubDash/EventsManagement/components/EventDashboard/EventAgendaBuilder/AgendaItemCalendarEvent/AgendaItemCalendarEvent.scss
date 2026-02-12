@@ -1,0 +1,55 @@
+.agenda-item-calendar-event {
+    margin: 2px;
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    z-index: 4;
+    height: 100%;
+    min-height: 40px;
+
+    &.editable {
+        cursor: pointer;
+
+        &:hover {
+            filter: brightness(0.97);
+        }
+    }
+
+    .event-time {
+        font-size: 0.75em;
+        color: var(--event-accent, var(--red));
+        width: 100%;
+        padding: 5px;
+    }
+
+    .event-content {
+        padding: 8px;
+        padding-top: 0;
+
+        .event-name {
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-bottom: 4px;
+        }
+
+        .event-details {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.8em;
+            color: #555;
+
+            .event-type {
+                padding: 2px 4px;
+                border-radius: 4px;
+                background-color: color-mix(in srgb, var(--event-accent, var(--red)) 30%, transparent);
+                color: var(--event-accent, var(--red));
+                width: fit-content;
+            }
+
+            .event-location {
+                color: #666;
+            }
+        }
+    }
+}

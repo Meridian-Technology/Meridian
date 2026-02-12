@@ -1,0 +1,16 @@
+.agenda-daily-calendar {
+    overflow-y: auto;
+
+    .calendar-body {
+        position: relative;
+    }
+
+    .day-column {
+        position: relative;
+    }
+
+    .event.agenda-event {
+        position: absolute;
+        min-height: 32px;
+    }
+}

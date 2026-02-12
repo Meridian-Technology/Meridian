@@ -196,7 +196,7 @@
                 }
             }
 
-            .mode-toggle {
+            .view-toggle {
                 display: flex;
                 align-items: center;
                 gap: 0.5rem;
@@ -205,14 +205,14 @@
                 border-right: 1px solid var(--lighterborder);
             }
 
-            .mode-label {
+            .view-label {
                 font-size: 0.85rem;
                 font-weight: 500;
                 color: var(--light-text);
                 margin: 0;
             }
 
-            .mode-btn {
+            .view-btn {
                 display: flex;
                 align-items: center;
                 gap: 0.4rem;
@@ -260,7 +260,7 @@
         }
     }
 
-    .timeline-agenda-wrapper {
+    .agenda-calendar-wrapper {
         margin-top: 1rem;
     }
 
@@ -318,19 +318,6 @@
         display: flex;
         flex-direction: column;
         gap: 1rem;
-
-        // Styles for draggable items
-        .draggable-list {
-            width: 100%;
-
-            .draggable-item {
-                cursor: grab;
-                
-                &:active {
-                    cursor: grabbing;
-                }
-            }
-        }
     }
 
     .agenda-item {
@@ -346,18 +333,6 @@
         &:hover {
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             transform: translateY(-2px);
-        }
-
-        .item-drag-handle {
-            display: flex;
-            align-items: center;
-            color: var(--light-text);
-            cursor: grab;
-            padding: 0.5rem;
-
-            iconify-icon {
-                font-size: 1.5rem;
-            }
         }
 
         .item-content {
@@ -596,6 +571,42 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 1rem;
+        }
+
+        .input-mode-toggle {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+
+            .mode-btn {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.5rem 0.9rem;
+                background: transparent;
+                border: 1px solid var(--lighterborder);
+                border-radius: 6px;
+                color: var(--text);
+                font-size: 0.85rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                iconify-icon {
+                    font-size: 1rem;
+                }
+
+                &:hover {
+                    background: var(--lightbackground);
+                    border-color: #4DAA57;
+                }
+
+                &.active {
+                    background: #4DAA57;
+                    color: white;
+                    border-color: #4DAA57;
+                }
+            }
         }
 
         .form-actions {

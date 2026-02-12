@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import RSVPGrowthChart from './RSVPGrowthChart';
+import AgendaDailyCalendar from './EventAgendaBuilder/AgendaDailyCalendar/AgendaDailyCalendar';
 import './EventDashboard.scss';
 
 function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, orgId, onRefresh }) {
@@ -82,6 +83,19 @@ function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, o
     const readyCount = readinessChecks.filter(check => check.ready).length;
     const totalChecks = readinessChecks.length;
 
+    const agendaItemsWithTimes = useMemo(() => {
+        const items = agenda?.items || [];
+        return items
+            .filter((item) => item.startTime && item.endTime)
+            .map((item) => ({
+                ...item,
+                startTime: typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime,
+                endTime: typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime
+            }));
+    }, [agenda?.items]);
+
+    const showScheduleCalendar = agendaItemsWithTimes.length > 0 && event;
+
     return (
         <div className="event-overview">
             <div className="overview-layout">
@@ -135,6 +149,21 @@ function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, o
                     </div>
                 )}
             </div>
+
+            {showScheduleCalendar && (
+                <div className="overview-schedule-section">
+                    <h3>
+                        <Icon icon="mdi:calendar-clock" />
+                        Schedule
+                    </h3>
+                    <AgendaDailyCalendar
+                        agendaItems={agendaItemsWithTimes}
+                        event={event}
+                        minuteHeight={2}
+                        height="400px"
+                    />
+                </div>
+            )}
         </div>
     );
 }
