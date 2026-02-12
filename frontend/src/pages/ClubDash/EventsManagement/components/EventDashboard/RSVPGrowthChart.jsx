@@ -80,7 +80,7 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance }) {
     if (!dailyData || dailyData.length === 0) {
         return (
             <div className="rsvp-growth-chart">
-                <div className="chart-empty">No RSVP data available</div>
+                <div className="chart-empty">No registration data available</div>
             </div>
         );
     }
@@ -104,7 +104,7 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance }) {
 
     const datasets = [
         {
-            label: isCumulative ? 'Cumulative RSVPs' : 'Daily RSVPs',
+            label: isCumulative ? 'Cumulative registrations' : 'Daily registrations',
             data: actualData,
             fill: true,
             backgroundColor: 'rgba(77, 170, 87, 0.1)',
@@ -148,7 +148,7 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance }) {
                 <div className="chart-title-section">
                     <h3>
                         <Icon icon="mingcute:chart-line-fill" />
-                        RSVP Growth
+                        Registration Growth
                     </h3>
                     {isFrozen && (
                         <span className="frozen-badge">

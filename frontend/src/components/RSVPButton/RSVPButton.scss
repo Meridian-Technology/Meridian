@@ -111,3 +111,47 @@
         height: 12px;
     }
 }
+
+.rsvp-registration-form-modal {
+    .rsvp-registration-form-modal-inner {
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg, #fff);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .rsvp-registration-form-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--border, #e5e7eb);
+
+        h3 {
+            margin: 0;
+            font-size: 1.125rem;
+        }
+    }
+
+    .rsvp-registration-form-modal-close {
+        padding: 0.25rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: var(--text-secondary, #6b7280);
+
+        &:hover {
+            color: var(--text-primary, #111);
+        }
+    }
+
+    .rsvp-registration-form-modal-body {
+        overflow-y: auto;
+
+        .form-viewer .submit-button {
+            margin-top: 1rem;
+        }
+    }
+}
