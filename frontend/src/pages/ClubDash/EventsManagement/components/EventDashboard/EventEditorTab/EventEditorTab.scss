@@ -201,6 +201,53 @@
                 min-height: 100px;
             }
 
+            .registration-form-select-row {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                flex-wrap: wrap;
+
+                select {
+                    flex: 1;
+                    min-width: 160px;
+                    max-width: 320px;
+                }
+            }
+
+            .create-form-btn,
+            .edit-form-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                padding: 0.5rem 0.75rem;
+                font-size: 0.875rem;
+                font-weight: 500;
+                border-radius: 8px;
+                cursor: pointer;
+                white-space: nowrap;
+            }
+
+            .create-form-btn {
+                color: #4DAA57;
+                background: transparent;
+                border: 1px solid #4DAA57;
+
+                &:hover {
+                    background: rgba(77, 170, 87, 0.08);
+                }
+            }
+
+            .edit-form-btn {
+                color: var(--text-secondary, #6b7280);
+                background: transparent;
+                border: 1px solid var(--lighterborder, #e5e7eb);
+
+                &:hover {
+                    background: var(--lightbackground, #f3f4f6);
+                    color: var(--text, #111);
+                }
+            }
+
             .read-only-value {
                 padding: 0.75rem;
                 background: var(--background);

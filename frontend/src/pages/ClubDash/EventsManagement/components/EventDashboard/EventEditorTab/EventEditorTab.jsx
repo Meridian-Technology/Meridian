@@ -8,6 +8,7 @@ import Popup from '../../../../../../components/Popup/Popup';
 import RoomSelectorV2 from '../../../../../../pages/CreateEventV2/Steps/Where/RoomSelectorV2/RoomSelectorV2';
 import When from '../../../../../../pages/CreateEventV2/Steps/When/When';
 import apiRequest from '../../../../../../utils/postRequest';
+import CreateRegistrationFormModal from '../CreateRegistrationFormModal';
 import './EventEditorTab.scss';
 
 // Separate component for popup content to receive handleClose prop from Popup
@@ -102,6 +103,10 @@ function EventEditorTab({ event, orgId, onRefresh }) {
     
     // Form configuration
     const formConfigData = useFetch('/api/event-system-config/form-config');
+    const { data: orgFormsData, refetch: refetchOrgForms } = useFetch(orgId ? `/org-event-management/${orgId}/forms` : null);
+    const orgForms = orgFormsData?.success ? (orgFormsData.data || []) : [];
+    const [showCreateFormModal, setShowCreateFormModal] = useState(false);
+    const [editingFormId, setEditingFormId] = useState(null);
     
     // Initialize form data from event
     const [formData, setFormData] = useState({
@@ -112,13 +117,14 @@ function EventEditorTab({ event, orgId, onRefresh }) {
         expectedAttendance: 0,
         contact: '',
         externalLink: '',
-        rsvpEnabled: false,
-        rsvpRequired: false,
-        rsvpDeadline: null,
+        registrationEnabled: false,
+        registrationRequired: false,
+        registrationDeadline: null,
+        registrationFormId: null,
         maxAttendees: null,
         checkInEnabled: false,
         checkInMethod: 'both',
-        checkInRequireRsvp: false,
+        checkInRequireRegistration: false,
         checkInAutoCheckIn: false,
         checkInAllowOnPage: true,
         image: null,
@@ -147,13 +153,14 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                 expectedAttendance: event.expectedAttendance || 0,
                 contact: event.contact || '',
                 externalLink: event.externalLink || '',
-                rsvpEnabled: event.rsvpEnabled || false,
-                rsvpRequired: event.rsvpRequired || false,
-                rsvpDeadline: event.rsvpDeadline ? new Date(event.rsvpDeadline) : null,
+                registrationEnabled: event.registrationEnabled ?? event.rsvpEnabled ?? false,
+                registrationRequired: event.registrationRequired ?? event.rsvpRequired ?? false,
+                registrationDeadline: event.registrationDeadline || event.rsvpDeadline ? new Date(event.registrationDeadline || event.rsvpDeadline) : null,
+                registrationFormId: event.registrationFormId || null,
                 maxAttendees: event.maxAttendees || null,
                 checkInEnabled: event.checkInEnabled || false,
                 checkInMethod: event.checkInSettings?.method || 'both',
-                checkInRequireRsvp: event.checkInSettings?.requireRsvp || false,
+                checkInRequireRegistration: event.checkInSettings?.requireRegistration ?? event.checkInSettings?.requireRsvp ?? false,
                 checkInAutoCheckIn: event.checkInSettings?.autoCheckIn || false,
                 checkInAllowOnPage: event.checkInSettings?.allowOnPageCheckIn !== false,
                 image: null, // Will handle image separately
@@ -302,14 +309,15 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                 expectedAttendance: formData.expectedAttendance,
                 contact: formData.contact || '',
                 externalLink: formData.externalLink || '',
-                rsvpEnabled: formData.rsvpEnabled,
-                rsvpRequired: formData.rsvpRequired,
-                rsvpDeadline: formData.rsvpDeadline ? formData.rsvpDeadline.toISOString() : null,
+                registrationEnabled: formData.registrationEnabled,
+                registrationRequired: formData.registrationRequired,
+                registrationDeadline: formData.registrationDeadline ? formData.registrationDeadline.toISOString() : null,
+                registrationFormId: formData.registrationFormId || null,
                 maxAttendees: formData.maxAttendees || null,
                 checkInEnabled: formData.checkInEnabled,
                 checkInSettings: {
                     method: formData.checkInMethod,
-                    requireRsvp: formData.checkInRequireRsvp,
+                    requireRegistration: formData.checkInRequireRegistration,
                     autoCheckIn: formData.checkInAutoCheckIn,
                     allowOnPageCheckIn: formData.checkInAllowOnPage
                 },
@@ -323,9 +331,9 @@ function EventEditorTab({ event, orgId, onRefresh }) {
             const customFields = {};
             if (formConfigData.data?.data?.fields) {
                 formConfigData.data.data.fields.forEach(field => {
-                    if (!['name', 'description', 'type', 'visibility', 'expectedAttendance', 
-                          'contact', 'externalLink', 'rsvpEnabled', 'rsvpRequired', 'rsvpDeadline', 
-                          'maxAttendees', 'start_time', 'end_time', 'location', 'classroom_id', 
+                    if (!['name', 'description', 'type', 'visibility', 'expectedAttendance',
+                          'contact', 'externalLink', 'registrationEnabled', 'registrationRequired', 'registrationDeadline', 'registrationFormId',
+                          'maxAttendees', 'start_time', 'end_time', 'location', 'classroom_id',
                           'selectedRoomIds', 'image'].includes(field.name)) {
                         if (formData[field.name] !== undefined) {
                             customFields[field.name] = formData[field.name];
@@ -420,7 +428,7 @@ function EventEditorTab({ event, orgId, onRefresh }) {
             // Contact & Links
             'contact', 'externalLink',
             // RSVP Settings
-            'rsvpEnabled', 'rsvpRequired', 'rsvpDeadline', 'maxAttendees'
+            'registrationEnabled', 'registrationRequired', 'registrationDeadline', 'registrationFormId', 'maxAttendees'
         ];
         
         // Special steps that are handled separately
@@ -649,9 +657,9 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                     </div>
                 </div>
 
-                {/* RSVP Settings Section */}
+                {/* Registration Settings Section */}
                 <div className="editor-section">
-                    <h3>RSVP Settings</h3>
+                    <h3>Registration Settings</h3>
                     <div className="section-content">
                         <div className="field-group">
                             <label className="checkbox-label">
@@ -659,20 +667,20 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                                     <>
                                         <input
                                             type="checkbox"
-                                            checked={formData.rsvpEnabled}
-                                            onChange={(e) => handleFieldChange('rsvpEnabled', e.target.checked)}
+                                            checked={formData.registrationEnabled}
+                                            onChange={(e) => handleFieldChange('registrationEnabled', e.target.checked)}
                                         />
-                                        <span>Enable RSVP</span>
+                                        <span>Enable registration</span>
                                     </>
                                 ) : (
                                     <div className="read-only-value">
-                                        RSVP {formData.rsvpEnabled ? 'Enabled' : 'Disabled'}
+                                        Registration {formData.registrationEnabled ? 'Enabled' : 'Disabled'}
                                     </div>
                                 )}
                             </label>
                         </div>
 
-                        {formData.rsvpEnabled && (
+                        {formData.registrationEnabled && (
                             <>
                                 <div className="field-group">
                                     <label className="checkbox-label">
@@ -680,14 +688,14 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                                             <>
                                                 <input
                                                     type="checkbox"
-                                                    checked={formData.rsvpRequired}
-                                                    onChange={(e) => handleFieldChange('rsvpRequired', e.target.checked)}
+                                                    checked={formData.registrationRequired}
+                                                    onChange={(e) => handleFieldChange('registrationRequired', e.target.checked)}
                                                 />
-                                                <span>Require RSVP</span>
+                                                <span>Require registration</span>
                                             </>
                                         ) : (
                                             <div className="read-only-value">
-                                                RSVP {formData.rsvpRequired ? 'Required' : 'Optional'}
+                                                Registration {formData.registrationRequired ? 'Required' : 'Optional'}
                                             </div>
                                         )}
                                     </label>
@@ -695,16 +703,16 @@ function EventEditorTab({ event, orgId, onRefresh }) {
 
                                 <div className="field-row">
                                     <div className="field-group">
-                                        <label>RSVP Deadline</label>
+                                        <label>Registration deadline</label>
                                         {isEditing ? (
                                             <input
                                                 type="datetime-local"
-                                                value={formData.rsvpDeadline ? new Date(formData.rsvpDeadline).toISOString().slice(0, 16) : ''}
-                                                onChange={(e) => handleFieldChange('rsvpDeadline', e.target.value ? new Date(e.target.value) : null)}
+                                                value={formData.registrationDeadline ? new Date(formData.registrationDeadline).toISOString().slice(0, 16) : ''}
+                                                onChange={(e) => handleFieldChange('registrationDeadline', e.target.value ? new Date(e.target.value) : null)}
                                             />
                                         ) : (
                                             <div className="read-only-value">
-                                                {formData.rsvpDeadline ? formatDateTime(formData.rsvpDeadline) : 'Not set'}
+                                                {formData.registrationDeadline ? formatDateTime(formData.registrationDeadline) : 'Not set'}
                                             </div>
                                         )}
                                     </div>
@@ -726,6 +734,66 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                                         )}
                                     </div>
                                 </div>
+
+                                <div className="field-group">
+                                    <label>Registration form</label>
+                                    {isEditing ? (
+                                        <div className="registration-form-select-row">
+                                            <select
+                                                value={formData.registrationFormId || ''}
+                                                onChange={(e) => handleFieldChange('registrationFormId', e.target.value || null)}
+                                            >
+                                                <option value="">None</option>
+                                                {orgForms.map((f) => (
+                                                    <option key={f._id} value={f._id}>
+                                                        {f.title}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                type="button"
+                                                className="create-form-btn"
+                                                onClick={() => { setEditingFormId(null); setShowCreateFormModal(true); }}
+                                            >
+                                                <Icon icon="mdi:plus" />
+                                                Create form
+                                            </button>
+                                            {formData.registrationFormId && (
+                                                <button
+                                                    type="button"
+                                                    className="edit-form-btn"
+                                                    onClick={() => {
+                                                        const f = orgForms.find((x) => x._id === formData.registrationFormId);
+                                                        if (f) setEditingFormId(f._id);
+                                                        setShowCreateFormModal(true);
+                                                    }}
+                                                >
+                                                    <Icon icon="mdi:pencil" />
+                                                    Edit form
+                                                </button>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="read-only-value">
+                                            {formData.registrationFormId && orgForms.length
+                                                ? (orgForms.find((f) => f._id === formData.registrationFormId)?.title || formData.registrationFormId)
+                                                : 'None'}
+                                        </div>
+                                    )}
+                                    <p className="field-hint">Optional form attendees fill out when registering.</p>
+                                </div>
+                                {showCreateFormModal && (
+                                    <CreateRegistrationFormModal
+                                        orgId={orgId}
+                                        formId={editingFormId || undefined}
+                                        initialForm={editingFormId ? orgForms.find((f) => f._id === editingFormId) : undefined}
+                                        onCreated={(newFormId) => {
+                                            refetchOrgForms();
+                                            if (!editingFormId && newFormId) handleFieldChange('registrationFormId', newFormId);
+                                        }}
+                                        onClose={() => { setShowCreateFormModal(false); setEditingFormId(null); }}
+                                    />
+                                )}
                             </>
                         )}
                     </div>
@@ -832,18 +900,18 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                                                 <>
                                                     <input
                                                         type="checkbox"
-                                                        checked={formData.checkInRequireRsvp}
-                                                        onChange={(e) => handleFieldChange('checkInRequireRsvp', e.target.checked)}
+                                                        checked={formData.checkInRequireRegistration}
+                                                        onChange={(e) => handleFieldChange('checkInRequireRegistration', e.target.checked)}
                                                     />
-                                                    <span>Require RSVP to check in</span>
+                                                    <span>Require registration to check in</span>
                                                 </>
                                             ) : (
                                                 <div className="read-only-value">
-                                                    Require RSVP: {formData.checkInRequireRsvp ? 'Yes' : 'No'}
+                                                    Require registration: {formData.checkInRequireRegistration ? 'Yes' : 'No'}
                                                 </div>
                                             )}
                                         </label>
-                                        <p className="field-hint">Attendees must RSVP (Going or Maybe) before they can check in.</p>
+                                        <p className="field-hint">Attendees must register before they can check in.</p>
                                     </div>
                                     <div className="field-group">
                                         <label className="checkbox-label">
