@@ -24,7 +24,8 @@ function Dashboard({
     enableSubSidebar = false, 
     defaultPage = 0, 
     onBack=null, 
-    notificationInbox=false
+    notificationInbox=false,
+    contentOverlay=null
 } ) {
     const [expanded, setExpanded] = useState(false);
     const [expandedClass, setExpandedClass] = useState("");
@@ -639,6 +640,12 @@ function Dashboard({
                 {overlayContent && (
                     <div className="dashboard-overlay">
                         {overlayContent}
+                    </div>
+                )}
+                {/* Content overlay (e.g. pending approval blur) - restricted to dash-right only */}
+                {contentOverlay && (
+                    <div className="dashboard-content-overlay">
+                        {contentOverlay}
                     </div>
                 )}
             </div>

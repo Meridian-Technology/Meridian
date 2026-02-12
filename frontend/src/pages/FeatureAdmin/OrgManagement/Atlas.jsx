@@ -3,6 +3,7 @@ import './Atlas.scss';
 import Dashboard from '../../../components/Dashboard/Dashboard';
 import OrgOverview from './OrgOverview/OrgOverview';
 import VerificationRequests from './VerificationRequests/VerificationRequests';
+import ApprovalQueue from './ApprovalQueue/ApprovalQueue';
 import OrgList from './OrgList/OrgList';
 import Configuration from './Configuration/Configuration';
 import Analytics from './Analytics/Analytics';
@@ -20,6 +21,11 @@ function Atlas() {
             label: 'Verification Requests',
             icon: 'mdi:shield-check',
             element: <VerificationRequests />
+        },
+        {
+            label: 'Approval Queue',
+            icon: 'mdi:clipboard-check-outline',
+            element: <ApprovalQueue />
         },
         {
             label: 'Organizations',

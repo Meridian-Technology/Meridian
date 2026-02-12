@@ -343,6 +343,12 @@
             width:100%;
         }
 
+        .dashboard-content-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 999;
+        }
+
         .dashboard-overlay {
             position: absolute;
             top: 0;

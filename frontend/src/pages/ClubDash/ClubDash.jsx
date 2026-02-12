@@ -1,7 +1,7 @@
-import React, { useEffect, useState} from 'react';
+import React, { useEffect, useState } from 'react';
 import './ClubDash.scss';
 import useAuth from '../../hooks/useAuth';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import logo from '../../assets/red_logo.svg';
 import { getAllEvents } from '../../components/EventsViewer/EventHelpers';
 import { useNotification } from '../../NotificationContext';
@@ -32,6 +32,8 @@ import {
     SocialLinksSettings
 } from './OrgSettings/components';
 import VerificationRequest from './Settings/VerificationRequest/VerificationRequest';
+import OrgPendingBanner from '../../components/OrgPendingBanner/OrgPendingBanner';
+import PendingApprovalOverlay from '../../components/PendingApprovalOverlay/PendingApprovalOverlay';
 
 function ClubDash(){
     const [clubId, setClubId] = useState(useParams().id);
@@ -53,6 +55,8 @@ function ClubDash(){
 
     const orgData = useFetch(`/get-org-by-name/${clubId}?exhaustive=true`);
     const meetings = useFetch(`/get-meetings/${clubId}`);
+    const { data: configData } = useFetch('/org-management/config');
+    const [searchParams] = useSearchParams();
 
     const location = useLocation();
 
@@ -302,18 +306,47 @@ function ClubDash(){
 
     
 
+    const org = orgData.data?.org?.overview;
+    const isPending = org?.approvalStatus === 'pending';
+    const allowedActions = configData?.orgApproval?.pendingOrgLimits?.allowedActions ?? ['view_page', 'edit_profile', 'manage_members'];
+
+    const pageToAction = [
+        'view_page',      // 0: Dashboard
+        'create_events',  // 1: Events
+        'post_messages',  // 2: Announcements
+        'manage_members', // 3: Members
+        'edit_profile',   // 4: Forms
+        'edit_profile',   // 5: Settings
+    ];
+    const pageParam = parseInt(searchParams.get('page') ?? '0', 10);
+    const requiredAction = pageToAction[Math.min(pageParam, pageToAction.length - 1)] ?? 'view_page';
+    const isRestricted = isPending && !allowedActions.includes(requiredAction);
+    const memberCount = orgData.data?.org?.members?.length ?? 0;
+
     return (
-        <Dashboard 
-        menuItems={menuItems} 
-        additionalClass='club-dash' 
-        middleItem={<OrgDropdown showDrop={showDrop} setShowDrop={setShowDrop} user={user} currentOrgName={clubId} onOrgChange={onOrgChange}/>} 
-        logo={orgLogo} 
-        secondaryColor="#EDF6EE" 
-        primaryColor="#4DAA57"
-        enableSubSidebar={true}
-        onBack={() => navigate('/events-dashboard')}
-        >
-        </Dashboard>
+        <div className="club-dash-with-banner">
+            {isPending && (
+                <OrgPendingBanner org={org} orgName={clubId} />
+            )}
+            <Dashboard
+                menuItems={menuItems}
+                additionalClass='club-dash'
+                middleItem={<OrgDropdown showDrop={showDrop} setShowDrop={setShowDrop} user={user} currentOrgName={clubId} onOrgChange={onOrgChange}/>}
+                logo={orgLogo}
+                secondaryColor="#EDF6EE"
+                primaryColor="#4DAA57"
+                enableSubSidebar={true}
+                onBack={() => navigate('/events-dashboard')}
+                contentOverlay={isRestricted ? (
+                    <PendingApprovalOverlay
+                        org={org}
+                        orgName={clubId}
+                        config={configData}
+                        memberCount={memberCount}
+                    />
+                ) : null}
+            />
+        </div>
     )
 }
 
