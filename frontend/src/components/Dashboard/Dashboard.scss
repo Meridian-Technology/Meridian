@@ -221,6 +221,26 @@
                         }
                     }
 
+                    &.coming-soon{
+                        cursor: not-allowed;
+                        opacity: 0.6;
+                        
+                        &:hover{
+                            background-color: transparent;
+                        }
+                        
+                        .coming-soon-badge{
+                            font-family: 'Inter';
+                            font-size: 10px;
+                            font-weight: 600;
+                            color: white;
+                            background-color: var(--darkborder);
+                            padding: 2px 6px;
+                            border-radius: 4px;
+                            margin-left: auto;
+                        }
+                    }
+
                 }
             }
         }
@@ -323,6 +343,12 @@
             width:100%;
         }
 
+        .dashboard-content-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 999;
+        }
+
         .dashboard-overlay {
             position: absolute;
             top: 0;
@@ -332,6 +358,8 @@
             background: white;
             z-index: 1000;
             overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
 
             .full-width-event-viewer {
                 height: 100%;

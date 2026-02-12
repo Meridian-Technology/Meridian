@@ -1,0 +1,22 @@
+.event-jobs {
+    .role-list-item-description {
+        display: block;
+        font-size: 0.85rem;
+        color: var(--light-text);
+        margin-top: 0.25rem;
+    }
+
+    .no-roles,
+    .no-role-selected {
+        background: var(--background);
+        border: 2px dashed var(--lighterborder);
+    }
+
+    .role-editor-content {
+        .form-group {
+            .text-input {
+                width: 100%;
+            }
+        }
+    }
+}

@@ -139,7 +139,7 @@ router.post("/create-org", verifyToken, upload.fields([
     { name: 'image', maxCount: 1 },
     { name: 'bannerImage', maxCount: 1 }
 ]), handleMulterError, async (req, res) => {
-    const { Org, OrgMember, User } = getModels(req, "Org", "OrgMember", "User");
+    const { Org, OrgMember, User, OrgManagementConfig } = getModels(req, "Org", "OrgMember", "User", "OrgManagementConfig");
     const {
         org_name,
         org_description,
@@ -191,6 +191,11 @@ router.post("/create-org", verifyToken, upload.fields([
         }
 
         const cleanOrgDescription = clean(org_description);
+
+        // Check org approval config - new orgs may need pending status
+        const config = await OrgManagementConfig.findOne();
+        const approvalMode = config?.orgApproval?.mode || 'none';
+        const requiresApproval = ['manual', 'auto', 'both'].includes(approvalMode);
 
         // Prepare default roles (only owner and member)
         const defaultRoles = [
@@ -269,8 +274,8 @@ router.post("/create-org", verifyToken, upload.fields([
             positions: allRoles,
             weekly_meeting: weekly_meeting || null,
             socialLinks: parsedSocialLinks,
-            //Owner is the user
             owner: userId,
+            approvalStatus: requiresApproval ? 'pending' : 'approved',
         });
 
         // Handle profile image upload if file is present
@@ -744,9 +749,12 @@ router.post("/:orgId/apply-to-org", verifyToken, async (req, res) => {
                 role: 'member',
             });
             await newMember.save();
+            // Check auto-approve for org (Atlas: when member count reaches threshold)
+            const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
+            await checkAndAutoApproveOrg(req, orgId);
             res.status(200).json({success: true, message: "You are now a member of this org"});
             return;
-        };
+        }
         
         if(org.memberForm) {
             const form = await Form.findById(org.memberForm);
@@ -951,14 +959,40 @@ router.post('/send-email', async (req,res) => {
     }
 });
 
-router.get('/get-orgs', async (req, res) => {
-    try{
-        const {exhaustive} = req.query;
+router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
+    try {
+        const { exhaustive, includePending } = req.query;
         const { Org, OrgMember, OrgFollower, Event } = getModels(req, 'Org', 'OrgMember', 'OrgFollower', 'Event');
-        
+        const userId = req.user?.userId;
+
+        // Atlas: Default filter - only approved orgs for discoverability. includePending + auth = add user's orgs.
+        const baseApprovalFilter = {
+            $or: [
+                { approvalStatus: 'approved' },
+                { approvalStatus: { $exists: false } }
+            ]
+        };
+        let approvalFilter = baseApprovalFilter;
+        if (includePending === 'true' && userId) {
+            const userOrgIds = await OrgMember.find({ user_id: userId, status: 'active' })
+                .distinct('org_id');
+            const userOwnedOrgIds = await Org.find({ owner: userId }).distinct('_id');
+            const allUserOrgIds = [...new Set([
+                ...userOrgIds.map(id => id.toString()),
+                ...userOwnedOrgIds.map(id => id.toString())
+            ])].map(id => new mongoose.Types.ObjectId(id));
+            approvalFilter = {
+                $or: [
+                    baseApprovalFilter,
+                    { _id: { $in: allUserOrgIds } }
+                ]
+            };
+        }
+
         //if exhaustive, return org stats like memberCount, followerCount, eventCount, using aggregate using efficeint query
-        if(exhaustive){
+        if (exhaustive) {
             const orgs = await Org.aggregate([
+                { $match: approvalFilter },
                 // Lookup members and count them (only active members)
                 {
                     $lookup: {
@@ -1034,12 +1068,11 @@ router.get('/get-orgs', async (req, res) => {
                 orgs: orgs
             });
         }
-        const orgs = await Org.find();
-        console.log('GET: /get-orgs successful')
+        const orgs = await Org.find(approvalFilter);
         res.status(200).json({
-            success:true,
-            orgs:orgs
-        })
+            success: true,
+            orgs
+        });
     } catch (error){
         console.log('GET: /get-orgs failed', error);
         res.status(500).json({

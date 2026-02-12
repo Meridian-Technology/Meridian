@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { Icon } from '@iconify-icon/react';
 import ImageUpload from '../ImageUpload/ImageUpload';
+import Popup from '../Popup/Popup';
+import TextareaExpandPopup from '../TextareaExpandPopup/TextareaExpandPopup';
 import './DynamicFormField.scss';
 
-const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => {
+const DynamicFormField = ({ field, value, onChange, formData, errors = {}, specialStyling=null }) => {
     // Normalize value to never be null - use empty string instead
     const normalizeValue = (val) => {
         if (val === null || val === undefined) {
@@ -12,6 +15,7 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
     };
     
     const [localValue, setLocalValue] = useState(normalizeValue(value));
+    const [expandPopupOpen, setExpandPopupOpen] = useState(false);
 
     useEffect(() => {
         const normalized = normalizeValue(value);
@@ -118,7 +122,7 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
                 );
 
             case 'textarea':
-                return (
+                const textareaField = (
                     <textarea
                         id={field.name}
                         value={localValue === null || localValue === undefined ? '' : localValue}
@@ -131,6 +135,33 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
                         required={field.isRequired || field.validation?.required}
                     />
                 );
+                if (field.allowExpand) {
+                    return (
+                        <div className="textarea-with-expand">
+                            {textareaField}
+                            <button
+                                type="button"
+                                className="textarea-expand-btn"
+                                onClick={() => setExpandPopupOpen(true)}
+                                title="Open in larger editor"
+                            >
+                                <Icon icon="mdi:open-in-new" />
+                                <span>Expand</span>
+                            </button>
+                            <Popup isOpen={expandPopupOpen} onClose={() => setExpandPopupOpen(false)}defaultStyling={false}>
+                                <TextareaExpandPopup
+                                    label={field.label}
+                                    value={localValue}
+                                    onChange={(value) => handleChange(value)}
+                                    placeholder={field.placeholder || ''}
+                                    maxLength={field.validation?.maxLength}
+                                    minLength={field.validation?.minLength}
+                                />
+                            </Popup>
+                        </div>
+                    );
+                }
+                return textareaField;
 
             case 'select':
                 return (
@@ -243,7 +274,7 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
     };
 
     return (
-        <div className={`dynamic-form-field ${field.type}`}>
+        <div className={`dynamic-form-field ${field.type} ${specialStyling}`}>
             <label htmlFor={field.name}>
                 {field.label}
                 {(field.isRequired || field.validation?.required) && (

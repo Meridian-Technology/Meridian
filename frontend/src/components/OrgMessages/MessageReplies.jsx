@@ -7,15 +7,23 @@ import { useNotification } from '../../NotificationContext';
 import { formatDistanceToNow } from 'date-fns';
 import './OrgMessages.scss';
 
-const MessageReplies = ({ messageId, orgId, orgData, onReplyAdded }) => {
+const MessageReplies = ({ messageId, orgId, orgData, onReplyAdded, initialShowReplyForm = false, onCancelReply }) => {
     const [replies, setReplies] = useState([]);
     const [newReply, setNewReply] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [validationError, setValidationError] = useState('');
     const [characterLimit, setCharacterLimit] = useState(500);
     const [minCharacterLimit, setMinCharacterLimit] = useState(100);
+    const [showReplyForm, setShowReplyForm] = useState(initialShowReplyForm);
     const { user } = useAuth();
+
+    // When parent asks to open the reply form (e.g. user clicked "Reply" next to reactions), show it
+    useEffect(() => {
+        if (initialShowReplyForm) setShowReplyForm(true);
+    }, [initialShowReplyForm]);
     const { addNotification } = useNotification();
+
+    const canReply = orgData?.org?.isMember && orgData?.org?.overview?.messageSettings?.allowReplies !== false;
 
     // Fetch system config for character limits
     const { data: systemConfig } = useFetch('/org-management/config');
@@ -80,6 +88,7 @@ const MessageReplies = ({ messageId, orgId, orgData, onReplyAdded }) => {
             if (response.success) {
                 setNewReply('');
                 setValidationError('');
+                setShowReplyForm(false);
                 refetch();
                 onReplyAdded?.();
                 addNotification({
@@ -143,42 +152,7 @@ const MessageReplies = ({ messageId, orgId, orgData, onReplyAdded }) => {
     const isValid = !validateContent(newReply);
 
     return (
-        <div className="message-replies">
-            <div className="reply-form">
-                <textarea
-                    className={`reply-textarea ${validationError ? 'error' : ''}`}
-                    value={newReply}
-                    onChange={handleReplyChange}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Write a reply..."
-                    rows={3}
-                />
-                {validationError && (
-                    <div className="validation-error">
-                        <Icon icon="mdi:alert-circle" />
-                        <span>{validationError}</span>
-                    </div>
-                )}
-                <div className="reply-form-actions">
-                    <button
-                        onClick={() => {
-                            setNewReply('');
-                            setValidationError('');
-                        }}
-                        className="cancel-reply"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleAddReply}
-                        disabled={!isValid || isSubmitting}
-                        className="submit-reply"
-                    >
-                        {isSubmitting ? 'Posting...' : 'Reply'}
-                    </button>
-                </div>
-            </div>
-
+        <div className="message-replies message-replies--youtube">
             {loading && replies.length === 0 ? (
                 <div className="replies-loading">Loading replies...</div>
             ) : replies.length > 0 ? (
@@ -229,6 +203,51 @@ const MessageReplies = ({ messageId, orgId, orgData, onReplyAdded }) => {
                     ))}
                 </div>
             ) : null}
+
+            {/* Reply button: show reply form only when user clicks Reply (YouTube style) */}
+            {canReply && (
+                <div className="replies-actions">
+                    {showReplyForm &&  (
+                        <div className="reply-form">
+                            <textarea
+                                className={`reply-textarea ${validationError ? 'error' : ''}`}
+                                value={newReply}
+                                onChange={handleReplyChange}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Add a reply..."
+                                rows={3}
+                            />
+                            {validationError && (
+                                <div className="validation-error">
+                                    <Icon icon="mdi:alert-circle" />
+                                    <span>{validationError}</span>
+                                </div>
+                            )}
+                            <div className="reply-form-actions">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowReplyForm(false);
+                                        setNewReply('');
+                                        setValidationError('');
+                                        onCancelReply?.();
+                                    }}
+                                    className="cancel-reply"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleAddReply}
+                                    disabled={!isValid || isSubmitting}
+                                    className="submit-reply"
+                                >
+                                    {isSubmitting ? 'Posting...' : 'Reply'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };

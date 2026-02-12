@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './Roles.scss';
 import RoleManager from '../../../components/RoleManager';
+import TabbedContainer from '../../../components/TabbedContainer';
+import EventJobs from './EventJobs/EventJobs';
 import { useNotification } from '../../../NotificationContext';
 import useAuth from '../../../hooks/useAuth';
 import axios from 'axios';
@@ -24,7 +26,9 @@ function Roles({ expandedClass, org, refetch }) {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [roleToDelete, setRoleToDelete] = useState(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [hasDraftRole, setHasDraftRole] = useState(false);
     const {AtlasMain} = useGradient();
+    const roleManagerRef = useRef(null);
 
     useEffect(() => {
         if (org && !permissionsChecked) {
@@ -112,15 +116,34 @@ function Roles({ expandedClass, org, refetch }) {
 
         setSaving(true);
         try {
+            let rolesToSave = roles;
+            if (hasDraftRole) {
+                const draftResult = roleManagerRef.current?.createDraftRole?.();
+                if (!draftResult?.success) {
+                    const message = draftResult?.reason === 'duplicate'
+                        ? 'A role with this name already exists'
+                        : 'Role name is required';
+                    addNotification({
+                        title: 'Error',
+                        message,
+                        type: 'error'
+                    });
+                    return false;
+                }
+                rolesToSave = draftResult.roles;
+                setRoles(rolesToSave);
+                setHasDraftRole(false);
+            }
+
             // Update roles on the backend
             const response = await apiRequest(`/org-roles/${org._id}/roles`, {
-                positions: roles
+                positions: rolesToSave
             }, {
                 method: 'PUT'
             });
 
             if (response.success) {
-                setOriginalRoles(JSON.parse(JSON.stringify(roles))); // Deep copy
+                setOriginalRoles(JSON.parse(JSON.stringify(rolesToSave))); // Deep copy
                 addNotification({
                     title: 'Success',
                     message: 'Roles updated successfully',
@@ -154,6 +177,7 @@ function Roles({ expandedClass, org, refetch }) {
         setShowDeleteConfirm(false);
         setRoleToDelete(null);
         setDeleteConfirmText('');
+        setHasDraftRole(false);
     };
 
     const handleDeleteRequest = (roleName) => {
@@ -247,7 +271,7 @@ function Roles({ expandedClass, org, refetch }) {
     };
 
     // Check if there are unsaved changes
-    const hasChanges = JSON.stringify(roles) !== JSON.stringify(originalRoles);
+    const hasChanges = JSON.stringify(roles) !== JSON.stringify(originalRoles) || hasDraftRole;
 
     // Prevent navigation when there are unsaved changes
     useEffect(() => {
@@ -294,38 +318,76 @@ function Roles({ expandedClass, org, refetch }) {
 
     const roleToDeleteData = roleToDelete ? roles.find(r => r.name === roleToDelete) : null;
 
+    const tabs = [
+        {
+            id: 'org-roles',
+            label: 'Org Roles',
+            icon: 'mdi:shield-account',
+            content: (
+                <>
+                    <UnsavedChangesBanner
+                        hasChanges={hasChanges}
+                        onSave={handleSave}
+                        onDiscard={handleDiscard}
+                        saving={saving}
+                    />
+
+                    {!canManageRoles && (
+                        <div className="permission-warning">
+                            <p>You don't have permission to manage roles in this organization.</p>
+                            <p>Only organization owners and users with role management permissions can modify roles.</p>
+                        </div>
+                    )}
+
+                    <div className="role-manager-container">
+                        <RoleManager
+                            ref={roleManagerRef}
+                            roles={roles}
+                            onRolesChange={handleRolesChange}
+                            onDeleteRequest={handleDeleteRequest}
+                            isEditable={canManageRoles}
+                            saveImmediately={false}
+                            onDraftChange={setHasDraftRole}
+                        />
+                    </div>
+                </>
+            )
+        },
+        {
+            id: 'event-jobs',
+            label: 'Job Templates',
+            icon: 'mdi:briefcase',
+            content: (
+                <div className="role-manager-container">
+                    <EventJobs org={org} canManageRoles={canManageRoles} />
+                </div>
+            )
+        }
+    ];
+
     return (
         <div className={`dash ${expandedClass}`}>
             <div className="roles">
-                <UnsavedChangesBanner
-                    hasChanges={hasChanges}
-                    onSave={handleSave}
-                    onDiscard={handleDiscard}
-                    saving={saving}
-                />
-                
                 <header className="header">
-                    <h1>Role Management</h1>
-                    <p>Manage roles and permissions for {org.org_name}</p>
+                    <h1>Roles & Permissions</h1>
+                    <p>Manage roles, permissions, and event jobs for {org.org_name}</p>
                     <img src={AtlasMain} alt="" />
                 </header>
 
-                {!canManageRoles && (
-                    <div className="permission-warning">
-                        <p>You don't have permission to manage roles in this organization.</p>
-                        <p>Only organization owners and users with role management permissions can modify roles.</p>
-                    </div>
-                )}
-
-                <div className="role-manager-container">
-                    <RoleManager 
-                        roles={roles}
-                        onRolesChange={handleRolesChange}
-                        onDeleteRequest={handleDeleteRequest}
-                        isEditable={canManageRoles}
-                        saveImmediately={false}
-                    />
-                </div>
+                <TabbedContainer
+                    tabs={tabs}
+                    defaultTab="org-roles"
+                    tabStyle="default"
+                    size="medium"
+                    animated={true}
+                    showTabIcons={true}
+                    showTabLabels={true}
+                    fullWidth={false}
+                    scrollable={false}
+                    lazyLoad={true}
+                    keepAlive={true}
+                    className="roles-tabs"
+                />
             </div>
 
             {/* Delete Confirmation Popup */}

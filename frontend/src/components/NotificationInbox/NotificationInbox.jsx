@@ -5,7 +5,7 @@ import './NotificationInbox.scss';
 import { useNavigate } from 'react-router-dom';
 import HeaderContainer from '../HeaderContainer/HeaderContainer';
 
-const NotificationInbox = () => {
+const NotificationInbox = ({ position = 'top-right' }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
@@ -84,7 +84,7 @@ const NotificationInbox = () => {
         {unreadCount > 0 && <span className="badge">{unreadCount}</span>}
       </button>
       {open && (
-        <div className="dropdown">
+        <div className={`dropdown dropdown-${position}`}>
           <HeaderContainer 
             icon="ion:notifications" 
             header="Notifications"

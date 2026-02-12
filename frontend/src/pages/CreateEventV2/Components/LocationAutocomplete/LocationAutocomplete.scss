@@ -1,0 +1,97 @@
+.location-autocomplete {
+    position: relative;
+    width: 100%;
+
+    .location-autocomplete-input-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--lighterborder, #e0e0e0);
+        border-radius: 6px;
+        background: var(--background, #fff);
+        transition: border-color 0.2s;
+
+        &:focus-within {
+            border-color: var(--primary, #007bff);
+            outline: none;
+        }
+
+        .location-icon {
+            font-size: 1.1rem;
+            color: var(--text-muted, #6c757d);
+        }
+
+        .location-autocomplete-input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            font-size: 0.9375rem;
+            outline: none;
+
+            &::placeholder {
+                color: var(--text-muted, #6c757d);
+            }
+        }
+
+        .location-loading {
+            font-size: 1rem;
+            color: var(--text-muted, #6c757d);
+            animation: spin 0.8s linear infinite;
+        }
+    }
+
+    .location-autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        margin: 0;
+        padding: 0.25rem 0;
+        list-style: none;
+        background: var(--background, #fff);
+        border: 1px solid var(--lighterborder, #e0e0e0);
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        z-index: 100;
+        max-height: 220px;
+        overflow-y: auto;
+
+        .location-autocomplete-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.15s;
+
+            &:hover,
+            &.highlighted {
+                background: var(--hover-bg, #f5f5f5);
+            }
+
+            .room-name {
+                font-weight: 500;
+            }
+
+            .room-meta {
+                color: var(--text-muted, #6c757d);
+                font-size: 0.8125rem;
+            }
+
+            .room-capacity {
+                font-size: 0.75rem;
+                color: var(--text-muted, #6c757d);
+                background: var(--lighterborder, #e9ecef);
+                padding: 0.125rem 0.375rem;
+                border-radius: 4px;
+            }
+        }
+    }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

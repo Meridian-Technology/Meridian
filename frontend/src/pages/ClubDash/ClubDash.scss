@@ -3,6 +3,68 @@
     --club-dark:rgba(9, 9, 11, .05);
 }
 
+@keyframes club-dash-approved-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(-100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes club-dash-approved-fade-out {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+.club-dash-with-banner {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+    overflow: hidden;
+    position: relative;
+
+    .club-dash {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+}
+
+.club-dash-approved-notice {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 20px;
+    background: linear-gradient(135deg, rgba(77, 170, 87, 0.95) 0%, rgba(61, 140, 70, 0.95) 100%);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: club-dash-approved-slide-in 0.4s ease-out;
+
+    &__icon {
+        font-size: 24px;
+        flex-shrink: 0;
+    }
+
+    &__text {
+        letter-spacing: 0.02em;
+    }
+}
 
 .club-dash{
     overflow: hidden;

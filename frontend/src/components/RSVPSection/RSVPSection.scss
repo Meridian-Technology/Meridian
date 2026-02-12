@@ -1,64 +1,144 @@
 .rsvp-section {
     padding-top: 2rem;
 
-    .rsvp-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        flex-direction: column;
-
-        h3 {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: var(--text);
-            margin: 0;
-        }
-
-        .rsvp-stats-container {
+    &.rsvp-section--compact {
+        padding-top: 0.75rem;
+        margin-top: 0;
+        border-top: none;
+        .rsvp-compact-line {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 1rem;
+            flex-wrap: wrap;
+            .rsvp-compact-count {
+                font-size: 0.875rem;
+                color: var(--light-text, #666);
+            }
+            .rsvp-button-container,
+            .rsvp-button {
+                margin: 0;
+            }
+        }
+    }
 
-            .rsvp-stats {
-                display: flex;
-                gap: 0.5rem;
+    .rsvp-header {
+        margin-bottom: 1rem;
 
+        h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0 0 0.5rem 0;
+            font-family: 'OpenSauce';
+        }
+    }
 
-                .stat {
-                    text-align: center;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap:5px;
-                    
+    .rsvp-welcome-message {
+        font-size: 1rem;
+        color: var(--text);
+        margin: 0 0 1.25rem 0;
+        line-height: 1.5;
+    }
 
-                    .count {
-                        display: block;
-                        font-size: 1rem;
-                        font-weight: 700;
-                        color: var(--text);
-                    }
+    .rsvp-email-field {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.875rem 1rem;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid var(--lighterborder);
+        border-radius: 8px;
+        margin-bottom: 1.25rem;
+        font-size: 1rem;
+        color: var(--text);
 
-                    .label {
-                        font-size: 0.8rem;
-                        color: var(--text-secondary);
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                    }
+        .user-icon {
+            font-size: 1.25rem;
+            color: #4CAF50;
+            flex-shrink: 0;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            object-fit: cover;
+
+            &.registered {
+                color: #4CAF50;
+            }
+        }
+
+        .email-text {
+            flex: 1;
+            font-weight: 500;
+        }
+    }
+
+    .rsvp-registered-state {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+
+        .rsvp-registered-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.875rem 1rem;
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            color: #4CAF50;
+            font-weight: 600;
+            font-size: 1rem;
+
+            svg {
+                font-size: 1.25rem;
+            }
+        }
+
+        .rsvp-withdraw-button {
+            width: 100%;
+            padding: 0.875rem 1.5rem;
+            background: transparent;
+            border: 1px solid var(--lighterborder);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+
+            &:hover:not(:disabled) {
+                background: rgba(244, 67, 54, 0.1);
+                border-color: #F44336;
+                color: #F44336;
+            }
+
+            &:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+
+            svg {
+                font-size: 1.125rem;
+
+                &.spinning {
+                    animation: spin 1s linear infinite;
                 }
             }
+        }
+    }
 
-            .friends-going {
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 20px;
-                color: var(--text);
-                font-size: 0.9rem;
-                font-weight: 500;
-            }
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
         }
     }
 
@@ -171,10 +251,44 @@
     }
 
     .rsvp-button-container {
+        margin-top: 0;
+
         .rsvp-btn {
-            max-width: 200px;
-            font-size: 13px;
-            padding: 10px 10px;
+            width: 100%;
+            max-width: none;
+            font-size: 1rem;
+            padding: 0.875rem 1.5rem;
+            min-height: 48px;
+            font-weight: 600;
+            border-radius: 8px;
+            background: var(--dark-blue, #6D8EFA);
+            color: white;
+            border: none;
+
+            &:hover:not(:disabled) {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(109, 142, 250, 0.3);
+            }
+
+            &.active {
+                background: rgba(76, 175, 80, 0.1);
+                color: #4CAF50;
+                border: 1px solid rgba(76, 175, 80, 0.3);
+
+                &:hover:not(:disabled) {
+                    background: rgba(76, 175, 80, 0.15);
+                    transform: translateY(-1px);
+                }
+            }
+
+            svg {
+                width: 18px;
+                height: 18px;
+            }
+
+            .button-text {
+                font-size: 1rem;
+            }
         }
     }
 }

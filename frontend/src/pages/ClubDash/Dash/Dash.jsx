@@ -46,8 +46,12 @@ function Dash({ expandedClass, openMembers, clubName, meetings, org}) {
 
 
     const handleEventClick = () => {
-        console.log("create event");
-        navigate("/create-event", { state: { origin: clubName } });
+        navigate("/create-event", {
+            state: {
+                origin: clubName,
+                selectedOrg: org?.org?.overview ? { _id: org.org.overview._id } : null
+            }
+        });
     }
 
     return (

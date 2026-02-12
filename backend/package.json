@@ -25,6 +25,7 @@
     "nodemon": "^3.1.7",
     "passport": "^0.7.0",
     "passport-saml": "^3.2.4",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "19.0.0",
     "resend": "^4.0.1",

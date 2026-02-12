@@ -313,65 +313,126 @@ function Configuration({ section = 'general' }) {
         );
     }
 
+    const ALLOWED_ACTIONS_OPTIONS = [
+        { value: 'view_page', label: 'View page' },
+        { value: 'edit_profile', label: 'Edit profile' },
+        { value: 'manage_members', label: 'Manage members' },
+        { value: 'create_events', label: 'Create events' },
+        { value: 'post_messages', label: 'Post messages' }
+    ];
+
     // Render functions for different sections
-    const renderGeneral = () => (
-        <div className="config-sections">
-            {/* Verification Settings */}
-            <div className="config-section">
-                <h2>
-                    <Icon icon="mdi:shield-check" />
-                    Verification Settings
-                </h2>
-                
-                <div className="config-group">
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.verificationEnabled}
-                                onChange={(e) => updateConfig('verificationEnabled', e.target.checked)}
-                            />
-                            Enable Verification System
-                        </label>
-                        <p>Allow organizations to submit verification requests</p>
-                    </div>
+    const renderGeneral = () => {
+        const orgApproval = localConfig.orgApproval || {
+            mode: 'none',
+            autoApproveMemberThreshold: 5,
+            pendingOrgLimits: { discoverable: false, allowedActions: ['view_page', 'edit_profile'] }
+        };
+        const pendingLimits = orgApproval.pendingOrgLimits || { discoverable: false, allowedActions: [] };
+        const showThreshold = ['auto', 'both'].includes(orgApproval.mode);
 
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.verificationRequired}
-                                onChange={(e) => updateConfig('verificationRequired', e.target.checked)}
-                            />
-                            Require Verification
-                        </label>
-                        <p>Make verification mandatory for all organizations</p>
+        return (
+            <div className="config-sections">
+                <div className="config-section">
+                    <h2>
+                        <Icon icon="mdi:shield-check" />
+                        Verification Settings
+                    </h2>
+                    <div className="config-group">
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={localConfig.verificationEnabled}
+                                    onChange={(e) => updateConfig('verificationEnabled', e.target.checked)}
+                                />
+                                Enable Verification System
+                            </label>
+                            <p>Allow organizations to submit verification requests</p>
+                        </div>
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={localConfig.verificationRequired}
+                                    onChange={(e) => updateConfig('verificationRequired', e.target.checked)}
+                                />
+                                Require Verification
+                            </label>
+                            <p>Make verification mandatory for all organizations</p>
+                        </div>
                     </div>
+                </div>
 
-                    <div className="config-item">
-                        <label>Auto-approve new organizations</label>
-                        <input
-                            type="checkbox"
-                            checked={localConfig.autoApproveNewOrgs}
-                            onChange={(e) => updateConfig('autoApproveNewOrgs', e.target.checked)}
-                        />
-                        <p>Automatically approve new organizations</p>
-                    </div>
-
-                    <div className="config-item">
-                        <label>Auto-approval threshold (members)</label>
-                        <input
-                            type="number"
-                            value={localConfig.autoApproveThreshold}
-                            onChange={(e) => updateConfig('autoApproveThreshold', parseInt(e.target.value))}
-                            min="0"
-                        />
-                        <p>Minimum members required for auto-approval</p>
+                <div className="config-section">
+                    <h2>
+                        <Icon icon="mdi:clipboard-check" />
+                        Org Approval
+                    </h2>
+                    <div className="config-group">
+                        <div className="config-item">
+                            <label>Approval Mode</label>
+                            <select
+                                value={orgApproval.mode}
+                                onChange={(e) => updateConfig('orgApproval.mode', e.target.value)}
+                            >
+                                <option value="none">None</option>
+                                <option value="manual">Manual</option>
+                                <option value="auto">Auto (member threshold)</option>
+                                <option value="both">Both</option>
+                            </select>
+                            <p>New orgs require approval before full access. Manual = admin approves. Auto = approve when member count reaches threshold.</p>
+                        </div>
+                        {showThreshold && (
+                            <div className="config-item">
+                                <label>Auto-approve member threshold</label>
+                                <input
+                                    type="number"
+                                    value={orgApproval.autoApproveMemberThreshold ?? 5}
+                                    onChange={(e) => updateConfig('orgApproval.autoApproveMemberThreshold', parseInt(e.target.value) || 0)}
+                                    min="1"
+                                />
+                                <p>Minimum members required for auto-approval</p>
+                            </div>
+                        )}
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={pendingLimits.discoverable}
+                                    onChange={(e) => updateConfig('orgApproval.pendingOrgLimits.discoverable', e.target.checked)}
+                                />
+                                Discoverable in browse
+                            </label>
+                            <p>Allow pending orgs to appear in org browse/search (default: hidden)</p>
+                        </div>
+                        <div className="config-item">
+                            <label>Allowed actions for pending orgs</label>
+                            <div className="allowed-actions-checkboxes">
+                                {ALLOWED_ACTIONS_OPTIONS.map((opt) => (
+                                    <label key={opt.value} className="checkbox-inline">
+                                        <input
+                                            type="checkbox"
+                                            checked={(pendingLimits.allowedActions || []).includes(opt.value)}
+                                            onChange={(e) => {
+                                                const current = pendingLimits.allowedActions || [];
+                                                const next = e.target.checked
+                                                    ? [...current, opt.value]
+                                                    : current.filter((a) => a !== opt.value);
+                                                updateConfig('orgApproval.pendingOrgLimits.allowedActions', next);
+                                            }}
+                                        />
+                                        {opt.label}
+                                    </label>
+                                ))}
+                            </div>
+                            <p>Actions pending orgs can perform before approval</p>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderVerificationTypes = () => {
         const verificationTypes = localConfig.verificationTiers || {};

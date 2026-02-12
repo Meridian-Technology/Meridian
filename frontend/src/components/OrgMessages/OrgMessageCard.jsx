@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import apiRequest from '../../utils/postRequest';
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import MessageReplies from './MessageReplies';
+import DeleteConfirmModal from '../DeleteConfirmModal/DeleteConfirmModal';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import './OrgMessages.scss';
@@ -73,12 +74,35 @@ const EventEmbedCard = ({ event }) => {
     );
 };
 
-const OrgMessageCard = ({ message, orgId, orgData, onUpdate }) => {
+const OrgMessageCard = ({ message, orgId, orgData, onUpdate, isJustAdded, onMessageDeleted, isExiting }) => {
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(message.likeCount || 0);
     const [showReplies, setShowReplies] = useState(false);
+    const [requestReplyForm, setRequestReplyForm] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuRef = useRef(null);
     const { user } = useAuth();
+
+    useEffect(() => {
+        if (!menuOpen) return;
+        const handleClickOutside = (e) => {
+            if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [menuOpen]);
+
+    const canReply = orgData?.org?.isMember && orgData?.org?.overview?.messageSettings?.allowReplies !== false;
+
+    // Reset requestReplyForm after expanding so next time "View replies" doesn't auto-open the form
+    React.useEffect(() => {
+        if (showReplies && requestReplyForm) {
+            const id = setTimeout(() => setRequestReplyForm(false), 0);
+            return () => clearTimeout(id);
+        }
+    }, [showReplies, requestReplyForm]);
     const { addNotification } = useNotification();
 
     // Check if user has liked this message
@@ -109,10 +133,6 @@ const OrgMessageCard = ({ message, orgId, orgData, onUpdate }) => {
     };
 
     const handleDelete = async () => {
-        if (!window.confirm('Are you sure you want to delete this message?')) {
-            return;
-        }
-
         setIsDeleting(true);
         try {
             const response = await apiRequest(
@@ -127,7 +147,8 @@ const OrgMessageCard = ({ message, orgId, orgData, onUpdate }) => {
                     content: 'Message deleted successfully',
                     type: 'success'
                 });
-                onUpdate?.();
+                onMessageDeleted?.(message._id);
+                // Don't call onUpdate here — feed removes the message after exit animation
             } else {
                 addNotification({
                     title: 'Error',
@@ -294,7 +315,7 @@ const OrgMessageCard = ({ message, orgId, orgData, onUpdate }) => {
     const timeAgo = message.createdAt ? formatDistanceToNow(new Date(message.createdAt), { addSuffix: true }) : '';
 
     return (
-        <div className="org-message-card">
+        <div className={`org-message-card${isJustAdded ? ' org-message-card--just-added' : ''}${isExiting ? ' org-message-card--exiting' : ''}`}>
             <div className="profile-column">
                 {message.authorId?.picture ? (
                     <img 
@@ -323,17 +344,38 @@ const OrgMessageCard = ({ message, orgId, orgData, onUpdate }) => {
                             </span>
                         )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="message-header-right">
                         <span className="comment-date">{timeAgo}</span>
                         {canDelete && (
-                            <button 
-                                className="delete-btn"
-                                onClick={handleDelete}
-                                disabled={isDeleting}
-                                title="Delete message"
-                            >
-                                <Icon icon="mdi:delete-outline" />
-                            </button>
+                            <div className="message-card-menu" ref={menuRef}>
+                                <button
+                                    type="button"
+                                    className="message-card-menu-btn"
+                                    onClick={() => setMenuOpen(!menuOpen)}
+                                    title="More actions"
+                                    aria-expanded={menuOpen}
+                                    aria-haspopup="true"
+                                >
+                                    <Icon icon="mdi:dots-horizontal" />
+                                </button>
+                                {menuOpen && (
+                                    <div className="message-card-menu-dropdown" role="menu">
+                                        <button
+                                            type="button"
+                                            className="message-card-menu-item message-card-menu-item--danger"
+                                            role="menuitem"
+                                            onClick={() => {
+                                                setMenuOpen(false);
+                                                setShowDeleteConfirm(true);
+                                            }}
+                                            disabled={isDeleting}
+                                        >
+                                            <Icon icon="mdi:delete-outline" />
+                                            <span>{isDeleting ? 'Deleting...' : 'Delete'}</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -350,31 +392,62 @@ const OrgMessageCard = ({ message, orgId, orgData, onUpdate }) => {
                 )}
                 <div className="comment-actions">
                     <div 
-                        className={`reply ${isLiked ? 'liked' : ''}`}
+                        className={`comment-action-button ${isLiked ? 'liked' : ''}`}
                         onClick={handleLike}
                         style={{ cursor: 'pointer' }}
+                        title="Like"
                     >
                         <Icon icon={isLiked ? "mdi:heart" : "mdi:heart-outline"} />
-                        <p>{likeCount || 0}</p>
+                        <span>{likeCount || 0}</span>
                     </div>
-                    <div className="separator"></div>
-                    <div 
-                        className="reply" 
+                    {canReply && (
+                        <button
+                            type="button"
+                            className="reply-btn-inline"
+                            onClick={() => {
+                                setShowReplies(true);
+                                setRequestReplyForm(true);
+                            }}
+                            title="Reply"
+                        >
+                            Reply
+                        </button>
+                    )}
+                </div>
+                {/* Show "View X replies" / "Hide replies" only when there are replies */}
+                {(message.replyCount || 0) > 0 && (
+                    <button
+                        type="button"
+                        className="replies-toggle"
                         onClick={() => setShowReplies(!showReplies)}
                     >
-                        <Icon icon="lets-icons:comment-fill" />
-                        <p>{message.replyCount || 0}</p>
-                    </div>
-                </div>
+                        <Icon icon={showReplies ? 'mdi:chevron-up' : 'mdi:chevron-down'} />
+                        <span>
+                            {showReplies ? 'Hide replies' : `${message.replyCount || 0} ${(message.replyCount || 0) === 1 ? 'reply' : 'replies'}`}
+                        </span>
+                    </button>
+                )}
                 {showReplies && (
                     <MessageReplies 
                         messageId={message._id}
                         orgId={orgId}
                         orgData={orgData}
                         onReplyAdded={onUpdate}
+                        initialShowReplyForm={requestReplyForm}
+                        onCancelReply={() => {
+                            if ((message.replyCount || 0) === 0) setShowReplies(false);
+                        }}
                     />
                 )}
             </div>
+
+            <DeleteConfirmModal
+                isOpen={showDeleteConfirm}
+                onConfirm={handleDelete}
+                onCancel={() => setShowDeleteConfirm(false)}
+                title="Delete message"
+                message="Are you sure you want to delete this message? This cannot be undone."
+            />
         </div>
     );
 };

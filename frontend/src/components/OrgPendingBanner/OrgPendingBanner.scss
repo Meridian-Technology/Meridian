@@ -1,0 +1,71 @@
+.org-pending-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    background: #4DAA57;
+    color: var(--background, #1a1a1a);
+    padding: 8px 20px;
+    gap: 12px;
+    flex-shrink: 0;
+    position: relative;
+
+    &__content {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    &__icon {
+        font-size: 20px;
+        flex-shrink: 0;
+    }
+
+    &__text {
+        font-size: 14px;
+        font-weight: 500;
+        font-family: inherit;
+    }
+
+    &__link {
+        background: transparent;
+        border: 1px solid currentColor;
+        color: inherit;
+        padding: 6px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease;
+
+        &:hover {
+            background: rgba(0, 0, 0, 0.1);
+        }
+    }
+
+    &__dismiss {
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: transparent;
+        border: none;
+        color: inherit;
+        padding: 4px;
+        cursor: pointer;
+        opacity: 0.8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        &:hover {
+            opacity: 1;
+        }
+
+        .iconify-icon {
+            font-size: 18px;
+        }
+    }
+}

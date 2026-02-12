@@ -7,8 +7,8 @@ class StudySessionService {
         this.models = getModels(req, 'StudySession', 'Event', 'User', 'Classroom', 'Schedule', 'AvailabilityPoll', 'Notification');
         this.feedbackService = new FeedbackService(req);
     }
-
     // Get current semester end date
+    ß
     getCurrentSemesterEnd() {
         const now = new Date();
         const currentYear = now.getFullYear();
@@ -160,7 +160,7 @@ class StudySessionService {
     }
 
     // Check room availability for study session
-    async checkRoomAvailability(startTime, endTime, roomName) {
+    async checkRoomAvailability(startTime, endTime, roomName, excludeEventId = null) {
         const { Schedule, Event, Classroom } = this.models;
         
         const start = new Date(startTime);
@@ -195,7 +195,7 @@ class StudySessionService {
         }
 
         // Check event conflicts (including other study sessions)
-        const eventConflicts = await Event.find({
+        const eventQuery = {
             location: roomName,
             $or: [
                 { start_time: { $gte: start, $lt: end } },
@@ -204,7 +204,14 @@ class StudySessionService {
             ],
             status: { $in: ['approved', 'not-applicable'] },
             isDeleted: false
-        });
+        };
+
+        // Exclude current event if provided
+        if (excludeEventId) {
+            eventQuery._id = { $ne: excludeEventId };
+        }
+
+        const eventConflicts = await Event.find(eventQuery);
 
         if (eventConflicts.length > 0) {
             return { 
@@ -215,6 +222,22 @@ class StudySessionService {
         }
 
         return { isAvailable: true };
+    }
+
+    // Check room availability by classroom_id (for events)
+    async checkRoomAvailabilityByClassroomId(startTime, endTime, classroomId, excludeEventId = null) {
+        const { Classroom } = this.models;
+        
+        if (!classroomId) {
+            return { isAvailable: true }; // No room reserved, skip check
+        }
+
+        const room = await Classroom.findById(classroomId);
+        if (!room) {
+            return { isAvailable: false, reason: 'Room not found' };
+        }
+
+        return this.checkRoomAvailability(startTime, endTime, room.name, excludeEventId);
     }
 
     // Get suggested rooms for a time slot

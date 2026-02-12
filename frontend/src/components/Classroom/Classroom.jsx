@@ -29,7 +29,7 @@ import Image from '../../assets/Icons/Image.svg';
 import { checkIn, checkOut, getUser, getUsers, userRated, getRatings } from '../../DBInteractions.js';
 import { findNext } from '../../pages/Room/RoomHelpers.js';
 import { useNotification } from '../../NotificationContext.js';
-import { useWebSocket } from '../../WebSocketContext.js';
+// Room WebSocket (emit/on/off for join-classroom, check-in, check-out) deprecated – no longer used
 
 import '../../pages/Room/Room.scss';
 
@@ -48,13 +48,10 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
 
     const [ratings, setRatings] = useState([]);
 
-    const { emit, on, off } = useWebSocket();
     const { addNotification } = useNotification();
     const navigate = useNavigate();
 
-    // Use refs to access latest values in event handlers without causing re-renders
     const roomRef = useRef(room);
-    const checkedInUsersRef = useRef(checkedInUsers);
 
     // Get all users currently checked in
     const getCheckedInUsers = useCallback(async () => {
@@ -84,53 +81,7 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
 
     useEffect(() => {
         roomRef.current = room;
-        checkedInUsersRef.current = checkedInUsers;
-    }, [room, checkedInUsers]);
-
-    const handleCheckInEvent = useCallback(async (data) => {
-        const currentRoom = roomRef.current;
-        if (currentRoom && data.classroomId === currentRoom._id) {
-            // Update room data first
-            await reload();
-            // Then update checked-in users list
-            const currentCheckedInUsers = checkedInUsersRef.current;
-            if (data.userId && !currentCheckedInUsers[data.userId]) {
-                try {
-                    const newUser = await getUser(data.userId);
-                    setCheckedInUsers(prevState => ({
-                        ...prevState,
-                        [data.userId]: newUser
-                    }));
-                } catch (error) {
-                    console.error('Error fetching new user:', error);
-                    // Fallback: reload all checked-in users
-                    getCheckedInUsers();
-                }
-            } else {
-                // If user already exists or userId not provided, reload all
-                getCheckedInUsers();
-            }
-        }
-    }, [reload, getCheckedInUsers]);
-
-    const handleCheckOutEvent = useCallback(async (data) => {
-        const currentRoom = roomRef.current;
-        if (currentRoom && data.classroomId === currentRoom._id) {
-            // Update room data
-            await reload();
-            // Remove user from checked-in users list
-            if (data.userId) {
-                setCheckedInUsers(prevState => {
-                    const updated = { ...prevState };
-                    delete updated[data.userId];
-                    return updated;
-                });
-            } else {
-                // If userId not provided, reload all
-                getCheckedInUsers();
-            }
-        }
-    }, [reload, getCheckedInUsers]);
+    }, [room]);
 
     useEffect(() => {
         if(!room){
@@ -145,29 +96,13 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
             });
     }, [room]);
 
-
-    // Initialize checked-in users and WebSocket listeners when room changes
+    // Initialize checked-in users when room changes (room WebSocket deprecated – no real-time join/check-in/check-out)
     useEffect(() => {
         if (!room || !room._id) {
             return;
         }
-
-        // Load checked-in users
         getCheckedInUsers();
-
-        // Join the room for this classroom via WebSocket
-        emit('join-classroom', room._id);
-
-        // Listen for check-in events
-        on('check-in', handleCheckInEvent);
-        on('check-out', handleCheckOutEvent);
-
-        // Clean up on component unmount or room change
-        return () => {
-            off('check-in', handleCheckInEvent);
-            off('check-out', handleCheckOutEvent);
-        };
-    }, [room?._id, handleCheckInEvent, handleCheckOutEvent, emit, on, off, getCheckedInUsers]);
+    }, [room?._id, getCheckedInUsers]);
     
     useEffect(() => {
         if(!user){

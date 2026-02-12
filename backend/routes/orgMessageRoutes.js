@@ -118,6 +118,19 @@ router.post('/:orgId/messages', verifyToken, async (req, res) => {
             });
         }
 
+        // Atlas: Check if pending org is allowed to post messages
+        if (org.approvalStatus === 'pending') {
+            const systemConfig = await OrgManagementConfig.findOne();
+            const allowedActions = systemConfig?.orgApproval?.pendingOrgLimits?.allowedActions || [];
+            if (!allowedActions.includes('post_messages')) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Your organization is pending approval and cannot post messages yet.',
+                    code: 'ORG_PENDING_APPROVAL'
+                });
+            }
+        }
+
         // Validate content
         if (!content || !content.trim()) {
             console.log('Message content is required');
@@ -200,8 +213,8 @@ router.post('/:orgId/messages', verifyToken, async (req, res) => {
         const notificationSettings = systemConfig?.messaging?.notificationSettings;
         if (notificationSettings?.notifyOnNewMessage) {
             try {
-                const { Notification, OrgFollower } = getModels(req, 'Notification', 'OrgFollower');
-                const notificationService = NotificationService.withModels({ Notification });
+                const { Notification, OrgFollower, User } = getModels(req, 'Notification', 'OrgFollower', 'User');
+                const notificationService = NotificationService.withModels({ Notification, User });
                 
                 const recipients = [];
                 
@@ -761,7 +774,7 @@ router.post('/:orgId/messages/:messageId/reply', verifyToken, async (req, res) =
  * Edit a message (author only, within 15 minutes)
  */
 router.put('/:orgId/messages/:messageId', verifyToken, async (req, res) => {
-    const { OrgMessage, Org, Event, OrgManagementConfig } = getModels(req, 'OrgMessage', 'Org', 'Event', 'OrgManagementConfig');
+    const { OrgMessage, Org, OrgMember, Event, OrgManagementConfig } = getModels(req, 'OrgMessage', 'Org', 'OrgMember', 'Event', 'OrgManagementConfig');
     const { orgId, messageId } = req.params;
     const { content } = req.body;
     const userId = req.user.userId;

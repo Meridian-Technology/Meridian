@@ -27,6 +27,7 @@ import OIEDash from './pages/OIEDash/OIEDash';
 import NewBadge from './pages/NewBadge/NewBadge';
 import CreateOrg from './pages/CreateOrg/CreateOrg';
 import ClubDash from './pages/ClubDash/ClubDash';
+import PendingApprovalScreen from './pages/ClubDash/PendingApprovalScreen/PendingApprovalScreen';
 import OrgDisplay from './pages/Org/OrgDisplay';
 import RootDash from './pages/RootDash/RootDash';
 import OrgManagement from './pages/FeatureAdmin/OrgManagement/Atlas';
@@ -47,7 +48,7 @@ import { ProfileCreationProvider } from './ProfileCreationContext';
 import { WebSocketProvider } from './WebSocketContext';
 import Layout from './pages/Layout/Layout';
 import axios from 'axios';
-import CreateEvent from './pages/CreateEventV2/CreateEventV2';
+import CreateEvent from './pages/CreateEventV3/CreateEventV3';
 import EventsDash from './pages/EventsDash/EventsDash';
 import EventPage from './pages/EventPage/EventPage';
 import EventWorkspace from './pages/EventWorkspace/EventWorkspace';
@@ -61,6 +62,7 @@ import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
 import Form from './pages/Form/Form';
 import Support from './pages/Support/Support';
+import CheckInConfirmation from './pages/CheckIn/CheckInConfirmation';
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -151,6 +153,7 @@ function App() {
                                         <Route path='/' element={<Layout/>}>
                                             {/* publicly accessible pages */}
                                             <Route path="/qr/:id" element={<QR/>}/>
+                                            <Route path="/check-in/:eventId/:token" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route index element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />
                                             <Route path="/room/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/room1/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
@@ -189,10 +192,11 @@ function App() {
                                                 <Route path="/admin" element={<AnimatedPageWrapper><Admin/></AnimatedPageWrapper>}/>
                                             </Route>
 
-                                            {/* features under development */}
-                                            <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer']}/> }>
-                                                <Route path="/events" element={<AnimatedPageWrapper><Events/></AnimatedPageWrapper>}/>
+                                                <Route path="/club-dashboard/:id/pending-approval" element={<AnimatedPageWrapper><PendingApprovalScreen/></AnimatedPageWrapper>}/>
                                                 <Route path="/club-dashboard/:id" element={<AnimatedPageWrapper><ClubDash/></AnimatedPageWrapper>}/>
+                                            {/* features under development */}
+                                            <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'beta']}/> }>
+                                                <Route path="/events" element={<AnimatedPageWrapper><Events/></AnimatedPageWrapper>}/>
                                                 <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
                                                 <Route path="/root-dashboard" element={<AnimatedPageWrapper><RootDash/></AnimatedPageWrapper>}/>
                                                 <Route path="/form/:id" element={<AnimatedPageWrapper><Form/></AnimatedPageWrapper>}/>

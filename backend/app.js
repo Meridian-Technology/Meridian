@@ -8,10 +8,9 @@ const session = require('express-session');
 const passport = require('passport');
 require('dotenv').config();
 const { createServer } = require('http');
-// WEBSOCKET DISABLED - Uncomment to enable WebSocket functionality
-// const { Server } = require('socket.io');
 const enforce = require('express-sslify');
 const { connectToDatabase } = require('./connectionsManager');
+const { initSocket } = require('./socket');
 
 const s3 = require('./aws-config');
 
@@ -19,49 +18,20 @@ const app = express();
 const port = process.env.PORT || 5001;
 
 const server = createServer(app);
-// WEBSOCKET DISABLED - Uncomment to enable WebSocket functionality
-// const io = new Server(server, {
-//     transports: ['websocket', 'polling'], // WebSocket first, fallback to polling if necessary
-//     cors: {
-//         origin: process.env.NODE_ENV === 'production'
-//             ? ['https://www.meridian.study', 'https://meridian.study']
-//             : 'http://localhost:3000',  // Allow localhost during development
-//         methods: ['GET', 'POST'],
-//         allowedHeaders: ['Content-Type'],
-//         credentials: true
-//     }
-// });
+
+// WebSocket: room-based; clients join only on relevant pages (e.g. event page, event management)
+const corsOrigin = process.env.NODE_ENV === 'production'
+    ? ['https://www.meridian.study', 'https://meridian.study']
+    : 'http://localhost:3000';
+initSocket(server, { origin: corsOrigin });
 
 
 
 // Configure CORS for cookie-based authentication
 const corsOptions = {
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps, Postman, curl, etc.)
-        // Mobile apps typically don't send an Origin header
-        if (!origin) {
-            return callback(null, true);
-        }
-        
-        // In production, allow web origins
-        if (process.env.NODE_ENV === 'production') {
-            const allowedOrigins = ['https://www.meridian.study', 'https://meridian.study'];
-            if (allowedOrigins.indexOf(origin) !== -1) {
-                callback(null, true);
-            } else {
-                // Reject unknown origins in production for security
-                callback(new Error('Not allowed by CORS'));
-            }
-        } else {
-            // In development, allow localhost and requests with no origin
-            if (origin === 'http://localhost:3000' || !origin) {
-                callback(null, true);
-            } else {
-                // In development, be more permissive
-                callback(null, true);
-            }
-        }
-    },
+    origin: process.env.NODE_ENV === 'production'
+        ? ['https://www.meridian.study', 'https://meridian.study']
+        : 'http://localhost:3000',
     credentials: true, // This is crucial for cookies
     optionsSuccessStatus: 200 // for legacy browser support
 };
@@ -185,6 +155,7 @@ const feedbackRoutes = require('./routes/feedbackRoutes.js');
 const contactRoutes = require('./routes/contactRoutes.js');
 const affiliatedEmailRoutes = require('./routes/affiliatedEmailRoutes.js');
 const resourcesRoutes = require('./routes/resourcesRoutes.js');
+const shuttleConfigRoutes = require('./routes/shuttleConfigRoutes.js');
 
 app.use(authRoutes);
 app.use('/auth/saml', samlRoutes);
@@ -226,6 +197,7 @@ app.use('/availability-polls', availabilityPollRoutes);
 app.use('/feedback', feedbackRoutes);
 
 app.use('/api/resources', resourcesRoutes);
+app.use('/api/shuttle-config', shuttleConfigRoutes);
 
 app.use('/verify-affiliated-email', affiliatedEmailRoutes);
 
@@ -298,51 +270,6 @@ app.get('/api/greet', (req, res) => {
 //how to call the above route
 // fetch('/api/greet').then(response => response.text()).then(data => console.log(data));
 
-
-// WEBSOCKET DISABLED - Uncomment to enable WebSocket functionality
-// Socket.io functionality
-// io.on('connection', (socket) => {
-//     console.log('Client connected');
-
-//     // Heartbeat mechanism - declare early so it can be cleared on disconnect
-//     const heartbeatInterval = setInterval(() => {
-//         socket.emit('ping');
-//     }, 25000); // Send ping every 25 seconds
-
-//     socket.on('message', (message) => {
-//         console.log(`Received: ${message}`);
-//         socket.emit('message', `Echo: ${message}`);
-//     });
-
-//     socket.on('disconnect', () => {
-//         console.log('Client disconnected');
-//         // Clear the heartbeat interval to prevent memory leak
-//         clearInterval(heartbeatInterval);
-//     });
-
-//     // Example: Custom event for friend requests
-//     socket.on('friendRequest', (data) => {
-//         console.log('Friend request received:', data);
-//         // Handle friend request
-//         io.emit('friendRequest', data); // Broadcast to all connected clients
-//     });
-
-//     socket.on('join-classroom', (classroomId) => {
-//         socket.join(classroomId);
-//         console.log(`User joined classroom: ${classroomId}`);
-//     });
-
-//     socket.on('leave-classroom', (classroomId) => {
-//         socket.leave(classroomId);
-//         console.log(`User left classroom: ${classroomId}`);
-//     });
-
-//     socket.on('pong', () => {
-//         // console.log('Heartbeat pong received');
-//     });
-// });
-
-// app.set('io', io);
 
 // Start the server
 server.listen(port, () => {

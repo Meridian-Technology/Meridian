@@ -8,11 +8,23 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName="", popout=false, waitForLoad=false}) => {
     const [render, setRender] = useState(isOpen);
     const [show, setShow] = useState(false);
+    const isClosingRef = useRef(false);
 
     const [topPosition, setTopPosition] = useState(null);
     const [rightPosition, setRightPosition] = useState(null);
 
   const ref = useRef();
+
+  const handleClose = () => {
+    if (isClosingRef.current) return; // Prevent multiple calls
+    isClosingRef.current = true;
+    setShow(false);
+    setTimeout(() => {
+        onClose(); // Trigger the actual unmount after animation ends
+        setRender(false);
+        isClosingRef.current = false;
+    }, 300); // Match the exit animation duration
+  };
 
   useOutsideClick(ref, ()=>{
     handleClose();
@@ -21,7 +33,12 @@ const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName
   useEffect(() => {
     if (isOpen) {
         setRender(true);
+        isClosingRef.current = false; // Reset closing state when opening
+    } else if (!isOpen && render && !isClosingRef.current) {
+        // isOpen became false, trigger close animation
+        handleClose();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   useEffect(()=>{
@@ -40,15 +57,6 @@ const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName
     }, 300);
 
   }, [show, ref.current]);
-
-
-  const handleClose = () => {
-    setShow(false);
-    setTimeout(() => {
-        onClose(); // Trigger the actual unmount after animation ends
-        setRender(false);
-    }, 300); // Match the exit animation duration
-  };
 
   if (!isOpen && !render) {
     return null;

@@ -250,8 +250,8 @@ function EventsDash({}){
     // Create the plus button middle item for authenticated users
     const getMiddleItem = () => {
         if (!user) return null;
-        if(user.roles && !user.roles.includes('admin')){
-            return null;
+        if(user.roles && (!user.roles.includes('admin ') && !user.roles.includes('beta'))){
+            return null;    
         }
         return (
             <div className="create-button-container">
@@ -336,6 +336,7 @@ function EventsDash({}){
                 middleItem={getMiddleItem()}
                 // Set default page to "My Events" (index 1) if user is logged in, otherwise "Explore" (index 0)
                 defaultPage={0}
+                notificationInbox={false}
             >
             </Dashboard>
 

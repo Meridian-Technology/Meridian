@@ -10,10 +10,15 @@ import { useFetch } from '../../hooks/useFetch';
 import Loader from '../../components/Loader/Loader';
 import Header from '../../components/Header/Header';
 import RSVPSection from '../../components/RSVPSection/RSVPSection';
+import EventCheckInButton from '../../components/EventCheckInButton/EventCheckInButton';
 import EventsByCreator from '../../components/EventsByCreator/EventsByCreator';
 import Logo from '../../assets/Brand Image/BEACON.svg';
 import EventAnalytics from '../../components/EventAnalytics/EventAnalytics';
 import AgendaEditor from '../../components/AgendaEditor/AgendaEditor';
+import { useEventRoom } from '../../WebSocketContext';
+import Popup from '../../components/Popup/Popup';
+import AgendaDailyCalendar from '../ClubDash/EventsManagement/components/EventDashboard/EventAgendaBuilder/AgendaDailyCalendar/AgendaDailyCalendar';
+import { getStoredMinuteHeightPx } from '../../utils/agendaViewPreferences';
 
 function EventPage() {
     const { eventId } = useParams();
@@ -21,11 +26,17 @@ function EventPage() {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const [activeTab, setActiveTab] = useState('details');
+    const [showAgendaModal, setShowAgendaModal] = useState(false);
     
     // Fetch event data
     const { data: eventData, loading: eventLoading, error: eventError, refetch: refetchEvent } = useFetch(
         eventId ? `/get-event/${eventId}` : null
     );
+
+    // Live updates: only connect when on this event page; refetch when someone checks in
+    useEventRoom(eventId || null, () => {
+        refetchEvent?.();
+    });
 
     // RSVP functionality now handled by RSVPSection component
 
@@ -57,10 +68,12 @@ function EventPage() {
         return (
             <div className={`row hosting ${level.toLowerCase()}`} onClick={() => {if (level === "Organization") {navigate(`/org/${hostingName}`);}}}>
                 <p>Hosted by</p>
-                <img src={hostingImage} alt="" />
-                <p className="user-name">{hostingName}</p>
-                <div className={`level ${level.toLowerCase()}`}>
-                    {level}
+                <div className="host-info">
+                    <img src={hostingImage} alt="" />
+                    <p className="user-name">{hostingName}</p>
+                    {/* <div className={`level ${level.toLowerCase()}`}>
+                        {level}
+                    </div> */}
                 </div>
             </div>
         );
@@ -109,7 +122,9 @@ function EventPage() {
 
     const event = eventData.event;
     const date = new Date(event.start_time);
-    const dateEnd = new Date(event.end_time);
+    const dateEnd = new Date(event.end_time || event.start_time);
+    const now = new Date();
+    const isLive = now >= date && now <= dateEnd;
 
     return (
         <div className="event-page">
@@ -117,96 +132,169 @@ function EventPage() {
                 <img src={Logo} alt="Logo" className="logo" />
             </div>
             <div className="event-content">
-                {event.image && (
-                    <div className="image-container">
-                        <img src={event.image} alt={`Event image for ${event.name}`} className="event-image" />
+                <div className="back" onClick={() => navigate(-1)}>
+                    <Icon icon="mdi:arrow-left" />
+                    <p>Back to Events</p>
+                </div>
+                <div className="event-layout">
+                    {/* Left Column - Image and Metadata */}
+                    <div className="event-sidebar">
+                        {event.image && (
+                            <div className="image-container">
+                                <img src={event.image} alt={`Event image for ${event.name}`} className="event-image" />
+                            </div>
+                        )}
+                        {renderHostingStatus()}
+                        {event.tags && event.tags.length > 0 && (
+                            <div className="event-tags">
+                                {event.tags.map((tag, index) => (
+                                    <span key={index} className="tag">#{tag}</span>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                )}
-                <div className="event-details">
-                    <div className="back" onClick={() => navigate(-1)}>
-                        <Icon icon="mdi:arrow-left" />
-                        <p>Back to Events</p>
-                    </div>
-                    <h1>{event.name}</h1>
-                    <div className="col">
-                        <div className="row event-detail date">
-                            <p>{date.toLocaleString('default', {weekday: 'long'})}, {date.toLocaleString('default', {month: 'long'})} {date.getDate()}</p>
-                        </div>
-                        <div className="row event-detail time">
-                            <p>{date.toLocaleString('default', {hour: 'numeric', minute: 'numeric', hour12: true})} - {dateEnd.toLocaleString('default', {hour: 'numeric', minute: 'numeric', hour12: true})}</p>
-                        </div>
-                        <div className="row event-detail location">
-                            <Icon icon="fluent:location-28-filled" />
-                            <p>{event.location}</p>
-                        </div>
-                    </div>
-                    {renderHostingStatus()}
 
-                    <div className="row event-description">
-                        <p>{event.description}</p>
-                    </div>
-                    {event.externalLink && (
-                        <div className="row external-link">
-                            <a href={event.externalLink} target="_blank" rel="noopener noreferrer">
-                                <Icon icon="heroicons:arrow-top-right-on-square-20-solid" />
-                                <p>View Event External Link</p>
-                            </a>
+                    {/* Right Column - Main Content */}
+                    <div className="event-details">
+                        {isLive && (
+                            <div className="event-live-badge" role="status">
+                                <Icon icon="mdi:circle" className="event-live-dot" />
+                                <span>Happening now</span>
+                            </div>
+                        )}
+                        <h1>{event.name}</h1>
+                        {/* Mobile-only hosting section */}
+                        <div className="hosting-mobile">
+                            {renderHostingStatus()}
                         </div>
-                    )}
-                    <RSVPSection event={eventData.event} />
-                    
-                    {/* Agenda Editor
-                    <AgendaEditor event={eventData.event} onUpdate={(updatedEvent) => {
-                        // Refetch event data to show updated agenda
-                        refetchEvent();
-                    }} /> */}
-                    
-                    {/* Analytics Tab for Admin Users */}
-                    {user && user.roles && user.roles.includes('admin') && (
-                        <div className="analytics-tab">
-                            <div className="tab-buttons">
-                                <button 
-                                    className={activeTab === 'details' ? 'active' : ''}
-                                    onClick={() => setActiveTab('details')}
+                        <div className="col">
+                            <div className="row event-detail date">
+                                <p>{date.toLocaleString('default', {weekday: 'long'})}, {date.toLocaleString('default', {month: 'long'})} {date.getDate()}</p>
+                            </div>
+                            <div className="row event-detail time">
+                                <p>{date.toLocaleString('default', {hour: 'numeric', minute: 'numeric', hour12: true})} - {dateEnd.toLocaleString('default', {hour: 'numeric', minute: 'numeric', hour12: true})}</p>
+                            </div>
+                            <div className="row event-detail location">
+                                <Icon icon="fluent:location-28-filled" />
+                                <p>{event.location}</p>
+                            </div>
+                        </div>
+
+                        <div className="row event-description">
+                            <p>{event.description}</p>
+                        </div>
+                        {event.externalLink && (
+                            <div className="row external-link">
+                                <a href={event.externalLink} target="_blank" rel="noopener noreferrer">
+                                    <Icon icon="heroicons:arrow-top-right-on-square-20-solid" />
+                                    <p>View Event External Link</p>
+                                </a>
+                            </div>
+                        )}
+                        {event.eventAgenda?.isPublished && event.eventAgenda?.items?.length > 0 && (
+                            <div className="row view-agenda">
+                                <button
+                                    onClick={() => setShowAgendaModal(true)}
+                                    className="btn view-agenda-btn"
                                 >
-                                    Event Details
-                                </button>
-                                <button 
-                                    className={activeTab === 'analytics' ? 'active' : ''}
-                                    onClick={() => setActiveTab('analytics')}
-                                >
-                                    <Icon icon="mingcute:chart-fill" />
-                                    Analytics
+                                    <Icon icon="mdi:calendar-clock" />
+                                    <span>View Agenda</span>
                                 </button>
                             </div>
-                            
-                            {activeTab === 'analytics' && (
-                                <div className="analytics-content">
-                                    <EventAnalytics />
+                        )}
+                        {isLive ? (
+                            <div className="event-checkin-and-registration">
+                                <EventCheckInButton event={eventData.event} onCheckedIn={refetchEvent} />
+                                <RSVPSection event={eventData.event} compact />
+                            </div>
+                        ) : (
+                            <>
+                                <RSVPSection event={eventData.event} />
+                                <EventCheckInButton event={eventData.event} onCheckedIn={refetchEvent} />
+                            </>
+                        )}
+                        
+                        {/* Agenda Editor
+                        <AgendaEditor event={eventData.event} onUpdate={(updatedEvent) => {
+                            // Refetch event data to show updated agenda
+                            refetchEvent();
+                        }} /> */}
+                        
+                        {/* Analytics Tab for Admin Users */}
+                        {user && user.roles && user.roles.includes('admin') && (
+                            <div className="analytics-tab">
+                                <div className="tab-buttons">
+                                    <button 
+                                        className={activeTab === 'details' ? 'active' : ''}
+                                        onClick={() => setActiveTab('details')}
+                                    >
+                                        Event Details
+                                    </button>
+                                    <button 
+                                        className={activeTab === 'analytics' ? 'active' : ''}
+                                        onClick={() => setActiveTab('analytics')}
+                                    >
+                                        <Icon icon="mingcute:chart-fill" />
+                                        Analytics
+                                    </button>
                                 </div>
-                            )}
-                        </div>
-                    )}
-                    
-                    {/* More Events by This Creator Section */}
+                                
+                                {activeTab === 'analytics' && (
+                                    <div className="analytics-content">
+                                        <EventAnalytics />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
+                        {/* Agenda Modal */}
+                        <Popup
+                            isOpen={showAgendaModal}
+                            onClose={() => setShowAgendaModal(false)}
+                            defaultStyling={true}
+                            customClassName="event-agenda-modal-popup"
+                        >
+                            <div className="event-agenda-modal">
+                                <div className="event-agenda-modal-header">
+                                    <h3>
+                                        <Icon icon="mdi:calendar-clock" />
+                                        Event Agenda
+                                    </h3>
+                                </div>
+                                <div className="event-agenda-modal-content">
+                                    <AgendaDailyCalendar
+                                        agendaItems={(event.eventAgenda?.items || []).map((item) => ({
+                                            ...item,
+                                            startTime: item.startTime ? (typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime) : null,
+                                            endTime: item.endTime ? (typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime) : null
+                                        }))}
+                                        event={event}
+                                        minuteHeight={getStoredMinuteHeightPx()}
+                                    />
+                                </div>
+                            </div>
+                        </Popup>
+
+                        {/* More Events by This Creator Section */}
+                        {/* {eventData.event && activeTab === 'details' && (
+                            <EventsByCreator 
+                                eventId={eventId}
+                                creatorName={eventData.event.hostingType === "User" 
+                                    ? eventData.event.hostingId.name 
+                                    : eventData.event.hostingId.org_name
+                                }
+                                creatorType={eventData.event.hostingType === "User" 
+                                    ? (eventData.event.hostingId.roles.includes("developer") 
+                                        ? "Developer" 
+                                        : eventData.event.hostingId.roles.includes("oie") 
+                                            ? "Faculty" 
+                                            : "Student")
+                                    : "Organization"
+                                }
+                            />
+                        )} */}
+                    </div>
                 </div>
-                    {eventData.event && activeTab === 'details' && (
-                        <EventsByCreator 
-                            eventId={eventId}
-                            creatorName={eventData.event.hostingType === "User" 
-                                ? eventData.event.hostingId.name 
-                                : eventData.event.hostingId.org_name
-                            }
-                            creatorType={eventData.event.hostingType === "User" 
-                                ? (eventData.event.hostingId.roles.includes("developer") 
-                                    ? "Developer" 
-                                    : eventData.event.hostingId.roles.includes("oie") 
-                                        ? "Faculty" 
-                                        : "Student")
-                                : "Organization"
-                            }
-                        />
-                    )}
             </div>
         </div>
     );
