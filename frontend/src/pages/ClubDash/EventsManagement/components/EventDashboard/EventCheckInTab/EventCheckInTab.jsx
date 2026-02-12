@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
+import Popup from '../../../../../../components/Popup/Popup';
 import QRCodeDisplay from '../../../../../../components/EventCheckIn/QRCodeDisplay';
 import CheckInLink from '../../../../../../components/EventCheckIn/CheckInLink';
 import CheckInList from '../../../../../../components/EventCheckIn/CheckInList';
@@ -16,6 +17,7 @@ function EventCheckInTab({ event, orgId, onRefresh }) {
     const [checkInLink, setCheckInLink] = useState(null);
     const [attendees, setAttendees] = useState([]);
     const [stats, setStats] = useState(null);
+    const [showManualCheckInModal, setShowManualCheckInModal] = useState(false);
 
     // Fetch QR code if check-in is enabled and method includes QR
     const { data: qrResponse, refetch: refetchQR } = useFetch(
@@ -40,6 +42,11 @@ function EventCheckInTab({ event, orgId, onRefresh }) {
         event?.checkInEnabled && event?._id && orgId
             ? `/events/${event._id}/check-in/attendees`
             : null
+    );
+
+    // Fetch all registrations when manual check-in modal is open (to pick someone to check in)
+    const { data: allRegistrationsResponse, loading: loadingRegistrations } = useFetch(
+        showManualCheckInModal && event?._id ? `/attendees/${event._id}` : null
     );
 
     // Live updates: connect only when on this tab; refetch when someone checks in
@@ -99,6 +106,7 @@ function EventCheckInTab({ event, orgId, onRefresh }) {
                     message: 'User checked in successfully',
                     type: 'success'
                 });
+                setShowManualCheckInModal(false);
                 await refetchAttendees();
                 if (onRefresh) {
                     onRefresh();
@@ -114,6 +122,14 @@ function EventCheckInTab({ event, orgId, onRefresh }) {
             });
         }
     };
+
+    const getAttendeeUserId = (a) => (a.userId && (a.userId._id || a.userId.id || a.userId)) ? String(a.userId._id || a.userId.id || a.userId) : null;
+    const checkedInIds = new Set((attendees || []).map(getAttendeeUserId).filter(Boolean));
+    const allRegistrations = allRegistrationsResponse?.success ? (allRegistrationsResponse.attendees || []) : [];
+    const notCheckedIn = allRegistrations.filter((r) => {
+        const id = getAttendeeUserId(r);
+        return id && !checkedInIds.has(id);
+    });
 
     const handleRemoveCheckIn = async (userId) => {
         try {
@@ -190,8 +206,8 @@ function EventCheckInTab({ event, orgId, onRefresh }) {
                         <div className="stat-label">Checked In</div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-value">{stats.totalRSVPs}</div>
-                        <div className="stat-label">Total RSVPs</div>
+                        <div className="stat-value">{stats.totalRegistrations ?? stats.totalRSVPs ?? 0}</div>
+                        <div className="stat-label">Total Registrations</div>
                     </div>
                     <div className="stat-card">
                         <div className="stat-value">{stats.checkInRate}%</div>
@@ -241,8 +257,50 @@ function EventCheckInTab({ event, orgId, onRefresh }) {
                     attendees={attendees}
                     onManualCheckIn={handleManualCheckIn}
                     onRemoveCheckIn={handleRemoveCheckIn}
+                    onOpenManualCheckInModal={() => setShowManualCheckInModal(true)}
                 />
             </div>
+
+            {/* Manual check-in modal: pick a registrant not yet checked in */}
+            <Popup
+                isOpen={showManualCheckInModal}
+                onClose={() => setShowManualCheckInModal(false)}
+                customClassName="manual-checkin-modal"
+            >
+                <div className="manual-checkin-modal-content">
+                    <h3>
+                        <Icon icon="mdi:account-plus" />
+                        Manually Check In Attendee
+                    </h3>
+                    <p className="manual-checkin-modal-hint">Select a registrant who has not checked in yet.</p>
+                    {loadingRegistrations ? (
+                        <p className="manual-checkin-modal-loading">Loading registrations...</p>
+                    ) : notCheckedIn.length === 0 ? (
+                        <p className="manual-checkin-modal-empty">Everyone registered has already checked in.</p>
+                    ) : (
+                        <ul className="manual-checkin-modal-list">
+                            {notCheckedIn.map((reg) => {
+                                const uid = getAttendeeUserId(reg);
+                                const name = reg.userId?.name || reg.userId?.username || 'Unknown';
+                                return (
+                                    <li key={uid}>
+                                        <button
+                                            type="button"
+                                            className="manual-checkin-modal-item"
+                                            onClick={() => handleManualCheckIn(uid)}
+                                        >
+                                            {name}
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                    <button type="button" className="manual-checkin-modal-close" onClick={() => setShowManualCheckInModal(false)}>
+                        Cancel
+                    </button>
+                </div>
+            </Popup>
         </div>
     );
 }
