@@ -184,7 +184,7 @@ const Header = React.memo(()=>{
                     </Link>
                 }
 
-                {page === "/login" || page === "/register" ? "" :
+                {page === "/login" || page === "/register" || page === "/create-event" ? "" :
                     <div className="header-right">
                         {/* {isAuthenticated ? <NotificationInbox/> : ""}
                         {isAuthenticated ? <ProfilePicture/> : ""} */}
