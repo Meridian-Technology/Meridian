@@ -540,7 +540,7 @@ router.post("/edit-org", verifyToken, upload.fields([
 
 // Candidate: no direct frontend references found; verify before deprecating
 router.delete("/delete-org/:orgId", verifyToken, async (req, res) => {
-    const { Org, Follower, OrgMember } = getModels(req, "Org", "Follower", "OrgMember");
+    const { Org, OrgMember, Event } = getModels(req, "Org", "OrgMember", "Event");
     try {
         const { orgId } = req.params;
         const userId = req.user.userId;
@@ -562,10 +562,24 @@ router.delete("/delete-org/:orgId", verifyToken, async (req, res) => {
                 });
         }
 
-        // Delete the org
-        await Org.findByIdAndDelete(orgId);
+        // Already soft-deleted
+        if (org.isDeleted) {
+            return res.status(400).json({ success: false, message: "Org is already deleted" });
+        }
 
-        console.log(`DELETE: /delete-org`);
+        const now = new Date();
+        org.isDeleted = true;
+        org.deletedAt = now;
+        org.deletedBy = userId;
+        await org.save();
+
+        // Soft delete all events hosted by this org
+        const eventResult = await Event.updateMany(
+            { hostingId: orgId, hostingType: "Org" },
+            { $set: { isDeleted: true, deletedAt: now } }
+        );
+
+        console.log(`DELETE: /delete-org (soft) - org ${orgId}, ${eventResult.modifiedCount} events soft-deleted`);
         res.json({ success: true, message: "Org deleted successfully" });
     } catch (error) {
         console.log(`DELETE: /delete-org failed`, error);
