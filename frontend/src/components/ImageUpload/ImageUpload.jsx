@@ -16,7 +16,7 @@ const ImageUpload = ({
     orientation = "vertical",
     previewImageParams = {}, // { shape: 'circle' | 'square' | 'rectangle' }
     showActions = true, // Enable/disable upload/cancel buttons
-    previewMessage = "Drag a new image to replace, or click outside to save", // Custom message when image is selected
+    previewMessage = "", // Custom message when image is selected
     value = null // Initial file value to restore preview
 }) => {
     const [selectedFile, setSelectedFile] = useState(value);
@@ -155,7 +155,7 @@ const ImageUpload = ({
                         :
                         <>
                             ,<br />or{" "}
-                            <label htmlFor="fileInput" className="browse">browse</label>
+                            <label className="browse">browse</label>
                         </>
                     }
                 </h3>

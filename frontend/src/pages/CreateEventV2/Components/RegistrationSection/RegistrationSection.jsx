@@ -1,17 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { DatePicker } from 'rsuite';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../hooks/useFetch';
 import SlideSwitch from '../../../../components/SlideSwitch/SlideSwitch';
 import CreateRegistrationFormModal from '../../../ClubDash/EventsManagement/components/EventDashboard/CreateRegistrationFormModal';
+import 'rsuite/DatePicker/styles/index.css';
 import './RegistrationSection.scss';
 
 function RegistrationSection({ formData, setFormData, selectedHost }) {
-    const [editingCapacity, setEditingCapacity] = useState(false);
-    const [editingDeadline, setEditingDeadline] = useState(false);
     const [showFormModal, setShowFormModal] = useState(false);
     const [showFormDropdown, setShowFormDropdown] = useState(false);
     const [editingFormId, setEditingFormId] = useState(null);
-    const capacityInputRef = useRef(null);
     const formDropdownRef = useRef(null);
 
     useEffect(() => {
@@ -33,13 +32,6 @@ function RegistrationSection({ formData, setFormData, selectedHost }) {
     const registrationEnabled = formData.registrationEnabled ?? formData.rsvpEnabled ?? false;
     const registrationRequired = formData.registrationRequired ?? formData.rsvpRequired ?? false;
     const registrationDeadline = formData.registrationDeadline ?? formData.rsvpDeadline;
-    const maxAttendees = formData.maxAttendees;
-
-    useEffect(() => {
-        if (editingCapacity && capacityInputRef.current) {
-            capacityInputRef.current.focus();
-        }
-    }, [editingCapacity]);
 
     const handleRegistrationEnabledChange = (e) => {
         const checked = e.target.checked;
@@ -59,22 +51,12 @@ function RegistrationSection({ formData, setFormData, selectedHost }) {
         }));
     };
 
-    const handleCapacityChange = (value) => {
-        const num = value ? parseInt(value, 10) : null;
-        setFormData(prev => ({
-            ...prev,
-            maxAttendees: num && num > 0 ? num : null
-        }));
-        setEditingCapacity(false);
-    };
-
     const handleDeadlineChange = (date) => {
         setFormData(prev => ({
             ...prev,
             registrationDeadline: date ? new Date(date) : null,
             rsvpDeadline: date ? new Date(date) : null
         }));
-        setEditingDeadline(false);
     };
 
     const handleFormSelect = (formId) => {
@@ -96,14 +78,6 @@ function RegistrationSection({ formData, setFormData, selectedHost }) {
 
             {registrationEnabled && (
                 <div className="event-options-rows">
-                    <div className="event-option-row">
-                        <span className="option-label">Ticket Price</span>
-                        <span className="option-value">
-                            Free
-                            <Icon icon="mdi:pencil" className="option-edit-icon" />
-                        </span>
-                    </div>
-
                     <div className="event-option-row event-option-row-toggle">
                         <span className="option-label">Require Approval</span>
                         <SlideSwitch
@@ -112,64 +86,19 @@ function RegistrationSection({ formData, setFormData, selectedHost }) {
                         />
                     </div>
 
-                    <div className="event-option-row">
-                        <span className="option-label">Capacity</span>
-                        <span className="option-value" onClick={() => setEditingCapacity(true)}>
-                            {editingCapacity ? (
-                                <input
-                                    ref={capacityInputRef}
-                                    type="number"
-                                    placeholder="Unlimited"
-                                    min="1"
-                                    className="option-inline-input"
-                                    defaultValue={maxAttendees || ''}
-                                    onBlur={(e) => handleCapacityChange(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleCapacityChange(e.target.value);
-                                    }}
-                                />
-                            ) : (
-                                <>
-                                    {maxAttendees ? maxAttendees : 'Unlimited'}
-                                    <Icon icon="mdi:pencil" className="option-edit-icon" />
-                                </>
-                            )}
-                        </span>
-                    </div>
-
-                    <div className="event-option-row">
+                    <div className="event-option-row event-option-row-deadline">
                         <span className="option-label">Registration deadline</span>
-                        <span className="option-value">
-                            {editingDeadline ? (
-                                <input
-                                    type="datetime-local"
-                                    className="option-inline-input"
-                                    defaultValue={registrationDeadline ? new Date(registrationDeadline).toISOString().slice(0, 16) : ''}
-                                    onBlur={(e) => {
-                                        handleDeadlineChange(e.target.value ? new Date(e.target.value) : null);
-                                        setEditingDeadline(false);
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            handleDeadlineChange(e.target.value ? new Date(e.target.value) : null);
-                                            setEditingDeadline(false);
-                                        }
-                                    }}
-                                />
-                            ) : (
-                                <span onClick={() => setEditingDeadline(true)}>
-                                    {registrationDeadline
-                                        ? new Date(registrationDeadline).toLocaleDateString('en-US', {
-                                            month: 'short',
-                                            day: 'numeric',
-                                            year: 'numeric',
-                                            hour: 'numeric',
-                                            minute: '2-digit'
-                                        })
-                                        : 'None'}
-                                    <Icon icon="mdi:pencil" className="option-edit-icon" />
-                                </span>
-                            )}
+                        <span className="option-value option-value-datepicker">
+                            <DatePicker
+                                format="MMM d, yyyy h:mm a"
+                                showMeridiem
+                                placeholder="None"
+                                value={registrationDeadline ? new Date(registrationDeadline) : null}
+                                onChange={handleDeadlineChange}
+                                className="registration-deadline-picker"
+                                caretAs={() => <Icon icon="mdi:calendar" />}
+                                cleanable
+                            />
                         </span>
                     </div>
 

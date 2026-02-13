@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { Icon } from '@iconify-icon/react';
 import apiRequest from '../../utils/postRequest';
 import DynamicFormField from '../../components/DynamicFormField/DynamicFormField';
 import { useFetch } from '../../hooks/useFetch';
@@ -44,8 +45,8 @@ const CreateEventV3 = () => {
     const [formData, setFormData] = useState({
         name: '',
         type: '',
-        hostingId: user?._id || null,
-        hostingType: user ? 'User' : '',
+        hostingId: null,
+        hostingType: '',
         going: [],
         location: '',
         start_time: null,
@@ -69,10 +70,9 @@ const CreateEventV3 = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        if (user && !selectedHost) {
-            setSelectedHost({ id: user._id, type: 'User' });
-        }
-    }, [user, selectedHost]);
+        document.body.classList.add('create-event-v3-page');
+        return () => document.body.classList.remove('create-event-v3-page');
+    }, []);
 
     useEffect(() => {
         if (selectedHost) {
@@ -134,6 +134,14 @@ const CreateEventV3 = () => {
     }, []);
 
     const handleSubmit = async () => {
+        if (!selectedHost) {
+            addNotification({
+                title: 'Select a host',
+                message: 'Please select who is hosting this event.',
+                type: 'error'
+            });
+            return;
+        }
         const missing = getMissingFields(formData, formConfig);
         if (missing.length > 0) {
             addNotification({
@@ -251,6 +259,7 @@ const CreateEventV3 = () => {
                             onFileSelect={(file) => handleFieldChange('image', file)}
                             onFileClear={() => handleFieldChange('image', null)}
                             showPrompt={true}
+                            showActions={false}
                         />
                     </div>
                 </div>
@@ -350,6 +359,15 @@ const CreateEventV3 = () => {
                     </div>
 
                     <div className="create-event-v3-actions">
+                        {selectedHost?.type === 'Org' && user?.clubAssociations?.some((org) => org._id === selectedHost.id) && (
+                            <Link
+                                to={`/club-dashboard/${encodeURIComponent(user.clubAssociations.find((o) => o._id === selectedHost.id)?.org_name || '')}?page=1`}
+                                className="create-event-v3-management-btn"
+                            >
+                                <Icon icon="mdi:cog" />
+                                Event management
+                            </Link>
+                        )}
                         <button
                             className="create-event-v3-submit"
                             onClick={handleSubmit}

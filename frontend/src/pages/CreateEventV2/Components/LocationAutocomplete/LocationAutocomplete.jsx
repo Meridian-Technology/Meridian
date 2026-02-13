@@ -3,6 +3,55 @@ import { Icon } from '@iconify-icon/react';
 import apiRequest from '../../../../utils/postRequest';
 import './LocationAutocomplete.scss';
 
+// Abbreviation support (matches SearchBar) – full names ↔ building abbreviations
+const abbreviations = {
+    "Darrin Communications Center": "DCC",
+    "Jonsson Engineering Center": "JEC",
+    "Jonsson-Rowland Science Center": "JROWL",
+    "Low Center for Industrial Inn.": "LOW",
+    "Pittsburgh Building": "PITTS",
+    "Russell Sage Laboratory": "SAGE",
+    "Voorhees Computing Center": "VCC",
+    "Walker Laboratory": "WALK",
+    "Winslow Building": "WINS",
+    "Troy Building": "TROY",
+};
+const fullNames = {
+    "DCC": "Darrin Communications Center",
+    "JEC": "Jonsson Engineering Center",
+    "JROWL": "Jonsson-Rowland Science Center",
+    "LOW": "Low Center for Industrial Inn.",
+    "PITTS": "Pittsburgh Building",
+    "SAGE": "Russell Sage Laboratory",
+    "VCC": "Voorhees Computing Center",
+    "WALK": "Walker Laboratory",
+    "WINS": "Winslow Building",
+    "TROY": "Troy Building",
+};
+const removeLastWord = (str) => str.split(' ').slice(0, -1).join(' ');
+/** Convert "DCC 308" → "Darrin Communications Center 308" */
+function getFull(abb) {
+    if (removeLastWord(abb) in fullNames) {
+        return fullNames[removeLastWord(abb)] + " " + abb.split(' ').pop();
+    }
+    return abb;
+}
+/** Convert "DCC" → "Darrin Communications Center" */
+function getAbbFull(abb) {
+    if (abb && abb.toUpperCase() in fullNames) {
+        return fullNames[abb.toUpperCase()];
+    }
+    return abb;
+}
+/** Normalize typed location to full name when it's an abbreviation. */
+function normalizeLocation(value) {
+    if (!value || !value.trim()) return value;
+    const trimmed = value.trim();
+    const asFull = getAbbFull(trimmed);
+    if (asFull !== trimmed) return asFull;
+    return getFull(trimmed);
+}
+
 function LocationAutocomplete({ formData, setFormData }) {
     const [inputValue, setInputValue] = useState(formData.location || '');
     const [suggestions, setSuggestions] = useState([]);
@@ -34,22 +83,40 @@ function LocationAutocomplete({ formData, setFormData }) {
             setSuggestions([]);
             return;
         }
+        const trimmed = query.trim();
+        const queriesToTry = [trimmed];
+        const firstWord = trimmed.split(' ')[0];
+        if (firstWord && firstWord.toUpperCase() in fullNames) {
+            const expanded = fullNames[firstWord.toUpperCase()] + (trimmed.includes(' ') ? ' ' + trimmed.split(' ').slice(1).join(' ') : '');
+            if (!queriesToTry.includes(expanded)) queriesToTry.push(expanded);
+        }
+        if (trimmed.toUpperCase() in fullNames && !queriesToTry.includes(fullNames[trimmed.toUpperCase()])) {
+            queriesToTry.push(fullNames[trimmed.toUpperCase()]);
+        }
         setIsLoading(true);
         try {
-            const response = await apiRequest('/search-rooms', null, {
-                method: 'GET',
-                params: { query: query.trim(), limit: 10, page: 1 }
-            });
-            if (response.success && response.rooms) {
-                setSuggestions(response.rooms.map(room => ({
-                    id: room._id,
-                    name: room.name || 'Unknown Room',
-                    building: room.building || '',
-                    capacity: room.capacity || 0
-                })));
-            } else {
-                setSuggestions([]);
+            const seenIds = new Set();
+            const mergedRooms = [];
+            for (const q of queriesToTry) {
+                const response = await apiRequest('/search-rooms', null, {
+                    method: 'GET',
+                    params: { query: q, limit: 10, page: 1 }
+                });
+                if (response.success && response.rooms) {
+                    for (const room of response.rooms) {
+                        if (room._id && !seenIds.has(room._id)) {
+                            seenIds.add(room._id);
+                            mergedRooms.push({
+                                id: room._id,
+                                name: room.name || 'Unknown Room',
+                                building: room.building || '',
+                                capacity: room.capacity || 0
+                            });
+                        }
+                    }
+                }
             }
+            setSuggestions(mergedRooms);
         } catch (err) {
             setSuggestions([]);
         } finally {
@@ -81,10 +148,11 @@ function LocationAutocomplete({ formData, setFormData }) {
     };
 
     const handleSelectRoom = (room) => {
-        setInputValue(room.name);
+        const displayName = room.name;
+        setInputValue(displayName);
         setFormData(prev => ({
             ...prev,
-            location: room.name,
+            location: displayName,
             classroom_id: room.id,
             selectedRoomIds: [room.id]
         }));
@@ -92,6 +160,14 @@ function LocationAutocomplete({ formData, setFormData }) {
         setShowDropdown(false);
         setHighlightedIndex(-1);
         inputRef.current?.blur();
+    };
+
+    const handleBlur = () => {
+        const normalized = normalizeLocation(inputValue);
+        if (normalized !== inputValue) {
+            setInputValue(normalized);
+            setFormData(prev => ({ ...prev, location: normalized }));
+        }
     };
 
     const handleKeyDown = (e) => {
@@ -119,10 +195,11 @@ function LocationAutocomplete({ formData, setFormData }) {
                     ref={inputRef}
                     type="text"
                     className="location-autocomplete-input"
-                    placeholder="Offline location or virtual link"
+                    placeholder="Enter a location"
                     value={inputValue}
                     onChange={handleInputChange}
                     onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
+                    onBlur={handleBlur}
                     onKeyDown={handleKeyDown}
                     autoComplete="off"
                 />
