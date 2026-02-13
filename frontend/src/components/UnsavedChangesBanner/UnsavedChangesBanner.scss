@@ -1,10 +1,14 @@
 // Discord-style unsaved changes banner
 .unsaved-changes-banner {
-    position: absolute;
+    position: fixed;
     bottom: 0;
-    left: 0;
+    left: 200px;
     right: 0;
     z-index: 1000;
+
+    @media (max-width: 768px) {
+        left: 0;
+    }
     // background: linear-gradient(90deg, #ff6b6b 0%, #ff8e8e 100%);
     background-color: var(--background);
     border: 1px solid var(--lighterborder);

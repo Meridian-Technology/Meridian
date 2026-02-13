@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import './UnsavedChangesBanner.scss';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 
@@ -14,7 +15,7 @@ const UnsavedChangesBanner = ({
         return null;
     }
 
-    return (
+    const banner = (
         <div className="unsaved-changes-banner">
             <div className="banner-content">
                 <div className="banner-text">
@@ -40,6 +41,8 @@ const UnsavedChangesBanner = ({
             </div>
         </div>
     );
+
+    return createPortal(banner, document.body);
 };
 
 export default UnsavedChangesBanner; 

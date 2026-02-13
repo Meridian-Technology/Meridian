@@ -210,10 +210,10 @@
       color: var(--text);
     }
 
-    &:focus {
-      outline: 2px solid var(--primary);
-      outline-offset: -2px;
-    }
+    // &:focus {
+    //   outline: 2px solid var(--primary);
+    //   outline-offset: -2px;
+    // }
 
     // Active state - using higher specificity
     &.tabbed-container__tab--active {
@@ -306,6 +306,9 @@
     width: 20px;
     height: 20px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   // Tab label
