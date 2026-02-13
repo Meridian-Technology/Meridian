@@ -268,6 +268,28 @@ const OrgSchema= new Schema({
         default: [],
         required: false
     },
+    // Soft delete
+    isDeleted: {
+        type: Boolean,
+        default: false
+    },
+    deletedAt: {
+        type: Date,
+        default: null
+    },
+    deletedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    }
+});
+
+// Exclude soft-deleted orgs from default find/findOne (use findOneWithDeleted or findWithDeleted for admin if needed)
+OrgSchema.pre('find', function () {
+    this.where({ isDeleted: { $ne: true } });
+});
+OrgSchema.pre('findOne', function () {
+    this.where({ isDeleted: { $ne: true } });
 });
 
 // Add methods for role management

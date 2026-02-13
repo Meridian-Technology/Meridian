@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../../../hooks/useAuth';
+import useOutsideClick from '../../../../hooks/useClickOutside';
 import defaultAvatar from '../../../../assets/defaultAvatar.svg';
 import './HostOrgDropdown.scss';
 
@@ -9,6 +10,13 @@ function HostOrgDropdown({ selectedHost, onHostChange }) {
     const [showDrop, setShowDrop] = useState(false);
     const [isAnimating, setIsAnimating] = useState(false);
     const [shouldRender, setShouldRender] = useState(false);
+    const dropdownRef = useRef(null);
+
+    const handleClose = useCallback(() => {
+        setShowDrop(false);
+    }, []);
+
+    useOutsideClick(dropdownRef, handleClose);
 
     useEffect(() => {
         if (showDrop) {
@@ -24,16 +32,25 @@ function HostOrgDropdown({ selectedHost, onHostChange }) {
     }, [showDrop]);
 
     const getSelectedDisplay = () => {
-        if (!selectedHost || selectedHost.type === 'User') {
+        if (!selectedHost) {
+            return {
+                image: defaultAvatar,
+                name: 'Select host',
+                isPlaceholder: true,
+            };
+        }
+        if (selectedHost.type === 'User') {
             return {
                 image: user?.pfp || defaultAvatar,
                 name: user?.username || 'Student',
+                isPlaceholder: false,
             };
         }
         const org = user?.clubAssociations?.find(org => org._id === selectedHost.id);
         return {
             image: org?.org_profile_image || defaultAvatar,
             name: org?.org_name || 'Organization',
+            isPlaceholder: false,
         };
     };
 
@@ -45,11 +62,12 @@ function HostOrgDropdown({ selectedHost, onHostChange }) {
     };
 
     return (
-        <div className="host-org-dropdown" onClick={() => setShowDrop(!showDrop)}>
-            <div className="host-org">
-                <img src={selected.image} alt={selected.name} />
-                <h1>{selected.name}</h1>
-            </div>
+        <div className="host-org-dropdown-wrapper" ref={dropdownRef}>
+            <div className="host-org-dropdown" onClick={() => setShowDrop(!showDrop)}>
+                <div className="host-org">
+                    <img src={selected.image} alt={selected.name} />
+                    <h1 className={selected.isPlaceholder ? 'placeholder' : ''}>{selected.name}</h1>
+                </div>
             <Icon
                 icon={`${showDrop ? "ic:round-keyboard-arrow-up" : "ic:round-keyboard-arrow-down"}`}
                 width="24"
@@ -60,7 +78,7 @@ function HostOrgDropdown({ selectedHost, onHostChange }) {
                     <div className="org-list">
                         {/* User option */}
                         <div
-                            className={`drop-option ${(!selectedHost || selectedHost.type === 'User') && "selected"}`}
+                            className={`drop-option ${selectedHost?.type === 'User' && selectedHost?.id === user?._id ? "selected" : ""}`}
                             onClick={() => handleSelect({ id: user?._id, type: 'User' })}
                         >
                             <img src={user?.pfp || defaultAvatar} alt="" />
@@ -80,6 +98,7 @@ function HostOrgDropdown({ selectedHost, onHostChange }) {
                     </div>
                 </div>
             )}
+            </div>
         </div>
     );
 }

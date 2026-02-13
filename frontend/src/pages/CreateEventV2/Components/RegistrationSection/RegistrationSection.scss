@@ -77,9 +77,25 @@
             &:focus {
                 border-color: var(--primary, #007bff);
             }
+        }
 
-            &[type="datetime-local"] {
-                width: 180px;
+        &.event-option-row-deadline {
+            .option-value-datepicker {
+                cursor: default;
+                display: flex;
+                min-width: 0;
+
+                .registration-deadline-picker {
+                    width: 100%;
+                    min-width: 160px;
+                    max-width: 220px;
+
+                    .rs-input {
+                        padding: 0.35rem 0.5rem;
+                        font-size: 0.875rem;
+                        border-radius: 6px;
+                    }
+                }
             }
         }
 

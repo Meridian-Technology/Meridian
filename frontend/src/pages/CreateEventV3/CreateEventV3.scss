@@ -59,7 +59,6 @@
 
             .image-upload {
                 aspect-ratio: 1;
-                border-radius: 8px;
                 border: 2px dashed var(--lighterborder);
                 background: var(--lighter);
             }
@@ -96,10 +95,36 @@
             padding-top: 1.5rem;
             border-top: 1px solid var(--lighterborder);
             margin-bottom: 4rem;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .create-event-v3-management-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.25rem;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            color: var(--dark-blue);
+            background: transparent;
+            border: 1px solid var(--dark-blue);
+            border-radius: 8px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+
+            &:hover {
+                background: color-mix(in srgb, var(--dark-blue) 12%, transparent);
+                color: var(--dark-blue);
+            }
         }
 
         .create-event-v3-submit {
-            width: 100%;
+            flex: 1;
+            min-width: 140px;
             padding: 0.875rem 1.5rem;
             font-size: 1rem;
             font-weight: 600;
@@ -119,5 +144,49 @@
                 cursor: not-allowed;
             }
         }
+    }
+}
+
+// Date-picker theme when Create Event V3 is open (popup renders in portal under body)
+body.create-event-v3-page {
+    .rs-picker-daterange-header.rs-picker-tab-active-end::after,
+    .rs-picker-daterange-header.rs-picker-tab-active-start::after {
+        border-bottom-color: var(--dark-blue) !important;
+    }
+
+    .rs-btn-sm{
+        background-color: var(--dark-blue);
+    }
+    .rs-calendar-table-cell-content:hover {
+        background-color: color-mix(in srgb, var(--dark-blue) 15%, transparent) !important;
+    }
+    .rs-picker-popup .rs-calendar .rs-calendar-table-cell:hover .rs-calendar-table-cell-content {
+        color: var(--dark-blue) !important;
+    }
+    .rs-calendar-table-cell-is-today .rs-calendar-table-cell-content {
+        box-shadow: inset 0 0 0 1px var(--dark-blue) !important;
+    }
+    .rs-calendar-table-cell-selected .rs-calendar-table-cell-content {
+        background-color: var(--dark-blue) !important;
+        color: var(--background) !important;
+    }
+    .rs-calendar-table-cell-in-range::before {
+        background-color: color-mix(in srgb, var(--dark-blue) 15%, transparent) !important;
+    }
+    .rs-picker-popup .rs-calendar .rs-calendar-table-cell:hover .rs-calendar-table-cell-content {
+        background-color: color-mix(in srgb, var(--dark-blue) 15%, transparent) !important;
+    }
+    .rs-input-group:not(.rs-input-group-disabled):hover,
+    .rs-input-group:not(.rs-input-group-disabled).rs-input-group-focus,
+    .rs-input-group:focus-within {
+        border-color: var(--dark-blue) !important;
+    }
+    .rs-btn-primary:hover,
+    .rs-btn-primary:focus {
+        background-color: var(--dark-blue) !important;
+    }
+    .rs-btn-link:hover,
+    .rs-btn-link:focus {
+        color: var(--dark-blue) !important;
     }
 }
