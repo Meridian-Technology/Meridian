@@ -289,13 +289,14 @@ router.get("/search-users", verifyToken, async (req, res) => {
         // Build the search query
         let searchQuery = {};
         
-        // Text search on username or name
+        // Text search on username, name, or email
         if (query) {
             // Escape regex special characters to prevent regex errors
             const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             searchQuery.$or = [
                 { username: { $regex: new RegExp(escapedQuery, 'i') } },
-                { name: { $regex: new RegExp(escapedQuery, 'i') } }
+                { name: { $regex: new RegExp(escapedQuery, 'i') } },
+                { email: { $regex: new RegExp(escapedQuery, 'i') } }
             ];
         }
         

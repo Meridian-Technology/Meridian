@@ -73,12 +73,30 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: hidden;
+
             img{
                 width: 100%;
                 height:100%;
                 background-color: var(---background);
                 border-radius: 50%;
                 object-fit: cover;
+            }
+
+            .org-logo-placeholder {
+                width: 100%;
+                height: 100%;
+                background: var(--primary);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+            }
+
+            .org-logo-initials {
+                font-size: 48px;
+                font-weight: 600;
+                color: white;
             }
         }
         

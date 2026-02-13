@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import './Orgs.scss';
 import { useFetch } from '../../../hooks/useFetch';
 import OrgResult from './OrgResult/OrgResult';
-import AtlasGradient from '../../../assets/Gradients/ATLAS/Main1.png';
+import EventsGrad from '../../../assets/Gradients/EventsGrad.png';
 import { Icon } from '@iconify-icon/react';
 
 const Orgs = () => {
@@ -23,7 +23,7 @@ const Orgs = () => {
     return (
         <div className="orgs dash">
             <header className="header">
-                <img src={AtlasGradient} alt="" />
+                <img src={EventsGrad} alt="" />
                 <h1>Organizations</h1>
                 <p>Explore organizations at RPI</p>
             </header>

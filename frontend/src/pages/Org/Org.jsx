@@ -1,5 +1,4 @@
 import React, {useState, useEffect} from 'react';
-import rpiLogo from "../../assets/Icons/rpiLogo.svg";
 import person from "../../assets/Icons/Profile.svg";
 import defaultAvatar from "../../assets/defaultAvatar.svg";
 import FormViewer from '../../components/FormViewer/FormViewer';
@@ -16,9 +15,15 @@ import { getOrgRoleColor } from '../../utils/orgUtils';
 import './Org.scss';
 import { useNavigate } from 'react-router-dom';
 
+function getInitials(name) {
+    if (!name || typeof name !== 'string' || name.trim().length === 0) return '??';
+    return name.trim().split(' ').filter((w) => w.length > 0).map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
 const Org = ({ orgData, refetch }) => {
 
     const { overview, members, followers } = orgData.org;
+    const hasProfileImage = overview?.org_profile_image && overview.org_profile_image !== '/Logo.svg';
     const [showForm, setShowForm] = useState(false);
     const {user, friendRequests, refreshFriendRequests} = useAuth();
     const [activeTab, setActiveTab] = useState('home');
@@ -374,7 +379,13 @@ const Org = ({ orgData, refetch }) => {
                     <div className="org-info">
                         <div className="org-logo">
                             <div className="img-container">
-                                <img src={overview.org_profile_image ? overview.org_profile_image : rpiLogo} alt=""/>
+                                {hasProfileImage ? (
+                                    <img src={overview.org_profile_image} alt="" />
+                                ) : (
+                                    <div className="org-logo-placeholder">
+                                        <span className="org-logo-initials">{getInitials(overview?.org_name)}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="org-content-section">

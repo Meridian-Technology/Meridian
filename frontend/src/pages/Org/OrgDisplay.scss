@@ -1,0 +1,33 @@
+.org-display-overlay {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    &__back {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 12px 20px;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--light-text, #6c757d);
+        cursor: pointer;
+        transition: color 0.2s ease;
+        flex-shrink: 0;
+        background: var(--background, #fff);
+
+        .iconify-icon {
+            font-size: 1.25rem;
+        }
+
+        &:hover {
+            color: var(--primary, #6D8EFA);
+        }
+    }
+
+    &__content {
+        flex: 1;
+        overflow-y: auto;
+    }
+}
