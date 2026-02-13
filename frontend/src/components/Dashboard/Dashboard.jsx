@@ -47,6 +47,8 @@ function Dashboard({
     const [overlayContent, setOverlayContent] = useState(null);
     const prevDisplayRef = useRef(null);
     const isRestoringOverlayRef = useRef(false);
+    const urlHadOverlayParamsRef = useRef(false);
+    const overlayContentRef = useRef(overlayContent);
 
     // Wrapper so closing the overlay also clears persist overlay params from the URL
     const handleSetOverlayContent = useCallback((content) => {
@@ -113,13 +115,30 @@ function Dashboard({
         });
     }, [searchParams, overlayContent, handleSetOverlayContent]);
 
-    // Close overlay when URL no longer has overlay params (e.g. user pressed browser Back)
+    // Close overlay only when URL *had* overlay params and now doesn't (e.g. user pressed browser Back).
+    // Non-persisted overlays (e.g. org profile) don't set URL params, so we must not close them here.
     useEffect(() => {
         const overlayState = getOverlayStateFromParams(searchParams);
-        if (!overlayState && overlayContent !== null) {
+        const hadOverlayParams = urlHadOverlayParamsRef.current;
+        if (hadOverlayParams && !overlayState && overlayContent !== null) {
             handleSetOverlayContent(null);
         }
+        urlHadOverlayParamsRef.current = !!overlayState;
     }, [searchParams, overlayContent, handleSetOverlayContent]);
+
+    // Keep ref in sync for popstate listener
+    overlayContentRef.current = overlayContent;
+
+    // Browser Back/Forward: when user presses Back and an overlay is open (e.g. org), close it
+    useEffect(() => {
+        const handlePopState = () => {
+            if (overlayContentRef.current != null) {
+                handleSetOverlayContent(null);
+            }
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [handleSetOverlayContent]);
 
     // Close mobile menu when navigating
     const handleMobileNavigation = (callback) => {
