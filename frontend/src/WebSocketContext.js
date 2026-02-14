@@ -4,7 +4,7 @@
  * Use useEventRoom(eventId, onEvent) on those pages to join the event room and receive live updates.
  */
 
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
 const WebSocketContext = createContext(null);
@@ -44,7 +44,10 @@ export function useEventRoom(eventId, onEvent) {
     return () => {
       ctx.unsubscribeEvent(eventId);
     };
-  }, [eventId, ctx]);
+    // Intentionally omit ctx: context value is a new object every provider re-render (e.g. when
+    // socket connects and setConnected runs), which would cause subscribe → disconnect → subscribe
+    // in a loop. We only want to re-run when eventId changes; ctx methods are stable.
+  }, [eventId]);
 }
 
 /**
@@ -68,7 +71,8 @@ export function useOrgApprovalRoom(orgId, onApproved) {
     return () => {
       ctx.unsubscribeOrgApproval(orgId);
     };
-  }, [orgId, ctx]);
+    // Intentionally omit ctx to avoid connect/disconnect loop (see useEventRoom comment).
+  }, [orgId]);
 }
 
 export const WebSocketProvider = ({ children }) => {
@@ -113,6 +117,18 @@ export const WebSocketProvider = ({ children }) => {
     eventRoomsRef.current.set(eventId, { handler, count: (prev?.count ?? 0) + 1 });
   }, [ensureConnected]);
 
+  const tryDisconnectIfIdle = useCallback(() => {
+    if (
+      eventRoomsRef.current.size === 0 &&
+      orgApprovalRoomsRef.current.size === 0 &&
+      socketRef.current
+    ) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+      setConnected(false);
+    }
+  }, []);
+
   const unsubscribeEvent = useCallback((eventId) => {
     const entry = eventRoomsRef.current.get(eventId);
     if (!entry) return;
@@ -124,8 +140,9 @@ export const WebSocketProvider = ({ children }) => {
         socket.off(SOCKET_EVENT_CHECK_IN, entry.handler);
         socket.emit(EVENT_ROOM_LEAVE, { eventId });
       }
+      tryDisconnectIfIdle();
     }
-  }, []);
+  }, [tryDisconnectIfIdle]);
 
   const orgApprovalRoomsRef = useRef(new Map());
 
@@ -158,17 +175,28 @@ export const WebSocketProvider = ({ children }) => {
         socket.off(ORG_APPROVED_EVENT, entry.handler);
         socket.emit(ORG_APPROVAL_LEAVE, { orgId });
       }
+      tryDisconnectIfIdle();
     }
-  }, []);
+  }, [tryDisconnectIfIdle]);
 
-  const value = {
-    connected,
-    subscribeEvent,
-    unsubscribeEvent,
-    ensureConnected,
-    subscribeOrgApproval,
-    unsubscribeOrgApproval,
-  };
+  const value = useMemo(
+    () => ({
+      connected,
+      subscribeEvent,
+      unsubscribeEvent,
+      ensureConnected,
+      subscribeOrgApproval,
+      unsubscribeOrgApproval,
+    }),
+    [
+      connected,
+      subscribeEvent,
+      unsubscribeEvent,
+      ensureConnected,
+      subscribeOrgApproval,
+      unsubscribeOrgApproval,
+    ]
+  );
 
   return (
     <WebSocketContext.Provider value={value}>

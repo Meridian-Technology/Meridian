@@ -3,7 +3,8 @@
     max-width: 100%;
     min-height: 100%;
     background: var(--background);
-    display: block;
+    display: flex;
+    flex-direction: column;
 
     &.full-width-event-dashboard {
         max-width: 100%;
@@ -263,14 +264,22 @@
     }
 
     .event-dashboard-content {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
         width: 100%;
         max-width: 100%;
         overflow-x: hidden;
+        flex-grow: 1;
         box-sizing: border-box;
         background: var(--background);
 
         .event-dashboard-tabs {
             background: var(--background);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            flex-grow: 1;
         }
 
         .event-dashboard-tabs-sticky-spacer {
@@ -939,32 +948,11 @@
         margin-bottom: 2rem;
 
         .analytics-card {
-            padding: 1.5rem;
-            background: var(--lightbackground);
-            border: 1px solid var(--lighterborder);
-            border-radius: 12px;
-            box-shadow: var(--shadow);
-
-            .card-header {
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                margin-bottom: 1rem;
-
-                iconify-icon {
-                    font-size: 1.5rem;
-                    color: #4DAA57;
-                }
-
-                h4 {
-                    font-size: 1rem;
-                    font-weight: 600;
-                    color: var(--text);
-                    margin: 0;
-                }
+            .header-container-content {
+                padding: 1rem 1.5rem;
             }
 
-            .card-content {
+            .header-container-content .card-content {
                 .stat-large {
                     margin-bottom: 1rem;
 
@@ -1348,22 +1336,9 @@
 
     .logged-in-views-section {
         margin-top: 2rem;
-        padding-top: 2rem;
-        border-top: 1px solid var(--lighterborder);
 
-        h3 {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--text);
-            margin: 0 0 1rem 0;
-
-            iconify-icon {
-                color: #4DAA57;
-                font-size: 1.5rem;
-            }
+        .header-container-content {
+            padding: 1rem 1.5rem;
         }
 
         .logged-in-views-list {

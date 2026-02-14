@@ -220,9 +220,9 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
         },
         {
             id: 'edit',
-            label: 'Edit',
+            label: 'Details',
             icon: 'mdi:pencil',
-            description: 'Edit event details and settings',
+            description: 'Event details and basic information',
             content: <EventEditorTab
                         event={dashboardData.event}
                         orgId={orgId}
@@ -238,6 +238,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         event={dashboardData.event}
                         orgId={orgId}
                         onRefresh={handleRefresh}
+                        color="var(--primary-color)"
                     />
         },
         {
@@ -249,6 +250,8 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         event={dashboardData.event}
                         orgId={orgId}
                         onRefresh={handleRefresh}
+                        isTabActive={activeTab === 'checkin'}
+                        color="var(--primary-color)"
                     />
         },
         {

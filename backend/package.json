@@ -12,7 +12,6 @@
     "date-fns": "^4.1.0",
     "dotenv": "^16.3.2",
     "express": "^4.19.2",
-    "express-session": "^1.18.1",
     "express-sslify": "^1.2.0",
     "express-validator": "^7.2.1",
     "google-auth-library": "^9.4.2",

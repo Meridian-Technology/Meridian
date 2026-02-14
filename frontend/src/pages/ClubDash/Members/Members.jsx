@@ -13,6 +13,7 @@ import { getOrgRoleColor } from '../../../utils/orgUtils';
 import Select from '../../../components/Select/Select'; 
 import MemberApplicationsViewer from './MemberApplicationsViewer/MemberApplicationsViewer';
 import TabbedContainer, { CommonTabConfigs } from '../../../components/TabbedContainer';
+import ComingSoon from '../EventsManagement/components/EventDashboard/ComingSoon';
 
 function Members({ expandedClass, org }) {
     const { user } = useAuth();
@@ -258,7 +259,7 @@ function Members({ expandedClass, org }) {
                                 />
                             </div>
                         </div>
-                        {canManageMembers && (
+                        {/* {canManageMembers && (
                             
                                 <button
                                 className="view-applications-btn"
@@ -269,7 +270,7 @@ function Members({ expandedClass, org }) {
                                     View Applications
                                 </button>
                             
-                        )}
+                        )} */}
                         {canManageMembers && (
     
                             <button 
@@ -384,7 +385,7 @@ function Members({ expandedClass, org }) {
             'attendence record',
             'Attendence Record',
             'mdi:file-document-multiple',
-            <></>,
+            <ComingSoon feature="Attendance Record" />,
             applications.length.toString(),
             'warning'
         ),

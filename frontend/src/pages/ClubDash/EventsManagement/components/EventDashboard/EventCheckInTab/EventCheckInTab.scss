@@ -6,9 +6,11 @@
 
   .checkin-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 2rem;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
     padding-bottom: 1rem;
     border-bottom: 1px solid var(--lighterborder);
 
@@ -28,22 +30,30 @@
       }
     }
 
-    .refresh-button {
+    .checkin-header-actions {
       display: flex;
       align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .disable-checkin-button {
+      display: inline-flex;
+      align-items: center;
       gap: 0.5rem;
-      padding: 0.75rem 1.5rem;
-      background: #4DAA57;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      font-weight: 500;
+      padding: 0.5rem 1rem;
+      font-size: 0.8125rem;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 9px;
+      background: var(--bg, #fff);
+      color: var(--text-secondary, #6b7280);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.15s ease;
 
       &:hover:not(:disabled) {
-        background: #45a049;
+        background: var(--bg-hover, #f9fafb);
+        color: var(--error, #dc2626);
+        border-color: var(--error, #dc2626);
       }
 
       &:disabled {
@@ -55,125 +65,197 @@
       svg {
         font-size: 1.1rem;
       }
+
+      .spin {
+        animation: checkin-spin 0.8s linear infinite;
+      }
+    }
+
+    .checkin-settings-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.8125rem;
+      border: 1px solid var(--lighterborder);
+      border-radius: 9px;
+      background: var(--background);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      &:hover {
+        background: var(--offwhite);
+        border-color: var(--border);
+      }
+
+      iconify-icon, svg { font-size: 1.1rem; }
+    }
+
+    .refresh-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.8125rem;
+      border: 1px solid var(--primary, #4DAA57);
+      border-radius: 9px;
+      background: var(--primary, #4DAA57);
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      &:hover:not(:disabled) {
+        background: rgba(77, 170, 87, 0.9);
+        filter: brightness(1.05);
+      }
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      iconify-icon,
+      svg {
+        font-size: 1.1rem;
+      }
+
+      .spin {
+        animation: checkin-spin 0.8s linear infinite;
+      }
     }
   }
 
-  .checkin-disabled-message {
-    text-align: center;
-    padding: 3rem 1.5rem;
-    color: var(--light-text);
+  @keyframes checkin-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .enable-checkin-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: #4DAA57;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+      background: #45a049;
+    }
+
+    &:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
 
     iconify-icon,
     svg {
-      font-size: 3rem;
-      color: var(--light-text);
-      margin-bottom: 1rem;
-      opacity: 0.7;
-    }
-
-    h3 {
       font-size: 1.25rem;
-      font-weight: 600;
-      margin: 0 0 0.5rem 0;
-      color: var(--text);
-    }
-
-    p {
-      font-size: 0.95rem;
-      margin: 0;
     }
   }
 
   .checkin-stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
     margin-bottom: 2rem;
-
-    .stat-card {
-      background: var(--lightbackground);
-      border: 1px solid var(--lighterborder);
-      border-radius: 12px;
-      padding: 1.5rem;
-      text-align: center;
-      box-shadow: var(--shadow);
-
-      .stat-value {
-        font-size: 1.75rem;
-        font-weight: 700;
-        color: var(--text);
-        margin-bottom: 0.25rem;
-        display: block;
-      }
-
-      .stat-label {
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: var(--light-text);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-    }
   }
 
   .checkin-methods {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 1.5rem;
     margin-bottom: 2rem;
 
-    .checkin-method-card {
-      background: var(--lightbackground);
-      border: 1px solid var(--lighterborder);
-      border-radius: 12px;
-      padding: 1.5rem;
-      box-shadow: var(--shadow);
+    /* Auto-fit: one column when narrow, two when wide. Equal columns when both fit. */
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 
-      h3 {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 1.125rem;
-        font-weight: 600;
-        margin: 0 0 1.25rem 0;
-        color: var(--text);
+    /* When QR is present and there's room for both, give QR less width so attendees get more */
+    &:has(.checkin-section-qr) {
+      grid-template-columns: minmax(320px, 0.35fr) 1fr;
+    }
 
-        iconify-icon,
-        svg {
-          font-size: 1.25rem;
-          color: #4DAA57;
-        }
-      }
-
-      .loading-placeholder {
-        text-align: center;
-        padding: 2.5rem;
-        color: var(--light-text);
-        font-size: 0.95rem;
+    /* Wrap: when both can't fit, stack (one column) */
+    @media (max-width: 720px) {
+      &:has(.checkin-section-qr) {
+        grid-template-columns: 1fr;
       }
     }
   }
 
-  .checkin-attendees-section {
-    background: var(--lightbackground);
-    border: 1px solid var(--lighterborder);
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: var(--shadow);
+  .copy-checkin-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--primary, #4DAA57);
+    border-radius: 9px;
+    background: var(--primary, #4DAA57);
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.15s ease;
 
-    h3 {
-      display: flex;
+    &:hover {
+      background: rgba(77, 170, 87, 0.9);
+      filter: brightness(1.05);
+    }
+
+    iconify-icon,
+    svg {
+      font-size: 1.1rem;
+    }
+  }
+
+  .checkin-link-loading {
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
+  }
+
+  .checkin-section {
+    &.checkin-section-attendees {
+      margin-bottom: 0;
+    }
+  }
+
+  .checkin-section-content {
+    padding: 1rem 1.5rem;
+
+    .loading-placeholder {
+      text-align: center;
+      padding: 2.5rem;
+      color: var(--light-text);
+      font-size: 0.95rem;
+    }
+
+    .manual-checkin-button {
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 0.5rem;
-      font-size: 1.125rem;
-      font-weight: 600;
-      margin: 0 0 1.25rem 0;
-      color: var(--text);
+      padding: 0.75rem 1.5rem;
+      background: var(--primary, #4DAA57);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: #45a049;
+      }
 
       iconify-icon,
       svg {
-        font-size: 1.25rem;
-        color: #4DAA57;
+        font-size: 1.1rem;
       }
     }
   }
@@ -251,3 +333,4 @@
     }
   }
 }
+

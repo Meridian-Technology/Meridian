@@ -50,11 +50,11 @@ function QRCodeDisplay({ qrCode, eventName }) {
             </div>
             <div className="qr-code-actions">
                 <button className="action-button" onClick={handleDownload}>
-                    <Icon icon="mdi:download" />
+                    <Icon icon="mingcute:download-fill" />
                     Download
                 </button>
                 <button className="action-button" onClick={handleShare}>
-                    <Icon icon={copied ? 'mdi:check' : 'mdi:share'} />
+                    <Icon icon={copied ? 'mdi:check' : 'mingcute:share-forward-fill'} />
                     {copied ? 'Copied!' : 'Share'}
                 </button>
             </div>

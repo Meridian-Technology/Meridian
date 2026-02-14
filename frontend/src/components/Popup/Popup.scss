@@ -57,6 +57,13 @@
     &.narrow-content{
       max-width: 400px;
     }
+    
+    &.medium-content{
+      max-width: 600px;
+      width:95%;
+      max-height:600px;
+      height:600px;
+    }
 
     &.wide-content{
       max-width: 1000px;
