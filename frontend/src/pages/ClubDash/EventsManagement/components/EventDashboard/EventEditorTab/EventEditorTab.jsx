@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
+import useUnsavedChanges from '../../../../../../hooks/useUnsavedChanges';
 import DynamicFormField from '../../../../../../components/DynamicFormField/DynamicFormField';
 import ImageUpload from '../../../../../../components/ImageUpload/ImageUpload';
 import Popup from '../../../../../../components/Popup/Popup';
 import RoomSelectorV2 from '../../../../../../pages/CreateEventV2/Steps/Where/RoomSelectorV2/RoomSelectorV2';
 import When from '../../../../../../pages/CreateEventV2/Steps/When/When';
 import apiRequest from '../../../../../../utils/postRequest';
-import CreateRegistrationFormModal from '../CreateRegistrationFormModal';
 import './EventEditorTab.scss';
 
 // Separate component for popup content to receive handleClose prop from Popup
@@ -95,20 +95,13 @@ function LocationTimePopupContent({
 
 function EventEditorTab({ event, orgId, onRefresh }) {
     const { addNotification } = useNotification();
-    const [isEditing, setIsEditing] = useState(false);
-    const [saving, setSaving] = useState(false);
     const [showLocationTimePopup, setShowLocationTimePopup] = useState(false);
     const [popupStep, setPopupStep] = useState('location'); // 'location' or 'time'
     const [tempLocationData, setTempLocationData] = useState(null);
     
-    // Form configuration
     const formConfigData = useFetch('/api/event-system-config/form-config');
-    const { data: orgFormsData, refetch: refetchOrgForms } = useFetch(orgId ? `/org-event-management/${orgId}/forms` : null);
-    const orgForms = orgFormsData?.success ? (orgFormsData.data || []) : [];
-    const [showCreateFormModal, setShowCreateFormModal] = useState(false);
-    const [editingFormId, setEditingFormId] = useState(null);
     
-    // Initialize form data from event
+    // Form data: details only (registration/check-in are in their respective tabs)
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -117,16 +110,6 @@ function EventEditorTab({ event, orgId, onRefresh }) {
         expectedAttendance: 0,
         contact: '',
         externalLink: '',
-        registrationEnabled: false,
-        registrationRequired: false,
-        registrationDeadline: null,
-        registrationFormId: null,
-        maxAttendees: null,
-        checkInEnabled: false,
-        checkInMethod: 'both',
-        checkInRequireRegistration: false,
-        checkInAutoCheckIn: false,
-        checkInAllowOnPage: true,
         image: null,
         start_time: null,
         end_time: null,
@@ -142,7 +125,7 @@ function EventEditorTab({ event, orgId, onRefresh }) {
         end_time: null
     });
 
-    // Initialize form data from event prop
+    // Initialize form data from event prop (details only; no rsvp/hosting/registration/check-in)
     useEffect(() => {
         if (event) {
             const initialData = {
@@ -153,31 +136,18 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                 expectedAttendance: event.expectedAttendance || 0,
                 contact: event.contact || '',
                 externalLink: event.externalLink || '',
-                registrationEnabled: event.registrationEnabled ?? event.rsvpEnabled ?? false,
-                registrationRequired: event.registrationRequired ?? event.rsvpRequired ?? false,
-                registrationDeadline: event.registrationDeadline || event.rsvpDeadline ? new Date(event.registrationDeadline || event.rsvpDeadline) : null,
-                registrationFormId: event.registrationFormId || null,
-                maxAttendees: event.maxAttendees || null,
-                checkInEnabled: event.checkInEnabled || false,
-                checkInMethod: event.checkInSettings?.method || 'both',
-                checkInRequireRegistration: event.checkInSettings?.requireRegistration ?? event.checkInSettings?.requireRsvp ?? false,
-                checkInAutoCheckIn: event.checkInSettings?.autoCheckIn || false,
-                checkInAllowOnPage: event.checkInSettings?.allowOnPageCheckIn !== false,
-                image: null, // Will handle image separately
+                image: null,
                 start_time: event.start_time ? new Date(event.start_time) : null,
                 end_time: event.end_time ? new Date(event.end_time) : null,
                 location: event.location || '',
                 classroom_id: event.classroom_id || null,
                 selectedRoomIds: event.classroom_id ? [event.classroom_id] : []
             };
-            
-            // Map custom fields if they exist
             if (event.customFields) {
                 Object.keys(event.customFields).forEach(key => {
                     initialData[key] = event.customFields[key];
                 });
             }
-            
             setFormData(initialData);
             setOriginalData(JSON.parse(JSON.stringify(initialData)));
         }
@@ -195,18 +165,6 @@ function EventEditorTab({ event, orgId, onRefresh }) {
             });
         }
     }, [showLocationTimePopup, popupStep]);
-
-    const handleEdit = () => {
-        setIsEditing(true);
-    };
-
-    const handleCancel = () => {
-        // Reset to original data
-        if (originalData) {
-            setFormData(JSON.parse(JSON.stringify(originalData)));
-        }
-        setIsEditing(false);
-    };
 
     const handleFieldChange = (fieldName, value) => {
         setFormData(prev => ({
@@ -289,18 +247,14 @@ function EventEditorTab({ event, orgId, onRefresh }) {
     const handleSave = async () => {
         const errors = validateForm();
         if (Object.keys(errors).length > 0) {
-            console.log(errors);
             addNotification({
                 title: 'Validation Error',
                 message: 'Please fix all errors before saving',
                 type: 'error'
             });
-            return;
+            return false;
         }
-
-        setSaving(true);
         try {
-            // Prepare update data
             const updateData = {
                 name: formData.name,
                 description: formData.description,
@@ -309,18 +263,6 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                 expectedAttendance: formData.expectedAttendance,
                 contact: formData.contact || '',
                 externalLink: formData.externalLink || '',
-                registrationEnabled: formData.registrationEnabled,
-                registrationRequired: formData.registrationRequired,
-                registrationDeadline: formData.registrationDeadline ? formData.registrationDeadline.toISOString() : null,
-                registrationFormId: formData.registrationFormId || null,
-                maxAttendees: formData.maxAttendees || null,
-                checkInEnabled: formData.checkInEnabled,
-                checkInSettings: {
-                    method: formData.checkInMethod,
-                    requireRegistration: formData.checkInRequireRegistration,
-                    autoCheckIn: formData.checkInAutoCheckIn,
-                    allowOnPageCheckIn: formData.checkInAllowOnPage
-                },
                 start_time: formData.start_time.toISOString(),
                 end_time: formData.end_time.toISOString(),
                 classroom_id: formData.classroom_id,
@@ -330,14 +272,12 @@ function EventEditorTab({ event, orgId, onRefresh }) {
             // Add custom fields if any
             const customFields = {};
             if (formConfigData.data?.data?.fields) {
+                const reserved = ['name', 'description', 'type', 'visibility', 'expectedAttendance',
+                    'contact', 'externalLink', 'start_time', 'end_time', 'location', 'classroom_id',
+                    'selectedRoomIds', 'image', 'hostingId', 'hostingType', 'rsvpEnabled', 'rsvpRequired', 'rsvpDeadline'];
                 formConfigData.data.data.fields.forEach(field => {
-                    if (!['name', 'description', 'type', 'visibility', 'expectedAttendance',
-                          'contact', 'externalLink', 'registrationEnabled', 'registrationRequired', 'registrationDeadline', 'registrationFormId',
-                          'maxAttendees', 'start_time', 'end_time', 'location', 'classroom_id',
-                          'selectedRoomIds', 'image'].includes(field.name)) {
-                        if (formData[field.name] !== undefined) {
-                            customFields[field.name] = formData[field.name];
-                        }
+                    if (!reserved.includes(field.name) && formData[field.name] !== undefined) {
+                        customFields[field.name] = formData[field.name];
                     }
                 });
             }
@@ -367,14 +307,9 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                     message: 'Event updated successfully',
                     type: 'success'
                 });
-                
-                // Update original data
                 setOriginalData(JSON.parse(JSON.stringify(formData)));
-                setIsEditing(false);
-                
-                if (onRefresh) {
-                    onRefresh();
-                }
+                if (onRefresh) onRefresh();
+                return true;
             } else {
                 throw new Error(response.message || 'Failed to update event');
             }
@@ -384,10 +319,19 @@ function EventEditorTab({ event, orgId, onRefresh }) {
                 message: error.message || 'Failed to update event',
                 type: 'error'
             });
-        } finally {
-            setSaving(false);
+            return false;
         }
     };
+
+    const handleDiscard = () => {
+        if (originalData) setFormData(JSON.parse(JSON.stringify(originalData)));
+    };
+    const { hasChanges, saving, handleSave: performSave, handleDiscard: discardChanges } = useUnsavedChanges(
+        originalData,
+        formData,
+        handleSave,
+        handleDiscard
+    );
 
     const formatDate = (date) => {
         if (!date) return 'Not set';
@@ -417,17 +361,11 @@ function EventEditorTab({ event, orgId, onRefresh }) {
     const regularFields = useMemo(() => {
         if (!formConfig?.fields) return [];
         
-        // Fields already shown in other sections
         const excludedFields = [
-            // Basic Information
             'name', 'description', 'type', 'visibility', 'expectedAttendance', 'image',
-            // Date & Time
-            'start_time', 'end_time',
-            // Location
-            'location', 'classroom_id', 'selectedRoomIds',
-            // Contact & Links
+            'start_time', 'end_time', 'location', 'classroom_id', 'selectedRoomIds',
             'contact', 'externalLink',
-            // RSVP Settings
+            'hostingId', 'hostingType', 'rsvpEnabled', 'rsvpRequired', 'rsvpDeadline',
             'registrationEnabled', 'registrationRequired', 'registrationDeadline', 'registrationFormId', 'maxAttendees'
         ];
         
@@ -446,526 +384,156 @@ function EventEditorTab({ event, orgId, onRefresh }) {
     }
 
     return (
-        <div className={`event-editor-tab ${isEditing ? 'editing' : 'locked'}`}>
+        <div className="event-editor-tab">
             <div className="editor-header">
-                <h2>Event Details</h2>
-                {!isEditing ? (
-                    <button className="edit-button" onClick={handleEdit}>
-                        <Icon icon="mdi:pencil" />
-                        Edit
-                    </button>
-                ) : (
+                <h2>Details</h2>
+                {hasChanges && (
                     <div className="editor-actions">
-                        <button className="cancel-button" onClick={handleCancel} disabled={saving}>
-                            Cancel
+                        <button type="button" className="cancel-button" onClick={discardChanges} disabled={saving}>
+                            Discard
                         </button>
-                        <button className="save-button" onClick={handleSave} disabled={saving}>
-                            {saving ? 'Saving...' : 'Save Changes'}
+                        <button type="button" className="save-button" onClick={performSave} disabled={saving}>
+                            {saving ? 'Saving...' : 'Save'}
                         </button>
                     </div>
                 )}
             </div>
 
-            <div className="editor-content">
-                {/* Basic Information Section */}
-                <div className="editor-section">
-                    <h3>Basic Information</h3>
-                    <div className="section-content">
-                        <div className="field-group">
-                            <label>Event Name</label>
-                            {isEditing ? (
-                                <input
-                                    type="text"
-                                    value={formData.name}
-                                    onChange={(e) => handleFieldChange('name', e.target.value)}
-                                    placeholder="Event name"
-                                />
-                            ) : (
-                                <div className="read-only-value">{formData.name || 'Not set'}</div>
-                            )}
-                        </div>
-
-                        <div className="field-group">
-                            <label>Description</label>
-                            {isEditing ? (
-                                <textarea
-                                    value={formData.description || ''}
-                                    onChange={(e) => handleFieldChange('description', e.target.value)}
-                                    placeholder="Event description"
-                                    rows={4}
-                                />
-                            ) : (
-                                <div className="read-only-value">{formData.description || 'Not set'}</div>
-                            )}
-                        </div>
-
-                        <div className="field-row">
-                            <div className="field-group">
-                                <label>Event Type</label>
-                                {isEditing ? (
-                                    <select
-                                        value={formData.type}
-                                        onChange={(e) => handleFieldChange('type', e.target.value)}
-                                    >
-                                        <option value="">Select type</option>
-                                        <option value="study">Study Event</option>
-                                        <option value="workshop">Workshop</option>
-                                        <option value="campus">Campus Event</option>
-                                        <option value="social">Social Event</option>
-                                        <option value="club">Club Event</option>
-                                        <option value="meeting">Club Meeting</option>
-                                        <option value="sports">Sports Event</option>
-                                    </select>
-                                ) : (
-                                    <div className="read-only-value">{formData.type || 'Not set'}</div>
-                                )}
-                            </div>
-
-                            <div className="field-group">
-                                <label>Visibility</label>
-                                {isEditing ? (
-                                    <select
-                                        value={formData.visibility}
-                                        onChange={(e) => handleFieldChange('visibility', e.target.value)}
-                                    >
-                                        <option value="">Select visibility</option>
-                                        <option value="public">Public</option>
-                                        <option value="internal">Internal</option>
-                                        <option value="inviteOnly">Invite Only</option>
-                                    </select>
-                                ) : (
-                                    <div className="read-only-value">{formData.visibility || 'Not set'}</div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="field-group">
-                            <label>Expected Attendance</label>
-                            {isEditing ? (
-                                <input
-                                    type="number"
-                                    value={formData.expectedAttendance}
-                                    onChange={(e) => handleFieldChange('expectedAttendance', parseInt(e.target.value) || 0)}
-                                    min="1"
-                                />
-                            ) : (
-                                <div className="read-only-value">{formData.expectedAttendance || 0}</div>
-                            )}
-                        </div>
-
-                        <div className="field-group">
-                            <label>Event Image</label>
-                            {isEditing ? (
-                                <ImageUpload
-                                    uploadText="Drag your image here"
-                                    onFileSelect={(file) => handleFieldChange('image', file)}
-                                    onFileClear={() => handleFieldChange('image', null)}
-                                    showPrompt={false}
-                                />
-                            ) : (
-                                <div className="read-only-value">
-                                    {event.image ? (
-                                        <img src={event.image} alt="Event" style={{ maxWidth: '200px', maxHeight: '200px' }} />
-                                    ) : (
-                                        'No image'
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+            <div className="editor-content create-event-v3-form">
+                <div className="form-section">
+                    <DynamicFormField
+                        field={{ name: 'name', label: 'Event Name', inputType: 'text', placeholder: 'Event name', validation: {} }}
+                        value={formData.name}
+                        onChange={handleFieldChange}
+                        formData={formData}
+                        errors={{}}
+                        color="var(--primary-color)"
+                    />
                 </div>
 
-                {/* Date, Time & Location Section */}
-                <div className="editor-section">
-                    <h3>Date, Time & Location</h3>
-                    <div className="section-content">
-                        <div className="field-row">
-                            <div className="field-group">
-                                <label>Event Time</label>
-                                <div className="read-only-value">
-                                    {formatDateTime(formData.start_time)} - {formatTime(formData.end_time)}
-                                </div>
-                            </div>
-                            <div className="field-group">
-                                <label>Location</label>
-                                {isEditing ? (
-                                    <input
-                                        type="text"
-                                        value={formData.location || ''}
-                                        onChange={(e) => handleFieldChange('location', e.target.value)}
-                                        placeholder="e.g. Room 101, Off-campus, or address"
-                                    />
-                                ) : (
-                                    <div className="read-only-value">{formData.location || 'Not set'}</div>
-                                )}
-                            </div>
-                        </div>
-                        {isEditing && (
-                            <div className="field-group">
-                                <button 
-                                    type="button" 
-                                    className="change-location-time-button"
-                                    onClick={handleLocationTimePopupOpen}
-                                >
-                                    <Icon icon="mdi:calendar-clock" />
-                                    Change Location & Time
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                <div className="form-section">
+                    <DynamicFormField
+                        field={{ name: 'description', label: 'Description', inputType: 'textarea', placeholder: 'Event description', validation: {}, allowExpand: true }}
+                        value={formData.description || ''}
+                        onChange={handleFieldChange}
+                        formData={formData}
+                        errors={{}}
+                        color="var(--primary-color)"
+                    />
                 </div>
 
-                {/* Contact & Links Section */}
-                <div className="editor-section">
-                    <h3>Contact & Links</h3>
-                    <div className="section-content">
-                        <div className="field-group">
-                            <label>Contact</label>
-                            {isEditing ? (
-                                <input
-                                    type="text"
-                                    value={formData.contact || ''}
-                                    onChange={(e) => handleFieldChange('contact', e.target.value)}
-                                    placeholder="Contact information"
-                                />
-                            ) : (
-                                <div className="read-only-value">{formData.contact || 'Not set'}</div>
-                            )}
-                        </div>
-
-                        <div className="field-group">
-                            <label>External Link</label>
-                            {isEditing ? (
-                                <input
-                                    type="url"
-                                    value={formData.externalLink || ''}
-                                    onChange={(e) => handleFieldChange('externalLink', e.target.value)}
-                                    placeholder="https://..."
-                                />
-                            ) : (
-                                <div className="read-only-value">
-                                    {formData.externalLink ? (
-                                        <a href={formData.externalLink} target="_blank" rel="noopener noreferrer">
-                                            {formData.externalLink}
-                                        </a>
-                                    ) : (
-                                        'Not set'
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                <div className="form-section">
+                    <DynamicFormField
+                        field={{ name: 'type', label: 'Event Type', inputType: 'select', validation: { options: ['study', 'workshop', 'campus', 'social', 'club', 'meeting', 'sports'] }}}
+                        value={formData.type}
+                        onChange={handleFieldChange}
+                        formData={formData}
+                        errors={{}}
+                        color="var(--primary-color)"
+                    />
                 </div>
 
-                {/* Registration Settings Section */}
-                <div className="editor-section">
-                    <h3>Registration Settings</h3>
-                    <div className="section-content">
-                        <div className="field-group">
-                            <label className="checkbox-label">
-                                {isEditing ? (
-                                    <>
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.registrationEnabled}
-                                            onChange={(e) => handleFieldChange('registrationEnabled', e.target.checked)}
-                                        />
-                                        <span>Enable registration</span>
-                                    </>
-                                ) : (
-                                    <div className="read-only-value">
-                                        Registration {formData.registrationEnabled ? 'Enabled' : 'Disabled'}
-                                    </div>
-                                )}
-                            </label>
-                        </div>
-
-                        {formData.registrationEnabled && (
-                            <>
-                                <div className="field-group">
-                                    <label className="checkbox-label">
-                                        {isEditing ? (
-                                            <>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={formData.registrationRequired}
-                                                    onChange={(e) => handleFieldChange('registrationRequired', e.target.checked)}
-                                                />
-                                                <span>Require registration</span>
-                                            </>
-                                        ) : (
-                                            <div className="read-only-value">
-                                                Registration {formData.registrationRequired ? 'Required' : 'Optional'}
-                                            </div>
-                                        )}
-                                    </label>
-                                </div>
-
-                                <div className="field-row">
-                                    <div className="field-group">
-                                        <label>Registration deadline</label>
-                                        {isEditing ? (
-                                            <input
-                                                type="datetime-local"
-                                                value={formData.registrationDeadline ? new Date(formData.registrationDeadline).toISOString().slice(0, 16) : ''}
-                                                onChange={(e) => handleFieldChange('registrationDeadline', e.target.value ? new Date(e.target.value) : null)}
-                                            />
-                                        ) : (
-                                            <div className="read-only-value">
-                                                {formData.registrationDeadline ? formatDateTime(formData.registrationDeadline) : 'Not set'}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="field-group">
-                                        <label>Max Attendees</label>
-                                        {isEditing ? (
-                                            <input
-                                                type="number"
-                                                value={formData.maxAttendees || ''}
-                                                onChange={(e) => handleFieldChange('maxAttendees', e.target.value ? parseInt(e.target.value) : null)}
-                                                placeholder="No limit"
-                                                min="1"
-                                            />
-                                        ) : (
-                                            <div className="read-only-value">
-                                                {formData.maxAttendees || 'No limit'}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="field-group">
-                                    <label>Registration form</label>
-                                    {isEditing ? (
-                                        <div className="registration-form-select-row">
-                                            <select
-                                                value={formData.registrationFormId || ''}
-                                                onChange={(e) => handleFieldChange('registrationFormId', e.target.value || null)}
-                                            >
-                                                <option value="">None</option>
-                                                {orgForms.map((f) => (
-                                                    <option key={f._id} value={f._id}>
-                                                        {f.title}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <button
-                                                type="button"
-                                                className="create-form-btn"
-                                                onClick={() => { setEditingFormId(null); setShowCreateFormModal(true); }}
-                                            >
-                                                <Icon icon="mdi:plus" />
-                                                Create form
-                                            </button>
-                                            {formData.registrationFormId && (
-                                                <button
-                                                    type="button"
-                                                    className="edit-form-btn"
-                                                    onClick={() => {
-                                                        const f = orgForms.find((x) => x._id === formData.registrationFormId);
-                                                        if (f) setEditingFormId(f._id);
-                                                        setShowCreateFormModal(true);
-                                                    }}
-                                                >
-                                                    <Icon icon="mdi:pencil" />
-                                                    Edit form
-                                                </button>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="read-only-value">
-                                            {formData.registrationFormId && orgForms.length
-                                                ? (orgForms.find((f) => f._id === formData.registrationFormId)?.title || formData.registrationFormId)
-                                                : 'None'}
-                                        </div>
-                                    )}
-                                    <p className="field-hint">Optional form attendees fill out when registering.</p>
-                                </div>
-                                {showCreateFormModal && (
-                                    <CreateRegistrationFormModal
-                                        orgId={orgId}
-                                        formId={editingFormId || undefined}
-                                        initialForm={editingFormId ? orgForms.find((f) => f._id === editingFormId) : undefined}
-                                        onCreated={(newFormId) => {
-                                            refetchOrgForms();
-                                            if (!editingFormId && newFormId) handleFieldChange('registrationFormId', newFormId);
-                                        }}
-                                        onClose={() => { setShowCreateFormModal(false); setEditingFormId(null); }}
-                                    />
-                                )}
-                            </>
-                        )}
-                    </div>
+                <div className="form-section">
+                    <DynamicFormField
+                        field={{ name: 'visibility', label: 'Visibility', inputType: 'select', validation: { options: ['public', 'internal', 'inviteOnly'] }}}
+                        value={formData.visibility}
+                        onChange={handleFieldChange}
+                        formData={formData}
+                        errors={{}}
+                        color="var(--primary-color)"
+                    />
                 </div>
 
-                {/* Check-In Settings Section */}
-                <div className="editor-section checkin-settings-section">
-                    <h3>Check-In</h3>
-                    <p className="section-description">
-                        Let attendees mark that they&apos;re here using a QR code, link, or a button on the event page.
-                    </p>
-                    <div className="section-content">
-                        <div className="field-group checkin-master-toggle">
-                            <label className="checkbox-label">
-                                {isEditing ? (
-                                    <>
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.checkInEnabled}
-                                            onChange={(e) => handleFieldChange('checkInEnabled', e.target.checked)}
-                                        />
-                                        <span>Enable check-in for this event</span>
-                                    </>
-                                ) : (
-                                    <div className="read-only-value">
-                                        Check-in {formData.checkInEnabled ? 'enabled' : 'disabled'}
-                                    </div>
-                                )}
-                            </label>
-                        </div>
-
-                        {formData.checkInEnabled && (
-                            <>
-                                <div className="checkin-subsection">
-                                    <h4 className="subsection-title">Ways to check in</h4>
-                                    <div className="field-group">
-                                        <label className="field-label">QR code & link</label>
-                                        {isEditing ? (
-                                            <div className="radio-group">
-                                                <label className="radio-label">
-                                                    <input
-                                                        type="radio"
-                                                        name="checkInMethod"
-                                                        value="qr"
-                                                        checked={formData.checkInMethod === 'qr'}
-                                                        onChange={(e) => handleFieldChange('checkInMethod', e.target.value)}
-                                                    />
-                                                    <span>QR code only</span>
-                                                </label>
-                                                <label className="radio-label">
-                                                    <input
-                                                        type="radio"
-                                                        name="checkInMethod"
-                                                        value="link"
-                                                        checked={formData.checkInMethod === 'link'}
-                                                        onChange={(e) => handleFieldChange('checkInMethod', e.target.value)}
-                                                    />
-                                                    <span>Link only</span>
-                                                </label>
-                                                <label className="radio-label">
-                                                    <input
-                                                        type="radio"
-                                                        name="checkInMethod"
-                                                        value="both"
-                                                        checked={formData.checkInMethod === 'both'}
-                                                        onChange={(e) => handleFieldChange('checkInMethod', e.target.value)}
-                                                    />
-                                                    <span>Both</span>
-                                                </label>
-                                            </div>
-                                        ) : (
-                                            <div className="read-only-value">
-                                                {formData.checkInMethod === 'qr' ? 'QR code only' :
-                                                 formData.checkInMethod === 'link' ? 'Link only' : 'Both'}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="field-group">
-                                        <label className="checkbox-label">
-                                            {isEditing ? (
-                                                <>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formData.checkInAllowOnPage}
-                                                        onChange={(e) => handleFieldChange('checkInAllowOnPage', e.target.checked)}
-                                                    />
-                                                    <span>Allow check-in from event page</span>
-                                                </>
-                                            ) : (
-                                                <div className="read-only-value">
-                                                    Event page check-in: {formData.checkInAllowOnPage ? 'Yes' : 'No'}
-                                                </div>
-                                            )}
-                                        </label>
-                                        <p className="field-hint">Show a &quot;Check in&quot; button on the event page (web &amp; app) during the event.</p>
-                                    </div>
-                                </div>
-
-                                <div className="checkin-subsection">
-                                    <h4 className="subsection-title">Options</h4>
-                                    <div className="field-group">
-                                        <label className="checkbox-label">
-                                            {isEditing ? (
-                                                <>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formData.checkInRequireRegistration}
-                                                        onChange={(e) => handleFieldChange('checkInRequireRegistration', e.target.checked)}
-                                                    />
-                                                    <span>Require registration to check in</span>
-                                                </>
-                                            ) : (
-                                                <div className="read-only-value">
-                                                    Require registration: {formData.checkInRequireRegistration ? 'Yes' : 'No'}
-                                                </div>
-                                            )}
-                                        </label>
-                                        <p className="field-hint">Attendees must register before they can check in.</p>
-                                    </div>
-                                    <div className="field-group">
-                                        <label className="checkbox-label">
-                                            {isEditing ? (
-                                                <>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={formData.checkInAutoCheckIn}
-                                                        onChange={(e) => handleFieldChange('checkInAutoCheckIn', e.target.checked)}
-                                                    />
-                                                    <span>Auto check-in when using link or QR</span>
-                                                </>
-                                            ) : (
-                                                <div className="read-only-value">
-                                                    Auto check-in: {formData.checkInAutoCheckIn ? 'On' : 'Off'}
-                                                </div>
-                                            )}
-                                        </label>
-                                        <p className="field-hint">Skip the confirmation page and check in immediately when they open the link or scan the QR.</p>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-                    </div>
+                <div className="form-section">
+                    <DynamicFormField
+                        field={{ name: 'expectedAttendance', label: 'Expected Attendance', inputType: 'number', placeholder: '1', validation: { min: 1 } }}
+                        value={formData.expectedAttendance}
+                        onChange={handleFieldChange}
+                        formData={formData}
+                        errors={{}}
+                        color="var(--primary-color)"
+                    />
                 </div>
 
-                {/* Custom Fields Section */}
+                <div className="form-section">
+                    <label className="section-label">Event Image</label>
+                    <ImageUpload
+                        uploadText="Drag your image here"
+                        onFileSelect={(file) => handleFieldChange('image', file)}
+                        onFileClear={() => handleFieldChange('image', null)}
+                        showPrompt={false}
+                        showActions={false}
+                        initialImageUrl={event?.image}
+                        color="var(--primary-color)"
+                    />
+                </div>
+
+                <div className="form-section">
+                    <label className="section-label">Date & Time</label>
+                    <div className="read-only-value">
+                        {formatDateTime(formData.start_time)} – {formatTime(formData.end_time)}
+                    </div>
+                    <button
+                        type="button"
+                        className="change-location-time-button"
+                        onClick={handleLocationTimePopupOpen}
+                    >
+                        <Icon icon="mdi:calendar-clock" />
+                        Change Location & Time
+                    </button>
+                </div>
+
+                <div className="form-section">
+                    <DynamicFormField
+                        field={{ name: 'location', label: 'Location', inputType: 'text', placeholder: 'e.g. Room 101, Off-campus, or address', validation: {} }}
+                        value={formData.location || ''}
+                        onChange={handleFieldChange}
+                        formData={formData}
+                        errors={{}}
+                        color="var(--primary-color)"
+                    />
+                </div>
+
+                <div className="form-section">
+                    <DynamicFormField
+                        field={{ name: 'contact', label: 'Contact', inputType: 'text', placeholder: 'Contact information', validation: {} }}
+                        value={formData.contact || ''}
+                        onChange={handleFieldChange}
+                        formData={formData}
+                        errors={{}}
+                        color="var(--primary-color)"
+                    />
+                </div>
+
+                <div className="form-section">
+                    <DynamicFormField
+                        field={{ name: 'externalLink', label: 'External Link', inputType: 'url', placeholder: 'https://...', validation: {} }}
+                        value={formData.externalLink || ''}
+                        onChange={handleFieldChange}
+                        formData={formData}
+                        errors={{}}
+                        color="var(--primary-color)"
+                    />
+                </div>
+
                 {regularFields.length > 0 && (
-                    <div className="editor-section">
-                        <h3>Additional Information</h3>
-                        <div className="section-content">
-                            {regularFields.map(field => (
-                                <div key={field.name} className="field-group">
-                                    <label>
-                                        {field.label}
-                                        {field.isRequired && <span className="required">*</span>}
-                                    </label>
-                                    {isEditing ? (
-                                        <DynamicFormField
-                                            field={field}
-                                            value={formData[field.name]}
-                                            onChange={handleFieldChange}
-                                            formData={formData}
-                                        />
-                                    ) : (
-                                        <div className="read-only-value">
-                                            {formData[field.name] !== null && formData[field.name] !== undefined
-                                                ? String(formData[field.name])
-                                                : 'Not set'}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                    <div className="form-section">
+                        <label className="section-label">Additional Information</label>
+                        {regularFields.map(field => (
+                            <div key={field.name} className="field-group">
+                                <label className="section-label">
+                                    {field.label}
+                                    {field.isRequired && <span className="required">*</span>}
+                                </label>
+                                <DynamicFormField
+                                    field={field}
+                                    value={formData[field.name]}
+                                    onChange={handleFieldChange}
+                                    formData={formData}
+                                    color="var(--primary-color)"
+                                />
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>

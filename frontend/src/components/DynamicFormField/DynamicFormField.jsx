@@ -5,7 +5,7 @@ import Popup from '../Popup/Popup';
 import TextareaExpandPopup from '../TextareaExpandPopup/TextareaExpandPopup';
 import './DynamicFormField.scss';
 
-const DynamicFormField = ({ field, value, onChange, formData, errors = {}, specialStyling=null }) => {
+const DynamicFormField = ({ field, value, onChange, formData, errors = {}, specialStyling = null, color }) => {
     // Normalize value to never be null - use empty string instead
     const normalizeValue = (val) => {
         if (val === null || val === undefined) {
@@ -240,6 +240,7 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
                         onFileSelect={(file) => handleChange(file)}
                         onFileClear={() => handleChange(null)}
                         showPrompt={false}
+                        color={color}
                     />
                 );
 
@@ -274,7 +275,10 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
     };
 
     return (
-        <div className={`dynamic-form-field ${field.type} ${specialStyling}`}>
+        <div
+            className={`dynamic-form-field ${field.type} ${specialStyling}`}
+            style={color ? { '--dynamic-form-field-color': color } : undefined}
+        >
             <label htmlFor={field.name}>
                 {field.label}
                 {(field.isRequired || field.validation?.required) && (

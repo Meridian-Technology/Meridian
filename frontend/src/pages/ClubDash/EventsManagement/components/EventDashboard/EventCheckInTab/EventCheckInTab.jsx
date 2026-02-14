@@ -8,12 +8,13 @@ import QRCodeDisplay from '../../../../../../components/EventCheckIn/QRCodeDispl
 import CheckInLink from '../../../../../../components/EventCheckIn/CheckInLink';
 import CheckInList from '../../../../../../components/EventCheckIn/CheckInList';
 import EmptyState from '../../../../../../components/EmptyState/EmptyState';
+import CheckInSettingsModal from './CheckInSettingsModal';
 import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
 import KpiCard from '../../../../../../components/Analytics/Dashboard/KpiCard';
 import { useEventRoom } from '../../../../../../WebSocketContext';
 import './EventCheckInTab.scss';
 
-function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
+function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }) {
     const { addNotification } = useNotification();
     const [refreshing, setRefreshing] = useState(false);
     const [qrCodeData, setQrCodeData] = useState(null);
@@ -21,6 +22,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
     const [attendees, setAttendees] = useState([]);
     const [stats, setStats] = useState(null);
     const [showManualCheckInModal, setShowManualCheckInModal] = useState(false);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [enablingCheckIn, setEnablingCheckIn] = useState(false);
     const [disablingCheckIn, setDisablingCheckIn] = useState(false);
 
@@ -292,6 +294,15 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
                 <div className="checkin-header-actions">
                     <button
                         type="button"
+                        className="checkin-settings-button"
+                        onClick={() => setShowSettingsModal(true)}
+                        title="Check-in settings"
+                    >
+                        <Icon icon="mdi:cog" />
+                        Settings
+                    </button>
+                    <button
+                        type="button"
                         className="disable-checkin-button"
                         onClick={handleDisableCheckIn}
                         disabled={disablingCheckIn}
@@ -382,7 +393,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
                     <div className="checkin-section-content">
                         {attendees.length === 0 ? (
                             <EmptyState
-                                icon="mdi:account-check-outline"
+                                icon="mingcute:user-follow-fill"
                                 title="No attendees have checked in yet"
                                 description="Checked-in attendees will appear here. You can manually check in someone from the list of registrations."
                                 actions={
@@ -391,7 +402,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
                                         className="manual-checkin-button"
                                         onClick={() => setShowManualCheckInModal(true)}
                                     >
-                                        <Icon icon="mdi:account-plus" />
+                                        <Icon icon="mingcute:user-add-fill" />
                                         Manually check in attendee
                                     </button>
                                 }
@@ -407,6 +418,15 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
                     </div>
                 </HeaderContainer>
             </div>
+
+            <CheckInSettingsModal
+                isOpen={showSettingsModal}
+                onClose={() => setShowSettingsModal(false)}
+                event={event}
+                orgId={orgId}
+                color={'var(--org-primary)'}
+                onSaved={() => onRefresh?.()}
+            />
 
             {/* Manual check-in modal: pick a registrant not yet checked in */}
             <Popup

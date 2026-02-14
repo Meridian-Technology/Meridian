@@ -71,6 +71,27 @@
       }
     }
 
+    .checkin-settings-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.8125rem;
+      border: 1px solid var(--lighterborder);
+      border-radius: 9px;
+      background: var(--background);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      &:hover {
+        background: var(--offwhite);
+        border-color: var(--border);
+      }
+
+      iconify-icon, svg { font-size: 1.1rem; }
+    }
+
     .refresh-button {
       display: inline-flex;
       align-items: center;
@@ -312,3 +333,4 @@
     }
   }
 }
+

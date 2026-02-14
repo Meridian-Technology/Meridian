@@ -40,7 +40,7 @@
         
         &:focus {
             outline: none;
-            border-color: #6D8EFA;
+            border-color: var(--dynamic-form-field-color, #6D8EFA);
         }
         
         &.error {
@@ -75,7 +75,7 @@
 
             &:hover {
                 background: var(--lighter);
-                border-color: var(--dark-blue);
+                border-color: var(--dynamic-form-field-color, var(--dark-blue));
             }
 
             .iconify {
@@ -99,7 +99,7 @@
                 width: 60px;
                 text-align: center;
                 padding: 0.25rem;
-                border: 1px solid #6D8EFA;
+                border: 1px solid var(--dynamic-form-field-color, #6D8EFA);
                 background: white;
                 border-radius: 4px;
                 font-weight: 500;
@@ -120,7 +120,7 @@
                 width: 20px;
                 height: 20px;
                 border-radius: 50%;
-                background: #6D8EFA;
+                background: var(--dynamic-form-field-color, #6D8EFA);
                 cursor: pointer;
             }
             
@@ -128,7 +128,7 @@
                 width: 20px;
                 height: 20px;
                 border-radius: 50%;
-                background: #6D8EFA;
+                background: var(--dynamic-form-field-color, #6D8EFA);
                 cursor: pointer;
                 border: none;
             }

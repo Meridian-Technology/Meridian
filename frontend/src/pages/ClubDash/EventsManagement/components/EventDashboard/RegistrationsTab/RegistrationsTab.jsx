@@ -4,6 +4,7 @@ import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
 import CreateRegistrationFormModal from '../CreateRegistrationFormModal';
+import RegistrationSettingsModal from './RegistrationSettingsModal';
 import Popup from '../../../../../../components/Popup/Popup';
 import EmptyState from '../../../../../../components/EmptyState/EmptyState';
 import './RegistrationsTab.scss';
@@ -14,7 +15,7 @@ const VIEW_MODES = [
     { id: 'summary', label: 'Summary', icon: 'mdi:chart-bar' }
 ];
 
-function RegistrationsTab({ event, orgId, onRefresh }) {
+function RegistrationsTab({ event, orgId, onRefresh, color }) {
     const { addNotification } = useNotification();
     const [updatingForm, setUpdatingForm] = useState(false);
     const [viewMode, setViewMode] = useState('table');
@@ -28,6 +29,7 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
     const orgForms = formsData?.success ? (formsData.data || []) : [];
     const [showCreateFormModal, setShowCreateFormModal] = useState(false);
     const [editingFormId, setEditingFormId] = useState(null);
+    const [showRegistrationSettingsModal, setShowRegistrationSettingsModal] = useState(false);
 
     const { registrations = [], formResponses = [], registrationFormId } = data?.data || {};
     const hasForm = Boolean(registrationFormId);
@@ -296,6 +298,15 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                         <>
                             <button
                                 type="button"
+                                className="registration-settings-btn"
+                                onClick={() => setShowRegistrationSettingsModal(true)}
+                                title="Registration settings"
+                            >
+                                <Icon icon="mdi:cog" />
+                                Settings
+                            </button>
+                            <button
+                                type="button"
                                 className="disable-registration-btn"
                                 onClick={handleDisableRegistration}
                                 disabled={updatingForm}
@@ -313,7 +324,6 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                                 <Icon icon="mdi:link-variant" />
                                 Copy Link
                             </button>
-
                         </>
                     )}
                     {hasForm && formResponses.length > 0 && (
@@ -578,7 +588,7 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                 <div className="registrations-list-simple">
                     {registrations.length === 0 ? (
                         <EmptyState
-                            icon="mdi:account-group-outline"
+                            icon="mingcute:group-fill"
                             title="No registrations yet"
                             description="Registrations will appear here once people sign up for this event."
                         />
@@ -616,6 +626,20 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                     )}
                 </div>
             )}
+
+            <RegistrationSettingsModal
+                isOpen={showRegistrationSettingsModal}
+                onClose={() => setShowRegistrationSettingsModal(false)}
+                event={event}
+                orgId={orgId}
+                orgForms={orgForms}
+                refetchForms={refetchForms}
+                color={'var(--org-primary)'}
+                onSaved={() => {
+                    onRefresh?.();
+                    refetch?.();
+                }}
+            />
 
             {confirmRemove && (
                 <Popup isOpen onClose={() => setConfirmRemove(null)} customClassName="registrations-confirm-remove-modal">

@@ -397,7 +397,7 @@ function JobsManager({ event, orgId, onRefresh }) {
 
             {orgRoles.length === 0 && (
                 <EmptyState
-                    icon="mdi:information-outline"
+                    icon="mingcute:group-fill"
                     title="No job templates available"
                     description="Create job templates in Settings → Job Templates to assign jobs to this event."
                 />
@@ -405,7 +405,7 @@ function JobsManager({ event, orgId, onRefresh }) {
 
             {roles.length === 0 ? (
                 <EmptyState
-                    icon="mdi:account-group-outline"
+                    icon="mingcute:group-fill"
                     title="No event jobs assigned yet"
                     description="Add event jobs to keep everyone organized."
                 />
