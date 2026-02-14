@@ -4,7 +4,6 @@ const cors = require('cors');
 const path = require('path'); 
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
-const session = require('express-session');
 const passport = require('passport');
 require('dotenv').config();
 const { createServer } = require('http');
@@ -58,21 +57,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Add this for form-encoded data
 app.use(cookieParser());
 
-// Session middleware for SAML
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'secret',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
-}));
-
-// Initialize Passport
+// Express-session and passport.session() deprecated – SAML uses RelayState in request/response; auth is token/cookie-based.
 app.use(passport.initialize());
-app.use(passport.session());
 app.use(express.urlencoded({ extended: true }));
 
 // if (process.env.NODE_ENV === 'production') {

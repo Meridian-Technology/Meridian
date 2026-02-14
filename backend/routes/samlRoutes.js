@@ -133,7 +133,7 @@ function configureSAMLStrategy(school, req) {
     });
 }
 
-//SAML Login endpoint
+//SAML Login endpoint – RelayState is passed to IdP and echoed back in callback (no server session).
 router.get('/login', async (req, res) => {
     try {
         const { relayState } = req.query;
@@ -142,11 +142,9 @@ router.get('/login', async (req, res) => {
         console.log(`SAML login initiated for school: ${school}, relayState: ${relayState}`);
         
         const strategy = await configureSAMLStrategy(school, req);
-        
-        //store relay state in session or pass it through
+        // passport-saml reads RelayState from req.query.RelayState when redirecting to IdP
         if (relayState) {
-            req.session = req.session || {};
-            req.session.relayState = relayState;
+            req.query.RelayState = relayState;
         }
         
         passport.authenticate(strategy, { 
@@ -226,13 +224,8 @@ router.post('/callback', async (req, res) => {
                     path: '/'
                 });
 
-                //get relay state for redirect
-                const relayState = req.session?.relayState || '/room/none';
-                
-                //clear session
-                if (req.session) {
-                    delete req.session.relayState;
-                }
+                // RelayState is echoed back by IdP in POST body (no server session)
+                const relayState = req.body?.RelayState || '/room/none';
 
                 console.log(`SAML authentication successful for user: ${user.email}`);
                 

@@ -113,6 +113,18 @@ export const WebSocketProvider = ({ children }) => {
     eventRoomsRef.current.set(eventId, { handler, count: (prev?.count ?? 0) + 1 });
   }, [ensureConnected]);
 
+  const tryDisconnectIfIdle = useCallback(() => {
+    if (
+      eventRoomsRef.current.size === 0 &&
+      orgApprovalRoomsRef.current.size === 0 &&
+      socketRef.current
+    ) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+      setConnected(false);
+    }
+  }, []);
+
   const unsubscribeEvent = useCallback((eventId) => {
     const entry = eventRoomsRef.current.get(eventId);
     if (!entry) return;
@@ -124,8 +136,9 @@ export const WebSocketProvider = ({ children }) => {
         socket.off(SOCKET_EVENT_CHECK_IN, entry.handler);
         socket.emit(EVENT_ROOM_LEAVE, { eventId });
       }
+      tryDisconnectIfIdle();
     }
-  }, []);
+  }, [tryDisconnectIfIdle]);
 
   const orgApprovalRoomsRef = useRef(new Map());
 
@@ -158,8 +171,9 @@ export const WebSocketProvider = ({ children }) => {
         socket.off(ORG_APPROVED_EVENT, entry.handler);
         socket.emit(ORG_APPROVAL_LEAVE, { orgId });
       }
+      tryDisconnectIfIdle();
     }
-  }, []);
+  }, [tryDisconnectIfIdle]);
 
   const value = {
     connected,

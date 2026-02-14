@@ -249,6 +249,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         event={dashboardData.event}
                         orgId={orgId}
                         onRefresh={handleRefresh}
+                        isTabActive={activeTab === 'checkin'}
                     />
         },
         {

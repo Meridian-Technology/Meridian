@@ -10,7 +10,7 @@ import CheckInList from '../../../../../../components/EventCheckIn/CheckInList';
 import { useEventRoom } from '../../../../../../WebSocketContext';
 import './EventCheckInTab.scss';
 
-function EventCheckInTab({ event, orgId, onRefresh }) {
+function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
     const { addNotification } = useNotification();
     const [refreshing, setRefreshing] = useState(false);
     const [qrCodeData, setQrCodeData] = useState(null);
@@ -49,8 +49,9 @@ function EventCheckInTab({ event, orgId, onRefresh }) {
         showManualCheckInModal && event?._id ? `/attendees/${event._id}` : null
     );
 
-    // Live updates: connect only when on this tab; refetch when someone checks in
-    useEventRoom(event?._id || null, () => {
+    // Live updates: only open websocket when check-in tab is active and check-in is enabled; disconnect when leaving tab
+    const shouldConnect = Boolean(isTabActive && event?.checkInEnabled && event?._id);
+    useEventRoom(shouldConnect ? event._id : null, () => {
         refetchAttendees?.();
         onRefresh?.();
     });

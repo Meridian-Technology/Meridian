@@ -24,6 +24,8 @@ function initSocket(server, corsOptions = {}) {
 
     io = new Server(server, {
         transports: ['websocket', 'polling'],
+        pingInterval: PING_INTERVAL_MS,
+        pingTimeout: 10000, // disconnect if no pong within 10s (frees server memory for dead clients)
         cors: corsOptions.origin
             ? { origin: corsOptions.origin, credentials: true, methods: ['GET', 'POST'] }
             : {
