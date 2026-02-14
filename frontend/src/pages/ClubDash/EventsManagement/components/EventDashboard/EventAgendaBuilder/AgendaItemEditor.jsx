@@ -170,7 +170,7 @@ function AgendaItemEditor({ item, event, latestItemEnd, onSave, onCancel }) {
     const itemTypes = ['Activity', 'Break', 'Setup', 'Breakdown', 'Transition', 'Speaker', 'Custom'];
 
     return (
-        <Popup isOpen={true} onClose={onCancel} customClassName="agenda-item-editor-popup">
+        <Popup isOpen={true} onClose={onCancel} customClassName="agenda-item-editor-popup" hideCloseButton>
             <div className="agenda-item-editor">
                 <div className="editor-header">
                     <h3>

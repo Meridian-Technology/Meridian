@@ -133,7 +133,7 @@ function EventPage() {
                 <img src={Logo} alt="Logo" className="logo" />
             </div>
             <div className="event-content">
-                <div className="back" onClick={() => navigate(-1)}>
+                <div className="back" onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/events-dashboard?page=1')}>
                     <Icon icon="mdi:arrow-left" />
                     <p>Back to Events</p>
                 </div>

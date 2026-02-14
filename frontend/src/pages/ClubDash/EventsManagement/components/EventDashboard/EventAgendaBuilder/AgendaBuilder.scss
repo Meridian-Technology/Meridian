@@ -526,14 +526,11 @@
 }
 
 // Popup styles for editors
-.agenda-item-editor-popup {
-    .popup-content {
-        max-width: 600px;
-        width: 90%;
-    }
-}
+
 
 .agenda-item-editor {
+    width: 90vw;
+    max-width: 600px;
     .editor-header,
     .selector-header {
         display: flex;
