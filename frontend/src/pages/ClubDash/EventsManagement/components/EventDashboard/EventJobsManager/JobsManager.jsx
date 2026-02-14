@@ -9,6 +9,7 @@ import JobShiftScheduler from './JobShiftScheduler';
 import JobPicker from './JobPicker';
 import JobSignup from './JobSignup';
 import MemberDropdown from './MemberDropdown';
+import EmptyState from '../../../../../../components/EmptyState/EmptyState';
 import './JobsManager.scss';
 
 function JobsManager({ event, orgId, onRefresh }) {
@@ -395,20 +396,19 @@ function JobsManager({ event, orgId, onRefresh }) {
             </div>
 
             {orgRoles.length === 0 && (
-                <div className="empty-roles">
-                    <Icon icon="mdi:information-outline" />
-                    <h4>No job templates available</h4>
-                    <p>Create job templates in Settings → Job Templates to assign jobs to this event.</p>
-                </div>
+                <EmptyState
+                    icon="mdi:information-outline"
+                    title="No job templates available"
+                    description="Create job templates in Settings → Job Templates to assign jobs to this event."
+                />
             )}
 
             {roles.length === 0 ? (
-                <div className="empty-roles">
-                    <Icon icon="mdi:account-group-outline" />
-                    <h4>No event jobs assigned yet</h4>
-                    <p>Add event jobs to keep everyone organized.</p>
-  
-                </div>
+                <EmptyState
+                    icon="mdi:account-group-outline"
+                    title="No event jobs assigned yet"
+                    description="Add event jobs to keep everyone organized."
+                />
             ) : (
                 <div className="roles-list">
                     {roles.map(role => {

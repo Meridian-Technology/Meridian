@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import './MyEventsContent.scss';
 import { useFetch } from '../../../../hooks/useFetch';
 import MyEventCard from '../MyEventCard/MyEventCard';
+import EmptyState from '../../../../components/EmptyState/EmptyState';
 
 const MyEventsContent = () => {
     const [selectedFilter, setSelectedFilter] = useState('upcoming');
@@ -94,9 +95,7 @@ const MyEventsContent = () => {
                             ))}
                         </div>
                     ) : (
-                        <div className="empty-state">
-                            <p>{emptyCase}</p>
-                        </div>
+                        <EmptyState title={emptyCase} />
                     )}
                 </div>
             </div>

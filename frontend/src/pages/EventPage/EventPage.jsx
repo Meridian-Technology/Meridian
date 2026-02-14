@@ -17,6 +17,7 @@ import EventAnalytics from '../../components/EventAnalytics/EventAnalytics';
 import AgendaEditor from '../../components/AgendaEditor/AgendaEditor';
 import { useEventRoom } from '../../WebSocketContext';
 import Popup from '../../components/Popup/Popup';
+import EmptyState from '../../components/EmptyState/EmptyState';
 import AgendaDailyCalendar from '../ClubDash/EventsManagement/components/EventDashboard/EventAgendaBuilder/AgendaDailyCalendar/AgendaDailyCalendar';
 import { getStoredMinuteHeightPx } from '../../utils/agendaViewPreferences';
 
@@ -262,15 +263,26 @@ function EventPage() {
                                     </h3>
                                 </div>
                                 <div className="event-agenda-modal-content">
-                                    <AgendaDailyCalendar
-                                        agendaItems={(event.eventAgenda?.items || []).map((item) => ({
-                                            ...item,
-                                            startTime: item.startTime ? (typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime) : null,
-                                            endTime: item.endTime ? (typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime) : null
-                                        }))}
-                                        event={event}
-                                        minuteHeight={getStoredMinuteHeightPx()}
-                                    />
+                                    {(event.eventAgenda?.items || []).length === 0 ? (
+                                        <EmptyState
+                                            icon="mdi:calendar-blank"
+                                            title="No agenda items yet"
+                                            description="The host hasn't added a schedule for this event."
+                                            actions={[
+                                                { label: 'Close', onClick: () => setShowAgendaModal(false) }
+                                            ]}
+                                        />
+                                    ) : (
+                                        <AgendaDailyCalendar
+                                            agendaItems={(event.eventAgenda?.items || []).map((item) => ({
+                                                ...item,
+                                                startTime: item.startTime ? (typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime) : null,
+                                                endTime: item.endTime ? (typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime) : null
+                                            }))}
+                                            event={event}
+                                            minuteHeight={getStoredMinuteHeightPx()}
+                                        />
+                                    )}
                                 </div>
                             </div>
                         </Popup>

@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../NotificationContext';
 import apiRequest from '../../../../../utils/postRequest';
+import HeaderContainer from '../../../../../components/HeaderContainer/HeaderContainer';
 import './EventDashboard.scss';
 
 function EventAnalyticsDetail({ event, orgId, onRefresh }) {
@@ -159,11 +160,12 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
             </div>
 
             <div className="analytics-grid">
-                <div className="analytics-card">
-                    <div className="card-header">
-                        <Icon icon="mdi:eye" />
-                        <h4>Views</h4>
-                    </div>
+                <HeaderContainer
+                    icon="mdi:eye"
+                    header="Views"
+                    classN="analytics-card"
+                    size="1rem"
+                >
                     <div className="card-content">
                         <div className="views-grid">
                             <div className="views-squares-wrapper">
@@ -196,13 +198,14 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                             </div>
                         </div>
                     </div>
-                </div>
+                </HeaderContainer>
 
-                <div className="analytics-card">
-                    <div className="card-header">
-                        <Icon icon="mingcute:trending-up-fill" />
-                        <h4>Engagement</h4>
-                    </div>
+                <HeaderContainer
+                    icon="mingcute:trending-up-fill"
+                    header="Engagement"
+                    classN="analytics-card"
+                    size="1rem"
+                >
                     <div className="card-content">
                         <div className="stat-large">
                             <span className="stat-value">{engagementRate.toFixed(1)}%</span>
@@ -223,13 +226,14 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                             </div>
                         </div>
                     </div>
-                </div>
+                </HeaderContainer>
 
-                <div className="analytics-card">
-                    <div className="card-header">
-                        <Icon icon="mingcute:chart-line-fill" />
-                        <h4>Conversion & Activity</h4>
-                    </div>
+                <HeaderContainer
+                    icon="mingcute:chart-line-fill"
+                    header="Conversion & Activity"
+                    classN="analytics-card"
+                    size="1rem"
+                >
                     <div className="card-content">
                         <div className="conversion-metrics">
                             <div className="conversion-item">
@@ -265,15 +269,16 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                             </div>
                         </div>
                     </div>
-                </div>
+                </HeaderContainer>
             </div>
 
             {loggedInViews.length > 0 && (
-                <div className="logged-in-views-section">
-                    <h3>
-                        <Icon icon="mingcute:eye-fill" />
-                        Logged-in Views
-                    </h3>
+                <HeaderContainer
+                    icon="mingcute:eye-fill"
+                    header="Logged-in Views"
+                    classN="logged-in-views-section"
+                    size="1.25rem"
+                >
                     <div className="logged-in-views-list">
                         {loggedInViews.slice(0, 20).map((view, index) => (
                             <div key={index} className="history-item">
@@ -292,7 +297,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                             </div>
                         )}
                     </div>
-                </div>
+                </HeaderContainer>
             )}
 
             {/* <div className="analytics-actions">

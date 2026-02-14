@@ -9,6 +9,7 @@ import AgendaItemEditor from './AgendaItemEditor';
 import AgendaDailyCalendar from './AgendaDailyCalendar/AgendaDailyCalendar';
 import PublishConfirmModal from './PublishConfirmModal';
 import DeleteConfirmModal from '../../../../../../components/DeleteConfirmModal/DeleteConfirmModal';
+import EmptyState from '../../../../../../components/EmptyState/EmptyState';
 import { getStoredAgendaView } from '../../../../../../utils/agendaViewPreferences';
 import './AgendaBuilder.scss';
 
@@ -490,11 +491,12 @@ function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
                     />
                 </div>
             ) : items.length === 0 ? (
-                <div className="empty-agenda">
-                    <Icon icon="mdi:calendar-blank" />
-                    <h4>No agenda items yet</h4>
-                    <p>Start building your event agenda by adding items</p>
-                </div>
+                <EmptyState
+                    icon="mdi:calendar-blank"
+                    title="No agenda items yet"
+                    description="Start building your event agenda by adding items."
+                    actions={[{ label: 'Add first item', onClick: handleAddItem, primary: true }]}
+                />
             ) : (
                 <div className="agenda-items-container">
                     {[...items]

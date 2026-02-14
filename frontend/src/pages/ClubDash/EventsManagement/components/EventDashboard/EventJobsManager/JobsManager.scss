@@ -90,36 +90,6 @@
         }
     }
 
-    .empty-roles {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 4rem 2rem;
-        text-align: center;
-        background: var(--lightbackground);
-        border: 2px dashed var(--lighterborder);
-        border-radius: 12px;
-
-        iconify-icon {
-            font-size: 4rem;
-            color: var(--light-text);
-            margin-bottom: 1rem;
-        }
-
-        h4 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--text);
-            margin: 0 0 0.5rem 0;
-        }
-
-        p {
-            color: var(--light-text);
-            margin: 0 0 1.5rem 0;
-        }
-    }
-
     .roles-list {
         display: flex;
         flex-direction: column;

@@ -5,6 +5,7 @@ import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
 import CreateRegistrationFormModal from '../CreateRegistrationFormModal';
 import Popup from '../../../../../../components/Popup/Popup';
+import EmptyState from '../../../../../../components/EmptyState/EmptyState';
 import './RegistrationsTab.scss';
 
 const VIEW_MODES = [
@@ -295,15 +296,6 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                         <>
                             <button
                                 type="button"
-                                className="copy-registration-link-btn"
-                                onClick={copyRegistrationLink}
-                                title="Copy registration link"
-                            >
-                                <Icon icon="mdi:link-variant" />
-                                Copy Link
-                            </button>
-                            <button
-                                type="button"
                                 className="disable-registration-btn"
                                 onClick={handleDisableRegistration}
                                 disabled={updatingForm}
@@ -312,6 +304,16 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
                                 <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:account-off'} className={updatingForm ? 'spin' : ''} />
                                 {updatingForm ? 'Disabling...' : 'Disable'}
                             </button>
+                            <button
+                                type="button"
+                                className="copy-registration-link-btn"
+                                onClick={copyRegistrationLink}
+                                title="Copy registration link"
+                            >
+                                <Icon icon="mdi:link-variant" />
+                                Copy Link
+                            </button>
+
                         </>
                     )}
                     {hasForm && formResponses.length > 0 && (
@@ -575,7 +577,11 @@ function RegistrationsTab({ event, orgId, onRefresh }) {
             ) : (
                 <div className="registrations-list-simple">
                     {registrations.length === 0 ? (
-                        <p className="empty">No registrations yet.</p>
+                        <EmptyState
+                            icon="mdi:account-group-outline"
+                            title="No registrations yet"
+                            description="Registrations will appear here once people sign up for this event."
+                        />
                     ) : (
                         <ul>
                             {registrations.map((reg, i) => {

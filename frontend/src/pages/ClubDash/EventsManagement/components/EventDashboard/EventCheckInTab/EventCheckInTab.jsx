@@ -7,6 +7,9 @@ import Popup from '../../../../../../components/Popup/Popup';
 import QRCodeDisplay from '../../../../../../components/EventCheckIn/QRCodeDisplay';
 import CheckInLink from '../../../../../../components/EventCheckIn/CheckInLink';
 import CheckInList from '../../../../../../components/EventCheckIn/CheckInList';
+import EmptyState from '../../../../../../components/EmptyState/EmptyState';
+import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
+import KpiCard from '../../../../../../components/Analytics/Dashboard/KpiCard';
 import { useEventRoom } from '../../../../../../WebSocketContext';
 import './EventCheckInTab.scss';
 
@@ -18,6 +21,8 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
     const [attendees, setAttendees] = useState([]);
     const [stats, setStats] = useState(null);
     const [showManualCheckInModal, setShowManualCheckInModal] = useState(false);
+    const [enablingCheckIn, setEnablingCheckIn] = useState(false);
+    const [disablingCheckIn, setDisablingCheckIn] = useState(false);
 
     // Fetch QR code if check-in is enabled and method includes QR
     const { data: qrResponse, refetch: refetchQR } = useFetch(
@@ -90,6 +95,27 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
             console.error('Error refreshing check-in data:', error);
         } finally {
             setRefreshing(false);
+        }
+    };
+
+    const [linkCopied, setLinkCopied] = useState(false);
+    const handleCopyCheckInLink = async () => {
+        if (!checkInLink) return;
+        try {
+            await navigator.clipboard.writeText(checkInLink);
+            setLinkCopied(true);
+            setTimeout(() => setLinkCopied(false), 2000);
+            addNotification({
+                title: 'Copied',
+                message: 'Check-in link copied to clipboard',
+                type: 'success'
+            });
+        } catch (err) {
+            addNotification({
+                title: 'Error',
+                message: err?.message || 'Failed to copy link',
+                type: 'error'
+            });
         }
     };
 
@@ -166,14 +192,88 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
         return <div className="event-checkin-tab">Loading...</div>;
     }
 
+    const handleEnableCheckIn = async () => {
+        setEnablingCheckIn(true);
+        try {
+            const response = await apiRequest(
+                `/events/${event._id}/check-in/enable`,
+                {},
+                { method: 'POST' }
+            );
+            if (response.success) {
+                addNotification({
+                    title: 'Success',
+                    message: 'Check-in is now enabled for this event.',
+                    type: 'success'
+                });
+                if (onRefresh) {
+                    onRefresh();
+                }
+            } else {
+                throw new Error(response.message || 'Failed to enable check-in');
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: error.message || 'Failed to enable check-in',
+                type: 'error'
+            });
+        } finally {
+            setEnablingCheckIn(false);
+        }
+    };
+
+    const handleDisableCheckIn = async () => {
+        if (!event?._id) return;
+        setDisablingCheckIn(true);
+        try {
+            const response = await apiRequest(
+                `/events/${event._id}/check-in/disable`,
+                {},
+                { method: 'POST' }
+            );
+            if (response.success) {
+                addNotification({
+                    title: 'Success',
+                    message: 'Check-in is now disabled for this event.',
+                    type: 'success'
+                });
+                if (onRefresh) {
+                    onRefresh();
+                }
+            } else {
+                throw new Error(response.message || 'Failed to disable check-in');
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: error.message || 'Failed to disable check-in',
+                type: 'error'
+            });
+        } finally {
+            setDisablingCheckIn(false);
+        }
+    };
+
     if (!event.checkInEnabled) {
         return (
             <div className="event-checkin-tab">
-                <div className="checkin-disabled-message">
-                    <Icon icon="mdi:qrcode-scan" />
-                    <h3>Check-In Not Enabled</h3>
-                    <p>Enable check-in in the Edit tab to start tracking attendance.</p>
-                </div>
+                <EmptyState
+                    icon="mdi:qrcode-scan"
+                    title="Check-In Not Enabled"
+                    description="Enable check-in to start tracking attendance with QR code, link, or manual check-in. You can change QR/link options in the Edit tab after enabling."
+                    actions={
+                        <button
+                            type="button"
+                            className="enable-checkin-button"
+                            onClick={handleEnableCheckIn}
+                            disabled={enablingCheckIn}
+                        >
+                            <Icon icon={enablingCheckIn ? 'mdi:loading' : 'mdi:qrcode-scan'} className={enablingCheckIn ? 'spin' : ''} />
+                            {enablingCheckIn ? 'Enabling...' : 'Enable check-in'}
+                        </button>
+                    }
+                />
             </div>
         );
     }
@@ -189,77 +289,123 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false }) {
                     <Icon icon="mdi:qrcode-scan" />
                     Event Check-In
                 </h2>
-                <button 
-                    className="refresh-button" 
-                    onClick={handleRefresh}
-                    disabled={refreshing}
-                >
-                    <Icon icon={refreshing ? 'mdi:loading' : 'mdi:refresh'} />
-                    {refreshing ? 'Refreshing...' : 'Refresh'}
-                </button>
+                <div className="checkin-header-actions">
+                    <button
+                        type="button"
+                        className="disable-checkin-button"
+                        onClick={handleDisableCheckIn}
+                        disabled={disablingCheckIn}
+                        title="Turn off check-in for this event"
+                    >
+                        <Icon icon={disablingCheckIn ? 'mdi:loading' : 'mdi:account-off'} className={disablingCheckIn ? 'spin' : ''} />
+                        {disablingCheckIn ? 'Disabling...' : 'Disable check-in'}
+                    </button>
+                    <button 
+                        className="refresh-button" 
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                    >
+                        <Icon icon={refreshing ? 'mdi:loading' : 'mdi:refresh'} className={refreshing ? 'spin' : ''} />
+                        {refreshing ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                </div>
             </div>
 
             {/* Statistics */}
             {stats && (
                 <div className="checkin-stats">
-                    <div className="stat-card">
-                        <div className="stat-value">{stats.totalCheckedIn}</div>
-                        <div className="stat-label">Checked In</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-value">{stats.totalRegistrations ?? stats.totalRSVPs ?? 0}</div>
-                        <div className="stat-label">Total Registrations</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-value">{stats.checkInRate}%</div>
-                        <div className="stat-label">Check-In Rate</div>
-                    </div>
+                    <KpiCard
+                        title="Checked In"
+                        value={stats.totalCheckedIn}
+                        icon="mdi:account-check"
+                        iconVariant="approved"
+                    />
+                    <KpiCard
+                        title="Total Registrations"
+                        value={stats.totalRegistrations ?? stats.totalRSVPs ?? 0}
+                        icon="mdi:account-group"
+                    />
+                    <KpiCard
+                        title="Check-In Rate"
+                        value={`${stats.checkInRate}%`}
+                        icon="mdi:chart-line"
+                    />
                 </div>
             )}
 
-            {/* QR Code and Link Section */}
+            {/* QR Code + Checked-In Attendees side by side */}
             <div className="checkin-methods">
-                {showQR && (
-                    <div className="checkin-method-card">
-                        <h3>
-                            <Icon icon="mdi:qrcode" />
-                            QR Code
-                        </h3>
-                        {qrCodeData ? (
-                            <QRCodeDisplay qrCode={qrCodeData} eventName={event.name} />
-                        ) : (
-                            <div className="loading-placeholder">Loading QR code...</div>
-                        )}
-                    </div>
+                {(showQR || showLink) && (
+                    <HeaderContainer
+                        icon={showQR ? 'mdi:qrcode' : 'mdi:link'}
+                        header={showQR ? 'QR Code' : 'Check-in link'}
+                        classN="checkin-section checkin-section-qr"
+                        right={checkInLink ? (
+                            <button
+                                type="button"
+                                className="copy-checkin-link-btn"
+                                onClick={handleCopyCheckInLink}
+                                title="Copy check-in link"
+                            >
+                                <Icon icon={linkCopied ? 'mdi:check' : 'mdi:link-variant'} />
+                                {linkCopied ? 'Copied' : 'Copy link'}
+                            </button>
+                        ) : showLink && !checkInLink ? (
+                            <span className="checkin-link-loading">Loading link…</span>
+                        ) : null}
+                    >
+                        <div className="checkin-section-content">
+                            {showQR ? (
+                                qrCodeData ? (
+                                    <QRCodeDisplay qrCode={qrCodeData} eventName={event.name} />
+                                ) : (
+                                    <div className="loading-placeholder">Loading QR code...</div>
+                                )
+                            ) : (
+                                checkInLink ? (
+                                    <CheckInLink checkInUrl={checkInLink} eventName={event.name} />
+                                ) : (
+                                    <div className="loading-placeholder">Loading link...</div>
+                                )
+                            )}
+                        </div>
+                    </HeaderContainer>
                 )}
 
-                {showLink && (
-                    <div className="checkin-method-card">
-                        <h3>
-                            <Icon icon="mdi:link" />
-                            Check-In Link
-                        </h3>
-                        {checkInLink ? (
-                            <CheckInLink checkInUrl={checkInLink} eventName={event.name} />
+                {/* Checked-In Attendees List */}
+                <HeaderContainer
+                    icon="mdi:account-check"
+                    header="Checked-In Attendees"
+                    subheader={<span>{attendees.length} attendees</span>}
+                    classN="checkin-section checkin-section-attendees"
+                >
+                    <div className="checkin-section-content">
+                        {attendees.length === 0 ? (
+                            <EmptyState
+                                icon="mdi:account-check-outline"
+                                title="No attendees have checked in yet"
+                                description="Checked-in attendees will appear here. You can manually check in someone from the list of registrations."
+                                actions={
+                                    <button
+                                        type="button"
+                                        className="manual-checkin-button"
+                                        onClick={() => setShowManualCheckInModal(true)}
+                                    >
+                                        <Icon icon="mdi:account-plus" />
+                                        Manually check in attendee
+                                    </button>
+                                }
+                            />
                         ) : (
-                            <div className="loading-placeholder">Loading link...</div>
+                            <CheckInList 
+                                attendees={attendees}
+                                onManualCheckIn={handleManualCheckIn}
+                                onRemoveCheckIn={handleRemoveCheckIn}
+                                onOpenManualCheckInModal={() => setShowManualCheckInModal(true)}
+                            />
                         )}
                     </div>
-                )}
-            </div>
-
-            {/* Checked-In Attendees List */}
-            <div className="checkin-attendees-section">
-                <h3>
-                    <Icon icon="mdi:account-check" />
-                    Checked-In Attendees ({attendees.length})
-                </h3>
-                <CheckInList 
-                    attendees={attendees}
-                    onManualCheckIn={handleManualCheckIn}
-                    onRemoveCheckIn={handleRemoveCheckIn}
-                    onOpenManualCheckInModal={() => setShowManualCheckInModal(true)}
-                />
+                </HeaderContainer>
             </div>
 
             {/* Manual check-in modal: pick a registrant not yet checked in */}
