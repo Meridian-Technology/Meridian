@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
-import Popup from '../../../../../../components/Popup/Popup';
-import './JobsManager.scss';
+import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
+import './JobSignup.scss';
 
 function JobSignup({ event, orgId, roles, onClose, onSuccess }) {
     const { addNotification } = useNotification();
@@ -65,40 +65,33 @@ function JobSignup({ event, orgId, roles, onClose, onSuccess }) {
 
     if (availableRoles.length === 0) {
         return (
-            <Popup isOpen={true} onClose={onClose} customClassName="volunteer-signup-popup">
-                <div className="volunteer-signup">
-                    <div className="signup-header">
-                        <h3>
-                            <Icon icon="mdi:account-plus" />
-                            Volunteer Signup
-                        </h3>
-                        <button className="close-btn" onClick={onClose}>
-                            <Icon icon="mdi:close" />
-                        </button>
-                    </div>
-                    <div className="no-roles-available">
-                        <Icon icon="mdi:information" />
-                        <p>No jobs available for signup. All jobs are fully staffed.</p>
-                    </div>
+            <HeaderContainer classN="volunteer-signup" icon="mdi:account-plus" header="Volunteer Signup"
+            right={
+                <button className="close-btn" onClick={onClose} type="button" aria-label="Close">
+                    <Icon icon="mdi:close" />
+                </button>
+            }
+            >
+                <div className="no-roles-available">
+                    <Icon icon="mdi:information" />
+                    <p>No jobs available for signup. All jobs are fully staffed.</p>
                 </div>
-            </Popup>
+            </HeaderContainer>
         );
     }
 
     return (
-        <Popup isOpen={true} onClose={onClose} customClassName="volunteer-signup-popup">
-            <div className="volunteer-signup">
-                <div className="signup-header">
-                    <h3>
-                        <Icon icon="mdi:account-plus" />
-                        Volunteer Signup
-                    </h3>
-                    <button className="close-btn" onClick={onClose}>
-                        <Icon icon="mdi:close" />
-                    </button>
-                </div>
-
-                <div className="signup-form">
+        <HeaderContainer
+            classN="volunteer-signup"
+            icon="mdi:account-plus"
+            header="Volunteer Signup"
+            right={
+                <button className="close-btn" onClick={onClose} type="button" aria-label="Close">
+                    <Icon icon="mdi:close" />
+                </button>
+            }
+        >
+            <div className="signup-form">
                     <div className="form-group">
                         <label>
                             Select Job <span className="required">*</span>
@@ -172,8 +165,7 @@ function JobSignup({ event, orgId, roles, onClose, onSuccess }) {
                         </button>
                     </div>
                 </div>
-            </div>
-        </Popup>
+        </HeaderContainer>
     );
 }
 

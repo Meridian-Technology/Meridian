@@ -1,0 +1,151 @@
+.volunteer-signup {
+    height:100%;
+    .header-container-content {
+        padding: 1rem 1.25rem;
+    }
+
+    .header-container-header .row .close-btn {
+        background: transparent;
+        border: none;
+        color: var(--text);
+        cursor: pointer;
+        padding: 0;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+        width: 24px;
+        height: 24px;
+
+        &:hover {
+            background: var(--lightbackground);
+        }
+
+        iconify-icon {
+            font-size: 1.5rem;
+        }
+    }
+
+    .signup-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+
+            label {
+                font-size: 0.9rem;
+                font-weight: 500;
+                color: var(--text);
+
+                .required {
+                    color: #dc3545;
+                }
+            }
+
+            input,
+            textarea,
+            select {
+                padding: 0.75rem;
+                border: 1px solid var(--lighterborder);
+                border-radius: 6px;
+                font-size: 0.9rem;
+                font-family: inherit;
+                background: var(--background);
+                color: var(--text);
+                transition: all 0.2s ease;
+
+                &:focus {
+                    outline: none;
+                    border-color: #4DAA57;
+                    box-shadow: 0 0 0 3px rgba(77, 170, 87, 0.1);
+                }
+            }
+
+            textarea {
+                resize: vertical;
+            }
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            padding-top: 1rem;
+            border-top: 1px solid var(--lighterborder);
+
+            .btn-cancel,
+            .btn-save {
+                padding: 0.75rem 1.5rem;
+                border: none;
+                border-radius: 6px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .btn-cancel {
+                background: var(--lightbackground);
+                color: var(--text);
+                border: 1px solid var(--lighterborder);
+
+                &:hover {
+                    background: var(--lighterborder);
+                }
+            }
+
+            .btn-save {
+                background: #4DAA57;
+                color: white;
+
+                &:hover:not(:disabled) {
+                    background: #45a049;
+                    transform: translateY(-2px);
+                }
+
+                &:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+
+                .spinner {
+                    animation: volunteer-signup-spin 1s linear infinite;
+                }
+            }
+        }
+    }
+
+    .no-roles-available {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem 2rem;
+        text-align: center;
+
+        iconify-icon {
+            font-size: 3rem;
+            color: var(--light-text);
+            margin-bottom: 1rem;
+        }
+
+        p {
+            color: var(--light-text);
+            margin: 0;
+        }
+    }
+}
+
+@keyframes volunteer-signup-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}

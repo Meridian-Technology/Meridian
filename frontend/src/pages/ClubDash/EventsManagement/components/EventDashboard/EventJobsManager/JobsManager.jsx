@@ -6,6 +6,7 @@ import apiRequest from '../../../../../../utils/postRequest';
 import Popup from '../../../../../../components/Popup/Popup';
 import DeleteConfirmModal from '../../../../../../components/DeleteConfirmModal/DeleteConfirmModal';
 import JobShiftScheduler from './JobShiftScheduler';
+import JobPicker from './JobPicker';
 import JobSignup from './JobSignup';
 import MemberDropdown from './MemberDropdown';
 import './JobsManager.scss';
@@ -534,104 +535,34 @@ function JobsManager({ event, orgId, onRefresh }) {
             <JobShiftScheduler roles={roles} event={event} />
 
 
-            {showJobPicker && (
-                <Popup
-                    isOpen={true}
+            <Popup
+                isOpen={showJobPicker}
+                onClose={() => setShowJobPicker(false)}
+                customClassName="job-picker-popup medium-content"
+                defaultStyling={false}
+                hideCloseButton
+            >
+                <JobPicker 
+                    orgRoles={orgRoles}
+                    roles={roles}
+                    creatingJobTemplate={creatingJobTemplate}
+                    setCreatingJobTemplate={setCreatingJobTemplate}
+                    newJobTemplate={newJobTemplate}
+                    setNewJobTemplate={setNewJobTemplate}
+                    onCreateJobTemplate={handleCreateJobTemplate}
+                    onIncrementJob={handleIncrementJob}
+                    onDecrementJob={handleDecrementJob}
                     onClose={() => setShowJobPicker(false)}
-                    customClassName="job-picker-popup"
-                >
-                    <div className="job-picker">
-                        <div className="editor-header">
-                            <h3>
-                                <Icon icon="mdi:briefcase" />
-                                Add Job Slots
-                            </h3>
-                            <div className="header-actions">
-                                <button
-                                    className="btn-secondary"
-                                    onClick={() => setCreatingJobTemplate(prev => !prev)}
-                                >
-                                    <Icon icon="mdi:plus" />
-                                    {creatingJobTemplate ? 'Cancel' : 'New Template'}
-                                </button>
-                                <button className="close-btn" onClick={() => setShowJobPicker(false)}>
-                                    <Icon icon="mdi:close" />
-                                </button>
-                            </div>
-                        </div>
-                        {creatingJobTemplate && (
-                            <div className="job-template-form">
-                                <div className="form-group">
-                                    <label>Template Name *</label>
-                                    <input
-                                        type="text"
-                                        value={newJobTemplate.name}
-                                        onChange={(e) => setNewJobTemplate(prev => ({ ...prev, name: e.target.value }))}
-                                        placeholder="e.g., Registration, Ticketing"
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Description</label>
-                                    <textarea
-                                        rows={2}
-                                        value={newJobTemplate.description}
-                                        onChange={(e) => setNewJobTemplate(prev => ({ ...prev, description: e.target.value }))}
-                                        placeholder="Describe this job template"
-                                    />
-                                </div>
-                                <div className="form-actions">
-                                    <button
-                                        className="btn-save"
-                                        onClick={handleCreateJobTemplate}
-                                        disabled={!newJobTemplate.name.trim()}
-                                    >
-                                        <Icon icon="mdi:check" />
-                                        Create & Add Slot
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                        <div className="job-picker-list">
-                            {orgRoles.map(orgRole => {
-                                const existingRole = roles.find(role => {
-                                    const orgRoleId = role.orgRoleId?._id || role.orgRoleId;
-                                    return orgRoleId === orgRole._id;
-                                });
-                                const count = existingRole?.requiredCount || 0;
+                />
+            </Popup>
 
-                                return (
-                                    <div key={orgRole._id} className="job-picker-item">
-                                        <div className="job-info">
-                                            <strong>{orgRole.name}</strong>
-                                            {orgRole.description && <p>{orgRole.description}</p>}
-                                        </div>
-                                        <div className="job-actions">
-                                            <button
-                                                className="action-btn remove"
-                                                onClick={() => handleDecrementJob(orgRole)}
-                                                title="Remove slot"
-                                                disabled={count <= 0}
-                                            >
-                                                <Icon icon="mdi:minus" />
-                                            </button>
-                                            <span className="job-count">{count}</span>
-                                            <button
-                                                className="action-btn add"
-                                                onClick={() => handleIncrementJob(orgRole)}
-                                                title="Add slot"
-                                            >
-                                                <Icon icon="mdi:plus" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </Popup>
-            )}
-
-            {showVolunteerSignup && (
+            <Popup
+                isOpen={showVolunteerSignup}
+                onClose={() => setShowVolunteerSignup(false)}
+                customClassName="volunteer-signup-popup medium-content"
+                defaultStyling={false}
+                hideCloseButton
+            >
                 <JobSignup
                     event={event}
                     orgId={orgId}
@@ -643,7 +574,7 @@ function JobsManager({ event, orgId, onRefresh }) {
                         if (onRefresh) onRefresh();
                     }}
                 />
-            )}
+            </Popup>
 
             <DeleteConfirmModal
                 isOpen={showDeleteModal}
