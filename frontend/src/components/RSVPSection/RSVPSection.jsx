@@ -9,7 +9,7 @@ import defaultAvatar from '../../assets/defaultAvatar.svg';
 import postRequest from '../../utils/postRequest';
 import './RSVPSection.scss';
 
-const RSVPSection = ({ event, compact }) => {
+const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const [registration, setRegistration] = useState(null);
@@ -23,17 +23,19 @@ const RSVPSection = ({ event, compact }) => {
 
     const enabled = event.registrationEnabled ?? event.rsvpEnabled;
     const { data: rsvpData } = useFetch(
-        enabled && user ? `/my-rsvp/${event._id}` : null
+        enabled && user && !previewAsUnregistered ? `/my-rsvp/${event._id}` : null
     );
     const { data: attendeesData } = useFetch(
         enabled ? `/attendees/${event._id}` : null
     );
 
     useEffect(() => {
-        if (rsvpData?.success) {
+        if (previewAsUnregistered) {
+            setRegistration(null);
+        } else if (rsvpData?.success) {
             setRegistration(rsvpData.rsvp);
         }
-    }, [rsvpData]);
+    }, [rsvpData, previewAsUnregistered]);
 
     useEffect(() => {
         if (attendeesData?.success) {
