@@ -447,7 +447,7 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
 
                 <div className="form-section">
                     <DynamicFormField
-                        field={{ name: 'visibility', label: 'Visibility', inputType: 'select', validation: { options: ['public', 'internal', 'inviteOnly'] }}}
+                        field={{ name: 'visibility', label: 'Visibility', inputType: 'select', validation: {} }}
                         value={formData.visibility}
                         onChange={handleFieldChange}
                         formData={formData}

@@ -264,11 +264,15 @@ const CreateEventV2 = () => {
             if (response.success) {
                 addNotification({
                     title: 'Event Created',
-                    message: `Your event has been created successfully, you'll be contacted shortly upon it's approval!`,
+                    message: `Your event has been created successfully!`,
                     type: 'success'
                 });
-                
-                navigate(`/events-dashboard`);
+                const { eventId, orgId, orgName } = response;
+                if (eventId && orgId && orgName) {
+                    navigate(`/club-dashboard/${orgName}?page=1&overlay=event-dashboard&eventId=${eventId}&orgId=${orgId}`);
+                } else {
+                    navigate('/events-dashboard');
+                }
             } else {
                 throw new Error(response.message || response.error || 'Failed to create event');
             }

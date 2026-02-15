@@ -59,6 +59,68 @@
     }
   }
 
+  .form-config-migration-banner {
+    margin-bottom: 24px;
+    padding: 16px 20px;
+    background: color-mix(in srgb, var(--dark-blue, #2563eb) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--dark-blue, #2563eb) 30%, transparent);
+    border-radius: 10px;
+
+    .migration-banner-content {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+
+      .migration-icon {
+        flex-shrink: 0;
+        font-size: 24px;
+        color: var(--dark-blue, #2563eb);
+      }
+
+      div {
+        flex: 1;
+        min-width: 0;
+
+        strong {
+          display: block;
+          margin-bottom: 4px;
+          font-size: 14px;
+        }
+
+        p {
+          margin: 0;
+          font-size: 13px;
+          color: var(--lighter-text);
+          line-height: 1.5;
+
+          em {
+            font-style: italic;
+          }
+        }
+      }
+
+      .migrate-btn {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: var(--dark-blue, #2563eb);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: opacity 0.2s;
+
+        &:hover {
+          opacity: 0.9;
+        }
+      }
+    }
+  }
+
   .form-config-content {
     display: grid;
     grid-template-columns: 280px 1fr;

@@ -175,7 +175,7 @@ function FormConfig({ config, onChange }) {
                     isRequired: true,
                     order: 3,
                     step: 'basic-info',
-                    validation: { required: true, options: ['public', 'campus', 'private'] },
+                    validation: { required: true, options: ['public', 'unlisted', 'members_only'] },
                     helpText: 'Choose who can see and join your event'
                 },
                 'expectedAttendance': {
@@ -494,7 +494,7 @@ function FormConfig({ config, onChange }) {
                         step: 'basic-info',
                         validation: {
                             required: true,
-                            options: ['public', 'campus', 'private']
+                            options: ['public', 'unlisted', 'members_only']
                         },
                         helpText: 'Choose who can see and join your event'
                     },
@@ -886,6 +886,26 @@ function FormConfig({ config, onChange }) {
     const currentStepData = formConfig.steps.find(s => s.id === activeStep);
     const stepFields = getFieldsForStep(activeStep);
 
+    // Check if visibility field has old options (missing unlisted or members_only)
+    const visibilityField = formConfig.fields.find(f => f.name === 'visibility');
+    const visibilityOptions = visibilityField?.validation?.options || [];
+    const hasOldVisibilityConfig = visibilityField && (
+        !visibilityOptions.includes('unlisted') || !visibilityOptions.includes('members_only')
+    );
+    const FULL_VISIBILITY_OPTIONS = ['public', 'unlisted', 'members_only'];
+
+    const handleMigrateVisibility = () => {
+        if (!visibilityField) return;
+        handleFieldChange('visibility', {
+            validation: { ...visibilityField.validation, options: FULL_VISIBILITY_OPTIONS }
+        });
+        addNotification({
+            title: 'Visibility options updated',
+            message: 'Updated visibility options to public, unlisted, and members only. Save the configuration to apply.',
+            type: 'success'
+        });
+    };
+
     return (
         <div className="form-config-tab">
             <div className="form-config-header">
@@ -894,6 +914,22 @@ function FormConfig({ config, onChange }) {
                     Configure the event creation form. Locked fields (marked with 🔒) are required system fields and cannot be modified.
                 </p>
             </div>
+
+            {hasOldVisibilityConfig && (
+                <div className="form-config-migration-banner">
+                    <div className="migration-banner-content">
+                        <Icon icon="mdi:information-outline" className="migration-icon" />
+                        <div>
+                            <strong>Update visibility options</strong>
+                            <p>Your event visibility field is using an older set of options. Update to <em>public</em>, <em>unlisted</em>, and <em>members only</em>?</p>
+                        </div>
+                        <button className="migrate-btn" onClick={handleMigrateVisibility}>
+                            <Icon icon="mdi:update" />
+                            Update options
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="form-config-content">
                 <div className="steps-sidebar">

@@ -3,9 +3,17 @@ import { Icon } from '@iconify-icon/react';
 import ImageUpload from '../ImageUpload/ImageUpload';
 import Popup from '../Popup/Popup';
 import TextareaExpandPopup from '../TextareaExpandPopup/TextareaExpandPopup';
+import Select from '../Select/Select';
 import './DynamicFormField.scss';
 
-const DynamicFormField = ({ field, value, onChange, formData, errors = {}, specialStyling = null, color }) => {
+// Built-in option items for visibility field (value, label, icon)
+const VISIBILITY_OPTION_ITEMS = [
+    { value: 'public', label: 'Public', icon: 'mdi:earth' },
+    { value: 'unlisted', label: 'Unlisted', icon: 'mdi:link-variant' },
+    { value: 'members_only', label: 'Members only', icon: 'mdi:account-group' },
+];
+
+const DynamicFormField = ({ field, value, onChange, formData, errors = {}, specialStyling = null, color, hideLabel = false }) => {
     // Normalize value to never be null - use empty string instead
     const normalizeValue = (val) => {
         if (val === null || val === undefined) {
@@ -164,6 +172,17 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
                 return textareaField;
 
             case 'select':
+                // Hardcoded: visibility always uses icon dropdown
+                if (field.name === 'visibility') {
+                    return (
+                        <Select
+                            optionItems={VISIBILITY_OPTION_ITEMS}
+                            defaultValue={localValue || ''}
+                            onChange={handleChange}
+                            placeholder={field.placeholder || 'Select visibility'}
+                        />
+                    );
+                }
                 return (
                     <select
                         id={field.name}
@@ -276,23 +295,25 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
 
     return (
         <div
-            className={`dynamic-form-field ${field.type} ${specialStyling}`}
+            className={`dynamic-form-field ${field.type} ${specialStyling} ${hideLabel ? 'dynamic-form-field--no-label' : ''}`}
             style={color ? { '--dynamic-form-field-color': color } : undefined}
         >
-            <label htmlFor={field.name}>
-                {field.label}
-                {(field.isRequired || field.validation?.required) && (
-                    <span className="required-indicator">*</span>
-                )}
-            </label>
-            {field.description && (
+            {!hideLabel && (
+                <label htmlFor={field.name}>
+                    {field.label}
+                    {(field.isRequired || field.validation?.required) && (
+                        <span className="required-indicator">*</span>
+                    )}
+                </label>
+            )}
+            {!hideLabel && field.description && (
                 <p className="field-description">{field.description}</p>
             )}
             {renderField()}
             {errors[field.name] && (
                 <span className="error-message">{errors[field.name]}</span>
             )}
-            {field.helpText && (
+            {!hideLabel && field.helpText && (
                 <p className="help-text">{field.helpText}</p>
             )}
         </div>
