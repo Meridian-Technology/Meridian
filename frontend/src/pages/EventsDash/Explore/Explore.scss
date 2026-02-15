@@ -199,6 +199,15 @@ body {
             width: 100%;
             overflow: visible;
 
+            .empty-state-center {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                min-height: 280px;
+                padding: 2rem;
+            }
+
             .loading{
                 display: flex;
                 flex-direction: column;
