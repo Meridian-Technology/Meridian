@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
+import { analytics } from '../../services/analytics/analytics';
 import apiRequest from '../../utils/postRequest';
 import DynamicFormField from '../../components/DynamicFormField/DynamicFormField';
 import { useFetch } from '../../hooks/useFetch';
@@ -19,7 +20,7 @@ const DEFAULT_FIELDS = [
     { name: 'name', type: 'string', label: 'Event Name', inputType: 'text', step: 'basic-info', isActive: true, order: 0, validation: { required: true }, placeholder: 'Event Name' },
     { name: 'description', type: 'textarea', label: 'Description', inputType: 'textarea', step: 'basic-info', isActive: true, order: 1, validation: { required: true }, placeholder: 'Tell us about your event', allowExpand: true },
     { name: 'type', type: 'select', label: 'Event Type', inputType: 'select', step: 'basic-info', isActive: true, order: 2, validation: { required: true, options: ['study', 'workshop', 'campus', 'social', 'club', 'meeting', 'sports'] } },
-    { name: 'visibility', type: 'select', label: 'Visibility', inputType: 'select', step: 'basic-info', isActive: true, order: 3, validation: { required: true, options: ['public', 'internal', 'inviteOnly'] } },
+    { name: 'visibility', type: 'select', label: 'Visibility', inputType: 'select', step: 'basic-info', isActive: true, order: 3, validation: { required: true, options: ['public', 'unlisted', 'members_only'] } },
     { name: 'expectedAttendance', type: 'number', label: 'Expected Attendance', inputType: 'number', step: 'basic-info', isActive: true, order: 4, validation: { required: true, min: 1, max: 10000, defaultValue: 1 }, placeholder: '1' },
     { name: 'contact', type: 'string', label: 'Contact', inputType: 'text', step: 'additional', isActive: true, order: 0, validation: { required: false }, placeholder: 'Email or phone' },
 ];
@@ -36,12 +37,31 @@ const CreateEventV3 = () => {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const formConfigData = useFetch('/api/event-system-config/form-config');
+    const eligibilityData = useFetch(user ? '/api/event-system-config/event-creation-eligibility' : null);
     const formConfig = formConfigData.data?.data ?? formConfigData.data;
+    const eligibility = eligibilityData.data?.data;
 
     const initialStateHost = location.state?.selectedOrg
         ? { id: location.state.selectedOrg._id, type: 'Org' }
         : null;
     const [selectedHost, setSelectedHost] = useState(initialStateHost);
+
+    useEffect(() => {
+        if (!eligibility || !user) return;
+        const { allowIndividualUserHosting, orgsWithEventPermission } = eligibility;
+        setSelectedHost(prev => {
+            if (prev) {
+                if (prev.type === 'User') return allowIndividualUserHosting ? prev : null;
+                if (prev.type === 'Org') {
+                    const isOrgAllowed = orgsWithEventPermission?.some(o => o._id === prev.id);
+                    return isOrgAllowed ? prev : null;
+                }
+            }
+            if (allowIndividualUserHosting) return { id: user._id, type: 'User' };
+            if (orgsWithEventPermission?.length > 0) return { id: orgsWithEventPermission[0]._id, type: 'Org' };
+            return null;
+        });
+    }, [eligibility, user]);
     const [formData, setFormData] = useState({
         name: '',
         type: '',
@@ -72,6 +92,10 @@ const CreateEventV3 = () => {
     useEffect(() => {
         document.body.classList.add('create-event-v3-page');
         return () => document.body.classList.remove('create-event-v3-page');
+    }, []);
+
+    useEffect(() => {
+        analytics.screen('Create Event');
     }, []);
 
     useEffect(() => {
@@ -133,7 +157,7 @@ const CreateEventV3 = () => {
         return missing;
     }, []);
 
-    const handleSubmit = async () => {
+    const handleSubmit = async (asDraft) => {
         if (!selectedHost) {
             addNotification({
                 title: 'Select a host',
@@ -174,7 +198,8 @@ const CreateEventV3 = () => {
                 registrationDeadline: formData.registrationDeadline ?? formData.rsvpDeadline,
                 maxAttendees: formData.maxAttendees,
                 registrationFormId: formData.registrationFormId,
-                orgId: selectedHost?.type === 'Org' ? selectedHost.id : null
+                orgId: selectedHost?.type === 'Org' ? selectedHost.id : null,
+                asDraft: asDraft ? 'true' : 'false'
             };
 
             Object.keys(data).forEach(key => {
@@ -198,12 +223,24 @@ const CreateEventV3 = () => {
             const response = await apiRequest('/create-event', submitData, { method: 'POST' });
 
             if (response.success) {
+                analytics.track('event_create_submitted', {
+                    event_id: response.eventId,
+                    as_draft: !!asDraft,
+                    hosting_type: selectedHost?.type
+                });
                 addNotification({
-                    title: 'Event Created',
-                    message: `Your event has been created successfully, you'll be contacted shortly upon it's approval!`,
+                    title: asDraft ? 'Draft Saved' : 'Event Created',
+                    message: asDraft
+                        ? 'Draft saved. Add an agenda, configure registration, assign roles, and publish when ready.'
+                        : "Your event has been created successfully!",
                     type: 'success'
                 });
-                navigate('/events-dashboard');
+                const { eventId, orgId, orgName } = response;
+                if (eventId && orgId && orgName) {
+                    navigate(`/club-dashboard/${orgName}?page=1&overlay=event-dashboard&eventId=${eventId}&orgId=${orgId}`);
+                } else {
+                    navigate('/events-dashboard');
+                }
             } else {
                 throw new Error(response.message || response.error || 'Failed to create event');
             }
@@ -265,9 +302,30 @@ const CreateEventV3 = () => {
                 </div>
 
                 <div className="create-event-v3-right">
-                    {user && (
-                        <HostOrgDropdown selectedHost={selectedHost} onHostChange={setSelectedHost} />
-                    )}
+                    <div className="create-event-v3-header-row">
+                        {user && (
+                            <HostOrgDropdown
+                                selectedHost={selectedHost}
+                                onHostChange={setSelectedHost}
+                                allowIndividualUserHosting={eligibility?.allowIndividualUserHosting ?? true}
+                                orgsWithEventPermission={eligibility?.orgsWithEventPermission}
+                            />
+                        )}
+                        {getFieldsForStep('basic-info')
+                            .filter(f => f.name === 'visibility')
+                            .map(field => (
+                                <div key={field.name} className="create-event-v3-visibility-wrap">
+                                    <DynamicFormField
+                                        field={field}
+                                        value={formData[field.name]}
+                                        onChange={handleFieldChange}
+                                        formData={formData}
+                                        errors={{}}
+                                        hideLabel
+                                    />
+                                </div>
+                            ))}
+                    </div>
 
                     <div className="create-event-v3-form">
                         {getFieldsForStep('basic-info')
@@ -313,7 +371,7 @@ const CreateEventV3 = () => {
                             ))}
 
                         {getFieldsForStep('basic-info')
-                            .filter(f => ['type', 'visibility', 'expectedAttendance'].includes(f.name))
+                            .filter(f => ['type', 'expectedAttendance'].includes(f.name))
                             .map(field => {
                                 const fieldToRender = field.name === 'expectedAttendance'
                                     ? { ...field, inputType: 'number', placeholder: field.placeholder || '1' }
@@ -359,22 +417,25 @@ const CreateEventV3 = () => {
                     </div>
 
                     <div className="create-event-v3-actions">
-                        {selectedHost?.type === 'Org' && user?.clubAssociations?.some((org) => org._id === selectedHost.id) && (
-                            <Link
-                                to={`/club-dashboard/${encodeURIComponent(user.clubAssociations.find((o) => o._id === selectedHost.id)?.org_name || '')}?page=1`}
-                                className="create-event-v3-management-btn"
+                        <p className="create-event-v3-draft-note">
+                            Save as Draft to keep building your event in the dashboard—add an agenda, tweak registration settings, assign roles, and refine details. Only organizers can see drafts until you publish.
+                        </p>
+                        <div className="create-event-v3-buttons">
+                            <button
+                                className="create-event-v3-submit create-event-v3-draft"
+                                onClick={() => handleSubmit(true)}
+                                disabled={isSubmitting}
                             >
-                                <Icon icon="mdi:cog" />
-                                Event management
-                            </Link>
-                        )}
-                        <button
-                            className="create-event-v3-submit"
-                            onClick={handleSubmit}
-                            disabled={isSubmitting}
-                        >
-                            {isSubmitting ? 'Creating...' : 'Create Event'}
-                        </button>
+                                {isSubmitting ? 'Saving...' : 'Save Draft & Continue Later'}
+                            </button>
+                            <button
+                                className="create-event-v3-submit"
+                                onClick={() => handleSubmit(false)}
+                                disabled={isSubmitting}
+                            >
+                                {isSubmitting ? 'Creating...' : 'Create & Publish'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

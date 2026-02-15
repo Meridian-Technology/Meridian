@@ -47,9 +47,10 @@ export const AuthProvider = ({ children }) => {
                 } else {
                     setAuthMethod('email');
                 }
-                // Identify user in analytics
+                // Identify user in analytics and set roles (for admin exclusion from tracking)
                 if (response.data.user._id) {
                     analytics.identify(response.data.user._id);
+                    analytics.setUserRoles(response.data.user.roles);
                 }
                 // console.log(response.data.user);
                 setIsAuthenticated(true);
@@ -80,9 +81,10 @@ export const AuthProvider = ({ children }) => {
                 setIsAuthenticated(true);
                 setUser(response.data.data.user);
                 setAuthMethod('email');
-                // Identify user in analytics
+                // Identify user in analytics and set roles (for admin exclusion from tracking)
                 if (response.data.data.user._id) {
                     analytics.identify(response.data.data.user._id);
+                    analytics.setUserRoles(response.data.data.user.roles);
                 }
                 // Set friend requests if provided (may not be included in login response)
                 if (response.data.data.friendRequests) {
@@ -123,9 +125,10 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(true);
             setUser(response.data.data.user);
             setAuthMethod('google');
-            // Identify user in analytics
+            // Identify user in analytics and set roles (for admin exclusion from tracking)
             if (response.data.data.user._id) {
                 analytics.identify(response.data.data.user._id);
+                analytics.setUserRoles(response.data.data.user.roles);
             }
             // addNotification({title: 'Logged in successfully',type: 'success'});
             
@@ -152,9 +155,10 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(true);
             setUser(response.data.data.user);
             setAuthMethod('apple');
-            // Identify user in analytics
+            // Identify user in analytics and set roles (for admin exclusion from tracking)
             if (response.data.data.user._id) {
                 analytics.identify(response.data.data.user._id);
+                analytics.setUserRoles(response.data.data.user.roles);
             }
             addNotification({ title: 'Logged in successfully', type: 'success' });
             

@@ -1,5 +1,5 @@
 .host-org-dropdown-wrapper {
-    margin-bottom: 20px;
+    // margin-bottom: 20px;
 
     .host-org-dropdown-label {
         display: block;
@@ -157,6 +157,17 @@
                 background-color: var(--red-transparent);
                 &:hover {
                     background-color: var(--red-transparent);
+                }
+            }
+
+            &.drop-option-disabled {
+                cursor: default;
+                pointer-events: none;
+                opacity: 0.7;
+
+                p {
+                    color: var(--text-muted, #6c757d);
+                    font-weight: 500;
                 }
             }
         }

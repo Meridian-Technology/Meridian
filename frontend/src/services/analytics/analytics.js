@@ -26,6 +26,10 @@ class Analytics {
         this.flushTimer = null;
         this.isInitialized = false;
         this.lastVisibilityChange = document.visibilityState;
+        /** When true and user has admin role, all tracking is skipped */
+        this.excludeAdminUsersFromTracking = true;
+        /** User roles (set by AuthContext on login, cleared on logout) */
+        this.userRoles = null;
         this.setupVisibilityListener();
     }
 
@@ -55,9 +59,23 @@ class Analytics {
      * Check if analytics is enabled
      */
     isEnabled() {
-        // Disable analytics in development if needed
-        // You can add a config check here if needed
-        return true;
+        return this.config?.enabled !== false;
+    }
+
+    /**
+     * Set user roles (called by AuthContext on login). Used to exclude admin users from tracking
+     * when excludeAdminUsersFromTracking config is true.
+     */
+    setUserRoles(roles) {
+        this.userRoles = Array.isArray(roles) ? roles : (roles ? [roles] : null);
+    }
+
+    /**
+     * Check if tracking should be skipped (e.g. admin user when excludeAdminUsersFromTracking is on)
+     */
+    shouldSkipTracking() {
+        if (!this.excludeAdminUsersFromTracking) return false;
+        return this.userRoles?.includes('admin') === true;
     }
 
     /**
@@ -287,16 +305,28 @@ class Analytics {
      * Initialize analytics SDK
      */
     async init(config = {}) {
-        if (!this.isEnabled()) {
-            if (process.env.NODE_ENV === 'development') {
-                console.log('Analytics: Disabled');
-            }
-            return;
-        }
-
         if (this.isInitialized) {
             console.warn('Analytics: Already initialized');
             return;
+        }
+
+        // Fetch analytics config from backend (excludeAdminUsersFromTracking, enabled)
+        try {
+            const res = await axios.get('/api/event-system-config/analytics-config', { withCredentials: true });
+            if (res.data?.success && res.data?.data) {
+                this.excludeAdminUsersFromTracking = res.data.data.excludeAdminUsersFromTracking !== false;
+                if (res.data.data.enabled === false) {
+                    this.config = { enabled: false };
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log('Analytics: Disabled by config');
+                    }
+                    return;
+                }
+            }
+        } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+                console.warn('Analytics: Could not fetch analytics config, using defaults', err);
+            }
         }
 
         // Get app version from package.json or config
@@ -312,6 +342,7 @@ class Analytics {
             appVersion,
             build,
             platform,
+            enabled: true,
         };
 
         // Schedule automatic flush
@@ -323,7 +354,7 @@ class Analytics {
         this.isInitialized = true;
 
         if (process.env.NODE_ENV === 'development') {
-            console.log('Analytics: Initialized', this.config);
+            console.log('Analytics: Initialized', this.config, 'excludeAdminUsersFromTracking:', this.excludeAdminUsersFromTracking);
         }
     }
 
@@ -346,6 +377,7 @@ class Analytics {
      * Reset user identification and session
      */
     reset() {
+        this.userRoles = null;
         if (!this.isEnabled()) {
             return;
         }
@@ -365,6 +397,13 @@ class Analytics {
      */
     async track(eventName, properties = {}, contextOverrides = {}) {
         if (!this.isEnabled()) {
+            return;
+        }
+
+        if (this.shouldSkipTracking()) {
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`Analytics: Skipping event (admin excluded): ${eventName}`);
+            }
             return;
         }
 

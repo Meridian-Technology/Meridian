@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import apiRequest from '../../utils/postRequest';
+import { analytics } from '../../services/analytics/analytics';
 import './EventCheckInButton.scss';
 
 /**
@@ -41,6 +42,7 @@ function EventCheckInButton({ event, onCheckedIn }) {
                 { method: 'POST' }
             );
             if (response?.success) {
+                analytics.track('event_checkin', { event_id: event._id });
                 setCheckedIn(true);
                 addNotification?.('You’re checked in!', 'success');
                 onCheckedIn?.();
@@ -64,6 +66,7 @@ function EventCheckInButton({ event, onCheckedIn }) {
                 { method: 'POST' }
             );
             if (response?.success) {
+                analytics.track('event_checkout', { event_id: event._id });
                 setCheckedIn(false);
                 addNotification?.('You’ve checked out.', 'success');
                 onCheckedIn?.();

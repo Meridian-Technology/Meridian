@@ -36,6 +36,7 @@ function DateTimePicker({ formData, setFormData }) {
                         className="datetime-picker-input"
                         caretAs={() => <Icon icon="mdi:calendar" />}
                         cleanable
+                        oneTap
                     />
                 </div>
                 <div className="datetime-picker-field">
@@ -49,6 +50,7 @@ function DateTimePicker({ formData, setFormData }) {
                         className="datetime-picker-input"
                         caretAs={() => <Icon icon="mdi:calendar" />}
                         cleanable
+                        oneTap
                     />
                 </div>
             </div>

@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useEffect, useState } from 'react';
 import Event from '../EventsViewer/EventsGrid/EventsColumn/Event/Event';
 import Loader from '../Loader/Loader';
 import Switch from '../Switch/Switch';
+import EmptyState from '../EmptyState/EmptyState';
 import './EventsList.scss';
 
 const EventsList = ({ 
@@ -75,11 +76,13 @@ const EventsList = ({
     }, []);
 
     if (groupedEvents.length === 0) {
-
-        
         return (
-            <div className="no-events" role="status">
-                {hasFriendsFilter ? 'No events where friends are going' : 'No events found'}
+            <div className="empty-state-center">
+                <EmptyState
+                    icon="proicons:calendar"
+                    title={hasFriendsFilter ? 'No events where friends are going' : 'No events found'}
+                    description={hasFriendsFilter ? 'When your friends RSVP to events, they’ll show up here.' : 'Try adjusting your filters or check back later for new events.'}
+                />
             </div>
         );
     }

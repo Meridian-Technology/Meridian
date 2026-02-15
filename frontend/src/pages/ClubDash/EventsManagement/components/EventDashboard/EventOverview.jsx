@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
+import { useNotification } from '../../../../../NotificationContext';
 import RSVPGrowthChart from './RSVPGrowthChart';
 import AgendaDailyCalendar from './EventAgendaBuilder/AgendaDailyCalendar/AgendaDailyCalendar';
+import EventPreview from './EventPreview';
 import './EventDashboard.scss';
 
-function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, orgId, onRefresh }) {
+function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, orgId, onRefresh, onTabChange }) {
+    const { addNotification } = useNotification();
     const [rolesData, setRolesData] = useState([]);
     
     // Fetch full roles data to check job fill status
@@ -96,13 +99,124 @@ function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, o
 
     const showScheduleCalendar = agendaItemsWithTimes.length > 0 && event;
 
+    const eventWithAgenda = event
+        ? {
+              ...event,
+              eventAgenda: {
+                  items: agenda?.items || [],
+                  isPublished: agenda?.isPublished
+              }
+          }
+        : null;
+
+    const handleCopyLink = async () => {
+        if (!event?._id) return;
+        const eventUrl = `${window.location.origin}/event/${event._id}`;
+        try {
+            await navigator.clipboard.writeText(eventUrl);
+            addNotification({ title: 'Copied', message: 'Event link copied to clipboard', type: 'success' });
+        } catch {
+            addNotification({ title: 'Error', message: 'Failed to copy link', type: 'error' });
+        }
+    };
+
+    const handlePreview = () => {
+        if (!event?._id) return;
+        window.open(`${window.location.origin}/event/${event._id}`, '_blank', 'noopener,noreferrer');
+    };
+
+    const registrationCount = stats?.registrationCount ?? event?.registrationCount ?? 0;
+    const expectedAttendance = event?.expectedAttendance ?? 0;
+
+    const actionsColumn = (
+        <div className="overview-actions-column">
+            <button type="button" className="event-preview-action" onClick={handlePreview} title="Open full event">
+                <Icon icon="mdi:open-in-new" />
+                <span>View full event</span>
+            </button>
+            <button type="button" className="event-preview-action" onClick={handleCopyLink} title="Copy event link">
+                <Icon icon="mdi:link" />
+                <span>Copy link</span>
+            </button>
+            {onTabChange && (
+                <>
+                    <button type="button" className="event-preview-action" onClick={() => onTabChange('edit')} title="Edit event details">
+                        <Icon icon="mdi:pencil" />
+                        <span>Edit event</span>
+                    </button>
+                    <button type="button" className="event-preview-action" onClick={() => onTabChange('registrations')} title="View registrations">
+                        <Icon icon="mdi:clipboard-list-outline" />
+                        <span>Registrations</span>
+                    </button>
+                    <button type="button" className="event-preview-action" onClick={() => onTabChange('checkin')} title="Check-in management">
+                        <Icon icon="uil:qrcode-scan" />
+                        <span>Check-in</span>
+                    </button>
+                </>
+            )}
+        </div>
+    );
+
     return (
         <div className="event-overview">
+            {(eventWithAgenda || event) && (
+                <div className="overview-preview-chart-row">
+                    {eventWithAgenda && (
+                        <div className="overview-preview-box">
+                            <div className="overview-preview-box-header">
+                                <h3 className="event-dashboard-card-header">
+                                    <Icon icon="iconoir:eye-solid" />
+                                    Event Preview
+                                </h3>
+                            </div>
+                            <div className="overview-preview-box-body">
+                                <EventPreview event={eventWithAgenda} onRefetch={onRefresh} />
+                                <div className="overview-preview-actions">
+                                    <button type="button" className="event-preview-action" onClick={handleCopyLink} title="Copy event link">
+                                        <Icon icon="mdi:link" />
+                                        <span>Copy link</span>
+                                    </button>
+                                    {onTabChange && (
+                                        <>
+                                            <button type="button" className="event-preview-action" onClick={() => onTabChange('registrations')} title="View registrations">
+                                                <Icon icon="mdi:clipboard-list-outline" />
+                                                <span>Registrations</span>
+                                            </button>
+                                            <button type="button" className="event-preview-action" onClick={() => onTabChange('checkin')} title="Check-in management">
+                                                <Icon icon="uil:qrcode-scan" />
+                                                <span>Check-in</span>
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {event && (
+                        <div className="overview-chart-box">
+                            <div className="overview-chart-box-header">
+                                <h3 className="event-dashboard-card-header">
+                                    <Icon icon="mdi:chart-line" />
+                                    Registration Chart
+                                </h3>
+                            </div>
+                            <div className="overview-chart-box-body">
+                                <RSVPGrowthChart
+                                    eventId={event._id}
+                                    orgId={orgId}
+                                    expectedAttendance={expectedAttendance}
+                                    registrationCount={registrationCount}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
             <div className="overview-layout">
                 {/* Left Column: Readiness (1/3 width) */}
                 <div className="overview-left-column">
                     <div className="overview-card readiness-card">
-                        <h3>
+                        <h3 className="event-dashboard-card-header">
                             <Icon icon="mdi:clipboard-check-outline" />
                             Event Readiness
                             <span className="readiness-count">{readyCount}/{totalChecks}</span>
@@ -137,22 +251,11 @@ function EventOverview({ event, stats, agenda, roles: rolesSummary, equipment, o
                         </div>
                     </div>
                 </div>
-
-                {/* Right Column: Chart (2/3 width) */}
-                {event?._id && orgId && event?.expectedAttendance > 0 && (
-                    <div className="overview-right-column">
-                        <RSVPGrowthChart 
-                            eventId={event._id}
-                            orgId={orgId}
-                            expectedAttendance={event.expectedAttendance}
-                        />
-                    </div>
-                )}
             </div>
 
             {showScheduleCalendar && (
                 <div className="overview-schedule-section">
-                    <h3>
+                    <h3 className="event-dashboard-card-header">
                         <Icon icon="mdi:calendar-clock" />
                         Schedule
                     </h3>

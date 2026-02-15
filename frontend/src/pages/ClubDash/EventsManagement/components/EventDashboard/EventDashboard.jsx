@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
+import { analytics } from '../../../../../services/analytics/analytics';
 import { useNotification } from '../../../../../NotificationContext';
 import { useGradient } from '../../../../../hooks/useGradient';
 import TabbedContainer from '../../../../../components/TabbedContainer';
@@ -55,6 +56,29 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     const handleRefresh = () => {
         setRefreshTrigger(prev => prev + 1);
     };
+
+    const handleTabChange = useCallback((tabId) => {
+        setActiveTab(tabId);
+        if (event?._id && orgId) {
+            analytics.track('event_workspace_tab_view', {
+                event_id: event._id,
+                org_id: orgId,
+                tab: tabId
+            });
+        }
+    }, [event?._id, orgId]);
+
+    useEffect(() => {
+        if (event?._id && orgId && dashboardData && !loading) {
+            analytics.screen('Event Workspace', { event_id: event._id, org_id: orgId });
+            analytics.track('event_workspace_view', { event_id: event._id, org_id: orgId });
+            analytics.track('event_workspace_tab_view', {
+                event_id: event._id,
+                org_id: orgId,
+                tab: activeTab
+            });
+        }
+    }, [event?._id, orgId, dashboardData, loading]);
 
     const dashboardRef = useRef(null);
     const stickyTabsRef = useRef({ spacer: null, tabsWrapper: null });
@@ -182,6 +206,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         equipment={dashboardData.equipment}
                         orgId={orgId}
                         onRefresh={handleRefresh}
+                        onTabChange={handleTabChange}
                     />
         },
         {
@@ -225,6 +250,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             description: 'Event details and basic information',
             content: <EventEditorTab
                         event={dashboardData.event}
+                        agenda={dashboardData.agenda}
                         orgId={orgId}
                         onRefresh={handleRefresh}
                     />
@@ -244,7 +270,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
         {
             id: 'checkin',
             label: 'Check-In',
-            icon: 'mdi:qrcode-scan',
+            icon: 'uil:qrcode-scan',
             description: 'Manage event check-in and attendance',
             content: <EventCheckInTab
                         event={dashboardData.event}
@@ -301,7 +327,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                     tabs={tabs}
                     defaultTab="overview"
                     activeTab={activeTab}
-                    onTabChange={setActiveTab}
+                    onTabChange={handleTabChange}
                     tabStyle="default"
                     size="medium"
                     animated={true}

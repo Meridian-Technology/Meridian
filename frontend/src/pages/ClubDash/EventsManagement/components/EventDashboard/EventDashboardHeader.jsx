@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useGradient } from '../../../../../hooks/useGradient';
 import { useNotification } from '../../../../../NotificationContext';
+import apiRequest from '../../../../../utils/postRequest';
 import './EventDashboard.scss';
 
 function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
+    const [publishing, setPublishing] = useState(false);
     const { AtlasMain } = useGradient();
     const { addNotification } = useNotification();
 
@@ -64,6 +66,32 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
         window.open(eventUrl, '_blank', 'noopener,noreferrer');
     };
 
+    const handlePublish = async () => {
+        if (!event?._id) return;
+        setPublishing(true);
+        try {
+            const res = await apiRequest(`/publish-event/${event._id}`, {}, { method: 'POST' });
+            if (res.success) {
+                addNotification({
+                    title: 'Event Published',
+                    message: res.status === 'pending' ? 'Event submitted for approval.' : 'Event published successfully.',
+                    type: 'success'
+                });
+                onRefresh?.();
+            } else {
+                throw new Error(res.message || res.error);
+            }
+        } catch (err) {
+            addNotification({
+                title: 'Publish Failed',
+                message: err.message || 'Failed to publish event.',
+                type: 'error'
+            });
+        } finally {
+            setPublishing(false);
+        }
+    };
+
     const handleShare = async () => {
         if (!event?._id) return;
         const eventUrl = `${window.location.origin}/event/${event._id}`;
@@ -113,6 +141,17 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                         <Icon icon="mdi:close" />
                     </button>
                     <div className="header-actions">
+                        {event?.status === 'draft' && (
+                            <button
+                                className="action-btn publish"
+                                onClick={handlePublish}
+                                disabled={publishing}
+                                title="Publish Event"
+                            >
+                                <Icon icon="mdi:publish" />
+                                <span>{publishing ? 'Publishing...' : 'Publish'}</span>
+                            </button>
+                        )}
                         <button className="action-btn refresh" onClick={onRefresh} title="Refresh">
                             <Icon icon="mdi:refresh" />
                         </button>
@@ -139,7 +178,10 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                     <div className="event-title-section">
                         <h1>{event?.name || 'Event'}</h1>
                         <div className="event-meta">
-                            {eventStatus && (
+                            {event?.status === 'draft' && (
+                                <span className="event-status-bubble draft">Draft</span>
+                            )}
+                            {eventStatus && event?.status !== 'draft' && (
                                 <span className={`event-status-bubble ${eventStatus}`}>
                                     {eventStatus === 'upcoming' ? 'Upcoming' : 'Passed'}
                                 </span>

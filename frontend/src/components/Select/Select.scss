@@ -8,7 +8,7 @@
         display: flex;
         border:1px solid var(--lighterborder);
         border-radius: 8px;
-        padding:5px 8px;
+        padding:10px 12px;
         -webkit-user-select: noen;
         user-select: none;
         .select-header-text{
@@ -16,6 +16,17 @@
             font-weight: 600;
             color: var(--text);
             font-size: 15px;
+
+            .select-header-content {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+
+                .select-option-icon {
+                    font-size: 18px;
+                    flex-shrink: 0;
+                }
+            }
         }
     }
     .select-options{
@@ -34,8 +45,16 @@
         box-shadow: var(--shadow);
         .select-option{
             display: flex;
+            align-items: center;
+            gap: 8px;
             padding: 5px 8px;
             cursor: pointer;
+
+            .select-option-icon {
+                font-size: 18px;
+                flex-shrink: 0;
+                color: var(--text);
+            }
             font-family: 'Inter';
             font-weight:600;
             border-radius: 4px;

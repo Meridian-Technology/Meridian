@@ -2458,20 +2458,16 @@ router.post('/:orgId/equipment/:equipmentId/member-checkin', verifyToken, requir
 
 // Get event RSVP growth data
 router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { Event, EventAnalytics } = getModels(req, 'Event', 'EventAnalytics');
+    const { Event } = getModels(req, 'Event');
     const { orgId, eventId } = req.params;
 
     try {
-        // Fetch event and analytics in parallel for better performance
-        const [event, analytics] = await Promise.all([
-            Event.findOne({
-                _id: eventId,
-                hostingId: orgId,
-                hostingType: 'Org',
-                isDeleted: false
-            }),
-            EventAnalytics.findOne({ eventId })
-        ]);
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
 
         if (!event) {
             return res.status(404).json({
@@ -2483,222 +2479,32 @@ router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManag
         const eventStart = new Date(event.start_time);
         const eventCreated = new Date(event.createdAt);
         const now = new Date();
-        
-        // Chart always shows from creation to the day before the event
-        // For past events, freeze at the day before event start
-        // For future events, show projections all the way to the day before event
-        const eventCreatedNormalized = new Date(eventCreated);
-        eventCreatedNormalized.setHours(0, 0, 0, 0);
-        
-        const dayBeforeEvent = new Date(eventStart);
-        dayBeforeEvent.setDate(dayBeforeEvent.getDate() - 1);
-        dayBeforeEvent.setHours(23, 59, 59, 999);
-        
-        // Normalize dayBeforeEvent to start of day for comparison
-        const dayBeforeEventNormalized = new Date(dayBeforeEvent);
-        dayBeforeEventNormalized.setHours(0, 0, 0, 0);
-        
-        // For past events, end date is the day before event (frozen)
-        // For future events, end date is the day before event (shows projections)
-        let endDate = dayBeforeEvent;
-        
-        // Ensure endDate is not before eventCreated
-        if (dayBeforeEventNormalized < eventCreatedNormalized) {
-            endDate = new Date(eventCreatedNormalized);
-            endDate.setHours(23, 59, 59, 999);
-        }
-        
-        // Calculate total days from creation to end date (inclusive)
-        // Use normalized dates for accurate day count
-        // We want to include both the creation day and the day before event
-        const endDateNormalized = new Date(dayBeforeEventNormalized);
-        const totalDays = Math.max(0, Math.floor((endDateNormalized - eventCreatedNormalized) / (1000 * 60 * 60 * 24)));
-        
         const cutoffDate = eventStart < now ? eventStart : now;
         const cutoffDateNormalized = new Date(cutoffDate);
         cutoffDateNormalized.setHours(23, 59, 59, 999);
 
-        const maxAllowedDate = eventStart < now
-            ? cutoffDateNormalized
-            : new Date(now.getTime() + 60 * 60 * 1000);
-
         const attendees = event.attendees || [];
-        const registrationHistory = analytics?.registrationHistory || [];
-        const registrationCountTotal = event.registrationCount ?? 0;
 
-        const attendeeMap = new Map();
+        // Minimal payload: sparse registrations by day (only days with data)
+        const registrations = {};
         attendees.forEach(attendee => {
-            if (attendee && attendee.userId) {
-                const userIdStr = attendee.userId.toString();
-                const regAt = attendee.registeredAt || attendee.rsvpDate;
-                if (!attendeeMap.has(userIdStr) || (regAt && new Date(regAt) > new Date(attendeeMap.get(userIdStr).registeredAt || attendeeMap.get(userIdStr).rsvpDate || 0))) {
-                    attendeeMap.set(userIdStr, attendee);
-                }
-            }
+            if (!attendee || !attendee.userId) return;
+            const guestCount = attendee.guestCount || 1;
+            const regAt = attendee.registeredAt || attendee.rsvpDate;
+            const regDate = regAt ? new Date(regAt) : new Date(eventCreated);
+            if (regDate > cutoffDateNormalized) return;
+            const dayKey = regDate.toISOString().split('T')[0];
+            if (!registrations[dayKey]) registrations[dayKey] = 0;
+            registrations[dayKey] += guestCount;
         });
 
-        const registrationsFromHistory = registrationHistory.filter(r => {
-            const ts = new Date(r.timestamp);
-            return ts <= maxAllowedDate;
-        });
-
-        const rsvpsByDay = {};
-        registrationsFromHistory.forEach(r => {
-            const dayKey = new Date(r.timestamp).toISOString().split('T')[0];
-            const attendee = attendeeMap.get(r.userId.toString());
-            const guestCount = attendee?.guestCount || 1;
-            if (!rsvpsByDay[dayKey]) rsvpsByDay[dayKey] = 0;
-            rsvpsByDay[dayKey] += guestCount;
-        });
-
-        if (registrationsFromHistory.length === 0 && attendees.length > 0) {
-            attendees.forEach(attendee => {
-                if (!attendee) return;
-                const regAt = attendee.registeredAt || attendee.rsvpDate;
-                const regDate = regAt ? new Date(regAt) : new Date(eventCreated);
-                if (regDate > cutoffDateNormalized) return;
-                const dayKey = regDate.toISOString().split('T')[0];
-                if (!rsvpsByDay[dayKey]) rsvpsByDay[dayKey] = 0;
-                rsvpsByDay[dayKey] += attendee.guestCount || 1;
-            });
-        }
-
-        const totalFromData = Object.values(rsvpsByDay).reduce((sum, c) => sum + c, 0);
-        if (totalFromData === 0 && registrationCountTotal > 0 && eventCreated <= cutoffDateNormalized) {
-            const daysFromCreation = Math.max(1, Math.ceil((cutoffDateNormalized - eventCreatedNormalized) / (1000 * 60 * 60 * 24)));
-            const perDay = Math.ceil(registrationCountTotal / daysFromCreation);
-            let remaining = registrationCountTotal;
-            for (let i = 0; i < daysFromCreation && remaining > 0; i++) {
-                const currentDate = new Date(eventCreatedNormalized);
-                currentDate.setDate(currentDate.getDate() + i);
-                if (currentDate > cutoffDateNormalized) break;
-                const dayKey = currentDate.toISOString().split('T')[0];
-                const forDay = Math.min(perDay, remaining);
-                if (!rsvpsByDay[dayKey]) rsvpsByDay[dayKey] = 0;
-                rsvpsByDay[dayKey] += forDay;
-                remaining -= forDay;
-            }
-        }
-
-        // Generate daily data from creation to end date (inclusive)
-        // This includes both past days (with actual RSVP data) and future days (projections)
-        const dailyData = [];
-        let cumulativeRSVPs = 0;
-        
-        // Use normalized dayBeforeEvent for comparison (this is the actual end date we want)
-        const endDateForComparison = new Date(dayBeforeEventNormalized);
-        
-        for (let i = 0; i <= totalDays; i++) {
-            const currentDate = new Date(eventCreatedNormalized);
-            currentDate.setDate(currentDate.getDate() + i);
-            currentDate.setHours(0, 0, 0, 0);
-            
-            // Only include days up to and including the day before event
-            // Break if we've gone past the day before event
-            if (currentDate > endDateForComparison) break;
-            
-            const dayKey = currentDate.toISOString().split('T')[0];
-            // Only count RSVPs for days that have passed (up to cutoff date)
-            const dailyRSVPs = currentDate <= cutoffDateNormalized ? (rsvpsByDay[dayKey] || 0) : 0;
-            cumulativeRSVPs += dailyRSVPs;
-            
-            dailyData.push({
-                date: dayKey,
-                dailyRSVPs: dailyRSVPs,
-                cumulativeRSVPs: cumulativeRSVPs
-            });
-        }
-
-        // Calculate dynamic required growth based on actual RSVPs received
-        // Past days use their ORIGINAL prediction (not actual RSVPs)
-        // Future days recalculate: if behind, rate increases; if ahead, rate levels off
-        const targetAttendance = event.expectedAttendance || 0;
-        const actualDays = dailyData.length;
-        const originalRequiredPerDay = actualDays > 0 ? targetAttendance / actualDays : 0;
-        
-        // Calculate cumulative actual RSVPs and original targets for past days
-        let cumulativeActual = 0;
-        let cumulativeOriginalTarget = 0;
-        let pastDaysCount = 0;
-        
-        const requiredGrowth = [];
-        
-        for (let i = 0; i < dailyData.length; i++) {
-            const day = dailyData[i];
-            const currentDate = new Date(day.date);
-            const isPastDay = currentDate <= cutoffDateNormalized;
-            
-            if (isPastDay) {
-                // Past day: use original prediction (not actual RSVPs)
-                pastDaysCount++;
-                cumulativeActual += day.dailyRSVPs; // Track actual for future calculations
-                cumulativeOriginalTarget += originalRequiredPerDay;
-                
-                requiredGrowth.push({
-                    date: day.date,
-                    required: cumulativeOriginalTarget // Use original prediction for past days
-                });
-            } else {
-                // Future day: recalculate based on remaining target needed
-                // Remaining = totalTarget - original targets for past days - actual RSVPs received
-                // If ahead (actual > original): remaining is less, so rate levels off
-                // If behind (actual < original): remaining is more, so rate increases
-                const remainingNeeded = targetAttendance - cumulativeOriginalTarget - cumulativeActual;
-                const remainingDays = dailyData.length - pastDaysCount;
-                const requiredPerRemainingDay = remainingDays > 0 ? Math.max(0, remainingNeeded) / remainingDays : 0;
-                
-                // Cumulative target = original targets for past days + (required per remaining day * number of future days up to and including this one)
-                const futureDaysUpToThis = i - pastDaysCount + 1;
-                const cumulativeRequired = cumulativeOriginalTarget + (requiredPerRemainingDay * futureDaysUpToThis);
-                
-                // Ensure we reach the total target by the last day
-                requiredGrowth.push({
-                    date: day.date,
-                    required: i === dailyData.length - 1 ? targetAttendance : Math.min(cumulativeRequired, targetAttendance)
-                });
-            }
-        }
-        
-        // Calculate average required per day for daily view (for reference)
-        const requiredPerDay = originalRequiredPerDay;
-        
-        // Debug logging
-        console.log(`RSVP Growth Data:`, {
-            eventId,
-            totalAttendees: event.attendees?.length || 0,
-            registrationHistoryCount: registrationHistory.length,
-            registrationsFromHistoryCount: registrationsFromHistory.length,
-            rsvpsByDay,
-            dailyDataLength: dailyData.length,
-            totalDays,
-            targetAttendance,
-            eventStart: eventStart.toISOString(),
-            eventCreated: eventCreated.toISOString(),
-            endDate: endDate.toISOString(),
-            endDateNormalized: endDateNormalized.toISOString(),
-            dayBeforeEvent: dayBeforeEvent.toISOString(),
-            cutoffDate: cutoffDate.toISOString(),
-            now: now.toISOString(),
-            firstDay: dailyData[0]?.date,
-            lastDay: dailyData[dailyData.length - 1]?.date,
-            sampleRSVPTimestamps: registrationsFromHistory.slice(0, 5).map(r => ({
-                timestamp: r.timestamp,
-                userId: r.userId
-            }))
-        });
-
-        console.log(`GET: /org-event-management/${orgId}/events/${eventId}/rsvp-growth`);
         res.status(200).json({
             success: true,
             data: {
-                dailyData,
-                requiredGrowth,
-                targetAttendance,
-                totalDays,
-                requiredPerDay,
-                eventStart: eventStart.toISOString(),
+                registrations,
                 eventCreated: eventCreated.toISOString(),
-                isFrozen: eventStart < now // Event has passed
+                eventStart: eventStart.toISOString(),
+                expectedAttendance: event.expectedAttendance || 0
             }
         });
 

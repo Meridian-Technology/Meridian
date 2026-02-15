@@ -8,6 +8,7 @@ import ImageUpload from '../../../../../../components/ImageUpload/ImageUpload';
 import Popup from '../../../../../../components/Popup/Popup';
 import RoomSelectorV2 from '../../../../../../pages/CreateEventV2/Steps/Where/RoomSelectorV2/RoomSelectorV2';
 import When from '../../../../../../pages/CreateEventV2/Steps/When/When';
+import EventPreview from '../EventPreview';
 import apiRequest from '../../../../../../utils/postRequest';
 import './EventEditorTab.scss';
 
@@ -93,7 +94,7 @@ function LocationTimePopupContent({
     );
 }
 
-function EventEditorTab({ event, orgId, onRefresh }) {
+function EventEditorTab({ event, agenda, orgId, onRefresh }) {
     const { addNotification } = useNotification();
     const [showLocationTimePopup, setShowLocationTimePopup] = useState(false);
     const [popupStep, setPopupStep] = useState('location'); // 'location' or 'time'
@@ -379,12 +380,23 @@ function EventEditorTab({ event, orgId, onRefresh }) {
         );
     }, [formConfig]);
 
+    const eventWithAgenda = event ? {
+        ...event,
+        eventAgenda: {
+            items: agenda?.items || [],
+            isPublished: agenda?.isPublished
+        }
+    } : null;
+
     if (!event) {
         return <div className="event-editor-tab">Loading...</div>;
     }
 
     return (
         <div className="event-editor-tab">
+            {eventWithAgenda && (
+                <EventPreview event={eventWithAgenda} onRefetch={onRefresh} />
+            )}
             <div className="editor-header">
                 <h2>Details</h2>
                 {hasChanges && (
@@ -435,7 +447,7 @@ function EventEditorTab({ event, orgId, onRefresh }) {
 
                 <div className="form-section">
                     <DynamicFormField
-                        field={{ name: 'visibility', label: 'Visibility', inputType: 'select', validation: { options: ['public', 'internal', 'inviteOnly'] }}}
+                        field={{ name: 'visibility', label: 'Visibility', inputType: 'select', validation: {} }}
                         value={formData.visibility}
                         onChange={handleFieldChange}
                         formData={formData}

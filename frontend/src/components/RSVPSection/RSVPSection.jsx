@@ -4,12 +4,13 @@ import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import { useFetch } from '../../hooks/useFetch';
 import RSVPButton from '../RSVPButton/RSVPButton';
+import { analytics } from '../../services/analytics/analytics';
 import Popup from '../Popup/Popup';
 import defaultAvatar from '../../assets/defaultAvatar.svg';
 import postRequest from '../../utils/postRequest';
 import './RSVPSection.scss';
 
-const RSVPSection = ({ event, compact }) => {
+const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const [registration, setRegistration] = useState(null);
@@ -23,17 +24,19 @@ const RSVPSection = ({ event, compact }) => {
 
     const enabled = event.registrationEnabled ?? event.rsvpEnabled;
     const { data: rsvpData } = useFetch(
-        enabled && user ? `/my-rsvp/${event._id}` : null
+        enabled && user && !previewAsUnregistered ? `/my-rsvp/${event._id}` : null
     );
     const { data: attendeesData } = useFetch(
         enabled ? `/attendees/${event._id}` : null
     );
 
     useEffect(() => {
-        if (rsvpData?.success) {
+        if (previewAsUnregistered) {
+            setRegistration(null);
+        } else if (rsvpData?.success) {
             setRegistration(rsvpData.rsvp);
         }
-    }, [rsvpData]);
+    }, [rsvpData, previewAsUnregistered]);
 
     useEffect(() => {
         if (attendeesData?.success) {
@@ -64,6 +67,7 @@ const RSVPSection = ({ event, compact }) => {
             });
             
             if (response?.success) {
+                analytics.track('event_registration_withdraw', { event_id: event._id });
                 addNotification({
                     title: 'Registration Withdrawn',
                     message: 'You have successfully withdrawn from this event.',
