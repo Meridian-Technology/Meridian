@@ -4,6 +4,7 @@ import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import { useFetch } from '../../hooks/useFetch';
 import RSVPButton from '../RSVPButton/RSVPButton';
+import { analytics } from '../../services/analytics/analytics';
 import Popup from '../Popup/Popup';
 import defaultAvatar from '../../assets/defaultAvatar.svg';
 import postRequest from '../../utils/postRequest';
@@ -66,6 +67,7 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
             });
             
             if (response?.success) {
+                analytics.track('event_registration_withdraw', { event_id: event._id });
                 addNotification({
                     title: 'Registration Withdrawn',
                     message: 'You have successfully withdrawn from this event.',

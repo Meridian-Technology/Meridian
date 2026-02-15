@@ -13,6 +13,7 @@ import Logo from '../../assets/Brand Image/BEACON.svg';
 import { useFetch } from '../../hooks/useFetch';
 import { useEventRoom } from '../../WebSocketContext';
 import EventPageContent from './EventPageContent';
+import { analytics } from '../../services/analytics/analytics';
 
 function EventPage() {
     const { eventId } = useParams();
@@ -37,6 +38,13 @@ function EventPage() {
     }
 
     const event = eventData.event;
+
+    useEffect(() => {
+        if (event?._id) {
+            analytics.screen('Event Page', { event_id: event._id, event_name: event.name });
+            analytics.track('event_view', { event_id: event._id });
+        }
+    }, [event?._id]);
 
     return (
         <div className="event-page">

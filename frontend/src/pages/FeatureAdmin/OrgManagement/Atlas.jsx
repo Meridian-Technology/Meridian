@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './Atlas.scss';
 import Dashboard from '../../../components/Dashboard/Dashboard';
+import { analytics } from '../../../services/analytics/analytics';
 import OrgOverview from './OrgOverview/OrgOverview';
 import VerificationRequests from './VerificationRequests/VerificationRequests';
 import ApprovalQueue from './ApprovalQueue/ApprovalQueue';
@@ -11,6 +12,11 @@ import AtlasLogo from '../../../assets/Brand Image/SolutionLogos/Atlas.svg';
 import { useNavigate } from 'react-router-dom';
 function Atlas() {
     const navigate = useNavigate();
+
+    useEffect(() => {
+        analytics.screen('Org Management');
+    }, []);
+
     const menuItems = [
         {
             label: 'Overview',

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import './Beacon.scss';
 import Dashboard from '../../../components/Dashboard/Dashboard';
+import { analytics } from '../../../services/analytics/analytics';
 import Home from './Home/Home';
 import BeaconLogo from '../../../assets/Brand Image/SolutionLogos/Beacon.svg';
 import { useNavigate } from 'react-router-dom';
@@ -12,6 +13,11 @@ import EventsAnalytics from '../../../components/EventsAnalytics/EventsAnalytics
 
 const Beacon = () => {
     const navigate = useNavigate();
+
+    useEffect(() => {
+        analytics.screen('Event System Config (Beacon)');
+    }, []);
+
     const menuItems = [
 
         {

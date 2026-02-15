@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import defaultAvatar from '../../assets/defaultAvatar.svg';
 import useAuth from '../../hooks/useAuth';
+import { analytics } from '../../services/analytics/analytics';
 import RSVPSection from '../../components/RSVPSection/RSVPSection';
 import EventCheckInButton from '../../components/EventCheckInButton/EventCheckInButton';
 import Popup from '../../components/Popup/Popup';
@@ -125,7 +126,10 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                     {event.eventAgenda?.isPublished && (event.eventAgenda?.items?.length ?? 0) > 0 && (
                         <div className="row view-agenda">
                             <button
-                                onClick={() => setShowAgendaModal(true)}
+                                onClick={() => {
+                                    analytics.track('event_agenda_view', { event_id: event._id });
+                                    setShowAgendaModal(true);
+                                }}
                                 className="btn view-agenda-btn"
                             >
                                 <Icon icon="mdi:calendar-clock" />

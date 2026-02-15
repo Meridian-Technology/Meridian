@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../hooks/useFetch';
+import { analytics } from '../../../services/analytics/analytics';
 import { useNotification } from '../../../NotificationContext';
 import { useDashboardOverlay } from '../../../hooks/useDashboardOverlay';
 import './EventsManagement.scss';
@@ -30,6 +31,12 @@ function EventsManagement({ orgId, expandedClass, orgData: orgDataProp }) {
     const handleRefresh = () => {
         setRefreshTrigger(prev => prev + 1);
     };
+
+    useEffect(() => {
+        if (orgId) {
+            analytics.screen('Events Management', { org_id: orgId });
+        }
+    }, [orgId]);
 
     const handleViewEvent = (event) => {
         const orgIdForDashboard = orgData?.org?.overview?._id;

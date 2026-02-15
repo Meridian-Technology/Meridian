@@ -1,12 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import './Orgs.scss';
 import { useFetch } from '../../../hooks/useFetch';
 import OrgResult from './OrgResult/OrgResult';
+import { analytics } from '../../../services/analytics/analytics';
 import EventsGrad from '../../../assets/Gradients/EventsGrad.png';
 import { Icon } from '@iconify-icon/react';
 
 const Orgs = () => {
     const { data, loading, error } = useFetch('/get-orgs?exhaustive=true');
+
+    useEffect(() => {
+        analytics.screen('Orgs List');
+    }, []);
     const [searchQuery, setSearchQuery] = useState('');
 
     const orgs = data?.orgs || [];

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
+import { analytics } from '../../services/analytics/analytics';
 import apiRequest from '../../utils/postRequest';
 import DynamicFormField from '../../components/DynamicFormField/DynamicFormField';
 import { useFetch } from '../../hooks/useFetch';
@@ -91,6 +92,10 @@ const CreateEventV3 = () => {
     useEffect(() => {
         document.body.classList.add('create-event-v3-page');
         return () => document.body.classList.remove('create-event-v3-page');
+    }, []);
+
+    useEffect(() => {
+        analytics.screen('Create Event');
     }, []);
 
     useEffect(() => {
@@ -218,6 +223,11 @@ const CreateEventV3 = () => {
             const response = await apiRequest('/create-event', submitData, { method: 'POST' });
 
             if (response.success) {
+                analytics.track('event_create_submitted', {
+                    event_id: response.eventId,
+                    as_draft: !!asDraft,
+                    hosting_type: selectedHost?.type
+                });
                 addNotification({
                     title: asDraft ? 'Draft Saved' : 'Event Created',
                     message: asDraft

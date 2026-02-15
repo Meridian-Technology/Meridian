@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import './ClubDash.scss';
 import useAuth from '../../hooks/useAuth';
+import { analytics } from '../../services/analytics/analytics';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import logo from '../../assets/red_logo.svg';
 import { getAllEvents } from '../../components/EventsViewer/EventHelpers';
@@ -78,6 +79,12 @@ function ClubDash(){
         }
         
     },[isAuthenticating, isAuthenticated, user]);
+
+    useEffect(() => {
+        if (clubId) {
+            analytics.screen('Club Dashboard', { org_id: clubId });
+        }
+    }, [clubId]);
 
     useEffect(()=>{
         if(orgData){

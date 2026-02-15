@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import postRequest from '../../utils/postRequest';
+import { analytics } from '../../services/analytics/analytics';
 import Popup from '../Popup/Popup';
 import FormViewer from '../FormViewer/FormViewer';
 import { hasAnonymousRegistration, saveAnonymousRegistration } from '../../utils/anonymousRegistrationStorage';
@@ -38,6 +39,7 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                 ...(guestEmail ? { guestEmail } : {})
             });
             if (response.success) {
+                analytics.track('event_registration', { event_id: event._id });
                 if (!user) {
                     saveAnonymousRegistration(event._id, {
                         guestName: guestName || '',

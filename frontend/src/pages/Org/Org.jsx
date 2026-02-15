@@ -1,6 +1,7 @@
 import React, {useState, useEffect} from 'react';
 import person from "../../assets/Icons/Profile.svg";
 import defaultAvatar from "../../assets/defaultAvatar.svg";
+import { analytics } from '../../services/analytics/analytics';
 import FormViewer from '../../components/FormViewer/FormViewer';
 import Popup from '../../components/Popup/Popup';
 import OrgEvents from '../../components/OrgEvents/OrgEvents';
@@ -25,6 +26,12 @@ const Org = ({ orgData, refetch }) => {
 
     const { overview, members, followers } = orgData.org;
     const [showForm, setShowForm] = useState(false);
+
+    useEffect(() => {
+        if (overview?._id) {
+            analytics.screen('Org Page', { org_id: overview._id, org_name: overview.org_name });
+        }
+    }, [overview?._id]);
     const {user, friendRequests, refreshFriendRequests} = useAuth();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -85,6 +92,7 @@ const Org = ({ orgData, refetch }) => {
                     type: 'error'
                 });
             } else {
+                analytics.track('org_join', { org_id: overview._id });
                 addNotification({
                     title: 'Success',
                     message: response.message || (overview.requireApprovalForJoin ? 'Application submitted successfully' : 'You are now a member'),
@@ -141,6 +149,7 @@ const Org = ({ orgData, refetch }) => {
                 // Refetch to sync state
                 setTimeout(() => refetch(), 100);
             } else {
+                analytics.track('org_follow', { org_id: overview._id });
                 addNotification({
                     title: 'Success',
                     message: 'You are now following this organization',
@@ -180,6 +189,7 @@ const Org = ({ orgData, refetch }) => {
                 // Refetch to sync state
                 setTimeout(() => refetch(), 100);
             } else {
+                analytics.track('org_unfollow', { org_id: overview._id });
                 addNotification({
                     title: 'Success',
                     message: 'You have unfollowed this organization',
@@ -221,6 +231,7 @@ const Org = ({ orgData, refetch }) => {
                     type: 'error'
                 });
             } else {
+                analytics.track('org_leave', { org_id: overview._id });
                 addNotification({
                     title: 'Success',
                     message: response.message || 'You have left the organization',

@@ -2,6 +2,7 @@ import React, {useState, useEffect, useRef} from 'react';
 import './EventsDash.scss';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
+import { analytics } from '../../services/analytics/analytics';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import Explore from './Explore/Explore';
 import MyEvents from './MyEvents/MyEvents';
@@ -218,6 +219,10 @@ function EventsDash({}){
         return () => clearTimeout(timer);
     }, []);
 
+    useEffect(() => {
+        analytics.screen('Events Dashboard');
+    }, []);
+
     const handleSignUp = () => {
         setShowSignUpPrompt(false);
         navigate('/register');
@@ -242,6 +247,7 @@ function EventsDash({}){
             setCreateType('study-session');
             setShowCreatePopup(true);
         } else if (action === 'event') {
+            analytics.track('event_create_click', { source: 'events_dashboard' });
             navigate('/create-event');
         } else if (action === 'org') {
             navigate('/create-org');
