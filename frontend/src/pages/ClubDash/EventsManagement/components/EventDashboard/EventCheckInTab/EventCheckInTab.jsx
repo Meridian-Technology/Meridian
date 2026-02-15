@@ -261,7 +261,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
         return (
             <div className="event-checkin-tab">
                 <EmptyState
-                    icon="mdi:qrcode-scan"
+                    icon="jam:qr-code"
                     title="Check-In Not Enabled"
                     description="Enable check-in to start tracking attendance with QR code, link, or manual check-in. You can change QR/link options in the Edit tab after enabling."
                     actions={
@@ -271,7 +271,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                             onClick={handleEnableCheckIn}
                             disabled={enablingCheckIn}
                         >
-                            <Icon icon={enablingCheckIn ? 'mdi:loading' : 'mdi:qrcode-scan'} className={enablingCheckIn ? 'spin' : ''} />
+                            <Icon icon={enablingCheckIn ? 'mdi:loading' : 'fluent:scan-qr-code-24-regular'} className={enablingCheckIn ? 'spin' : ''} />
                             {enablingCheckIn ? 'Enabling...' : 'Enable check-in'}
                         </button>
                     }
@@ -288,7 +288,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
         <div className="event-checkin-tab">
             <div className="checkin-header">
                 <h2>
-                    <Icon icon="mdi:qrcode-scan" />
+                    <Icon icon="uil:qrcode-scan" />
                     Event Check-In
                 </h2>
                 <div className="checkin-header-actions">
@@ -348,7 +348,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
             <div className="checkin-methods">
                 {(showQR || showLink) && (
                     <HeaderContainer
-                        icon={showQR ? 'mdi:qrcode' : 'mdi:link'}
+                        icon={showQR ? 'fa7-solid:qrcode' : 'mdi:link'}
                         header={showQR ? 'QR Code' : 'Check-in link'}
                         classN="checkin-section checkin-section-qr"
                         right={checkInLink ? (
