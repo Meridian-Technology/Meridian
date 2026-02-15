@@ -38,6 +38,7 @@ function initSocket(server, corsOptions = {}) {
     });
 
     io.on('connection', (socket) => {
+        socket.connectedAt = Date.now();
         console.log('[WebSocket] client connected', { socketId: socket.id });
 
         let heartbeatInterval = null;
@@ -135,11 +136,60 @@ function emitToOrgApprovalRoom(orgId, eventName, payload) {
     io.to(room).emit(eventName, payload);
 }
 
+/**
+ * Get all connected sockets for admin inspection.
+ * @returns {Array<{ socketId: string, rooms: string[], connectedAt: number }>}
+ */
+function getConnections() {
+    if (!io) return [];
+    const sockets = io.sockets.sockets;
+    return Array.from(sockets.values())
+        .filter((s) => s.connected)
+        .map((s) => ({
+            socketId: s.id,
+            rooms: Array.from(s.rooms).filter((r) => r !== s.id),
+            connectedAt: s.connectedAt || 0,
+        }));
+}
+
+/**
+ * Disconnect a specific socket by ID.
+ * @param {string} socketId
+ * @returns {boolean} true if disconnected, false if not found
+ */
+function disconnectSocket(socketId) {
+    if (!io) return false;
+    const socket = io.sockets.sockets.get(socketId);
+    if (!socket) return false;
+    socket.disconnect(true);
+    return true;
+}
+
+/**
+ * Disconnect all connected sockets.
+ * @returns {number} count of disconnected sockets
+ */
+function disconnectAll() {
+    if (!io) return 0;
+    const sockets = io.sockets.sockets;
+    let count = 0;
+    for (const socket of sockets.values()) {
+        if (socket.connected) {
+            socket.disconnect(true);
+            count++;
+        }
+    }
+    return count;
+}
+
 module.exports = {
     initSocket,
     getIO,
     emitToEventRoom,
     emitToOrgApprovalRoom,
+    getConnections,
+    disconnectSocket,
+    disconnectAll,
     ROOM_PREFIX_EVENT,
     ROOM_PREFIX_ORG_APPROVAL,
 };
