@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import './Create.scss';
 import CreateStudySession from './CreateStudySession/CreateStudySession';
+import useAuth from '../../hooks/useAuth';
+import { useFetch } from '../../hooks/useFetch';
 
 function Create() {
     const [createType, setCreateType] = useState('');
@@ -10,6 +12,12 @@ function Create() {
     const menuRef = useRef(null);
     const buttonRef = useRef(null);
     const navigate = useNavigate();
+    const { user } = useAuth();
+    const eligibilityData = useFetch(user ? '/api/event-system-config/event-creation-eligibility' : null);
+    const eligibility = eligibilityData.data?.data;
+    const canCreateEvent = eligibility
+        ? (eligibility.allowIndividualUserHosting || (eligibility.orgsWithEventPermission?.length > 0))
+        : false;
 
     // Close menu when clicking outside
     useEffect(() => {
@@ -71,18 +79,20 @@ function Create() {
                                     <span className="menu-item-subtitle">Create a new study session</span>
                                 </div>
                             </div>
-                            <div 
-                                className="create-menu-item"
-                                onClick={() => handleOptionClick('event')}
-                            >
-                                <div className="menu-item-icon">
-                                    <Icon icon="mingcute:calendar-fill" />
+                            {canCreateEvent && (
+                                <div 
+                                    className="create-menu-item"
+                                    onClick={() => handleOptionClick('event')}
+                                >
+                                    <div className="menu-item-icon">
+                                        <Icon icon="mingcute:calendar-fill" />
+                                    </div>
+                                    <div className="menu-item-content">
+                                        <span className="menu-item-title">Event</span>
+                                        <span className="menu-item-subtitle">Create a new event</span>
+                                    </div>
                                 </div>
-                                <div className="menu-item-content">
-                                    <span className="menu-item-title">Event</span>
-                                    <span className="menu-item-subtitle">Create a new event</span>
-                                </div>
-                            </div>
+                            )}
                             <div 
                                 className="create-menu-item"
                                 onClick={() => handleOptionClick('org')}

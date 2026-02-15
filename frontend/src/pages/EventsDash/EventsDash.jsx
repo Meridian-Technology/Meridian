@@ -9,6 +9,7 @@ import Loader from '../../components/Loader/Loader';
 import Orgs from './Orgs/Orgs';
 import eventsLogo from '../../assets/Brand Image/BEACON.svg';
 import useAuth from '../../hooks/useAuth';
+import { useFetch } from '../../hooks/useFetch';
 import Friends from '../Friends/Friends';
 import EventsGrad from '../../assets/Gradients/EventsGrad.png';
 import Popup from '../../components/Popup/Popup';
@@ -84,6 +85,11 @@ function EventsDash({}){
     const createButtonRef = useRef(null);
     const { user, isAuthenticating } = useAuth();
     const navigate = useNavigate();
+    const eligibilityData = useFetch(user ? '/api/event-system-config/event-creation-eligibility' : null);
+    const eligibility = eligibilityData.data?.data;
+    const canCreateEvent = eligibility
+        ? (eligibility.allowIndividualUserHosting || (eligibility.orgsWithEventPermission?.length > 0))
+        : false;
 
     // Helper function to check if sign-up prompt should be shown today
     const shouldShowSignUpPrompt = () => {
@@ -250,8 +256,9 @@ function EventsDash({}){
     // Create the plus button middle item for authenticated users
     const getMiddleItem = () => {
         if (!user) return null;
-        if(user.roles && (user.roles.includes('admin') || user.roles.includes('beta'))){
-            console.log(user.roles);
+        // if(user.roles && (user.roles.includes('admin') || user.roles.includes('beta'))){
+        //     console.log(user.roles);
+        if(true){
         return (
             <div className="create-button-container">
                 <div className="create-menu-container">
@@ -279,18 +286,20 @@ function EventsDash({}){
                                     <span className="menu-item-subtitle">Create a new study session</span>
                                 </div>
                             </div>
-                            <div 
-                                className="create-menu-item"
-                                onClick={() => handleCreateOption('event')}
-                            >
-                                <div className="menu-item-icon">
-                                    <Icon icon="mingcute:calendar-fill" />
+                            {canCreateEvent && (
+                                <div 
+                                    className="create-menu-item"
+                                    onClick={() => handleCreateOption('event')}
+                                >
+                                    <div className="menu-item-icon">
+                                        <Icon icon="mingcute:calendar-fill" />
+                                    </div>
+                                    <div className="menu-item-content">
+                                        <span className="menu-item-title">Event</span>
+                                        <span className="menu-item-subtitle">Create a new event</span>
+                                    </div>
                                 </div>
-                                <div className="menu-item-content">
-                                    <span className="menu-item-title">Event</span>
-                                    <span className="menu-item-subtitle">Create a new event</span>
-                                </div>
-                            </div>
+                            )}
                             <div 
                                 className="create-menu-item"
                                 onClick={() => handleCreateOption('org')}

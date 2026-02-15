@@ -5,8 +5,9 @@ import useOutsideClick from '../../../../hooks/useClickOutside';
 import defaultAvatar from '../../../../assets/defaultAvatar.svg';
 import './HostOrgDropdown.scss';
 
-function HostOrgDropdown({ selectedHost, onHostChange }) {
+function HostOrgDropdown({ selectedHost, onHostChange, allowIndividualUserHosting = true, orgsWithEventPermission }) {
     const { user } = useAuth();
+    const displayOrgs = orgsWithEventPermission ?? user?.clubAssociations ?? [];
     const [showDrop, setShowDrop] = useState(false);
     const [isAnimating, setIsAnimating] = useState(false);
     const [shouldRender, setShouldRender] = useState(false);
@@ -46,7 +47,7 @@ function HostOrgDropdown({ selectedHost, onHostChange }) {
                 isPlaceholder: false,
             };
         }
-        const org = user?.clubAssociations?.find(org => org._id === selectedHost.id);
+        const org = displayOrgs.find(o => o._id === selectedHost.id);
         return {
             image: org?.org_profile_image || defaultAvatar,
             name: org?.org_name || 'Organization',
@@ -76,18 +77,20 @@ function HostOrgDropdown({ selectedHost, onHostChange }) {
             {shouldRender && (
                 <div className={`dropdown ${!isAnimating ? 'dropdown-exit' : ''}`} onClick={(e) => e.stopPropagation()}>
                     <div className="org-list">
-                        {/* User option */}
-                        <div
-                            className={`drop-option ${selectedHost?.type === 'User' && selectedHost?.id === user?._id ? "selected" : ""}`}
-                            onClick={() => handleSelect({ id: user?._id, type: 'User' })}
-                        >
-                            <img src={user?.pfp || defaultAvatar} alt="" />
-                            <p>{user?.username || 'Student'}</p>
-                        </div>
-                        {/* Organization options */}
-                        {user?.clubAssociations?.map((org) => (
+                        {/* User option - only when individual hosting is allowed */}
+                        {allowIndividualUserHosting && (
                             <div
-                                className={`drop-option ${selectedHost?.type === 'Org' && selectedHost?.id === org._id && "selected"}`}
+                                className={`drop-option ${selectedHost?.type === 'User' && selectedHost?.id === user?._id ? "selected" : ""}`}
+                                onClick={() => handleSelect({ id: user?._id, type: 'User' })}
+                            >
+                                <img src={user?.pfp || defaultAvatar} alt="" />
+                                <p>{user?.username || 'Student'}</p>
+                            </div>
+                        )}
+                        {/* Organization options */}
+                        {displayOrgs.map((org) => (
+                            <div
+                                className={`drop-option ${selectedHost?.type === 'Org' && selectedHost?.id === org._id ? "selected" : ""}`}
                                 key={org._id}
                                 onClick={() => handleSelect({ id: org._id, type: 'Org' })}
                             >
@@ -95,6 +98,11 @@ function HostOrgDropdown({ selectedHost, onHostChange }) {
                                 <p>{org.org_name}</p>
                             </div>
                         ))}
+                        {allowIndividualUserHosting === false && displayOrgs.length === 0 && (
+                            <div className="drop-option drop-option-disabled">
+                                <p>You don&apos;t have permission to host events</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

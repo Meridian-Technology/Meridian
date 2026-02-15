@@ -349,8 +349,17 @@ OrgSchema.methods.getRoleByName = function(roleName) {
 OrgSchema.methods.hasPermission = function(roleName, permission) {
     const role = this.getRoleByName(roleName);
     if (!role) return false;
-    
-    return role.permissions.includes('all') || role.permissions.includes(permission);
+
+    if (role.permissions.includes('all')) return true;
+    if (role.permissions.includes(permission)) return true;
+
+    // Also check boolean flags (roles may have canManageEvents etc. without permissions array)
+    if (permission === 'manage_events' && role.canManageEvents) return true;
+    if (permission === 'manage_members' && role.canManageMembers) return true;
+    if (permission === 'manage_roles' && role.canManageRoles) return true;
+    if (permission === 'view_analytics' && role.canViewAnalytics) return true;
+
+    return false;
 };
 
 // Approval-specific methods

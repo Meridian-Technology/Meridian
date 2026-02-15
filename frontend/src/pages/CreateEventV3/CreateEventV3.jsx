@@ -36,12 +36,31 @@ const CreateEventV3 = () => {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const formConfigData = useFetch('/api/event-system-config/form-config');
+    const eligibilityData = useFetch(user ? '/api/event-system-config/event-creation-eligibility' : null);
     const formConfig = formConfigData.data?.data ?? formConfigData.data;
+    const eligibility = eligibilityData.data?.data;
 
     const initialStateHost = location.state?.selectedOrg
         ? { id: location.state.selectedOrg._id, type: 'Org' }
         : null;
     const [selectedHost, setSelectedHost] = useState(initialStateHost);
+
+    useEffect(() => {
+        if (!eligibility || !user) return;
+        const { allowIndividualUserHosting, orgsWithEventPermission } = eligibility;
+        setSelectedHost(prev => {
+            if (prev) {
+                if (prev.type === 'User') return allowIndividualUserHosting ? prev : null;
+                if (prev.type === 'Org') {
+                    const isOrgAllowed = orgsWithEventPermission?.some(o => o._id === prev.id);
+                    return isOrgAllowed ? prev : null;
+                }
+            }
+            if (allowIndividualUserHosting) return { id: user._id, type: 'User' };
+            if (orgsWithEventPermission?.length > 0) return { id: orgsWithEventPermission[0]._id, type: 'Org' };
+            return null;
+        });
+    }, [eligibility, user]);
     const [formData, setFormData] = useState({
         name: '',
         type: '',
@@ -266,7 +285,12 @@ const CreateEventV3 = () => {
 
                 <div className="create-event-v3-right">
                     {user && (
-                        <HostOrgDropdown selectedHost={selectedHost} onHostChange={setSelectedHost} />
+                        <HostOrgDropdown
+                            selectedHost={selectedHost}
+                            onHostChange={setSelectedHost}
+                            allowIndividualUserHosting={eligibility?.allowIndividualUserHosting ?? true}
+                            orgsWithEventPermission={eligibility?.orgsWithEventPermission}
+                        />
                     )}
 
                     <div className="create-event-v3-form">
@@ -359,9 +383,9 @@ const CreateEventV3 = () => {
                     </div>
 
                     <div className="create-event-v3-actions">
-                        {selectedHost?.type === 'Org' && user?.clubAssociations?.some((org) => org._id === selectedHost.id) && (
+                        {selectedHost?.type === 'Org' && (eligibility?.orgsWithEventPermission ?? user?.clubAssociations)?.some((org) => org._id === selectedHost.id) && (
                             <Link
-                                to={`/club-dashboard/${encodeURIComponent(user.clubAssociations.find((o) => o._id === selectedHost.id)?.org_name || '')}?page=1`}
+                                to={`/club-dashboard/${encodeURIComponent((eligibility?.orgsWithEventPermission ?? user?.clubAssociations)?.find((o) => o._id === selectedHost.id)?.org_name || '')}?page=1`}
                                 className="create-event-v3-management-btn"
                             >
                                 <Icon icon="mdi:cog" />
