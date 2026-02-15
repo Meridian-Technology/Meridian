@@ -190,6 +190,11 @@ function EventsDash({}){
                 icon: 'mdi:account-group',
                 element: <Friends />
             });
+            items.push({
+                label: 'Orgs',
+                icon: 'mingcute:group-2-fill',
+                element: <Orgs />
+            });
             
             // Add Analytics tab for admin users
             if (user.roles && user.roles.includes('admin')) {
@@ -198,11 +203,7 @@ function EventsDash({}){
                 //     icon: 'mingcute:chart-fill',
                 //     element: <EventsAnalytics />
                 // });
-                items.push({
-                    label: 'Orgs',
-                    icon: 'mingcute:group-2-fill',
-                    element: <Orgs />
-                });
+
             }
         }
         

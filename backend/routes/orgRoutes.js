@@ -537,13 +537,21 @@ router.post("/edit-org", verifyToken, upload.fields([
         }
         if (memberForm) {
             console.log(memberForm);
+            const formObject = typeof memberForm === 'string' ? JSON.parse(memberForm) : memberForm;
             if(org.memberForm) {
-                const formObject = JSON.parse(memberForm);
                 await Form.findByIdAndUpdate(org.memberForm, formObject);
             } else {
-                const formObject = JSON.parse(memberForm);
-                formObject.createdBy = userId;
-                const newForm = new Form(formObject);
+                const formWithMeta = {
+                    ...formObject,
+                    title: formObject.title || 'Member Application Form',
+                    description: formObject.description || 'Prospective members will need to fill out this form.',
+                    questions: formObject.questions || [],
+                    createdBy: userId,
+                    createdType: 'User',
+                    formOwner: org._id,
+                    formOwnerType: 'Org'
+                };
+                const newForm = new Form(formWithMeta);
                 await newForm.save();
                 org.memberForm = newForm._id;
             }
