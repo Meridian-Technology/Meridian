@@ -26,6 +26,15 @@ function EventPage() {
         refetchEvent?.();
     });
 
+    const event = eventData?.event;
+
+    useEffect(() => {
+        if (event?._id) {
+            analytics.screen('Event Page', { event_id: event._id, event_name: event.name });
+            analytics.track('event_view', { event_id: event._id });
+        }
+    }, [event?._id]);
+
     if (eventLoading || !eventData) {
         return (
             <div className="event-page">
@@ -36,15 +45,6 @@ function EventPage() {
             </div>
         );
     }
-
-    const event = eventData.event;
-
-    useEffect(() => {
-        if (event?._id) {
-            analytics.screen('Event Page', { event_id: event._id, event_name: event.name });
-            analytics.track('event_view', { event_id: event._id });
-        }
-    }, [event?._id]);
 
     return (
         <div className="event-page">

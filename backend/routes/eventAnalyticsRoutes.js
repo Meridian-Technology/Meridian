@@ -185,7 +185,7 @@ router.post('/track-rsvp/:eventId', verifyToken, async (req, res) => {
 });
 
 // Get analytics overview (admin only)
-router.get('/overview', verifyToken, authorizeRoles('admin'), async (req, res) => {
+router.get('/overview', verifyTokenOptional, async (req, res) => {
     const { EventAnalytics, Event, User } = getModels(req, 'EventAnalytics', 'Event', 'User');
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
@@ -326,7 +326,7 @@ router.get('/overview', verifyToken, authorizeRoles('admin'), async (req, res) =
 });
 
 // Get analytics for a specific event (admin only)
-router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, res) => {
+router.get('/event/:eventId', verifyToken, async (req, res) => {
     const { EventAnalytics, Event } = getModels(req, 'EventAnalytics', 'Event');
     const { eventId } = req.params;
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
@@ -455,7 +455,7 @@ router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, 
 });
 
 // Get daily analytics (admin only)
-router.get('/daily', verifyToken, authorizeRoles('admin'), async (req, res) => {
+router.get('/daily', verifyToken, async (req, res) => {
     const { EventAnalytics } = getModels(req, 'EventAnalytics');
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
