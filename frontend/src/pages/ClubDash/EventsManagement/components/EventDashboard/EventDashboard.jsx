@@ -182,6 +182,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         equipment={dashboardData.equipment}
                         orgId={orgId}
                         onRefresh={handleRefresh}
+                        onTabChange={setActiveTab}
                     />
         },
         {
@@ -225,6 +226,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             description: 'Event details and basic information',
             content: <EventEditorTab
                         event={dashboardData.event}
+                        agenda={dashboardData.agenda}
                         orgId={orgId}
                         onRefresh={handleRefresh}
                     />
@@ -244,7 +246,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
         {
             id: 'checkin',
             label: 'Check-In',
-            icon: 'mdi:qrcode-scan',
+            icon: 'uil:qrcode-scan',
             description: 'Manage event check-in and attendance',
             content: <EventCheckInTab
                         event={dashboardData.event}
