@@ -3,6 +3,8 @@ import { Icon } from '@iconify-icon/react';
 import ImageUpload from '../ImageUpload/ImageUpload';
 import Popup from '../Popup/Popup';
 import TextareaExpandPopup from '../TextareaExpandPopup/TextareaExpandPopup';
+import MarkdownTextarea from '../MarkdownTextarea/MarkdownTextarea';
+import MarkdownTextareaExpandPopup from '../MarkdownTextareaExpandPopup/MarkdownTextareaExpandPopup';
 import Select from '../Select/Select';
 import './DynamicFormField.scss';
 
@@ -170,6 +172,48 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
                     );
                 }
                 return textareaField;
+
+            case 'markdown-textarea':
+                const markdownField = (
+                    <MarkdownTextarea
+                        id={field.name}
+                        value={localValue === null || localValue === undefined ? '' : localValue}
+                        onChange={handleChange}
+                        placeholder={field.placeholder || ''}
+                        rows={4}
+                        maxLength={field.validation?.maxLength}
+                        minLength={field.validation?.minLength}
+                        required={field.isRequired || field.validation?.required}
+                        className={errors[field.name] ? 'error' : ''}
+                    />
+                );
+                if (field.allowExpand) {
+                    return (
+                        <div className="textarea-with-expand">
+                            {markdownField}
+                            <button
+                                type="button"
+                                className="textarea-expand-btn"
+                                onClick={() => setExpandPopupOpen(true)}
+                                title="Open in larger editor"
+                            >
+                                <Icon icon="mdi:open-in-new" />
+                                <span>Expand</span>
+                            </button>
+                            <Popup isOpen={expandPopupOpen} onClose={() => setExpandPopupOpen(false)} defaultStyling={false}>
+                                <MarkdownTextareaExpandPopup
+                                    label={field.label}
+                                    value={localValue}
+                                    onChange={(value) => handleChange(value)}
+                                    placeholder={field.placeholder || ''}
+                                    maxLength={field.validation?.maxLength}
+                                    minLength={field.validation?.minLength}
+                                />
+                            </Popup>
+                        </div>
+                    );
+                }
+                return markdownField;
 
             case 'select':
                 // Hardcoded: visibility always uses icon dropdown

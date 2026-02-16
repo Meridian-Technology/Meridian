@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import defaultAvatar from '../../assets/defaultAvatar.svg';
@@ -11,6 +11,7 @@ import EmptyState from '../../components/EmptyState/EmptyState';
 import AgendaDailyCalendar from '../ClubDash/EventsManagement/components/EventDashboard/EventAgendaBuilder/AgendaDailyCalendar/AgendaDailyCalendar';
 import EventAnalytics from '../../components/EventAnalytics/EventAnalytics';
 import { getStoredMinuteHeightPx } from '../../utils/agendaViewPreferences';
+import { parseMarkdownDescription } from '../../utils/markdownUtils';
 
 /**
  * EventPageContent - Shared event layout and UI components.
@@ -23,6 +24,21 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
     const { user } = useAuth();
     const [showAgendaModal, setShowAgendaModal] = useState(false);
     const [activeTab, setActiveTab] = useState('details');
+    const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+    const [descriptionOverflows, setDescriptionOverflows] = useState(false);
+    const descriptionRef = useRef(null);
+
+    useEffect(() => {
+        if (!descriptionRef.current || descriptionExpanded || !event?.description) return;
+        const checkOverflow = () => {
+            if (descriptionRef.current && descriptionRef.current.scrollHeight > descriptionRef.current.clientHeight) {
+                setDescriptionOverflows(true);
+            }
+        };
+        checkOverflow();
+        const timeout = setTimeout(checkOverflow, 100);
+        return () => clearTimeout(timeout);
+    }, [event?.description, descriptionExpanded]);
 
     if (!event) return null;
 
@@ -112,9 +128,24 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                         </div>
                     </div>
 
-                    <div className="row event-description">
-                        <p>{event.description}</p>
-                    </div>
+                    {event.description && (
+                        <div className="row event-description">
+                            <div
+                                ref={descriptionRef}
+                                className={`event-description-content ${!descriptionExpanded ? 'event-description-clamped' : ''}`}
+                                dangerouslySetInnerHTML={{ __html: parseMarkdownDescription(event.description) }}
+                            />
+                            {(descriptionOverflows || descriptionExpanded) && (
+                                <button
+                                    type="button"
+                                    className="event-description-expand-btn"
+                                    onClick={() => setDescriptionExpanded((prev) => !prev)}
+                                >
+                                    {descriptionExpanded ? 'Show less' : 'Expand'}
+                                </button>
+                            )}
+                        </div>
+                    )}
                     {event.externalLink && (
                         <div className="row external-link">
                             <a href={event.externalLink} target="_blank" rel="noopener noreferrer">
