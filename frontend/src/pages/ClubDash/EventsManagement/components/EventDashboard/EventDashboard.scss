@@ -1209,6 +1209,22 @@
             }
         }
 
+        .analytics-header-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .time-range-selector select {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--lighterborder);
+            background: var(--background);
+            color: var(--text);
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
         .live-indicator {
             display: flex;
             align-items: center;
@@ -1226,6 +1242,65 @@
                 background: #4caf50;
                 border-radius: 50%;
                 animation: pulse 2s infinite;
+            }
+        }
+    }
+
+    .registration-form-section {
+        .registration-form-metrics {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+        }
+
+        .form-metric {
+            display: flex;
+            flex-direction: column;
+
+            .form-metric-value {
+                font-size: 1.5rem;
+                font-weight: 600;
+                color: var(--text);
+            }
+
+            .form-metric-label {
+                font-size: 0.85rem;
+                color: var(--light-text);
+                margin-top: 0.25rem;
+            }
+
+            &.form-metric-bounces .form-metric-value {
+                color: var(--warning-color, #e67e22);
+            }
+        }
+    }
+
+    .tab-breakdown-section {
+        .tab-breakdown-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .tab-breakdown-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--lighterborder);
+
+            &:last-child {
+                border-bottom: none;
+            }
+
+            .tab-name {
+                text-transform: capitalize;
+                color: var(--text);
+            }
+
+            .tab-count {
+                font-weight: 600;
+                color: var(--text);
             }
         }
     }

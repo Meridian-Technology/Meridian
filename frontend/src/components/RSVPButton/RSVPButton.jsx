@@ -85,6 +85,7 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
             return;
         }
         if (hasForm && formReady) {
+            analytics.track('event_registration_form_open', { event_id: event._id });
             setShowFormModal(true);
             return;
         }
@@ -106,6 +107,7 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                         });
                         return;
                     }
+                    analytics.track('event_registration_form_open', { event_id: event._id });
                     setShowFormModal(true);
                 } else {
                     addNotification({ title: 'Registration Failed', message: data.message || 'Form unavailable', type: 'error' });

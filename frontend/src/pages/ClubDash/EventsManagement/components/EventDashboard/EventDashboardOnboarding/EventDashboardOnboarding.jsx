@@ -4,6 +4,7 @@ import { useGradient } from '../../../../../../hooks/useGradient';
 import AgendaItem from '../EventAgendaBuilder/AgendaItem';
 import KpiCard from '../../../../../../components/Analytics/Dashboard/KpiCard';
 import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
+import FunnelChart from '../FunnelChart';
 import '../EventDashboard.scss';
 import '../EventAgendaBuilder/AgendaBuilder.scss';
 import '../EventJobsManager/JobsManager.scss';
@@ -12,6 +13,13 @@ import '../EventCheckInTab/EventCheckInTab.scss';
 import '../EventEditorTab/EventEditorTab.scss';
 import '../../../../../../components/EventCheckIn/EventCheckIn.scss';
 import './EventDashboardOnboarding.scss';
+
+const FAKE_FUNNEL_DATA = [
+    { label: 'Views', value: 1250 },
+    { label: 'Form Opens', value: 680 },
+    { label: 'Registrations', value: 312 },
+    { label: 'Check-ins', value: 189 },
+];
 
 const MOCK_AGENDA_ITEMS = [
     { _id: '1', title: 'Welcome & Check-In', type: 'Activity', startTime: new Date('2025-03-15T09:00:00'), endTime: new Date('2025-03-15T09:30:00'), isPublic: true },
@@ -143,6 +151,18 @@ const SLIDES = [
         description: 'Track views, RSVPs, and engagement with detailed charts and metrics.',
         snippet: (
             <div className="event-analytics-detail">
+                <HeaderContainer
+                    icon="mingcute:chart-bar-fill"
+                    header="Engagement Funnel"
+                    classN="analytics-card funnel-section"
+                    size="1rem"
+                >
+                    <div className="card-content funnel-chart-container">
+                        <div className="funnel-chart-wrapper">
+                            <FunnelChart data={FAKE_FUNNEL_DATA} />
+                        </div>
+                    </div>
+                </HeaderContainer>
                 <div className="analytics-grid">
                     <HeaderContainer icon="mdi:eye" header="Views" classN="analytics-card" size="1rem">
                         <div className="card-content">
