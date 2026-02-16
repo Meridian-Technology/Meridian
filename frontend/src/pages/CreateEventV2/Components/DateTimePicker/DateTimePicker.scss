@@ -1,4 +1,8 @@
 .datetime-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+
     .datetime-picker-row {
         display: flex;
         gap: 1rem;

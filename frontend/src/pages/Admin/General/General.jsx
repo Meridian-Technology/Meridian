@@ -11,14 +11,14 @@ function General() {
     const { addNotification } = useNotification();
     const [migrating, setMigrating] = useState(false);
 
-    const runMigration = async () => {
+    const runOrgUnlistedMigration = async () => {
         setMigrating(true);
         try {
-            const res = await postRequest('/migrate/events-rsvp-to-registration', {});
+            const res = await postRequest('/migrate/org-add-unlisted-field', {});
             if (res?.success) {
                 addNotification({
                     title: 'Migration complete',
-                    message: `Events: ${res.data?.eventsUpdated ?? 0}, Analytics: ${res.data?.analyticsUpdated ?? 0}`,
+                    message: `Orgs updated: ${res.data?.orgsUpdated ?? 0}`,
                     type: 'success'
                 });
             } else {
@@ -48,12 +48,12 @@ function General() {
             <div className="general-content">
                 <SiteHealth />
                 <div className="admin-migration-section" style={{ marginTop: 16 }}>
-                    <h3>Events: RSVP → Registration migration</h3>
-                    <p className="admin-migration-hint">One-time migration for current tenant. Remove this section after running.</p>
+                    <h3>Orgs: Add unlisted field</h3>
+                    <p className="admin-migration-hint">Adds unlisted: false to orgs missing the field. Safe to run multiple times.</p>
                     <button
                         type="button"
                         className="admin-migration-btn"
-                        onClick={runMigration}
+                        onClick={runOrgUnlistedMigration}
                         disabled={migrating}
                     >
                         {migrating ? (
@@ -64,7 +64,7 @@ function General() {
                         ) : (
                             <>
                                 <Icon icon="mdi:database-export" />
-                                Run migration
+                                Run org unlisted migration
                             </>
                         )}
                     </button>

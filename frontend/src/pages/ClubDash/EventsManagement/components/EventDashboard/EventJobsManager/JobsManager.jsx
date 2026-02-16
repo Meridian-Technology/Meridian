@@ -89,15 +89,13 @@ function JobsManager({ event, orgId, onRefresh }) {
         }
     }, [orgRolesData]);
 
+    const handleCloseJobPicker = () => {
+        setShowJobPicker(false);
+        setCreatingJobTemplate(false);
+        setNewJobTemplate({ name: '', description: '' });
+    };
+
     const handleAddRole = () => {
-        if (orgRoles.length === 0) {
-            addNotification({
-                title: 'No Job Templates',
-                message: 'Create job templates in Settings → Job Templates before assigning jobs to events.',
-                type: 'warning'
-            });
-            return;
-        }
         setShowJobPicker(true);
     };
 
@@ -387,21 +385,12 @@ function JobsManager({ event, orgId, onRefresh }) {
                     <button 
                         className="btn-primary"
                         onClick={handleAddRole}
-                        disabled={orgRoles.length === 0}
                     >
                         <Icon icon="mdi:plus" />
                         <span>Add Job Slots</span>
                     </button>
                 </div>
             </div>
-
-            {orgRoles.length === 0 && (
-                <EmptyState
-                    icon="mingcute:group-fill"
-                    title="No job templates available"
-                    description="Create job templates in Settings → Job Templates to assign jobs to this event."
-                />
-            )}
 
             {roles.length === 0 ? (
                 <EmptyState
@@ -537,7 +526,7 @@ function JobsManager({ event, orgId, onRefresh }) {
 
             <Popup
                 isOpen={showJobPicker}
-                onClose={() => setShowJobPicker(false)}
+                onClose={handleCloseJobPicker}
                 customClassName="job-picker-popup medium-content"
                 defaultStyling={false}
                 hideCloseButton
@@ -552,7 +541,7 @@ function JobsManager({ event, orgId, onRefresh }) {
                     onCreateJobTemplate={handleCreateJobTemplate}
                     onIncrementJob={handleIncrementJob}
                     onDecrementJob={handleDecrementJob}
-                    onClose={() => setShowJobPicker(false)}
+                    onClose={handleCloseJobPicker}
                 />
             </Popup>
 

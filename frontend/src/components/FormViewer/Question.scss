@@ -19,6 +19,7 @@
       margin:0;
       margin-left:2px;
       line-height: 1.4;
+      white-space: pre-wrap; /* preserve newlines in question text */
     }
 
     .required {

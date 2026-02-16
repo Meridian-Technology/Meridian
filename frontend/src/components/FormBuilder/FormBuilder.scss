@@ -202,7 +202,8 @@
             font-weight: 500;
         }
         
-        input[type="text"] {
+        input[type="text"],
+        textarea {
             width: 100%;
             padding: 8px;
             margin-bottom: 10px;
@@ -211,10 +212,15 @@
             background-color: var(--oie-background);
             color: var(--text);
             box-sizing: border-box;
+            resize: vertical;
             &:focus {
                 outline: none;
                 border-color: var(--dark-blue);
             }
+        }
+
+        textarea {
+            min-height: 60px;
         }
 
         label {

@@ -5,7 +5,9 @@ import { analytics } from '../../../../../services/analytics/analytics';
 import { useNotification } from '../../../../../NotificationContext';
 import { useGradient } from '../../../../../hooks/useGradient';
 import TabbedContainer from '../../../../../components/TabbedContainer';
+import Popup from '../../../../../components/Popup/Popup';
 import EventDashboardHeader from './EventDashboardHeader';
+import EventDashboardOnboarding from './EventDashboardOnboarding/EventDashboardOnboarding';
 import EventOverview from './EventOverview';
 import EventEditorTab from './EventEditorTab/EventEditorTab';
 import AgendaBuilder from './EventAgendaBuilder/AgendaBuilder';
@@ -18,6 +20,9 @@ import ComingSoon from './ComingSoon';
 // import EquipmentManager from './EventEquipment/EquipmentManager';
 import './EventDashboard.scss';
 
+/** Set to true to always show the onboarding popup (ignores localStorage) */
+const FORCE_EVENT_DASHBOARD_ONBOARDING = false;
+
 function EventDashboard({ event, orgId, onClose, className = '' }) {
     const { addNotification } = useNotification();
     const { AtlasMain } = useGradient();
@@ -25,6 +30,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     const [loading, setLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [activeTab, setActiveTab] = useState('overview');
+    const [showOnboarding, setShowOnboarding] = useState(false);
 
     // Fetch dashboard data
     const { data, loading: dataLoading, error, refetch } = useFetch(
@@ -79,6 +85,25 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             });
         }
     }, [event?._id, orgId, dashboardData, loading]);
+
+    useEffect(() => {
+        if (loading || !dashboardData) return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const isTestMode = urlParams.get('test-event-onboarding') === 'true';
+        const hasSeen = localStorage.getItem('eventDashboardOnboardingSeen');
+        if (FORCE_EVENT_DASHBOARD_ONBOARDING || isTestMode || !hasSeen) {
+            setShowOnboarding(true);
+        }
+    }, [loading, dashboardData]);
+
+    const handleOnboardingClose = useCallback(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const isTestMode = urlParams.get('test-event-onboarding') === 'true';
+        if (!FORCE_EVENT_DASHBOARD_ONBOARDING && !isTestMode) {
+            localStorage.setItem('eventDashboardOnboardingSeen', 'true');
+        }
+        setShowOnboarding(false);
+    }, []);
 
     const dashboardRef = useRef(null);
     const stickyTabsRef = useRef({ spacer: null, tabsWrapper: null });
@@ -314,33 +339,42 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     ];
 
     return (
-        <div ref={dashboardRef} className={`event-dashboard ${className}`}>
-            <EventDashboardHeader
-                    event={dashboardData.event}
-                    stats={dashboardData.stats}
-                    onClose={onClose}
-                    onRefresh={handleRefresh}
-                    orgId={orgId}
-            />
-            <div className="event-dashboard-content">
-                <TabbedContainer
-                    tabs={tabs}
-                    defaultTab="overview"
-                    activeTab={activeTab}
-                    onTabChange={handleTabChange}
-                    tabStyle="default"
-                    size="medium"
-                    animated={true}
-                    showTabIcons={true}
-                    showTabLabels={true}
-                    fullWidth={false}
-                    scrollable={true}
-                    lazyLoad={true}
-                    keepAlive={true}
-                    className="event-dashboard-tabs"
+        <>
+            <div ref={dashboardRef} className={`event-dashboard ${className}`}>
+                <EventDashboardHeader
+                        event={dashboardData.event}
+                        stats={dashboardData.stats}
+                        onClose={onClose}
+                        onRefresh={handleRefresh}
+                        orgId={orgId}
                 />
+                <div className="event-dashboard-content">
+                    <TabbedContainer
+                        tabs={tabs}
+                        defaultTab="overview"
+                        activeTab={activeTab}
+                        onTabChange={handleTabChange}
+                        tabStyle="default"
+                        size="medium"
+                        animated={true}
+                        showTabIcons={true}
+                        showTabLabels={true}
+                        fullWidth={false}
+                        scrollable={true}
+                        lazyLoad={true}
+                        keepAlive={true}
+                        className="event-dashboard-tabs"
+                    />
+                </div>
             </div>
-        </div>
+            <Popup
+                isOpen={showOnboarding}
+                onClose={handleOnboardingClose}
+                customClassName="event-dashboard-onboarding-popup"
+            >
+                <EventDashboardOnboarding onClose={handleOnboardingClose} />
+            </Popup>
+        </>
     );
 }
 

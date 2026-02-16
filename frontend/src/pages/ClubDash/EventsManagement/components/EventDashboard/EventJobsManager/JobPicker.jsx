@@ -1,6 +1,7 @@
 import React from 'react';
 import { Icon } from '@iconify-icon/react';
 import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
+import EmptyState from '../../../../../../components/EmptyState/EmptyState';
 import './JobPicker.scss';
 
 function JobPicker({
@@ -22,13 +23,15 @@ function JobPicker({
             header="Add Job Slots"
             right={
                 <div className="header-actions">
-                    <button
-                        className="btn-secondary"
-                        onClick={() => setCreatingJobTemplate(prev => !prev)}
-                    >
-                        <Icon icon="mdi:plus" />
-                        {creatingJobTemplate ? 'Cancel' : 'New Template'}
-                    </button>
+                    {!creatingJobTemplate && (
+                        <button
+                            className="btn-secondary"
+                            onClick={() => setCreatingJobTemplate(true)}
+                        >
+                            <Icon icon="mdi:plus" />
+                            New Template
+                        </button>
+                    )}
                     <button className="close-btn" onClick={onClose} type="button" aria-label="Close">
                         <Icon icon="mdi:close" />
                     </button>
@@ -57,6 +60,16 @@ function JobPicker({
                     </div>
                     <div className="form-actions">
                         <button
+                            className="btn-cancel"
+                            type="button"
+                            onClick={() => {
+                                setCreatingJobTemplate(false);
+                                setNewJobTemplate({ name: '', description: '' });
+                            }}
+                        >
+                            Cancel
+                        </button>
+                        <button
                             className="btn-save"
                             onClick={onCreateJobTemplate}
                             disabled={!newJobTemplate.name.trim()}
@@ -68,6 +81,14 @@ function JobPicker({
                 </div>
             )}
             <div className="job-picker-list">
+                {orgRoles.length === 0 && !creatingJobTemplate && (
+                    <EmptyState
+                        icon="mingcute:group-fill"
+                        title="No job templates yet"
+                        description="Create your first job template to add slots to this event."
+                        actions={[{ label: 'New Template', onClick: () => setCreatingJobTemplate(true), primary: true }]}
+                    />
+                )}
                 {orgRoles.map(orgRole => {
                     const existingRole = roles.find(role => {
                         const orgRoleId = role.orgRoleId?._id || role.orgRoleId;

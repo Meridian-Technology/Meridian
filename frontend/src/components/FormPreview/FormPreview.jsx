@@ -9,7 +9,7 @@ const FormPreview = ({ form }) => {
                 <Icon icon="ion:document-text" />
                 <h3>{form.title}</h3>
             </div>
-            <p>{form.description}</p>
+            <p className="form-preview-description">{form.description}</p>
         </div>
     );
 };
