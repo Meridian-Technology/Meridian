@@ -12,10 +12,10 @@ export const useOrgPermissions = (org) => {
 
         try {
             // Check if user is the owner
-            const isOwner = org.owner === user._id;
+            const isOwner = String(org.owner) === String(user._id);
             
             if (isOwner) {
-                return { hasAccess: true, canManageSettings: true };
+                return { hasAccess: true, canManageSettings: true, isOwner: true };
             }
 
             // Get user's role in this organization
@@ -36,12 +36,12 @@ export const useOrgPermissions = (org) => {
                                                 userRoleData.permissions.includes('manage_content') || 
                                                 userRoleData.permissions.includes('all');
                         
-                        return { hasAccess: true, canManageSettings: canManageContent };
+                        return { hasAccess: true, canManageSettings: canManageContent, isOwner: false };
                     }
                 }
             }
             
-            return { hasAccess: false, canManageSettings: false };
+            return { hasAccess: false, canManageSettings: false, isOwner: false };
         } catch (error) {
             console.error('Error checking user permissions:', error);
             return { hasAccess: false, canManageSettings: false };

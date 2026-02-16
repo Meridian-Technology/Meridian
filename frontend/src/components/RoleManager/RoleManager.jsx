@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef, useRef } from 'react';
 import './RoleManager.scss';
 import { Icon } from '@iconify-icon/react';
 import { getOrgRoleColor } from '../../utils/orgUtils';
 import DraggableList from '../DraggableList/DraggableList';
 
-const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEditable = true, roleHighlight = false, saveImmediately = false, onDraftChange }, ref) => {
+const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEditable = true, roleHighlight = false, saveImmediately = false, onDraftChange, userRoleData = null, isOwner = false }, ref) => {
     const [customRoles, setCustomRoles] = useState(roles || []);
+    const userHasEditedRef = useRef(false);
     const [selectedRole, setSelectedRole] = useState(null);
     const [formData, setFormData] = useState({
         name: '',
@@ -49,6 +50,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
     // Update local state when roles prop changes
     useEffect(() => {
         setCustomRoles(roles || []);
+        userHasEditedRef.current = false; // Reset when roles are replaced from parent (e.g. after save/discard)
         // If selected role still exists, update it
         if (selectedRole) {
             const updatedRole = roles?.find(r => r.name === selectedRole.name);
@@ -101,6 +103,8 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
     };
 
     const handlePermissionToggle = (permissionKey) => {
+        userHasEditedRef.current = true;
+        if (selectedRole && !canEditRole(selectedRole)) return;
         // Prevent toggling "coming soon" permissions
         const permission = availablePermissions.find(p => p.key === permissionKey);
         if (permission?.comingSoon) {
@@ -134,6 +138,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
     };
 
     const handleColorSelect = (color) => {
+        userHasEditedRef.current = true;
         setFormData(prev => ({
             ...prev,
             color: color,
@@ -153,6 +158,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
     };
 
     const handleCustomColorChange = (hex) => {
+        userHasEditedRef.current = true;
         // Allow typing partial hex codes while user is typing
         // Valid formats: empty, #, #a, #ab, #abc, #abcd, #abcde, #abcdef (3 or 6 digits)
         // Also allow without # prefix: a, ab, abc, etc. (we'll add # when needed)
@@ -214,9 +220,11 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
         onRolesChange(updatedRoles);
     };
 
-    // Auto-save changes to local state when form data changes
+    // Auto-save changes to local state when form data changes (only when user actually edited)
     useEffect(() => {
         if (!selectedRole || selectedRole.isNew) return;
+        if (!canEditRole(selectedRole)) return;
+        if (!userHasEditedRef.current) return; // Skip when form was just initialized from role selection
 
         // Don't auto-save name changes for owner or member (they must keep their names)
         const isProtectedRole = selectedRole.name === 'owner' || selectedRole.name === 'member';
@@ -255,13 +263,24 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                 }
             }
 
+            const newColor = formData.color || '#a855f7';
+
+            // Check if anything actually changed - avoid triggering onRolesChange when form was just initialized
+            const permEqual = filteredPermissions.length === (selectedRole.permissions?.length || 0) &&
+                filteredPermissions.every(p => selectedRole.permissions?.includes(p));
+            const nameEqual = roleName === selectedRole.name && displayName === (selectedRole.displayName || selectedRole.name);
+            const colorEqual = (newColor === (selectedRole.color || '#a855f7')) || (newColor === selectedRole.color);
+            if (permEqual && nameEqual && colorEqual) {
+                return; // No actual changes, don't trigger onRolesChange
+            }
+
             const updatedRole = {
                 ...selectedRole,
                 name: roleName,
                 displayName: displayName,
                 permissions: filteredPermissions,
                 ...booleanFields,
-                color: formData.color || '#a855f7'
+                color: newColor
             };
 
             const updatedRoles = customRoles.map(role => 
@@ -333,6 +352,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
     }));
 
     const handleRoleSelect = (role) => {
+        userHasEditedRef.current = false; // Reset - we're loading role data, not user edit
         setSelectedRole(role);
         const permissions = role.permissions || [];
         const booleanFields = syncBooleanFieldsFromPermissions(permissions);
@@ -356,6 +376,10 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
     const handleDelete = (roleName) => {
         if (roleName === 'owner' || roleName === 'member') {
             return; // Cannot delete owner or member roles
+        }
+        const role = customRoles.find(r => r.name === roleName);
+        if (role && !canEditRole(role)) {
+            return; // Cannot delete roles at or above own level
         }
         
         if (onDeleteRequest) {
@@ -383,6 +407,13 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
     const getPermissionLabel = (permissionKey) => {
         const permission = availablePermissions.find(p => p.key === permissionKey);
         return permission ? permission.label : permissionKey;
+    };
+
+    // Users cannot edit their own role or roles above them (unless owner). Lower order = higher privilege.
+    const canEditRole = (role) => {
+        if (isOwner || !userRoleData) return true;
+        const targetOrder = role?.order ?? 999;
+        return targetOrder > (userRoleData?.order ?? -1);
     };
 
     // Get all roles except owner, sorted by order (member always last)
@@ -424,7 +455,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                     items={editableRoles.filter(role => role.name !== 'member')}
                                     onReorder={handleReorder}
                                     getItemId={(role) => role.name}
-                                    disabled={!isEditable}
+                                    disabled={!isEditable || editableRoles.filter(r => r.name !== 'member').some(r => !canEditRole(r))}
                                     renderItem={(role, index) => {
                                         const isSelected = selectedRole?.name === role.name;
                                         
@@ -433,7 +464,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                                 className={`role-list-item ${isSelected ? 'selected' : ''}`}
                                                 onClick={() => handleRoleSelect(role)}
                                             >
-                                                {isEditable && (
+                                                {isEditable && canEditRole(role) && (
                                                     <div className="drag-handle" onClick={(e) => e.stopPropagation()}>
                                                         <Icon icon="mdi:drag" />
                                                     </div>
@@ -447,7 +478,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                                         <span className="role-list-item-name">{role.displayName || role.name}</span>
                                                     </div>
                                                 </div>
-                                                {isEditable && (
+                                                {isEditable && canEditRole(role) && (
                                                     <div className="role-list-item-actions" onClick={(e) => e.stopPropagation()}>
                                                         <button 
                                                             className="delete-btn"
@@ -498,6 +529,11 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                         </div>
 
                             <div className="role-editor-content">
+                            {selectedRole && !selectedRole.isNew && !canEditRole(selectedRole) && (
+                                <div className="form-group role-edit-restricted-notice">
+                                    <p className="notice-text">You cannot edit this role because it is at or above your own level.</p>
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label htmlFor="roleName">Role Name *</label>
                                 <input
@@ -505,9 +541,12 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                     id="roleName"
                                     className="text-input"
                                     value={formData.name}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                                    onChange={(e) => {
+                                        userHasEditedRef.current = true;
+                                        setFormData(prev => ({ ...prev, name: e.target.value }));
+                                    }}
                                     placeholder="e.g., Treasurer, Secretary"
-                                    disabled={selectedRole && selectedRole.name === 'owner'}
+                                    disabled={selectedRole && (selectedRole.name === 'owner' || !canEditRole(selectedRole))}
                                 />
                                 <small>This is what users will see. The internal name will be automatically generated.</small>
                             </div>
@@ -522,8 +561,9 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                                     type="button"
                                                     className={`color-swatch ${formData.color === color && !formData.useCustomColor ? 'selected' : ''}`}
                                                     style={{ backgroundColor: color }}
-                                                    onClick={() => handleColorSelect(color)}
+                                                    onClick={() => selectedRole && canEditRole(selectedRole) && handleColorSelect(color)}
                                                     title={color}
+                                                    disabled={selectedRole && !canEditRole(selectedRole)}
                                                 />
                                             ))}
                                         </div>
@@ -539,6 +579,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                     onFocus={handleCustomColorFocus}
                                     placeholder="#a855f7"
                                     maxLength={7}
+                                    disabled={selectedRole && !canEditRole(selectedRole)}
                                 />
                                                 {formData.useCustomColor && formData.color && (
                                                     <div 
@@ -561,12 +602,12 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                         return (
                                             <div
                                                 key={permission.key}
-                                                className={`permission-item ${isSelected ? 'selected' : ''} ${isComingSoon ? 'coming-soon' : ''}`}
-                                                onClick={() => !isComingSoon && handlePermissionToggle(permission.key)}
+                                                className={`permission-item ${isSelected ? 'selected' : ''} ${isComingSoon ? 'coming-soon' : ''} ${selectedRole && !canEditRole(selectedRole) ? 'disabled' : ''}`}
+                                                onClick={() => !isComingSoon && (!selectedRole || canEditRole(selectedRole)) && handlePermissionToggle(permission.key)}
                                                 role="button"
-                                                tabIndex={isComingSoon ? -1 : 0}
+                                                tabIndex={isComingSoon || (selectedRole && !canEditRole(selectedRole)) ? -1 : 0}
                                                 onKeyDown={(e) => {
-                                                    if (!isComingSoon && (e.key === 'Enter' || e.key === ' ')) {
+                                                    if (!isComingSoon && (!selectedRole || canEditRole(selectedRole)) && (e.key === 'Enter' || e.key === ' ')) {
                                                         e.preventDefault();
                                                         handlePermissionToggle(permission.key);
                                                     }

@@ -3,7 +3,6 @@
  * Use these so all views show the same colors per event type.
  */
 const EVENT_TYPE_COLORS = {
-  study: { background: '#000000', border: '#000000' },
   campus: { background: '#D3DDFD', border: '#6D8EFA' },
   alumni: { background: '#D6D6D6', border: '#5C5C5C' },
   sports: { background: '#D3E8CF', border: '#6EB25F' },
