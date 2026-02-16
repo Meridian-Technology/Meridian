@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import './ClubDash.scss';
 import useAuth from '../../hooks/useAuth';
 import { analytics } from '../../services/analytics/analytics';
@@ -36,6 +36,11 @@ import VerificationRequest from './Settings/VerificationRequest/VerificationRequ
 import OrgPendingBanner from '../../components/OrgPendingBanner/OrgPendingBanner';
 import PendingApprovalOverlay from '../../components/PendingApprovalOverlay/PendingApprovalOverlay';
 import { useOrgApprovalRoom } from '../../WebSocketContext';
+import Popup from '../../components/Popup/Popup';
+import ClubDashOnboarding from './ClubDashOnboarding/ClubDashOnboarding';
+
+/** Set to true to always show the onboarding popup (ignores localStorage) */
+const FORCE_CLUB_DASH_ONBOARDING = false;
 
 function ClubDash(){
     const [clubId, setClubId] = useState(useParams().id);
@@ -56,6 +61,7 @@ function ClubDash(){
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [showJustApprovedBanner, setShowJustApprovedBanner] = useState(false);
     const approvedBannerTimeoutRef = useRef(null);
+    const [showOnboarding, setShowOnboarding] = useState(false);
 
     const orgData = useFetch(`/get-org-by-name/${clubId}?exhaustive=true`);
     const meetings = useFetch(`/get-meetings/${clubId}`);
@@ -328,6 +334,25 @@ function ClubDash(){
         if (approvedBannerTimeoutRef.current) clearTimeout(approvedBannerTimeoutRef.current);
     }, []);
 
+    useEffect(() => {
+        if (orgData.loading || !orgData.data || orgData.error) return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const isTestMode = urlParams.get('test-club-onboarding') === 'true';
+        const hasSeen = localStorage.getItem('clubDashOnboardingSeen');
+        if (FORCE_CLUB_DASH_ONBOARDING || isTestMode || !hasSeen) {
+            setShowOnboarding(true);
+        }
+    }, [orgData.loading, orgData.data, orgData.error]);
+
+    const handleOnboardingClose = useCallback(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const isTestMode = urlParams.get('test-club-onboarding') === 'true';
+        if (!FORCE_CLUB_DASH_ONBOARDING && !isTestMode) {
+            localStorage.setItem('clubDashOnboardingSeen', 'true');
+        }
+        setShowOnboarding(false);
+    }, []);
+
     if(orgData.loading){
         return (
             <div></div>
@@ -353,6 +378,13 @@ function ClubDash(){
 
     return (
         <div className="club-dash-with-banner">
+            <Popup
+                isOpen={showOnboarding}
+                onClose={handleOnboardingClose}
+                customClassName="club-dash-onboarding-popup"
+            >
+                <ClubDashOnboarding handleClose={handleOnboardingClose} />
+            </Popup>
             {showJustApprovedBanner && (
                 <div className="club-dash-approved-notice" role="alert">
                     <Icon icon="mdi:check-circle" className="club-dash-approved-notice__icon" />

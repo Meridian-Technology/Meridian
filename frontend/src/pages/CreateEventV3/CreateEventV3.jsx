@@ -18,7 +18,7 @@ import './CreateEventV3.scss';
 
 const DEFAULT_FIELDS = [
     { name: 'name', type: 'string', label: 'Event Name', inputType: 'text', step: 'basic-info', isActive: true, order: 0, validation: { required: true }, placeholder: 'Event Name' },
-    { name: 'description', type: 'textarea', label: 'Description', inputType: 'textarea', step: 'basic-info', isActive: true, order: 1, validation: { required: true }, placeholder: 'Tell us about your event', allowExpand: true },
+    { name: 'description', type: 'textarea', label: 'Description', inputType: 'markdown-textarea', step: 'basic-info', isActive: true, order: 1, validation: { required: true }, placeholder: 'Tell us about your event', allowExpand: true },
     { name: 'type', type: 'select', label: 'Event Type', inputType: 'select', step: 'basic-info', isActive: true, order: 2, validation: { required: true, options: ['study', 'workshop', 'campus', 'social', 'club', 'meeting', 'sports'] } },
     { name: 'visibility', type: 'select', label: 'Visibility', inputType: 'select', step: 'basic-info', isActive: true, order: 3, validation: { required: true, options: ['public', 'unlisted', 'members_only'] } },
     { name: 'expectedAttendance', type: 'number', label: 'Expected Attendance', inputType: 'number', step: 'basic-info', isActive: true, order: 4, validation: { required: true, min: 1, max: 10000, defaultValue: 1 }, placeholder: '1' },
@@ -367,7 +367,7 @@ const CreateEventV3 = () => {
                             .map(field => (
                                 <div key={field.name} className="form-section">
                                     <DynamicFormField
-                                        field={{ ...field, allowExpand: true }}
+                                        field={{ ...field, inputType: 'markdown-textarea', allowExpand: true }}
                                         value={formData[field.name]}
                                         onChange={handleFieldChange}
                                         formData={formData}

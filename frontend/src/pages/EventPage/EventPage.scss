@@ -395,13 +395,64 @@
                 }
 
                 &.event-description {
+                    flex-direction: column;
                     align-items: flex-start;
                     margin-bottom: 2rem;
+                    gap: 0.5rem;
 
-                    p {
-                        margin: 0;
+                    .event-description-content {
                         font-size: 1.1rem;
                         line-height: 1.6;
+                        margin: 0;
+                        width: 100%;
+
+                        p {
+                            margin: 0 0 0.5em 0;
+
+                            &:last-child {
+                                margin-bottom: 0;
+                            }
+                        }
+
+                        strong, b {
+                            font-weight: 700;
+                        }
+
+                        em, i {
+                            font-style: italic;
+                        }
+
+                        ul, ol {
+                            margin: 0.5em 0;
+                            padding-left: 1.5em;
+                        }
+
+                        li {
+                            margin: 0.25em 0;
+                        }
+
+                        &.event-description-clamped {
+                            display: -webkit-box;
+                            -webkit-box-orient: vertical;
+                            -webkit-line-clamp: 10;
+                            overflow: hidden;
+                        }
+                    }
+
+                    .event-description-expand-btn {
+                        padding: 0.25rem 0;
+                        font-size: 0.9rem;
+                        font-weight: 600;
+                        color: var(--link-blue, #306bac);
+                        background: none;
+                        border: none;
+                        cursor: pointer;
+                        transition: opacity 0.2s;
+
+                        &:hover {
+                            opacity: 0.8;
+                            text-decoration: underline;
+                        }
                     }
                 }
 

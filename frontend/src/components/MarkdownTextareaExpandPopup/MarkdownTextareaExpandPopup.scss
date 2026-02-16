@@ -1,0 +1,26 @@
+.markdown-textarea-expand-popup {
+    min-width: min(800px, 90vw);
+    max-width: 90vw;
+
+    .markdown-textarea-expand-popup-header {
+        .header-container-content {
+            padding: 1rem;
+        }
+    }
+
+    .markdown-textarea-expand-popup-editor {
+        .markdown-textarea-input {
+            min-height: 280px;
+            background: var(--lightest);
+            color: var(--text);
+
+            &:focus {
+                border-color: var(--dark-blue);
+            }
+
+            &::placeholder {
+                color: var(--light-text);
+            }
+        }
+    }
+}

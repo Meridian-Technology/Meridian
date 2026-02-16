@@ -135,6 +135,14 @@
     .row.event-description{
         flex:1;
         margin:10px 0;
+
+        .event-description-content {
+            p { margin: 0 0 0.5em 0; &:last-child { margin-bottom: 0; } }
+            strong, b { font-weight: 700; }
+            em, i { font-style: italic; }
+            ul, ol { margin: 0.5em 0; padding-left: 1.5em; }
+            li { margin: 0.25em 0; }
+        }
     }
     &.ongoing{
         &::after{
@@ -361,11 +369,14 @@
             
             .row.event-description {
                 margin: 0 0 4px 0;
-                
-                p {
+
+                .event-description-content {
                     font-size: 12px;
                     line-height: 1.4;
-                    -webkit-line-clamp: 1;
+                    display: -webkit-box;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 2;
+                    overflow: hidden;
                 }
             }
             

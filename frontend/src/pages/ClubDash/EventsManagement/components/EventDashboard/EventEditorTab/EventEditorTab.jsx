@@ -425,7 +425,7 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
 
                 <div className="form-section">
                     <DynamicFormField
-                        field={{ name: 'description', label: 'Description', inputType: 'textarea', placeholder: 'Event description', validation: {}, allowExpand: true }}
+                        field={{ name: 'description', label: 'Description', inputType: 'markdown-textarea', placeholder: 'Event description', validation: {}, allowExpand: true }}
                         value={formData.description || ''}
                         onChange={handleFieldChange}
                         formData={formData}
