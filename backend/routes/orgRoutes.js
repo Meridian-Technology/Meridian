@@ -435,6 +435,7 @@ router.post("/edit-org", verifyToken, upload.fields([
             requireApprovalForJoin,
             memberForm,
             socialLinks,
+            unlisted,
         } = req.body;
         const userId = req.user?.userId;
         const profileFile = req.files?.image?.[0];
@@ -568,6 +569,9 @@ router.post("/edit-org", verifyToken, upload.fields([
         }
         if (weekly_meeting) {
             org.weekly_meeting = weekly_meeting;
+        }
+        if (unlisted !== undefined) {
+            org.unlisted = unlisted === true || unlisted === 'true';
         }
         if (socialLinks !== undefined) {
             try {
@@ -1078,10 +1082,13 @@ router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
             };
         }
 
+        // Exclude unlisted orgs from the public Organizations list
+        const unlistedFilter = { unlisted: { $ne: true } };
+
         //if exhaustive, return org stats like memberCount, followerCount, eventCount, using aggregate using efficeint query
         if (exhaustive) {
             const orgs = await Org.aggregate([
-                { $match: { ...approvalFilter, isDeleted: { $ne: true } } },
+                { $match: { ...approvalFilter, ...unlistedFilter, isDeleted: { $ne: true } } },
                 // Lookup members and count them (only active members)
                 {
                     $lookup: {
@@ -1157,7 +1164,7 @@ router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
                 orgs: orgs
             });
         }
-        const orgs = await Org.find(approvalFilter);
+        const orgs = await Org.find({ ...approvalFilter, ...unlistedFilter });
         res.status(200).json({
             success: true,
             orgs

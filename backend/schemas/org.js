@@ -272,6 +272,11 @@ const OrgSchema= new Schema({
         default: [],
         required: false
     },
+    // Unlisted: when true, org is hidden from the public Organizations list (Orgs.jsx)
+    unlisted: {
+        type: Boolean,
+        default: false
+    },
     // Soft delete
     isDeleted: {
         type: Boolean,

@@ -105,6 +105,25 @@
             padding-top: 1rem;
             border-top: 1px solid var(--lighterborder);
 
+            .btn-cancel {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 0.9rem;
+                border: 1px solid var(--lighterborder);
+                border-radius: 6px;
+                font-size: 0.85rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                background: var(--lightbackground);
+                color: var(--text);
+
+                &:hover {
+                    background: var(--lighterborder);
+                }
+            }
+
             .btn-save {
                 display: inline-flex;
                 align-items: center;

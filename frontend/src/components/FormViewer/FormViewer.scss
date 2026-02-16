@@ -33,6 +33,7 @@
       color: var(--light-text, #6b7280);
       margin: 0;
       line-height: 1.5;
+      white-space: pre-wrap; /* preserve newlines in form description */
     }
 
     .form-viewer-signed-in-banner {

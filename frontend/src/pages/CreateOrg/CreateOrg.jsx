@@ -11,7 +11,6 @@ import BasicInfo from './Steps/BasicInfo/BasicInfo';
 import ProfileImage from './Steps/ProfileImage/ProfileImage';
 import BannerImage from './Steps/BannerImage/BannerImage';
 import SocialLinks from './Steps/SocialLinks/SocialLinks';
-import InviteMembers from './Steps/InviteMembers/InviteMembers';
 import Membership from './Steps/Membership/Membership';
 
 const CreateOrg = () => {
@@ -27,7 +26,6 @@ const CreateOrg = () => {
         socialLinks: [],
         requireApprovalForJoin: false,
         memberForm: null,
-        invitedMembers: []
     });
 
     const steps = [
@@ -60,12 +58,6 @@ const CreateOrg = () => {
             title: 'Membership',
             description: 'Configure how members join your organization',
             component: Membership,
-        },
-        {
-            id: 5,
-            title: 'Invite Members',
-            description: 'Invite friends to join your organization',
-            component: InviteMembers,
         }
     ];
 
@@ -79,7 +71,6 @@ const CreateOrg = () => {
             case 2: // BannerImage - optional, marked complete when visited
             case 3: // SocialLinks - optional, marked complete when visited
             case 4: // Membership - optional, marked complete when visited
-            case 5: // InviteMembers - optional, marked complete when visited
                 return false; // Don't mark as complete until step component calls onComplete
             default:
                 return false;
@@ -148,13 +139,6 @@ const CreateOrg = () => {
             if (response.success && response.org) {
                 
                 await validateToken();
-                
-                // Handle member invitations if provided
-                if (formData.invitedMembers && formData.invitedMembers.length > 0) {
-                    // TODO: Send invitations to members
-                    // This would require a separate API endpoint to invite members
-                    console.log('Members to invite:', formData.invitedMembers);
-                }
                 
                 addNotification({
                     title: 'Organization Created',
