@@ -31,6 +31,10 @@ const OrgSchema= new Schema({
     },
     positions: {
         type: [{
+            _id: {
+                type: Schema.Types.ObjectId,
+                default: () => new mongoose.Types.ObjectId()
+            },
             name: {
                 type: String,
                 required: true

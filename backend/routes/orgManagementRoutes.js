@@ -745,4 +745,53 @@ router.get('/organizations/export', verifyToken, authorizeRoles('admin', 'root')
     }
 });
 
+// ==================== MIGRATIONS ====================
+
+/**
+ * Add _id to org positions that don't have it (for role rename detection).
+ * Run once per tenant. Protected: admin or root only.
+ */
+router.post('/migrate/org-positions-ids', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const mongoose = require('mongoose');
+    const { Org } = getModels(req, 'Org');
+
+    try {
+        const orgs = await Org.find({}).lean();
+        let updated = 0;
+
+        for (const org of orgs) {
+            const positions = org.positions || [];
+            let changed = false;
+
+            for (let i = 0; i < positions.length; i++) {
+                if (!positions[i]._id) {
+                    positions[i]._id = new mongoose.Types.ObjectId();
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                await Org.updateOne(
+                    { _id: org._id },
+                    { $set: { positions } }
+                );
+                updated++;
+            }
+        }
+
+        console.log(`POST: /org-management/migrate/org-positions-ids - Updated ${updated} org(s)`);
+        res.status(200).json({
+            success: true,
+            message: `Migration completed. Updated ${updated} organization(s) with _id on role positions.`,
+            data: { orgsUpdated: updated }
+        });
+    } catch (error) {
+        console.error('Migration org-positions-ids failed:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Migration failed'
+        });
+    }
+});
+
 module.exports = router;

@@ -109,6 +109,12 @@ const CreateEventV3 = () => {
     }, [selectedHost]);
 
     useEffect(() => {
+        if (user?.email) {
+            setFormData(prev => ({ ...prev, contact: prev.contact || user.email }));
+        }
+    }, [user?.email]);
+
+    useEffect(() => {
         const fields = formConfig?.fields?.length ? formConfig.fields : DEFAULT_FIELDS;
         const defaultValues = {};
         fields.forEach(field => {

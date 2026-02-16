@@ -15,7 +15,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const multer = require('multer');
 const path = require('path');
 const { uploadImageToS3, upload } = require('../services/imageUploadService');
-const { requireMemberManagement } = require('../middlewares/orgPermissions');
+const { requireMemberManagement, requireOrgOwner } = require('../middlewares/orgPermissions');
 const NotificationService = require('../services/notificationService');
 
 // Error handling middleware for multer
@@ -352,6 +352,8 @@ router.post("/create-org", verifyToken, upload.fields([
                     .select('email name username')
                     .lean();
 
+                console.log(adminUsers);
+
                 if (adminUsers.length > 0 && process.env.RESEND_API_KEY) {
                     const baseUrl = process.env.NODE_ENV === 'production'
                         ? `https://${school}.meridian.study`
@@ -373,13 +375,21 @@ router.post("/create-org", verifyToken, upload.fields([
                         </div>
                     `;
 
-                    await resend.emails.send({
+                    // Fire-and-forget: don't block the response on Resend's API
+                    resend.emails.send({
                         from: 'Meridian <support@meridian.study>',
                         to: adminEmails,
                         subject: `New organization "${cleanOrgName}" needs approval`,
                         html: emailHTML,
+                    }).then(({ data, error }) => {
+                        if (error) {
+                            console.error('POST: /create-org - Resend API error:', error);
+                        } else {
+                            console.log(`POST: /create-org - Notified ${adminEmails.length} admin(s) about pending org`, data?.id ? `(id: ${data.id})` : '');
+                        }
+                    }).catch((err) => {
+                        console.error('POST: /create-org - Failed to send admin notification email:', err);
                     });
-                    console.log(`POST: /create-org - Notified ${adminEmails.length} admin(s) about pending org`);
                 }
             } catch (emailError) {
                 console.error('POST: /create-org - Failed to send admin notification email:', emailError);
@@ -620,28 +630,12 @@ router.post("/edit-org", verifyToken, upload.fields([
 });
 
 // Candidate: no direct frontend references found; verify before deprecating
-router.delete("/delete-org/:orgId", verifyToken, async (req, res) => {
-    const { Org, OrgMember, Event } = getModels(req, "Org", "OrgMember", "Event");
+router.delete("/delete-org/:orgId", verifyToken, requireOrgOwner('orgId'), async (req, res) => {
+    const { Org, Event } = getModels(req, "Org", "Event");
     try {
         const { orgId } = req.params;
         const userId = req.user.userId;
-
-        const org = await Org.findById(orgId);
-
-        //Check if the org exists
-        if (!org) {
-            return res.status(404).json({ success: false, message: "Org not found" });
-        }
-
-        // Verify that the user is the owner of the org
-        if (org.owner.toString() !== userId) {
-            return res
-                .status(400)
-                .json({
-                    success: false,
-                    message: "You are not authorized to delete this org",
-                });
-        }
+        const org = req.org;
 
         // Already soft-deleted
         if (org.isDeleted) {
@@ -1087,7 +1081,7 @@ router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
         //if exhaustive, return org stats like memberCount, followerCount, eventCount, using aggregate using efficeint query
         if (exhaustive) {
             const orgs = await Org.aggregate([
-                { $match: approvalFilter },
+                { $match: { ...approvalFilter, isDeleted: { $ne: true } } },
                 // Lookup members and count them (only active members)
                 {
                     $lookup: {

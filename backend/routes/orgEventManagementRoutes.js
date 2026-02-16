@@ -2458,8 +2458,10 @@ router.post('/:orgId/equipment/:equipmentId/member-checkin', verifyToken, requir
 
 // Get event RSVP growth data
 router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { Event } = getModels(req, 'Event');
+    const { Event, FormResponse, EventAnalytics } = getModels(req, 'Event', 'FormResponse', 'EventAnalytics');
     const { orgId, eventId } = req.params;
+
+    console.log('[rsvp-growth] request', { eventId, orgId, school: req.school, host: req.headers?.host, timezone: req.query?.timezone });
 
     try {
         const event = await Event.findOne({
@@ -2470,11 +2472,27 @@ router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManag
         });
 
         if (!event) {
+            console.log('[rsvp-growth] event not found');
             return res.status(404).json({
                 success: false,
                 message: 'Event not found'
             });
         }
+
+        const attendees = event.attendees || [];
+        const registrationCount = event.registrationCount ?? attendees.length;
+        console.log('[rsvp-growth] event', {
+            eventId,
+            attendeesLength: attendees.length,
+            registrationCount,
+            sampleAttendee: attendees[0] ? {
+                hasUserId: !!attendees[0].userId,
+                hasUser: !!attendees[0].user,
+                keys: Object.keys(attendees[0] || {}),
+                registeredAt: attendees[0].registeredAt,
+                rsvpDate: attendees[0].rsvpDate
+            } : null
+        });
 
         const eventStart = new Date(event.start_time);
         const eventCreated = new Date(event.createdAt);
@@ -2483,20 +2501,69 @@ router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManag
         const cutoffDateNormalized = new Date(cutoffDate);
         cutoffDateNormalized.setHours(23, 59, 59, 999);
 
-        const attendees = event.attendees || [];
-
         // Minimal payload: sparse registrations by day (only days with data)
         const registrations = {};
+
+        const timezone = req.query.timezone || 'UTC';
+
+        function toLocalDateKey(date) {
+            const d = new Date(date);
+            const formatter = new Intl.DateTimeFormat('en-CA', {
+                timeZone: timezone,
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
+            return formatter.format(d);
+        }
+
+        // 1. Count from event.attendees (logged-in users who registered)
         attendees.forEach(attendee => {
-            if (!attendee || !attendee.userId) return;
+            const uid = attendee?.userId ?? attendee?.user;
+            if (!attendee || !uid) return;
             const guestCount = attendee.guestCount || 1;
             const regAt = attendee.registeredAt || attendee.rsvpDate;
             const regDate = regAt ? new Date(regAt) : new Date(eventCreated);
             if (regDate > cutoffDateNormalized) return;
-            const dayKey = regDate.toISOString().split('T')[0];
+            const dayKey = toLocalDateKey(regDate);
             if (!registrations[dayKey]) registrations[dayKey] = 0;
             registrations[dayKey] += guestCount;
         });
+        const fromAttendees = Object.values(registrations).reduce((a, b) => a + b, 0);
+        console.log('[rsvp-growth] from attendees', { fromAttendees, registrations: { ...registrations } });
+
+        // 2. Count from FormResponse (anonymous form registrations - not in attendees)
+        const formResponses = await FormResponse.find({
+            event: eventId,
+            submittedBy: null
+        }).select('submittedAt').lean();
+
+        formResponses.forEach(fr => {
+            const regDate = fr.submittedAt ? new Date(fr.submittedAt) : new Date(eventCreated);
+            if (regDate > cutoffDateNormalized) return;
+            const dayKey = toLocalDateKey(regDate);
+            if (!registrations[dayKey]) registrations[dayKey] = 0;
+            registrations[dayKey] += 1;
+        });
+        console.log('[rsvp-growth] from FormResponse (anonymous)', { formResponsesCount: formResponses.length });
+
+        // 3. Fallback: EventAnalytics.registrationHistory when attendees is empty but we have registrations
+        const totalFromAttendeesAndForm = Object.values(registrations).reduce((a, b) => a + b, 0);
+        if (totalFromAttendeesAndForm === 0 && registrationCount > 0) {
+            const analytics = await EventAnalytics.findOne({ eventId }).select('registrationHistory').lean();
+            const history = analytics?.registrationHistory || [];
+            console.log('[rsvp-growth] fallback to EventAnalytics.registrationHistory', { historyLength: history.length });
+            history.forEach((r) => {
+                const regDate = r.timestamp ? new Date(r.timestamp) : new Date(eventCreated);
+                if (regDate > cutoffDateNormalized) return;
+                const dayKey = toLocalDateKey(regDate);
+                if (!registrations[dayKey]) registrations[dayKey] = 0;
+                registrations[dayKey] += 1;
+            });
+        }
+
+        const totalRegistrations = Object.values(registrations).reduce((a, b) => a + b, 0);
+        console.log('[rsvp-growth] final', { totalRegistrations, registrations: { ...registrations } });
 
         res.status(200).json({
             success: true,

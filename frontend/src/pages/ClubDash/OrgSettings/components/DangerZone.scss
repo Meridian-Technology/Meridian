@@ -1,55 +1,81 @@
 // DangerZone Component Styles
 .danger-zone-wrapper {
-
     .danger-zone {
-        display: flex;
-        justify-content: center;
-        align-items: center;
         width: 100%;
 
+        padding:2rem;
+        box-sizing:border-box;
+        
         .danger-item {
-            width: 90%;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
-            padding: 20px;
-            border: 2px solid #dc3545;
-            border-radius: 8px;
-            background: #fff5f5;
+            gap: 24px;
+            padding: 24px;
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            border-radius: 18px;
+            background: rgba(239, 68, 68, 0.03);
+            transition: border-color 0.2s ease, background 0.2s ease;
+            box-sizing:border-box;
+            &:hover {
+                border-color: rgba(239, 68, 68, 0.35);
+            }
 
             .danger-content {
+                flex: 1;
+                min-width: 0;
+
                 h3 {
-                    margin: 0 0 8px 0;
-                    color: #dc3545;
-                    font-size: 18px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    margin: 0 0 6px 0;
+                    color: #b91c1c;
+                    font-size: 16px;
                     font-weight: 600;
+                    letter-spacing: -0.01em;
+
+                    .danger-item-icon {
+                        font-size: 20px;
+                        opacity: 0.9;
+                    }
                 }
 
                 p {
                     margin: 0;
-                    color: #721c24;
+                    color: var(--text, #374151);
                     font-size: 14px;
+                    line-height: 1.5;
+                    opacity: 0.9;
                 }
             }
 
             .delete-button {
-                background: #dc3545;
+                flex-shrink: 0;
+                background: #ef4444;
                 color: white;
                 border: none;
-                padding: 12px 24px;
+                padding: 10px 20px;
                 border-radius: 8px;
                 font-size: 14px;
                 font-weight: 500;
                 cursor: pointer;
-                transition: background-color 0.2s ease;
+                transition: all 0.2s ease;
+                white-space: nowrap;
 
                 &:hover:not(:disabled) {
-                    background: #c82333;
+                    background: #dc2626;
+                    transform: translateY(-1px);
+                }
+
+                &:active:not(:disabled) {
+                    transform: translateY(0);
                 }
 
                 &:disabled {
-                    background: #6c757d;
+                    background: #9ca3af;
                     cursor: not-allowed;
+                    opacity: 0.8;
                 }
             }
         }
@@ -59,186 +85,216 @@
 // Delete Organization Confirmation Popup Styles
 // Note: Popup renders via portal to document.body, so styles must be at root level
 .delete-org-confirm-popup {
-        .delete-org-confirm-content {
-            background: var(--background);
-            border-radius: 12px;
-            padding: 24px;
-            max-width: 500px;
-            width: 100%;
+    .delete-org-confirm-content {
+        background: var(--background, #fff);
+        border-radius: 16px;
+        padding: 28px;
+        max-width: 480px;
+        width: 100%;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
 
-            .delete-org-header {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                margin-bottom: 20px;
+        .delete-org-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 
-                .warning-icon {
-                    font-size: 32px;
-                    color: #ef4444;
+            .warning-icon {
+                font-size: 28px;
+                color: #ef4444;
+                flex-shrink: 0;
+            }
+
+            h2 {
+                font-family: 'Inter', 'Satoshi', sans-serif;
+                font-size: 20px;
+                font-weight: 600;
+                color: var(--text, #111827);
+                margin: 0;
+                letter-spacing: -0.02em;
+            }
+        }
+
+        .delete-org-warning {
+            background: rgba(239, 68, 68, 0.06);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin-bottom: 20px;
+
+            p {
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                color: var(--text, #374151);
+                margin: 0 0 10px 0;
+                line-height: 1.55;
+
+                &:last-of-type {
+                    margin-bottom: 0;
                 }
 
-                h2 {
-                    font-family: 'Satoshi', sans-serif;
-                    font-size: 24px;
-                    font-weight: 700;
-                    color: var(--text);
-                    margin: 0;
+                strong {
+                    color: #b91c1c;
+                    font-weight: 600;
                 }
             }
 
-            .delete-org-warning {
-                background: rgba(239, 68, 68, 0.1);
-                border: 1px solid rgba(239, 68, 68, 0.2);
-                border-radius: 8px;
-                padding: 16px;
-                margin-bottom: 20px;
+            ul {
+                margin: 10px 0 0 20px;
+                padding: 0;
+                color: var(--text, #374151);
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                line-height: 1.7;
 
-                p {
-                    font-family: 'Inter', sans-serif;
-                    font-size: 14px;
-                    color: var(--text);
-                    margin: 0 0 8px 0;
-                    line-height: 1.5;
+                li {
+                    margin-bottom: 4px;
 
                     &:last-child {
                         margin-bottom: 0;
                     }
-
-                    strong {
-                        color: #ef4444;
-                        font-weight: 600;
-                    }
                 }
+            }
+        }
 
-                ul {
-                    margin: 8px 0 8px 20px;
-                    padding: 0;
-                    color: var(--text);
-                    font-family: 'Inter', sans-serif;
-                    font-size: 14px;
-                    line-height: 1.6;
+        .delete-org-form {
+            margin-bottom: 24px;
 
-                    li {
-                        margin-bottom: 4px;
-                    }
+            label {
+                display: block;
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                color: var(--text, #374151);
+                margin-bottom: 8px;
+                line-height: 1.4;
+
+                strong {
+                    color: #b91c1c;
+                    font-weight: 600;
                 }
             }
 
-            .delete-org-form {
-                margin-bottom: 24px;
+            .text-input {
+                width: 100%;
+                padding: 12px 14px;
+                border: 1px solid var(--lighterborder, #e5e7eb);
+                border-radius: 8px;
+                font-size: 15px;
+                font-family: 'Inter', sans-serif;
+                background: var(--background, #fff);
+                color: var(--text, #111827);
+                transition: border-color 0.2s ease, box-shadow 0.2s ease;
+                box-sizing: border-box;
 
-                label {
-                    display: block;
-                    font-family: 'Inter', sans-serif;
-                    font-size: 14px;
-                    font-weight: 600;
-                    color: var(--text);
-                    margin-bottom: 8px;
-
-                    strong {
-                        color: #ef4444;
-                    }
+                &:focus {
+                    outline: none;
+                    border-color: #ef4444;
+                    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
                 }
 
-                .text-input {
-                    width: 100%;
-                    padding: 12px 16px;
-                    border: 2px solid var(--lighterborder);
-                    border-radius: 8px;
-                    font-size: 16px;
-                    font-family: 'Inter', sans-serif;
-                    background: var(--background);
-                    color: var(--text);
-                    transition: all 0.2s ease;
-                    box-sizing: border-box;
-
-                    &:focus {
-                        outline: none;
-                        border-color: var(--red);
-                        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
-                    }
-
-                    &::placeholder {
-                        color: var(--light-text);
-                    }
+                &::placeholder {
+                    color: var(--light-text, #9ca3af);
                 }
             }
+        }
 
-            .delete-org-actions {
-                display: flex;
-                gap: 12px;
-                justify-content: flex-end;
+        .delete-org-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            padding-top: 4px;
 
-                button {
-                    padding: 12px 24px;
-                    border-radius: 8px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    font-family: 'Inter', sans-serif;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
+            button {
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 500;
+                font-family: 'Inter', sans-serif;
+                cursor: pointer;
+                transition: all 0.2s ease;
 
-                    &.cancel-btn {
-                        background: transparent;
-                        border: 2px solid var(--lighterborder);
-                        color: var(--text);
+                &.cancel-btn {
+                    background: transparent;
+                    border: 1px solid var(--lighterborder, #e5e7eb);
+                    color: var(--text, #374151);
 
-                        &:hover:not(:disabled) {
-                            background: var(--club-dark);
-                            border-color: var(--lighterborder);
-                        }
-
-                        &:disabled {
-                            opacity: 0.6;
-                            cursor: not-allowed;
-                        }
+                    &:hover:not(:disabled) {
+                        background: #f9fafb;
+                        border-color: #d1d5db;
                     }
 
-                    &.delete-btn {
-                        background: #ef4444;
-                        border: none;
-                        color: white;
+                    &:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                    }
+                }
 
-                        &:hover:not(:disabled) {
-                            background: #dc2626;
-                        }
+                &.delete-btn {
+                    background: #ef4444;
+                    border: none;
+                    color: white;
 
-                        &:disabled {
-                            opacity: 0.6;
-                            cursor: not-allowed;
-                        }
+                    &:hover:not(:disabled) {
+                        background: #dc2626;
+                    }
+
+                    &:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                        background: #9ca3af;
                     }
                 }
             }
         }
+    }
 }
 
 // Responsive design for danger zone
-@media (max-width: 768px) {
+@media (max-width: 640px) {
     .danger-zone-wrapper {
         .danger-zone {
             .danger-item {
                 flex-direction: column;
-                gap: 15px;
-                text-align: center;
+                gap: 20px;
+                padding: 20px;
+                align-items: stretch;
 
                 .danger-content {
+                    text-align: left;
+
                     h3 {
-                        font-size: 16px;
+                        font-size: 15px;
                     }
 
                     p {
                         font-size: 13px;
                     }
                 }
+
+                .delete-button {
+                    width: 100%;
+                }
             }
         }
     }
 
-    // Responsive design for delete org popup
     .delete-org-confirm-popup {
         .delete-org-confirm-content {
             padding: 20px;
+            margin: 16px;
+
+            .delete-org-header {
+                flex-direction: column;
+                text-align: center;
+                gap: 10px;
+
+                h2 {
+                    font-size: 18px;
+                }
+            }
 
             .delete-org-actions {
                 flex-direction: column-reverse;

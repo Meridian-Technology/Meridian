@@ -19,6 +19,11 @@ const accessors = {
     yAccessor: (d) => d.y,
 };
 
+function toLocalDateKey(date) {
+    const d = new Date(date);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function formatSemanticDate(dateStr) {
     const date = new Date(dateStr + 'T12:00:00');
     const today = new Date();
@@ -91,15 +96,24 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
     const [isCumulative, setIsCumulative] = useState(true);
     const [useFakeRsvpData, setUseFakeRsvpData] = useState(false);
 
-    const { data: growthData, loading, error } = useFetch(
-        eventId && orgId ? `/org-event-management/${orgId}/events/${eventId}/rsvp-growth` : null
-    );
+    const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+    const rsvpGrowthUrl = eventId && orgId
+        ? `/org-event-management/${orgId}/events/${eventId}/rsvp-growth${timezone ? `?timezone=${encodeURIComponent(timezone)}` : ''}`
+        : null;
+    const { data: growthData, loading, error } = useFetch(rsvpGrowthUrl);
 
     const { dailyData, requiredGrowth, targetAttendance, isFrozen, requiredPerDay } = useMemo(() => {
         if (!growthData?.success || !growthData?.data) {
+            console.log('[RSVPGrowthChart] no growthData', { success: growthData?.success, hasData: !!growthData?.data });
             return { dailyData: [], requiredGrowth: [], targetAttendance: 0, isFrozen: false, requiredPerDay: 0 };
         }
         const { registrations: rawRegistrations = {}, eventCreated, eventStart, expectedAttendance } = growthData.data;
+        console.log('[RSVPGrowthChart] raw API data', {
+            rawRegistrations,
+            eventCreated,
+            eventStart,
+            expectedAttendance
+        });
         const dayBeforeEventTemp = new Date(eventStart);
         dayBeforeEventTemp.setDate(dayBeforeEventTemp.getDate() - 1);
         dayBeforeEventTemp.setHours(0, 0, 0, 0);
@@ -115,16 +129,16 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
 
         const eventCreatedNormalized = new Date(eventCreatedDate);
         eventCreatedNormalized.setHours(0, 0, 0, 0);
-        const dayBeforeEvent = new Date(eventStartDate);
-        dayBeforeEvent.setDate(dayBeforeEvent.getDate() - 1);
-        dayBeforeEvent.setHours(0, 0, 0, 0);
+        const lastChartDate = new Date(eventStartDate);
+        lastChartDate.setHours(0, 0, 0, 0);
+        // Include event start date so registrations on the day-of are shown
 
         const dailyData = [];
         let cumulativeRSVPs = 0;
-        for (let d = new Date(eventCreatedNormalized); d <= dayBeforeEvent; d.setDate(d.getDate() + 1)) {
+        for (let d = new Date(eventCreatedNormalized); d <= lastChartDate; d.setDate(d.getDate() + 1)) {
             const currentDate = new Date(d);
             currentDate.setHours(0, 0, 0, 0);
-            const dayKey = currentDate.toISOString().split('T')[0];
+            const dayKey = toLocalDateKey(currentDate);
             const dailyRSVPs = currentDate <= cutoffDateNormalized ? (registrations[dayKey] || 0) : 0;
             cumulativeRSVPs += dailyRSVPs;
             dailyData.push({ date: dayKey, dailyRSVPs, cumulativeRSVPs });
@@ -137,6 +151,13 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
             date: day.date,
             required: i === dailyData.length - 1 ? target : (i + 1) * originalRequiredPerDay,
         }));
+
+        console.log('[RSVPGrowthChart] dailyData computed', {
+            dailyDataLength: dailyData.length,
+            sampleDays: dailyData.slice(0, 3).map((d) => ({ date: d.date, dailyRSVPs: d.dailyRSVPs, cumulativeRSVPs: d.cumulativeRSVPs })),
+            lastDay: dailyData[dailyData.length - 1],
+            daysWithRegistrations: dailyData.filter((d) => d.dailyRSVPs > 0)
+        });
 
         return {
             dailyData,
@@ -193,10 +214,10 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
         ? (dailyData?.[dailyData.length - 1]?.cumulativeRSVPs ?? 0)
         : (registrationCount ?? dailyData?.[dailyData.length - 1]?.cumulativeRSVPs ?? 0);
     const displayExpected = useFakeRsvpData ? targetAttendance : (expectedAttendance ?? targetAttendance ?? 0);
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = toLocalDateKey(new Date());
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const yesterdayStr = toLocalDateKey(yesterday);
     const todayDaily = dailyData?.find((d) => d.date === todayStr)?.dailyRSVPs ?? 0;
     const yesterdayDaily = dailyData?.find((d) => d.date === yesterdayStr)?.dailyRSVPs ?? 0;
     const dailyChangePercent =
@@ -229,10 +250,20 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
         );
     }
 
-    const actualData = (isCumulative
+    const beforeFilter = isCumulative
         ? dailyData.map((day) => ({ x: day.date, y: day.cumulativeRSVPs }))
-        : dailyData.map((day) => ({ x: day.date, y: day.dailyRSVPs }))
-    ).filter((d) => d.x <= todayStr);
+        : dailyData.map((day) => ({ x: day.date, y: day.dailyRSVPs }));
+    const actualData = beforeFilter.filter((d) => d.x <= todayStr);
+
+    console.log('[RSVPGrowthChart] chart data', {
+        todayStr,
+        isCumulative,
+        beforeFilterLength: beforeFilter.length,
+        beforeFilterWithY: beforeFilter.filter((d) => d.y > 0),
+        actualDataLength: actualData.length,
+        actualDataWithY: actualData.filter((d) => d.y > 0),
+        filterRemoved: beforeFilter.filter((d) => d.x > todayStr)
+    });
 
     const requiredData = isCumulative
         ? requiredGrowth.map((day) => ({ x: day.date, y: day.required }))

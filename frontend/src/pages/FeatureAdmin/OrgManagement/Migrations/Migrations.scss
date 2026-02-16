@@ -1,0 +1,93 @@
+.migrations {
+    .content {
+        padding: 0 40px 20px 40px;
+        box-sizing: border-box;
+    }
+
+    .migration-card {
+        background: var(--background, #fff);
+        border-radius: 12px;
+        padding: 24px;
+        border: 1px solid var(--lightborder, #e5e7eb);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+
+        .migration-info {
+            margin-bottom: 20px;
+
+            h3 {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                font-size: 16px;
+                font-weight: 600;
+                color: var(--text, #111827);
+                margin: 0 0 8px 0;
+
+                .iconify-icon {
+                    font-size: 22px;
+                    color: #4DAA57;
+                }
+            }
+
+            p {
+                margin: 0;
+                font-size: 14px;
+                color: var(--text-secondary, #6b7280);
+                line-height: 1.5;
+
+                code {
+                    background: #f3f4f6;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    font-size: 13px;
+                }
+            }
+        }
+
+        .migration-actions {
+            margin-bottom: 12px;
+        }
+
+        .migrate-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #4DAA57;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+
+            &:hover:not(:disabled) {
+                background: #45a049;
+            }
+
+            &:disabled {
+                opacity: 0.7;
+                cursor: not-allowed;
+            }
+
+            .spin {
+                animation: spin 1s linear infinite;
+            }
+        }
+
+        .migration-result {
+            margin-top: 12px;
+            padding: 10px 14px;
+            background: #f0fdf4;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #166534;
+        }
+    }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
