@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@babel/core": "^7.16.0",
+    "@nivo/funnel": "^0.99.0",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.5.3",
     "@react-oauth/google": "^0.12.1",
     "@squircle-js/react": "^1.2.17",

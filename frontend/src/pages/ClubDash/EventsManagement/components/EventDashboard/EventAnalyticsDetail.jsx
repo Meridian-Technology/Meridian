@@ -1,20 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../NotificationContext';
 import apiRequest from '../../../../../utils/postRequest';
 import HeaderContainer from '../../../../../components/HeaderContainer/HeaderContainer';
+import FunnelChart from './FunnelChart';
 import './EventDashboard.scss';
+
+/** Set to true to preview the funnel with fake event data (Views → Form Opens → Registrations → Check-ins) */
+const USE_FAKE_FUNNEL_DATA = false;
+
+const FAKE_FUNNEL_DATA = [
+    { label: 'Views', value: 1250 },
+    { label: 'Form Opens', value: 680 },
+    { label: 'Registrations', value: 312 },
+    { label: 'Check-ins', value: 189 },
+];
 
 function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     const { addNotification } = useNotification();
     const [analytics, setAnalytics] = useState(null);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
+    const [timeRange, setTimeRange] = useState('30d');
 
     // Fetch detailed analytics using the correct route
     const { data: analyticsData, refetch } = useFetch(
-        event?._id ? `/event-analytics/event/${event._id}?timeRange=30d` : null
+        event?._id ? `/event-analytics/event/${event._id}?timeRange=${timeRange}` : null
     );
 
     useEffect(() => {
@@ -27,13 +39,17 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     }, [analyticsData]);
 
     useEffect(() => {
+        setLoading(true);
+    }, [timeRange]);
+
+    useEffect(() => {
         // Refresh analytics every 30 seconds for real-time updates
         const interval = setInterval(() => {
             refetch();
         }, 30000);
 
         return () => clearInterval(interval);
-    }, [refetch]);
+    }, [refetch, timeRange]);
 
     const formatDate = (dateString) => {
         return new Date(dateString).toLocaleDateString('en-US', {
@@ -48,6 +64,25 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     const formatNumber = (num) => {
         return new Intl.NumberFormat().format(num);
     };
+
+    const platform = analytics?.platform || {};
+    const funnelData = useMemo(() => {
+        if (USE_FAKE_FUNNEL_DATA) return FAKE_FUNNEL_DATA;
+
+        const totalViews = (analytics?.views ?? 0) + (analytics?.anonymousViews ?? 0);
+        const totalRegistrations = analytics?.registrations ?? analytics?.registrationHistory?.length ?? 0;
+        const steps = [
+            { label: 'Views', value: totalViews },
+        ];
+        if (event?.registrationFormId) {
+            steps.push({ label: 'Form Opens', value: platform.registrationFormOpens || 0 });
+        }
+        steps.push(
+            { label: 'Registrations', value: totalRegistrations },
+            { label: 'Check-ins', value: platform.checkins || 0 }
+        );
+        return steps;
+    }, [analytics, platform.registrationFormOpens, platform.checkins, event?.registrationFormId]);
 
     // const handleExport = async () => {
     //     if (!event?._id || !orgId) return;
@@ -91,7 +126,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     //     }
     // };
 
-    if (loading) {
+    if (!USE_FAKE_FUNNEL_DATA && loading) {
         return (
             <div className="event-analytics-detail loading">
                 <Icon icon="mdi:loading" className="spinner" />
@@ -100,7 +135,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
         );
     }
 
-    if (!analytics) {
+    if (!USE_FAKE_FUNNEL_DATA && !analytics) {
         return (
             <div className="event-analytics-detail error">
                 <Icon icon="mdi:alert-circle" />
@@ -109,11 +144,12 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
         );
     }
 
-    const registrationHistory = analytics.registrationHistory || [];
-    const totalRegistrations = analytics.registrations || registrationHistory.length || 0;
+    const safeAnalytics = USE_FAKE_FUNNEL_DATA ? {} : analytics;
+    const registrationHistory = safeAnalytics.registrationHistory || [];
+    const totalRegistrations = safeAnalytics.registrations || registrationHistory.length || 0;
 
     // Get view data - viewHistory is filtered by timeRange on backend
-    const viewHistory = analytics.viewHistory || [];
+    const viewHistory = safeAnalytics.viewHistory || [];
     const loggedInViews = viewHistory.filter(v => !v.isAnonymous && v.userId);
     
     // Count filtered views (these are already filtered by timeRange)
@@ -122,16 +158,16 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     const filteredTotalViews = filteredLoggedInViews + filteredAnonymousViews;
     
     // Use API's total counts for display (these are unfiltered totals)
-    const loggedInViewsCount = analytics.views || 0;
-    const anonymousViewsCount = analytics.anonymousViews || 0;
+    const loggedInViewsCount = safeAnalytics.views || 0;
+    const anonymousViewsCount = safeAnalytics.anonymousViews || 0;
     const totalViews = loggedInViewsCount + anonymousViewsCount;
 
     const engagementRate = filteredTotalViews > 0
         ? ((totalRegistrations / filteredTotalViews) * 100)
-        : (analytics.engagementRate || 0);
+        : (safeAnalytics.engagementRate || 0);
 
-    const uniqueViewsTotal = analytics.uniqueViews || 0;
-    const uniqueRegistrationsTotal = analytics.uniqueRegistrations || 0;
+    const uniqueViewsTotal = safeAnalytics.uniqueViews || 0;
+    const uniqueRegistrationsTotal = safeAnalytics.uniqueRegistrations || 0;
     const conversionRate = uniqueViewsTotal > 0
         ? ((uniqueRegistrationsTotal / uniqueViewsTotal) * 100).toFixed(1)
         : 0;
@@ -146,6 +182,9 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     const recentViews = viewHistory.filter(v => new Date(v.timestamp) >= last24Hours).length;
     const recentRegistrations = registrationHistory.filter(r => new Date(r.timestamp) >= last24Hours).length;
 
+    const tabViews = platform.tabViews || {};
+    const tabEntries = Object.entries(tabViews).sort((a, b) => b[1] - a[1]);
+
     return (
         <div className="event-analytics-detail">
             <div className="analytics-header">
@@ -153,11 +192,54 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                     <Icon icon="mingcute:chart-fill" />
                     Event Analytics
                 </h3>
-                <div className="live-indicator">
-                    <span className="live-dot"></span>
-                    <span>Live</span>
+                <div className="analytics-header-controls">
+                    <div className="time-range-selector">
+                        <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}>
+                            <option value="7d">Last 7 days</option>
+                            <option value="30d">Last 30 days</option>
+                            <option value="90d">Last 90 days</option>
+                        </select>
+                    </div>
+                    <div className="live-indicator">
+                        <span className="live-dot"></span>
+                        <span>Live</span>
+                    </div>
                 </div>
             </div>
+
+            {(USE_FAKE_FUNNEL_DATA || totalViews > 0 || totalRegistrations > 0 || platform.checkins > 0 || platform.registrationFormOpens > 0) && (
+                <HeaderContainer
+                    icon="mingcute:chart-bar-fill"
+                    header="Engagement Funnel"
+                    classN="analytics-card funnel-section"
+                    size="1rem"
+                >
+                    <div className="card-content funnel-chart-container">
+                        <div className="funnel-chart-wrapper">
+                            <FunnelChart data={funnelData} />
+                        </div>
+                        {(platform.withdrawals > 0 || platform.checkouts > 0 || platform.registrationFormBounces > 0) && (
+                            <div className="funnel-secondary">
+                                {platform.registrationFormBounces > 0 && (
+                                    <span className="funnel-secondary-item funnel-bounces">
+                                        {formatNumber(platform.registrationFormBounces)} opened form but did not register
+                                    </span>
+                                )}
+                                {platform.withdrawals > 0 && (
+                                    <span className="funnel-secondary-item">
+                                        {formatNumber(platform.withdrawals)} withdrawals
+                                    </span>
+                                )}
+                                {platform.checkouts > 0 && (
+                                    <span className="funnel-secondary-item">
+                                        {formatNumber(platform.checkouts)} check-outs
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </HeaderContainer>
+            )}
 
             <div className="analytics-grid">
                 <HeaderContainer
@@ -174,7 +256,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                                         <div className="view-square-content">
                                             <span className="view-value">{formatNumber(loggedInViewsCount)}</span>
                                             <span className="view-label">Logged-in</span>
-                                            <span className="view-subtitle">{formatNumber(analytics.uniqueViews || 0)} unique</span>
+                                            <span className="view-subtitle">{formatNumber(safeAnalytics.uniqueViews || 0)} unique</span>
                                         </div>
                                     </div>
                                 </div>
@@ -183,7 +265,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                                         <div className="view-square-content">
                                             <span className="view-value">{formatNumber(anonymousViewsCount)}</span>
                                             <span className="view-label">Anonymous</span>
-                                            <span className="view-subtitle">{formatNumber(analytics.uniqueAnonymousViews || 0)} unique</span>
+                                            <span className="view-subtitle">{formatNumber(safeAnalytics.uniqueAnonymousViews || 0)} unique</span>
                                         </div>
                                     </div>
                                 </div>
@@ -251,6 +333,11 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                                 <div className="conversion-label">Avg Views/User</div>
                                 <div className="conversion-subtitle">Per unique viewer</div>
                             </div>
+                            <div className="conversion-item">
+                                <div className="conversion-value">{formatNumber(platform.agendaViews || 0)}</div>
+                                <div className="conversion-label">Agenda Opens</div>
+                                <div className="conversion-subtitle">Times agenda modal was viewed</div>
+                            </div>
                         </div>
                         <div className="recent-activity">
                             <div className="activity-header">
@@ -271,6 +358,56 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                     </div>
                 </HeaderContainer>
             </div>
+
+            {platform.registrationFormOpens > 0 && (
+                <HeaderContainer
+                    icon="mdi:form-select"
+                    header="Registration Form"
+                    classN="analytics-card registration-form-section"
+                    size="1rem"
+                >
+                    <div className="card-content">
+                        <div className="registration-form-metrics">
+                            <div className="form-metric">
+                                <span className="form-metric-value">{formatNumber(platform.registrationFormOpens)}</span>
+                                <span className="form-metric-label">Form Opens</span>
+                            </div>
+                            <div className="form-metric">
+                                <span className="form-metric-value">
+                                    {platform.registrationFormOpens > 0
+                                        ? ((totalRegistrations / platform.registrationFormOpens) * 100).toFixed(1)
+                                        : 0}%
+                                </span>
+                                <span className="form-metric-label">Form Conversion</span>
+                            </div>
+                            <div className="form-metric form-metric-bounces">
+                                <span className="form-metric-value">{formatNumber(platform.registrationFormBounces || 0)}</span>
+                                <span className="form-metric-label">Opened but did not register</span>
+                            </div>
+                        </div>
+                    </div>
+                </HeaderContainer>
+            )}
+
+            {tabEntries.length > 0 && (
+                <HeaderContainer
+                    icon="mdi:tab"
+                    header="Workspace Tab Engagement"
+                    classN="analytics-card tab-breakdown-section"
+                    size="1rem"
+                >
+                    <div className="card-content">
+                        <div className="tab-breakdown-list">
+                            {tabEntries.map(([tab, count]) => (
+                                <div key={tab} className="tab-breakdown-item">
+                                    <span className="tab-name">{tab}</span>
+                                    <span className="tab-count">{formatNumber(count)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </HeaderContainer>
+            )}
 
             {loggedInViews.length > 0 && (
                 <HeaderContainer
