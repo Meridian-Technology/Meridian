@@ -46,7 +46,7 @@ router.get('/featured-all', async (req, res) => {
         //populate hostingId, org or user
         const events = await Event.aggregate([
             { $match: { start_time: { $gte: new Date(), $lte: new Date(Date.now() + 2 * 7 * 24 * 60 * 60 * 1000) } }, },
-            { $sample: { size: 3 } },
+            { $sample: { size: 5 } },
             // Lookup user host
             {
                 $lookup: {

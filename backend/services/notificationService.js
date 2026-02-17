@@ -822,6 +822,28 @@ class NotificationService {
                     }   
                 ]
             },
+            'org_approval_needed': {
+                title: 'Organization Needs Approval',
+                message: 'A new organization <strong>{{orgName}}</strong> is pending approval.',
+                version: '1.0',
+                priority: 'high',
+                channels: ['in_app', 'push'],
+                navigation: {
+                    type: 'navigate',
+                    route: 'OrganizationProfile',
+                    params: { orgId: '{{orgId}}' },
+                    deepLink: 'meridian://organization/{{orgId}}'
+                },
+                actions: [
+                    {
+                        id: 'review_approval',
+                        label: 'Review and Approve',
+                        type: 'link',
+                        url: '/org-management',
+                        style: 'primary'
+                    }
+                ]
+            },
             'event_reminder': {
                 title: 'Event Reminder',
                 message: 'Your event <strong>{{eventName}}</strong> starts in <em>{{timeUntil}}</em> at {{startTime|time}}.',

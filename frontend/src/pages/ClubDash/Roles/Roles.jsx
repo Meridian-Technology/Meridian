@@ -12,7 +12,7 @@ import UnsavedChangesBanner from '../../../components/UnsavedChangesBanner/Unsav
 import Popup from '../../../components/Popup/Popup';
 import { Icon } from '@iconify-icon/react';
 
-function Roles({ expandedClass, org, refetch }) {
+function Roles({ expandedClass, org, refetch, adminBypass = false }) {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const [roles, setRoles] = useState([]);
@@ -45,6 +45,17 @@ function Roles({ expandedClass, org, refetch }) {
         if (!org || !user || permissionsChecked) return;
 
         try {
+            // Admin/root viewing as admin: grant full access
+            if (adminBypass) {
+                setUserRole('admin');
+                setUserRoleData(null);
+                setCanManageRoles(true);
+                setHasAccess(true);
+                setPermissionsChecked(true);
+                setLoading(false);
+                return;
+            }
+
             // Check if user is the owner
             const isOwner = String(org.owner) === String(user._id);
             

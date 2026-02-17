@@ -140,7 +140,7 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
             {
                 variant === 'regular' ? (
                     <>
-                        {event.image && <img src={event.image} alt={`Event image for ${event.name}`} />}
+                        {event.image && <img src={event.image} alt={`Event image for ${event.name}`} className="event-image" />}
                             <div className="info">
                                 <div className="row event-header">
                                     <div className="col">

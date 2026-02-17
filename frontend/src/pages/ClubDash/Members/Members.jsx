@@ -15,7 +15,7 @@ import MemberApplicationsViewer from './MemberApplicationsViewer/MemberApplicati
 import TabbedContainer, { CommonTabConfigs } from '../../../components/TabbedContainer';
 import ComingSoon from '../EventsManagement/components/EventDashboard/ComingSoon';
 
-function Members({ expandedClass, org }) {
+function Members({ expandedClass, org, adminBypass = false }) {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const {AtlasMain} = useGradient();
@@ -75,6 +75,15 @@ function Members({ expandedClass, org }) {
         if (!org || !user || permissionsChecked) return;
 
         try {
+            // Admin/root viewing as admin: grant full access
+            if (adminBypass) {
+                setUserRole('admin');
+                setCanManageMembers(true);
+                setHasAccess(true);
+                setPermissionsChecked(true);
+                return;
+            }
+
             // Check if user is the owner
             const isOwner = org.owner === user._id;
             

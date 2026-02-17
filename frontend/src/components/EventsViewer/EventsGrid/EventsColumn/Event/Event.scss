@@ -42,10 +42,13 @@
         font-size: 16px;
         color: #7F7F7F;
     }
-    img{
+    img.event-image {
         border-radius: 5px;
-        box-shadow:0px 7px 29px 0px rgba(150, 150, 157, 0.1);
-        width:200px;
+        box-shadow: 0px 7px 29px 0px rgba(150, 150, 157, 0.1);
+        width: 200px;
+        height: auto;
+        max-height: 300px;
+        flex-shrink: 0;
     }
     .info:not(.compact){
         display: flex;
@@ -288,8 +291,10 @@
         border-radius: 12px;
         padding: 0;
         
-        img {
-            height: 120px;
+        img.event-image {
+            width: 200px;
+            height: auto;
+            max-height: 300px;
         }
         
         .info.compact {

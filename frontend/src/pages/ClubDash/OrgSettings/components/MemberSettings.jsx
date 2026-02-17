@@ -12,7 +12,7 @@ import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/Un
 import useUnsavedChanges from '../../../../hooks/useUnsavedChanges';
 import SettingsList from '../../../../components/SettingsList/SettingsList';
 
-function MemberSettings({org}){
+function MemberSettings({ org, expandedClass, adminBypass = false }){
     const [formData, setFormData] = useState({
         requireApprovalForJoin: org.requireApprovalForJoin,
         memberForm: org.memberForm ? org.memberForm : null,
@@ -21,7 +21,7 @@ function MemberSettings({org}){
     const [showFormViewer, setShowFormViewer] = useState(false);
     const [currentForm, setCurrentForm] = useState(null);
     const {AtlasMain} = useGradient();
-    const { checkUserPermissions } = useOrgPermissions(org);
+    const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { saveOrgSettings } = useOrgSave(org);
 
     // Original data for comparison

@@ -70,6 +70,7 @@ function ClubDash(){
     const [searchParams] = useSearchParams();
     const isAdminView = searchParams.get('adminView') === 'true';
     const isSiteAdmin = user?.roles?.includes('admin') || user?.roles?.includes('root');
+    const adminBypass = isAdminView && isSiteAdmin;
 
     const location = useLocation();
 
@@ -242,7 +243,7 @@ function ClubDash(){
             label: 'Events', 
             icon: 'mingcute:calendar-fill', 
             key: 'events',
-            element: <EventsManagement expandedClass={expandedClass} orgId={clubId}/>
+            element: <EventsManagement expandedClass={expandedClass} orgId={clubId} orgData={orgData.data} adminBypass={adminBypass}/>
         },
         { 
             label: 'Announcements', 
@@ -255,7 +256,7 @@ function ClubDash(){
             icon: 'mdi:account-group', 
             key: 'members', 
             requiresPermission: 'canManageMembers',
-            element: <Members expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
+            element: <Members expandedClass={expandedClass} org={orgData.data?.org?.overview} adminBypass={adminBypass}/>
         },
         // { 
         //     label: 'Forms', 
@@ -278,12 +279,12 @@ function ClubDash(){
                 {
                     label: 'General',
                     icon: 'mdi:cog',
-                    element: <GeneralSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                    element: <GeneralSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
                 },
                 {
                     label: 'Roles & Permissions',
                     icon: 'mdi:shield-account',
-                    element:  <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview} refetch={orgData.refetch}/>
+                    element:  <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview} refetch={orgData.refetch} adminBypass={adminBypass}/>
                 },
                 {
                     label: 'Equipment',
@@ -296,12 +297,12 @@ function ClubDash(){
                 {
                     label: 'Application Process',
                     icon: 'mdi:form-select',
-                    element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                    element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
                 },
                 {
                     label: 'Social Links',
                     icon: 'mdi:link-variant',
-                    element: <SocialLinksSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                    element: <SocialLinksSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
                 },
                 // {
                 //     label: 'Verification Requests',
@@ -311,7 +312,7 @@ function ClubDash(){
                 {
                     label: 'Danger Zone',
                     icon: 'mdi:alert-circle',
-                    element: <DangerZone org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                    element: <DangerZone org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
                 },
                 {
                     label: 'Audit Log',
