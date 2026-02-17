@@ -3,7 +3,8 @@ import useAuth from '../../../../hooks/useAuth';
 import apiRequest from '../../../../utils/postRequest';
 
 // Hook to check user permissions for an organization
-export const useOrgPermissions = (org) => {
+export const useOrgPermissions = (org, options = {}) => {
+    const { adminBypass = false } = options;
     const { user } = useAuth();
     const { addNotification } = useNotification();
     
@@ -11,6 +12,10 @@ export const useOrgPermissions = (org) => {
         if (!org || !user) return { hasAccess: false, canManageSettings: false };
 
         try {
+            // Admin/root viewing as admin: grant full access
+            if (adminBypass) {
+                return { hasAccess: true, canManageSettings: true, isOwner: false };
+            }
             // Check if user is the owner
             const isOwner = String(org.owner) === String(user._id);
             

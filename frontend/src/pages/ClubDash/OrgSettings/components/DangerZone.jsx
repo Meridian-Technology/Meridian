@@ -5,7 +5,7 @@ import { Icon } from '@iconify-icon/react';
 import { useGradient } from '../../../../hooks/useGradient';
 import './DangerZone.scss';
 
-const DangerZone = ({ org, expandedClass }) => {
+const DangerZone = ({ org, expandedClass, adminBypass = false }) => {
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [canManageSettings, setCanManageSettings] = useState(false);
     const [isOwner, setIsOwner] = useState(false);
@@ -14,7 +14,7 @@ const DangerZone = ({ org, expandedClass }) => {
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
 
-    const { checkUserPermissions } = useOrgPermissions(org);
+    const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { deleteOrganization } = useOrgDelete();
     const { AtlasMain } = useGradient();
 

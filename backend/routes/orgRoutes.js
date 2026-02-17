@@ -456,8 +456,10 @@ router.post("/edit-org", verifyToken, upload.fields([
             return res.status(404).json({ success: false, message: "Org not found" });
         }
 
-        // Check if the user is authorized to edit the org
-        if (org.owner.toString() !== userId) {
+        // Check if the user is authorized to edit the org (owner or site admin/root)
+        const roles = req.user?.roles || [];
+        const isSiteAdmin = roles.includes('admin') || roles.includes('root');
+        if (org.owner.toString() !== userId && !isSiteAdmin) {
             return res
                 .status(400)
                 .json({

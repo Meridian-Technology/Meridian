@@ -10,7 +10,7 @@ import SlideSwitch from '../../../../components/SlideSwitch/SlideSwitch';
 import { Icon } from '@iconify-icon/react';
 import './GeneralSettings.scss';
 
-const GeneralSettings = ({ org, expandedClass }) => {
+const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
     const location = useLocation();
     const [formData, setFormData] = useState({
         org_name: '',
@@ -34,7 +34,7 @@ const GeneralSettings = ({ org, expandedClass }) => {
     const [isInvalidBannerImageType, setIsInvalidBannerImageType] = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
     const {AtlasMain} = useGradient();
-    const { checkUserPermissions } = useOrgPermissions(org);
+    const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { saveOrgSettings } = useOrgSave(org);
 
     useEffect(() => {

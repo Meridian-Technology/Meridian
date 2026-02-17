@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import RoleManager from '../../../../components/RoleManager';
 import { useOrgPermissions, useOrgSave } from './settingsHelpers';
 
-const RolesSettings = ({ org, expandedClass }) => {
+const RolesSettings = ({ org, expandedClass, adminBypass = false }) => {
     const [formData, setFormData] = useState({
         org_name: '',
         org_description: '',
@@ -22,7 +22,7 @@ const RolesSettings = ({ org, expandedClass }) => {
     const [canManageSettings, setCanManageSettings] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
 
-    const { checkUserPermissions } = useOrgPermissions(org);
+    const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { saveOrgSettings } = useOrgSave(org);
 
     useEffect(() => {

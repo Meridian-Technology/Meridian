@@ -300,7 +300,7 @@ function MyEvents({ onRoomNavigation }){
                                 )}
 
                                 {/* Featured Rooms - Show for both authenticated and unauthenticated users */}
-                                {/* {featuredRooms.length > 0 && (
+                                {featuredRooms.length > 0 && !user && (
                                     <HeaderContainer
                                         icon="ic:baseline-room"
                                         header="Available Study Rooms"
@@ -323,7 +323,7 @@ function MyEvents({ onRoomNavigation }){
                                             ))}
                                         </div>
                                     </HeaderContainer>
-                                )} */}
+                                )}
                             </>
                         )}
 
