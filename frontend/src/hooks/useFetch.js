@@ -14,7 +14,8 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
     params: options.params || {},
   }), [options.method, options.data, options.headers, options.params]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (options = {}) => {
+    const { silent = false } = options;
     // Don't fetch if URL is null or undefined
     if (!url) {
       setLoading(false);
@@ -22,7 +23,7 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
       return;
     }
     
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const response = await axios({
@@ -67,7 +68,7 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
         setError(err.message);
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [url, memoizedOptions]);
 
@@ -75,5 +76,6 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
     fetchData();
   }, [fetchData]);
 
-  return { data, loading, error, refetch: fetchData };
+  const refetch = useCallback((opts) => fetchData(opts), [fetchData]);
+  return { data, loading, error, refetch };
 };

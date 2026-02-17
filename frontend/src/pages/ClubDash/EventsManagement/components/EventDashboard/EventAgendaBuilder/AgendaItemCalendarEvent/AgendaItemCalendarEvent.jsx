@@ -11,9 +11,26 @@ const AGENDA_TYPE_COLORS = {
     Custom: { background: '#D3DDFD', border: '#6D8EFA' }
 };
 
+function hexToRgba(hex, alpha) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!result) return hex;
+    const r = parseInt(result[1], 16);
+    const g = parseInt(result[2], 16);
+    const b = parseInt(result[3], 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function getAgendaTypeColors(item) {
     const type = item?.type || 'Activity';
+    if (type === 'Custom' && item?.customColor) {
+        return { background: hexToRgba(item.customColor, 0.2), border: item.customColor };
+    }
     return AGENDA_TYPE_COLORS[type] || AGENDA_TYPE_COLORS.Activity;
+}
+
+function getDisplayType(item) {
+    if (item?.type === 'Custom' && item?.customTag?.trim()) return item.customTag.trim();
+    return item?.type || 'Activity';
 }
 
 function AgendaItemCalendarEvent({ item, onEdit, event }) {
@@ -52,7 +69,7 @@ function AgendaItemCalendarEvent({ item, onEdit, event }) {
             <div className="event-content">
                 <div className="event-name">{item.title || 'Untitled'}</div>
                 <div className="event-details">
-                    <span className="event-type">{item.type || 'Activity'}</span>
+                    <span className="event-type">{getDisplayType(item)}</span>
                     {item.location && (
                         <span className="event-location">{item.location}</span>
                     )}

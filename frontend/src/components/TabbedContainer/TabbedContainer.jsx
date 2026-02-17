@@ -40,6 +40,7 @@ import './TabbedContainer.scss';
  * @param {string} props.scrollBehavior - Scroll behavior: 'smooth', 'auto' (default: 'smooth')
  * @param {boolean} props.showScrollButtons - Whether to show scroll buttons for overflow (default: true)
  * @param {Object} props.theme - Theme configuration object (optional)
+ * @param {boolean} props.stickyTabs - Whether tabs should stick to top when scrolling (default: false)
  */
 function TabbedContainer({
     tabs = [],
@@ -68,7 +69,8 @@ function TabbedContainer({
     scrollable = true,
     scrollBehavior = 'smooth',
     showScrollButtons = true,
-    theme = {}
+    theme = {},
+    stickyTabs = false
 }) {
     // Internal state for uncontrolled mode
     const [internalActiveTab, setInternalActiveTab] = useState(
@@ -336,7 +338,7 @@ function TabbedContainer({
 
                 <div className="tabbed-container__main">
                     {tabPosition === 'top' && (
-                        <div className="tabbed-container__tabs-wrapper">
+                        <div className={`tabbed-container__tabs-wrapper${stickyTabs ? ' tabbed-container__tabs-wrapper--sticky' : ''}`}>
                             {renderScrollButtons()}
                             <div className={tabsClasses}>
                                 {tabs.map(renderTabButton)}
@@ -345,7 +347,7 @@ function TabbedContainer({
                     )}
 
                     {tabPosition === 'left' && (
-                        <div className="tabbed-container__tabs-wrapper">
+                        <div className={`tabbed-container__tabs-wrapper${stickyTabs ? ' tabbed-container__tabs-wrapper--sticky' : ''}`}>
                             <div className={tabsClasses}>
                                 {tabs.map(renderTabButton)}
                             </div>
@@ -360,7 +362,7 @@ function TabbedContainer({
                     </div>
 
                     {tabPosition === 'right' && (
-                        <div className="tabbed-container__tabs-wrapper">
+                        <div className={`tabbed-container__tabs-wrapper${stickyTabs ? ' tabbed-container__tabs-wrapper--sticky' : ''}`}>
                             <div className={tabsClasses}>
                                 {tabs.map(renderTabButton)}
                             </div>
@@ -368,7 +370,7 @@ function TabbedContainer({
                     )}
 
                     {tabPosition === 'bottom' && (
-                        <div className="tabbed-container__tabs-wrapper">
+                        <div className={`tabbed-container__tabs-wrapper${stickyTabs ? ' tabbed-container__tabs-wrapper--sticky' : ''}`}>
                             {renderScrollButtons()}
                             <div className={tabsClasses}>
                                 {tabs.map(renderTabButton)}

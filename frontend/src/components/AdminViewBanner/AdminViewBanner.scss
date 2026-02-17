@@ -1,0 +1,46 @@
+.admin-view-banner {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+
+    &__icon {
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    &__text {
+        flex: 1;
+    }
+
+    &__exit {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .iconify-icon {
+            font-size: 1rem;
+        }
+    }
+}

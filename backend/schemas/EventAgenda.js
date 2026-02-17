@@ -41,6 +41,14 @@ const EventAgendaSchema = new Schema({
             enum: ['Activity', 'Break', 'Setup', 'Breakdown', 'Transition', 'Speaker', 'Custom'],
             default: 'Activity'
         },
+        customTag: {
+            type: String,
+            trim: true
+        },
+        customColor: {
+            type: String,
+            trim: true
+        },
         location: {
             type: String,
             trim: true

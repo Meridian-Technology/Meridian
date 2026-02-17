@@ -6,6 +6,7 @@ import useUnsavedChanges from '../../../../../../hooks/useUnsavedChanges';
 import DynamicFormField from '../../../../../../components/DynamicFormField/DynamicFormField';
 import ImageUpload from '../../../../../../components/ImageUpload/ImageUpload';
 import Popup from '../../../../../../components/Popup/Popup';
+import UnsavedChangesBanner from '../../../../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
 import RoomSelectorV2 from '../../../../../../pages/CreateEventV2/Steps/Where/RoomSelectorV2/RoomSelectorV2';
 import When from '../../../../../../pages/CreateEventV2/Steps/When/When';
 import EventPreview from '../EventPreview';
@@ -394,21 +395,19 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
 
     return (
         <div className="event-editor-tab">
+            <UnsavedChangesBanner
+                hasChanges={hasChanges}
+                onSave={performSave}
+                onDiscard={discardChanges}
+                saving={saving}
+                saveText="Save"
+                discardText="Discard"
+            />
             {eventWithAgenda && (
                 <EventPreview event={eventWithAgenda} onRefetch={onRefresh} />
             )}
             <div className="editor-header">
                 <h2>Details</h2>
-                {hasChanges && (
-                    <div className="editor-actions">
-                        <button type="button" className="cancel-button" onClick={discardChanges} disabled={saving}>
-                            Discard
-                        </button>
-                        <button type="button" className="save-button" onClick={performSave} disabled={saving}>
-                            {saving ? 'Saving...' : 'Save'}
-                        </button>
-                    </div>
-                )}
             </div>
 
             <div className="editor-content create-event-v3-form">

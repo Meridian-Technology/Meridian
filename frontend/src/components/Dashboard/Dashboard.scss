@@ -4,7 +4,7 @@
     --secondary-color: var(--red-transparent);
 }
 .general-dash{
-    overflow: hidden;
+    overflow: clip;
     height:100vh;
     max-height:100%;
     width:100vw;

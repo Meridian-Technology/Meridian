@@ -643,6 +643,30 @@
             gap: 1rem;
         }
 
+        .custom-color-picker {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+
+            .color-option {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                border: 2px solid transparent;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                &:hover {
+                    transform: scale(1.1);
+                }
+
+                &.selected {
+                    border-color: var(--text);
+                    box-shadow: 0 0 0 2px var(--background);
+                }
+            }
+        }
+
         .input-mode-toggle {
             display: flex;
             gap: 0.5rem;

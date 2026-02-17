@@ -5,6 +5,7 @@ import './AgendaDailyCalendar.scss';
 
 const DEFAULT_MINUTE_HEIGHT = 4;
 const MINUTES_PER_DAY = 24 * 60;
+const RANGE_PADDING_MINUTES = 30;
 
 function AgendaDailyCalendar({
     agendaItems = [],
@@ -17,7 +18,7 @@ function AgendaDailyCalendar({
     const [width, setWidth] = useState(0);
     const ref = React.useRef(null);
 
-    const { days, totalHeight } = useMemo(() => {
+    const { days, totalHeight, rangeStartMinutes, rangeEndMinutes, minutesInRange } = useMemo(() => {
         const eventStart = event?.start_time ? new Date(event.start_time) : new Date();
         const eventEnd = event?.end_time ? new Date(event.end_time) : new Date(eventStart);
         eventEnd.setDate(eventEnd.getDate() + 1);
@@ -50,11 +51,35 @@ function AgendaDailyCalendar({
             days.push(new Date(d));
         }
 
-        const totalHeight = days.length * MINUTES_PER_DAY * minuteHeight;
+        // Only show event hours, not full 24h - use min start and max end across all items
+        const allStarts = [first];
+        const allEnds = [last];
+        agendaItems.forEach((item) => {
+            if (item.startTime) allStarts.push(new Date(item.startTime));
+            if (item.endTime) allEnds.push(new Date(item.endTime));
+        });
+        let rangeStartMinutes = Math.min(...allStarts.map((d) => d.getHours() * 60 + d.getMinutes()));
+        let rangeEndMinutes = Math.max(...allEnds.map((d) => d.getHours() * 60 + d.getMinutes()));
+
+        if (rangeEndMinutes <= rangeStartMinutes) {
+            rangeEndMinutes = rangeStartMinutes + 60; // fallback: 1 hour
+        }
+
+        // Add padding and round to 30-min boundaries
+        rangeStartMinutes = Math.floor((rangeStartMinutes - RANGE_PADDING_MINUTES) / 30) * 30;
+        rangeEndMinutes = Math.ceil((rangeEndMinutes + RANGE_PADDING_MINUTES) / 30) * 30;
+        rangeStartMinutes = Math.max(0, rangeStartMinutes);
+        rangeEndMinutes = Math.min(MINUTES_PER_DAY, rangeEndMinutes);
+
+        const minutesInRange = rangeEndMinutes - rangeStartMinutes;
+        const totalHeight = days.length * minutesInRange * minuteHeight;
 
         return {
             days,
-            totalHeight: Math.max(totalHeight, MINUTES_PER_DAY * minuteHeight)
+            totalHeight: Math.max(totalHeight, minutesInRange * minuteHeight),
+            rangeStartMinutes,
+            rangeEndMinutes,
+            minutesInRange
         };
     }, [agendaItems, event, dayStart, dayEnd, minuteHeight]);
 
@@ -80,7 +105,8 @@ function AgendaDailyCalendar({
         const d = new Date(date);
         const dayOffset = Math.floor((d - base) / (1000 * 60 * 60 * 24));
         const minutesInDay = d.getHours() * 60 + d.getMinutes();
-        return dayOffset * MINUTES_PER_DAY + minutesInDay;
+        const minutesFromRangeStart = minutesInDay - rangeStartMinutes;
+        return dayOffset * minutesInRange + minutesFromRangeStart;
     };
 
     const groupIntoClusters = (events) => {
@@ -181,9 +207,9 @@ function AgendaDailyCalendar({
     const renderTimeGrid = () => {
         const lines = [];
         days.forEach((day, dayIndex) => {
-            for (let m = 0; m < MINUTES_PER_DAY; m += 30) {
+            for (let m = rangeStartMinutes; m < rangeEndMinutes; m += 30) {
                 const isHour = m % 60 === 0;
-                const top = (dayIndex * MINUTES_PER_DAY + m) * minuteHeight;
+                const top = (dayIndex * minutesInRange + (m - rangeStartMinutes)) * minuteHeight;
                 lines.push(
                     <div
                         key={`${dayIndex}-${m}`}
@@ -201,7 +227,7 @@ function AgendaDailyCalendar({
             <div
                 key={index}
                 className="day-line"
-                style={{ top: `${index * MINUTES_PER_DAY * minuteHeight}px` }}
+                style={{ top: `${index * minutesInRange * minuteHeight}px` }}
             >
                 <span className="day-line-label">
                     {day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
@@ -212,9 +238,13 @@ function AgendaDailyCalendar({
 
     const renderTimeLabels = () => {
         const labels = [];
+        const startHour = Math.floor(rangeStartMinutes / 60);
+        const endHour = Math.ceil(rangeEndMinutes / 60);
         days.forEach((day, dayIndex) => {
-            for (let hour = 0; hour < 24; hour++) {
-                const top = (dayIndex * MINUTES_PER_DAY + hour * 60) * minuteHeight;
+            for (let hour = startHour; hour < endHour; hour++) {
+                const hourMinutes = hour * 60;
+                if (hourMinutes >= rangeEndMinutes) break;
+                const top = (dayIndex * minutesInRange + (hourMinutes - rangeStartMinutes)) * minuteHeight;
                 labels.push(
                     <div
                         key={`${dayIndex}-${hour}`}

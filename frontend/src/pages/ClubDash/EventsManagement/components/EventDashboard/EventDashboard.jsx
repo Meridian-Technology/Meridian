@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { analytics } from '../../../../../services/analytics/analytics';
@@ -104,95 +104,6 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
         }
         setShowOnboarding(false);
     }, []);
-
-    const dashboardRef = useRef(null);
-    const stickyTabsRef = useRef({ spacer: null, tabsWrapper: null });
-
-    const updateStickyTabs = useCallback(() => {
-        const dashboard = dashboardRef.current;
-        if (!dashboard) return;
-
-        const scrollContainer = dashboard.closest('.dashboard-overlay') || dashboard.parentElement;
-        const tabsWrapper = dashboard.querySelector('.tabbed-container__tabs-wrapper');
-        if (!scrollContainer || !tabsWrapper) return;
-
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const spacer = stickyTabsRef.current.spacer;
-        const isStuck = tabsWrapper.style.position === 'fixed';
-
-        if (isStuck && spacer && spacer.style.display !== 'none') {
-            const spacerRect = spacer.getBoundingClientRect();
-            if (spacerRect.top > containerRect.top) {
-                tabsWrapper.style.position = '';
-                tabsWrapper.style.top = '';
-                tabsWrapper.style.left = '';
-                tabsWrapper.style.width = '';
-                tabsWrapper.style.zIndex = '';
-                tabsWrapper.style.background = '';
-                tabsWrapper.style.borderBottom = '';
-                spacer.style.display = 'none';
-                spacer.style.height = '0';
-            }
-        } else {
-            const rect = tabsWrapper.getBoundingClientRect();
-            if (rect.top <= containerRect.top) {
-                let spacerEl = stickyTabsRef.current.spacer;
-                if (!spacerEl) {
-                    spacerEl = document.createElement('div');
-                    spacerEl.className = 'event-dashboard-tabs-sticky-spacer';
-                    tabsWrapper.parentNode.insertBefore(spacerEl, tabsWrapper);
-                    stickyTabsRef.current.spacer = spacerEl;
-                }
-                spacerEl.style.height = `${rect.height}px`;
-                spacerEl.style.display = 'block';
-
-                tabsWrapper.style.position = 'fixed';
-                tabsWrapper.style.top = `${containerRect.top}px`;
-                tabsWrapper.style.left = `calc(${containerRect.left}px + 1.5rem)`;
-                tabsWrapper.style.width = `${containerRect.width}px`;
-                tabsWrapper.style.zIndex = '100';
-                tabsWrapper.style.background = 'var(--background)';
-                tabsWrapper.style.borderBottom = '1px solid var(--lighterborder)';
-            }
-        }
-    }, []);
-
-    useEffect(() => {
-        if (loading || !dashboardData) return;
-
-        const dashboard = dashboardRef.current;
-        if (!dashboard) return;
-
-        const scrollContainer = dashboard.closest('.dashboard-overlay') || dashboard.parentElement;
-        const tabsWrapper = dashboard.querySelector('.tabbed-container__tabs-wrapper');
-        if (!scrollContainer || !tabsWrapper) return;
-
-        const runUpdate = () => {
-            requestAnimationFrame(updateStickyTabs);
-        };
-
-        updateStickyTabs();
-        scrollContainer.addEventListener('scroll', runUpdate, { passive: true });
-        window.addEventListener('resize', runUpdate);
-
-        return () => {
-            scrollContainer.removeEventListener('scroll', runUpdate);
-            window.removeEventListener('resize', runUpdate);
-            const { spacer } = stickyTabsRef.current;
-            if (spacer && spacer.parentNode) {
-                spacer.parentNode.removeChild(spacer);
-            }
-            if (tabsWrapper) {
-                tabsWrapper.style.position = '';
-                tabsWrapper.style.top = '';
-                tabsWrapper.style.left = '';
-                tabsWrapper.style.width = '';
-                tabsWrapper.style.zIndex = '';
-                tabsWrapper.style.background = '';
-                tabsWrapper.style.borderBottom = '';
-            }
-        };
-    }, [loading, dashboardData, updateStickyTabs]);
 
     if (loading) {
         return (
@@ -340,7 +251,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
 
     return (
         <>
-            <div ref={dashboardRef} className={`event-dashboard ${className}`}>
+            <div className={`event-dashboard ${className}`}>
                 <EventDashboardHeader
                         event={dashboardData.event}
                         stats={dashboardData.stats}
@@ -364,6 +275,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         lazyLoad={true}
                         keepAlive={true}
                         className="event-dashboard-tabs"
+                        stickyTabs={true}
                     />
                 </div>
             </div>

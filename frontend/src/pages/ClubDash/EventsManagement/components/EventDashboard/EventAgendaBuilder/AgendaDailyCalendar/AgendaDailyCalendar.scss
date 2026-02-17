@@ -1,5 +1,5 @@
 .agenda-daily-calendar {
-    overflow: visible;
+    height: auto;
     border-top: 1px solid var(--lighterborder);
 
     &.multi-day {
@@ -11,6 +11,7 @@
     .calendar-body {
         position: relative;
         padding-top: 12px;
+        overflow: visible;
     }
 
     .day-column {

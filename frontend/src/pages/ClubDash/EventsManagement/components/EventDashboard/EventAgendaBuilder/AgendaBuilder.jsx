@@ -230,22 +230,47 @@ function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
     };
 
     const calculateTimeDifference = () => {
-        if (!event?.start_time || !event?.end_time || items.length === 0) {
+        if (!event?.start_time || items.length === 0) {
             return null;
         }
 
-        const agendaDuration = items.reduce((total, item) => {
-            if (item.startTime && item.endTime) {
+        const eventStart = new Date(event.start_time);
+        const eventEnd = event?.end_time ? new Date(event.end_time) : null;
+        if (!eventEnd || isNaN(eventEnd.getTime()) || eventEnd <= eventStart) {
+            return null;
+        }
+        const eventDuration = Math.round((eventEnd - eventStart) / 60000);
+
+        // Build intervals from items with valid times, then merge overlaps
+        const intervals = items
+            .filter((item) => item.startTime && item.endTime)
+            .map((item) => {
                 const start = new Date(item.startTime);
                 const end = new Date(item.endTime);
-                return total + Math.round((end - start) / 60000);
-            }
-            return total;
-        }, 0);
+                if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
+                return { start, end };
+            })
+            .filter(Boolean);
 
-        const eventStart = new Date(event.start_time);
-        const eventEnd = new Date(event.end_time);
-        const eventDuration = Math.round((eventEnd - eventStart) / 60000);
+        if (intervals.length === 0) return null;
+
+        // Sort by start time, then merge overlapping intervals
+        intervals.sort((a, b) => a.start - b.start);
+        const merged = [intervals[0]];
+        for (let i = 1; i < intervals.length; i++) {
+            const curr = intervals[i];
+            const last = merged[merged.length - 1];
+            if (curr.start <= last.end) {
+                last.end = curr.end > last.end ? curr.end : last.end;
+            } else {
+                merged.push(curr);
+            }
+        }
+
+        const agendaDuration = merged.reduce(
+            (total, { start, end }) => total + Math.round((end - start) / 60000),
+            0
+        );
         const difference = agendaDuration - eventDuration;
 
         return {

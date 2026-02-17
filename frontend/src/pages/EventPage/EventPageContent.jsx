@@ -9,9 +9,10 @@ import EventCheckInButton from '../../components/EventCheckInButton/EventCheckIn
 import Popup from '../../components/Popup/Popup';
 import EmptyState from '../../components/EmptyState/EmptyState';
 import AgendaDailyCalendar from '../ClubDash/EventsManagement/components/EventDashboard/EventAgendaBuilder/AgendaDailyCalendar/AgendaDailyCalendar';
+import AgendaItem from '../ClubDash/EventsManagement/components/EventDashboard/EventAgendaBuilder/AgendaItem';
 import EventAnalytics from '../../components/EventAnalytics/EventAnalytics';
-import { getStoredMinuteHeightPx } from '../../utils/agendaViewPreferences';
 import { parseMarkdownDescription } from '../../utils/markdownUtils';
+import AgendaItemDetailView from '../../components/AgendaItemDetailView/AgendaItemDetailView';
 
 /**
  * EventPageContent - Shared event layout and UI components.
@@ -23,6 +24,8 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
     const navigate = useNavigate();
     const { user } = useAuth();
     const [showAgendaModal, setShowAgendaModal] = useState(false);
+    const [agendaViewMode, setAgendaViewMode] = useState('list'); // 'list' | 'calendar'
+    const [viewingAgendaItem, setViewingAgendaItem] = useState(null);
     const [activeTab, setActiveTab] = useState('details');
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
     const [descriptionOverflows, setDescriptionOverflows] = useState(false);
@@ -209,7 +212,8 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                         isOpen={showAgendaModal}
                         onClose={() => setShowAgendaModal(false)}
                         defaultStyling={true}
-                        customClassName="event-agenda-modal-popup"
+                        customClassName="event-agenda-modal-popup medium-content"
+                        disableOutsideClick={!!viewingAgendaItem}
                     >
                         <div className="event-agenda-modal">
                             <div className="event-agenda-modal-header">
@@ -217,6 +221,30 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                                     <Icon icon="mdi:calendar-clock" />
                                     Event Agenda
                                 </h3>
+                                <div className="event-agenda-modal-actions">
+                                    {(event.eventAgenda?.items || []).length > 0 && (
+                                        <div className="agenda-view-toggle">
+                                            <button
+                                                type="button"
+                                                className={`agenda-view-btn ${agendaViewMode === 'list' ? 'active' : ''}`}
+                                                onClick={() => setAgendaViewMode('list')}
+                                                title="List view"
+                                            >
+                                                <Icon icon="mdi:format-list-numbered" />
+                                                <span>List</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`agenda-view-btn ${agendaViewMode === 'calendar' ? 'active' : ''}`}
+                                                onClick={() => setAgendaViewMode('calendar')}
+                                                title="Calendar view"
+                                            >
+                                                <Icon icon="mdi:view-timeline" />
+                                                <span>Calendar</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             <div className="event-agenda-modal-content">
                                 {(event.eventAgenda?.items || []).length === 0 ? (
@@ -229,18 +257,59 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                                         ]}
                                     />
                                 ) : (
-                                    <AgendaDailyCalendar
-                                        agendaItems={(event.eventAgenda?.items || []).map((item) => ({
-                                            ...item,
-                                            startTime: item.startTime ? (typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime) : null,
-                                            endTime: item.endTime ? (typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime) : null
-                                        }))}
-                                        event={event}
-                                        minuteHeight={getStoredMinuteHeightPx()}
-                                    />
+                                    <>
+                                        {event.eventAgenda?.publicNotes && (
+                                            <div className="event-agenda-public-notes">
+                                                {event.eventAgenda.publicNotes}
+                                            </div>
+                                        )}
+                                        {agendaViewMode === 'list' ? (
+                                            <div className="event-agenda-items-list">
+                                                {[...(event.eventAgenda?.items || [])]
+                                                    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                                                    .map((item) => (
+                                                        <AgendaItem
+                                                            key={item.id}
+                                                            item={{
+                                                                ...item,
+                                                                startTime: item.startTime ? (typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime) : null,
+                                                                endTime: item.endTime ? (typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime) : null
+                                                            }}
+                                                            readOnly
+                                                            onClick={() => setViewingAgendaItem(item)}
+                                                        />
+                                                    ))}
+                                            </div>
+                                        ) : (
+                                            <AgendaDailyCalendar
+                                                agendaItems={(event.eventAgenda?.items || []).map((item) => ({
+                                                    ...item,
+                                                    startTime: item.startTime ? (typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime) : null,
+                                                    endTime: item.endTime ? (typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime) : null
+                                                }))}
+                                                event={event}
+                                                minuteHeight={3}
+                                                onEditItem={(item) => setViewingAgendaItem(item)}
+                                            />
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>
+                    </Popup>
+
+                    <Popup
+                        isOpen={!!viewingAgendaItem}
+                        onClose={() => setViewingAgendaItem(null)}
+                        defaultStyling={true}
+                        customClassName="agenda-item-detail-popup"
+                    >
+                        {viewingAgendaItem && (
+                            <AgendaItemDetailView
+                                item={viewingAgendaItem}
+                                onClose={() => setViewingAgendaItem(null)}
+                            />
+                        )}
                     </Popup>
                 </div>
             </div>
