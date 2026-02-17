@@ -1,0 +1,120 @@
+.org-invite-modal-content {
+    padding: 8px 0;
+
+    h2 {
+        margin: 0 0 8px 0;
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text);
+    }
+
+    .org-invite-modal-subtitle {
+        margin: 0 0 20px 0;
+        font-size: 14px;
+        color: var(--light-text);
+    }
+
+    .org-invite-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .org-invite-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        background: var(--lighter);
+        border-radius: 10px;
+        border: 1px solid var(--lightborder);
+    }
+
+    .org-invite-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .org-invite-org-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        object-fit: cover;
+    }
+
+    .org-invite-details {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .org-invite-org-name {
+        font-weight: 600;
+        font-size: 16px;
+        color: var(--text);
+    }
+
+    .org-invite-role {
+        font-size: 14px;
+        color: var(--light-text);
+    }
+
+    .org-invite-inviter {
+        font-size: 12px;
+        color: var(--lighter-text);
+    }
+
+    .org-invite-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .org-invite-btn {
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+        transition: opacity 0.2s;
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        &.accept {
+            background: var(--secondary-color);
+            color: var(--primary-color);
+        }
+
+        &.decline {
+            background: var(--lighter);
+            color: var(--light-text);
+            border: 1px solid var(--lightborder);
+
+            &:hover:not(:disabled) {
+                background: rgba(220, 38, 38, 0.1);
+                color: #dc2626;
+            }
+        }
+    }
+
+    .org-invite-dismiss {
+        width: 100%;
+        padding: 10px;
+        background: none;
+        border: none;
+        color: var(--light-text);
+        font-size: 14px;
+        cursor: pointer;
+        border-radius: 8px;
+
+        &:hover {
+            background: var(--lighter);
+            color: var(--text);
+        }
+    }
+}

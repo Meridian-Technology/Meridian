@@ -10,6 +10,24 @@ import TabbedContainer, { CommonTabConfigs } from '../../../../components/Tabbed
 import './OrgManageModal.scss';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const BATCH_MAX = 30;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function parseEmails(text) {
+    return [...new Set(
+        text.split(/[\n,]/).map(e => e.trim().toLowerCase()).filter(Boolean)
+    )];
+}
+
+function validateEmails(emails) {
+    const valid = [];
+    const invalid = [];
+    for (const e of emails) {
+        if (EMAIL_REGEX.test(e)) valid.push(e);
+        else invalid.push(e);
+    }
+    return { valid, invalid };
+}
 
 function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
     const { addNotification } = useNotification();
@@ -37,7 +55,14 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
     const [bannerPreview, setBannerPreview] = useState('');
     const [saving, setSaving] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
+    const [inviteEmail, setInviteEmail] = useState('');
     const [addRole, setAddRole] = useState('member');
+    const [inviteSending, setInviteSending] = useState(false);
+    const [batchEmailsRaw, setBatchEmailsRaw] = useState('');
+    const [batchPreviewData, setBatchPreviewData] = useState(null);
+    const [batchPreviewLoading, setBatchPreviewLoading] = useState(false);
+    const [batchSending, setBatchSending] = useState(false);
+    const [batchInviteRoles, setBatchInviteRoles] = useState({});
     const [newOwnerId, setNewOwnerId] = useState('');
     const [assigningOwner, setAssigningOwner] = useState(false);
 
@@ -116,25 +141,99 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
         }
     };
 
-    const handleAddMember = async () => {
-        if (!selectedUser || !orgId) return;
+    const handleInviteByEmail = async () => {
+        const email = (inviteEmail || selectedUser?.email || '').trim().toLowerCase();
+        if (!email || !orgId) return;
+        if (!EMAIL_REGEX.test(email)) {
+            addNotification({ title: 'Error', message: 'Please enter a valid email address', type: 'error' });
+            return;
+        }
+        setInviteSending(true);
         try {
-            const response = await apiRequest(`/org-management/organizations/${orgId}/members`, {
-                userId: selectedUser._id,
-                role: addRole
-            }, { method: 'POST' });
-
+            const response = await apiRequest(`/org-invites/${orgId}/invite`, { email, role: addRole }, { method: 'POST' });
             if (response.success) {
-                addNotification({ title: 'Success', message: 'Member added successfully', type: 'success' });
+                const msg = response.data?.userExists
+                    ? 'Invitation sent. The user will receive an email and in-app notification.'
+                    : "Invitation sent. The user doesn't have an account yet—they'll receive an email to sign up and join.";
+                addNotification({ title: 'Success', message: msg, type: 'success' });
                 refetchMembers({ silent: true });
                 refetchOrg({ silent: true });
+                setInviteEmail('');
                 setSelectedUser(null);
                 onSuccess?.();
             } else {
-                addNotification({ title: 'Error', message: response.message || 'Failed to add member', type: 'error' });
+                addNotification({ title: 'Error', message: response?.message || response?.error || 'Failed to send invitation', type: 'error' });
             }
         } catch (error) {
-            addNotification({ title: 'Error', message: error.message || 'Failed to add member', type: 'error' });
+            addNotification({ title: 'Error', message: error?.message || error?.error || 'Failed to send invitation', type: 'error' });
+        } finally {
+            setInviteSending(false);
+        }
+    };
+
+    const handleBatchPreview = async () => {
+        const emails = parseEmails(batchEmailsRaw);
+        if (emails.length === 0) {
+            addNotification({ title: 'Error', message: 'Enter at least one email', type: 'error' });
+            return;
+        }
+        if (emails.length > BATCH_MAX) {
+            addNotification({ title: 'Error', message: `Maximum ${BATCH_MAX} emails per batch`, type: 'error' });
+            return;
+        }
+        const { valid, invalid } = validateEmails(emails);
+        if (invalid.length > 0) {
+            addNotification({ title: 'Error', message: `Invalid emails: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? '...' : ''}`, type: 'error' });
+            return;
+        }
+        setBatchPreviewLoading(true);
+        setBatchPreviewData(null);
+        try {
+            const response = await apiRequest(`/org-invites/${orgId}/batch-preview`, { emails: valid }, { method: 'POST' });
+            if (response.success) {
+                setBatchPreviewData(response.data);
+                const defaults = {};
+                (response.data.toInvite || []).forEach((item, i) => {
+                    defaults[item.email] = item.role || 'member';
+                });
+                setBatchInviteRoles(defaults);
+            } else {
+                addNotification({ title: 'Error', message: response.message || 'Failed to preview', type: 'error' });
+            }
+        } catch (error) {
+            addNotification({ title: 'Error', message: error.message || 'Failed to preview batch', type: 'error' });
+        } finally {
+            setBatchPreviewLoading(false);
+        }
+    };
+
+    const handleBatchSend = async () => {
+        if (!batchPreviewData?.toInvite?.length || !orgId) return;
+        const invites = batchPreviewData.toInvite.map(item => ({
+            email: item.email,
+            role: batchInviteRoles[item.email] || item.role || 'member'
+        }));
+        setBatchSending(true);
+        try {
+            const response = await apiRequest(`/org-invites/${orgId}/invite-batch`, { invites }, { method: 'POST' });
+            if (response.success) {
+                const d = response.data || {};
+                const msg = d.errors?.length > 0
+                    ? `${d.sent} sent, ${d.skipped} skipped, ${d.errors.length} failed`
+                    : `${d.sent} invitation(s) sent`;
+                addNotification({ title: 'Success', message: msg, type: 'success' });
+                setBatchEmailsRaw('');
+                setBatchPreviewData(null);
+                refetchMembers({ silent: true });
+                refetchOrg({ silent: true });
+                onSuccess?.();
+            } else {
+                addNotification({ title: 'Error', message: response.message || 'Failed to send invitations', type: 'error' });
+            }
+        } catch (error) {
+            addNotification({ title: 'Error', message: error.message || 'Failed to send invitations', type: 'error' });
+        } finally {
+            setBatchSending(false);
         }
     };
 
@@ -205,6 +304,7 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
 
     const existingMemberIds = members.map(m => m.user_id?._id || m.user_id).filter(Boolean);
     const currentOwnerId = org?.owner?._id || org?.owner;
+    const singleInviteEmail = (inviteEmail || selectedUser?.email || '').trim();
 
     const infoTabContent = (
         <div className="org-manage-info">
@@ -258,42 +358,115 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
 
     const membersTabContent = (
         <div className="org-manage-members">
-            <div className="add-member-section">
-                <h4>Add Member</h4>
-                <div className="add-member-row">
-                    <div className="user-search-wrap">
-                        <UserSearch
-                            onUserSelect={setSelectedUser}
-                            placeholder="Search users..."
-                            excludeIds={existingMemberIds}
-                            limit={10}
+            <div className="invite-section single-invite">
+                <h4>Invite by email</h4>
+                <div className="invite-row">
+                    <div className="invite-input-wrap">
+                        <input
+                            type="email"
+                            className="invite-email-input"
+                            placeholder="Enter email address"
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
                         />
+                        <div className="user-search-wrap">
+                            <UserSearch
+                                onUserSelect={(u) => { setSelectedUser(u); setInviteEmail(u?.email || ''); }}
+                                placeholder="Or search user..."
+                                excludeIds={existingMemberIds}
+                                limit={10}
+                            />
+                        </div>
                     </div>
                     {roles.length > 0 && (
-                        <select value={addRole} onChange={(e) => setAddRole(e.target.value)}>
+                        <select value={addRole} onChange={(e) => setAddRole(e.target.value)} className="role-select">
                             {roles.map(r => (
                                 <option key={r.name} value={r.name}>{r.displayName || r.name}</option>
                             ))}
                         </select>
                     )}
                     <button
-                        className="add-btn"
-                        onClick={handleAddMember}
-                        disabled={!selectedUser}
+                        className="invite-btn"
+                        onClick={handleInviteByEmail}
+                        disabled={!singleInviteEmail || inviteSending}
                     >
-                        Add
+                        {inviteSending ? 'Sending...' : 'Send Invite'}
                     </button>
                 </div>
                 {selectedUser && (
-                    <div className="selected-user">
-                        {selectedUser.name} (@{selectedUser.username})
+                    <div className="selected-user-hint">{selectedUser.name} ({selectedUser.email})</div>
+                )}
+            </div>
+
+            <div className="invite-section batch-invite">
+                <h4>Batch invite (max {BATCH_MAX})</h4>
+                <textarea
+                    className="batch-emails-input"
+                    placeholder="Paste emails separated by commas or newlines"
+                    value={batchEmailsRaw}
+                    onChange={(e) => setBatchEmailsRaw(e.target.value)}
+                    rows={3}
+                />
+                <div className="batch-actions">
+                    <button className="preview-btn" onClick={handleBatchPreview} disabled={batchPreviewLoading}>
+                        {batchPreviewLoading ? 'Loading...' : 'Preview'}
+                    </button>
+                </div>
+                {batchPreviewData && (
+                    <div className="batch-preview">
+                        {(batchPreviewData.members?.length > 0 || batchPreviewData.invited?.length > 0) && (
+                            <div className="batch-skipped">
+                                {batchPreviewData.members?.length > 0 && (
+                                    <span>{batchPreviewData.members.length} already member(s)</span>
+                                )}
+                                {batchPreviewData.invited?.length > 0 && (
+                                    <span>{batchPreviewData.invited.length} already invited</span>
+                                )}
+                            </div>
+                        )}
+                        {batchPreviewData.toInvite?.length > 0 ? (
+                            <>
+                                <div className="batch-to-invite-list">
+                                    {batchPreviewData.toInvite.map((item) => (
+                                        <div key={item.email} className="batch-invite-row">
+                                            <div className="batch-invite-info">
+                                                {item.user ? (
+                                                    <>
+                                                        <img src={item.user.picture || '/Logo.svg'} alt="" className="batch-avatar" />
+                                                        <span>{item.user.name || item.user.username}</span>
+                                                        <span className="batch-email">{item.email}</span>
+                                                    </>
+                                                ) : (
+                                                    <span className="batch-email-only">{item.email}</span>
+                                                )}
+                                            </div>
+                                            <select
+                                                value={batchInviteRoles[item.email] || 'member'}
+                                                onChange={(e) => setBatchInviteRoles(prev => ({ ...prev, [item.email]: e.target.value }))}
+                                                className="batch-role-select"
+                                            >
+                                                {roles.map(r => (
+                                                    <option key={r.name} value={r.name}>{r.displayName || r.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button className="send-batch-btn" onClick={handleBatchSend} disabled={batchSending}>
+                                    {batchSending ? 'Sending...' : `Send ${batchPreviewData.toInvite.length} invite(s)`}
+                                </button>
+                            </>
+                        ) : (
+                            <p className="batch-empty">No new invites to send (all are members or already invited).</p>
+                        )}
                     </div>
                 )}
             </div>
+
             <div className="members-list">
                 <h4>Members ({members.length})</h4>
                 {membersLoading ? (
-                    <p>Loading...</p>
+                    <p className="loading-text">Loading...</p>
                 ) : (
                     <div className="member-rows">
                         {members.map((m) => {
@@ -308,7 +481,7 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
                                             alt=""
                                             className="member-avatar"
                                         />
-                                        <div>
+                                        <div className="member-details">
                                             <span className="member-name">{user?.name || 'Unknown'}</span>
                                             <span className="member-role" style={{ color: getOrgRoleColor(m.role, 1, roles) }}>
                                                 {m.role}
@@ -397,9 +570,6 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
                     <h2>
                         {orgLoading ? 'Loading...' : org?.org_name || 'Manage Organization'}
                     </h2>
-                    {/* <button className="close-btn" onClick={onClose} aria-label="Close">
-                        <Icon icon="mdi:close" />
-                    </button> */}
                 </div>
                 <div className="modal-body">
                     {orgLoading ? (

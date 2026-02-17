@@ -30,6 +30,7 @@ function Members({ expandedClass, org }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRole, setFilterRole] = useState('all');
     const [showApplicationsViewer, setShowApplicationsViewer] = useState(false);
+    const [showPendingInvites, setShowPendingInvites] = useState(false);
 
     // Use useFetch for members data
     const { data: membersData, loading: membersLoading, error: membersError, refetch: refetchMembers } = useFetch(
@@ -39,6 +40,15 @@ function Members({ expandedClass, org }) {
     // Extract members and applications from the fetched data
     const members = membersData?.members || [];
     const applications = membersData?.applications || [];
+
+    // Fetch pending invites when modal is open
+    const { data: invitesData, loading: invitesLoading, refetch: refetchInvites } = useFetch(
+        showPendingInvites && org ? `/org-invites/${org._id}` : null,
+    );
+    const allInvites = invitesData?.data || [];
+    const pendingInvites = allInvites.filter(
+        (inv) => inv.status === 'pending' && new Date(inv.expires_at) > new Date()
+    );
 
     useEffect(() => {
         if (org && !permissionsChecked) {
@@ -272,14 +282,22 @@ function Members({ expandedClass, org }) {
                             
                         )} */}
                         {canManageMembers && (
-    
-                            <button 
-                                className="add-member-btn"
-                                onClick={() => setShowAddMember(true)}
-                            >
-                                <Icon icon="ic:round-add" />
-                                Add Member
-                            </button>
+                            <>
+                                <button 
+                                    className="pending-invites-btn"
+                                    onClick={() => setShowPendingInvites(true)}
+                                >
+                                    <Icon icon="mdi:email-clock-outline" />
+                                    Pending Invites
+                                </button>
+                                <button 
+                                    className="add-member-btn"
+                                    onClick={() => setShowAddMember(true)}
+                                >
+                                    <Icon icon="ic:round-add" />
+                                    Add Member
+                                </button>
+                            </>
                         )}
                         
                     </div>
@@ -449,6 +467,53 @@ function Members({ expandedClass, org }) {
                 <MemberApplicationsViewer org={org} />
             </Popup>
 
+            <Popup 
+                isOpen={showPendingInvites} 
+                onClose={() => setShowPendingInvites(false)}
+                customClassName="pending-invites-popup medium-content"
+            >
+                <div className="pending-invites-modal">
+                    <h3>Pending Invites</h3>
+                    {invitesLoading ? (
+                        <div className="pending-invites-loading">Loading...</div>
+                    ) : pendingInvites.length === 0 ? (
+                        <div className="pending-invites-empty">
+                            <Icon icon="mdi:email-outline" className="empty-icon" />
+                            <p>No pending invites</p>
+                        </div>
+                    ) : (
+                        <div className="pending-invites-list">
+                            <div className="pending-invites-header">
+                                <span>Email</span>
+                                <span>Role</span>
+                                <span>Invited by</span>
+                                <span>Expires</span>
+                            </div>
+                            {pendingInvites.map((inv) => (
+                                <div key={inv._id} className="pending-invite-row">
+                                    <span className="invite-email">{inv.email}</span>
+                                    <span 
+                                        className="invite-role"
+                                        style={{ 
+                                            backgroundColor: getOrgRoleColor(inv.role, 0.1, roles), 
+                                            color: getOrgRoleColor(inv.role, 1, roles) 
+                                        }}
+                                    >
+                                        {getRoleDisplayName(inv.role)}
+                                    </span>
+                                    <span className="invite-inviter">
+                                        {inv.invited_by?.name || inv.invited_by?.username || '—'}
+                                    </span>
+                                    <span className="invite-expires">
+                                        {new Date(inv.expires_at).toLocaleDateString()}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </Popup>
+
             <div className="members">
                 {!canManageMembers && (
                     <div className="permission-warning">
@@ -478,7 +543,7 @@ function Members({ expandedClass, org }) {
                 <Popup 
                     isOpen={showAddMember} 
                     onClose={handleCloseAddMember}
-                    customClassName="add-member-popup"
+                    customClassName="add-member-popup medium-content"
                 >
                     <AddMemberForm 
                         orgId={org._id}
