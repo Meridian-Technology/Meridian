@@ -35,6 +35,7 @@ import {
 import VerificationRequest from './Settings/VerificationRequest/VerificationRequest';
 import OrgPendingBanner from '../../components/OrgPendingBanner/OrgPendingBanner';
 import PendingApprovalOverlay from '../../components/PendingApprovalOverlay/PendingApprovalOverlay';
+import AdminViewBanner from '../../components/AdminViewBanner/AdminViewBanner';
 import { useOrgApprovalRoom } from '../../WebSocketContext';
 import Popup from '../../components/Popup/Popup';
 import ClubDashOnboarding from './ClubDashOnboarding/ClubDashOnboarding';
@@ -67,6 +68,8 @@ function ClubDash(){
     const meetings = useFetch(`/get-meetings/${clubId}`);
     const { data: configData } = useFetch('/org-management/config');
     const [searchParams] = useSearchParams();
+    const isAdminView = searchParams.get('adminView') === 'true';
+    const isSiteAdmin = user?.roles?.includes('admin') || user?.roles?.includes('root');
 
     const location = useLocation();
 
@@ -111,6 +114,17 @@ function ClubDash(){
 
     const checkUserPermissions = async () => {
         if (!orgData.data || !user || permissionsChecked) return;
+
+        // Admin view: grant full permissions without checking org role
+        if (isAdminView && isSiteAdmin) {
+            setUserPermissions({
+                canManageRoles: true,
+                canManageMembers: true,
+                canViewAnalytics: true
+            });
+            setPermissionsChecked(true);
+            return;
+        }
 
         try {
             const org = orgData.data.org.overview;
@@ -174,6 +188,10 @@ function ClubDash(){
         if(!userInfo){
             return;
         }
+        // Admin view: bypass clubAssociations check for site admins
+        if (isAdminView && isSiteAdmin) {
+            return;
+        }
         if(userInfo.clubAssociations){
             if(userInfo.clubAssociations.find(club => club.org_name === clubId)){
                 return;
@@ -182,7 +200,7 @@ function ClubDash(){
                 navigate('/');
             }
         }
-    },[userInfo]);
+    },[userInfo, isAdminView, isSiteAdmin]);
 
     const onExpand = () => {
         if(expanded){
@@ -200,12 +218,16 @@ function ClubDash(){
     }
 
     function openMembers(){
-        const newPath = `/club-dashboard/${clubId}?page=3`;
-        navigate(newPath);
+        const basePath = `/club-dashboard/${encodeURIComponent(clubId)}`;
+        const params = new URLSearchParams();
+        params.set('page', '3');
+        if (isAdminView && isSiteAdmin) params.set('adminView', 'true');
+        navigate(`${basePath}?${params.toString()}`);
     }
 
     const onOrgChange = (org) => {
-        const newPath = `/club-dashboard/${org.org_name}`;
+        const basePath = `/club-dashboard/${org.org_name}`;
+        const newPath = isAdminView ? `${basePath}?adminView=true` : basePath;
         navigate(newPath);
     }
 
@@ -306,8 +328,9 @@ function ClubDash(){
         //     element: <Testing expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
         // },
     ];
-    // Filter menu items based on user permissions
+    // Filter menu items based on user permissions (show all when admin view)
     const menuItems = baseMenuItems.filter(item => {
+        if (isAdminView && isSiteAdmin) return true;
         if (!item.requiresPermission) return true;
         return userPermissions[item.requiresPermission];
     });
@@ -385,6 +408,9 @@ function ClubDash(){
             >
                 <ClubDashOnboarding handleClose={handleOnboardingClose} />
             </Popup>
+            {isAdminView && isSiteAdmin && (
+                <AdminViewBanner />
+            )}
             {showJustApprovedBanner && (
                 <div className="club-dash-approved-notice" role="alert">
                     <Icon icon="mdi:check-circle" className="club-dash-approved-notice__icon" />
@@ -397,12 +423,19 @@ function ClubDash(){
             <Dashboard
                 menuItems={menuItems}
                 additionalClass='club-dash'
-                middleItem={<OrgDropdown showDrop={showDrop} setShowDrop={setShowDrop} user={user} currentOrgName={clubId} onOrgChange={onOrgChange}/>}
+                middleItem={isAdminView && isSiteAdmin ? (
+                    <div className="org-dropdown org-dropdown--admin-view">
+                        <img src={org?.org_profile_image || '/Logo.svg'} alt="" />
+                        <span className="org-dropdown__viewing-label">Viewing: {clubId}</span>
+                    </div>
+                ) : (
+                    <OrgDropdown showDrop={showDrop} setShowDrop={setShowDrop} user={user} currentOrgName={clubId} onOrgChange={onOrgChange}/>
+                )}
                 logo={orgLogo}
                 secondaryColor="#EDF6EE"
                 primaryColor="#4DAA57"
                 enableSubSidebar={true}
-                onBack={() => navigate('/events-dashboard')}
+                onBack={() => navigate(isAdminView && isSiteAdmin ? '/org-management' : '/events-dashboard')}
                 contentOverlay={isRestricted ? (
                     <PendingApprovalOverlay
                         org={org}
