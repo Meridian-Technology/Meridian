@@ -28,8 +28,12 @@ function RegisterForm() {
     let navigate = useNavigate();
 
     const location = useLocation();
-    const from = location.state?.from?.pathname || '/room/none';
-    const inviteToken = new URLSearchParams(location.search).get('invite');
+    const searchParams = new URLSearchParams(location.search);
+    const redirectFromUrl = searchParams.get('redirect');
+    const rawFrom = redirectFromUrl || location.state?.from?.pathname || '/events-dashboard';
+    // If redirect is org-invite URL, use dashboard - the OrgInviteModal popup will show the invite (avoids double display)
+    const from = rawFrom?.startsWith('/org-invites') ? '/events-dashboard' : rawFrom;
+    const inviteToken = searchParams.get('invite');
 
     useEffect(() => {
         async function google(code) {
@@ -80,15 +84,9 @@ function RegisterForm() {
 
     useEffect(() => {
         if (isAuthenticated && isAuthenticated !== null) {
-            // console.log("logged in already");
-            // const redirectto = localStorage.getItem('redirectto');
-            // if(redirectto){
-                // navigate(redirectto, { replace: true });
-            // } else {
-                navigate('/events-dashboard', { replace: true });
-            // }
+            navigate(from, { replace: true });
         }
-    }, [isAuthenticated, navigate]);
+    }, [isAuthenticated, navigate, from]);
 
     useEffect(() => {
         if (formData.email !== '' && formData.password !== '' && formData.username !== '') {
@@ -140,7 +138,7 @@ function RegisterForm() {
             const response = await axios.post('/register', payload);
             console.log(response.data);
             await login(formData);
-            navigate('/events-dashboard');
+            navigate(from, { replace: true });
         } catch (error) {
             if (error.response?.status === 400) {
                 if (error.response?.data?.code === 'INVITE_EMAIL_MISMATCH') {
@@ -189,7 +187,7 @@ function RegisterForm() {
         }
 
         // Store redirect path in state for callback to use
-        const redirectState = JSON.stringify({ redirect: '/events-dashboard' });
+        const redirectState = JSON.stringify({ redirect: from });
         
         // Initiate Apple Sign In - will redirect to callback URL
         window.AppleID.auth.signIn({
@@ -245,7 +243,7 @@ function RegisterForm() {
                 <button className={`show-email button active ${email ? "disappear-show" : ""}`} onClick={(e)=>{e.preventDefault();setEmail(true)}}>
                     Register with Email
                 </button>
-                <p className={`already ${email ? "disappear-show" : ""}`}>Already have an account? <Link to="/Login" >Login</Link></p>
+                <p className={`already ${email ? "disappear-show" : ""}`}>Already have an account? <Link to={from !== '/events-dashboard' ? `/login?redirect=${encodeURIComponent(from)}` : '/login'}>Login</Link></p>
             </div>
 
             <div className="form-content" >
@@ -262,7 +260,7 @@ function RegisterForm() {
                     <input type="password" name="password" value={formData.password} onChange={handleChange} placeholder="Password" required />
                 </div>
                 <button type="submit" className={`button ${valid ? "active" : ""}`}>Register</button>
-                <p className="already">Already have an account? <Link to="/login">Login</Link></p>
+                <p className="already">Already have an account? <Link to={from !== '/events-dashboard' ? `/login?redirect=${encodeURIComponent(from)}` : '/login'}>Login</Link></p>
 
             </div>
             </div>

@@ -153,16 +153,15 @@ async function createInvite(req, orgId, email, role) {
             }
         );
 
-        const acceptUrl = `${baseUrl}/org-invites/accept?token=${token}`;
-        const declineUrl = `${baseUrl}/org-invites/decline?token=${token}`;
+        const inviteUrl = `${baseUrl}/org-invites?token=${token}`;
         const emailHTML = buildExistingUserInviteEmail({
             orgName: org.org_name,
             orgDescription: org.org_description,
             role,
             roleDisplayName,
             inviterName,
-            acceptUrl,
-            declineUrl
+            acceptUrl: inviteUrl,
+            declineUrl: inviteUrl
         });
         await resend.emails.send({
             from: 'Meridian <support@meridian.study>',

@@ -63,8 +63,9 @@ import Booking from './pages/Booking/Booking';
 import Form from './pages/Form/Form';
 import Support from './pages/Support/Support';
 import CheckInConfirmation from './pages/CheckIn/CheckInConfirmation';
-import OrgInviteAccept from './pages/OrgInviteAccept/OrgInviteAccept';
-import OrgInviteDecline from './pages/OrgInviteDecline/OrgInviteDecline';
+import OrgInviteLanding from './pages/OrgInviteLanding/OrgInviteLanding';
+import OrgInviteLandingToken from './pages/OrgInviteLanding/OrgInviteLandingToken';
+import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -160,8 +161,10 @@ function App() {
                                             <Route path="/room/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/room1/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/register" element={<AnimatedPageWrapper><Register /></AnimatedPageWrapper>}/>
-                                            <Route path="/org-invites/accept" element={<AnimatedPageWrapper><OrgInviteAccept /></AnimatedPageWrapper>}/>
-                                            <Route path="/org-invites/decline" element={<AnimatedPageWrapper><OrgInviteDecline /></AnimatedPageWrapper>}/>
+                                            <Route path="/org-invites" element={<AnimatedPageWrapper><OrgInviteLanding /></AnimatedPageWrapper>}/>
+                                            <Route path="/org-invites/landing/:token" element={<AnimatedPageWrapper><OrgInviteLandingToken /></AnimatedPageWrapper>}/>
+                                            <Route path="/org-invites/accept" element={<OrgInviteRedirect />}/>
+                                            <Route path="/org-invites/decline" element={<OrgInviteRedirect />}/>
                                             <Route path="/login" element={<AnimatedPageWrapper><Login /></AnimatedPageWrapper>}/>
                                             <Route path="/contact" element={<AnimatedPageWrapper><Contact /></AnimatedPageWrapper>}/>
                                             <Route path="/support" element={<AnimatedPageWrapper><Support /></AnimatedPageWrapper>}/>
