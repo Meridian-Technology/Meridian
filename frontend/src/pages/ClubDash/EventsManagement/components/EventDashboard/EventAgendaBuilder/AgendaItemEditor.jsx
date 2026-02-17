@@ -12,9 +12,20 @@ function AgendaItemEditor({ item, event, latestItemEnd, onSave, onCancel }) {
         endTime: null,
         durationMinutes: 30,
         type: 'Activity',
+        customTag: '',
+        customColor: '#6D8EFA',
         location: '',
         isPublic: true
     });
+
+    const CUSTOM_COLOR_OPTIONS = [
+        { value: '#6D8EFA', label: 'Blue' },
+        { value: '#4DAA57', label: 'Green' },
+        { value: '#ffc107', label: 'Amber' },
+        { value: '#dc3545', label: 'Red' },
+        { value: '#17a2b8', label: 'Teal' },
+        { value: '#6c757d', label: 'Gray' }
+    ];
 
     useEffect(() => {
         if (item) {
@@ -51,6 +62,8 @@ function AgendaItemEditor({ item, event, latestItemEnd, onSave, onCancel }) {
                 endTime,
                 durationMinutes,
                 type: item.type || 'Activity',
+                customTag: item.customTag || '',
+                customColor: item.customColor || '#6D8EFA',
                 location: item.location || '',
                 isPublic: item.isPublic !== undefined ? item.isPublic : true
             });
@@ -220,6 +233,36 @@ function AgendaItemEditor({ item, event, latestItemEnd, onSave, onCancel }) {
                                 ))}
                             </select>
                         </div>
+
+                        {formData.type === 'Custom' && (
+                            <>
+                                <div className="form-group">
+                                    <label>Custom Tag</label>
+                                    <input
+                                        type="text"
+                                        value={formData.customTag}
+                                        onChange={(e) => handleChange('customTag', e.target.value)}
+                                        placeholder="e.g., Workshop, Keynote"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Color</label>
+                                    <div className="custom-color-picker">
+                                        {CUSTOM_COLOR_OPTIONS.map((opt) => (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                className={`color-option ${formData.customColor === opt.value ? 'selected' : ''}`}
+                                                style={{ backgroundColor: opt.value }}
+                                                onClick={() => handleChange('customColor', opt.value)}
+                                                title={opt.label}
+                                                aria-label={opt.label}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
                         <div className="form-group">
                             <label>Location</label>

@@ -269,7 +269,7 @@
         height: 100%;
         width: 100%;
         max-width: 100%;
-        overflow-x: hidden;
+        overflow-x: clip;
         flex-grow: 1;
         box-sizing: border-box;
         background: var(--background);
@@ -280,10 +280,6 @@
             flex-direction: column;
             height: 100%;
             flex-grow: 1;
-        }
-
-        .event-dashboard-tabs-sticky-spacer {
-            display: none;
         }
     }
 

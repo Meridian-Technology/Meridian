@@ -2,7 +2,7 @@ import React from 'react';
 import { Icon } from '@iconify-icon/react';
 import './AgendaBuilder.scss';
 
-function AgendaItem({ item, onEdit, onDelete }) {
+function AgendaItem({ item, onEdit, onDelete, readOnly = false, onClick }) {
     const formatTime = (date) => {
         if (!date) return 'TBD';
         const time = date instanceof Date ? date : new Date(date);
@@ -32,7 +32,8 @@ function AgendaItem({ item, onEdit, onDelete }) {
         return icons[type] || 'mdi:circle';
     };
 
-    const getTypeColor = (type) => {
+    const getTypeColor = (type, customColor) => {
+        if (type === 'Custom' && customColor) return customColor;
         const colors = {
             Activity: '#4DAA57',
             Break: '#ffc107',
@@ -45,17 +46,26 @@ function AgendaItem({ item, onEdit, onDelete }) {
         return colors[type] || '#6c757d';
     };
 
+    const getDisplayType = (type, customTag) => {
+        if (type === 'Custom' && customTag?.trim()) return customTag.trim();
+        return type || 'Activity';
+    };
+
     const startTime = item.startTime ? (typeof item.startTime === 'string' ? new Date(item.startTime) : item.startTime) : null;
     const endTime = item.endTime ? (typeof item.endTime === 'string' ? new Date(item.endTime) : item.endTime) : null;
     const durationMinutes = getDurationMinutes();
 
     return (
-        <div className="agenda-item">
+        <div
+            className={`agenda-item ${onClick ? 'clickable' : ''}`}
+            onClick={onClick}
+            role={onClick ? 'button' : undefined}
+        >
             <div className="item-content">
                 <div className="item-header">
-                    <div className="item-type-badge" style={{ backgroundColor: getTypeColor(item.type) }}>
+                    <div className="item-type-badge" style={{ backgroundColor: getTypeColor(item.type, item.customColor) }}>
                         <Icon icon={getTypeIcon(item.type)} />
-                        <span>{item.type}</span>
+                        <span>{getDisplayType(item.type, item.customTag)}</span>
                     </div>
                     {!item.isPublic && (
                         <span className="item-visibility">
@@ -89,14 +99,16 @@ function AgendaItem({ item, onEdit, onDelete }) {
                     )}
                 </div>
             </div>
-            <div className="item-actions">
-                <button className="action-btn edit" onClick={onEdit} title="Edit">
-                    <Icon icon="mdi:pencil" />
-                </button>
-                <button className="action-btn delete" onClick={onDelete} title="Delete">
-                    <Icon icon="mdi:delete" />
-                </button>
-            </div>
+            {!readOnly && (
+                <div className="item-actions">
+                    <button className="action-btn edit" onClick={onEdit} title="Edit">
+                        <Icon icon="mdi:pencil" />
+                    </button>
+                    <button className="action-btn delete" onClick={onDelete} title="Delete">
+                        <Icon icon="mdi:delete" />
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

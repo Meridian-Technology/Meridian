@@ -127,6 +127,14 @@
     display: flex;
     align-items: center;
     border-bottom: 1px solid var(--border);
+
+    &--sticky {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--background);
+      border-bottom: 1px solid var(--lighterborder, var(--border));
+    }
   }
 
   // Tabs container
