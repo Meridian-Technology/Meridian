@@ -116,6 +116,9 @@ export const AuthProvider = ({ children }) => {
                 console.log(response.data);
                 addNotification({ title:'Logged in successfully',type: 'success'});
                 
+                // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
+                await validateToken();
+                
                 // Redirect admin users to admin dashboard
                 if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
                     window.location.href = '/admin';
@@ -152,11 +155,13 @@ export const AuthProvider = ({ children }) => {
             }
             // addNotification({title: 'Logged in successfully',type: 'success'});
             
+            // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
+            await validateToken();
+            
             // Redirect admin users to admin dashboard
             if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
                 window.location.href = '/admin';
             }
-            // For example, redirect the user or store the received token in local storage
         } catch (error) {
             console.error('Error sending code to backend:', error);
             // Handle error
@@ -181,6 +186,9 @@ export const AuthProvider = ({ children }) => {
                 analytics.setUserRoles(response.data.data.user.roles);
             }
             addNotification({ title: 'Logged in successfully', type: 'success' });
+            
+            // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
+            await validateToken();
             
             // Redirect admin users to admin dashboard
             if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
