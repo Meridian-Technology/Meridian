@@ -61,10 +61,26 @@ function validateUsername(username) {
 // Registration endpoint
 router.post('/register', async (req, res) => {
     // Extract user details from request body
-    const { username, email, password } = req.body;
+    const { username, email, password, invite_token: bodyInviteToken } = req.body;
+    const inviteToken = bodyInviteToken || req.cookies?.org_invite_token;
 
     try {
-        const {User} = getModels(req, 'User');
+        const { User, OrgInvite, OrgMember } = getModels(req, 'User', 'OrgInvite', 'OrgMember');
+
+        if (inviteToken) {
+            const invite = await OrgInvite.findOne({ token: inviteToken, status: 'pending' });
+            if (invite && new Date() <= invite.expires_at) {
+                const inviteEmail = invite.email?.toLowerCase();
+                const regEmail = String(email).trim().toLowerCase();
+                if (inviteEmail !== regEmail) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Please register with the same email address the invitation was sent to.',
+                        code: 'INVITE_EMAIL_MISMATCH'
+                    });
+                }
+            }
+        }
 
         if (!validateUsername(username)) {
             console.log(`POST: /register registration of ${username} failed`);
@@ -98,6 +114,39 @@ router.post('/register', async (req, res) => {
             username: username, email: email, password: password,
         });
         await user.save();
+
+        // Process org invite if present
+        if (inviteToken) {
+            const invite = await OrgInvite.findOne({ token: inviteToken, status: 'pending' });
+            if (invite && new Date() <= invite.expires_at) {
+                const inviteEmail = invite.email?.toLowerCase();
+                const userEmail = user.email?.toLowerCase();
+                if (inviteEmail === userEmail) {
+                    const existingMember = await OrgMember.findOne({ org_id: invite.org_id, user_id: user._id });
+                    if (!existingMember) {
+                        const member = new OrgMember({
+                            org_id: invite.org_id,
+                            user_id: user._id,
+                            role: invite.role,
+                            status: 'active',
+                            assignedBy: invite.invited_by
+                        });
+                        await member.save();
+                        if (!user.clubAssociations) user.clubAssociations = [];
+                        if (!user.clubAssociations.some(c => c.toString() === invite.org_id)) {
+                            user.clubAssociations.push(invite.org_id);
+                            await user.save();
+                        }
+                        invite.status = 'accepted';
+                        invite.user_id = user._id;
+                        await invite.save();
+                        const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
+                        await checkAndAutoApproveOrg(req, invite.org_id);
+                    }
+                }
+                res.clearCookie('org_invite_token', { path: '/' });
+            }
+        }
 
         // Generate both tokens
         const accessToken = jwt.sign(
@@ -340,7 +389,8 @@ router.post('/logout', async (req, res) => {
 
 router.get('/validate-token', verifyToken, async (req, res) => {
     try {
-        const {User, Friendship} = getModels(req, 'User', 'Friendship');
+        const { User, Friendship } = getModels(req, 'User', 'Friendship');
+        const orgInviteService = require('../services/orgInviteService');
 
         const user = await User.findById(req.user.userId)
             .select('-password -refreshToken') // Add fields you want to exclude
@@ -359,13 +409,17 @@ router.get('/validate-token', verifyToken, async (req, res) => {
             lean: true
         });
 
+        // Fetch pending org invites for this user
+        const pendingOrgInvites = await orgInviteService.getPendingForUser(req);
+
         console.log(`GET: /validate-token token is valid for user ${user.username}`)
         res.json({
             success: true,
             message: 'Token is valid',
             data: {
                 user: user,
-                friendRequests: friendRequests
+                friendRequests: friendRequests,
+                pendingOrgInvites: pendingOrgInvites
             }
         });
     } catch (error) {
