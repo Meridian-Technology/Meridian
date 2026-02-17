@@ -170,6 +170,30 @@
                 }
             }
 
+            .pending-invites-btn {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 5px 16px;
+                background: #dcdcdc;
+                color: black;
+                border: none;
+                border-radius: 8px;
+                font-family: 'Inter', sans-serif;
+                font-weight: 500;
+                font-size: 0.9rem;
+                cursor: pointer;
+                transition: background-color 0.2s ease;
+
+                &:hover {
+                    background: var(--gray);
+                }
+
+                svg {
+                    font-size: 1.1rem;
+                }
+            }
+
             .add-member-btn {
                 display: flex;
                 align-items: center;
@@ -435,7 +459,124 @@
         max-width: 600px;
         width: 90vw;
         max-height: 80vh;
+        height: 80vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+
+        .add-member-form {
+            flex: 1;
+            min-height: 0;
+        }
+    }
+}
+
+// Pending Invites Popup Styles
+.pending-invites-popup {
+    .popup-content {
+        max-width: 600px;
+        width: 90vw;
+        max-height: 70vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+}
+
+.pending-invites-modal {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+
+    h3 {
+        font-family: 'Satoshi', sans-serif;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text);
+        margin: 0 0 1rem 0;
+    }
+
+    .pending-invites-loading {
+        font-family: 'Inter', sans-serif;
+        color: var(--light-text);
+        padding: 2rem;
+        text-align: center;
+    }
+
+    .pending-invites-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        color: var(--light-text);
+
+        .empty-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+            opacity: 0.6;
+        }
+
+        p {
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            margin: 0;
+        }
+    }
+
+    .pending-invites-list {
+        flex: 1;
         overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+
+        .pending-invites-header {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1.5fr 1fr;
+            gap: 1rem;
+            padding: 8px 0;
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--light-text);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--lighterborder);
+        }
+
+        .pending-invite-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1.5fr 1fr;
+            gap: 1rem;
+            align-items: center;
+            padding: 12px 0;
+            border-top: 1px solid var(--lighterborder);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+
+            .invite-email {
+                color: var(--text);
+                font-weight: 500;
+            }
+
+            .invite-role {
+                padding: 4px 10px;
+                border-radius: 12px;
+                font-size: 0.8rem;
+                font-weight: 600;
+                text-align: center;
+            }
+
+            .invite-inviter {
+                color: var(--light-text);
+            }
+
+            .invite-expires {
+                color: var(--light-text);
+                font-size: 0.85rem;
+            }
+        }
     }
 }
 
@@ -706,6 +847,7 @@
                     }
                 }
 
+                .pending-invites-btn,
                 .add-member-btn {
                     justify-content: center;
                 }
