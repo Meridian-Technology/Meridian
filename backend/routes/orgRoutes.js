@@ -342,25 +342,40 @@ router.post("/create-org", verifyToken, upload.fields([
 
         const saveOrg = await newOrg.save(); //Save the org
 
-        // If manual approval is on, email all admin users about the new org
+        // If manual approval is on, email and push-notify all admin users about the new org
         if (requiresApproval && (approvalMode === 'manual' || approvalMode === 'both')) {
             try {
                 const adminUsers = await User.find({
-                    roles: { $in: ['admin', 'root'] },
-                    email: { $exists: true, $ne: '' }
+                    roles: { $in: ['admin', 'root'] }
                 })
-                    .select('email name username')
+                    .select('_id email name username')
                     .lean();
 
                 console.log(adminUsers);
 
-                if (adminUsers.length > 0 && process.env.RESEND_API_KEY) {
+                // Send push notifications to admins (including those without email)
+                if (adminUsers.length > 0) {
+                    try {
+                        const { Notification } = getModels(req, 'Notification');
+                        const notificationService = NotificationService.withModels({ Notification });
+                        const recipients = adminUsers.map(u => ({ id: u._id, model: 'User' }));
+                        await notificationService.createBatchTemplateNotification(recipients, 'org_approval_needed', {
+                            orgName: cleanOrgName,
+                            orgId: saveOrg._id.toString(),
+                        });
+                        console.log(`POST: /create-org - Sent push notifications to ${adminUsers.length} admin(s) about pending org`);
+                    } catch (pushErr) {
+                        console.error('POST: /create-org - Failed to send admin push notifications:', pushErr);
+                    }
+                }
+
+                const adminEmails = adminUsers.map(u => u.email).filter(Boolean);
+                if (adminEmails.length > 0 && process.env.RESEND_API_KEY) {
                     const baseUrl = process.env.NODE_ENV === 'production'
                         ? `https://${school}.meridian.study`
                         : 'http://localhost:3000';
                     const approvalUrl = `${baseUrl}/org-management`;
 
-                    const adminEmails = adminUsers.map(u => u.email).filter(Boolean);
                     const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
                     const safeOrgName = escapeHtml(cleanOrgName);
                     const safeDescription = escapeHtml(cleanOrgDescription.substring(0, 200) + (cleanOrgDescription.length > 200 ? '...' : ''));
