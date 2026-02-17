@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../NotificationContext';
+import useAuth from '../../../../../hooks/useAuth';
 import apiRequest from '../../../../../utils/postRequest';
 import HeaderContainer from '../../../../../components/HeaderContainer/HeaderContainer';
 import FunnelChart from './FunnelChart';
@@ -19,15 +20,74 @@ const FAKE_FUNNEL_DATA = [
 
 function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     const { addNotification } = useNotification();
+    const { user } = useAuth();
     const [analytics, setAnalytics] = useState(null);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
     const [timeRange, setTimeRange] = useState('30d');
+    const [canViewAdminAnalytics, setCanViewAdminAnalytics] = useState(false);
 
     // Fetch detailed analytics using the correct route
     const { data: analyticsData, refetch } = useFetch(
         event?._id ? `/event-analytics/event/${event._id}?timeRange=${timeRange}` : null
     );
+
+    // Fetch org data to check admin analytics permission
+    const { data: orgData } = useFetch(orgId ? `/get-org/${orgId}` : null);
+
+    // Check if user can view admin analytics (workspace tab engagement, etc.)
+    useEffect(() => {
+        if (!user || !orgId) {
+            setCanViewAdminAnalytics(false);
+            return;
+        }
+
+        const checkPermission = async () => {
+            try {
+                // Site admins always have access
+                const isSiteAdmin = user.roles?.includes('admin') || user.roles?.includes('root');
+                if (isSiteAdmin) {
+                    setCanViewAdminAnalytics(true);
+                    return;
+                }
+
+                const org = orgData?.org?.[0] ?? orgData?.org;
+                if (!org) {
+                    setCanViewAdminAnalytics(false);
+                    return;
+                }
+
+                // Org owner has access
+                if (String(org.owner) === String(user._id)) {
+                    setCanViewAdminAnalytics(true);
+                    return;
+                }
+
+                // Check user's role in org
+                const response = await apiRequest(`/org-roles/${orgId}/members`, {}, { method: 'GET' });
+                if (!response?.success) {
+                    setCanViewAdminAnalytics(false);
+                    return;
+                }
+
+                const userMember = response.members?.find(m => String(m.user_id?._id) === String(user._id));
+                if (!userMember) {
+                    setCanViewAdminAnalytics(false);
+                    return;
+                }
+
+                const roleData = org.positions?.find(p => p.name === userMember.role);
+                const hasAccess = roleData?.canViewAnalytics ||
+                    roleData?.permissions?.includes('view_analytics') ||
+                    roleData?.permissions?.includes('all');
+                setCanViewAdminAnalytics(!!hasAccess);
+            } catch {
+                setCanViewAdminAnalytics(false);
+            }
+        };
+
+        checkPermission();
+    }, [user, orgId, orgData]);
 
     useEffect(() => {
         if (analyticsData?.success) {
@@ -389,7 +449,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                 </HeaderContainer>
             )}
 
-            {tabEntries.length > 0 && (
+            {canViewAdminAnalytics && tabEntries.length > 0 && (
                 <HeaderContainer
                     icon="mdi:tab"
                     header="Workspace Tab Engagement"
