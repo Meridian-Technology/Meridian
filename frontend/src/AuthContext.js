@@ -18,6 +18,8 @@ export const AuthProvider = ({ children }) => {
     const [checkedIn, setCheckedIn] = useState(null);
     const [authMethod, setAuthMethod] = useState(null); // 'google', 'saml', 'email'
     const [friendRequests, setFriendRequests] = useState({ received: [], sent: [] });
+    const [pendingOrgInvites, setPendingOrgInvites] = useState([]);
+    const [showOrgInviteModal, setShowOrgInviteModal] = useState(true);
 
     const { addNotification } = useNotification();
 
@@ -36,6 +38,14 @@ export const AuthProvider = ({ children }) => {
                         received: response.data.friendRequests.received || [],
                         sent: response.data.friendRequests.sent || []
                     });
+                }
+                if (response.data.pendingOrgInvites) {
+                    setPendingOrgInvites(response.data.pendingOrgInvites);
+                    if (response.data.pendingOrgInvites.length > 0) {
+                        setShowOrgInviteModal(true);
+                    }
+                } else {
+                    setPendingOrgInvites([]);
                 }
                 // Determine auth method frwom user data
                 if (response.data.user.samlProvider) {
@@ -59,13 +69,23 @@ export const AuthProvider = ({ children }) => {
             } else {
                 setIsAuthenticated(false);
                 setIsAuthenticating(false);
+                setPendingOrgInvites([]);
             }
         } catch (error) {
             console.log('Token expired or invalid');
             setIsAuthenticated(false);
             setIsAuthenticating(false);
+            setPendingOrgInvites([]);
             return error;
         }
+    };
+
+    const clearPendingOrgInvite = (inviteId) => {
+        setPendingOrgInvites(prev => prev.filter(inv => inv._id !== inviteId));
+    };
+
+    const dismissOrgInviteModal = () => {
+        setShowOrgInviteModal(false);
     };
 
     useEffect(() => {
@@ -278,7 +298,12 @@ export const AuthProvider = ({ children }) => {
             getCheckedIn,
             authMethod,
             friendRequests,
-            refreshFriendRequests
+            refreshFriendRequests,
+            pendingOrgInvites,
+            clearPendingOrgInvite,
+            showOrgInviteModal,
+            dismissOrgInviteModal,
+            setPendingOrgInvites
         }}>
             {children}
         </AuthContext.Provider>
