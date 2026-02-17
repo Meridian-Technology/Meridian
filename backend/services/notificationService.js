@@ -717,7 +717,7 @@ class NotificationService {
                         id: 'accept_invitation',
                         label: 'Accept',
                         type: 'api_call',
-                        url: '/api/org/invitations/accept',
+                        url: '/org-invites/{{invitationId}}/accept',
                         method: 'POST',
                         payload: { invitationId: '{{invitationId}}' },
                         style: 'success'
@@ -726,7 +726,7 @@ class NotificationService {
                         id: 'decline_invitation',
                         label: 'Decline',
                         type: 'api_call',
-                        url: '/api/org/invitations/decline',
+                        url: '/org-invites/{{invitationId}}/decline',
                         method: 'POST',
                         payload: { invitationId: '{{invitationId}}' },
                         style: 'secondary'
