@@ -195,9 +195,13 @@ function Dashboard({
     // Set initial URL if no page parameter is present
     useEffect(() => {
         if (!searchParams.get('page') && !searchParams.get('sub') && defaultPage !== 0) {
-            navigate(`?page=${defaultPage}`, { replace: true });
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('page', defaultPage.toString());
+                return next;
+            }, { replace: true });
         }
-    }, [searchParams, navigate, defaultPage]);
+    }, [searchParams, setSearchParams, defaultPage]);
 
     // Fallback timeout to ensure content is shown even if URL processing fails
     useEffect(() => {
@@ -226,24 +230,40 @@ function Dashboard({
                 }]);
                 setCurrentSubItems(data.subItems);
                 setCurrentDisplay(0);
-                navigate(`?page=${data.parentIndex}&sub=0`, { replace: true });
+                setSearchParams(prev => {
+                    const next = new URLSearchParams(prev);
+                    next.set('page', data.parentIndex.toString());
+                    next.set('sub', '0');
+                    return next;
+                }, { replace: true });
             } else if (action === 'backToMain') {
                 setNavigationStack([]);
                 setCurrentSubItems(null);
                 setCurrentDisplay(defaultPage);
-                navigate(`?page=${defaultPage}`, { replace: true });
+                setSearchParams(prev => {
+                    const next = new URLSearchParams(prev);
+                    next.set('page', defaultPage.toString());
+                    next.delete('sub');
+                    return next;
+                }, { replace: true });
             } else if (action === 'backStep') {
                 const newStack = [...navigationStack];
                 newStack.pop();
                 setNavigationStack(newStack);
                 setCurrentSubItems(newStack[newStack.length - 1].items);
                 setCurrentDisplay(newStack[newStack.length - 1].subIndex);
-                navigate(`?page=${newStack[newStack.length - 1].parentIndex}&sub=${newStack[newStack.length - 1].subIndex}`, { replace: true });
+                const stackTop = newStack[newStack.length - 1];
+                setSearchParams(prev => {
+                    const next = new URLSearchParams(prev);
+                    next.set('page', stackTop.parentIndex.toString());
+                    next.set('sub', stackTop.subIndex.toString());
+                    return next;
+                }, { replace: true });
             }
             
             setPendingNavigation(null);
         }
-    }, [pendingNavigation, isTransitioning, navigationStack, menuItems, navigate]);
+    }, [pendingNavigation, isTransitioning, navigationStack, menuItems, setSearchParams]);
 
     const onExpand = () => {
         setExpanded(prev => !prev);
@@ -256,8 +276,12 @@ function Dashboard({
         
         setTimeout(() => {
             setCurrentDisplay(index);
-            // Update URL with the new page number
-            navigate(`?page=${index}`, { replace: true });
+            // Update URL with the new page number, preserving other search params (e.g. adminView)
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('page', index.toString());
+                return next;
+            }, { replace: true });
             
             // Fade content back in
             setTimeout(() => {
@@ -307,7 +331,7 @@ function Dashboard({
             // Regular page change
             handlePageChangeWithMobile(parentIndex);
         }
-    }, [enableSubSidebar, navigate]);
+    }, [enableSubSidebar]);
 
     const handleBackToMain = useCallback(() => {
         // Start opacity transition
@@ -411,7 +435,12 @@ function Dashboard({
                                         setTimeout(() => {
                                             setCurrentDisplay(index);
                                             const currentParentIndex = navigationStack[navigationStack.length - 1]?.parentIndex || 0;
-                                            navigate(`?page=${currentParentIndex}&sub=${index}`, { replace: true });
+                                            setSearchParams(prev => {
+                                                const next = new URLSearchParams(prev);
+                                                next.set('page', currentParentIndex.toString());
+                                                next.set('sub', index.toString());
+                                                return next;
+                                            }, { replace: true });
                                             
                                             // Fade content back in
                                             setTimeout(() => {
