@@ -26,7 +26,7 @@ function ProportionalBarList({
     items = [],
     header = 'Sources',
     icon = 'mdi:source-branch',
-    classN = '',
+    classN = 'proportional-bar-list-container',
     size = '1rem',
     formatValue = (v) => new Intl.NumberFormat().format(v),
     sortBy = 'count-desc',

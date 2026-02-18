@@ -1,11 +1,24 @@
+.proportional-bar-list-container{
+    .header-container-content{
+        display:flex;
+        flex-direction: column;
+        flex-grow:1;
+        overflow: hidden;
+        .card-content{
+            display:flex;
+            flex-direction: column;
+            flex-grow:1;
+        }
+    }
+}
 .proportional-bar-list {
     margin-bottom: 2rem;
 
     &__table {
         background: var(--pbl-bg, #fff);
-        border-radius: 12px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         overflow: hidden;
+        height:-webkit-fill-available;
     }
 
     &__rows {
