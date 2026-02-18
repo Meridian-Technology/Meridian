@@ -55,6 +55,7 @@ const volunteerSignupSchema = require('../schemas/VolunteerSignup');
 const eventEquipmentSchema = require('../schemas/EventEquipment');
 const orgEquipmentSchema = require('../schemas/OrgEquipment');
 const analyticsEventSchema = require('../events/schemas/analyticsEvent');
+const eventQRSchema = require('../events/schemas/eventQR');
 
 
 
@@ -116,6 +117,7 @@ const getModels = (req, ...names) => {
         EventEquipment: req.db.model('EventEquipment', eventEquipmentSchema, 'eventEquipment'),
         OrgEquipment: req.db.model('OrgEquipment', orgEquipmentSchema, 'orgEquipment'),
         AnalyticsEvent: req.db.model('AnalyticsEvent', analyticsEventSchema, 'analytics_events'),
+        EventQR: req.db.model('EventQR', eventQRSchema, 'event_qrs'),
         ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
         ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
     };

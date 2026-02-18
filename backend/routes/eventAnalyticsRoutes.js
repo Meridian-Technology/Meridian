@@ -377,7 +377,7 @@ router.get('/overview', verifyTokenOptional, async (req, res) => {
 
 // Get analytics for a specific event (admin only)
 router.get('/event/:eventId', verifyToken, async (req, res) => {
-    const { EventAnalytics, Event, AnalyticsEvent } = getModels(req, 'EventAnalytics', 'Event', 'AnalyticsEvent');
+    const { EventAnalytics, Event, AnalyticsEvent, EventQR } = getModels(req, 'EventAnalytics', 'Event', 'AnalyticsEvent', 'EventQR');
     const { eventId } = req.params;
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
@@ -518,6 +518,31 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             }
         });
 
+        // Aggregate QR referrer sources (event_view with source=qr, qr_id) - group by qr_id
+        const qrReferrerAgg = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...referrerSourceMatch,
+                    'properties.source': 'qr',
+                    'properties.qr_id': { $exists: true, $ne: null, $ne: '' }
+                }
+            },
+            { $group: { _id: '$properties.qr_id', count: { $sum: 1 } } }
+        ]);
+        const qrReferrerCounts = {};
+        qrReferrerAgg.forEach(({ _id: qrId, count }) => { qrReferrerCounts[qrId] = count; });
+        const shortIds = Object.keys(qrReferrerCounts);
+        const qrDocs = shortIds.length > 0
+            ? await EventQR.find({ shortId: { $in: shortIds }, eventId }).select('shortId name').lean()
+            : [];
+        const shortIdToName = {};
+        qrDocs.forEach(q => { shortIdToName[q.shortId] = q.name; });
+        const qrReferrerSources = shortIds.map(sid => ({
+            qr_id: sid,
+            name: shortIdToName[sid] || 'Deleted QR',
+            count: qrReferrerCounts[sid]
+        })).sort((a, b) => b.count - a.count);
+
         const registrationFormOpens = platformCounts['event_registration_form_open'] ?? 0;
         const registrationsCount = platformCounts['event_registration'] ?? 0;
         const registrationFormBounces = Math.max(0, registrationFormOpens - registrationsCount);
@@ -534,6 +559,7 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             workspaceViews: platformCounts['event_workspace_view'] ?? 0,
             tabViews,
             referrerSources,
+            qrReferrerSources,
             // Unique users per event type (for funnel - avoids double-counting repeat actions)
             uniqueEventViews: platformUniqueCounts['event_view'] ?? 0,
             uniqueFormOpens: platformUniqueCounts['event_registration_form_open'] ?? 0,
