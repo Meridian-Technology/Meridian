@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom'; // Allows for nested routes to be rendered within this layout
+import { Outlet, useLocation } from 'react-router-dom'; // Allows for nested routes to be rendered within this layout
+import { updateReferrerOnNavigation } from '../../utils/referrerContext';
 import Banner from '../../components/Banner/Banner'; // Import your Banner component
 import OrgInviteModal from '../../components/OrgInviteModal/OrgInviteModal';
 import useAuth from '../../hooks/useAuth';
@@ -8,8 +9,14 @@ import { useNotification } from '../../NotificationContext';
 function Layout() {
   const [visible, setVisible] = useState(false);
   const [viewport, setViewport] = useState("100vh");
+  const location = useLocation();
   const { pendingOrgInvites, showOrgInviteModal, dismissOrgInviteModal, setPendingOrgInvites } = useAuth();
   const { addNotification } = useNotification();
+
+  // SPA referrer tracking: store previous pathname for accurate referrer on any page view
+  useEffect(() => {
+    updateReferrerOnNavigation(location.pathname);
+  }, [location.pathname]);
 
   useEffect(() => {
       let height = window.innerHeight;
