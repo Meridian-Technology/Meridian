@@ -405,19 +405,45 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
         const platformAggregation = await AnalyticsEvent.aggregate([
             { $match: platformMatch },
             {
+                $addFields: {
+                    _uid: {
+                        $cond: [
+                            { $and: [{ $ne: ['$user_id', null] }] },
+                            { $toString: '$user_id' },
+                            { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                        ]
+                    }
+                }
+            },
+            {
                 $group: {
                     _id: '$event',
                     count: { $sum: 1 },
-                    uniqueUsers: { $addToSet: '$user_id' },
-                    uniqueAnonymous: { $addToSet: '$anonymous_id' }
+                    uniqueIds: { $addToSet: '$_uid' }
+                }
+            },
+            {
+                $project: {
+                    count: 1,
+                    uniqueCount: {
+                        $size: {
+                            $filter: {
+                                input: '$uniqueIds',
+                                as: 'id',
+                                cond: { $and: [{ $ne: ['$$id', ''] }, { $ne: ['$$id', 'a:'] }] }
+                            }
+                        }
+                    }
                 }
             }
         ]);
 
         const platformCounts = {};
+        const platformUniqueCounts = {};
         const tabViews = {};
-        platformAggregation.forEach(({ _id: eventType, count, uniqueUsers, uniqueAnonymous }) => {
+        platformAggregation.forEach(({ _id: eventType, count, uniqueCount }) => {
             platformCounts[eventType] = count;
+            platformUniqueCounts[eventType] = uniqueCount ?? 0;
             if (eventType === 'event_workspace_tab_view') {
                 // Tab breakdown is in a separate aggregation
             }
@@ -507,7 +533,12 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             checkouts: platformCounts['event_checkout'] ?? 0,
             workspaceViews: platformCounts['event_workspace_view'] ?? 0,
             tabViews,
-            referrerSources
+            referrerSources,
+            // Unique users per event type (for funnel - avoids double-counting repeat actions)
+            uniqueEventViews: platformUniqueCounts['event_view'] ?? 0,
+            uniqueFormOpens: platformUniqueCounts['event_registration_form_open'] ?? 0,
+            uniqueRegistrations: platformUniqueCounts['event_registration'] ?? 0,
+            uniqueCheckins: platformUniqueCounts['event_checkin'] ?? 0
         };
 
         // Legacy EventAnalytics (merge for backwards compatibility)
