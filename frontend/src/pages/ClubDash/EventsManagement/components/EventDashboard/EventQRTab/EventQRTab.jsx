@@ -102,7 +102,7 @@ function StyledQRCode({ url, fgColor = '#414141', bgColor = '#ffffff', transpare
     return <div ref={containerRef} className="styled-qr-container" style={{ width: size, height: size }} />;
 }
 
-const USE_FAKE_SCAN_DATA = true; // Set to true to preview charts with fake scan data
+const USE_FAKE_SCAN_DATA = false; // Set to true to preview charts with fake scan data
 
 function generateFakeScanData(qrCodes, event) {
     if (!event || !qrCodes?.length) return null;
