@@ -165,9 +165,17 @@ router.post("/create-org", verifyToken, upload.fields([
                 .json({ success: false, message: "User not found" });
         }
 
+        if (!org_name || !org_description) {
+            console.log('POST: /create-org - Missing required fields:', { org_name: !!org_name, org_description: !!org_description });
+            return res
+                .status(400)
+                .json({ success: false, message: "Organization name and description are required" });
+        }
+
         const orgExist = await Org.findOne({ org_name: org_name });
         //Check to verify if the org already exists
         if (orgExist) {
+            console.log('POST: /create-org - Org name already exists:', org_name);
             return res
                 .status(400)
                 .json({ success: false, message: "Org name already exists" });

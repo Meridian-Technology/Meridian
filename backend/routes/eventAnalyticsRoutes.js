@@ -377,7 +377,7 @@ router.get('/overview', verifyTokenOptional, async (req, res) => {
 
 // Get analytics for a specific event (admin only)
 router.get('/event/:eventId', verifyToken, async (req, res) => {
-    const { EventAnalytics, Event, AnalyticsEvent } = getModels(req, 'EventAnalytics', 'Event', 'AnalyticsEvent');
+    const { EventAnalytics, Event, AnalyticsEvent, EventQR } = getModels(req, 'EventAnalytics', 'Event', 'AnalyticsEvent', 'EventQR');
     const { eventId } = req.params;
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
@@ -405,19 +405,45 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
         const platformAggregation = await AnalyticsEvent.aggregate([
             { $match: platformMatch },
             {
+                $addFields: {
+                    _uid: {
+                        $cond: [
+                            { $and: [{ $ne: ['$user_id', null] }] },
+                            { $toString: '$user_id' },
+                            { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                        ]
+                    }
+                }
+            },
+            {
                 $group: {
                     _id: '$event',
                     count: { $sum: 1 },
-                    uniqueUsers: { $addToSet: '$user_id' },
-                    uniqueAnonymous: { $addToSet: '$anonymous_id' }
+                    uniqueIds: { $addToSet: '$_uid' }
+                }
+            },
+            {
+                $project: {
+                    count: 1,
+                    uniqueCount: {
+                        $size: {
+                            $filter: {
+                                input: '$uniqueIds',
+                                as: 'id',
+                                cond: { $and: [{ $ne: ['$$id', ''] }, { $ne: ['$$id', 'a:'] }] }
+                            }
+                        }
+                    }
                 }
             }
         ]);
 
         const platformCounts = {};
+        const platformUniqueCounts = {};
         const tabViews = {};
-        platformAggregation.forEach(({ _id: eventType, count, uniqueUsers, uniqueAnonymous }) => {
+        platformAggregation.forEach(({ _id: eventType, count, uniqueCount }) => {
             platformCounts[eventType] = count;
+            platformUniqueCounts[eventType] = uniqueCount ?? 0;
             if (eventType === 'event_workspace_tab_view') {
                 // Tab breakdown is in a separate aggregation
             }
@@ -439,6 +465,84 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             tabViews[tab || 'unknown'] = count;
         });
 
+        // Aggregate event_view by derived referrer source (org_page, explore, direct)
+        const referrerSourceMatch = {
+            ...platformMatch,
+            event: 'event_view'
+        };
+        const referrerAggregation = await AnalyticsEvent.aggregate([
+            { $match: referrerSourceMatch },
+            {
+                $addFields: {
+                    source: {
+                        $cond: {
+                            if: {
+                                $and: [
+                                    { $ne: ['$properties.source', null] },
+                                    { $ne: ['$properties.source', ''] },
+                                    { $in: ['$properties.source', ['org_page', 'explore', 'direct']] }
+                                ]
+                            },
+                            then: '$properties.source',
+                            else: {
+                                $switch: {
+                                    branches: [
+                                        {
+                                            case: {
+                                                $or: [
+                                                    { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'org/'] }, -1] },
+                                                    { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'club-dashboard'] }, -1] }
+                                                ]
+                                            },
+                                            then: 'org_page'
+                                        },
+                                        {
+                                            case: { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'events-dashboard'] }, -1] },
+                                            then: 'explore'
+                                        }
+                                    ],
+                                    default: 'direct'
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            { $group: { _id: '$source', count: { $sum: 1 } } }
+        ]);
+
+        const referrerSources = { org_page: 0, explore: 0, direct: 0 };
+        referrerAggregation.forEach(({ _id: source, count }) => {
+            if (source && referrerSources.hasOwnProperty(source)) {
+                referrerSources[source] = count;
+            }
+        });
+
+        // Aggregate QR referrer sources (event_view with source=qr, qr_id) - group by qr_id
+        const qrReferrerAgg = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...referrerSourceMatch,
+                    'properties.source': 'qr',
+                    'properties.qr_id': { $exists: true, $ne: null, $ne: '' }
+                }
+            },
+            { $group: { _id: '$properties.qr_id', count: { $sum: 1 } } }
+        ]);
+        const qrReferrerCounts = {};
+        qrReferrerAgg.forEach(({ _id: qrId, count }) => { qrReferrerCounts[qrId] = count; });
+        const shortIds = Object.keys(qrReferrerCounts);
+        const qrDocs = shortIds.length > 0
+            ? await EventQR.find({ shortId: { $in: shortIds }, eventId }).select('shortId name').lean()
+            : [];
+        const shortIdToName = {};
+        qrDocs.forEach(q => { shortIdToName[q.shortId] = q.name; });
+        const qrReferrerSources = shortIds.map(sid => ({
+            qr_id: sid,
+            name: shortIdToName[sid] || 'Deleted QR',
+            count: qrReferrerCounts[sid]
+        })).sort((a, b) => b.count - a.count);
+
         const registrationFormOpens = platformCounts['event_registration_form_open'] ?? 0;
         const registrationsCount = platformCounts['event_registration'] ?? 0;
         const registrationFormBounces = Math.max(0, registrationFormOpens - registrationsCount);
@@ -453,7 +557,14 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             checkins: platformCounts['event_checkin'] ?? 0,
             checkouts: platformCounts['event_checkout'] ?? 0,
             workspaceViews: platformCounts['event_workspace_view'] ?? 0,
-            tabViews
+            tabViews,
+            referrerSources,
+            qrReferrerSources,
+            // Unique users per event type (for funnel - avoids double-counting repeat actions)
+            uniqueEventViews: platformUniqueCounts['event_view'] ?? 0,
+            uniqueFormOpens: platformUniqueCounts['event_registration_form_open'] ?? 0,
+            uniqueRegistrations: platformUniqueCounts['event_registration'] ?? 0,
+            uniqueCheckins: platformUniqueCounts['event_checkin'] ?? 0
         };
 
         // Legacy EventAnalytics (merge for backwards compatibility)

@@ -540,6 +540,308 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
     }
 });
 
+// ==================== EVENT QR CODES ====================
+
+// List event QRs
+router.get('/:orgId/events/:eventId/qr', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventQR, Event } = getModels(req, 'EventQR', 'Event');
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const qrCodes = await EventQR.find({ eventId, orgId })
+            .select('-scanHistory')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        res.status(200).json({ success: true, data: qrCodes });
+    } catch (error) {
+        console.error('Error listing event QRs:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Create event QR
+router.post('/:orgId/events/:eventId/qr', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventQR, Event } = getModels(req, 'EventQR', 'Event');
+    const { nanoid } = require('nanoid');
+    const { orgId, eventId } = req.params;
+    const { name, fgColor = '#414141', bgColor = '#ffffff', transparentBg = false, dotType = 'extra-rounded', cornerType = 'extra-rounded' } = req.body;
+
+    try {
+        if (!name || !name.trim()) {
+            return res.status(400).json({ success: false, message: 'Name is required' });
+        }
+
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const shortId = nanoid(8);
+        const qr = new EventQR({
+            eventId,
+            orgId,
+            name: name.trim(),
+            shortId,
+            fgColor,
+            bgColor,
+            transparentBg: Boolean(transparentBg),
+            dotType: ['extra-rounded', 'square', 'dots'].includes(dotType) ? dotType : 'extra-rounded',
+            cornerType: ['extra-rounded', 'square', 'dot'].includes(cornerType) ? cornerType : 'extra-rounded'
+        });
+        await qr.save();
+
+        res.status(201).json({ success: true, data: qr });
+    } catch (error) {
+        console.error('Error creating event QR:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Update event QR
+router.put('/:orgId/events/:eventId/qr/:qrId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventQR, Event } = getModels(req, 'EventQR', 'Event');
+    const { orgId, eventId, qrId } = req.params;
+    const { name, fgColor, bgColor, transparentBg, dotType, cornerType } = req.body;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const qr = await EventQR.findOne({ _id: qrId, eventId, orgId });
+        if (!qr) {
+            return res.status(404).json({ success: false, message: 'QR code not found' });
+        }
+
+        if (name !== undefined) qr.name = name.trim();
+        if (fgColor !== undefined) qr.fgColor = fgColor;
+        if (bgColor !== undefined) qr.bgColor = bgColor;
+        if (transparentBg !== undefined) qr.transparentBg = Boolean(transparentBg);
+        if (dotType !== undefined && ['extra-rounded', 'square', 'dots'].includes(dotType)) qr.dotType = dotType;
+        if (cornerType !== undefined && ['extra-rounded', 'square', 'dot'].includes(cornerType)) qr.cornerType = cornerType;
+        await qr.save();
+
+        res.status(200).json({ success: true, data: qr });
+    } catch (error) {
+        console.error('Error updating event QR:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Delete event QR
+router.delete('/:orgId/events/:eventId/qr/:qrId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventQR, Event } = getModels(req, 'EventQR', 'Event');
+    const { orgId, eventId, qrId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const qr = await EventQR.findOneAndDelete({ _id: qrId, eventId, orgId });
+        if (!qr) {
+            return res.status(404).json({ success: false, message: 'QR code not found' });
+        }
+
+        res.status(200).json({ success: true, message: 'QR code deleted' });
+    } catch (error) {
+        console.error('Error deleting event QR:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Get event QR analytics (aggregate)
+// Date range: first QR creation -> event end (for overall); per-QR: that QR's creation -> event end
+router.get('/:orgId/events/:eventId/qr/analytics', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventQR, Event, AnalyticsEvent } = getModels(req, 'EventQR', 'Event', 'AnalyticsEvent');
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const qrCodes = await EventQR.find({ eventId, orgId }).sort({ createdAt: 1 }).lean();
+        const qrIds = qrCodes.map(q => q._id.toString());
+        const shortIds = qrCodes.map(q => q.shortId);
+
+        const eventEnd = new Date(event.end_time);
+        eventEnd.setHours(23, 59, 59, 999);
+        let startDate = qrCodes.length > 0
+            ? (() => { const d = new Date(qrCodes[0].createdAt); d.setHours(0, 0, 0, 0); return d; })()
+            : new Date(event.start_time);
+        if (startDate > eventEnd) startDate = eventEnd;
+        const endDate = eventEnd;
+
+        const platformMatch = {
+            event: 'event_qr_scan',
+            ts: { $gte: startDate, $lte: endDate },
+            $or: [
+                { 'properties.event_id': eventId },
+                { 'properties.qr_short_id': { $in: shortIds } }
+            ]
+        };
+
+        const dailyAgg = await AnalyticsEvent.aggregate([
+            { $match: platformMatch },
+            { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } }, count: { $sum: 1 } } },
+            { $sort: { _id: 1 } }
+        ]);
+        const dailyScans = {};
+        dailyAgg.forEach(({ _id, count }) => { dailyScans[_id] = count; });
+
+        const byQRAgg = await AnalyticsEvent.aggregate([
+            { $match: platformMatch },
+            { $group: { _id: '$properties.qr_short_id', count: { $sum: 1 } } }
+        ]);
+        const byQRCounts = {};
+        byQRAgg.forEach(({ _id: sid, count }) => { if (sid) byQRCounts[sid] = count; });
+
+        const byQRDailyAgg = await AnalyticsEvent.aggregate([
+            { $match: platformMatch },
+            { $group: { _id: { date: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } }, shortId: '$properties.qr_short_id' }, count: { $sum: 1 } } },
+            { $sort: { '_id.date': 1 } }
+        ]);
+        const dailyByQR = {};
+        byQRDailyAgg.forEach(({ _id, count }) => {
+            if (_id.shortId) {
+                if (!dailyByQR[_id.shortId]) dailyByQR[_id.shortId] = {};
+                dailyByQR[_id.shortId][_id.date] = count;
+            }
+        });
+
+        const toDateStr = (d) => d.toISOString().slice(0, 10);
+        const qrCreatedStr = (q) => toDateStr(new Date(q.createdAt));
+
+        const byQR = qrCodes.map(q => {
+            const rawDaily = dailyByQR[q.shortId] || {};
+            const qrStart = qrCreatedStr(q);
+            const filteredDaily = {};
+            Object.entries(rawDaily).forEach(([date, count]) => {
+                if (date >= qrStart) filteredDaily[date] = count;
+            });
+            return {
+                qrId: q._id,
+                name: q.name,
+                shortId: q.shortId,
+                createdAt: q.createdAt,
+                scans: byQRCounts[q.shortId] ?? q.scans ?? 0,
+                uniqueScans: q.uniqueScans ?? 0,
+                lastScanned: q.lastScanned,
+                dailyScans: filteredDaily
+            };
+        });
+
+        const totalScans = Object.values(byQRCounts).reduce((a, b) => a + b, 0) || qrCodes.reduce((a, q) => a + (q.scans || 0), 0);
+        const totalUniqueScans = qrCodes.reduce((a, q) => a + (q.uniqueScans || 0), 0);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                summary: { totalQRCodes: qrCodes.length, totalScans, totalUniqueScans },
+                dateRange: { startDate: startDate.toISOString().slice(0, 10), endDate: endDate.toISOString().slice(0, 10) },
+                dailyScans,
+                byQR
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching event QR analytics:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Get single event QR analytics
+router.get('/:orgId/events/:eventId/qr/:qrId/analytics', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventQR, Event, AnalyticsEvent } = getModels(req, 'EventQR', 'Event', 'AnalyticsEvent');
+    const { orgId, eventId, qrId } = req.params;
+    const { timeRange = '30d' } = req.query;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        });
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const qr = await EventQR.findOne({ _id: qrId, eventId, orgId });
+        if (!qr) {
+            return res.status(404).json({ success: false, message: 'QR code not found' });
+        }
+
+        const now = new Date();
+        let startDate;
+        switch (timeRange) {
+            case '7d': startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+            case '30d': startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+            case '90d': startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000); break;
+            default: startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
+
+        const dailyAgg = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    event: 'event_qr_scan',
+                    'properties.qr_short_id': qr.shortId,
+                    ts: { $gte: startDate, $lte: now }
+                }
+            },
+            { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } }, count: { $sum: 1 } } },
+            { $sort: { _id: 1 } }
+        ]);
+        const dailyScans = {};
+        dailyAgg.forEach(({ _id, count }) => { dailyScans[_id] = count; });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                qr: { _id: qr._id, name: qr.name, shortId: qr.shortId, scans: qr.scans, uniqueScans: qr.uniqueScans, lastScanned: qr.lastScanned },
+                dailyScans
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching event QR analytics:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // List org forms (for event registration form selector)
 router.get('/:orgId/forms', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { Form } = getModels(req, 'Form');

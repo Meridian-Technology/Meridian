@@ -264,6 +264,45 @@
         border-radius: 6px;
         background: var(--lightbackground);
     }
+
+    // QR tab onboarding preview
+    .event-qr-tab-onboarding {
+        padding: 0.5rem 0;
+
+        .event-qr-overview-cards {
+            margin-bottom: 0.75rem;
+        }
+
+        .event-qr-chart-card {
+            margin-bottom: 0.75rem;
+        }
+
+        .event-qr-list-card .event-qr-list {
+            gap: 0.5rem;
+        }
+
+        .event-qr-item {
+            .styled-qr-container.onboarding-qr-placeholder {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 80px;
+                height: 80px;
+                color: var(--light-text);
+                font-size: 0.7rem;
+
+                iconify-icon {
+                    font-size: 1.5rem;
+                    color: #4DAA57;
+                    opacity: 0.7;
+                }
+            }
+
+            .event-qr-detail-chart {
+                padding: 0 1rem 0.75rem;
+            }
+        }
+    }
 }
 
 // Popup overlay custom class

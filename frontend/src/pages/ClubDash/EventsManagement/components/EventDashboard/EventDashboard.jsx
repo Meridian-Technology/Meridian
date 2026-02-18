@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { analytics } from '../../../../../services/analytics/analytics';
@@ -14,6 +14,7 @@ import AgendaBuilder from './EventAgendaBuilder/AgendaBuilder';
 import JobsManager from './EventJobsManager/JobsManager';
 import EventAnalyticsDetail from './EventAnalyticsDetail';
 import EventCheckInTab from './EventCheckInTab/EventCheckInTab';
+import EventQRTab from './EventQRTab/EventQRTab';
 import RegistrationsTab from './RegistrationsTab/RegistrationsTab';
 import ComingSoon from './ComingSoon';
 // Temporarily disabled - EquipmentManager functionality commented out
@@ -29,6 +30,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     const [dashboardData, setDashboardData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const hasNotifiedErrorRef = useRef(false);
     const [activeTab, setActiveTab] = useState('overview');
     const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -42,11 +44,14 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             setDashboardData(data.data);
             setLoading(false);
         } else if (error || (data && !data.success)) {
-            addNotification({
-                title: 'Error',
-                message: error || data?.message || 'Failed to load event dashboard',
-                type: 'error'
-            });
+            if (!hasNotifiedErrorRef.current) {
+                hasNotifiedErrorRef.current = true;
+                addNotification({
+                    title: 'Error',
+                    message: error || data?.message || 'Failed to load event dashboard',
+                    type: 'error'
+                });
+            }
             setLoading(false);
         } else if (dataLoading) {
             setLoading(true);
@@ -214,6 +219,17 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         onRefresh={handleRefresh}
                         isTabActive={activeTab === 'checkin'}
                         color="var(--primary-color)"
+                    />
+        },
+        {
+            id: 'qr',
+            label: 'QR Codes',
+            icon: 'mdi:qrcode',
+            description: 'Create and manage QR codes for event promotion',
+            content: <EventQRTab
+                        event={dashboardData.event}
+                        orgId={orgId}
+                        onRefresh={handleRefresh}
                     />
         },
         {

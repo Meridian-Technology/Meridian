@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../NotificationContext';
 import HeaderContainer from '../../../../../components/HeaderContainer/HeaderContainer';
+import ProportionalBarList from '../../../../../components/ProportionalBarList/ProportionalBarList';
 import FunnelChart from './FunnelChart';
 import './EventDashboard.scss';
 
@@ -65,23 +66,27 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     };
 
     const platform = analytics?.platform || {};
+    const safeAnalyticsForFunnel = USE_FAKE_FUNNEL_DATA ? {} : (analytics || {});
+    const uniqueViewsTotalForFunnel = (safeAnalyticsForFunnel.uniqueViews || 0) + (safeAnalyticsForFunnel.uniqueAnonymousViews || 0);
+    const uniqueRegistrationsTotalForFunnel = safeAnalyticsForFunnel.uniqueRegistrations || 0;
+
     const funnelData = useMemo(() => {
         if (USE_FAKE_FUNNEL_DATA) return FAKE_FUNNEL_DATA;
 
-        const totalViews = (analytics?.views ?? 0) + (analytics?.anonymousViews ?? 0);
-        const totalRegistrations = analytics?.registrations ?? analytics?.registrationHistory?.length ?? 0;
+        const uniqueViews = platform.uniqueEventViews > 0 ? platform.uniqueEventViews : uniqueViewsTotalForFunnel;
+        const uniqueRegs = platform.uniqueRegistrations > 0 ? platform.uniqueRegistrations : uniqueRegistrationsTotalForFunnel;
         const steps = [
-            { label: 'Views', value: totalViews },
+            { label: 'Unique viewers', value: uniqueViews },
         ];
         if (event?.registrationFormId) {
-            steps.push({ label: 'Form Opens', value: platform.registrationFormOpens || 0 });
+            steps.push({ label: 'Opened form', value: platform.uniqueFormOpens || 0 });
         }
         steps.push(
-            { label: 'Registrations', value: totalRegistrations },
-            { label: 'Check-ins', value: platform.checkins || 0 }
+            { label: 'Registrations', value: uniqueRegs },
+            { label: 'Check-ins', value: platform.uniqueCheckins || 0 }
         );
         return steps;
-    }, [analytics, platform.registrationFormOpens, platform.checkins, event?.registrationFormId]);
+    }, [platform, event?.registrationFormId, uniqueViewsTotalForFunnel, uniqueRegistrationsTotalForFunnel]);
 
     // const handleExport = async () => {
     //     if (!event?._id || !orgId) return;
@@ -151,29 +156,18 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     const viewHistory = safeAnalytics.viewHistory || [];
     const loggedInViews = viewHistory.filter(v => !v.isAnonymous && v.userId);
     
-    // Count filtered views (these are already filtered by timeRange)
-    const filteredLoggedInViews = loggedInViews.length;
-    const filteredAnonymousViews = viewHistory.filter(v => v.isAnonymous).length;
-    const filteredTotalViews = filteredLoggedInViews + filteredAnonymousViews;
-    
-    // Use API's total counts for display (these are unfiltered totals)
+    // Use API's total counts for display (filtered by timeRange on backend)
     const loggedInViewsCount = safeAnalytics.views || 0;
     const anonymousViewsCount = safeAnalytics.anonymousViews || 0;
     const totalViews = loggedInViewsCount + anonymousViewsCount;
 
-    const engagementRate = filteredTotalViews > 0
-        ? ((totalRegistrations / filteredTotalViews) * 100)
-        : (safeAnalytics.engagementRate || 0);
-
-    const uniqueViewsTotal = safeAnalytics.uniqueViews || 0;
+    const uniqueViewsTotal = (safeAnalytics.uniqueViews || 0) + (safeAnalytics.uniqueAnonymousViews || 0);
     const uniqueRegistrationsTotal = safeAnalytics.uniqueRegistrations || 0;
     const conversionRate = uniqueViewsTotal > 0
         ? ((uniqueRegistrationsTotal / uniqueViewsTotal) * 100).toFixed(1)
         : 0;
 
-    const avgViewsPerUser = uniqueViewsTotal > 0
-        ? (totalViews / uniqueViewsTotal).toFixed(1)
-        : 0;
+    const isEventStarted = event?.start_time && new Date(event.start_time) <= new Date();
 
     // Calculate recent activity (last 24 hours)
     const now = new Date();
@@ -207,6 +201,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                 <HeaderContainer
                     icon="mingcute:chart-bar-fill"
                     header="Engagement Funnel"
+                    subheader={<span className="funnel-subtitle">Unique users at each step</span>}
                     classN="analytics-card funnel-section"
                     size="1rem"
                 >
@@ -214,146 +209,124 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                         <div className="funnel-chart-wrapper">
                             <FunnelChart data={funnelData} />
                         </div>
-                        {(platform.withdrawals > 0 || platform.checkouts > 0 || platform.registrationFormBounces > 0) && (
-                            <div className="funnel-secondary">
-                                {platform.registrationFormBounces > 0 && (
-                                    <span className="funnel-secondary-item funnel-bounces">
-                                        {formatNumber(platform.registrationFormBounces)} opened form but did not register
-                                    </span>
-                                )}
-                                {platform.withdrawals > 0 && (
-                                    <span className="funnel-secondary-item">
-                                        {formatNumber(platform.withdrawals)} withdrawals
-                                    </span>
-                                )}
-                                {platform.checkouts > 0 && (
-                                    <span className="funnel-secondary-item">
-                                        {formatNumber(platform.checkouts)} check-outs
-                                    </span>
-                                )}
-                            </div>
-                        )}
                     </div>
                 </HeaderContainer>
             )}
 
-            <div className="analytics-grid">
-                <HeaderContainer
-                    icon="mdi:eye"
-                    header="Views"
-                    classN="analytics-card"
-                    size="1rem"
-                >
-                    <div className="card-content">
-                        <div className="views-grid">
-                            <div className="views-squares-wrapper">
-                                <div className="view-square-wrapper">
-                                    <div className="view-square">
-                                        <div className="view-square-content">
-                                            <span className="view-value">{formatNumber(loggedInViewsCount)}</span>
-                                            <span className="view-label">Logged-in</span>
-                                            <span className="view-subtitle">{formatNumber(safeAnalytics.uniqueViews || 0)} unique</span>
+            <HeaderContainer
+                icon="mingcute:chart-fill"
+                header="Key Metrics"
+                classN="analytics-card key-metrics-section"
+                size="1rem"
+            >
+                <div className="card-content">
+                    <div className="key-metrics-grid">
+                        <div className="key-metric key-metric-primary">
+                            <span className="key-metric-value">{formatNumber(totalRegistrations)}</span>
+                            <span className="key-metric-label">Registrations</span>
+                        </div>
+                        {isEventStarted && (
+                            <div className="key-metric key-metric-primary">
+                                <span className="key-metric-value">{formatNumber(platform.checkins || 0)}</span>
+                                <span className="key-metric-label">Check-ins</span>
+                            </div>
+                        )}
+                        <div className="key-metric">
+                            <span className="key-metric-value">{formatNumber(totalViews)}</span>
+                            <span className="key-metric-label">Views</span>
+                            <span className="key-metric-subtitle">Total, includes repeat</span>
+                        </div>
+                        <div className="key-metric">
+                            <span className="key-metric-value">{formatNumber(uniqueViewsTotal)}</span>
+                            <span className="key-metric-label">Unique Viewers</span>
+                        </div>
+                        <div className="key-metric">
+                            <span className="key-metric-value">{conversionRate}%</span>
+                            <span className="key-metric-label">Conversion</span>
+                            <span className="key-metric-subtitle">View → Registration</span>
+                        </div>
+                    </div>
+                    <div className="key-metrics-details">
+                        <div className="key-metrics-detail-group">
+                            <span className="key-metrics-detail-label">Views</span>
+                            <span className="key-metrics-detail-value">
+                                {formatNumber(loggedInViewsCount)} logged-in · {formatNumber(anonymousViewsCount)} anonymous
+                            </span>
+                        </div>
+                        <div className="key-metrics-detail-group">
+                            <span className="key-metrics-detail-label">Agenda opens</span>
+                            <span className="key-metrics-detail-value">{formatNumber(platform.agendaViews || 0)}</span>
+                        </div>
+                        <div className="key-metrics-detail-group">
+                            <span className="key-metrics-detail-label">Last 24h</span>
+                            <span className="key-metrics-detail-value">
+                                {recentViews} views · {recentRegistrations} registrations
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </HeaderContainer>
+
+            {((totalViews > 0 &&
+                (((platform.referrerSources?.org_page ?? 0) + (platform.referrerSources?.explore ?? 0) + (platform.referrerSources?.direct ?? 0)) > 0 ||
+                    (platform.qrReferrerSources?.length ?? 0) > 0)) ||
+                loggedInViews.length > 0) && (
+                <div className="analytics-sources-row">
+                    {totalViews > 0 && (() => {
+                        const referrerSources = platform.referrerSources || { org_page: 0, explore: 0, direct: 0 };
+                        const qrSources = platform.qrReferrerSources || [];
+                        const sourceItems = [
+                            { key: 'direct', label: 'Direct', icon: 'mdi:arrow-right', value: referrerSources.direct },
+                            { key: 'explore', label: 'Explore', icon: 'mingcute:compass-fill', value: referrerSources.explore },
+                            { key: 'org_page', label: 'Org Page', icon: 'mdi:domain', value: referrerSources.org_page },
+                            ...qrSources.map(({ qr_id, name, count }) => ({
+                                key: `qr_${qr_id}`,
+                                label: name,
+                                icon: 'mdi:qrcode',
+                                value: count
+                            }))
+                        ];
+                        const hasSourceData = sourceItems.some((item) => (item.value ?? 0) > 0);
+                        return hasSourceData && (
+                            <ProportionalBarList
+                                items={sourceItems}
+                                header="Sources"
+                                icon="mdi:source-branch"
+                                classN="analytics-card sources-section proportional-bar-list-container"
+                                size="1rem"
+                                formatValue={formatNumber}
+                            />
+                        );
+                    })()}
+                    {loggedInViews.length > 0 && (
+                        <HeaderContainer
+                            icon="mingcute:eye-fill"
+                            header="Logged-in Views"
+                            classN="analytics-card logged-in-views-section"
+                            size="1rem"
+                        >
+                            <div className="logged-in-views-list">
+                                {loggedInViews.slice(0, 20).map((view, index) => (
+                                    <div key={index} className="history-item">
+                                        <div className="history-icon">
+                                            <Icon icon="mingcute:eye-fill" />
+                                        </div>
+                                        <div className="history-content">
+                                            <p className="history-time">{formatDate(view.timestamp)}</p>
+                                            <p className="history-detail">User viewed this event</p>
                                         </div>
                                     </div>
-                                </div>
-                                <div className="view-square-wrapper">
-                                    <div className="view-square">
-                                        <div className="view-square-content">
-                                            <span className="view-value">{formatNumber(anonymousViewsCount)}</span>
-                                            <span className="view-label">Anonymous</span>
-                                            <span className="view-subtitle">{formatNumber(safeAnalytics.uniqueAnonymousViews || 0)} unique</span>
-                                        </div>
+                                ))}
+                                {loggedInViews.length > 20 && (
+                                    <div className="views-more">
+                                        <span>+{loggedInViews.length - 20} more views</span>
                                     </div>
-                                </div>
+                                )}
                             </div>
-                            <div className="view-total-wrapper">
-                                <div className="view-total">
-                                    <div className="view-total-content">
-                                        <span className="view-value">{formatNumber(totalViews)}</span>
-                                        <span className="view-label">Total Views</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </HeaderContainer>
-
-                <HeaderContainer
-                    icon="mingcute:trending-up-fill"
-                    header="Engagement"
-                    classN="analytics-card"
-                    size="1rem"
-                >
-                    <div className="card-content">
-                        <div className="stat-large">
-                            <span className="stat-value">{engagementRate.toFixed(1)}%</span>
-                            <span className="stat-label">Engagement Rate</span>
-                        </div>
-                        <div className="engagement-bar-container">
-                            <div className="engagement-bar">
-                                <div 
-                                    className="engagement-fill" 
-                                    style={{ width: `${Math.min(engagementRate, 100)}%` }}
-                                />
-                            </div>
-                        </div>
-                        <div className="rsvp-segments-display">
-                            <div className="rsvp-segment-item going">
-                                <span className="segment-number">{totalRegistrations}</span>
-                                <span className="segment-label">Registrations</span>
-                            </div>
-                        </div>
-                    </div>
-                </HeaderContainer>
-
-                <HeaderContainer
-                    icon="mingcute:chart-line-fill"
-                    header="Conversion & Activity"
-                    classN="analytics-card"
-                    size="1rem"
-                >
-                    <div className="card-content">
-                        <div className="conversion-metrics">
-                            <div className="conversion-item">
-                                <div className="conversion-value">{conversionRate}%</div>
-                                <div className="conversion-label">View-to-Registration</div>
-                                <div className="conversion-subtitle">Unique conversion rate</div>
-                            </div>
-                            <div className="conversion-item">
-                                <div className="conversion-value">{totalRegistrations}</div>
-                                <div className="conversion-label">Registrations</div>
-                                <div className="conversion-subtitle">Total registered</div>
-                            </div>
-                            <div className="conversion-item">
-                                <div className="conversion-value">{avgViewsPerUser}</div>
-                                <div className="conversion-label">Avg Views/User</div>
-                                <div className="conversion-subtitle">Per unique viewer</div>
-                            </div>
-                            <div className="conversion-item">
-                                <div className="conversion-value">{formatNumber(platform.agendaViews || 0)}</div>
-                                <div className="conversion-label">Agenda Opens</div>
-                                <div className="conversion-subtitle">Times agenda modal was viewed</div>
-                            </div>
-                        </div>
-                        <div className="recent-activity">
-                            <div className="activity-header">
-                                <Icon icon="mdi:clock-outline" />
-                                <span>Last 24 Hours</span>
-                            </div>
-                            <div className="activity-stats">
-                                <div className="activity-stat">
-                                    <span className="activity-value">{recentViews}</span>
-                                    <span className="activity-label">Views</span>
-                                </div>
-                                <div className="activity-stat">
-                                    <span className="activity-value">{recentRegistrations}</span>
-                                    <span className="activity-label">Registrations</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </HeaderContainer>
-            </div>
+                        </HeaderContainer>
+                    )}
+                </div>
+            )}
 
             {platform.registrationFormOpens > 0 && (
                 <HeaderContainer
@@ -365,50 +338,24 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                     <div className="card-content">
                         <div className="registration-form-metrics">
                             <div className="form-metric">
-                                <span className="form-metric-value">{formatNumber(platform.registrationFormOpens)}</span>
-                                <span className="form-metric-label">Form Opens</span>
+                                <span className="form-metric-value">{formatNumber(platform.uniqueFormOpens || 0)}</span>
+                                <span className="form-metric-label">Unique form openers</span>
                             </div>
                             <div className="form-metric">
                                 <span className="form-metric-value">
-                                    {platform.registrationFormOpens > 0
-                                        ? ((totalRegistrations / platform.registrationFormOpens) * 100).toFixed(1)
+                                    {(platform.uniqueFormOpens || 0) > 0
+                                        ? ((totalRegistrations / (platform.uniqueFormOpens || 1)) * 100).toFixed(1)
                                         : 0}%
                                 </span>
-                                <span className="form-metric-label">Form Conversion</span>
+                                <span className="form-metric-label">Form conversion</span>
+                                <span className="form-metric-subtitle">Opened form → Registered</span>
                             </div>
                             <div className="form-metric form-metric-bounces">
                                 <span className="form-metric-value">{formatNumber(platform.registrationFormBounces || 0)}</span>
                                 <span className="form-metric-label">Opened but did not register</span>
+                                <span className="form-metric-subtitle">Total opens, not unique</span>
                             </div>
                         </div>
-                    </div>
-                </HeaderContainer>
-            )}
-
-            {loggedInViews.length > 0 && (
-                <HeaderContainer
-                    icon="mingcute:eye-fill"
-                    header="Logged-in Views"
-                    classN="logged-in-views-section"
-                    size="1.25rem"
-                >
-                    <div className="logged-in-views-list">
-                        {loggedInViews.slice(0, 20).map((view, index) => (
-                            <div key={index} className="history-item">
-                                <div className="history-icon">
-                                    <Icon icon="mingcute:eye-fill" />
-                                </div>
-                                <div className="history-content">
-                                    <p className="history-time">{formatDate(view.timestamp)}</p>
-                                    <p className="history-detail">User viewed this event</p>
-                                </div>
-                            </div>
-                        ))}
-                        {loggedInViews.length > 20 && (
-                            <div className="views-more">
-                                <span>+{loggedInViews.length - 20} more views</span>
-                            </div>
-                        )}
                     </div>
                 </HeaderContainer>
             )}

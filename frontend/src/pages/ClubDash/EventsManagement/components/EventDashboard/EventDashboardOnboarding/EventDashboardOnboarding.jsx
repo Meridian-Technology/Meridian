@@ -5,14 +5,85 @@ import AgendaItem from '../EventAgendaBuilder/AgendaItem';
 import KpiCard from '../../../../../../components/Analytics/Dashboard/KpiCard';
 import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
 import FunnelChart from '../FunnelChart';
+import EventDashboardChart from '../components/EventDashboardChart/EventDashboardChart';
 import '../EventDashboard.scss';
 import '../EventAgendaBuilder/AgendaBuilder.scss';
 import '../EventJobsManager/JobsManager.scss';
 import '../RegistrationsTab/RegistrationsTab.scss';
 import '../EventCheckInTab/EventCheckInTab.scss';
 import '../EventEditorTab/EventEditorTab.scss';
+import '../EventQRTab/EventQRTab.scss';
 import '../../../../../../components/EventCheckIn/EventCheckIn.scss';
 import './EventDashboardOnboarding.scss';
+
+function toCumulative(data) {
+    let sum = 0;
+    return data.map((d) => {
+        sum += d.y;
+        return { ...d, y: sum };
+    });
+}
+
+function buildMockQRChartDates(daysBack = 14) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(today);
+    start.setDate(start.getDate() - daysBack);
+    const result = [];
+    const d = new Date(start);
+    while (d <= today) {
+        result.push(d.toISOString().slice(0, 10));
+        d.setDate(d.getDate() + 1);
+    }
+    return result;
+}
+
+// Seeded pseudo-random for deterministic, realistic-looking daily scan counts
+function seeded(seed, min, max) {
+    const hash = (s) => s.split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
+    return Math.abs(hash(String(seed))) % (max - min + 1) + min;
+}
+
+function buildMockQRChartSeries() {
+    const dates = buildMockQRChartDates(14);
+    const dayOfWeek = (x) => new Date(x + 'T12:00:00').getDay();
+
+    // Poster QR: physical posters, ramps up, weekend bumps, one promo spike
+    const posterDaily = dates.map((x, i) => {
+        const dow = dayOfWeek(x);
+        const base = 3 + Math.floor(i * 0.8) + (dow === 0 || dow === 6 ? 4 : 0);
+        const variation = seeded(x + 'poster', 0, 6);
+        const spike = i === 5 ? 12 : 0; // promo day
+        return Math.max(1, base + variation + spike);
+    });
+
+    // Email QR: campaign launch spike, then gradual decay
+    const emailDaily = dates.map((x, i) => {
+        const decay = i < 2 ? 18 - i * 4 : Math.max(2, 8 - i);
+        const variation = seeded(x + 'email', 0, 4);
+        return Math.max(0, decay + variation);
+    });
+
+    // Flyer QR: handouts at events, slower ramp, mid-week bump
+    const flyerDaily = dates.map((x, i) => {
+        const base = i < 3 ? 0 : 2 + Math.floor((i - 3) * 0.6);
+        const variation = seeded(x + 'flyer', 0, 3);
+        const bump = dayOfWeek(x) === 3 ? 5 : 0; // tabling day
+        return Math.max(0, base + variation + bump);
+    });
+
+    return [
+        { data: toCumulative(dates.map((x, i) => ({ x, y: posterDaily[i] }))), color: '#4DAA57', label: 'Poster QR' },
+        { data: toCumulative(dates.map((x, i) => ({ x, y: emailDaily[i] }))), color: '#2563eb', label: 'Email QR' },
+        { data: toCumulative(dates.map((x, i) => ({ x, y: flyerDaily[i] }))), color: '#f59e0b', label: 'Flyer QR' },
+    ];
+}
+
+const MOCK_QR_DATES = buildMockQRChartDates(14);
+const MOCK_QR_CHART_SERIES = buildMockQRChartSeries();
+const MOCK_QR_EXPANDED_CHART_DATA = MOCK_QR_CHART_SERIES[0].data;
+const MOCK_QR_TOTAL_SCANS = MOCK_QR_CHART_SERIES.reduce((sum, s) => sum + (s.data[s.data.length - 1]?.y ?? 0), 0);
+const MOCK_QR_POSTER_SCANS = MOCK_QR_CHART_SERIES[0].data[MOCK_QR_CHART_SERIES[0].data.length - 1]?.y ?? 0;
 
 const FAKE_FUNNEL_DATA = [
     { label: 'Views', value: 1250 },
@@ -316,6 +387,91 @@ const SLIDES = [
                         </div>
                     </HeaderContainer>
                 </div>
+            </div>
+        )
+    },
+    {
+        id: 'qr',
+        label: 'QR Codes',
+        icon: 'mdi:qrcode',
+        description: 'Create event QR codes for posters, flyers, and emails. Track scans per code with the By QR chart and expand cards for individual performance.',
+        snippet: (
+            <div className="event-qr-tab event-qr-tab-onboarding">
+                <div className="event-qr-overview-cards">
+                    <div className="overview-card">
+                        <span className="overview-value">3</span>
+                        <span className="overview-label">QR Codes</span>
+                    </div>
+                    <div className="overview-card">
+                        <span className="overview-value">{MOCK_QR_TOTAL_SCANS}</span>
+                        <span className="overview-label">Total Scans</span>
+                    </div>
+                </div>
+                <HeaderContainer
+                    icon="mingcute:chart-line-fill"
+                    header="Scan Growth"
+                    classN="event-qr-chart-card"
+                    size="1rem"
+                    right={
+                        <label className="chart-split-toggle">
+                            <input type="checkbox" checked readOnly />
+                            <span>By QR</span>
+                        </label>
+                    }
+                >
+                    <div className="chart-wrapper">
+                        <EventDashboardChart
+                            data={[]}
+                            series={MOCK_QR_CHART_SERIES}
+                            xDomain={MOCK_QR_DATES}
+                            color="#4DAA57"
+                            height={140}
+                            emptyMessage="No scan data yet"
+                        />
+                    </div>
+                </HeaderContainer>
+                <HeaderContainer icon="mdi:qrcode" header="Your QR Codes" classN="event-qr-list-card" size="1rem">
+                    <div className="event-qr-list">
+                        <div className="event-qr-item expanded">
+                            <div className="event-qr-item-main">
+                                <div className="event-qr-preview">
+                                    <div className="styled-qr-container onboarding-qr-placeholder">
+                                        <Icon icon="fa7-solid:qrcode" />
+                                    </div>
+                                </div>
+                                <div className="event-qr-info">
+                                    <span className="event-qr-name">Poster QR</span>
+                                    <span className="event-qr-stats">{MOCK_QR_POSTER_SCANS} scans · {Math.round(MOCK_QR_POSTER_SCANS * 0.72)} unique</span>
+                                    <span className="event-qr-meta">Last scan: Today</span>
+                                </div>
+                                <Icon icon="mdi:chevron-up" className="expand-icon" />
+                            </div>
+                            <div className="event-qr-detail-chart">
+                                <EventDashboardChart
+                                    data={MOCK_QR_EXPANDED_CHART_DATA}
+                                    xDomain={MOCK_QR_DATES}
+                                    color="#4DAA57"
+                                    height={120}
+                                    emptyMessage="No scans yet"
+                                />
+                            </div>
+                        </div>
+                        <div className="event-qr-item">
+                            <div className="event-qr-item-main">
+                                <div className="event-qr-preview">
+                                    <div className="styled-qr-container onboarding-qr-placeholder">
+                                        <Icon icon="fa7-solid:qrcode" />
+                                    </div>
+                                </div>
+                                <div className="event-qr-info">
+                                    <span className="event-qr-name">Email QR</span>
+                                    <span className="event-qr-stats">{MOCK_QR_CHART_SERIES[1].data[MOCK_QR_CHART_SERIES[1].data.length - 1]?.y ?? 0} scans · {Math.round((MOCK_QR_CHART_SERIES[1].data[MOCK_QR_CHART_SERIES[1].data.length - 1]?.y ?? 0) * 0.68)} unique</span>
+                                </div>
+                                <Icon icon="mdi:chevron-down" className="expand-icon" />
+                            </div>
+                        </div>
+                    </div>
+                </HeaderContainer>
             </div>
         )
     }

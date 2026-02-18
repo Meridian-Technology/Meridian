@@ -22,6 +22,7 @@ import Landing from './pages/Landing/Landing';
 import Events from './pages/Events/Events';
 import DeveloperOnboard from './pages/DeveloperOnboarding/DeveloperOnboarding';
 import QR from './pages/QR/QR';
+import EventQRRedirect from './pages/QR/EventQRRedirect';
 import Admin  from './pages/Admin/Admin';
 import OIEDash from './pages/OIEDash/OIEDash';
 import NewBadge from './pages/NewBadge/NewBadge';
@@ -155,6 +156,7 @@ function App() {
                                     <Routes>
                                         <Route path='/' element={<Layout/>}>
                                             {/* publicly accessible pages */}
+                                            <Route path="/qr/e/:shortId" element={<EventQRRedirect/>}/>
                                             <Route path="/qr/:id" element={<QR/>}/>
                                             <Route path="/check-in/:eventId/:token" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route index element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />

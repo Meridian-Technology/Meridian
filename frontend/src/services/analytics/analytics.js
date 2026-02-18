@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getReferrerPath } from '../../utils/referrerContext';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -443,7 +444,7 @@ class Analytics {
                 context: {
                     locale,
                     timezone,
-                    referrer: document.referrer || undefined,
+                    referrer: getReferrerPath() || document.referrer || undefined,
                     ...contextOverrides,
                 },
                 properties: this.scrubPII(properties),

@@ -489,7 +489,7 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
                                     {requiredDatum && (
                                         <div className="rsvp-chart-tooltip-row">
                                             <span className="rsvp-chart-tooltip-dot rsvp-chart-tooltip-dot-required" />
-                                            {isCumulative ? 'Required' : 'Required daily'}:{' '}
+                                            {isCumulative ? 'Goal' : 'Daily Goal'}:{' '}
                                             {Math.round(requiredDatum.y * 10) / 10}
                                         </div>
                                     )}

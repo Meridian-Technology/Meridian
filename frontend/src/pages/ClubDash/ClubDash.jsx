@@ -57,7 +57,8 @@ function ClubDash(){
     const [userPermissions, setUserPermissions] = useState({
         canManageRoles: false,
         canManageMembers: false,
-        canViewAnalytics: false
+        canViewAnalytics: false,
+        canManageEvents: false
     });
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [showJustApprovedBanner, setShowJustApprovedBanner] = useState(false);
@@ -121,7 +122,8 @@ function ClubDash(){
             setUserPermissions({
                 canManageRoles: true,
                 canManageMembers: true,
-                canViewAnalytics: true
+                canViewAnalytics: true,
+                canManageEvents: true
             });
             setPermissionsChecked(true);
             return;
@@ -137,7 +139,8 @@ function ClubDash(){
                 setUserPermissions({
                     canManageRoles: true,
                     canManageMembers: true,
-                    canViewAnalytics: true
+                    canViewAnalytics: true,
+                    canManageEvents: true
                 });
                 setPermissionsChecked(true);
                 return;
@@ -160,7 +163,8 @@ function ClubDash(){
                         setUserPermissions({
                             canManageRoles: userRoleData.canManageRoles || userRoleData.permissions.includes('manage_roles') || userRoleData.permissions.includes('all'),
                             canManageMembers: userRoleData.canManageMembers || userRoleData.permissions.includes('manage_members') || userRoleData.permissions.includes('all'),
-                            canViewAnalytics: userRoleData.canViewAnalytics || userRoleData.permissions.includes('view_analytics') || userRoleData.permissions.includes('all')
+                            canViewAnalytics: userRoleData.canViewAnalytics || userRoleData.permissions.includes('view_analytics') || userRoleData.permissions.includes('all'),
+                            canManageEvents: userRoleData.canManageEvents || userRoleData.permissions.includes('manage_events') || userRoleData.permissions.includes('all')
                         });
                     }
                 }
@@ -237,7 +241,7 @@ function ClubDash(){
             label: 'Dashboard', 
             icon: 'ic:round-dashboard', 
             key: 'dash',
-            element: <Dash expandedClass={expandedClass} openMembers={openMembers} clubName={clubId} meetings={meetings.data} org={orgData.data}/>
+            element: <Dash expandedClass={expandedClass} openMembers={openMembers} clubName={clubId} meetings={meetings.data} org={orgData.data} canManageEvents={userPermissions.canManageEvents}/>
         },
         { 
             label: 'Events', 
