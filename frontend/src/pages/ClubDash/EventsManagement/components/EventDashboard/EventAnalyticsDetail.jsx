@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../NotificationContext';
 import HeaderContainer from '../../../../../components/HeaderContainer/HeaderContainer';
+import ProportionalBarList from '../../../../../components/ProportionalBarList/ProportionalBarList';
 import FunnelChart from './FunnelChart';
 import './EventDashboard.scss';
 
@@ -355,6 +356,60 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                 </HeaderContainer>
             </div>
 
+            {((totalViews > 0 &&
+                ((platform.referrerSources?.org_page ?? 0) + (platform.referrerSources?.explore ?? 0) + (platform.referrerSources?.direct ?? 0)) > 0) ||
+                loggedInViews.length > 0) && (
+                <div className="analytics-sources-row">
+                    {totalViews > 0 && (() => {
+                        const referrerSources = platform.referrerSources || { org_page: 0, explore: 0, direct: 0 };
+                        const sourcesTotal = referrerSources.org_page + referrerSources.explore + referrerSources.direct;
+                        const hasSourceData = sourcesTotal > 0;
+                        const sourceItems = [
+                            { key: 'direct', label: 'Direct', icon: 'mdi:arrow-right', value: referrerSources.direct },
+                            { key: 'explore', label: 'Explore', icon: 'mingcute:compass-fill', value: referrerSources.explore },
+                            { key: 'org_page', label: 'Org Page', icon: 'mdi:domain', value: referrerSources.org_page }
+                        ];
+                        return hasSourceData && (
+                            <ProportionalBarList
+                                items={sourceItems}
+                                header="Sources"
+                                icon="mdi:source-branch"
+                                classN="analytics-card sources-section"
+                                size="1rem"
+                                formatValue={formatNumber}
+                            />
+                        );
+                    })()}
+                    {loggedInViews.length > 0 && (
+                        <HeaderContainer
+                            icon="mingcute:eye-fill"
+                            header="Logged-in Views"
+                            classN="analytics-card logged-in-views-section"
+                            size="1.25rem"
+                        >
+                            <div className="logged-in-views-list">
+                                {loggedInViews.slice(0, 20).map((view, index) => (
+                                    <div key={index} className="history-item">
+                                        <div className="history-icon">
+                                            <Icon icon="mingcute:eye-fill" />
+                                        </div>
+                                        <div className="history-content">
+                                            <p className="history-time">{formatDate(view.timestamp)}</p>
+                                            <p className="history-detail">User viewed this event</p>
+                                        </div>
+                                    </div>
+                                ))}
+                                {loggedInViews.length > 20 && (
+                                    <div className="views-more">
+                                        <span>+{loggedInViews.length - 20} more views</span>
+                                    </div>
+                                )}
+                            </div>
+                        </HeaderContainer>
+                    )}
+                </div>
+            )}
+
             {platform.registrationFormOpens > 0 && (
                 <HeaderContainer
                     icon="mdi:form-select"
@@ -381,34 +436,6 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                                 <span className="form-metric-label">Opened but did not register</span>
                             </div>
                         </div>
-                    </div>
-                </HeaderContainer>
-            )}
-
-            {loggedInViews.length > 0 && (
-                <HeaderContainer
-                    icon="mingcute:eye-fill"
-                    header="Logged-in Views"
-                    classN="logged-in-views-section"
-                    size="1.25rem"
-                >
-                    <div className="logged-in-views-list">
-                        {loggedInViews.slice(0, 20).map((view, index) => (
-                            <div key={index} className="history-item">
-                                <div className="history-icon">
-                                    <Icon icon="mingcute:eye-fill" />
-                                </div>
-                                <div className="history-content">
-                                    <p className="history-time">{formatDate(view.timestamp)}</p>
-                                    <p className="history-detail">User viewed this event</p>
-                                </div>
-                            </div>
-                        ))}
-                        {loggedInViews.length > 20 && (
-                            <div className="views-more">
-                                <span>+{loggedInViews.length - 20} more views</span>
-                            </div>
-                        )}
                     </div>
                 </HeaderContainer>
             )}

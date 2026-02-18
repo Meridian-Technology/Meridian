@@ -1301,6 +1301,13 @@
         }
     }
 
+    .analytics-sources-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
     .analytics-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -1695,8 +1702,6 @@
     }
 
     .logged-in-views-section {
-        margin-top: 2rem;
-
         .header-container-content {
             padding: 1rem 1.5rem;
         }
