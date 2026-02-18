@@ -3,6 +3,7 @@ import OIEEvent from "../../../OIEDash/OIEEventsComponents/Event/OIEEvent";
 import PulseDot from "../../../../components/Interface/PulseDot/PulseDot";
 import OIEEventSkeleton from "../../../OIEDash/OIEEventsComponents/Event/OIEEventSkeleton";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useFetch } from "../../../../hooks/useFetch";
 import { useDashboardOverlay } from "../../../../hooks/useDashboardOverlay";
 import './EventQuickLook.scss';
@@ -29,15 +30,18 @@ function timeUntil(date) {
   }
   
 
-const EventQuickLook = ({ org }) => {
+const EventQuickLook = ({ org, canManageEvents = false }) => {
     const [selectedTab, setSelectedTab] = useState("upcoming");
+    const navigate = useNavigate();
     const { showEventDashboard } = useDashboardOverlay();
     const orgId = org?.org?.overview?._id;
     const upcomingEvents = useFetch(`/get-my-events?orgId=${orgId}&type=${selectedTab === "upcoming" ? "future" : "pending"}&sort=asc&limit=5`);
 
     const handleOpenEventDashboard = (event) => {
-        if (orgId) {
+        if (canManageEvents && orgId) {
             showEventDashboard(event, orgId, { persistInUrl: true });
+        } else {
+            navigate(`/event/${event._id}`);
         }
     };
 
