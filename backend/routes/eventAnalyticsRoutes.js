@@ -439,6 +439,59 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             tabViews[tab || 'unknown'] = count;
         });
 
+        // Aggregate event_view by derived referrer source (org_page, explore, direct)
+        const referrerSourceMatch = {
+            ...platformMatch,
+            event: 'event_view'
+        };
+        const referrerAggregation = await AnalyticsEvent.aggregate([
+            { $match: referrerSourceMatch },
+            {
+                $addFields: {
+                    source: {
+                        $cond: {
+                            if: {
+                                $and: [
+                                    { $ne: ['$properties.source', null] },
+                                    { $ne: ['$properties.source', ''] },
+                                    { $in: ['$properties.source', ['org_page', 'explore', 'direct']] }
+                                ]
+                            },
+                            then: '$properties.source',
+                            else: {
+                                $switch: {
+                                    branches: [
+                                        {
+                                            case: {
+                                                $or: [
+                                                    { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'org/'] }, -1] },
+                                                    { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'club-dashboard'] }, -1] }
+                                                ]
+                                            },
+                                            then: 'org_page'
+                                        },
+                                        {
+                                            case: { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'events-dashboard'] }, -1] },
+                                            then: 'explore'
+                                        }
+                                    ],
+                                    default: 'direct'
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            { $group: { _id: '$source', count: { $sum: 1 } } }
+        ]);
+
+        const referrerSources = { org_page: 0, explore: 0, direct: 0 };
+        referrerAggregation.forEach(({ _id: source, count }) => {
+            if (source && referrerSources.hasOwnProperty(source)) {
+                referrerSources[source] = count;
+            }
+        });
+
         const registrationFormOpens = platformCounts['event_registration_form_open'] ?? 0;
         const registrationsCount = platformCounts['event_registration'] ?? 0;
         const registrationFormBounces = Math.max(0, registrationFormOpens - registrationsCount);
@@ -453,7 +506,8 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             checkins: platformCounts['event_checkin'] ?? 0,
             checkouts: platformCounts['event_checkout'] ?? 0,
             workspaceViews: platformCounts['event_workspace_view'] ?? 0,
-            tabViews
+            tabViews,
+            referrerSources
         };
 
         // Legacy EventAnalytics (merge for backwards compatibility)
