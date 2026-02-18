@@ -6,7 +6,7 @@
  * components, or styling must be made in EventPageContent.jsx as well.
  */
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import './EventPage.scss';
 import { Icon } from '@iconify-icon/react';
 import Logo from '../../assets/Brand Image/BEACON.svg';
@@ -17,6 +17,9 @@ import { analytics } from '../../services/analytics/analytics';
 
 function EventPage() {
     const { eventId } = useParams();
+    const [searchParams] = useSearchParams();
+    const source = searchParams.get('source');
+    const qrId = searchParams.get('qr_id');
 
     const { data: eventData, loading: eventLoading, refetch: refetchEvent } = useFetch(
         eventId ? `/get-event/${eventId}` : null
@@ -31,9 +34,12 @@ function EventPage() {
     useEffect(() => {
         if (event?._id) {
             analytics.screen('Event Page', { event_id: event._id, event_name: event.name });
-            analytics.track('event_view', { event_id: event._id });
+            analytics.track('event_view', {
+                event_id: event._id,
+                ...(source === 'qr' && qrId && { source: 'qr', qr_id: qrId })
+            });
         }
-    }, [event?._id]);
+    }, [event?._id, source, qrId]);
 
     if (eventLoading || !eventData) {
         return (

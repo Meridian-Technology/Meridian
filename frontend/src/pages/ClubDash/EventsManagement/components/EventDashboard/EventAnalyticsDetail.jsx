@@ -268,18 +268,25 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
             </HeaderContainer>
 
             {((totalViews > 0 &&
-                ((platform.referrerSources?.org_page ?? 0) + (platform.referrerSources?.explore ?? 0) + (platform.referrerSources?.direct ?? 0)) > 0) ||
+                (((platform.referrerSources?.org_page ?? 0) + (platform.referrerSources?.explore ?? 0) + (platform.referrerSources?.direct ?? 0)) > 0 ||
+                    (platform.qrReferrerSources?.length ?? 0) > 0)) ||
                 loggedInViews.length > 0) && (
                 <div className="analytics-sources-row">
                     {totalViews > 0 && (() => {
                         const referrerSources = platform.referrerSources || { org_page: 0, explore: 0, direct: 0 };
-                        const sourcesTotal = referrerSources.org_page + referrerSources.explore + referrerSources.direct;
-                        const hasSourceData = sourcesTotal > 0;
+                        const qrSources = platform.qrReferrerSources || [];
                         const sourceItems = [
                             { key: 'direct', label: 'Direct', icon: 'mdi:arrow-right', value: referrerSources.direct },
                             { key: 'explore', label: 'Explore', icon: 'mingcute:compass-fill', value: referrerSources.explore },
-                            { key: 'org_page', label: 'Org Page', icon: 'mdi:domain', value: referrerSources.org_page }
+                            { key: 'org_page', label: 'Org Page', icon: 'mdi:domain', value: referrerSources.org_page },
+                            ...qrSources.map(({ qr_id, name, count }) => ({
+                                key: `qr_${qr_id}`,
+                                label: name,
+                                icon: 'mdi:qrcode',
+                                value: count
+                            }))
                         ];
+                        const hasSourceData = sourceItems.some((item) => (item.value ?? 0) > 0);
                         return hasSourceData && (
                             <ProportionalBarList
                                 items={sourceItems}
