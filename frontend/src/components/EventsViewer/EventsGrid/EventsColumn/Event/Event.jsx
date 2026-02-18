@@ -65,9 +65,9 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
         setPopupOpen(true);
     }
 
-    const handleKeyDown = (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
             // Don't navigate if popup is open
             if (popupOpen) return;
             handleEventClick(event);
