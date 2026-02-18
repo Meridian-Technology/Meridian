@@ -40,14 +40,37 @@
 
   .dropdown {
     position: absolute;
-    right: 0;
-    top: 50px;
     width: 400px;
     background: var(--background);
     // border: 1px solid var(--lighterborder);
     // border-radius: 15px;
     z-index: 100;
     padding: 0;
+
+    // Position variants
+    &.dropdown-top-right {
+      right: 0;
+      top: 50px;
+      bottom: auto;
+    }
+
+    &.dropdown-top-left {
+      left: 0;
+      top: 50px;
+      bottom: auto;
+    }
+
+    &.dropdown-bottom-right {
+      right: 0;
+      top: auto;
+      bottom: 50px;
+    }
+
+    &.dropdown-bottom-left {
+      left: 0;
+      top: auto;
+      bottom: 50px;
+    }
 
     // Override HeaderContainer styles for notification context
     .notification-header.header-container {

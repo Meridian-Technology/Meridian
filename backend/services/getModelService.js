@@ -8,6 +8,7 @@ const OIEConfigSchema = require('../schemas/OIEConfig');
 const orgSchema = require('../schemas/org');
 const orgFollowerSchema = require('../schemas/orgFollower');
 const orgMemberSchema = require('../schemas/orgMember');
+const orgInviteSchema = require('../schemas/orgInvite');
 const qrSchema = require('../schemas/qr');
 const ratingSchema = require('../schemas/rating');
 const repeatedVisitSchema = require('../schemas/repeatedVisit');
@@ -24,6 +25,7 @@ const notificationSchema = require('../schemas/notification');
 const orgMessageSchema = require('../schemas/orgMessage');
 const contactRequestSchema = require('../schemas/contactRequest');
 const resourcesConfigSchema = require('../schemas/resources');
+const shuttleConfigSchema = require('../schemas/shuttleConfig');
 // Study Sessions
 const studySessionSchema = require('../schemas/studySession');
 const availabilityPollSchema = require('../schemas/availabilityPoll');
@@ -46,7 +48,14 @@ const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
 const eventSystemConfigSchema = require('../events/schemas/eventSystemConfig');
 const stakeholderRoleSchema = require('../events/schemas/stakeholderRole');
 const domainSchema = require('../events/schemas/domain');
+const eventAgendaSchema = require('../schemas/EventAgenda');
+const eventJobSchema = require('../schemas/EventJob');
+const orgEventRoleSchema = require('../schemas/OrgEventRole');
+const volunteerSignupSchema = require('../schemas/VolunteerSignup');
+const eventEquipmentSchema = require('../schemas/EventEquipment');
+const orgEquipmentSchema = require('../schemas/OrgEquipment');
 const analyticsEventSchema = require('../events/schemas/analyticsEvent');
+const eventQRSchema = require('../events/schemas/eventQR');
 
 
 
@@ -63,6 +72,7 @@ const getModels = (req, ...names) => {
         Org: req.db.model('Org', orgSchema, 'orgs'),
         OrgFollower: req.db.model('OrgFollower', orgFollowerSchema, 'followers'),
         OrgMember: req.db.model('OrgMember', orgMemberSchema, 'members'),
+        OrgInvite: req.db.model('OrgInvite', orgInviteSchema, 'orgInvites'),
         QR: req.db.model('QR', qrSchema, 'QR'),
         Rating: req.db.model('Rating', ratingSchema, 'ratings'),
         RepeatedVisit: req.db.model('RepeatedVisit', repeatedVisitSchema, 'repeatedVisits'),
@@ -101,8 +111,16 @@ const getModels = (req, ...names) => {
         StakeholderRole: req.db.model('StakeholderRole', stakeholderRoleSchema, 'stakeholderRoles'),
         Domain: req.db.model('Domain', domainSchema, 'domains'),
         ContactRequest: req.db.model('ContactRequest', contactRequestSchema, 'contactRequests'),
+        EventAgenda: req.db.model('EventAgenda', eventAgendaSchema, 'eventAgendas'),
+        EventJob: req.db.model('EventJob', eventJobSchema, 'eventRoles'),
+        OrgEventRole: req.db.model('OrgEventRole', orgEventRoleSchema, 'orgEventRoles'),
+        VolunteerSignup: req.db.model('VolunteerSignup', volunteerSignupSchema, 'volunteerSignups'),
+        EventEquipment: req.db.model('EventEquipment', eventEquipmentSchema, 'eventEquipment'),
+        OrgEquipment: req.db.model('OrgEquipment', orgEquipmentSchema, 'orgEquipment'),
         AnalyticsEvent: req.db.model('AnalyticsEvent', analyticsEventSchema, 'analytics_events'),
+        EventQR: req.db.model('EventQR', eventQRSchema, 'event_qrs'),
         ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
+        ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
     };
 
     return names.reduce((acc, name) => {

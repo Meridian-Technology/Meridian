@@ -1,0 +1,202 @@
+.checkin-confirmation-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+    .checkin-loading,
+    .checkin-error,
+    .checkin-success {
+        background: white;
+        border-radius: 16px;
+        padding: 48px;
+        text-align: center;
+        max-width: 500px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+
+        svg {
+            font-size: 64px;
+            margin-bottom: 24px;
+        }
+
+        h2 {
+            font-size: 24px;
+            font-weight: 600;
+            margin: 0 0 16px 0;
+            color: var(--text-primary, #1a1a1a);
+        }
+
+        p {
+            font-size: 16px;
+            color: var(--text-secondary, #6b7280);
+            margin: 0 0 24px 0;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: var(--primary-color, #3b82f6);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+
+            &:hover {
+                background: var(--primary-hover, #2563eb);
+            }
+        }
+
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+
+        .success-icon {
+            color: var(--success-color, #10b981);
+        }
+    }
+
+    .checkin-error {
+        svg {
+            color: var(--error-color, #ef4444);
+        }
+    }
+
+    .checkin-container {
+        background: white;
+        border-radius: 16px;
+        padding: 48px;
+        max-width: 600px;
+        width: 100%;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+
+        .checkin-header {
+            text-align: center;
+            margin-bottom: 32px;
+
+            .header-icon {
+                font-size: 64px;
+                color: var(--primary-color, #3b82f6);
+                margin-bottom: 16px;
+            }
+
+            h1 {
+                font-size: 28px;
+                font-weight: 700;
+                margin: 0;
+                color: var(--text-primary, #1a1a1a);
+            }
+        }
+
+        .event-details {
+            margin-bottom: 32px;
+
+            h2 {
+                font-size: 24px;
+                font-weight: 600;
+                margin: 0 0 16px 0;
+                color: var(--text-primary, #1a1a1a);
+            }
+
+            .event-description {
+                font-size: 16px;
+                color: var(--text-secondary, #6b7280);
+                margin-bottom: 24px;
+                line-height: 1.6;
+            }
+
+            .event-info {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+
+                .info-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    font-size: 16px;
+                    color: var(--text-primary, #1a1a1a);
+
+                    svg {
+                        font-size: 20px;
+                        color: var(--primary-color, #3b82f6);
+                    }
+                }
+            }
+        }
+
+        .checkin-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+
+            .checkin-button {
+                width: 100%;
+                padding: 16px 24px;
+                background: var(--primary-color, #3b82f6);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 18px;
+                font-weight: 600;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                transition: background 0.2s;
+
+                &:hover:not(:disabled) {
+                    background: var(--primary-hover, #2563eb);
+                }
+
+                &:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+
+                svg {
+                    font-size: 20px;
+                }
+
+                .spinner {
+                    animation: spin 1s linear infinite;
+                }
+            }
+
+            .cancel-button {
+                width: 100%;
+                padding: 12px 24px;
+                background: transparent;
+                color: var(--text-secondary, #6b7280);
+                border: 1px solid var(--border-color, #e5e7eb);
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+                transition: all 0.2s;
+
+                &:hover:not(:disabled) {
+                    background: var(--background-secondary, #f9fafb);
+                    border-color: var(--text-secondary, #6b7280);
+                }
+
+                &:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+            }
+        }
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}

@@ -1,38 +1,74 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Icon } from '@iconify-icon/react';
-import { useFetch } from '../../../../hooks/useFetch';
-import { useNotification } from '../../../../NotificationContext';
-import apiRequest from '../../../../utils/postRequest';
+import { useNavigate } from 'react-router-dom';
+import { useCache } from '../../../../CacheContext';
 import './EventsManagementList.scss';
 
-function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelection, selectedEvents, onViewEvent }) {
-    const { addNotification } = useNotification();
+function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, onCreateEvent }) {
+    const navigate = useNavigate();
+    const { getOrgEvents, refreshOrgEvents } = useCache();
+    const [allEvents, setAllEvents] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    
     const [filters, setFilters] = useState({
         status: 'all',
         type: 'all',
-        timeRange: 'all',
+        timeRange: 'upcoming', // Default to upcoming events
         search: ''
     });
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [sortBy, setSortBy] = useState('start_time');
     const [sortOrder, setSortOrder] = useState('asc');
     const [page, setPage] = useState(1);
-    const [showFilters, setShowFilters] = useState(false);
-    const [viewMode, setViewMode] = useState('list'); // 'list' or 'card'
-    const [isBulkActionLoading, setIsBulkActionLoading] = useState(false);
-    const [quickFilter, setQuickFilter] = useState(null); // For quick status filters
+    const [quickFilter, setQuickFilter] = useState('upcoming'); // Default to upcoming filter active
     const searchTimeoutRef = useRef(null);
-    
+    const ITEMS_PER_PAGE = 20;
+
+    // Fetch all events once using CacheContext
+    useEffect(() => {
+        const fetchEvents = async () => {
+            if (!orgId) {
+                setLoading(false);
+                return;
+            }
+
+            setLoading(true);
+            setError(null);
+            
+            try {
+                const response = refreshTrigger > 0 
+                    ? await refreshOrgEvents(orgId)
+                    : await getOrgEvents(orgId);
+                
+                if (response?.success && response?.data?.events) {
+                    setAllEvents(response.data.events);
+                } else {
+                    setError('Failed to load events');
+                    setAllEvents([]);
+                }
+            } catch (err) {
+                console.error('Error fetching events:', err);
+                setError(err.message || 'Error loading events');
+                setAllEvents([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchEvents();
+    }, [orgId, refreshTrigger, getOrgEvents, refreshOrgEvents]);
+
     // Debounce search input
     useEffect(() => {
         if (searchTimeoutRef.current) {
             clearTimeout(searchTimeoutRef.current);
         }
-        
+
         searchTimeoutRef.current = setTimeout(() => {
             setDebouncedSearch(filters.search);
         }, 300);
-        
+
         return () => {
             if (searchTimeoutRef.current) {
                 clearTimeout(searchTimeoutRef.current);
@@ -40,36 +76,109 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
         };
     }, [filters.search]);
 
-    // Memoize query params
-    const queryParams = useMemo(() => {
-        return new URLSearchParams({
-            page: page.toString(),
-            limit: '20',
-            status: filters.status,
-            type: filters.type,
-            timeRange: filters.timeRange,
-            search: debouncedSearch,
-            sortBy,
-            sortOrder
-        });
-    }, [page, filters.status, filters.type, filters.timeRange, debouncedSearch, sortBy, sortOrder]);
-    
-    // Fetch events data
-    const { data: eventsData, loading, error, refetch } = useFetch(
-        orgId ? `/org-event-management/${orgId}/events?${queryParams}` : null
-    );
-
-    // Refetch when refreshTrigger changes
-    useEffect(() => {
-        if (refreshTrigger > 0) {
-            refetch();
-        }
-    }, [refreshTrigger, refetch]);
-
-    // Reset page when filters change (except search which is debounced)
+    // Reset page when filters change
     useEffect(() => {
         setPage(1);
     }, [filters.status, filters.type, filters.timeRange, debouncedSearch, sortBy, sortOrder]);
+
+    // Client-side filtering, sorting, and pagination
+    const filteredAndSortedEvents = useMemo(() => {
+        let filtered = [...allEvents];
+
+        // Apply status filter
+        if (filters.status !== 'all') {
+            filtered = filtered.filter(event => event.status === filters.status);
+        }
+
+        // Apply type filter
+        if (filters.type !== 'all') {
+            filtered = filtered.filter(event => event.type === filters.type);
+        }
+
+        // Apply time range filter
+        if (filters.timeRange !== 'all') {
+            const now = new Date();
+            filtered = filtered.filter(event => {
+                const startTime = new Date(event.start_time);
+                const endTime = new Date(event.end_time);
+                
+                switch (filters.timeRange) {
+                    case 'upcoming':
+                        return now < startTime;
+                    case 'past':
+                        return endTime < now;
+                    case 'live':
+                        return now >= startTime && now <= endTime;
+                    case 'this_week':
+                        const weekStart = new Date(now);
+                        weekStart.setDate(now.getDate() - now.getDay());
+                        weekStart.setHours(0, 0, 0, 0);
+                        const weekEnd = new Date(weekStart);
+                        weekEnd.setDate(weekStart.getDate() + 7);
+                        return startTime >= weekStart && startTime < weekEnd;
+                    case 'this_month':
+                        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+                        return startTime >= monthStart && startTime < monthEnd;
+                    default:
+                        return true;
+                }
+            });
+        }
+
+        // Apply search filter
+        if (debouncedSearch) {
+            const searchLower = debouncedSearch.toLowerCase();
+            filtered = filtered.filter(event => 
+                event.name?.toLowerCase().includes(searchLower) ||
+                event.description?.toLowerCase().includes(searchLower) ||
+                event.location?.toLowerCase().includes(searchLower)
+            );
+        }
+
+        // Apply sorting
+        filtered.sort((a, b) => {
+            let aValue = a[sortBy];
+            let bValue = b[sortBy];
+
+            // Handle date fields
+            if (sortBy === 'start_time' || sortBy === 'end_time' || sortBy === 'createdAt') {
+                aValue = new Date(aValue).getTime();
+                bValue = new Date(bValue).getTime();
+            }
+
+            // Handle string fields
+            if (typeof aValue === 'string') {
+                aValue = aValue.toLowerCase();
+                bValue = bValue.toLowerCase();
+            }
+
+            if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+            if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return filtered;
+    }, [allEvents, filters, debouncedSearch, sortBy, sortOrder]);
+
+    // Paginate filtered events
+    const paginatedEvents = useMemo(() => {
+        const startIndex = (page - 1) * ITEMS_PER_PAGE;
+        const endIndex = startIndex + ITEMS_PER_PAGE;
+        return filteredAndSortedEvents.slice(startIndex, endIndex);
+    }, [filteredAndSortedEvents, page]);
+
+    // Calculate pagination info
+    const pagination = useMemo(() => {
+        const total = filteredAndSortedEvents.length;
+        const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+        return {
+            total,
+            page,
+            limit: ITEMS_PER_PAGE,
+            totalPages
+        };
+    }, [filteredAndSortedEvents.length, page]);
 
     // Memoized utility functions
     const formatDate = useCallback((dateString) => {
@@ -91,43 +200,25 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
 
     const getStatusColor = useCallback((status) => {
         const colors = {
-            'approved': '#28a745',
-            'pending': '#ffc107',
-            'rejected': '#dc3545',
-            'not-applicable': '#6c757d'
+            'approved': 'var(--green)',
+            'pending': 'var(--yellow)',
+            'rejected': 'var(--red)',
+            'not-applicable': 'var(--light-text)'
         };
-        return colors[status] || '#6c757d';
+        return colors[status] || 'var(--light-text)';
     }, []);
 
     const getTypeColor = useCallback((type) => {
         const colors = {
-            'meeting': '#6D8EFA',
-            'campus': '#6D8EFA',
-            'study': '#6EB25F',
-            'sports': '#6EB25F',
-            'alumni': '#5C5C5C',
-            'arts': '#FBEBBB'
+            'meeting': 'var(--dark-blue)',
+            'campus': 'var(--dark-blue)',
+            'study': 'var(--green)',
+            'sports': 'var(--green)',
+            'alumni': 'var(--lighter-text)',
+            'arts': 'var(--yellow)'
         };
-        return colors[type] || '#6c757d';
+        return colors[type] || 'var(--light-text)';
     }, []);
-
-    // Memoized event handlers
-    const handleEventSelect = useCallback((eventId) => {
-        const newSelection = selectedEvents.includes(eventId)
-            ? selectedEvents.filter(id => id !== eventId)
-            : [...selectedEvents, eventId];
-        onEventSelection(newSelection);
-    }, [selectedEvents, onEventSelection]);
-
-    const handleSelectAll = useCallback(() => {
-        const events = eventsData?.data?.events || [];
-        if (selectedEvents.length === events.length && events.length > 0) {
-            onEventSelection([]);
-        } else {
-            const allEventIds = events.map(event => event._id);
-            onEventSelection(allEventIds);
-        }
-    }, [selectedEvents, eventsData?.data?.events, onEventSelection]);
 
     const handleViewEvent = useCallback((event) => {
         if (onViewEvent) {
@@ -135,61 +226,17 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
         }
     }, [onViewEvent]);
 
-    const handleBulkAction = useCallback(async (action) => {
-        if (selectedEvents.length === 0) {
-            addNotification({
-                title: 'No Events Selected',
-                message: 'Please select events to perform bulk actions',
-                type: 'warning'
-            });
-            return;
+    const handleCreateEvent = useCallback(() => {
+        if (onCreateEvent) {
+            navigate('/create-event', { state: { origin: onCreateEvent } });
+        } else {
+            navigate('/create-event');
         }
-
-        setIsBulkActionLoading(true);
-        try {
-            const response = await apiRequest(
-                `/org-event-management/${orgId}/events/bulk-action`,
-                {
-                    action,
-                    eventIds: selectedEvents
-                },
-                { method: 'POST' }
-            );
-
-            if (response.success) {
-                addNotification({
-                    title: 'Success',
-                    message: response.message,
-                    type: 'success'
-                });
-                onEventSelection([]);
-                onRefresh();
-            } else {
-                throw new Error(response.message || 'Action failed');
-            }
-        } catch (error) {
-            addNotification({
-                title: 'Error',
-                message: error.message || 'Failed to perform bulk action',
-                type: 'error'
-            });
-        } finally {
-            setIsBulkActionLoading(false);
-        }
-    }, [selectedEvents, orgId, addNotification, onEventSelection, onRefresh]);
+    }, [navigate, onCreateEvent]);
 
     const handleFilterChange = useCallback((key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
     }, []);
-
-    const handleSort = useCallback((field) => {
-        if (sortBy === field) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortBy(field);
-            setSortOrder('asc');
-        }
-    }, [sortBy, sortOrder]);
 
     const clearFilters = useCallback(() => {
         setFilters({
@@ -201,45 +248,46 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
         setQuickFilter(null);
     }, []);
 
-    const handleQuickFilter = useCallback((status) => {
-        if (quickFilter === status) {
+    const handleQuickFilter = useCallback((timeFilter) => {
+        if (quickFilter === timeFilter) {
             setQuickFilter(null);
-            handleFilterChange('status', 'all');
+            handleFilterChange('timeRange', 'all');
         } else {
-            setQuickFilter(status);
-            handleFilterChange('status', status);
+            setQuickFilter(timeFilter);
+            handleFilterChange('timeRange', timeFilter);
         }
     }, [quickFilter, handleFilterChange]);
 
     // Memoize computed values
-    const events = useMemo(() => eventsData?.data?.events || [], [eventsData?.data?.events]);
-    const pagination = useMemo(() => eventsData?.data?.pagination || {}, [eventsData?.data?.pagination]);
-    const summary = useMemo(() => eventsData?.data?.summary || {}, [eventsData?.data?.summary]);
-    const hasActiveFilters = useMemo(() => 
-        filters.status !== 'all' || 
-        filters.type !== 'all' || 
-        filters.timeRange !== 'all' || 
+    const events = paginatedEvents;
+    const hasActiveFilters = useMemo(() =>
+        filters.status !== 'all' ||
+        filters.type !== 'all' ||
+        filters.timeRange !== 'all' ||
         filters.search !== ''
     , [filters]);
-    const allSelected = useMemo(() => 
-        events.length > 0 && selectedEvents.length === events.length
-    , [events.length, selectedEvents.length]);
 
-    // Count events by status for quick filters
-    const statusCounts = useMemo(() => {
-        const counts = { pending: 0, approved: 0, rejected: 0 };
-        events.forEach(event => {
-            if (counts.hasOwnProperty(event.status)) {
-                counts[event.status]++;
+    // Count events by time status for quick filters - NOW USING ALL EVENTS
+    const timeCounts = useMemo(() => {
+        const now = new Date();
+        const counts = { upcoming: 0, live: 0, past: 0 };
+        allEvents.forEach(event => {
+            const startTime = new Date(event.start_time);
+            const endTime = new Date(event.end_time);
+            if (now < startTime) {
+                counts.upcoming++;
+            } else if (now >= startTime && now <= endTime) {
+                counts.live++;
+            } else {
+                counts.past++;
             }
         });
         return counts;
-    }, [events]);
+    }, [allEvents]);
 
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
-            // Focus search on "/"
             if (e.key === '/' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const searchInput = document.querySelector('.search-input');
@@ -247,7 +295,6 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                     searchInput.focus();
                 }
             }
-            // Clear search on Escape
             if (e.key === 'Escape' && e.target.matches('.search-input')) {
                 handleFilterChange('search', '');
             }
@@ -281,54 +328,74 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
         <div className="events-management-list">
             <div className="events-header">
                 <div className="header-content">
-                    <h2>Events Management</h2>
-                    <p>Manage and organize your organization's events</p>
+                    <h2>Events</h2>
+                    <p>Manage your organization's events</p>
                 </div>
                 <div className="header-actions">
-                    <div className="view-toggle">
-                        <button 
-                            className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
-                            onClick={() => setViewMode('list')}
-                            title="List View"
-                        >
-                            <Icon icon="mdi:format-list-bulleted" />
-                        </button>
-                        <button 
-                            className={`view-btn ${viewMode === 'card' ? 'active' : ''}`}
-                            onClick={() => setViewMode('card')}
-                            title="Card View"
-                        >
-                            <Icon icon="mdi:view-grid" />
-                        </button>
-                    </div>
-                    <button 
-                        className={`filter-btn ${showFilters ? 'active' : ''}`}
-                        onClick={() => setShowFilters(!showFilters)}
-                    >
-                        <Icon icon="mdi:filter" />
-                        <span>Filters</span>
-                        {hasActiveFilters && <span className="filter-badge"></span>}
-                    </button>
-                    <button className="create-btn">
+                    <button className="create-btn" onClick={handleCreateEvent}>
                         <Icon icon="mingcute:add-fill" />
                         <span>Create Event</span>
                     </button>
                 </div>
             </div>
 
-            {/* Modern Search Bar with Keyboard Shortcut Hint */}
-            <div className="search-bar-container">
+            {/* Search and Filter Row */}
+            <div className="search-filter-row">
+                {/* Quick Filter Chips - Left */}
+                <div className="quick-filters">
+                    <button
+                        className={`filter-chip ${quickFilter === 'upcoming' ? 'active' : ''}`}
+                        onClick={() => handleQuickFilter('upcoming')}
+                    >
+                        <Icon icon="mdi:calendar-arrow-right" />
+                        <span>Upcoming</span>
+                        {timeCounts.upcoming > 0 && (
+                            <span className="chip-count">{timeCounts.upcoming}</span>
+                        )}
+                    </button>
+                    <button
+                        className={`filter-chip live ${quickFilter === 'live' ? 'active' : ''}`}
+                        onClick={() => handleQuickFilter('live')}
+                    >
+                        <Icon icon="mdi:broadcast" />
+                        <span>Live</span>
+                        {timeCounts.live > 0 && (
+                            <span className="chip-count">{timeCounts.live}</span>
+                        )}
+                    </button>
+                    <button
+                        className={`filter-chip ${quickFilter === 'past' ? 'active' : ''}`}
+                        onClick={() => handleQuickFilter('past')}
+                    >
+                        <Icon icon="mdi:history" />
+                        <span>Past</span>
+                        {timeCounts.past > 0 && (
+                            <span className="chip-count">{timeCounts.past}</span>
+                        )}
+                    </button>
+                    {hasActiveFilters && (
+                        <button
+                            className="filter-chip clear-all"
+                            onClick={clearFilters}
+                        >
+                            <Icon icon="mdi:filter-off" />
+                            <span>Clear</span>
+                        </button>
+                    )}
+                </div>
+
+                {/* Search Bar - Center */}
                 <div className="search-bar">
                     <Icon icon="mdi:magnify" className="search-icon" />
-                    <input 
+                    <input
                         type="text"
-                        placeholder="Search events... (Press / to focus)"
+                        placeholder="Search events..."
                         value={filters.search}
                         onChange={(e) => handleFilterChange('search', e.target.value)}
                         className="search-input"
                     />
                     {filters.search && (
-                        <button 
+                        <button
                             className="clear-search"
                             onClick={() => handleFilterChange('search', '')}
                             title="Clear search (Esc)"
@@ -336,275 +403,62 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                             <Icon icon="mdi:close" />
                         </button>
                     )}
-                    <div className="search-hint">
-                        <kbd>/</kbd>
-                    </div>
+                </div>
+
+                {/* Filter Dropdowns - Right */}
+                <div className="filter-dropdowns">
+                    <select
+                        value={filters.type}
+                        onChange={(e) => handleFilterChange('type', e.target.value)}
+                    >
+                        <option value="all">All Types</option>
+                        <option value="meeting">Meeting</option>
+                        <option value="campus">Campus</option>
+                        <option value="study">Study</option>
+                        <option value="sports">Sports</option>
+                        <option value="alumni">Alumni</option>
+                        <option value="arts">Arts</option>
+                    </select>
+                    <select
+                        value={filters.timeRange}
+                        onChange={(e) => handleFilterChange('timeRange', e.target.value)}
+                    >
+                        <option value="all">All Time</option>
+                        <option value="upcoming">Upcoming</option>
+                        <option value="past">Past</option>
+                        <option value="this_week">This Week</option>
+                        <option value="this_month">This Month</option>
+                    </select>
                 </div>
             </div>
 
-            {/* Quick Filter Chips - Stripe/Linear Style */}
-            <div className="quick-filters">
-                <div className="quick-filters-label">Quick filters:</div>
-                <div className="filter-chips">
-                    <button 
-                        className={`filter-chip ${quickFilter === 'pending' ? 'active' : ''}`}
-                        onClick={() => handleQuickFilter('pending')}
-                    >
-                        <Icon icon="mdi:clock-outline" />
-                        <span>Pending</span>
-                        {statusCounts.pending > 0 && (
-                            <span className="chip-count">{statusCounts.pending}</span>
-                        )}
-                    </button>
-                    <button 
-                        className={`filter-chip ${quickFilter === 'approved' ? 'active' : ''}`}
-                        onClick={() => handleQuickFilter('approved')}
-                    >
-                        <Icon icon="mdi:check-circle" />
-                        <span>Approved</span>
-                        {statusCounts.approved > 0 && (
-                            <span className="chip-count">{statusCounts.approved}</span>
-                        )}
-                    </button>
-                    <button 
-                        className={`filter-chip ${quickFilter === 'rejected' ? 'active' : ''}`}
-                        onClick={() => handleQuickFilter('rejected')}
-                    >
-                        <Icon icon="mdi:close-circle" />
-                        <span>Rejected</span>
-                        {statusCounts.rejected > 0 && (
-                            <span className="chip-count">{statusCounts.rejected}</span>
-                        )}
-                    </button>
-                    {hasActiveFilters && (
-                        <button 
-                            className="filter-chip clear-all"
-                            onClick={clearFilters}
-                        >
-                            <Icon icon="mdi:filter-off" />
-                            <span>Clear all</span>
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {/* Summary Stats - More Visual */}
-            <div className="summary-stats">
-                <div className="stat-card">
-                    <div className="stat-icon-wrapper" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-                        <Icon icon="mingcute:calendar-fill" className="stat-icon" />
-                    </div>
-                    <div className="stat-content">
-                        <span className="stat-value">{summary.totalEvents || 0}</span>
-                        <span className="stat-label">Total Events</span>
-                    </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-icon-wrapper" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
-                        <Icon icon="mingcute:user-group-fill" className="stat-icon" />
-                    </div>
-                    <div className="stat-content">
-                        <span className="stat-value">{summary.totalExpectedAttendance || 0}</span>
-                        <span className="stat-label">Expected Attendance</span>
-                    </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-icon-wrapper" style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' }}>
-                        <Icon icon="mingcute:trending-up-fill" className="stat-icon" />
-                    </div>
-                    <div className="stat-content">
-                        <span className="stat-value">{summary.avgExpectedAttendance || 0}</span>
-                        <span className="stat-label">Avg Attendance</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Filters */}
-            {showFilters && (
-                <div className="filters-panel">
-                    <div className="filters-header">
-                        <h3>Filter Events</h3>
-                        {hasActiveFilters && (
-                            <button className="clear-filters-btn" onClick={clearFilters}>
-                                <Icon icon="mdi:close" />
-                                <span>Clear All</span>
-                            </button>
-                        )}
-                    </div>
-                    <div className="filter-row">
-                        <div className="filter-group">
-                            <label>
-                                <Icon icon="mdi:check-circle" />
-                                Status
-                            </label>
-                            <select 
-                                value={filters.status} 
-                                onChange={(e) => handleFilterChange('status', e.target.value)}
-                            >
-                                <option value="all">All Statuses</option>
-                                <option value="approved">Approved</option>
-                                <option value="pending">Pending</option>
-                                <option value="rejected">Rejected</option>
-                                <option value="not-applicable">Not Applicable</option>
-                            </select>
-                        </div>
-                        <div className="filter-group">
-                            <label>
-                                <Icon icon="mdi:tag" />
-                                Type
-                            </label>
-                            <select 
-                                value={filters.type} 
-                                onChange={(e) => handleFilterChange('type', e.target.value)}
-                            >
-                                <option value="all">All Types</option>
-                                <option value="meeting">Meeting</option>
-                                <option value="campus">Campus</option>
-                                <option value="study">Study</option>
-                                <option value="sports">Sports</option>
-                                <option value="alumni">Alumni</option>
-                                <option value="arts">Arts</option>
-                            </select>
-                        </div>
-                        <div className="filter-group">
-                            <label>
-                                <Icon icon="mdi:calendar-clock" />
-                                Time Range
-                            </label>
-                            <select 
-                                value={filters.timeRange} 
-                                onChange={(e) => handleFilterChange('timeRange', e.target.value)}
-                            >
-                                <option value="all">All Time</option>
-                                <option value="upcoming">Upcoming</option>
-                                <option value="past">Past</option>
-                                <option value="this_week">This Week</option>
-                                <option value="this_month">This Month</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Bulk Actions */}
-            {selectedEvents.length > 0 && (
-                <div className="bulk-actions">
-                    <div className="bulk-info">
-                        <Icon icon="mdi:checkbox-marked-circle" />
-                        <span>{selectedEvents.length} event{selectedEvents.length !== 1 ? 's' : ''} selected</span>
-                        <button 
-                            className="deselect-all"
-                            onClick={() => onEventSelection([])}
-                            title="Deselect all"
-                        >
-                            <Icon icon="mdi:close" />
-                        </button>
-                    </div>
-                    <div className="bulk-buttons">
-                        <button 
-                            className="bulk-btn approve"
-                            onClick={() => handleBulkAction('approve')}
-                            disabled={isBulkActionLoading}
-                        >
-                            <Icon icon="mdi:check" />
-                            <span>Approve</span>
-                        </button>
-                        <button 
-                            className="bulk-btn reject"
-                            onClick={() => handleBulkAction('reject')}
-                            disabled={isBulkActionLoading}
-                        >
-                            <Icon icon="mdi:close" />
-                            <span>Reject</span>
-                        </button>
-                        <button 
-                            className="bulk-btn delete"
-                            onClick={() => handleBulkAction('delete')}
-                            disabled={isBulkActionLoading}
-                        >
-                            <Icon icon="mdi:delete" />
-                            <span>Delete</span>
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Events Display - Modern List or Card View */}
-            {viewMode === 'list' ? (
+            {/* Events List View */}
             <div className="events-list-view">
-                {/* List Header with Sort Options */}
                 <div className="list-header">
                     <div className="list-header-left">
-                        <input 
-                            type="checkbox"
-                            checked={allSelected}
-                            onChange={handleSelectAll}
-                            title={allSelected ? "Deselect all" : "Select all"}
-                            className="select-all-checkbox"
-                        />
-                        <div className="sort-options">
-                            <button 
-                                className={`sort-btn ${sortBy === 'start_time' ? 'active' : ''}`}
-                                onClick={() => handleSort('start_time')}
-                            >
-                                <span>Date</span>
-                                {sortBy === 'start_time' && (
-                                    <Icon icon={sortOrder === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down'} />
-                                )}
-                            </button>
-                            <button 
-                                className={`sort-btn ${sortBy === 'name' ? 'active' : ''}`}
-                                onClick={() => handleSort('name')}
-                            >
-                                <span>Name</span>
-                                {sortBy === 'name' && (
-                                    <Icon icon={sortOrder === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down'} />
-                                )}
-                            </button>
-                            <button 
-                                className={`sort-btn ${sortBy === 'type' ? 'active' : ''}`}
-                                onClick={() => handleSort('type')}
-                            >
-                                <span>Type</span>
-                                {sortBy === 'type' && (
-                                    <Icon icon={sortOrder === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down'} />
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                    <div className="list-header-right">
-                        <span className="results-count">{events.length} event{events.length !== 1 ? 's' : ''}</span>
+                        <span className="results-count">{pagination.total} event{pagination.total !== 1 ? 's' : ''}</span>
                     </div>
                 </div>
 
-                {/* Modern List Items */}
                 <div className="list-items">
                     {events.map((event) => (
-                        <div 
-                            key={event._id} 
-                            className={`list-item ${selectedEvents.includes(event._id) ? 'selected' : ''}`}
+                        <div
+                            key={event._id}
+                            className="list-item"
                             onClick={() => handleViewEvent(event)}
                         >
-                            <div className="list-item-checkbox" onClick={(e) => e.stopPropagation()}>
-                                <input 
-                                    type="checkbox"
-                                    checked={selectedEvents.includes(event._id)}
-                                    onChange={() => handleEventSelect(event._id)}
-                                />
-                            </div>
-                            
                             <div className="list-item-content">
                                 <div className="list-item-header">
                                     <div className="list-item-title-row">
                                         <h3 className="list-item-title">{event.name}</h3>
                                         <div className="list-item-badges">
-                                            <span 
+                                            <span
                                                 className="status-badge"
                                                 style={{ backgroundColor: getStatusColor(event.status) }}
                                             >
                                                 {event.status}
                                             </span>
-                                            <span 
+                                            <span
                                                 className="type-badge"
                                                 style={{ backgroundColor: getTypeColor(event.type) }}
                                             >
@@ -614,20 +468,20 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                                     </div>
                                     {event.description && (
                                         <p className="list-item-description">
-                                            {event.description.length > 120 
-                                                ? `${event.description.substring(0, 120)}...` 
+                                            {event.description.length > 120
+                                                ? `${event.description.substring(0, 120)}...`
                                                 : event.description
                                             }
                                         </p>
                                     )}
                                 </div>
-                                
+
                                 <div className="list-item-meta">
                                     <div className="meta-item">
                                         <Icon icon="mdi:calendar-clock" />
                                         <span>{formatDate(event.start_time)}</span>
-                                        <span className="meta-separator">•</span>
-                                        <span>{formatTime(event.start_time)} - {formatTime(event.end_time)}</span>
+                                        <span className="meta-separator">-</span>
+                                        <span>{formatTime(event.end_time)}</span>
                                     </div>
                                     <div className="meta-item">
                                         <Icon icon="fluent:location-28-filled" />
@@ -640,124 +494,11 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                                 </div>
                             </div>
 
-                            <div className="list-item-actions" onClick={(e) => e.stopPropagation()}>
-                                <button 
-                                    className="action-btn view" 
-                                    title="View Event"
-                                    onClick={() => handleViewEvent(event)}
-                                >
-                                    <Icon icon="mdi:eye" />
-                                </button>
-                                <button className="action-btn edit" title="Edit Event">
-                                    <Icon icon="mdi:pencil" />
-                                </button>
-                                <button className="action-btn analytics" title="View Analytics">
-                                    <Icon icon="mingcute:chart-fill" />
-                                </button>
-                            </div>
+        
                         </div>
                     ))}
                 </div>
             </div>
-            ) : (
-            <div className="events-cards">
-                <div className="cards-grid">
-                    {events.map((event) => (
-                        <div 
-                            key={event._id} 
-                            className={`event-card ${selectedEvents.includes(event._id) ? 'selected' : ''}`}
-                            onClick={() => handleEventSelect(event._id)}
-                        >
-                            <div className="card-header">
-                                <div className="card-checkbox">
-                                    <input 
-                                        type="checkbox"
-                                        checked={selectedEvents.includes(event._id)}
-                                        onChange={() => handleEventSelect(event._id)}
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
-                                </div>
-                                <div className="card-status">
-                                    <span 
-                                        className="status-badge"
-                                        style={{ backgroundColor: getStatusColor(event.status) }}
-                                    >
-                                        {event.status}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="card-body">
-                                <h3 className="card-title">{event.name}</h3>
-                                {event.description && (
-                                    <p className="card-description">
-                                        {event.description.length > 150 
-                                            ? `${event.description.substring(0, 150)}...` 
-                                            : event.description
-                                        }
-                                    </p>
-                                )}
-                                <div className="card-meta">
-                                    <div className="meta-item">
-                                        <Icon icon="mdi:tag" />
-                                        <span 
-                                            className="type-badge"
-                                            style={{ backgroundColor: getTypeColor(event.type) }}
-                                        >
-                                            {event.type}
-                                        </span>
-                                    </div>
-                                    <div className="meta-item">
-                                        <Icon icon="mdi:calendar-clock" />
-                                        <span>{formatDate(event.start_time)}</span>
-                                    </div>
-                                    <div className="meta-item">
-                                        <Icon icon="mdi:clock-outline" />
-                                        <span>{formatTime(event.start_time)} - {formatTime(event.end_time)}</span>
-                                    </div>
-                                    <div className="meta-item">
-                                        <Icon icon="fluent:location-28-filled" />
-                                        <span>{event.location}</span>
-                                    </div>
-                                    <div className="meta-item">
-                                        <Icon icon="mingcute:user-group-fill" />
-                                        <span>{event.expectedAttendance || 0} expected</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="card-actions">
-                                <button 
-                                    className="action-btn view" 
-                                    title="View Event"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleViewEvent(event);
-                                    }}
-                                >
-                                    <Icon icon="mdi:eye" />
-                                    <span>View</span>
-                                </button>
-                                <button 
-                                    className="action-btn edit" 
-                                    title="Edit Event"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <Icon icon="mdi:pencil" />
-                                    <span>Edit</span>
-                                </button>
-                                <button 
-                                    className="action-btn analytics" 
-                                    title="View Analytics"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <Icon icon="mingcute:chart-fill" />
-                                    <span>Analytics</span>
-                                </button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-            )}
 
             {/* Pagination */}
             {pagination.totalPages > 1 && (
@@ -768,7 +509,7 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                         </span>
                     </div>
                     <div className="pagination-controls">
-                        <button 
+                        <button
                             className="page-btn"
                             disabled={page === 1 || loading}
                             onClick={() => setPage(page - 1)}
@@ -777,14 +518,13 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                             <Icon icon="mdi:chevron-left" />
                             <span>Previous</span>
                         </button>
-                        
+
                         <div className="page-numbers">
                             {(() => {
                                 const pages = [];
                                 const totalPages = pagination.totalPages;
                                 const currentPage = page;
-                                
-                                // Show first page
+
                                 if (totalPages > 0) {
                                     pages.push(
                                         <button
@@ -796,16 +536,14 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                                         </button>
                                     );
                                 }
-                                
-                                // Show ellipsis if needed
+
                                 if (currentPage > 3 && totalPages > 5) {
                                     pages.push(<span key="ellipsis1" className="ellipsis">...</span>);
                                 }
-                                
-                                // Show pages around current page
+
                                 const start = Math.max(2, currentPage - 1);
                                 const end = Math.min(totalPages - 1, currentPage + 1);
-                                
+
                                 for (let i = start; i <= end; i++) {
                                     if (i !== 1 && i !== totalPages) {
                                         pages.push(
@@ -819,13 +557,11 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                                         );
                                     }
                                 }
-                                
-                                // Show ellipsis if needed
+
                                 if (currentPage < totalPages - 2 && totalPages > 5) {
                                     pages.push(<span key="ellipsis2" className="ellipsis">...</span>);
                                 }
-                                
-                                // Show last page
+
                                 if (totalPages > 1) {
                                     pages.push(
                                         <button
@@ -837,12 +573,12 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                                         </button>
                                     );
                                 }
-                                
+
                                 return pages;
                             })()}
                         </div>
 
-                        <button 
+                        <button
                             className="page-btn"
                             disabled={page === pagination.totalPages || loading}
                             onClick={() => setPage(page + 1)}
@@ -858,10 +594,9 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
             {/* Empty State */}
             {events.length === 0 && !loading && (
                 <div className="empty-state">
-                    
-                    <h3>No Upcoming Events</h3>
+                    <h3>No Events Found</h3>
                     <p>
-                        {hasActiveFilters 
+                        {hasActiveFilters
                             ? "No events match your current filters. Try adjusting your search criteria."
                             : "You haven't created any events yet. Get started by creating your first event!"
                         }
@@ -872,7 +607,7 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onEventSelectio
                             <span>Clear Filters</span>
                         </button>
                     )}
-                    <button className="create-btn">
+                    <button className="create-btn" onClick={handleCreateEvent}>
                         <Icon icon="mingcute:add-fill" />
                         <span>Create Event</span>
                     </button>

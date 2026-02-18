@@ -310,6 +310,7 @@ function ResourceEditorModal({
                   <option value="open_campus_map">Open Campus Map</option>
                   <option value="contact_support">Contact Support</option>
                   <option value="report_issue">Report Issue</option>
+                  <option value="open_shuttle_tracker">Open Shuttle Tracker</option>
                 </select>
                 {formErrors.action && <div className="resource-editor-error">{formErrors.action}</div>}
               </div>

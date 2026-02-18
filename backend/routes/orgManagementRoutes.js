@@ -1,9 +1,30 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
 const getModels = require('../services/getModelService');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
-const { uploadImageToS3 } = require('../services/imageUploadService');
+const { uploadImageToS3, upload } = require('../services/imageUploadService');
+const { emitToOrgApprovalRoom } = require('../socket');
+const { clean, isProfane } = require('../services/profanityFilterService');
 
 const router = express.Router();
+
+const handleMulterError = (err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                success: false,
+                message: 'File size exceeds 5MB limit.'
+            });
+        }
+    } else if (err) {
+        return res.status(400).json({
+            success: false,
+            message: err.message
+        });
+    }
+    next();
+};
 
 // ==================== VERIFICATION REQUESTS ====================
 
@@ -232,10 +253,53 @@ router.put('/verification-requests/:requestId', verifyToken, authorizeRoles('adm
     }
 });
 
+// ==================== PENDING APPROVALS ====================
+
+// Get orgs pending approval (admin/root only)
+router.get('/pending-approvals', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
+
+    try {
+        const orgs = await Org.find({ approvalStatus: 'pending' })
+            .populate('owner', 'username name email')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const orgsWithCount = await Promise.all(orgs.map(async (org) => {
+            const memberCount = await OrgMember.countDocuments({ org_id: org._id, status: 'active' });
+            return {
+                ...org,
+                memberCount
+            };
+        }));
+
+        console.log(`GET: /org-management/pending-approvals - Retrieved ${orgsWithCount.length} pending orgs`);
+        res.status(200).json({
+            success: true,
+            data: orgsWithCount
+        });
+    } catch (error) {
+        console.error('Error fetching pending approvals:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching pending approvals',
+            error: error.message
+        });
+    }
+});
+
 // ==================== CONFIGURATION MANAGEMENT ====================
 
-// Get management configuration
-router.get('/config', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+// Messaging defaults from orgManagementConfig schema (so clients always get min/max limits)
+const MESSAGING_SCHEMA_DEFAULTS = {
+    minCharacterLimit: 100,
+    maxCharacterLimit: 2000,
+    defaultCharacterLimit: 500,
+    defaultVisibility: 'members_and_followers'
+};
+
+// Get management configuration (readable by any authenticated user for messaging limits etc.; write remains admin/root)
+router.get('/config', verifyToken, async (req, res) => {
     const { OrgManagementConfig } = getModels(req, 'OrgManagementConfig');
 
     try {
@@ -247,10 +311,17 @@ router.get('/config', verifyToken, authorizeRoles('admin', 'root'), async (req, 
             await config.save();
         }
 
+        const data = config.toObject ? config.toObject() : config;
+        if (!data.messaging || typeof data.messaging !== 'object') {
+            data.messaging = { ...MESSAGING_SCHEMA_DEFAULTS };
+        } else {
+            data.messaging = { ...MESSAGING_SCHEMA_DEFAULTS, ...data.messaging };
+        }
+
         console.log(`GET: /org-management/config`);
         res.status(200).json({
             success: true,
-            data: config
+            data
         });
     } catch (error) {
         console.error('Error fetching management config:', error);
@@ -548,6 +619,551 @@ router.get('/organizations', verifyToken, authorizeRoles('admin', 'root'), async
     }
 });
 
+// Export organizations data (must be before /organizations/:orgId to avoid route conflict)
+router.get('/organizations/export', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
+    const { format = 'json' } = req.query;
+
+    try {
+        const orgs = await Org.find({}).lean();
+
+        const orgsWithData = await Promise.all(orgs.map(async (org) => {
+            const memberCount = await OrgMember.countDocuments({ org_id: org._id });
+            const eventCount = await Event.countDocuments({ hostingId: org._id, hostingType: 'Org' });
+
+            return {
+                ...org,
+                memberCount,
+                totalEventCount: eventCount
+            };
+        }));
+
+        if (format === 'csv') {
+            const csvHeaders = ['Name', 'Description', 'Members', 'Events', 'Verified', 'Created At'];
+            const csvData = orgsWithData.map(org => [
+                org.org_name,
+                org.org_description,
+                org.memberCount,
+                org.totalEventCount,
+                org.verified ? 'Yes' : 'No',
+                new Date(org.createdAt).toLocaleDateString()
+            ]);
+
+            const csvContent = [csvHeaders, ...csvData]
+                .map(row => row.map(cell => `"${cell}"`).join(','))
+                .join('\n');
+
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename="organizations.csv"');
+            res.send(csvContent);
+        } else {
+            res.status(200).json({
+                success: true,
+                data: orgsWithData
+            });
+        }
+
+        console.log(`GET: /org-management/organizations/export - Data exported in ${format} format`);
+    } catch (error) {
+        console.error('Error exporting organizations:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error exporting organizations',
+            error: error.message
+        });
+    }
+});
+
+// Get single organization by ID (admin only)
+router.get('/organizations/:orgId', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
+    const { orgId } = req.params;
+
+    try {
+        const org = await Org.findById(orgId).populate('owner', 'username name email');
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        const memberCount = await OrgMember.countDocuments({ org_id: orgId });
+        const eventCount = await Event.countDocuments({
+            hostingId: orgId,
+            hostingType: 'Org',
+            createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+        });
+
+        const orgWithData = {
+            ...org.toObject(),
+            memberCount,
+            recentEventCount: eventCount
+        };
+
+        console.log(`GET: /org-management/organizations/${orgId} - Retrieved org`);
+        res.status(200).json({
+            success: true,
+            data: orgWithData
+        });
+    } catch (error) {
+        console.error('Error fetching organization:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching organization',
+            error: error.message
+        });
+    }
+});
+
+// Admin edit organization (name, description, images)
+router.post('/organizations/:orgId/edit', verifyToken, authorizeRoles('admin', 'root'), upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'bannerImage', maxCount: 1 }
+]), handleMulterError, async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId } = req.params;
+    const {
+        org_name,
+        org_description,
+        org_profile_image,
+        org_banner_image
+    } = req.body;
+    const profileFile = req.files?.image?.[0];
+    const bannerFile = req.files?.bannerImage?.[0];
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        if (org_name) {
+            const cleanOrgName = clean(org_name);
+            if (isProfane(org_name)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Org name contains inappropriate language'
+                });
+            }
+            const orgExist = await Org.findOne({ org_name: cleanOrgName });
+            if (orgExist && orgExist._id.toString() !== orgId) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Org name already taken'
+                });
+            }
+            org.org_name = cleanOrgName;
+        }
+
+        if (org_description) {
+            const cleanOrgDescription = clean(org_description);
+            if (isProfane(org_description)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Description contains inappropriate language'
+                });
+            }
+            org.org_description = cleanOrgDescription;
+        }
+
+        if (profileFile) {
+            const fileExtension = path.extname(profileFile.originalname);
+            const fileName = `${org._id}_profile${fileExtension}`;
+            const imageUrl = await uploadImageToS3(profileFile, 'orgs', fileName);
+            org.org_profile_image = imageUrl;
+        } else if (org_profile_image !== undefined) {
+            org.org_profile_image = org_profile_image;
+        }
+
+        if (bannerFile) {
+            const fileExtension = path.extname(bannerFile.originalname);
+            const fileName = `${org._id}_banner${fileExtension}`;
+            const bannerUrl = await uploadImageToS3(bannerFile, 'orgs', fileName);
+            org.org_banner_image = bannerUrl;
+        } else if (org_banner_image !== undefined) {
+            org.org_banner_image = org_banner_image || null;
+        }
+
+        await org.save();
+
+        console.log(`POST: /org-management/organizations/${orgId}/edit - Organization updated by admin`);
+        res.status(200).json({
+            success: true,
+            message: 'Organization updated successfully',
+            data: org
+        });
+    } catch (error) {
+        console.error('Error updating organization:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating organization',
+            error: error.message
+        });
+    }
+});
+
+// Assign new owner (admin only)
+router.put('/organizations/:orgId/owner', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
+    const { orgId } = req.params;
+    const { newOwnerId } = req.body;
+
+    if (!newOwnerId) {
+        return res.status(400).json({
+            success: false,
+            message: 'newOwnerId is required'
+        });
+    }
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        const newOwner = await User.findById(newOwnerId);
+        if (!newOwner) {
+            return res.status(404).json({
+                success: false,
+                message: 'New owner user not found'
+            });
+        }
+
+        const newOwnerMember = await OrgMember.findOne({ org_id: orgId, user_id: newOwnerId });
+        if (!newOwnerMember) {
+            return res.status(400).json({
+                success: false,
+                message: 'New owner must be an existing member of the organization'
+            });
+        }
+
+        const oldOwnerId = org.owner.toString();
+        org.owner = newOwnerId;
+        await org.save();
+
+        const oldOwnerMember = await OrgMember.findOne({ org_id: orgId, user_id: oldOwnerId });
+        if (oldOwnerMember) {
+            await oldOwnerMember.changeRole('member', req.user.userId, 'Owner transferred by admin');
+        }
+
+        await newOwnerMember.changeRole('owner', req.user.userId, 'Assigned as owner by admin');
+
+        if (!newOwner.clubAssociations || !newOwner.clubAssociations.some(c => c.toString() === orgId)) {
+            if (!newOwner.clubAssociations) newOwner.clubAssociations = [];
+            newOwner.clubAssociations.push(orgId);
+            await newOwner.save();
+        }
+
+        console.log(`PUT: /org-management/organizations/${orgId}/owner - Owner assigned`);
+        res.status(200).json({
+            success: true,
+            message: 'Owner assigned successfully',
+            data: org
+        });
+    } catch (error) {
+        console.error('Error assigning owner:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error assigning owner',
+            error: error.message
+        });
+    }
+});
+
+// Get organization members (admin only)
+router.get('/organizations/:orgId/members', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { OrgMember, OrgMemberApplication } = getModels(req, 'OrgMember', 'OrgMemberApplication');
+    const { orgId } = req.params;
+
+    try {
+        const members = await OrgMember.find({ org_id: orgId, status: 'active' })
+            .populate('user_id', 'username name email picture')
+            .populate('assignedBy', 'username name')
+            .sort({ role: 1, joinedAt: 1 });
+        const applications = await OrgMemberApplication.find({ org_id: orgId, status: 'pending' })
+            .populate('user_id formResponse');
+
+        res.status(200).json({
+            success: true,
+            members,
+            applications,
+            count: members.length
+        });
+    } catch (error) {
+        console.error('Error fetching organization members:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching members',
+            error: error.message
+        });
+    }
+});
+
+// Add member to organization (admin only)
+router.post('/organizations/:orgId/members', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
+    const { orgId } = req.params;
+    const { userId, role = 'member' } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({
+            success: false,
+            message: 'userId is required'
+        });
+    }
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        const roleExists = org.getRoleByName(role);
+        if (!roleExists) {
+            return res.status(400).json({
+                success: false,
+                message: 'Role not found'
+            });
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        let member = await OrgMember.findOne({ org_id: orgId, user_id: userId });
+        if (member) {
+            return res.status(400).json({
+                success: false,
+                message: 'User is already a member'
+            });
+        }
+
+        member = new OrgMember({
+            org_id: orgId,
+            user_id: userId,
+            role,
+            assignedBy: req.user.userId
+        });
+        await member.save();
+
+        if (!user.clubAssociations || !user.clubAssociations.some(c => c.toString() === orgId)) {
+            if (!user.clubAssociations) user.clubAssociations = [];
+            user.clubAssociations.push(orgId);
+            await user.save();
+        }
+
+        const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
+        await checkAndAutoApproveOrg(req, orgId);
+
+        res.status(201).json({
+            success: true,
+            message: 'Member added successfully',
+            member: {
+                ...member.toObject(),
+                user_id: user
+            }
+        });
+    } catch (error) {
+        console.error('Error adding member:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error adding member',
+            error: error.message
+        });
+    }
+});
+
+// Remove member from organization (admin only)
+router.delete('/organizations/:orgId/members/:userId', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { OrgMember, Org, User } = getModels(req, 'OrgMember', 'Org', 'User');
+    const { orgId, userId } = req.params;
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        if (org.owner.toString() === userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot remove organization owner. Assign a new owner first.'
+            });
+        }
+
+        const member = await OrgMember.findOne({ org_id: orgId, user_id: userId });
+        if (!member) {
+            return res.status(404).json({
+                success: false,
+                message: 'Member not found'
+            });
+        }
+
+        await OrgMember.deleteOne({ _id: member._id });
+
+        const user = await User.findById(userId);
+        if (user && user.clubAssociations) {
+            user.clubAssociations = user.clubAssociations.filter(c => c.toString() !== orgId);
+            await user.save();
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Member removed successfully'
+        });
+    } catch (error) {
+        console.error('Error removing member:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error removing member',
+            error: error.message
+        });
+    }
+});
+
+// Change member role (admin only)
+router.put('/organizations/:orgId/members/:userId/role', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
+    const { orgId, userId } = req.params;
+    const { role } = req.body;
+
+    if (!role) {
+        return res.status(400).json({
+            success: false,
+            message: 'role is required'
+        });
+    }
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        const roleExists = org.getRoleByName(role);
+        if (!roleExists) {
+            return res.status(400).json({
+                success: false,
+                message: 'Role not found'
+            });
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        let member = await OrgMember.findOne({ org_id: orgId, user_id: userId });
+        if (!member) {
+            return res.status(404).json({
+                success: false,
+                message: 'Member not found'
+            });
+        }
+
+        if (org.owner.toString() === userId && role !== 'owner') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot change owner role. Assign a new owner first.'
+            });
+        }
+
+        await member.changeRole(role, req.user.userId, 'Role changed by admin');
+
+        if (!user.clubAssociations || !user.clubAssociations.some(c => c.toString() === orgId)) {
+            if (!user.clubAssociations) user.clubAssociations = [];
+            user.clubAssociations.push(orgId);
+            await user.save();
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Role updated successfully',
+            member: {
+                userId: member.user_id,
+                role: member.role,
+                assignedAt: member.assignedAt
+            }
+        });
+    } catch (error) {
+        console.error('Error updating member role:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating role',
+            error: error.message
+        });
+    }
+});
+
+// Approve a pending organization
+router.put('/organizations/:orgId/approve', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId } = req.params;
+    const adminId = req.user.userId;
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        if (org.approvalStatus !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Organization is not pending approval'
+            });
+        }
+
+        org.approvalStatus = 'approved';
+        org.approvedAt = new Date();
+        org.approvedBy = adminId;
+        await org.save();
+
+        // Notify pending-org clients in real time (they leave the room after receiving this)
+        emitToOrgApprovalRoom(orgId, 'org:approved', { orgId });
+
+        console.log(`PUT: /org-management/organizations/${orgId}/approve - Organization approved`);
+        res.status(200).json({
+            success: true,
+            message: 'Organization approved successfully',
+            data: org
+        });
+    } catch (error) {
+        console.error('Error approving organization:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error approving organization',
+            error: error.message
+        });
+    }
+});
+
 // Update organization status
 router.put('/organizations/:orgId', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
     const { Org } = getModels(req, 'Org');
@@ -591,59 +1207,51 @@ router.put('/organizations/:orgId', verifyToken, authorizeRoles('admin', 'root')
     }
 });
 
-// Export organizations data
-router.get('/organizations/export', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
-    const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
-    const { format = 'json' } = req.query;
+// ==================== MIGRATIONS ====================
+
+/**
+ * Add _id to org positions that don't have it (for role rename detection).
+ * Run once per tenant. Protected: admin or root only.
+ */
+router.post('/migrate/org-positions-ids', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const mongoose = require('mongoose');
+    const { Org } = getModels(req, 'Org');
 
     try {
         const orgs = await Org.find({}).lean();
+        let updated = 0;
 
-        // Get additional data for each org
-        const orgsWithData = await Promise.all(orgs.map(async (org) => {
-            const memberCount = await OrgMember.countDocuments({ org_id: org._id });
-            const eventCount = await Event.countDocuments({ hostingId: org._id, hostingType: 'Org' });
+        for (const org of orgs) {
+            const positions = org.positions || [];
+            let changed = false;
 
-            return {
-                ...org,
-                memberCount,
-                totalEventCount: eventCount
-            };
-        }));
+            for (let i = 0; i < positions.length; i++) {
+                if (!positions[i]._id) {
+                    positions[i]._id = new mongoose.Types.ObjectId();
+                    changed = true;
+                }
+            }
 
-        if (format === 'csv') {
-            // Convert to CSV format
-            const csvHeaders = ['Name', 'Description', 'Members', 'Events', 'Verified', 'Created At'];
-            const csvData = orgsWithData.map(org => [
-                org.org_name,
-                org.org_description,
-                org.memberCount,
-                org.totalEventCount,
-                org.verified ? 'Yes' : 'No',
-                new Date(org.createdAt).toLocaleDateString()
-            ]);
-
-            const csvContent = [csvHeaders, ...csvData]
-                .map(row => row.map(cell => `"${cell}"`).join(','))
-                .join('\n');
-
-            res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', 'attachment; filename="organizations.csv"');
-            res.send(csvContent);
-        } else {
-            res.status(200).json({
-                success: true,
-                data: orgsWithData
-            });
+            if (changed) {
+                await Org.updateOne(
+                    { _id: org._id },
+                    { $set: { positions } }
+                );
+                updated++;
+            }
         }
 
-        console.log(`GET: /org-management/organizations/export - Data exported in ${format} format`);
+        console.log(`POST: /org-management/migrate/org-positions-ids - Updated ${updated} org(s)`);
+        res.status(200).json({
+            success: true,
+            message: `Migration completed. Updated ${updated} organization(s) with _id on role positions.`,
+            data: { orgsUpdated: updated }
+        });
     } catch (error) {
-        console.error('Error exporting organizations:', error);
+        console.error('Migration org-positions-ids failed:', error);
         res.status(500).json({
             success: false,
-            message: 'Error exporting organizations',
-            error: error.message
+            message: error.message || 'Migration failed'
         });
     }
 });

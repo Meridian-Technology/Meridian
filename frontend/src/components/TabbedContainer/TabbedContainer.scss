@@ -127,6 +127,14 @@
     display: flex;
     align-items: center;
     border-bottom: 1px solid var(--border);
+
+    &--sticky {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--background);
+      border-bottom: 1px solid var(--lighterborder, var(--border));
+    }
   }
 
   // Tabs container
@@ -210,10 +218,10 @@
       color: var(--text);
     }
 
-    &:focus {
-      outline: 2px solid var(--primary);
-      outline-offset: -2px;
-    }
+    // &:focus {
+    //   outline: 2px solid var(--primary);
+    //   outline-offset: -2px;
+    // }
 
     // Active state - using higher specificity
     &.tabbed-container__tab--active {
@@ -306,6 +314,9 @@
     width: 20px;
     height: 20px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   // Tab label
@@ -505,6 +516,7 @@
 .tabbed-container--top {
   .tabbed-container__body {
     flex-direction: column;
+    padding:1.5rem;
   }
 }
 

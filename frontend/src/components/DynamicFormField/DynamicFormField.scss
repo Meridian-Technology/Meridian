@@ -36,10 +36,11 @@
         font-size: 0.875rem;
         font-family: inherit;
         transition: border-color 0.2s;
+        box-sizing: border-box;
         
         &:focus {
             outline: none;
-            border-color: #6D8EFA;
+            border-color: var(--dynamic-form-field-color, #6D8EFA);
         }
         
         &.error {
@@ -51,6 +52,38 @@
         resize: vertical;
         min-height: 100px;
     }
+
+    .textarea-with-expand {
+        position: relative;
+
+        .textarea-expand-btn {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            font-family: inherit;
+            color: var(--dark-blue);
+            background: var(--background);
+            border: 1px solid var(--lighterborder);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+
+            &:hover {
+                background: var(--lighter);
+                border-color: var(--dynamic-form-field-color, var(--dark-blue));
+            }
+
+            .iconify {
+                font-size: 14px;
+            }
+        }
+    }
+
     
     .range-field {
         position: relative;
@@ -66,7 +99,7 @@
                 width: 60px;
                 text-align: center;
                 padding: 0.25rem;
-                border: 1px solid #6D8EFA;
+                border: 1px solid var(--dynamic-form-field-color, #6D8EFA);
                 background: white;
                 border-radius: 4px;
                 font-weight: 500;
@@ -87,7 +120,7 @@
                 width: 20px;
                 height: 20px;
                 border-radius: 50%;
-                background: #6D8EFA;
+                background: var(--dynamic-form-field-color, #6D8EFA);
                 cursor: pointer;
             }
             
@@ -95,7 +128,7 @@
                 width: 20px;
                 height: 20px;
                 border-radius: 50%;
-                background: #6D8EFA;
+                background: var(--dynamic-form-field-color, #6D8EFA);
                 cursor: pointer;
                 border: none;
             }
@@ -133,15 +166,26 @@
     .error-message {
         display: block;
         margin-top: 0.5rem;
-        color: #ff4444;
+        color: var(--error);
         font-size: 0.75rem;
     }
     
     .help-text {
         margin: 0.5rem 0 0 0;
         font-size: 0.75rem;
-        color: #666;
+        color: var(--text-muted);
         font-style: italic;
+    }
+
+    &.event-name-field {
+        label {
+            display: none;
+        }
+        input[type="text"] {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text);
+        }
     }
 }
 

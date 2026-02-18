@@ -16,14 +16,17 @@ const ImageUpload = ({
     orientation = "vertical",
     previewImageParams = {}, // { shape: 'circle' | 'square' | 'rectangle' }
     showActions = true, // Enable/disable upload/cancel buttons
-    previewMessage = "Drag a new image to replace, or click outside to save", // Custom message when image is selected
-    value = null // Initial file value to restore preview
+    previewMessage = "", // Custom message when image is selected
+    value = null, // Initial file value to restore preview
+    color, // Optional: CSS color for accents (e.g. 'var(--primary-color)'). Default: var(--dark-blue)
+    initialImageUrl // Optional: URL of existing image to show (e.g. event.image). Shown when no file selected.
 }) => {
     const [selectedFile, setSelectedFile] = useState(value);
     const [message, setMessage] = useState('');
     const [fileName, setFileName] = useState(value?.name || '');
     const [isDragging, setIsDragging] = useState(false);
     const [image, setImage] = useState(null);
+    const [clearedInitial, setClearedInitial] = useState(false);
     const fileInputRef = useRef(null);
 
     // Helper function to compare files by properties (not reference)
@@ -54,6 +57,10 @@ const ImageUpload = ({
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [value]);
+
+    useEffect(() => {
+        setClearedInitial(false);
+    }, [initialImageUrl]);
 
     const onFileChange = event => {
         const file = event.target.files[0];
@@ -100,9 +107,14 @@ const ImageUpload = ({
         setFileName('');
         setMessage('');
         setImage(null);
+        setClearedInitial(true);
         if (fileInputRef.current) fileInputRef.current.value = null;
         onFileClear?.();
     };
+
+    // Display: selected file preview, or initial image URL (if not cleared), or nothing
+    const displayImage = image || (initialImageUrl && !clearedInitial ? initialImageUrl : null);
+    const hasImage = Boolean(displayImage);
 
     const handleBoxClick = () => {
         if (fileInputRef.current) {
@@ -118,17 +130,20 @@ const ImageUpload = ({
 
     return (
         <div
-            className={`file-upload image-upload ${isDragging ? 'drag-over' : ''} ${selectedFile ? 'active' : ''} ${orientation === "horizontal" ? "horizontal" : ""}`}
+            className={`file-upload image-upload ${isDragging ? 'drag-over' : ''} ${hasImage ? 'active' : ''} ${orientation === "horizontal" ? "horizontal" : ""}`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onClick={handleBoxClick}
-            style={{ '--text-size': `${fontSize}px` }}
+            style={{ 
+                '--text-size': `${fontSize}px`,
+                ...(color && { '--image-upload-color': color })
+            }}
         >   
-            {image ? (
+            {displayImage ? (
                 <div className="preview-container">
                     <img 
-                        src={image} 
+                        src={displayImage} 
                         alt="preview" 
                         className={`preview ${previewImageParams.shape ? `preview-${previewImageParams.shape}` : ''}`}
                     />
@@ -148,15 +163,14 @@ const ImageUpload = ({
             )}
             <div className="text-container">
                 <h3 className="upload-text">
-                    {selectedFile ? fileName : uploadText}
+                    {selectedFile ? fileName : hasImage ? 'Current image' : uploadText}
                     {
-                        selectedFile ? 
-                        ""
-                        :
+                        !hasImage ? (
                         <>
                             ,<br />or{" "}
-                            <label htmlFor="fileInput" className="browse">browse</label>
+                            <label className="browse">browse</label>
                         </>
+                        ) : ""
                     }
                 </h3>
                 <input
@@ -168,7 +182,7 @@ const ImageUpload = ({
                     style={{ display: 'none' }}
                 />
                 {
-                    selectedFile && showPrompt && showActions ? 
+                    hasImage && showPrompt && showActions ? 
                     <div className="upload-actions" onClick={(e) => e.stopPropagation()}>
                         <button
                             className="clear-button"
@@ -189,7 +203,7 @@ const ImageUpload = ({
                     </div>
                     :
                     <>
-                        {selectedFile && !showActions ? (
+                        {hasImage && !showActions ? (
                             <p className="preview-message">{previewMessage}</p>
                         ) : (
                             <p className="upload-message">{message || uploadMessage}</p>

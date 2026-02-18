@@ -28,6 +28,7 @@
       font-size: 17px;
       line-height: 1.7;
       font-weight: 400;
+      white-space: pre-wrap; /* preserve newlines in form description */
     }
 
     .response-meta {
@@ -83,6 +84,7 @@
           font-weight: 600;
           flex: 1;
           line-height: 1.4;
+          white-space: pre-wrap; /* preserve newlines in question text */
         }
 
         .required-indicator {

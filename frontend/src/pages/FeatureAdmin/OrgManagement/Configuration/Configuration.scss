@@ -88,6 +88,25 @@
             font-size: 14px;
             line-height: 1.4;
         }
+
+        .allowed-actions-checkboxes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+
+            .checkbox-inline {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-weight: 500;
+                cursor: pointer;
+
+                input {
+                    accent-color: var(--red);
+                }
+            }
+        }
+
         &.inline {
             flex-direction: row;
             justify-content: space-between;

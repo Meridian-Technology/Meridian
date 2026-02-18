@@ -38,15 +38,16 @@ const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
         // Calculate character limits from org settings and system config
         const systemMaxLimit = systemConfig?.data?.messaging?.maxCharacterLimit || 2000;
         const systemMinLimit = systemConfig?.data?.messaging?.minCharacterLimit || 100;
-        const orgLimit = orgData?.org?.messageSettings?.characterLimit || 500;
+        const msgSettings = orgData?.org?.overview?.messageSettings;
+        const orgLimit = msgSettings?.characterLimit || 500;
         
         const maxLimit = Math.min(orgLimit, systemMaxLimit);
         setCharacterLimit(maxLimit);
         setMinCharacterLimit(systemMinLimit);
         
-        // Set default visibility from org settings or system config
-        const defaultVisibility = orgData?.org?.messageSettings?.defaultVisibility || 
-                                  systemConfig?.data?.messaging?.defaultVisibility || 
+        // Set default visibility from org settings or system config (backend uses messageSettings.visibility)
+        const defaultVisibility = msgSettings?.visibility ||
+                                  systemConfig?.data?.messaging?.defaultVisibility ||
                                   'members_and_followers';
         setVisibility(defaultVisibility);
     }, [orgId, orgData, systemConfig]);
@@ -111,36 +112,34 @@ const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         
-        // Clear previous validation error
         setValidationError('');
-        
-        // Validate content
         const error = validateContent(content);
         if (error) {
             setValidationError(error);
             return;
         }
 
+        const payload = { content: content.trim(), visibility };
+        const contentToRestore = content;
+
+        // Optimistic: clear input immediately so the user sees the post "sent"
+        setContent('');
+        setEventSearch('');
         setIsSubmitting(true);
 
         try {
-            const response = await apiRequest(`/org-messages/${orgId}/messages`, {
-                content: content.trim(),
-                visibility: visibility
-            });
+            const response = await apiRequest(`/org-messages/${orgId}/messages`, payload);
 
             if (response.success) {
-                setContent('');
                 setValidationError('');
-                setEventSearch('');
-                onMessageCreated?.();
+                onMessageCreated?.(response.data);
                 addNotification({
                     title: 'Success',
                     content: 'Message posted successfully',
                     type: 'success'
                 });
             } else {
-                // Backend validation error (e.g., profanity)
+                setContent(contentToRestore);
                 setValidationError(response.message || 'Failed to post message');
                 addNotification({
                     title: 'Error',
@@ -150,6 +149,7 @@ const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
             }
         } catch (error) {
             console.error('Error posting message:', error);
+            setContent(contentToRestore);
             setValidationError('Failed to post message. Please try again.');
             addNotification({
                 title: 'Error',

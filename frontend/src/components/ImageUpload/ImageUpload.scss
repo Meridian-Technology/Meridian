@@ -1,10 +1,11 @@
 .file-upload.image-upload {
     --text-size: 15px;
+    --image-upload-color: var(--dark-blue);
 
     background-color: var(--background);
     border: 2px dashed var(--lightborder);
     transition: 0.3s all;
-    border-radius: 10px;
+    border-radius: 15px;
     margin-bottom: 15px;
     padding: 10px;
     display: flex;
@@ -17,10 +18,10 @@
 
     iconify-icon {
         font-size: 30px;
-        color: var(--dark-blue);
+        color: var(--image-upload-color);
         transition: all 0.3s;
         padding: 15px;
-        background-color: rgba(109, 142, 250, 0.1);
+        background-color: color-mix(in srgb, var(--image-upload-color) 10%, transparent);
         border-radius: 15px;
         margin-bottom: 10px;
 
@@ -122,7 +123,7 @@
         margin-top: 10px;
         text-align: center;
         label.browse{
-            color: var(--dark-blue);  
+            color: var(--image-upload-color);  
             cursor: pointer;
             font-weight: 600;
         }
@@ -141,7 +142,7 @@
         font-family: 'Inter';
         font-weight: 500;
         font-size: calc(var(--text-size) - 1px);
-        color: var(--dark-blue);
+        color: var(--image-upload-color);
         margin: calc(var(--text-size) - 2px);
         text-align: center;
     }
@@ -151,18 +152,18 @@
         font-weight: 600;
         border-radius: 5px;
         padding: 3px 12px;
-        background-color: var(--dark-blue);
+        background-color: var(--image-upload-color);
         color: white;
         font-size: 13px;
         transition: all 0.3s;
         border:none;
         outline:none;
         &:hover{
-            background-color: rgba(109, 142, 250, 0.8);
+            filter: brightness(0.9);
         }
         
         &:active{
-            background-color: rgba(109, 142, 250, 0.7);
+            filter: brightness(0.8);
         }
     }
 
@@ -196,10 +197,10 @@
 
     &.active {
         background-color: var(--background);
-        border: 2px dashed var(--dark-blue);
+        border: 2px dashed var(--image-upload-color);
         
         img.preview {
-            outline: 2px solid var(--dark-blue);
+            outline: 2px solid var(--image-upload-color);
             outline-offset: 4px;
         }
 
@@ -211,11 +212,11 @@
     &.drag-over,
     &:hover {
         cursor: pointer;
-        background-color: rgba(109, 142, 250, 0.1);
-        border: 2px dashed var(--dark-blue);
+        background-color: color-mix(in srgb, var(--image-upload-color) 10%, transparent);
+        border: 2px dashed var(--image-upload-color);
 
         iconify-icon {
-            color: var(--dark-blue);
+            color: var(--image-upload-color);
         }
 
         .clear-preview-button {

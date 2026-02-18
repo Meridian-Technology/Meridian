@@ -1,5 +1,31 @@
 // Analytics tab specific styles
 .analytics-tab {
+    .analytics-loading,
+    .analytics-error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 300px;
+        gap: 1rem;
+        color: var(--text);
+
+        .spinner {
+            font-size: 2rem;
+            animation: spin 1s linear infinite;
+        }
+
+        iconify-icon {
+            font-size: 3rem;
+            color: var(--light-text);
+        }
+
+        p {
+            margin: 0;
+            color: var(--light-text);
+        }
+    }
+
     .analytics-header {
         display: flex;
         justify-content: space-between;
@@ -368,7 +394,38 @@
                     font-size: 14px;
                 }
             }
+
+            .trends-data-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+
+                .trends-data-item {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 0.5rem 0;
+                    border-bottom: 1px solid var(--lighterborder);
+
+                    .trends-date {
+                        color: var(--text);
+                    }
+
+                    .trends-count {
+                        font-weight: 600;
+                        color: var(--text);
+                    }
+                }
+            }
         }
+    }
+
+    .empty-state,
+    .discovery-placeholder {
+        color: var(--light-text);
+        font-size: 0.9rem;
+        padding: 1rem;
+        text-align: center;
     }
 
     .discovery-section {

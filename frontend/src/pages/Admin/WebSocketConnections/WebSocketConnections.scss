@@ -1,0 +1,196 @@
+.websocket-connections {
+  margin-top: 16px;
+  border-radius: 10px;
+  box-shadow: var(--shaodw);
+  box-sizing: border-box;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .websocket-connections-loading,
+  .websocket-connections-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    padding: 12px 0;
+  }
+
+  .websocket-connections-error {
+    color: var(--red, #e74c3c);
+  }
+
+  .websocket-connections-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+
+    h3 {
+      margin: 0;
+      font-family: 'Satoshi';
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      iconify-icon {
+        color: var(--primary-color, #4a90d9);
+      }
+    }
+  }
+
+  .websocket-connections-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .websocket-refresh-btn,
+  .websocket-disconnect-btn {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--lighterborder);
+    background: var(--bg-secondary);
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, border-color 0.2s;
+
+    &:hover:not(:disabled) {
+      background: var(--bg-tertiary);
+      border-color: var(--border);
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .spin {
+      animation: spin 0.8s linear infinite;
+    }
+  }
+
+  .websocket-disconnect-all-btn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--lighterborder);
+    background: var(--bg-secondary);
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    transition: background 0.2s, border-color 0.2s;
+
+    &:hover:not(:disabled) {
+      background: var(--bg-tertiary);
+      border-color: var(--border);
+    }
+
+    &.confirm {
+      border-color: var(--red, #e74c3c);
+      color: var(--red, #e74c3c);
+
+      &:hover:not(:disabled) {
+        background: rgba(231, 76, 60, 0.1);
+      }
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .spin {
+      animation: spin 0.8s linear infinite;
+    }
+  }
+
+  .websocket-connections-hint {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted, #888);
+  }
+
+  .websocket-connections-table-wrap {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid var(--lighterborder);
+  }
+
+  .websocket-connections-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+
+    th,
+    td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--lighterborder);
+    }
+
+    th {
+      font-weight: 600;
+      background: var(--bg-secondary);
+      color: var(--text);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: var(--bg-secondary);
+    }
+
+    .socket-id code,
+    .rooms code {
+      font-family: monospace;
+      font-size: 12px;
+      background: var(--bg-tertiary);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .rooms ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+
+      li {
+        margin: 2px 0;
+      }
+    }
+
+    .muted {
+      color: var(--text-muted, #888);
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--text-muted, #888);
+      padding: 24px;
+    }
+
+    .websocket-disconnect-btn {
+      padding: 4px 8px;
+    }
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

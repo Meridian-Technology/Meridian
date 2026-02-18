@@ -8,6 +8,7 @@ import defaultAvatar from '../../../../../assets/defaultAvatar.svg'
 import useAuth from '../../../../../hooks/useAuth';
 import RSVPButton from '../../../../RSVPButton/RSVPButton';
 import { useFetch } from '../../../../../hooks/useFetch';
+import { parseMarkdownDescription } from '../../../../../utils/markdownUtils';
 
 function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate, showRSVP = true, variant = 'regular'}){
     const [optimisticEvent, setOptimisticEvent] = useState(event);
@@ -64,9 +65,9 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
         setPopupOpen(true);
     }
 
-    const handleKeyDown = (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
             // Don't navigate if popup is open
             if (popupOpen) return;
             handleEventClick(event);
@@ -139,7 +140,7 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
             {
                 variant === 'regular' ? (
                     <>
-                        {event.image && <img src={event.image} alt={`Event image for ${event.name}`} />}
+                        {event.image && <img src={event.image} alt={`Event image for ${event.name}`} className="event-image" />}
                             <div className="info">
                                 <div className="row event-header">
                                     <div className="col">
@@ -163,9 +164,14 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
                                     </div>
                                 </div>
 
-                                <div className="row event-description" id={`event-description-${event._id}`}>
-                                    <p>{event.description}</p>
-                                </div>
+                                {event.description && (
+                                    <div className="row event-description" id={`event-description-${event._id}`}>
+                                        <div
+                                            className="event-description-content"
+                                            dangerouslySetInnerHTML={{ __html: parseMarkdownDescription(event.description) }}
+                                        />
+                                    </div>
+                                )}
                                 <div className="row">
                                     <Icon icon="fluent:location-28-filled" aria-hidden="true" />
                                     <address>{event.location}</address>
@@ -224,9 +230,14 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
                         <div className="event-name">
                             <h2>{event.name}</h2>
                         </div>
-                        <div className="row">
-                            <p>{event.description.slice(0,80)}</p>
-                        </div>
+                        {event.description && (
+                            <div className="row event-description compact">
+                                <div
+                                    className="event-description-content"
+                                    dangerouslySetInnerHTML={{ __html: parseMarkdownDescription(event.description) }}
+                                />
+                            </div>
+                        )}
                         <div className="row">
                             <Icon icon="fluent:location-28-filled" aria-hidden="true" />
                             <address>{event.location}</address>

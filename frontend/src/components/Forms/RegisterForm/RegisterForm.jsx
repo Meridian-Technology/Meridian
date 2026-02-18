@@ -7,6 +7,7 @@ import { useGoogleLogin } from '@react-oauth/google';
 import circleWarning from '../../../assets/circle-warning.svg';
 import { generalIcons } from '../../../Icons';
 import Flag from '../../Flag/Flag';
+import apiRequest from '../../../utils/postRequest';
 
 function RegisterForm() {
     const { isAuthenticated, googleLogin, appleLogin, login } = useAuth();
@@ -20,21 +21,44 @@ function RegisterForm() {
     const [loadContent, setLoadContent] = useState(false);
     const [errorText, setErrorText] = useState("");
     const [email, setEmail] = useState(false);
+    const [inviteData, setInviteData] = useState(null);
 
     const googleLogo = generalIcons.google;
 
     let navigate = useNavigate();
 
     const location = useLocation();
-    const from = location.state?.from?.pathname || '/room/none';
+    const searchParams = new URLSearchParams(location.search);
+    const redirectFromUrl = searchParams.get('redirect');
+    const rawFrom = redirectFromUrl || location.state?.from?.pathname || '/events-dashboard';
+    // If redirect is org-invite URL, use dashboard - the OrgInviteModal popup will show the invite (avoids double display)
+    const from = rawFrom?.startsWith('/org-invites') ? '/events-dashboard' : rawFrom;
+    const inviteToken = searchParams.get('invite');
 
     useEffect(() => {
         async function google(code) {
             try{
-                const codeResponse = await googleLogin(code, true);
+                // Try to retrieve code verifier from sessionStorage
+                let codeVerifier = sessionStorage.getItem('code_verifier') || 
+                                 sessionStorage.getItem('google_code_verifier') ||
+                                 localStorage.getItem('code_verifier') ||
+                                 null;
+                
+                const queryParams = new URLSearchParams(location.search);
+                const verifierFromUrl = queryParams.get('code_verifier');
+                if (verifierFromUrl) {
+                    codeVerifier = verifierFromUrl;
+                }
+                
+                const codeResponse = await googleLogin(code, true, codeVerifier);
                 console.log("codeResponse: " + codeResponse);
+                
+                // Clear code verifier after use
+                sessionStorage.removeItem('code_verifier');
+                sessionStorage.removeItem('google_code_verifier');
+                localStorage.removeItem('code_verifier');
             } catch (error){
-                if(error.response.status  === 409){
+                if(error.response?.status === 409){
                     failed("Email already exists");
                 } else {
                     console.error("Google login failed:", error);
@@ -60,15 +84,9 @@ function RegisterForm() {
 
     useEffect(() => {
         if (isAuthenticated && isAuthenticated !== null) {
-            // console.log("logged in already");
-            // const redirectto = localStorage.getItem('redirectto');
-            // if(redirectto){
-                // navigate(redirectto, { replace: true });
-            // } else {
-                navigate('/events-dashboard', { replace: true });
-            // }
+            navigate(from, { replace: true });
         }
-    }, [isAuthenticated, navigate]);
+    }, [isAuthenticated, navigate, from]);
 
     useEffect(() => {
         if (formData.email !== '' && formData.password !== '' && formData.username !== '') {
@@ -78,6 +96,21 @@ function RegisterForm() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [formData.email, formData.password, formData.username]);
+
+    useEffect(() => {
+        if (inviteToken) {
+            apiRequest(`/org-invites/validate/${inviteToken}`, null, { method: 'GET' })
+                .then((res) => {
+                    if (res.success && res.data) {
+                        setInviteData(res.data);
+                        if (res.data.email) {
+                            setFormData(prev => ({ ...prev, email: res.data.email }));
+                        }
+                    }
+                })
+                .catch(() => setInviteData(null));
+        }
+    }, [inviteToken]);
 
 
     const handleChange = (e) => {
@@ -98,28 +131,41 @@ function RegisterForm() {
             return;
         }
         try {
-            const response = await axios.post('/register', formData);
-            console.log(response.data);
-            // Handle success (e.g., redirect to login page or auto-login)
-            await login(formData);
-            // navigate('/onboard', { state: {from:location.state?.from} });
-            navigate('/events-dashboard');
-        } catch (error) {
-            if(error.response.status === 400){
-                setErrorText("Username or Email already exists");
-            } else {
-                setErrorText(error.response.data.message);
+            const payload = { ...formData };
+            if (inviteToken) {
+                payload.invite_token = inviteToken;
             }
-            // console.error('Registration failed:', error);
-            // Handle errors (e.g., display error message)
+            const response = await axios.post('/register', payload);
+            console.log(response.data);
+            await login(formData);
+            navigate(from, { replace: true });
+        } catch (error) {
+            if (error.response?.status === 400) {
+                if (error.response?.data?.code === 'INVITE_EMAIL_MISMATCH') {
+                    setErrorText('Please register with the same email address the invitation was sent to.');
+                } else {
+                    setErrorText(error.response?.data?.message || 'Username or Email already exists');
+                }
+            } else {
+                setErrorText(error.response?.data?.message || 'Registration failed');
+            }
         }
     }
     // codeResponse => responseGoogle1(codeResponse)
     const google = useGoogleLogin({
-        onSuccess: () => { console.log("succeeded") },
+        onSuccess: (codeResponse) => { 
+            console.log("Google OAuth succeeded", codeResponse);
+            // Store code verifier if provided by the library
+            if (codeResponse.code_verifier) {
+                sessionStorage.setItem('code_verifier', codeResponse.code_verifier);
+            }
+        },
         flow: 'auth-code',
         ux_mode: 'redirect',
-        onFailure: () => { console.log("failed") },
+        onFailure: (error) => {
+            console.error("Google login failed:", error);
+            failed("Google login failed. Please try again");
+        },
     });
 
     // Initialize Apple Sign In
@@ -141,7 +187,7 @@ function RegisterForm() {
         }
 
         // Store redirect path in state for callback to use
-        const redirectState = JSON.stringify({ redirect: '/events-dashboard' });
+        const redirectState = JSON.stringify({ redirect: from });
         
         // Initiate Apple Sign In - will redirect to callback URL
         window.AppleID.auth.signIn({
@@ -165,6 +211,9 @@ function RegisterForm() {
     return (
         <form onSubmit={handleSubmit} className='form'>
             <h1>Register</h1>
+            {inviteData?.orgName && (
+                <p className="invite-banner">You're signing up to join <strong>{inviteData.orgName}</strong></p>
+            )}
             {errorText !== "" && 
                 <Flag text={errorText} img={circleWarning} color={"#FD5858"} primary={"rgba(250, 117, 109, 0.16)"} accent={"#FD5858"} /> 
             }
@@ -194,7 +243,7 @@ function RegisterForm() {
                 <button className={`show-email button active ${email ? "disappear-show" : ""}`} onClick={(e)=>{e.preventDefault();setEmail(true)}}>
                     Register with Email
                 </button>
-                <p className={`already ${email ? "disappear-show" : ""}`}>Already have an account? <Link to="/Login" >Login</Link></p>
+                <p className={`already ${email ? "disappear-show" : ""}`}>Already have an account? <Link to={from !== '/events-dashboard' ? `/login?redirect=${encodeURIComponent(from)}` : '/login'}>Login</Link></p>
             </div>
 
             <div className="form-content" >
@@ -211,7 +260,7 @@ function RegisterForm() {
                     <input type="password" name="password" value={formData.password} onChange={handleChange} placeholder="Password" required />
                 </div>
                 <button type="submit" className={`button ${valid ? "active" : ""}`}>Register</button>
-                <p className="already">Already have an account? <Link to="/login">Login</Link></p>
+                <p className="already">Already have an account? <Link to={from !== '/events-dashboard' ? `/login?redirect=${encodeURIComponent(from)}` : '/login'}>Login</Link></p>
 
             </div>
             </div>

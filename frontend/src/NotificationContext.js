@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import Check from './assets/Icons/Check.svg';
 import CircleX from './assets/Icons/Circle-X.svg';
 import Error from './assets/circle-warning.svg';
@@ -36,14 +36,7 @@ export const NotificationProvider = ({ children }) => {
     }
   }, []);
 
-  const addNotification = (notification) => {
-    const id = new Date().getTime(); // Simple unique ID
-    setNotifications((prevNotifications) => [...prevNotifications, { ...notification, id, exit: false }]);
-
-    setTimeout(() => initiateExit(id), 3000); 
-  };
-
-  const initiateExit = (id) => {
+  const initiateExit = useCallback((id) => {
     setNotifications((prevNotifications) =>
       prevNotifications.map((n) =>
         n.id === id ? { ...n, exit: true } : n
@@ -56,10 +49,16 @@ export const NotificationProvider = ({ children }) => {
         prevNotifications.filter((n) => n.id !== id)
       );
     }, 1000); // Should match the duration of the exit animation
-  };
+  }, []);
+
+  const addNotification = useCallback((notification) => {
+    const id = new Date().getTime(); // Simple unique ID
+    setNotifications((prevNotifications) => [...prevNotifications, { ...notification, id, exit: false }]);
+    setTimeout(() => initiateExit(id), 3000);
+  }, [initiateExit]);
 
   return (
-    <NotificationContext.Provider value={{ addNotification, reloadNotification }}>
+    <NotificationContext.Provider value={{ addNotification, reloadNotification, notificationCount: notifications.length }}>
       {children}
       <div className="notification-container">
         {notifications.map((notification) => (

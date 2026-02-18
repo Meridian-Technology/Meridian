@@ -212,11 +212,11 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
         return (
             <div className="question-editor" onClick={(e) => e.stopPropagation()}>
                 {/* <p>Question:</p> */}
-                <input
-                    type="text"
+                <textarea
                     value={question.question}
                     onChange={(e) => updateQuestion(question._id, { question: e.target.value })}
                     placeholder="Question"
+                    rows={2}
                 />
 
                 {(question.type === 'multiple_choice' || question.type === 'select_multiple') && (

@@ -55,9 +55,9 @@ router.get("/get-form-by-id/:id", verifyTokenOptional, async (req, res) => {
 
 
 // ---- SUBMIT FORM RESPONSE ----
-router.post("/submit-form-response", verifyToken, async (req, res) => {
+router.post("/submit-form-response", verifyTokenOptional, async (req, res) => {
     try {
-        const { formId, responses } = req.body;
+        const { formId, responses, guestName, guestEmail } = req.body;
         const { Form, FormResponse } = getModels(req, "Form", "FormResponse");
         const userId = req.user?.userId;
 
@@ -65,10 +65,6 @@ router.post("/submit-form-response", verifyToken, async (req, res) => {
 
         if (!formId || !responses) {
             return res.status(400).json({ success: false, message: "Missing formId or responses" });
-        }
-
-        if (!userId) {
-            return res.status(401).json({ success: false, message: "User not authenticated" });
         }
 
         // Make sure the form exists
@@ -85,11 +81,31 @@ router.post("/submit-form-response", verifyToken, async (req, res) => {
             });
         }
 
-        // Check if authentication is required
+        // Anonymous submission: require allowAnonymous, check collectGuestDetails
+        if (!userId) {
+            if (!form.allowAnonymous) {
+                return res.status(401).json({ 
+                    success: false, 
+                    message: "Authentication required to submit this form",
+                    code: "AUTH_REQUIRED"
+                });
+            }
+            if (form.collectGuestDetails !== false) {
+                if (!guestName || !guestEmail) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: "Name and email are required for anonymous submissions" 
+                    });
+                }
+            }
+        }
+
+        // Authenticated: require auth when form.requireAuth
         if (form.requireAuth && !userId) {
             return res.status(401).json({ 
                 success: false, 
-                message: "Authentication required to submit this form" 
+                message: "Authentication required to submit this form",
+                code: "AUTH_REQUIRED"
             });
         }
 
@@ -127,14 +143,25 @@ router.post("/submit-form-response", verifyToken, async (req, res) => {
 
         console.log("Converted answers:", answers.length, "answers");
 
-        // Save a new FormResponse using the schema correctly
-        const formResponse = new FormResponse({
+        // Build FormResponse document
+        const formResponseData = {
             formSnapshot: form.toObject(),
             form: formId,
-            submittedBy: userId,
             answers: answers,
             submittedAt: new Date()
-        });
+        };
+
+        if (userId) {
+            formResponseData.submittedBy = userId;
+        } else {
+            formResponseData.submittedBy = null;
+            if (form.collectGuestDetails !== false) {
+                formResponseData.guestName = guestName;
+                formResponseData.guestEmail = guestEmail;
+            }
+        }
+
+        const formResponse = new FormResponse(formResponseData);
 
         await formResponse.save();
 

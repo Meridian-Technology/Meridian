@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
 const mongoose = require('mongoose');
-const {connectToDatabase} = require('../connectionsManager')
+const {connectToDatabase} = require('../connectionsManager');
+const { getConnections, disconnectSocket, disconnectAll } = require('../socket');
 
 router.get('/health', async (req, res) => {
   try {
@@ -51,5 +52,50 @@ async function checkExternalApi() {
     return false;
   }
 }
+
+/**
+ * WebSocket connections – admin only.
+ * List and manage open Socket.IO connections to help with server load.
+ */
+router.get('/websocket-connections', verifyToken, authorizeRoles('admin', 'root'), (req, res) => {
+  try {
+    const connections = getConnections();
+    res.json({
+      success: true,
+      count: connections.length,
+      connections: connections.map((c) => ({
+        ...c,
+        connectedAt: new Date(c.connectedAt).toISOString(),
+      })),
+    });
+  } catch (err) {
+    console.error('GET /websocket-connections failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/websocket-connections/:socketId/disconnect', verifyToken, authorizeRoles('admin', 'root'), (req, res) => {
+  try {
+    const { socketId } = req.params;
+    const ok = disconnectSocket(socketId);
+    if (!ok) {
+      return res.status(404).json({ success: false, message: 'Socket not found or already disconnected' });
+    }
+    res.json({ success: true, message: 'Socket disconnected' });
+  } catch (err) {
+    console.error('POST /websocket-connections/:socketId/disconnect failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/websocket-connections/disconnect-all', verifyToken, authorizeRoles('admin', 'root'), (req, res) => {
+  try {
+    const count = disconnectAll();
+    res.json({ success: true, message: `Disconnected ${count} connection(s)`, count });
+  } catch (err) {
+    console.error('POST /websocket-connections/disconnect-all failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 module.exports = router;

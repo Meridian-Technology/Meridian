@@ -15,7 +15,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const multer = require('multer');
 const path = require('path');
 const { uploadImageToS3, upload } = require('../services/imageUploadService');
-const { requireMemberManagement } = require('../middlewares/orgPermissions');
+const { requireMemberManagement, requireOrgOwner } = require('../middlewares/orgPermissions');
 const NotificationService = require('../services/notificationService');
 
 // Error handling middleware for multer
@@ -139,14 +139,17 @@ router.post("/create-org", verifyToken, upload.fields([
     { name: 'image', maxCount: 1 },
     { name: 'bannerImage', maxCount: 1 }
 ]), handleMulterError, async (req, res) => {
-    const { Org, OrgMember, User } = getModels(req, "Org", "OrgMember", "User");
+    const { Org, OrgMember, User, OrgManagementConfig, Form } = getModels(req, "Org", "OrgMember", "User", "OrgManagementConfig", "Form");
+    const school = req.school || 'rpi';
     const {
         org_name,
         org_description,
         positions,
         weekly_meeting,
         custom_roles,
-        socialLinks
+        socialLinks,
+        requireApprovalForJoin,
+        memberForm
     } = req.body;
     const profileFile = req.files?.image?.[0];
     const bannerFile = req.files?.bannerImage?.[0];
@@ -162,9 +165,17 @@ router.post("/create-org", verifyToken, upload.fields([
                 .json({ success: false, message: "User not found" });
         }
 
+        if (!org_name || !org_description) {
+            console.log('POST: /create-org - Missing required fields:', { org_name: !!org_name, org_description: !!org_description });
+            return res
+                .status(400)
+                .json({ success: false, message: "Organization name and description are required" });
+        }
+
         const orgExist = await Org.findOne({ org_name: org_name });
         //Check to verify if the org already exists
         if (orgExist) {
+            console.log('POST: /create-org - Org name already exists:', org_name);
             return res
                 .status(400)
                 .json({ success: false, message: "Org name already exists" });
@@ -191,6 +202,11 @@ router.post("/create-org", verifyToken, upload.fields([
         }
 
         const cleanOrgDescription = clean(org_description);
+
+        // Check org approval config - new orgs may need pending status
+        const config = await OrgManagementConfig.findOne();
+        const approvalMode = config?.orgApproval?.mode || 'none';
+        const requiresApproval = ['manual', 'auto', 'both'].includes(approvalMode);
 
         // Prepare default roles (only owner and member)
         const defaultRoles = [
@@ -269,8 +285,9 @@ router.post("/create-org", verifyToken, upload.fields([
             positions: allRoles,
             weekly_meeting: weekly_meeting || null,
             socialLinks: parsedSocialLinks,
-            //Owner is the user
             owner: userId,
+            approvalStatus: requiresApproval ? 'pending' : 'approved',
+            requireApprovalForJoin: requireApprovalForJoin === 'true' || requireApprovalForJoin === true,
         });
 
         // Handle profile image upload if file is present
@@ -308,7 +325,101 @@ router.post("/create-org", verifyToken, upload.fields([
         user.clubAssociations.push(newOrg._id);
         await user.save();
 
+        // Create member form if provided
+        if (memberForm) {
+            try {
+                const formObject = typeof memberForm === 'string' ? JSON.parse(memberForm) : memberForm;
+                const formWithMeta = {
+                    ...formObject,
+                    title: formObject.title || 'Member Application Form',
+                    description: formObject.description || 'Prospective members will need to fill out this form.',
+                    questions: formObject.questions || [],
+                    createdBy: userId,
+                    createdType: 'User',
+                    formOwner: newOrg._id,
+                    formOwnerType: 'Org'
+                };
+                const newForm = new Form(formWithMeta);
+                await newForm.save();
+                newOrg.memberForm = newForm._id;
+            } catch (formError) {
+                console.error('Error creating member form:', formError);
+                // Continue without form - org is already created
+            }
+        }
+
         const saveOrg = await newOrg.save(); //Save the org
+
+        // If manual approval is on, email and push-notify all admin users about the new org
+        if (requiresApproval && (approvalMode === 'manual' || approvalMode === 'both')) {
+            try {
+                const adminUsers = await User.find({
+                    roles: { $in: ['admin', 'root'] }
+                })
+                    .select('_id email name username')
+                    .lean();
+
+                console.log(adminUsers);
+
+                // Send push notifications to admins (including those without email)
+                if (adminUsers.length > 0) {
+                    try {
+                        const { Notification } = getModels(req, 'Notification');
+                        const notificationService = NotificationService.withModels({ Notification });
+                        const recipients = adminUsers.map(u => ({ id: u._id, model: 'User' }));
+                        await notificationService.createBatchTemplateNotification(recipients, 'org_approval_needed', {
+                            orgName: cleanOrgName,
+                            orgId: saveOrg._id.toString(),
+                        });
+                        console.log(`POST: /create-org - Sent push notifications to ${adminUsers.length} admin(s) about pending org`);
+                    } catch (pushErr) {
+                        console.error('POST: /create-org - Failed to send admin push notifications:', pushErr);
+                    }
+                }
+
+                const adminEmails = adminUsers.map(u => u.email).filter(Boolean);
+                if (adminEmails.length > 0 && process.env.RESEND_API_KEY) {
+                    const baseUrl = process.env.NODE_ENV === 'production'
+                        ? `https://${school}.meridian.study`
+                        : 'http://localhost:3000';
+                    const approvalUrl = `${baseUrl}/org-management`;
+
+                    const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                    const safeOrgName = escapeHtml(cleanOrgName);
+                    const safeDescription = escapeHtml(cleanOrgDescription.substring(0, 200) + (cleanOrgDescription.length > 200 ? '...' : ''));
+                    const emailHTML = `
+                        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h2 style="color: #1f2937;">New organization awaiting approval</h2>
+                            <p>A new organization has been created and is pending approval:</p>
+                            <p><strong>${safeOrgName}</strong></p>
+                            <p>${safeDescription}</p>
+                            <p><a href="${approvalUrl}" style="display: inline-block; padding: 12px 24px; background: #6d8efa; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">Review and approve</a></p>
+                            <p style="color: #6b7280; font-size: 14px;">This is an automated message from Meridian.</p>
+                        </div>
+                    `;
+
+                    // Fire-and-forget: don't block the response on Resend's API
+                    resend.emails.send({
+                        from: 'Meridian <support@meridian.study>',
+                        to: adminEmails,
+                        subject: `New organization "${cleanOrgName}" needs approval`,
+                        html: emailHTML,
+                    }).then(({ data, error }) => {
+                        if (error) {
+                            console.error('POST: /create-org - Resend API error:', error);
+                        } else {
+                            console.log(`POST: /create-org - Notified ${adminEmails.length} admin(s) about pending org`, data?.id ? `(id: ${data.id})` : '');
+                        }
+                    }).catch((err) => {
+                        console.error('POST: /create-org - Failed to send admin notification email:', err);
+                    });
+                }
+            } catch (emailError) {
+                console.error('POST: /create-org - Failed to send admin notification email:', emailError);
+                // Don't fail org creation if email fails
+            }
+        }
+
         console.log(`POST: /create-org`);
         return res
             .status(200)
@@ -347,6 +458,7 @@ router.post("/edit-org", verifyToken, upload.fields([
             requireApprovalForJoin,
             memberForm,
             socialLinks,
+            unlisted,
         } = req.body;
         const userId = req.user?.userId;
         const profileFile = req.files?.image?.[0];
@@ -367,8 +479,10 @@ router.post("/edit-org", verifyToken, upload.fields([
             return res.status(404).json({ success: false, message: "Org not found" });
         }
 
-        // Check if the user is authorized to edit the org
-        if (org.owner.toString() !== userId) {
+        // Check if the user is authorized to edit the org (owner or site admin/root)
+        const roles = req.user?.roles || [];
+        const isSiteAdmin = roles.includes('admin') || roles.includes('root');
+        if (org.owner.toString() !== userId && !isSiteAdmin) {
             return res
                 .status(400)
                 .json({
@@ -459,19 +573,30 @@ router.post("/edit-org", verifyToken, upload.fields([
         }
         if (memberForm) {
             console.log(memberForm);
+            const formObject = typeof memberForm === 'string' ? JSON.parse(memberForm) : memberForm;
             if(org.memberForm) {
-                const formObject = JSON.parse(memberForm);
                 await Form.findByIdAndUpdate(org.memberForm, formObject);
             } else {
-                const formObject = JSON.parse(memberForm);
-                formObject.createdBy = userId;
-                const newForm = new Form(formObject);
+                const formWithMeta = {
+                    ...formObject,
+                    title: formObject.title || 'Member Application Form',
+                    description: formObject.description || 'Prospective members will need to fill out this form.',
+                    questions: formObject.questions || [],
+                    createdBy: userId,
+                    createdType: 'User',
+                    formOwner: org._id,
+                    formOwnerType: 'Org'
+                };
+                const newForm = new Form(formWithMeta);
                 await newForm.save();
                 org.memberForm = newForm._id;
             }
         }
         if (weekly_meeting) {
             org.weekly_meeting = weekly_meeting;
+        }
+        if (unlisted !== undefined) {
+            org.unlisted = unlisted === true || unlisted === 'true';
         }
         if (socialLinks !== undefined) {
             try {
@@ -534,33 +659,31 @@ router.post("/edit-org", verifyToken, upload.fields([
 });
 
 // Candidate: no direct frontend references found; verify before deprecating
-router.delete("/delete-org/:orgId", verifyToken, async (req, res) => {
-    const { Org, Follower, OrgMember } = getModels(req, "Org", "Follower", "OrgMember");
+router.delete("/delete-org/:orgId", verifyToken, requireOrgOwner('orgId'), async (req, res) => {
+    const { Org, Event } = getModels(req, "Org", "Event");
     try {
         const { orgId } = req.params;
         const userId = req.user.userId;
+        const org = req.org;
 
-        const org = await Org.findById(orgId);
-
-        //Check if the org exists
-        if (!org) {
-            return res.status(404).json({ success: false, message: "Org not found" });
+        // Already soft-deleted
+        if (org.isDeleted) {
+            return res.status(400).json({ success: false, message: "Org is already deleted" });
         }
 
-        // Verify that the user is the owner of the org
-        if (org.owner.toString() !== userId) {
-            return res
-                .status(400)
-                .json({
-                    success: false,
-                    message: "You are not authorized to delete this org",
-                });
-        }
+        const now = new Date();
+        org.isDeleted = true;
+        org.deletedAt = now;
+        org.deletedBy = userId;
+        await org.save();
 
-        // Delete the org
-        await Org.findByIdAndDelete(orgId);
+        // Soft delete all events hosted by this org
+        const eventResult = await Event.updateMany(
+            { hostingId: orgId, hostingType: "Org" },
+            { $set: { isDeleted: true, deletedAt: now } }
+        );
 
-        console.log(`DELETE: /delete-org`);
+        console.log(`DELETE: /delete-org (soft) - org ${orgId}, ${eventResult.modifiedCount} events soft-deleted`);
         res.json({ success: true, message: "Org deleted successfully" });
     } catch (error) {
         console.log(`DELETE: /delete-org failed`, error);
@@ -744,9 +867,12 @@ router.post("/:orgId/apply-to-org", verifyToken, async (req, res) => {
                 role: 'member',
             });
             await newMember.save();
+            // Check auto-approve for org (Atlas: when member count reaches threshold)
+            const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
+            await checkAndAutoApproveOrg(req, orgId);
             res.status(200).json({success: true, message: "You are now a member of this org"});
             return;
-        };
+        }
         
         if(org.memberForm) {
             const form = await Form.findById(org.memberForm);
@@ -951,14 +1077,43 @@ router.post('/send-email', async (req,res) => {
     }
 });
 
-router.get('/get-orgs', async (req, res) => {
-    try{
-        const {exhaustive} = req.query;
+router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
+    try {
+        const { exhaustive, includePending } = req.query;
         const { Org, OrgMember, OrgFollower, Event } = getModels(req, 'Org', 'OrgMember', 'OrgFollower', 'Event');
-        
+        const userId = req.user?.userId;
+
+        // Atlas: Default filter - only approved orgs for discoverability. includePending + auth = add user's orgs.
+        const baseApprovalFilter = {
+            $or: [
+                { approvalStatus: 'approved' },
+                { approvalStatus: { $exists: false } }
+            ]
+        };
+        let approvalFilter = baseApprovalFilter;
+        if (includePending === 'true' && userId) {
+            const userOrgIds = await OrgMember.find({ user_id: userId, status: 'active' })
+                .distinct('org_id');
+            const userOwnedOrgIds = await Org.find({ owner: userId }).distinct('_id');
+            const allUserOrgIds = [...new Set([
+                ...userOrgIds.map(id => id.toString()),
+                ...userOwnedOrgIds.map(id => id.toString())
+            ])].map(id => new mongoose.Types.ObjectId(id));
+            approvalFilter = {
+                $or: [
+                    baseApprovalFilter,
+                    { _id: { $in: allUserOrgIds } }
+                ]
+            };
+        }
+
+        // Exclude unlisted orgs from the public Organizations list
+        const unlistedFilter = { unlisted: { $ne: true } };
+
         //if exhaustive, return org stats like memberCount, followerCount, eventCount, using aggregate using efficeint query
-        if(exhaustive){
+        if (exhaustive) {
             const orgs = await Org.aggregate([
+                { $match: { ...approvalFilter, ...unlistedFilter, isDeleted: { $ne: true } } },
                 // Lookup members and count them (only active members)
                 {
                     $lookup: {
@@ -1034,12 +1189,11 @@ router.get('/get-orgs', async (req, res) => {
                 orgs: orgs
             });
         }
-        const orgs = await Org.find();
-        console.log('GET: /get-orgs successful')
+        const orgs = await Org.find({ ...approvalFilter, ...unlistedFilter });
         res.status(200).json({
-            success:true,
-            orgs:orgs
-        })
+            success: true,
+            orgs
+        });
     } catch (error){
         console.log('GET: /get-orgs failed', error);
         res.status(500).json({
@@ -1050,12 +1204,23 @@ router.get('/get-orgs', async (req, res) => {
 });
 
 router.get('/:orgId/events', verifyToken, async (req, res) => {
-    const { Event } = getModels(req, 'Event');
+    const { Event, OrgMember } = getModels(req, 'Event', 'OrgMember');
     try {
         const { orgId } = req.params;
         const { page = 1, limit = 15 } = req.query;
+        const userId = req.user?.userId;
         
         const skip = (page - 1) * limit;
+        
+        // Visibility: exclude unlisted; for members_only, only show to org members
+        const isOrgMember = userId ? await OrgMember.findOne({ org_id: orgId, user_id: userId, status: 'active' }) : null;
+        const visibilityFilter = {
+            visibility: { $ne: 'unlisted' },
+            $or: [
+                { visibility: { $ne: 'members_only' } },
+                ...(isOrgMember ? [{ visibility: 'members_only' }] : [])
+            ]
+        };
         
         // Find events hosted by this organization
         const events = await Event.find({
@@ -1063,7 +1228,8 @@ router.get('/:orgId/events', verifyToken, async (req, res) => {
             hostingType: 'Org',
             start_time: { $gte: new Date() },
             status: { $in: ['approved', 'not-applicable'] },
-            isDeleted: false
+            isDeleted: false,
+            ...visibilityFilter
         })
         .sort({ start_time: 1 })
         .skip(skip)
@@ -1077,7 +1243,8 @@ router.get('/:orgId/events', verifyToken, async (req, res) => {
             hostingType: 'Org',
             start_time: { $gte: new Date() },
             status: { $in: ['approved', 'not-applicable'] },
-            isDeleted: false
+            isDeleted: false,
+            ...visibilityFilter
         });
         
         console.log(`GET: /${orgId}/events`);

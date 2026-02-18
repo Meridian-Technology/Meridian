@@ -3,7 +3,9 @@ import OIEEvent from "../../../OIEDash/OIEEventsComponents/Event/OIEEvent";
 import PulseDot from "../../../../components/Interface/PulseDot/PulseDot";
 import OIEEventSkeleton from "../../../OIEDash/OIEEventsComponents/Event/OIEEventSkeleton";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useFetch } from "../../../../hooks/useFetch";
+import { useDashboardOverlay } from "../../../../hooks/useDashboardOverlay";
 import './EventQuickLook.scss';
 
 function timeUntil(date) {
@@ -28,9 +30,20 @@ function timeUntil(date) {
   }
   
 
-const EventQuickLook = ({org}) => {
+const EventQuickLook = ({ org, canManageEvents = false }) => {
     const [selectedTab, setSelectedTab] = useState("upcoming");
-    const upcomingEvents = useFetch(`/get-my-events?orgId=${org.org.overview._id}&type=${selectedTab === "upcoming" ? "future" : "pending"}&sort=asc&limit=5`);
+    const navigate = useNavigate();
+    const { showEventDashboard } = useDashboardOverlay();
+    const orgId = org?.org?.overview?._id;
+    const upcomingEvents = useFetch(`/get-my-events?orgId=${orgId}&type=${selectedTab === "upcoming" ? "future" : "pending"}&sort=asc&limit=5`);
+
+    const handleOpenEventDashboard = (event) => {
+        if (canManageEvents && orgId) {
+            showEventDashboard(event, orgId, { persistInUrl: true });
+        } else {
+            navigate(`/event/${event._id}`);
+        }
+    };
 
 
     return(
@@ -46,7 +59,16 @@ const EventQuickLook = ({org}) => {
             <div className="row events-container">
                 {
                     upcomingEvents.data && upcomingEvents.data.events.map((event) => (
-                        <OIEEvent key={event._id} event={event} showOIE={event.approvalReference} manage={false} refetch={upcomingEvents.refetch} showHosting={true} showHostingType={false} extraInfo={
+                        <OIEEvent
+                            key={event._id}
+                            event={event}
+                            showOIE={event.approvalReference}
+                            manage={false}
+                            refetch={upcomingEvents.refetch}
+                            showHosting={true}
+                            showHostingType={false}
+                            onOpenDashboard={handleOpenEventDashboard}
+                            extraInfo={
                             <div className="row live-event-info">
                                 <div>
                                     <PulseDot color="var(--green)" size="8px" pulse={true} />

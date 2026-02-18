@@ -10,6 +10,98 @@
         gap: 8px;
     }
 
+    &__header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    &__mode-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-right: 8px;
+    }
+
+    &__mode-label {
+        font-size: 12px;
+        font-weight: 500;
+        color: #666;
+    }
+
+    &__mode-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px;
+        background: transparent;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        color: #666;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        svg {
+            font-size: 14px;
+        }
+
+        &:hover {
+            background: #f0f0f0;
+            border-color: #667eea;
+        }
+
+        &.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+
+            &:hover {
+                background: #5568d3;
+            }
+        }
+    }
+
+    &__view-toggle {
+        display: flex;
+        gap: 4px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 2px;
+        background: #fafafa;
+    }
+
+    &__view-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 8px;
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        color: #666;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        svg {
+            font-size: 16px;
+        }
+
+        &:hover {
+            background: #f0f0f0;
+        }
+
+        &.active {
+            background: #667eea;
+            color: white;
+
+            &:hover {
+                background: #5568d3;
+            }
+        }
+    }
+
     &__title {
         display: flex;
         align-items: center;
@@ -80,6 +172,28 @@
         display: flex;
         flex-direction: column;
         gap: 8px;
+    }
+
+    &__timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        
+        // Style DailyCalendar when used in agenda editor
+        .oie-weekly-calendar-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+    }
+
+    &__section-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: #666;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 
     &__item {
@@ -212,6 +326,13 @@
             resize: vertical;
             min-height: 60px;
         }
+
+        .help-text {
+            margin: 0;
+            font-size: 11px;
+            color: #666;
+            font-style: italic;
+        }
     }
 
     &__form-row {
@@ -320,6 +441,24 @@
             flex-direction: column;
             align-items: flex-start;
             gap: 8px;
+        }
+
+        &__header-actions {
+            flex-direction: column;
+            width: 100%;
+            gap: 8px;
+        }
+
+        &__mode-toggle {
+            width: 100%;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        &__mode-btn {
+            width: 100%;
+            justify-content: center;
         }
 
         &__form-row {

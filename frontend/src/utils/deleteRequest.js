@@ -45,7 +45,6 @@ const deleteRequest = async (url, body, options = {}) => {
             ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
             ...options.headers,
           },
-          withCredentials: true,
           ...options,
           withCredentials: true, // Ensure withCredentials is not overridden by options
         };

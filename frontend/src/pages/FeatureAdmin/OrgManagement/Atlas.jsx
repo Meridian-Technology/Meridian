@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './Atlas.scss';
 import Dashboard from '../../../components/Dashboard/Dashboard';
+import { analytics } from '../../../services/analytics/analytics';
 import OrgOverview from './OrgOverview/OrgOverview';
 import VerificationRequests from './VerificationRequests/VerificationRequests';
+import ApprovalQueue from './ApprovalQueue/ApprovalQueue';
 import OrgList from './OrgList/OrgList';
 import Configuration from './Configuration/Configuration';
 import Analytics from './Analytics/Analytics';
+import Migrations from './Migrations/Migrations';
 import AtlasLogo from '../../../assets/Brand Image/SolutionLogos/Atlas.svg';
 import { useNavigate } from 'react-router-dom';
 function Atlas() {
     const navigate = useNavigate();
+
+    useEffect(() => {
+        analytics.screen('Org Management');
+    }, []);
+
     const menuItems = [
         {
             label: 'Overview',
@@ -20,6 +28,11 @@ function Atlas() {
             label: 'Verification Requests',
             icon: 'mdi:shield-check',
             element: <VerificationRequests />
+        },
+        {
+            label: 'Approval Queue',
+            icon: 'mdi:clipboard-check-outline',
+            element: <ApprovalQueue />
         },
         {
             label: 'Organizations',
@@ -59,6 +72,11 @@ function Atlas() {
                     label: 'Messaging Configuration',
                     icon: 'mdi:message-text',
                     element: <Configuration section="messaging" />
+                },
+                {
+                    label: 'Migrations',
+                    icon: 'mdi:database-sync-outline',
+                    element: <Migrations />
                 }
             ]
         }

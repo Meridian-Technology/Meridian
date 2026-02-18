@@ -46,19 +46,28 @@ const apiRequest = async (url, body = null, options = {}) => {
         console.log('✅ Token refresh successful:', refreshResponse.data);
         
         // Retry original request
+        // FormData is consumed on first send - rebuild it for retry so the body isn't empty
+        let retryBody = body;
+        if (body instanceof FormData) {
+          retryBody = new FormData();
+          for (const [key, value] of body.entries()) {
+            retryBody.append(key, value);
+          }
+        }
+
         const retryConfig = {
           method: options.method || 'POST',
           url,
           headers: {
-            ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+            ...(retryBody instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
             ...options.headers,
           },
           withCredentials: true,
           ...options,
         };
 
-        if ((retryConfig.method === 'POST' || retryConfig.method === 'PUT' || retryConfig.method === 'PATCH') && body) {
-          retryConfig.data = body;
+        if ((retryConfig.method === 'POST' || retryConfig.method === 'PUT' || retryConfig.method === 'PATCH') && retryBody) {
+          retryConfig.data = retryBody;
         } else if (retryConfig.method === 'GET' && options.params) {
           retryConfig.params = options.params;
         }

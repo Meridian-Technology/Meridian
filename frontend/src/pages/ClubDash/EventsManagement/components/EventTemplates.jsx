@@ -20,8 +20,8 @@ function EventTemplates({ orgId, orgName, refreshTrigger, onRefresh }) {
             expectedAttendance: 50,
             visibility: 'public',
             contact: '',
-            rsvpEnabled: false,
-            rsvpRequired: false,
+            registrationEnabled: false,
+            registrationRequired: false,
             maxAttendees: null,
             externalLink: ''
         }
@@ -168,8 +168,8 @@ function EventTemplates({ orgId, orgName, refreshTrigger, onRefresh }) {
                 expectedAttendance: 50,
                 visibility: 'public',
                 contact: '',
-                rsvpEnabled: false,
-                rsvpRequired: false,
+                registrationEnabled: false,
+                registrationRequired: false,
                 maxAttendees: null,
                 externalLink: ''
             }
@@ -450,25 +450,25 @@ function EventTemplates({ orgId, orgName, refreshTrigger, onRefresh }) {
                                         <label>
                                             <input
                                                 type="checkbox"
-                                                checked={templateForm.templateData.rsvpEnabled}
-                                                onChange={(e) => handleInputChange('templateData.rsvpEnabled', e.target.checked)}
+                                                checked={templateForm.templateData.registrationEnabled}
+                                                onChange={(e) => handleInputChange('templateData.registrationEnabled', e.target.checked)}
                                             />
-                                            Enable RSVP
+                                            Enable registration
                                         </label>
                                     </div>
                                     <div className="form-group checkbox">
                                         <label>
                                             <input
                                                 type="checkbox"
-                                                checked={templateForm.templateData.rsvpRequired}
-                                                onChange={(e) => handleInputChange('templateData.rsvpRequired', e.target.checked)}
+                                                checked={templateForm.templateData.registrationRequired}
+                                                onChange={(e) => handleInputChange('templateData.registrationRequired', e.target.checked)}
                                             />
-                                            Require RSVP
+                                            Require registration
                                         </label>
                                     </div>
                                 </div>
 
-                                {templateForm.templateData.rsvpEnabled && (
+                                {templateForm.templateData.registrationEnabled && (
                                     <div className="form-group">
                                         <label>Max Attendees</label>
                                         <input

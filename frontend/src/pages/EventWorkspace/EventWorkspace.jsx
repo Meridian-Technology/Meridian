@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
+import { analytics } from '../../services/analytics/analytics';
 import { useFetch } from '../../hooks/useFetch';
 import { useNotification } from '../../NotificationContext';
 import useAuth from '../../hooks/useAuth';
@@ -24,6 +25,12 @@ function EventWorkspace({ eventId: propEventId, onClose }) {
     );
 
     const event = eventData?.event;
+
+    useEffect(() => {
+        if (event?._id) {
+            analytics.screen('Event Workspace', { event_id: event._id });
+        }
+    }, [event?._id]);
     
     // Check if user can edit this event
     const canEdit = user && event && (

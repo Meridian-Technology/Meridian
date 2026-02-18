@@ -282,6 +282,20 @@
                 padding: 20px;
                 overflow-y: auto;
 
+            .role-edit-restricted-notice {
+                margin-bottom: 16px;
+                padding: 12px;
+                background: var(--rm-error-light);
+                border-radius: 8px;
+                border: 1px solid rgba(239, 68, 68, 0.2);
+
+                .notice-text {
+                    margin: 0;
+                    font-size: 13px;
+                    color: var(--rm-error);
+                }
+            }
+
             .form-group {
                     margin-bottom: 20px;
                     position: relative;
@@ -401,7 +415,7 @@
                     background: var(--rm-background);
                     position: relative;
 
-                    &:hover:not(.coming-soon) {
+                    &:hover:not(.coming-soon):not(.disabled) {
                         border-color: var(--rm-primary);
                         background: var(--rm-primary-light);
                     }
@@ -417,7 +431,8 @@
                         }
                     }
 
-                    &.coming-soon {
+                    &.coming-soon,
+                    &.disabled {
                         cursor: not-allowed;
                         opacity: 0.7;
                         background: var(--rm-background-secondary);

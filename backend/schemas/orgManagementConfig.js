@@ -134,7 +134,7 @@ const orgManagementConfigSchema = new mongoose.Schema({
         default: () => JSON.parse(JSON.stringify(defaultVerificationTiers))
     },
     
-    // Auto-approval settings
+    // Auto-approval settings (legacy - prefer orgApproval)
     autoApproveNewOrgs: {
         type: Boolean,
         default: false
@@ -142,6 +142,28 @@ const orgManagementConfigSchema = new mongoose.Schema({
     autoApproveThreshold: {
         type: Number,
         default: 0 // Minimum members required for auto-approval
+    },
+    // Atlas org approval config
+    orgApproval: {
+        mode: {
+            type: String,
+            enum: ['none', 'manual', 'auto', 'both'],
+            default: 'none'
+        },
+        autoApproveMemberThreshold: {
+            type: Number,
+            default: 5
+        },
+        pendingOrgLimits: {
+            discoverable: {
+                type: Boolean,
+                default: false
+            },
+            allowedActions: {
+                type: [String],
+                default: ['view_page', 'edit_profile']
+            }
+        }
     },
     
     // Verification type settings

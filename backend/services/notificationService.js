@@ -717,7 +717,7 @@ class NotificationService {
                         id: 'accept_invitation',
                         label: 'Accept',
                         type: 'api_call',
-                        url: '/api/org/invitations/accept',
+                        url: '/org-invites/{{invitationId}}/accept',
                         method: 'POST',
                         payload: { invitationId: '{{invitationId}}' },
                         style: 'success'
@@ -726,7 +726,7 @@ class NotificationService {
                         id: 'decline_invitation',
                         label: 'Decline',
                         type: 'api_call',
-                        url: '/api/org/invitations/decline',
+                        url: '/org-invites/{{invitationId}}/decline',
                         method: 'POST',
                         payload: { invitationId: '{{invitationId}}' },
                         style: 'secondary'
@@ -772,6 +772,30 @@ class NotificationService {
                     }
                 ]
             },
+            'org_message_new':{
+                title: '{{orgName}} has posted a new announcement',
+                message: '{{messagePreview}}',
+                version: '1.0',
+                priority: 'normal',
+                channels: ['in_app', 'push'],
+                // Backend-controlled navigation: navigate to organization profile
+                // Note: orgId should be provided in variables when creating notification
+                navigation: {
+                    type: 'navigate',
+                    route: 'OrganizationProfile',
+                    params: { orgId: '{{orgId}}' },
+                    deepLink: 'meridian://organization/{{orgId}}'
+                },
+                actions: [
+                    {
+                        id: 'view_announcement',
+                        label: 'View Announcement',
+                        type: 'link',
+                        url: 'meridian://organization/{{orgId}}',
+                        style: 'primary'
+                    }
+                ]
+            },
             'org_member_applied': {
                 title: 'New Member Applied',
                 message: '<strong>{{senderName|capitalize}}</strong> has applied to join <strong>{{orgName}}</strong>.',
@@ -796,6 +820,28 @@ class NotificationService {
                         url: '/club-dashboard/{{orgName}}?page=2',
                         style: 'primary'
                     }   
+                ]
+            },
+            'org_approval_needed': {
+                title: 'Organization Needs Approval',
+                message: 'A new organization <strong>{{orgName}}</strong> is pending approval.',
+                version: '1.0',
+                priority: 'high',
+                channels: ['in_app', 'push'],
+                navigation: {
+                    type: 'navigate',
+                    route: 'OrganizationProfile',
+                    params: { orgId: '{{orgId}}' },
+                    deepLink: 'meridian://organization/{{orgId}}'
+                },
+                actions: [
+                    {
+                        id: 'review_approval',
+                        label: 'Review and Approve',
+                        type: 'link',
+                        url: '/org-management',
+                        style: 'primary'
+                    }
                 ]
             },
             'event_reminder': {

@@ -78,7 +78,7 @@
             border-radius: 0;
             &:focus {
                 outline: none;
-                border-bottom-color: var(--red);
+                border-bottom-color: var(--dark-blue);
             }
         }
 
@@ -96,7 +96,7 @@
 
             &:focus {
                 outline: none;
-                border-bottom-color: var(--red);
+                border-bottom-color: var(--dark-blue);
             }
         }
     }
@@ -115,7 +115,7 @@
         overflow:hidden;
         transition: all 0.5s ease;
         &.editing{
-            border-left: 4px solid var(--red);
+            border-left: 4px solid var(--dark-blue);
         }
         .edit-header {
             display: flex;
@@ -181,8 +181,8 @@
         }
 
         &.editing{
-            // border:1px solid var(--red-transparent);
-            box-shadow: 0px 0px 28px 0px var(--red-transparent);
+            // border:1px solid var(--dark-blue-transparent);
+            box-shadow: 0px 0px 28px 0px var(--dark-blue-transparent);
             scale:1.01;
 
         }
@@ -193,7 +193,7 @@
         padding: 15px;
         // border-radius: 8px;
         cursor:pointer;
-        // border-left: 4px solid var(--red);
+        // border-left: 4px solid var(--dark-blue);
 
         p{
             font-size: 14px;
@@ -202,7 +202,8 @@
             font-weight: 500;
         }
         
-        input[type="text"] {
+        input[type="text"],
+        textarea {
             width: 100%;
             padding: 8px;
             margin-bottom: 10px;
@@ -211,10 +212,15 @@
             background-color: var(--oie-background);
             color: var(--text);
             box-sizing: border-box;
+            resize: vertical;
             &:focus {
                 outline: none;
-                border-color: var(--red);
+                border-color: var(--dark-blue);
             }
+        }
+
+        textarea {
+            min-height: 60px;
         }
 
         label {
@@ -241,14 +247,14 @@
                     background: none;
                     border: none;
                     cursor: pointer;
-                    color: var(--red);
+                    color: var(--dark-blue);
                 }
             }
 
             >button {
                 margin-top: 10px;
                 padding: 8px 16px;
-                background-color: var(--red);
+                background-color: var(--dark-blue);
                 color: white;
                 border: none;
                 border-radius: 4px;
@@ -294,7 +300,7 @@
     .save-button {
         width: 100%;
         padding: 12px;
-        background-color: var(--red);
+        background-color: var(--dark-blue);
         color: white;
         border: none;
         border-radius: 4px;

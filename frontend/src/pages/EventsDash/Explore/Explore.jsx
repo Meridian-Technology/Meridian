@@ -15,6 +15,7 @@ import useAuth from '../../../hooks/useAuth';
 import postRequest from '../../../utils/postRequest';
 import { useNotification } from '../../../NotificationContext';
 import Loader from '../../../components/Loader/Loader';
+import EmptyState from '../../../components/EmptyState/EmptyState';
 import eventsLogo from '../../../assets/Brand Image/EventsLogo.svg';
 import exploreBackgroundGradient from '../../../assets/Gradients/ExploreBackgroundGradient.png';
 import { analytics } from '../../../services/analytics/analytics';
@@ -343,7 +344,13 @@ function Explore(){
                     <p>Loading events...</p>
                 </div>
             ) : error ? (
-                <div className="error" role="alert">Error loading events</div>
+                <div className="empty-state-center" role="alert">
+                    <EmptyState
+                        icon="mdi:alert-circle"
+                        title="Error loading events"
+                        description="Something went wrong. Try refreshing or changing your filters."
+                    />
+                </div>
             ) : viewType === 0 ? (
                 <EventsList 
                     groupedEvents={groupedEvents}

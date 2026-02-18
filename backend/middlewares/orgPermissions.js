@@ -19,6 +19,21 @@ function requireOrgPermission(permission, orgParam = 'orgId') {
                 });
             }
 
+            // Site admin/root bypass: grant full access without org membership
+            const roles = req.user?.roles || [];
+            if (roles.includes('admin') || roles.includes('root')) {
+                const org = await Org.findById(orgId);
+                if (!org) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Organization not found'
+                    });
+                }
+                req.org = org;
+                req.orgMember = null;
+                return next();
+            }
+
             const member = await OrgMember.findOne({
                 org_id: orgId,
                 user_id: req.user.userId,
@@ -80,6 +95,21 @@ function requireAnyOrgPermission(permissions, orgParam = 'orgId') {
                     success: false,
                     message: 'Organization ID is required'
                 });
+            }
+
+            // Site admin/root bypass: grant full access without org membership
+            const roles = req.user?.roles || [];
+            if (roles.includes('admin') || roles.includes('root')) {
+                const org = await Org.findById(orgId);
+                if (!org) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Organization not found'
+                    });
+                }
+                req.org = org;
+                req.orgMember = null;
+                return next();
             }
 
             const member = await OrgMember.findOne({
@@ -145,6 +175,20 @@ function requireOrgOwner(orgParam = 'orgId') {
                     success: false,
                     message: 'Organization ID is required'
                 });
+            }
+
+            // Site admin/root bypass: grant full access without ownership
+            const roles = req.user?.roles || [];
+            if (roles.includes('admin') || roles.includes('root')) {
+                const org = await Org.findById(orgId);
+                if (!org) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Organization not found'
+                    });
+                }
+                req.org = org;
+                return next();
             }
 
             const org = await Org.findById(orgId);
@@ -213,5 +257,7 @@ module.exports = {
     requireRoleManagement,
     requireMemberManagement,
     requireEventManagement,
-    requireAnalyticsAccess
+    requireAnalyticsAccess,
+    requireEquipmentManagement: (orgParam = 'orgId') => requireOrgPermission('manage_equipment', orgParam),
+    requireEquipmentModification: (orgParam = 'orgId') => requireOrgPermission('modify_equipment', orgParam)
 }; 

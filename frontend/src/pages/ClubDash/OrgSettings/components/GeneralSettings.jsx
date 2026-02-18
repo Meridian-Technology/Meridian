@@ -6,10 +6,11 @@ import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/Un
 import SettingsList from '../../../../components/SettingsList/SettingsList';
 import ImageUpload from '../../../../components/ImageUpload/ImageUpload';
 import Popup from '../../../../components/Popup/Popup';
+import SlideSwitch from '../../../../components/SlideSwitch/SlideSwitch';
 import { Icon } from '@iconify-icon/react';
 import './GeneralSettings.scss';
 
-const GeneralSettings = ({ org, expandedClass }) => {
+const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
     const location = useLocation();
     const [formData, setFormData] = useState({
         org_name: '',
@@ -17,7 +18,8 @@ const GeneralSettings = ({ org, expandedClass }) => {
         org_profile_image: '',
         org_banner_image: '',
         weekly_meeting: '',
-        positions: []
+        positions: [],
+        unlisted: false
     });
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [canManageSettings, setCanManageSettings] = useState(false);
@@ -32,7 +34,7 @@ const GeneralSettings = ({ org, expandedClass }) => {
     const [isInvalidBannerImageType, setIsInvalidBannerImageType] = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
     const {AtlasMain} = useGradient();
-    const { checkUserPermissions } = useOrgPermissions(org);
+    const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { saveOrgSettings } = useOrgSave(org);
 
     useEffect(() => {
@@ -55,7 +57,8 @@ const GeneralSettings = ({ org, expandedClass }) => {
         org_profile_image: '',
         org_banner_image: '',
         weekly_meeting: '',
-        positions: []
+        positions: [],
+        unlisted: false
     });
 
     const initializeFormData = () => {
@@ -66,7 +69,8 @@ const GeneralSettings = ({ org, expandedClass }) => {
                 org_profile_image: org.org_profile_image || '',
                 org_banner_image: org.org_banner_image || '',
                 weekly_meeting: org.weekly_meeting || '',
-                positions: org.positions || []
+                positions: org.positions || [],
+                unlisted: org.unlisted || false
             };
             setFormData(initialData);
             setOriginalData(initialData);
@@ -96,6 +100,10 @@ const GeneralSettings = ({ org, expandedClass }) => {
                 return newErrors;
             });
         }
+    };
+
+    const handleUnlistedToggle = () => {
+        setFormData(prev => ({ ...prev, unlisted: !prev.unlisted }));
     };
 
     const handleFileSelect = (file) => {
@@ -404,6 +412,16 @@ const GeneralSettings = ({ org, expandedClass }) => {
                         <span className="error-message">{fieldErrors.org_description}</span>
                     )}
                 </div>
+            )
+        },
+        {
+            title: 'Unlisted',
+            subtitle: 'When enabled, your organization will not appear in the public Organizations list. Members can still access it via direct link.',
+            action: (
+                <SlideSwitch
+                    checked={formData.unlisted}
+                    onChange={handleUnlistedToggle}
+                />
             )
         },
         {

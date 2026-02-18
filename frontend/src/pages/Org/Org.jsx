@@ -1,11 +1,12 @@
 import React, {useState, useEffect} from 'react';
-import rpiLogo from "../../assets/Icons/rpiLogo.svg";
 import person from "../../assets/Icons/Profile.svg";
 import defaultAvatar from "../../assets/defaultAvatar.svg";
+import { analytics } from '../../services/analytics/analytics';
 import FormViewer from '../../components/FormViewer/FormViewer';
 import Popup from '../../components/Popup/Popup';
 import OrgEvents from '../../components/OrgEvents/OrgEvents';
 import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
+import TabbedContainer, { CommonTabConfigs } from '../../components/TabbedContainer';
 import apiRequest from '../../utils/postRequest';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import useAuth from '../../hooks/useAuth';
@@ -14,18 +15,34 @@ import { useCache } from '../../CacheContext';
 import { sendFriendRequest } from '../Friends/FriendsHelpers';
 import { getOrgRoleColor } from '../../utils/orgUtils';
 import './Org.scss';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+
+function getInitials(name) {
+    if (!name || typeof name !== 'string' || name.trim().length === 0) return '??';
+    return name.trim().split(' ').filter((w) => w.length > 0).map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
 
 const Org = ({ orgData, refetch }) => {
 
     const { overview, members, followers } = orgData.org;
     const [showForm, setShowForm] = useState(false);
+
+    useEffect(() => {
+        if (overview?._id) {
+            analytics.screen('Org Page', { org_id: overview._id, org_name: overview.org_name });
+        }
+    }, [overview?._id]);
     const {user, friendRequests, refreshFriendRequests} = useAuth();
-    const [activeTab, setActiveTab] = useState('home');
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const viewAsOutsider = searchParams.get('viewAs') === 'outsider';
+    const hasDashboardAccess = user?.clubAssociations?.find(club => club.org_name === overview?.org_name);
+    const displayOrgData = viewAsOutsider
+        ? { ...orgData, org: { ...orgData.org, isMember: false, isFollower: false, isPending: false } }
+        : orgData;
+    const hasProfileImage = overview?.org_profile_image && overview.org_profile_image !== '/Logo.svg';
     const { addNotification } = useNotification();
     const [isLoading, setIsLoading] = useState({ join: false, follow: false, leave: false });
-    const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
     const { getFriends } = useCache();
     const [friendsData, setFriendsData] = useState(null);
     const [friendRequestLoading, setFriendRequestLoading] = useState({});
@@ -75,6 +92,7 @@ const Org = ({ orgData, refetch }) => {
                     type: 'error'
                 });
             } else {
+                analytics.track('org_join', { org_id: overview._id });
                 addNotification({
                     title: 'Success',
                     message: response.message || (overview.requireApprovalForJoin ? 'Application submitted successfully' : 'You are now a member'),
@@ -131,6 +149,7 @@ const Org = ({ orgData, refetch }) => {
                 // Refetch to sync state
                 setTimeout(() => refetch(), 100);
             } else {
+                analytics.track('org_follow', { org_id: overview._id });
                 addNotification({
                     title: 'Success',
                     message: 'You are now following this organization',
@@ -170,6 +189,7 @@ const Org = ({ orgData, refetch }) => {
                 // Refetch to sync state
                 setTimeout(() => refetch(), 100);
             } else {
+                analytics.track('org_unfollow', { org_id: overview._id });
                 addNotification({
                     title: 'Success',
                     message: 'You have unfollowed this organization',
@@ -211,6 +231,7 @@ const Org = ({ orgData, refetch }) => {
                     type: 'error'
                 });
             } else {
+                analytics.track('org_leave', { org_id: overview._id });
                 addNotification({
                     title: 'Success',
                     message: response.message || 'You have left the organization',
@@ -374,7 +395,13 @@ const Org = ({ orgData, refetch }) => {
                     <div className="org-info">
                         <div className="org-logo">
                             <div className="img-container">
-                                <img src={overview.org_profile_image ? overview.org_profile_image : rpiLogo} alt=""/>
+                                {hasProfileImage ? (
+                                    <img src={overview.org_profile_image} alt="" />
+                                ) : (
+                                    <div className="org-logo-placeholder">
+                                        <span className="org-logo-initials">{getInitials(overview?.org_name)}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="org-content-section">
@@ -393,255 +420,252 @@ const Org = ({ orgData, refetch }) => {
                             <p className="description desktop-description">
                                 {overview.org_description}
                             </p>
-                        </div>
-                    </div>
-                </div>
-
-                <div 
-                    className={`mobile-description-box ${isDescriptionExpanded ? 'expanded' : 'collapsed'}`}
-                    onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
-                >
-                    <div className="mobile-description-header">
-                        <span>Description</span>
-                        <Icon 
-                            icon={isDescriptionExpanded ? "material-symbols:expand-less" : "material-symbols:expand-more"} 
-                            className="expand-icon"
-                        />
-                    </div>
-                    <div className="mobile-description-wrapper">
-                        <p className="description mobile-description">
-                            {overview.org_description}
-                        </p>
-                    </div>
-                </div>
-
-                {/* 2 base states: joined, not joined */}
-                <div className="actions-container">
-                    <div className="actions">
-                        {/* {
-                            overview.requireApprovalForJoin ? (
-                                <button onClick={initiateApply}>Apply</button>
-                            ) : (
-                                <button>Join</button>
-                            )
-                        } */}
-                        {
-                            orgData.org.isMember ? (
-                                <button 
-                                    className="no-action joined" 
-                                    onClick={handleLeaveClick}
-                                    disabled={isLoading.leave}
-                                >
-                                    <Icon icon="material-symbols:check-rounded" />
-                                    {isLoading.leave ? 'Leaving...' : 'Joined'}
-                                </button>
-                            ) : orgData.org.isPending ? (
-                                <button disabled={true}>Pending...</button>
-                            ) : overview.requireApprovalForJoin ? (
-                                <button onClick={initiateApply} disabled={isLoading.join}>
-                                    {isLoading.join ? 'Applying...' : 'Apply'}
-                                </button>
-                            ) : (
-                                <button onClick={initiateApply} disabled={isLoading.join}>
-                                    {isLoading.join ? 'Joining...' : 'Join'}
-                                </button>
-                            )
-                        }
-                        <button 
-                            onClick={handleFollowToggle} 
-                            className={`follow-button ${orgData.org.isFollower ? 'following' : 'not-following'}`}
-                            title={orgData.org.isFollower ? 'Unfollow' : 'Follow'}
-                        >
-                            <Icon icon={orgData.org.isFollower ? "material-symbols:notifications-active" : "material-symbols:notifications-outline"} />
-                        </button>
-                        {overview.socialLinks && overview.socialLinks.length > 0 && (
-                            <div className="social-links-pips">
-                                {overview.socialLinks
-                                    .sort((a, b) => (a.order || 0) - (b.order || 0))
-                                    .map((link, index) => {
-                                        let url, icon, label;
-                                        
-                                        if (link.type === 'website') {
-                                            url = link.url;
-                                            icon = 'mdi:link';
-                                            label = link.title || 'Website';
-                                        } else {
-                                            const baseUrls = {
-                                                instagram: 'https://instagram.com/',
-                                                youtube: 'https://youtube.com/@',
-                                                tiktok: 'https://tiktok.com/@'
-                                            };
-                                            url = `${baseUrls[link.type]}${link.username}`;
-                                            const icons = {
-                                                instagram: 'mdi:instagram',
-                                                youtube: 'mdi:youtube',
-                                                tiktok: 'simple-icons:tiktok'
-                                            };
-                                            icon = icons[link.type];
-                                            label = `${link.type.charAt(0).toUpperCase() + link.type.slice(1)}: ${link.username}`;
+                            {!displayOrgData.org.isMember && mutualFriends.length > 0 && (
+                                <div className="mutuals-stats">
+                                    <div className="mutual-friends-avatars">
+                                        {mutualFriends.slice(0, 3).map((friend, index) => (
+                                            <img 
+                                                key={friend._id} 
+                                                src={friend.picture || defaultAvatar} 
+                                                alt={friend.name || friend.username}
+                                                className="mutual-avatar"
+                                                style={{ zIndex: 3 - index }}
+                                            />
+                                        ))}
+                                    </div>
+                                    <span className="mutual-friends-text">
+                                        {mutualFriends.length === 1 
+                                            ? `${mutualFriends[0].name || mutualFriends[0].username} is already a member`
+                                            : mutualFriends.length === 2
+                                            ? `${mutualFriends[0].name || mutualFriends[0].username} and ${mutualFriends[1].name || mutualFriends[1].username} are members`
+                                            : `${mutualFriends.slice(0, 2).map(f => f.name || f.username).join(' and ')}, and ${mutualFriends.length - 2} other friend${mutualFriends.length - 2 === 1 ? '' : 's'} ${mutualFriends.length - 2 === 1 ? 'is' : 'are'} members`
                                         }
-                                        
-                                        return (
-                                            <a
-                                                key={index}
-                                                href={url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="social-link-pip"
-                                                title={label}
-                                            >
-                                                <Icon icon={icon} />
-                                            </a>
-                                        );
-                                    })}
-                            </div>
-                        )}
-                    </div>
-                    {
-                        user.clubAssociations.find(club => club.org_name === overview.org_name) && (
-                            <button 
-                                className="dashboard-button"
-                                onClick={()=>{
-                                    navigate(`/club-dashboard/${overview.org_name}`);
-                                }}
-                            >
-                                <Icon icon="material-symbols:admin-panel-settings" />
-                                Dashboard
-                            </button>
-                        ) 
-                    }
-                </div>
+                                    </span>
+                                </div>
+                            )}
 
-                {!orgData.org.isMember && mutualFriends.length > 0 && (
-                    <div className="mutuals-stats">
-                        <div className="mutual-friends-avatars">
-                            {mutualFriends.slice(0, 3).map((friend, index) => (
-                                <img 
-                                    key={friend._id} 
-                                    src={friend.picture || defaultAvatar} 
-                                    alt={friend.name || friend.username}
-                                    className="mutual-avatar"
-                                    style={{ zIndex: 3 - index }}
-                                />
-                            ))}
+                            <div className="actions-container">
+                                <div className="actions">
+                                    {
+                                        displayOrgData.org.isMember ? (
+                                            <button 
+                                                className="no-action joined" 
+                                                onClick={handleLeaveClick}
+                                                disabled={isLoading.leave || viewAsOutsider}
+                                            >
+                                                <Icon icon="material-symbols:check-rounded" />
+                                                {isLoading.leave ? 'Leaving...' : 'Joined'}
+                                            </button>
+                                        ) : displayOrgData.org.isPending ? (
+                                            <button disabled={true}>Pending...</button>
+                                        ) : overview.requireApprovalForJoin ? (
+                                            <button onClick={initiateApply} disabled={isLoading.join || viewAsOutsider} title={viewAsOutsider ? 'Exit preview to take action' : undefined}>
+                                                {isLoading.join ? 'Applying...' : 'Apply'}
+                                            </button>
+                                        ) : (
+                                            <button onClick={initiateApply} disabled={isLoading.join || viewAsOutsider} title={viewAsOutsider ? 'Exit preview to take action' : undefined}>
+                                                {isLoading.join ? 'Joining...' : 'Join'}
+                                            </button>
+                                        )
+                                    }
+                                    <button 
+                                        onClick={handleFollowToggle} 
+                                        className={`follow-button ${displayOrgData.org.isFollower ? 'following' : 'not-following'}`}
+                                        title={displayOrgData.org.isFollower ? 'Unfollow' : 'Follow'}
+                                        disabled={viewAsOutsider}
+                                    >
+                                        <Icon icon={displayOrgData.org.isFollower ? "material-symbols:notifications-active" : "material-symbols:notifications-outline"} />
+                                    </button>
+                                    {overview.socialLinks && overview.socialLinks.length > 0 && (
+                                        <div className="social-links-pips">
+                                            {overview.socialLinks
+                                                .sort((a, b) => (a.order || 0) - (b.order || 0))
+                                                .map((link, index) => {
+                                                    let url, icon, label;
+                                                    
+                                                    if (link.type === 'website') {
+                                                        url = link.url;
+                                                        icon = 'mdi:link';
+                                                        label = link.title || 'Website';
+                                                    } else {
+                                                        const baseUrls = {
+                                                            instagram: 'https://instagram.com/',
+                                                            youtube: 'https://youtube.com/@',
+                                                            tiktok: 'https://tiktok.com/@'
+                                                        };
+                                                        url = `${baseUrls[link.type]}${link.username}`;
+                                                        const icons = {
+                                                            instagram: 'mdi:instagram',
+                                                            youtube: 'mdi:youtube',
+                                                            tiktok: 'simple-icons:tiktok'
+                                                        };
+                                                        icon = icons[link.type];
+                                                        label = `${link.type.charAt(0).toUpperCase() + link.type.slice(1)}: ${link.username}`;
+                                                    }
+                                                    
+                                                    return (
+                                                        <a
+                                                            key={index}
+                                                            href={url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="social-link-pip"
+                                                            title={label}
+                                                        >
+                                                            <Icon icon={icon} />
+                                                        </a>
+                                                    );
+                                                })}
+                                        </div>
+                                    )}
+                                </div>
+                                {
+                                    hasDashboardAccess && (
+                                        <div className="dashboard-buttons">
+                                            <button 
+                                                className={`dashboard-button ${viewAsOutsider ? 'active' : ''}`}
+                                                onClick={() => {
+                                                    const next = new URLSearchParams(searchParams);
+                                                    if (viewAsOutsider) {
+                                                        next.delete('viewAs');
+                                                    } else {
+                                                        next.set('viewAs', 'outsider');
+                                                    }
+                                                    setSearchParams(next);
+                                                }}
+                                                title={viewAsOutsider ? 'Exit preview' : 'Preview how non-members see this page'}
+                                            >
+                                                <Icon icon={viewAsOutsider ? "material-symbols:visibility-off" : "material-symbols:visibility"} />
+                                                {viewAsOutsider ? 'Exit preview' : 'View as outsider'}
+                                            </button>
+                                            <button 
+                                                className="dashboard-button"
+                                                onClick={()=>{
+                                                    navigate(`/club-dashboard/${overview.org_name}`);
+                                                }}
+                                            >
+                                                <Icon icon="material-symbols:admin-panel-settings" />
+                                                Dashboard
+                                            </button>
+                                        </div>
+                                    ) 
+                                }
+                            </div>
+                            
                         </div>
-                        <span className="mutual-friends-text">
-                            {mutualFriends.length === 1 
-                                ? `${mutualFriends[0].name || mutualFriends[0].username} is already a member`
-                                : mutualFriends.length === 2
-                                ? `${mutualFriends[0].name || mutualFriends[0].username} and ${mutualFriends[1].name || mutualFriends[1].username} are already members`
-                                : `${mutualFriends.slice(0, 2).map(f => f.name || f.username).join(' and ')}, and ${mutualFriends.length - 2} other friend${mutualFriends.length - 2 === 1 ? '' : 's'} ${mutualFriends.length - 2 === 1 ? 'is' : 'are'} already members`
-                            }
-                        </span>
+                        
                     </div>
-                )}
+                    
+                </div>
 
                 <div className="org-dashboard">
-                    <div className="filter-buttons">
-                        <button
-                            className={`filter-button ${activeTab === 'home' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('home')}
-                        >
-                            Discussion
-                        </button>
-                        <button
-                            className={`filter-button ${activeTab === 'events' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('events')}
-                        >
-                            Events
-                        </button>
-                        <button
-                            className={`filter-button ${activeTab === 'members' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('members')}
-                        >
-                            Members
-                        </button>
-                    </div>
-                </div>
-                {
-                    activeTab === 'events' ? (
-                        <div className="events-content">
-                            <OrgEvents orgId={overview?._id} />
-                        </div>
-                    ) : activeTab === 'members' ? (
-                        <div className="members-content">
-                            {sortedMembers && sortedMembers.length > 0 ? (
-                                <div className="members-list">
-                                    {sortedMembers.map((member) => {
-                                        const memberUser = member.user_id;
-                                        const memberUserId = memberUser?._id || memberUser;
-                                        const memberUserIdStr = (memberUserId?.toString() || memberUserId || '').toString();
-                                        const isAlreadyFriend = isFriend(memberUser);
-                                        const isPending = isPendingFriendRequest(memberUser);
-                                        const isLoading = friendRequestLoading[memberUserIdStr];
-                                        const role = member.role || 'member';
-                                        const rolesArray = overview?.positions || [];
-                                        const roleColor = getOrgRoleColor(role, 1, rolesArray);
-                                        const roleBgColor = getOrgRoleColor(role, 0.1, rolesArray);
-                                        
-                                        return (
-                                            <div key={member._id || memberUserIdStr} className="member-card">
-                                                <div className="member-info">
-                                                    <img 
-                                                        src={memberUser?.picture || defaultAvatar} 
-                                                        alt={memberUser?.name || memberUser?.username || 'Member'}
-                                                        className="member-avatar"
-                                                    />
-                                                    <div className="member-details">
-                                                        <h3 className="member-name">
-                                                            {memberUser?.name || memberUser?.username || 'Unknown'}
-                                                        </h3>
-                                                        <p className="member-username">
-                                                            @{memberUser?.username || 'unknown'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="member-actions">
-                                                    <span 
-                                                        className="member-role" 
-                                                        style={{ 
-                                                            backgroundColor: roleBgColor, 
-                                                            color: roleColor 
-                                                        }}
-                                                    >
-                                                        {role}
-                                                    </span>
-                                                    {(() => {
-                                                        const currentUserId = (user?._id?.toString() || user?._id || '').toString();
-                                                        return memberUserIdStr && memberUserIdStr !== currentUserId;
-                                                    })() && (
-                                                        <button
-                                                            className={`add-friend-button ${isAlreadyFriend ? 'already-friend' : ''} ${isPending ? 'pending' : ''}`}
-                                                            onClick={() => !isAlreadyFriend && !isPending && handleAddFriend(member)}
-                                                            disabled={isAlreadyFriend || isLoading || isPending}
-                                                            title={isAlreadyFriend ? 'Friends' : isPending ? 'Request Pending' : 'Add Friend'}
-                                                        >
-                                                            {isLoading ? (
-                                                                <Icon icon="material-symbols:hourglass-empty" />
-                                                            ) : isAlreadyFriend ? (
-                                                                <Icon icon="material-symbols:check-rounded" />
-                                                            ) : isPending ? (
-                                                                <Icon icon="material-symbols:schedule" />
-                                                            ) : (
-                                                                <Icon icon="material-symbols:person-add" />
-                                                            )}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                    <TabbedContainer
+                        tabs={[
+                            CommonTabConfigs.basic(
+                                'home',
+                                'Discussion',
+                                'mdi:forum',
+                                <div className="announcements-content">
+                                    <OrgMessageFeed orgId={overview._id} orgData={displayOrgData} />
                                 </div>
-                            ) : (
-                                <p className="no-members">No members found</p>
-                            )}
-                        </div>
-                    ) : activeTab === 'home' ? (
-                        <div className="announcements-content">
-                            <OrgMessageFeed orgId={overview._id} orgData={orgData} />
-                        </div>
-                    ) : null
-                }
+                            ),
+                            CommonTabConfigs.basic(
+                                'events',
+                                'Events',
+                                'mdi:calendar',
+                                <div className="events-content">
+                                    <OrgEvents orgId={overview?._id} />
+                                </div>
+                            ),
+                            CommonTabConfigs.basic(
+                                'members',
+                                'Members',
+                                'mdi:account-group',
+                                <div className="members-content">
+                                    {sortedMembers && sortedMembers.length > 0 ? (
+                                        <div className="members-list">
+                                            {sortedMembers.map((member) => {
+                                                const memberUser = member.user_id;
+                                                const memberUserId = memberUser?._id || memberUser;
+                                                const memberUserIdStr = (memberUserId?.toString() || memberUserId || '').toString();
+                                                const isAlreadyFriend = isFriend(memberUser);
+                                                const isPending = isPendingFriendRequest(memberUser);
+                                                const isLoading = friendRequestLoading[memberUserIdStr];
+                                                const role = member.role || 'member';
+                                                const rolesArray = overview?.positions || [];
+                                                const roleColor = getOrgRoleColor(role, 1, rolesArray);
+                                                const roleBgColor = getOrgRoleColor(role, 0.1, rolesArray);
+                                                
+                                                return (
+                                                    <div key={member._id || memberUserIdStr} className="member-card">
+                                                        <div className="member-info">
+                                                            <img 
+                                                                src={memberUser?.picture || defaultAvatar} 
+                                                                alt={memberUser?.name || memberUser?.username || 'Member'}
+                                                                className="member-avatar"
+                                                            />
+                                                            <div className="member-details">
+                                                                <h3 className="member-name">
+                                                                    {memberUser?.name || memberUser?.username || 'Unknown'}
+                                                                </h3>
+                                                                <p className="member-username">
+                                                                    @{memberUser?.username || 'unknown'}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="member-actions">
+                                                            <span 
+                                                                className="member-role" 
+                                                                style={{ 
+                                                                    backgroundColor: roleBgColor, 
+                                                                    color: roleColor 
+                                                                }}
+                                                            >
+                                                                {role}
+                                                            </span>
+                                                            {(() => {
+                                                                const currentUserId = (user?._id?.toString() || user?._id || '').toString();
+                                                                return memberUserIdStr && memberUserIdStr !== currentUserId;
+                                                            })() && (
+                                                                <button
+                                                                    className={`add-friend-button ${isAlreadyFriend ? 'already-friend' : ''} ${isPending ? 'pending' : ''}`}
+                                                                    onClick={() => !isAlreadyFriend && !isPending && handleAddFriend(member)}
+                                                                    disabled={isAlreadyFriend || isLoading || isPending}
+                                                                    title={isAlreadyFriend ? 'Friends' : isPending ? 'Request Pending' : 'Add Friend'}
+                                                                >
+                                                                    {isLoading ? (
+                                                                        <Icon icon="material-symbols:hourglass-empty" />
+                                                                    ) : isAlreadyFriend ? (
+                                                                        <Icon icon="material-symbols:check-rounded" />
+                                                                    ) : isPending ? (
+                                                                        <Icon icon="material-symbols:schedule" />
+                                                                    ) : (
+                                                                        <Icon icon="material-symbols:person-add" />
+                                                                    )}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <p className="no-members">No members found</p>
+                                    )}
+                                </div>
+                            )
+                        ]}
+                        defaultTab="home"
+                        tabStyle="default"
+                        size="medium"
+                        showTabIcons={true}
+                        showTabLabels={true}
+                        animated={true}
+                        lazyLoad={true}
+                        keepAlive={true}
+                        className="org-tabs"
+                    />
+                </div>
                 {/* <div className="meeting-schedule">
                     <h3>meetings schedule</h3>
                     <div className="meeting-card">

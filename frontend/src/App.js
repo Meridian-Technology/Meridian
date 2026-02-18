@@ -22,11 +22,13 @@ import Landing from './pages/Landing/Landing';
 import Events from './pages/Events/Events';
 import DeveloperOnboard from './pages/DeveloperOnboarding/DeveloperOnboarding';
 import QR from './pages/QR/QR';
+import EventQRRedirect from './pages/QR/EventQRRedirect';
 import Admin  from './pages/Admin/Admin';
 import OIEDash from './pages/OIEDash/OIEDash';
 import NewBadge from './pages/NewBadge/NewBadge';
 import CreateOrg from './pages/CreateOrg/CreateOrg';
 import ClubDash from './pages/ClubDash/ClubDash';
+import PendingApprovalScreen from './pages/ClubDash/PendingApprovalScreen/PendingApprovalScreen';
 import OrgDisplay from './pages/Org/OrgDisplay';
 import RootDash from './pages/RootDash/RootDash';
 import OrgManagement from './pages/FeatureAdmin/OrgManagement/Atlas';
@@ -47,7 +49,7 @@ import { ProfileCreationProvider } from './ProfileCreationContext';
 import { WebSocketProvider } from './WebSocketContext';
 import Layout from './pages/Layout/Layout';
 import axios from 'axios';
-import CreateEvent from './pages/CreateEventV2/CreateEventV2';
+import CreateEvent from './pages/CreateEventV3/CreateEventV3';
 import EventsDash from './pages/EventsDash/EventsDash';
 import EventPage from './pages/EventPage/EventPage';
 import EventWorkspace from './pages/EventWorkspace/EventWorkspace';
@@ -62,6 +64,10 @@ import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
 import Form from './pages/Form/Form';
 import Support from './pages/Support/Support';
+import CheckInConfirmation from './pages/CheckIn/CheckInConfirmation';
+import OrgInviteLanding from './pages/OrgInviteLanding/OrgInviteLanding';
+import OrgInviteLandingToken from './pages/OrgInviteLanding/OrgInviteLandingToken';
+import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
 function App() {
@@ -153,11 +159,17 @@ function App() {
                                     <Routes>
                                         <Route path='/' element={<Layout/>}>
                                             {/* publicly accessible pages */}
+                                            <Route path="/qr/e/:shortId" element={<EventQRRedirect/>}/>
                                             <Route path="/qr/:id" element={<QR/>}/>
+                                            <Route path="/check-in/:eventId/:token" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route index element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />
                                             <Route path="/room/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/room1/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/register" element={<AnimatedPageWrapper><Register /></AnimatedPageWrapper>}/>
+                                            <Route path="/org-invites" element={<AnimatedPageWrapper><OrgInviteLanding /></AnimatedPageWrapper>}/>
+                                            <Route path="/org-invites/landing/:token" element={<AnimatedPageWrapper><OrgInviteLandingToken /></AnimatedPageWrapper>}/>
+                                            <Route path="/org-invites/accept" element={<OrgInviteRedirect />}/>
+                                            <Route path="/org-invites/decline" element={<OrgInviteRedirect />}/>
                                             <Route path="/login" element={<AnimatedPageWrapper><Login /></AnimatedPageWrapper>}/>
                                             <Route path="/contact" element={<AnimatedPageWrapper><Contact /></AnimatedPageWrapper>}/>
                                             <Route path="/support" element={<AnimatedPageWrapper><Support /></AnimatedPageWrapper>}/>
@@ -193,17 +205,18 @@ function App() {
                                                 <Route path="/analytics-dashboard" element={<AnimatedPageWrapper><AnalyticsDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
 
-                                            {/* features under development */}
-                                            <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer']}/> }>
-                                                <Route path="/events" element={<AnimatedPageWrapper><Events/></AnimatedPageWrapper>}/>
+                                                <Route path="/club-dashboard/:id/pending-approval" element={<AnimatedPageWrapper><PendingApprovalScreen/></AnimatedPageWrapper>}/>
                                                 <Route path="/club-dashboard/:id" element={<AnimatedPageWrapper><ClubDash/></AnimatedPageWrapper>}/>
-                                                <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
+                                            {/* features under development */}
+                                            <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'beta']}/> }>
+                                                {/* <Route path="/events" element={<AnimatedPageWrapper><Events/></AnimatedPageWrapper>}/> */}
                                                 <Route path="/root-dashboard" element={<AnimatedPageWrapper><RootDash/></AnimatedPageWrapper>}/>
                                                 <Route path="/form/:id" element={<AnimatedPageWrapper><Form/></AnimatedPageWrapper>}/>
                                             <Route path="/org-management" element={<AnimatedPageWrapper><OrgManagement/></AnimatedPageWrapper>}/>
                                                 <Route path="/approval-dashboard/:id" element={<AnimatedPageWrapper><OIEDash/></AnimatedPageWrapper>}/>
                                                 <Route path="/domain-dashboard/:domainId" element={<AnimatedPageWrapper><DomainDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
+                                            <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
                                             <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsDash/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
