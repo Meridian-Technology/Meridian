@@ -30,6 +30,36 @@
         .header-content {
             flex: 1;
 
+            .platform-switcher {
+                display: flex;
+                gap: 8px;
+                margin-top: 12px;
+                align-items: center;
+
+                .platform-tab {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 6px 12px;
+                    border-radius: 8px;
+                    font-size: 0.9rem;
+                    font-weight: 500;
+                    color: var(--visitors-text-secondary);
+                    text-decoration: none;
+                    transition: all 0.2s ease;
+
+                    &:hover {
+                        color: var(--visitors-accent);
+                        background: rgba(59, 130, 246, 0.08);
+                    }
+
+                    &.active {
+                        color: var(--visitors-accent);
+                        background: rgba(59, 130, 246, 0.12);
+                    }
+                }
+            }
+
             h1 {
                 font-size: 2.5rem;
                 font-weight: 600;
@@ -563,6 +593,14 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
         gap: 24px;
+
+        &.proportional-bar-grid {
+            .proportional-bar-list-container {
+                background: var(--visitors-bg-secondary);
+                border-radius: 8px;
+                border: 1px solid var(--visitors-border-light);
+            }
+        }
 
         .device-section {
             background: var(--visitors-bg-secondary);

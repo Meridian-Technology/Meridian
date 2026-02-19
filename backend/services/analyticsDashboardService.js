@@ -37,15 +37,28 @@ function getTimeRange(timeRange = '30d') {
 }
 
 /**
- * Get overview metrics: unique users, sessions, page views, bounce rate, avg session duration
+ * Get platform filter for queries. 'web' = web only, 'mobile' = ios + android.
+ * @param {string} [platform] - 'web' | 'mobile' | undefined (all)
  */
-async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d') {
+function getPlatformFilter(platform) {
+    if (!platform || platform === 'all') return {};
+    if (platform === 'web') return { platform: 'web' };
+    if (platform === 'mobile') return { platform: { $in: ['ios', 'android'] } };
+    return {};
+}
+
+/**
+ * Get overview metrics: unique users, sessions, page views, bounce rate, avg session duration
+ * @param {string} [platform] - 'web' | 'mobile' to filter by platform
+ */
+async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d', platform) {
     const { startDate, endDate } = getTimeRange(timeRange);
     
-    // Base match for time range
+    // Base match for time range + optional platform filter
     const baseMatch = {
         ts: { $gte: startDate, $lte: endDate },
-        env: 'prod' // Only production events for dashboard
+        env: 'prod', // Only production events for dashboard
+        ...getPlatformFilter(platform)
     };
     
     // Unique users (distinct user_id + anonymous_id)
@@ -286,36 +299,33 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d') {
     const webPageViews = platformPageViewsResult.find(p => p.platform === 'web')?.pageViews || 0;
     const mobilePageViews = platformPageViewsResult.find(p => p.platform === 'mobile')?.pageViews || 0;
     
-    return {
+    const result = {
         uniqueUsers,
         sessions,
         pageViews,
         bounceRate: Math.round(bounceRate * 100) / 100, // Round to 2 decimals
-        avgSessionDuration: Math.round(avgSessionDurationSeconds),
-        // Web vs Mobile breakdowns
-        web: {
-            uniqueUsers: webUsers,
-            sessions: webSessions,
-            pageViews: webPageViews
-        },
-        mobile: {
-            uniqueUsers: mobileUsers,
-            sessions: mobileSessions,
-            pageViews: mobilePageViews
-        }
+        avgSessionDuration: Math.round(avgSessionDurationSeconds)
     };
+    // Only include web/mobile breakdown when not filtering by platform
+    if (!platform) {
+        result.web = { uniqueUsers: webUsers, sessions: webSessions, pageViews: webPageViews };
+        result.mobile = { uniqueUsers: mobileUsers, sessions: mobileSessions, pageViews: mobilePageViews };
+    }
+    return result;
 }
 
 /**
  * Get realtime metrics (last 60 minutes)
+ * @param {string} [platform] - 'web' | 'mobile' to filter by platform
  */
-async function getRealtimeMetrics(AnalyticsEvent) {
+async function getRealtimeMetrics(AnalyticsEvent, platform) {
     const now = new Date();
     const startDate = new Date(now.getTime() - 60 * 60 * 1000); // Last 60 minutes
     
     const baseMatch = {
         ts: { $gte: startDate, $lte: now },
-        env: 'prod'
+        env: 'prod',
+        ...getPlatformFilter(platform)
     };
     
     // Active users (last hour)
@@ -349,7 +359,7 @@ async function getRealtimeMetrics(AnalyticsEvent) {
         {
             $match: {
                 ...baseMatch,
-                event: 'page_view'
+                event: 'screen_view'
             }
         },
         {
@@ -414,7 +424,8 @@ async function getRealtimeMetrics(AnalyticsEvent) {
             $match: {
                 ts: { $gte: recentStartDate, $lte: now },
                 event: 'screen_view',
-                env: 'prod'
+                env: 'prod',
+                ...getPlatformFilter(platform)
             }
         },
         {
@@ -456,7 +467,8 @@ async function getRealtimeMetrics(AnalyticsEvent) {
         {
             $match: {
                 ts: { $gte: liveStartDate, $lte: now },
-                env: 'prod'
+                env: 'prod',
+                ...getPlatformFilter(platform)
             }
         },
         {
@@ -480,33 +492,31 @@ async function getRealtimeMetrics(AnalyticsEvent) {
         }
     ]);
     
-    return {
+    const result = {
         activeUsers,
         pageViews,
         topPages: topPagesResult,
-        liveEvents: liveEventsResult,
-        // Web vs Mobile breakdown
-        web: {
-            activeUsers: webRealtime.activeUsers,
-            pageViews: webRealtime.pageViews
-        },
-        mobile: {
-            activeUsers: mobileRealtime.activeUsers,
-            pageViews: mobileRealtime.pageViews
-        }
+        liveEvents: liveEventsResult
     };
+    if (!platform) {
+        result.web = { activeUsers: webRealtime.activeUsers, pageViews: webRealtime.pageViews };
+        result.mobile = { activeUsers: mobileRealtime.activeUsers, pageViews: mobileRealtime.pageViews };
+    }
+    return result;
 }
 
 /**
  * Get top pages with views, entrances, exits, exit rate
+ * @param {string} [platform] - 'web' | 'mobile' to filter by platform
  */
-async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20) {
+async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20, platform) {
     const { startDate, endDate } = getTimeRange(timeRange);
     
     const baseMatch = {
         ts: { $gte: startDate, $lte: endDate },
         event: 'screen_view',
-        env: 'prod'
+        env: 'prod',
+        ...getPlatformFilter(platform)
     };
     
     // Get all page views grouped by screen name (context.screen for screen_view events)
@@ -648,8 +658,9 @@ async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20) {
 /**
  * Get screen views by page: screen_view events grouped by screen name, ranked highest to lowest.
  * Uses context.screen from analytics.screen('Screen Name', ...) per analytics-collected-events.
+ * @param {string} [platform] - 'web' | 'mobile' to filter by platform
  */
-async function getScreenViews(AnalyticsEvent, timeRange = '30d', limit = 30) {
+async function getScreenViews(AnalyticsEvent, timeRange = '30d', limit = 30, platform) {
     const { startDate, endDate } = getTimeRange(timeRange);
     
     const screenViewsResult = await AnalyticsEvent.aggregate([
@@ -657,7 +668,8 @@ async function getScreenViews(AnalyticsEvent, timeRange = '30d', limit = 30) {
             $match: {
                 ts: { $gte: startDate, $lte: endDate },
                 event: 'screen_view',
-                env: 'prod'
+                env: 'prod',
+                ...getPlatformFilter(platform)
             }
         },
         {
@@ -686,14 +698,16 @@ async function getScreenViews(AnalyticsEvent, timeRange = '30d', limit = 30) {
 
 /**
  * Get traffic sources: views and sessions by source
+ * @param {string} [platform] - 'web' | 'mobile' to filter by platform
  */
-async function getTrafficSources(AnalyticsEvent, timeRange = '30d') {
+async function getTrafficSources(AnalyticsEvent, timeRange = '30d', platform) {
     const { startDate, endDate } = getTimeRange(timeRange);
     
     const baseMatch = {
         ts: { $gte: startDate, $lte: endDate },
         event: 'screen_view',
-        env: 'prod'
+        env: 'prod',
+        ...getPlatformFilter(platform)
     };
     
     // Group by referrer/source
@@ -726,13 +740,15 @@ async function getTrafficSources(AnalyticsEvent, timeRange = '30d') {
 
 /**
  * Get locations: users by country/region/city
+ * @param {string} [platform] - 'web' | 'mobile' to filter by platform
  */
-async function getLocations(AnalyticsEvent, timeRange = '30d') {
+async function getLocations(AnalyticsEvent, timeRange = '30d', platform) {
     const { startDate, endDate } = getTimeRange(timeRange);
     
     const baseMatch = {
         ts: { $gte: startDate, $lte: endDate },
-        env: 'prod'
+        env: 'prod',
+        ...getPlatformFilter(platform)
     };
     
     // Group by location (assuming location data in properties or context)
@@ -780,13 +796,15 @@ async function getLocations(AnalyticsEvent, timeRange = '30d') {
 
 /**
  * Get devices & platforms: users by device, OS, browser, mobile vs desktop
+ * @param {string} [platform] - 'web' | 'mobile' to filter by platform
  */
-async function getDevicesAndPlatforms(AnalyticsEvent, timeRange = '30d') {
+async function getDevicesAndPlatforms(AnalyticsEvent, timeRange = '30d', platform) {
     const { startDate, endDate } = getTimeRange(timeRange);
     
     const baseMatch = {
         ts: { $gte: startDate, $lte: endDate },
-        env: 'prod'
+        env: 'prod',
+        ...getPlatformFilter(platform)
     };
     
     // By platform (ios, android, web)
@@ -963,13 +981,15 @@ async function getDevicesAndPlatforms(AnalyticsEvent, timeRange = '30d') {
 
 /**
  * Get events overview: top events, event frequency, events per session
+ * @param {string} [platform] - 'web' | 'mobile' to filter by platform
  */
-async function getEventsOverview(AnalyticsEvent, timeRange = '30d') {
+async function getEventsOverview(AnalyticsEvent, timeRange = '30d', platform) {
     const { startDate, endDate } = getTimeRange(timeRange);
     
     const baseMatch = {
         ts: { $gte: startDate, $lte: endDate },
-        env: 'prod'
+        env: 'prod',
+        ...getPlatformFilter(platform)
     };
     
     // Top events

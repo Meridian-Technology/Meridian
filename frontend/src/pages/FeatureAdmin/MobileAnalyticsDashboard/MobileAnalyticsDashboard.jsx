@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
 import ProportionalBarList from '../../../components/ProportionalBarList/ProportionalBarList';
-import './AnalyticsDashboard.scss';
+import '../AnalyticsDashboard/AnalyticsDashboard.scss';
 
-function AnalyticsDashboard() {
+function MobileAnalyticsDashboard() {
     const [timeRange, setTimeRange] = useState('30d');
-    const { data: dashboardData, loading, error, refetch } = useFetch(`/dashboard/all?timeRange=${timeRange}&platform=web`);
-    
+    const { data: dashboardData, loading, error, refetch } = useFetch(`/dashboard/all?timeRange=${timeRange}&platform=mobile`);
+
     const formatNumber = (num) => {
         if (num === null || num === undefined) return '0';
         return new Intl.NumberFormat().format(num);
@@ -24,21 +24,10 @@ function AnalyticsDashboard() {
         return `${secs}s`;
     };
 
-    const getTimeRangeLabel = (range) => {
-        const labels = {
-            '1h': 'Last Hour',
-            '24h': 'Last 24 Hours',
-            '7d': 'Last 7 Days',
-            '30d': 'Last 30 Days',
-            '90d': 'Last 90 Days'
-        };
-        return labels[range] || range;
-    };
-
     if (loading) {
         return (
             <div className="analytics-dashboard">
-                <div className="loading">Loading analytics dashboard...</div>
+                <div className="loading">Loading mobile analytics...</div>
             </div>
         );
     }
@@ -56,24 +45,23 @@ function AnalyticsDashboard() {
     const realtime = data?.realtime || {};
     const topPages = data?.topPages?.pages || [];
     const screenViews = data?.screenViews?.pages || [];
-    const trafficSources = data?.trafficSources?.sources || [];
     const locations = data?.locations?.locations || [];
     const devices = data?.devicesAndPlatforms || {};
     const events = data?.eventsOverview || {};
 
     return (
-        <div className="analytics-dashboard">
+        <div className="analytics-dashboard mobile-analytics">
             <header className="header">
                 <div className="header-content">
-                    <h1>Web Analytics</h1>
-                    <p>Analytics for the Meridian web platform</p>
+                    <h1>Mobile App Analytics</h1>
+                    <p>Analytics for the Meridian mobile app (iOS & Android)</p>
                     <div className="platform-switcher">
-                        <span className="platform-tab active">
+                        <Link to="/analytics-dashboard" className="platform-tab">
                             <Icon icon="mdi:web" /> Web
-                        </span>
-                        <Link to="/mobile-analytics-dashboard" className="platform-tab">
-                            <Icon icon="mdi:cellphone" /> Mobile App
                         </Link>
+                        <span className="platform-tab active">
+                            <Icon icon="mdi:cellphone" /> Mobile App
+                        </span>
                     </div>
                 </div>
                 <div className="header-actions">
@@ -114,7 +102,7 @@ function AnalyticsDashboard() {
 
                         <div className="metric-card">
                             <div className="metric-icon sessions">
-                                <Icon icon="mdi:web" />
+                                <Icon icon="mdi:cellphone" />
                             </div>
                             <div className="metric-content">
                                 <p>Sessions</p>
@@ -127,7 +115,7 @@ function AnalyticsDashboard() {
                                 <Icon icon="mdi:eye" />
                             </div>
                             <div className="metric-content">
-                                <p>Page Views</p>
+                                <p>Screen Views</p>
                                 <h3>{formatNumber(overview.pageViews)}</h3>
                             </div>
                         </div>
@@ -176,7 +164,7 @@ function AnalyticsDashboard() {
                                 <Icon icon="mdi:eye" />
                             </div>
                             <div className="realtime-content">
-                                <p>Page Views</p>
+                                <p>Screen Views</p>
                                 <h3>{formatNumber(realtime.pageViews)}</h3>
                             </div>
                         </div>
@@ -184,7 +172,7 @@ function AnalyticsDashboard() {
 
                     <div className="realtime-sections">
                         <div className="realtime-section">
-                            <h3>Top Pages Right Now</h3>
+                            <h3>Top Screens Right Now</h3>
                             <div className="top-pages-list">
                                 {realtime.topPages && realtime.topPages.length > 0 ? (
                                     realtime.topPages.map((page, index) => (
@@ -195,7 +183,7 @@ function AnalyticsDashboard() {
                                         </div>
                                     ))
                                 ) : (
-                                    <div className="empty-state">No recent page views</div>
+                                    <div className="empty-state">No recent screen views</div>
                                 )}
                             </div>
                         </div>
@@ -218,19 +206,19 @@ function AnalyticsDashboard() {
                     </div>
                 </section>
 
-                {/* Screen Views - Pages ranked by views */}
+                {/* Screen Views - Mobile screens ranked by views */}
                 <section className="section">
                     <h2 className="section-title">
                         <Icon icon="mdi:monitor-dashboard" />
                         Screen Views
                     </h2>
-                    <p className="section-description">Pages being viewed, ranked from highest to lowest</p>
+                    <p className="section-description">App screens being viewed, ranked from highest to lowest</p>
                     <div className="table-container">
                         <table className="data-table">
                             <thead>
                                 <tr>
                                     <th>#</th>
-                                    <th>Page</th>
+                                    <th>Screen</th>
                                     <th>Views</th>
                                 </tr>
                             </thead>
@@ -253,134 +241,99 @@ function AnalyticsDashboard() {
                     </div>
                 </section>
 
-                {/* Two Column Layout */}
-                <div className="two-column">
-                    {/* Top Pages */}
-                    <section className="section">
-                        <h2 className="section-title">
-                            <Icon icon="mdi:file-document-multiple" />
-                            Top Pages
-                        </h2>
-                        <div className="table-container">
-                            <table className="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Page</th>
-                                        <th>Views</th>
-                                        <th>Entrances</th>
-                                        <th>Exits</th>
-                                        <th>Exit Rate</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {topPages.length > 0 ? (
-                                        topPages.map((page, index) => (
-                                            <tr key={index}>
-                                                <td className="page-path-cell">{page.path}</td>
-                                                <td>{formatNumber(page.views)}</td>
-                                                <td>{formatNumber(page.entrances)}</td>
-                                                <td>{formatNumber(page.exits)}</td>
-                                                <td>{page.exitRate?.toFixed(1) || '0'}%</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan="5" className="empty-state">No page data available</td>
+                {/* Top Screens */}
+                <section className="section">
+                    <h2 className="section-title">
+                        <Icon icon="mdi:cellphone" />
+                        Top Screens
+                    </h2>
+                    <div className="table-container">
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Screen</th>
+                                    <th>Views</th>
+                                    <th>Entrances</th>
+                                    <th>Exits</th>
+                                    <th>Exit Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {topPages.length > 0 ? (
+                                    topPages.map((page, index) => (
+                                        <tr key={index}>
+                                            <td className="page-path-cell">{page.path}</td>
+                                            <td>{formatNumber(page.views)}</td>
+                                            <td>{formatNumber(page.entrances)}</td>
+                                            <td>{formatNumber(page.exits)}</td>
+                                            <td>{page.exitRate?.toFixed(1) || '0'}%</td>
                                         </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </section>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="5" className="empty-state">No screen data available</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
 
-                    {/* Traffic Sources */}
-                    <section className="section">
-                        <ProportionalBarList
-                            items={trafficSources.map((source, index) => ({
-                                key: source.source || `source-${index}`,
-                                label: source.source || 'Unknown',
-                                value: source.views ?? 0
-                            }))}
-                            header="Traffic Sources"
-                            icon="mdi:source-branch"
-                            classN="proportional-bar-list-container"
-                            size="1rem"
-                            formatValue={formatNumber}
-                            emptyMessage="No traffic source data"
-                        />
-                    </section>
-                </div>
-
-                {/* Devices & Platforms */}
+                {/* Devices & Platforms - iOS/Android focused */}
                 <section className="section">
                     <h2 className="section-title">
                         <Icon icon="mdi:devices" />
                         Devices & Platforms
                     </h2>
-                    <div className="devices-grid">
-                        <div className="device-section">
-                            <h3>Platforms</h3>
-                            <div className="device-list">
-                                {devices.platforms && devices.platforms.length > 0 ? (
-                                    devices.platforms.map((platform, index) => (
-                                        <div key={index} className="device-item">
-                                            <span className="device-name">{platform.platform}</span>
-                                            <span className="device-count">{formatNumber(platform.users)} users</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="empty-state">No platform data</div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="device-section">
-                            <h3>Device Types</h3>
-                            <div className="device-list">
-                                {devices.deviceTypes && devices.deviceTypes.length > 0 ? (
-                                    devices.deviceTypes.map((type, index) => (
-                                        <div key={index} className="device-item">
-                                            <span className="device-name">{type.type}</span>
-                                            <span className="device-count">{formatNumber(type.users)} users</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="empty-state">No device type data</div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="device-section">
-                            <h3>Top Browsers</h3>
-                            <div className="device-list">
-                                {devices.browsers && devices.browsers.length > 0 ? (
-                                    devices.browsers.slice(0, 10).map((browser, index) => (
-                                        <div key={index} className="device-item">
-                                            <span className="device-name">{browser.browser}</span>
-                                            <span className="device-count">{formatNumber(browser.users)} users</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="empty-state">No browser data</div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="device-section">
-                            <h3>Top OS</h3>
-                            <div className="device-list">
-                                {devices.os && devices.os.length > 0 ? (
-                                    devices.os.slice(0, 10).map((os, index) => (
-                                        <div key={index} className="device-item">
-                                            <span className="device-name">{os.os}</span>
-                                            <span className="device-count">{formatNumber(os.users)} users</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="empty-state">No OS data</div>
-                                )}
-                            </div>
-                        </div>
+                    <div className="devices-grid proportional-bar-grid">
+                        <ProportionalBarList
+                            items={(devices.platforms || []).map((p, i) => {
+                                const plat = (p.platform || '').toLowerCase();
+                                return {
+                                    key: p.platform || `platform-${i}`,
+                                    label: p.platform || 'Unknown',
+                                    icon: plat === 'ios' ? 'mdi:apple' : plat === 'android' ? 'mdi:android' : 'mdi:cellphone',
+                                    value: p.users ?? 0
+                                };
+                            })}
+                            header="Platforms (iOS / Android)"
+                            icon="mdi:cellphone"
+                            classN="proportional-bar-list-container"
+                            size="1rem"
+                            formatValue={(v) => `${formatNumber(v)} users`}
+                            emptyMessage="No platform data"
+                        />
+                        <ProportionalBarList
+                            items={(devices.devices || []).slice(0, 15).map((d, i) => ({
+                                key: d.device || `device-${i}`,
+                                label: d.device || 'Unknown',
+                                icon: 'mdi:cellphone',
+                                value: d.users ?? 0
+                            }))}
+                            header="Device Models"
+                            icon="mdi:cellphone-link"
+                            classN="proportional-bar-list-container"
+                            size="1rem"
+                            formatValue={(v) => `${formatNumber(v)} users`}
+                            emptyMessage="No device model data"
+                        />
+                        <ProportionalBarList
+                            items={(devices.os || []).slice(0, 15).map((o, i) => {
+                                const osStr = (o.os || '').toLowerCase();
+                                return {
+                                    key: o.os || `os-${i}`,
+                                    label: o.os || 'Unknown',
+                                    icon: osStr.includes('ios') || osStr.includes('iphone') ? 'mdi:apple' : 'mdi:android',
+                                    value: o.users ?? 0
+                                };
+                            })}
+                            header="OS Versions"
+                            icon="mdi:android"
+                            classN="proportional-bar-list-container"
+                            size="1rem"
+                            formatValue={(v) => `${formatNumber(v)} users`}
+                            emptyMessage="No OS version data"
+                        />
                     </div>
                 </section>
 
@@ -466,6 +419,4 @@ function AnalyticsDashboard() {
     );
 }
 
-export default AnalyticsDashboard;
-
-
+export default MobileAnalyticsDashboard;
