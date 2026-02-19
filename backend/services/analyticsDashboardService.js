@@ -1052,6 +1052,280 @@ async function getEventsOverview(AnalyticsEvent, timeRange = '30d', platform) {
     };
 }
 
+/**
+ * Get user journey path exploration: next steps from a starting point (GA4 Path Exploration style).
+ * Returns tree of nodes: starting point -> step 1 -> step 2 -> ...
+ * @param {Object} AnalyticsEvent - Mongoose model
+ * @param {string} [timeRange='30d'] - Time range
+ * @param {string} [platform] - 'web' | 'mobile'
+ * @param {string} [startingPoint] - Screen name or event name to start from (e.g. 'Landing', 'Explore')
+ * @param {number} [maxSteps=3] - Max depth of path
+ * @param {number} [nodesPerStep=5] - Top N nodes per step
+ */
+async function getUserJourneyPaths(AnalyticsEvent, timeRange = '30d', platform, startingPoint, maxSteps = 3, nodesPerStep = 5) {
+    const { startDate, endDate } = getTimeRange(timeRange);
+    const baseMatch = {
+        ts: { $gte: startDate, $lte: endDate },
+        env: 'prod',
+        ...getPlatformFilter(platform)
+    };
+
+    // If no starting point, use top entrance screen
+    let start = startingPoint;
+    if (!start) {
+        const entrancesResult = await AnalyticsEvent.aggregate([
+            { $match: { ...baseMatch, event: 'screen_view' } },
+            { $project: { session_id: 1, ts: 1, screen: { $ifNull: ['$context.screen', 'Unknown'] } } },
+            { $sort: { session_id: 1, ts: 1 } },
+            { $group: { _id: '$session_id', firstScreen: { $first: '$screen' } } },
+            { $group: { _id: '$firstScreen', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 1 }
+        ]);
+        start = entrancesResult[0]?._id || 'Landing';
+    }
+
+    const pathData = { startingPoint: start, steps: [] };
+
+    const startMatch = {
+        ...baseMatch,
+        $or: [
+            { event: 'screen_view', 'context.screen': start },
+            { event: start }
+        ]
+    };
+    const startCount = await AnalyticsEvent.countDocuments(startMatch);
+    pathData.steps.push({ step: 0, nodes: [{ label: start, count: startCount }] });
+
+    let prevSessions = await AnalyticsEvent.distinct('session_id', startMatch);
+    let currentStep = 1;
+
+    while (currentStep <= maxSteps && prevSessions.length > 0) {
+        const sessionsWithStream = await AnalyticsEvent.aggregate([
+            { $match: { ...baseMatch, session_id: { $in: prevSessions } } },
+            { $sort: { session_id: 1, ts: 1 } },
+            {
+                $group: {
+                    _id: '$session_id',
+                    stream: {
+                        $push: {
+                            label: {
+                                $cond: [
+                                    { $eq: ['$event', 'screen_view'] },
+                                    { $ifNull: ['$context.screen', 'Unknown'] },
+                                    '$event'
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        const nextLabels = {};
+        for (const s of sessionsWithStream) {
+            const stream = s.stream.map(x => x.label);
+            const startIdx = stream.findIndex(l => l === start);
+            if (startIdx < 0) continue;
+            const afterStart = stream.slice(startIdx + 1);
+            const seen = new Set([start]);
+            for (const lbl of afterStart) {
+                if (!seen.has(lbl)) {
+                    seen.add(lbl);
+                    nextLabels[lbl] = (nextLabels[lbl] || 0) + 1;
+                    break; // Only first "next" node per session for step 1
+                }
+            }
+        }
+
+        const sorted = Object.entries(nextLabels)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, nodesPerStep)
+            .map(([label, count]) => ({ label, count }));
+
+        if (sorted.length === 0) break;
+
+        pathData.steps.push({ step: currentStep, nodes: sorted });
+
+        // For step 2+: get sessions that hit any of the top nodes, then their next node
+        const topNodeLabels = sorted.map(n => n.label);
+        const sessionsAtStep = await AnalyticsEvent.aggregate([
+            { $match: { ...baseMatch, session_id: { $in: prevSessions } } },
+            { $sort: { session_id: 1, ts: 1 } },
+            {
+                $group: {
+                    _id: '$session_id',
+                    stream: {
+                        $push: {
+                            label: {
+                                $cond: [
+                                    { $eq: ['$event', 'screen_view'] },
+                                    { $ifNull: ['$context.screen', 'Unknown'] },
+                                    '$event'
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        const step2Labels = {};
+        for (const s of sessionsAtStep) {
+            const stream = s.stream.map(x => x.label);
+            let lastReachedIdx = -1;
+            for (const topLabel of topNodeLabels) {
+                const idx = stream.indexOf(topLabel);
+                if (idx > lastReachedIdx) lastReachedIdx = idx;
+            }
+            if (lastReachedIdx < 0) continue;
+            const afterStep = stream.slice(lastReachedIdx + 1);
+            const seen = new Set([start, ...topNodeLabels]);
+            for (const lbl of afterStep) {
+                if (!seen.has(lbl)) {
+                    seen.add(lbl);
+                    step2Labels[lbl] = (step2Labels[lbl] || 0) + 1;
+                    break;
+                }
+            }
+        }
+
+        const step2Sorted = Object.entries(step2Labels)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, nodesPerStep)
+            .map(([label, count]) => ({ label, count }));
+
+        if (step2Sorted.length > 0) {
+            pathData.steps.push({ step: 2, nodes: step2Sorted });
+        }
+        break;
+    }
+
+    return { path: pathData, paths: [pathData], timeRange, startingPoint: start };
+}
+
+/**
+ * Get funnel analysis: conversion through predefined steps (GA4 Funnel Exploration style).
+ * Steps are screen names or event names. Users must complete in sequence (closed funnel).
+ * @param {Object} AnalyticsEvent - Mongoose model
+ * @param {string} [timeRange='30d'] - Time range
+ * @param {string} [platform] - 'web' | 'mobile'
+ * @param {string[]} [steps] - Funnel steps e.g. ['Landing', 'Explore', 'Event Page', 'event_registration']
+ */
+async function getFunnelAnalysis(AnalyticsEvent, timeRange = '30d', platform, steps = ['Landing', 'Explore', 'Event Page', 'event_registration']) {
+    const { startDate, endDate } = getTimeRange(timeRange);
+    const baseMatch = {
+        ts: { $gte: startDate, $lte: endDate },
+        env: 'prod',
+        ...getPlatformFilter(platform)
+    };
+
+    // Get all sessions with their ordered event stream (screen_view screens + key events)
+    const sessionsStream = await AnalyticsEvent.aggregate([
+        { $match: baseMatch },
+        { $sort: { session_id: 1, ts: 1 } },
+        {
+            $group: {
+                _id: '$session_id',
+                stream: {
+                    $push: {
+                        label: {
+                            $cond: {
+                                if: { $eq: ['$event', 'screen_view'] },
+                                then: { $ifNull: ['$context.screen', 'Unknown'] },
+                                else: '$event'
+                            }
+                        },
+                        ts: '$ts'
+                    }
+                }
+            }
+        },
+        { $project: { session_id: '$_id', stream: 1, _id: 0 } }
+    ]);
+
+    const funnelResults = steps.map((step, idx) => ({ step, index: idx, count: 0, dropOff: 0 }));
+
+    for (const s of sessionsStream) {
+        const stream = s.stream.map(x => x.label);
+        let lastReachedIndex = -1;
+        for (let i = 0; i < steps.length; i++) {
+            const stepLabel = steps[i];
+            const idx = stream.indexOf(stepLabel);
+            if (idx >= 0 && idx > lastReachedIndex) {
+                lastReachedIndex = idx;
+                funnelResults[i].count++;
+            }
+        }
+    }
+
+    // For closed funnel: only count users who entered at step 0 and progressed in order
+    const closedFunnelCounts = steps.map(() => 0);
+    for (const s of sessionsStream) {
+        const stream = s.stream.map(x => x.label);
+        let nextExpectedIndex = 0;
+        for (const lbl of stream) {
+            if (lbl === steps[nextExpectedIndex]) {
+                closedFunnelCounts[nextExpectedIndex]++;
+                nextExpectedIndex++;
+                if (nextExpectedIndex >= steps.length) break;
+            }
+        }
+    }
+
+    const funnelSteps = steps.map((step, idx) => ({
+        step,
+        index: idx + 1,
+        count: closedFunnelCounts[idx],
+        conversionRate: idx === 0 ? 100 : (closedFunnelCounts[idx] / closedFunnelCounts[0]) * 100,
+        dropOff: idx === 0 ? 0 : closedFunnelCounts[idx - 1] - closedFunnelCounts[idx]
+    }));
+
+    return {
+        steps: funnelSteps,
+        totalEntered: closedFunnelCounts[0],
+        totalConverted: closedFunnelCounts[closedFunnelCounts.length - 1],
+        overallConversionRate: closedFunnelCounts[0] > 0
+            ? (closedFunnelCounts[closedFunnelCounts.length - 1] / closedFunnelCounts[0]) * 100
+            : 0,
+        timeRange
+    };
+}
+
+/**
+ * Get available starting points (top screens/events) for path exploration
+ */
+async function getPathStartingPoints(AnalyticsEvent, timeRange = '30d', platform, limit = 20) {
+    const { startDate, endDate } = getTimeRange(timeRange);
+    const baseMatch = {
+        ts: { $gte: startDate, $lte: endDate },
+        env: 'prod',
+        ...getPlatformFilter(platform)
+    };
+
+    const screensResult = await AnalyticsEvent.aggregate([
+        { $match: { ...baseMatch, event: 'screen_view' } },
+        { $group: { _id: { $ifNull: ['$context.screen', 'Unknown'] }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: limit },
+        { $project: { label: '$_id', count: 1, type: 'screen', _id: 0 } }
+    ]);
+
+    const eventsResult = await AnalyticsEvent.aggregate([
+        { $match: baseMatch },
+        { $group: { _id: '$event', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+        { $project: { label: '$_id', count: 1, type: 'event', _id: 0 } }
+    ]);
+
+    return {
+        screens: screensResult,
+        events: eventsResult,
+        timeRange
+    };
+}
+
 module.exports = {
     getOverviewMetrics,
     getRealtimeMetrics,
@@ -1061,6 +1335,9 @@ module.exports = {
     getLocations,
     getDevicesAndPlatforms,
     getEventsOverview,
+    getUserJourneyPaths,
+    getFunnelAnalysis,
+    getPathStartingPoints,
     getTimeRange
 };
 

@@ -74,6 +74,9 @@ function AnalyticsDashboard() {
                         <Link to="/mobile-analytics-dashboard" className="platform-tab">
                             <Icon icon="mdi:cellphone" /> Mobile App
                         </Link>
+                        <Link to="/user-journey-analytics" className="platform-tab">
+                            <Icon icon="mdi:graph" /> User Journey
+                        </Link>
                     </div>
                 </div>
                 <div className="header-actions">

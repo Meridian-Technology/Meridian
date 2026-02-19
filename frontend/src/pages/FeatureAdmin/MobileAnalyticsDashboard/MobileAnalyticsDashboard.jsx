@@ -62,6 +62,9 @@ function MobileAnalyticsDashboard() {
                         <span className="platform-tab active">
                             <Icon icon="mdi:cellphone" /> Mobile App
                         </span>
+                        <Link to="/user-journey-analytics" className="platform-tab">
+                            <Icon icon="mdi:graph" /> User Journey
+                        </Link>
                     </div>
                 </div>
                 <div className="header-actions">
