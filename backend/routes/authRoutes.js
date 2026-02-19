@@ -33,6 +33,9 @@ const REFRESH_TOKEN_EXPIRY = `${REFRESH_TOKEN_EXPIRY_DAYS}d`;  // 2 days
 const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000; // 1 minute in milliseconds
 const REFRESH_TOKEN_EXPIRY_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000; // 2 days in milliseconds
 
+// Check if request is from mobile client (token-based auth instead of cookies)
+const isMobileClient = (req) => req.headers['x-client'] === 'mobile';
+
 function validateUsername(username) { //keeping logic external, for easier testing
     // Define the regex pattern
     const regex = /^[a-zA-Z0-9]{3,20}$/;
@@ -193,11 +196,15 @@ router.post('/register', async (req, res) => {
         //     school: req.school
         // });
         
-        // Send the response without tokens in body
+        const responseData = { user: user };
+        if (isMobileClient(req)) {
+            responseData.accessToken = accessToken;
+            responseData.refreshToken = refreshToken;
+        }
         res.status(201).json({
             success: true,
             message: 'User registered successfully',
-            data: { user: user }
+            data: responseData
         });
     } catch (error) {
         console.log(`POST: /register registration of ${username} failed`)
@@ -257,12 +264,15 @@ router.post('/login', async (req, res) => {
         });
 
         console.log(`POST: /login user ${user.username} logged in`)
+        const loginData = { user: user };
+        if (isMobileClient(req)) {
+            loginData.accessToken = accessToken;
+            loginData.refreshToken = refreshToken;
+        }
         res.status(200).json({
             success: true,
             message: 'Logged in successfully',
-            data: {
-                user: user
-            }
+            data: loginData
         });
     } catch (error) {
         console.log(`POST: /login login user failed`)
@@ -275,13 +285,19 @@ router.post('/login', async (req, res) => {
 
 // Refresh token endpoint
 router.post('/refresh-token', async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
-    
-    // console.log('🔄 Refresh token request received');
-    // console.log('📦 Cookies:', req.cookies);
+    // Accept refresh token from cookie (web) or header (mobile)
+    let refreshToken = req.cookies.refreshToken;
+    if (!refreshToken && req.headers['x-client'] === 'mobile') {
+        const authHeader = req.headers['authorization'];
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            refreshToken = authHeader.substring(7);
+        } else if (req.headers['x-refresh-token']) {
+            refreshToken = req.headers['x-refresh-token'];
+        }
+    }
     
     if (!refreshToken) {
-        console.log('POST: /refresh-token 403 no refresh token in cookies');
+        console.log('POST: /refresh-token 403 no refresh token provided');
         return res.status(403).json({
             success: false,
             message: 'No refresh token provided'
@@ -309,20 +325,24 @@ router.post('/refresh-token', async (req, res) => {
             { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
 
-        // Set new access token cookie
-        res.cookie('accessToken', newAccessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
-            path: '/'
-        });
+        const isMobile = isMobileClient(req);
+        if (!isMobile) {
+            // Set cookie for web clients
+            res.cookie('accessToken', newAccessToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
+                path: '/'
+            });
+        }
 
         console.log(`POST: /refresh-token user ${user.username}`);
-        res.json({
-            success: true,
-            message: 'Token refreshed successfully'
-        });
+        const response = { success: true, message: 'Token refreshed successfully' };
+        if (isMobile) {
+            response.accessToken = newAccessToken;
+        }
+        res.json(response);
     } catch (error) {
         console.log('POST: /refresh-token 401 refresh token failed', error.message);
         
@@ -357,7 +377,15 @@ router.post('/refresh-token', async (req, res) => {
 
 // Logout endpoint
 router.post('/logout', async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
+    let refreshToken = req.cookies.refreshToken;
+    if (!refreshToken && req.headers['x-client'] === 'mobile') {
+        const authHeader = req.headers['authorization'];
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            refreshToken = authHeader.substring(7);
+        } else if (req.headers['x-refresh-token']) {
+            refreshToken = req.headers['x-refresh-token'];
+        }
+    }
     
     if (refreshToken) {
         try {
@@ -368,7 +396,7 @@ router.post('/logout', async (req, res) => {
         }
     }
 
-    // Clear both cookies
+    // Clear both cookies (no-op for mobile, but harmless)
     res.clearCookie('accessToken', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -510,12 +538,15 @@ router.post('/google-login', async (req, res) => {
             path: '/'
         });
 
+        const googleLoginData = { user: user };
+        if (isMobileClient(req)) {
+            googleLoginData.accessToken = accessToken;
+            googleLoginData.refreshToken = refreshToken;
+        }
         res.status(200).json({
             success: true,
             message: 'Google login successful',
-            data: {
-                user: user
-            }
+            data: googleLoginData
         });
 
     } catch (error) {
@@ -579,12 +610,15 @@ router.post('/apple-login', async (req, res) => {
             path: '/'
         });
 
+        const appleLoginData = { user: authenticatedUser };
+        if (isMobileClient(req)) {
+            appleLoginData.accessToken = accessToken;
+            appleLoginData.refreshToken = refreshToken;
+        }
         res.status(200).json({
             success: true,
             message: 'Apple login successful',
-            data: {
-                user: authenticatedUser
-            }
+            data: appleLoginData
         });
 
     } catch (error) {

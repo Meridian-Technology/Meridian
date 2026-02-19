@@ -50,6 +50,15 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
     const now = new Date();
     const isLive = now >= date && now <= dateEnd;
 
+    const isMultiDay =
+        date.getDate() !== dateEnd.getDate() ||
+        date.getMonth() !== dateEnd.getMonth() ||
+        date.getFullYear() !== dateEnd.getFullYear();
+
+    const dateDisplay = isMultiDay
+        ? `${date.toLocaleString('default', { weekday: 'long' })}, ${date.toLocaleString('default', { month: 'long' })} ${date.getDate()} – ${dateEnd.toLocaleString('default', { weekday: 'long' })}, ${dateEnd.toLocaleString('default', { month: 'long' })} ${dateEnd.getDate()}`
+        : `${date.toLocaleString('default', { weekday: 'long' })}, ${date.toLocaleString('default', { month: 'long' })} ${date.getDate()}`;
+
     const renderHostingStatus = () => {
         if (!event?.hostingType) return null;
         let hostingImage = '';
@@ -120,7 +129,7 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                     </div>
                     <div className="col">
                         <div className="row event-detail date">
-                            <p>{date.toLocaleString('default', { weekday: 'long' })}, {date.toLocaleString('default', { month: 'long' })} {date.getDate()}</p>
+                            <p>{dateDisplay}</p>
                         </div>
                         <div className="row event-detail time">
                             <p>{date.toLocaleString('default', { hour: 'numeric', minute: 'numeric', hour12: true })} - {dateEnd.toLocaleString('default', { hour: 'numeric', minute: 'numeric', hour12: true })}</p>
