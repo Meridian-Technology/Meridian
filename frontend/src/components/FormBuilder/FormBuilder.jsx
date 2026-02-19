@@ -47,10 +47,8 @@ import HeaderContainer from '../HeaderContainer/HeaderContainer';
 
 const FormBuilder = ({ initialForm = { title: '', description: '', questions: [] }, onSave, handleClose = null, menuComponent = null }) => {
     const [form, setForm] = useState({
-        allowMultipleResponses: true,
-        requireAuth: true,
-        acceptingResponses: true,
-        headerColor: null,
+        allowAnonymous: false,
+        collectGuestDetails: true,
         ...initialForm
     });
     const [editingQuestion, setEditingQuestion] = useState(null);

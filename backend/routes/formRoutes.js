@@ -30,9 +30,9 @@ router.get("/get-form-by-id/:id", verifyTokenOptional, async (req, res) => {
             ownerInfo = user ? { name: user.name || user.email, email: user.email, type: 'User' } : null;
         }
         
-        // Check if user has already submitted (if allowMultipleResponses is false and user is authenticated)
+        // Check if user has already submitted (production schema: no allowMultipleResponses, always allow multiple)
         let hasSubmitted = false;
-        if (userId && !form.allowMultipleResponses) {
+        if (userId && form.allowMultipleResponses === false) {
             const existingResponse = await FormResponse.findOne({
                 form: formId,
                 submittedBy: userId
@@ -73,14 +73,6 @@ router.post("/submit-form-response", verifyTokenOptional, async (req, res) => {
             return res.status(404).json({ success: false, message: "Form not found" });
         }
 
-        // Check if form is accepting responses
-        if (form.acceptingResponses === false) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "This form is no longer accepting responses" 
-            });
-        }
-
         // Anonymous submission: require allowAnonymous, check collectGuestDetails
         if (!userId) {
             if (!form.allowAnonymous) {
@@ -100,17 +92,8 @@ router.post("/submit-form-response", verifyTokenOptional, async (req, res) => {
             }
         }
 
-        // Authenticated: require auth when form.requireAuth
-        if (form.requireAuth && !userId) {
-            return res.status(401).json({ 
-                success: false, 
-                message: "Authentication required to submit this form",
-                code: "AUTH_REQUIRED"
-            });
-        }
-
-        // Check if user has already submitted (if multiple responses not allowed)
-        if (!form.allowMultipleResponses && userId) {
+        // Check if user has already submitted (production: no allowMultipleResponses, always allow)
+        if (form.allowMultipleResponses === false && userId) {
             const existingResponse = await FormResponse.findOne({
                 form: formId,
                 submittedBy: userId

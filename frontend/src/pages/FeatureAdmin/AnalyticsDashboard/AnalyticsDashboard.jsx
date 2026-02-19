@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
+import ProportionalBarList from '../../../components/ProportionalBarList/ProportionalBarList';
 import './AnalyticsDashboard.scss';
 
 function AnalyticsDashboard() {
@@ -53,6 +54,7 @@ function AnalyticsDashboard() {
     const overview = data?.overview || {};
     const realtime = data?.realtime || {};
     const topPages = data?.topPages?.pages || [];
+    const screenViews = data?.screenViews?.pages || [];
     const trafficSources = data?.trafficSources?.sources || [];
     const locations = data?.locations?.locations || [];
     const devices = data?.devicesAndPlatforms || {};
@@ -306,6 +308,41 @@ function AnalyticsDashboard() {
                     </div>
                 </section>
 
+                {/* Screen Views - Pages ranked by views */}
+                <section className="section">
+                    <h2 className="section-title">
+                        <Icon icon="mdi:monitor-dashboard" />
+                        Screen Views
+                    </h2>
+                    <p className="section-description">Pages being viewed, ranked from highest to lowest</p>
+                    <div className="table-container">
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Page</th>
+                                    <th>Views</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {screenViews.length > 0 ? (
+                                    screenViews.map((page, index) => (
+                                        <tr key={index}>
+                                            <td className="rank-cell">{index + 1}</td>
+                                            <td className="page-path-cell">{page.screen}</td>
+                                            <td>{formatNumber(page.views)}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="3" className="empty-state">No screen view data available</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
                 {/* Two Column Layout */}
                 <div className="two-column">
                     {/* Top Pages */}
@@ -348,36 +385,19 @@ function AnalyticsDashboard() {
 
                     {/* Traffic Sources */}
                     <section className="section">
-                        <h2 className="section-title">
-                            <Icon icon="mdi:source-branch" />
-                            Traffic Sources
-                        </h2>
-                        <div className="table-container">
-                            <table className="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Source</th>
-                                        <th>Views</th>
-                                        <th>Sessions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {trafficSources.length > 0 ? (
-                                        trafficSources.map((source, index) => (
-                                            <tr key={index}>
-                                                <td className="source-cell">{source.source}</td>
-                                                <td>{formatNumber(source.views)}</td>
-                                                <td>{formatNumber(source.sessions)}</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan="3" className="empty-state">No traffic source data</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                        <ProportionalBarList
+                            items={trafficSources.map((source, index) => ({
+                                key: source.source || `source-${index}`,
+                                label: source.source || 'Unknown',
+                                value: source.views ?? 0
+                            }))}
+                            header="Traffic Sources"
+                            icon="mdi:source-branch"
+                            classN="proportional-bar-list-container"
+                            size="1rem"
+                            formatValue={formatNumber}
+                            emptyMessage="No traffic source data"
+                        />
                     </section>
                 </div>
 

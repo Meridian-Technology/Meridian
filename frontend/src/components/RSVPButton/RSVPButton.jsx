@@ -194,8 +194,6 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                                 onSubmit={handleFormSubmit}
                                 handleClose={null}
                                 formConfig={{
-                                    acceptingResponses: true,
-                                    requireAuth: !form.allowAnonymous,
                                     allowAnonymous: form.allowAnonymous === true,
                                     collectGuestDetails: form.collectGuestDetails !== false
                                 }}

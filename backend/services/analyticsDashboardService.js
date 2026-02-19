@@ -92,12 +92,12 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d') {
     
     const sessions = sessionsResult[0]?.sessionCount || 0;
     
-    // Page views (count of page_view events)
+    // Page views (count of screen_view events - platform uses screen_view, not page_view)
     const pageViewsResult = await AnalyticsEvent.aggregate([
         {
             $match: {
                 ...baseMatch,
-                event: 'page_view'
+                event: 'screen_view'
             }
         },
         {
@@ -110,12 +110,12 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d') {
     
     const pageViews = pageViewsResult[0]?.pageViews || 0;
     
-    // Bounce rate: sessions with only 1 page_view
+    // Bounce rate: sessions with only 1 screen_view (single-page sessions)
     const bounceRateResult = await AnalyticsEvent.aggregate([
         {
             $match: {
                 ...baseMatch,
-                event: 'page_view'
+                event: 'screen_view'
             }
         },
         {
@@ -259,7 +259,7 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d') {
         {
             $match: {
                 ...baseMatch,
-                event: 'page_view'
+                event: 'screen_view'
             }
         },
         {
@@ -386,7 +386,7 @@ async function getRealtimeMetrics(AnalyticsEvent) {
                 pageViews: {
                     $sum: {
                         $cond: [
-                            { $eq: ['$event', 'page_view'] },
+                            { $eq: ['$event', 'screen_view'] },
                             1,
                             0
                         ]
@@ -407,13 +407,13 @@ async function getRealtimeMetrics(AnalyticsEvent) {
     const webRealtime = platformRealtimeResult.find(p => p.platform === 'web') || { activeUsers: 0, pageViews: 0 };
     const mobileRealtime = platformRealtimeResult.find(p => p.platform === 'mobile') || { activeUsers: 0, pageViews: 0 };
     
-    // Top pages right now (last 15 minutes for "right now")
+    // Top pages right now (last 15 minutes for "right now") - use screen_view with context.screen
     const recentStartDate = new Date(now.getTime() - 15 * 60 * 1000);
     const topPagesResult = await AnalyticsEvent.aggregate([
         {
             $match: {
                 ts: { $gte: recentStartDate, $lte: now },
-                event: 'page_view',
+                event: 'screen_view',
                 env: 'prod'
             }
         },
@@ -421,9 +421,9 @@ async function getRealtimeMetrics(AnalyticsEvent) {
             $project: {
                 path: {
                     $ifNull: [
+                        '$context.screen',
                         '$properties.path',
                         '$context.route',
-                        '$context.screen',
                         'Unknown'
                     ]
                 }
@@ -505,20 +505,20 @@ async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20) {
     
     const baseMatch = {
         ts: { $gte: startDate, $lte: endDate },
-        event: 'page_view',
+        event: 'screen_view',
         env: 'prod'
     };
     
-    // Get all page views grouped by path
+    // Get all page views grouped by screen name (context.screen for screen_view events)
     const pagesResult = await AnalyticsEvent.aggregate([
         { $match: baseMatch },
         {
             $project: {
                 path: {
                     $ifNull: [
+                        '$context.screen',
                         '$properties.path',
                         '$context.route',
-                        '$context.screen',
                         'Unknown'
                     ]
                 },
@@ -548,7 +548,7 @@ async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20) {
         }
     ]);
     
-    // Calculate entrances (first page_view in each session)
+    // Calculate entrances (first screen_view in each session)
     const entrancesResult = await AnalyticsEvent.aggregate([
         { $match: baseMatch },
         {
@@ -557,9 +557,9 @@ async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20) {
                 ts: 1,
                 path: {
                     $ifNull: [
+                        '$context.screen',
                         '$properties.path',
                         '$context.route',
-                        '$context.screen',
                         'Unknown'
                     ]
                 }
@@ -587,7 +587,7 @@ async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20) {
         entrancesMap[item._id || 'Unknown'] = item.entrances;
     });
     
-    // Calculate exits (last page_view in each session)
+    // Calculate exits (last screen_view in each session)
     const exitsResult = await AnalyticsEvent.aggregate([
         { $match: baseMatch },
         {
@@ -596,9 +596,9 @@ async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20) {
                 ts: 1,
                 path: {
                     $ifNull: [
+                        '$context.screen',
                         '$properties.path',
                         '$context.route',
-                        '$context.screen',
                         'Unknown'
                     ]
                 }
@@ -646,6 +646,45 @@ async function getTopPages(AnalyticsEvent, timeRange = '30d', limit = 20) {
 }
 
 /**
+ * Get screen views by page: screen_view events grouped by screen name, ranked highest to lowest.
+ * Uses context.screen from analytics.screen('Screen Name', ...) per analytics-collected-events.
+ */
+async function getScreenViews(AnalyticsEvent, timeRange = '30d', limit = 30) {
+    const { startDate, endDate } = getTimeRange(timeRange);
+    
+    const screenViewsResult = await AnalyticsEvent.aggregate([
+        {
+            $match: {
+                ts: { $gte: startDate, $lte: endDate },
+                event: 'screen_view',
+                env: 'prod'
+            }
+        },
+        {
+            $group: {
+                _id: { $ifNull: ['$context.screen', 'Unknown'] },
+                views: { $sum: 1 }
+            }
+        },
+        {
+            $sort: { views: -1 }
+        },
+        {
+            $limit: limit
+        },
+        {
+            $project: {
+                screen: '$_id',
+                views: 1,
+                _id: 0
+            }
+        }
+    ]);
+    
+    return screenViewsResult;
+}
+
+/**
  * Get traffic sources: views and sessions by source
  */
 async function getTrafficSources(AnalyticsEvent, timeRange = '30d') {
@@ -653,7 +692,7 @@ async function getTrafficSources(AnalyticsEvent, timeRange = '30d') {
     
     const baseMatch = {
         ts: { $gte: startDate, $lte: endDate },
-        event: 'page_view',
+        event: 'screen_view',
         env: 'prod'
     };
     
@@ -997,6 +1036,7 @@ module.exports = {
     getOverviewMetrics,
     getRealtimeMetrics,
     getTopPages,
+    getScreenViews,
     getTrafficSources,
     getLocations,
     getDevicesAndPlatforms,
