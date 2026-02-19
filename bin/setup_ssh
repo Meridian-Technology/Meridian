@@ -1,26 +1,14 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-#SSH setup
 mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+
 echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
 chmod 600 ~/.ssh/id_ed25519
-ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-# Clone submodules for Heroku build
-# Read .gitmodules and clone each submodule
-if [ -f .gitmodules ]; then
-    while IFS= read -r line; do
-        if [[ $line == \[submodule* ]]; then
-            # Extract submodule name
-            submodule_name=$(echo "$line" | sed 's/\[submodule "\(.*\)"\]/\1/')
-        elif [[ $line == *url* ]]; then
-            # Extract URL
-            submodule_url=$(echo "$line" | sed 's/.*url = \(.*\)/\1/')
-            # Clone the submodule
-            echo "Cloning submodule: $submodule_name from $submodule_url"
-            rm -rf "$submodule_name"
-            git clone "$submodule_url" "$submodule_name"
-        fi
-    done < .gitmodules
-fi
+ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+chmod 644 ~/.ssh/known_hosts
+
+# optional sanity check; doesn't fail build
+ssh -o StrictHostKeyChecking=yes -T git@github.com || true
