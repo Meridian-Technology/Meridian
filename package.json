@@ -16,7 +16,7 @@
   },
   "scripts": {
     "start": "node backend/app.js",
-    "heroku-prebuild": "echo 'running prebuild tasks...'; chmod +x ./bin/setup_ssh; ./bin/setup_ssh; git submodule sync --recursive; git submodule update --init --recursive --depth 1; git submodule status",
+    "heroku-prebuild": "echo 'running prebuild tasks...'; chmod +x ./bin/setup_ssh ./bin/clone_events.sh; ./bin/setup_ssh; ./bin/clone_events.sh",
     "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install --prefix frontend && npm run build --prefix frontend && npm install --prefix backend",
     "server": "cd backend && nodemon app.js",
     "client": "cd frontend && npm start",
