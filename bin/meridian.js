@@ -435,11 +435,24 @@ async function cmdShip() {
 
     // Poll until merged
     let merged = isPrMerged(eventsPath, branch);
+    const frames = ['|', '/', '-', '\\'];
+    let frameIndex = 0;
+    let spinner = null;
+    if (!merged) {
+      spinner = setInterval(() => {
+        const c = frames[frameIndex % frames.length];
+        process.stdout.write(`\r  ${c} Waiting for Events PR to be merged to main...   `);
+        frameIndex++;
+      }, 100);
+    }
     while (!merged) {
-      console.log(dim('  Waiting for Events PR to be merged to main...'));
       await new Promise((r) => setTimeout(r, 5000));
       fetchAll(eventsPath);
       merged = isPrMerged(eventsPath, branch);
+    }
+    if (spinner) {
+      clearInterval(spinner);
+      process.stdout.write('\r  ' + green('Merged!') + '                              \n');
     }
   } else {
     const url = getPrUrl(eventsPath, branch) || prUrlFromRemote(getRepoRemoteUrl(eventsPath), branch, 'main');
