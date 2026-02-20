@@ -1,11 +1,14 @@
 #!/bin/bash
-set -euo pipefail
+set -eo pipefail
 
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 
-echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-chmod 600 ~/.ssh/id_ed25519
+# When SSH_PRIVATE_KEY is set (Heroku, CI), use it. When unset (local), rely on default SSH agent.
+if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+  echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+  chmod 600 ~/.ssh/id_ed25519
+fi
 
 ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
 chmod 644 ~/.ssh/known_hosts

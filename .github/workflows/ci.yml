@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install SSH
+        run: sudo apt-get update && sudo apt-get install -y openssh-client git
+
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: chmod +x ./bin/setup_ssh && ./bin/setup_ssh
+
+      - name: Fetch private deps
+        run: chmod +x ./bin/fetch_private_deps && ./bin/fetch_private_deps
+
+      - name: Install backend deps
+        run: npm install --prefix backend
+
+      - name: Smoke test backend
+        run: node -e "const { createApp } = require('./backend/app'); createApp(); console.log('ok')"
+
+      - name: Install & build frontend
+        run: |
+          npm install --prefix frontend
+          npm run build --prefix frontend
