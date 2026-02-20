@@ -5,7 +5,7 @@
 
 const getModels = require('./getModelService');
 const NotificationService = require('./notificationService');
-const { Resend } = require('resend');
+const { getResend } = require('./resendClient');
 const { checkAndAutoApproveOrg } = require('./orgApprovalService');
 
 function escapeHtml(s) {
@@ -61,7 +61,6 @@ function buildNewUserInviteEmail({ orgName, orgDescription, role, roleDisplayNam
     `;
 }
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const INVITE_EXPIRY_DAYS = 7;
 const BATCH_MAX = 30;
 
@@ -163,12 +162,15 @@ async function createInvite(req, orgId, email, role) {
             acceptUrl: inviteUrl,
             declineUrl: inviteUrl
         });
-        await resend.emails.send({
-            from: 'Meridian <support@meridian.study>',
-            to: [normalizedEmail],
-            subject: `You're invited to join ${org.org_name}`,
-            html: emailHTML
-        });
+        const resendClient = getResend();
+        if (resendClient) {
+            await resendClient.emails.send({
+                from: 'Meridian <support@meridian.study>',
+                to: [normalizedEmail],
+                subject: `You're invited to join ${org.org_name}`,
+                html: emailHTML
+            });
+        }
     } else {
         const signUpUrl = `${baseUrl}/org-invites/landing/${token}`;
         const emailHTML = buildNewUserInviteEmail({
@@ -179,12 +181,15 @@ async function createInvite(req, orgId, email, role) {
             inviterName,
             signUpUrl
         });
-        await resend.emails.send({
-            from: 'Meridian <support@meridian.study>',
-            to: [normalizedEmail],
-            subject: `You're invited to join ${org.org_name} on Meridian`,
-            html: emailHTML
-        });
+        const resendClient = getResend();
+        if (resendClient) {
+            await resendClient.emails.send({
+                from: 'Meridian <support@meridian.study>',
+                to: [normalizedEmail],
+                subject: `You're invited to join ${org.org_name} on Meridian`,
+                html: emailHTML
+            });
+        }
     }
 
     return { userExists, inviteId: invite._id.toString() };

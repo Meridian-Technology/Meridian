@@ -15,17 +15,10 @@ const getModels = require('../services/getModelService.js');
 const { getFriendRequests } = require('../utilities/friendUtils');
 const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, deleteSessionById } = require('../utilities/sessionUtils');
 
-const { Resend } = require('resend');
+const { getResend } = require('../services/resendClient');
 const { render } = require('@react-email/render')
 const React = require('react');
 const ForgotEmail = require('../emails/ForgotEmail').default;
-
-let _resendClient = null;
-function getResend() {
-  if (!process.env.RESEND_API_KEY) return null;
-  if (!_resendClient) _resendClient = new Resend(process.env.RESEND_API_KEY);
-  return _resendClient;
-}
 
 // Store verification codes temporarily (in production, use Redis or similar)
 const verificationCodes = new Map();
