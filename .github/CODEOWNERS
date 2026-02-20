@@ -1,2 +1,10 @@
-
+# Default owner
 * @AZ0228
+
+# Deployment / CI / build logic
+.github/ @AZ0228
+bin/ @AZ0228
+private-deps.lock @AZ0228
+package.json @AZ0228
+package-lock.json @AZ0228
+Procfile @AZ0228

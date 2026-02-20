@@ -1,3 +1,0 @@
-[submodule "backend/events"]
-	path = backend/events
-	url = git@github.com:Study-Compass/Events-Backend.git

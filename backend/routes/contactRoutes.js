@@ -1,8 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { Resend } = require('resend');
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+const { getResend } = require('../services/resendClient');
 const axios = require('axios');
 const getModels = require('../services/getModelService');
 
@@ -94,7 +92,9 @@ ${message}
         `;
 
         // Send email using Resend API (https://resend.com/docs/api-reference/emails/send-email)
-        const { data, error } = await resend.emails.send({
+        const resendClient = getResend();
+        if (!resendClient) return res.status(503).json({ success: false, message: 'Email service not configured' });
+        const { data, error } = await resendClient.emails.send({
             from: 'Meridian Contact Form <support@meridian.study>',
             to: ['raven@meridian.study', 'james@meridian.study'],
             replyTo: email,

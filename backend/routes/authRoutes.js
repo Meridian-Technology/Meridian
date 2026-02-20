@@ -15,11 +15,10 @@ const getModels = require('../services/getModelService.js');
 const { getFriendRequests } = require('../utilities/friendUtils');
 const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, deleteSessionById } = require('../utilities/sessionUtils');
 
-const { Resend } = require('resend');
+const { getResend } = require('../services/resendClient');
 const { render } = require('@react-email/render')
 const React = require('react');
 const ForgotEmail = require('../emails/ForgotEmail').default;
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Store verification codes temporarily (in production, use Redis or similar)
 const verificationCodes = new Map();
@@ -773,6 +772,10 @@ router.post('/forgot-password', async (req, res) => {
             code: verificationCode 
         }));
 
+        const resend = getResend();
+        if (!resend) {
+            return res.status(503).json({ success: false, message: 'Email service not configured' });
+        }
         const { data, error } = await resend.emails.send({
             from: "Meridian Support <support@meridian.study>",
             to: [email],

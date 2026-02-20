@@ -7,11 +7,10 @@ const {
 const mongoose = require("mongoose");
 const { clean, isProfane } = require("../services/profanityFilterService.js");
 const getModels = require("../services/getModelService.js");
-const { Resend } = require('resend');
+const { getResend } = require('../services/resendClient');
 const { render } = require('@react-email/render')
 const React = require('react');
 const ForgotEmail = require('../emails/ForgotEmail').default;
-const resend = new Resend(process.env.RESEND_API_KEY);
 const multer = require('multer');
 const path = require('path');
 const { uploadImageToS3, upload } = require('../services/imageUploadService');
@@ -399,20 +398,23 @@ router.post("/create-org", verifyToken, upload.fields([
                     `;
 
                     // Fire-and-forget: don't block the response on Resend's API
-                    resend.emails.send({
+                    const resendClient = getResend();
+                    if (resendClient) {
+                      resendClient.emails.send({
                         from: 'Meridian <support@meridian.study>',
                         to: adminEmails,
                         subject: `New organization "${cleanOrgName}" needs approval`,
                         html: emailHTML,
-                    }).then(({ data, error }) => {
+                      }).then(({ data, error }) => {
                         if (error) {
                             console.error('POST: /create-org - Resend API error:', error);
                         } else {
                             console.log(`POST: /create-org - Notified ${adminEmails.length} admin(s) about pending org`, data?.id ? `(id: ${data.id})` : '');
                         }
-                    }).catch((err) => {
+                      }).catch((err) => {
                         console.error('POST: /create-org - Failed to send admin notification email:', err);
-                    });
+                      });
+                    }
                 }
             } catch (emailError) {
                 console.error('POST: /create-org - Failed to send admin notification email:', emailError);
@@ -1060,7 +1062,9 @@ router.post('/send-email', async (req,res) => {
         
         const emailHTML = await render(React.createElement(ForgotEmail, { name: "James", link: "https://study-compass.com" }));
 
-        const { data, error } = await resend.emails.send({
+        const resendClient = getResend();
+        if (!resendClient) return res.status(503).json({ success: false, message: 'Email service not configured' });
+        const { data, error } = await resendClient.emails.send({
             from: "Study Compass <support@study-compass.com>",
             to: ["jbliu02@gmail.com"],
             subject: "hello world",

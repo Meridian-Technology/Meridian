@@ -1,11 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken');
-const { Resend } = require('resend');
+const { getResend } = require('../services/resendClient');
 const { render } = require('@react-email/render');
 const React = require('react');
 const EmailVerification = require('../emails/EmailVerification').default;
-const resend = new Resend(process.env.RESEND_API_KEY);
 const getModels  = require('../services/getModelService.js');
 
 //store verification codes temporarily, may have to change to redis in production
@@ -56,7 +55,9 @@ router.post('/request', verifyToken, async (req, res) => {
             code: verificationCode 
         }));
 
-        const { data, error } = await resend.emails.send({
+        const resendClient = getResend();
+        if (!resendClient) return res.status(503).json({ success: false, message: 'Email service not configured' });
+        const { data, error } = await resendClient.emails.send({
             from: "Meridian <support@meridian.study>",
             to: [email],
             subject: "Verify Your .edu Email",
