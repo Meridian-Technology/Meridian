@@ -46,7 +46,7 @@ function getPrUrl(repoPath, branch, base = 'main') {
 }
 
 function createPr(repoPath, branch, title, base = 'main') {
-  const r = gh(`pr create --head ${branch} --base ${base} --title "${title.replace(/"/g, '\\"')}"`, repoPath);
+  const r = gh(`pr create --head ${branch} --base ${base} --title "${title.replace(/"/g, '\\"')}" --body ""`, repoPath);
   return r.ok ? r.stdout : null;
 }
 
