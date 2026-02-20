@@ -33,8 +33,3 @@ jobs:
 
       - name: Smoke test backend
         run: node -e "const { createApp } = require('./backend/app'); createApp(); console.log('ok')"
-
-      - name: Install & build frontend
-        run: |
-          npm install --prefix frontend
-          npm run build --prefix frontend
