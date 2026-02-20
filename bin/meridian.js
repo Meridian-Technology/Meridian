@@ -420,26 +420,43 @@ async function cmdShip() {
 
   // Events PR
   if (hasGh) {
-    if (!prExists(eventsPath, branch)) {
+    let merged = isPrMerged(eventsPath, branch);
+    if (!merged && !prExists(eventsPath, branch)) {
       const ok = await promptYesNo('Create Events PR for Events branch?');
-      if (ok) {
-        const title = branch.replace(/-/g, ' ');
-        const create = createPr(eventsPath, branch, title, 'main');
-        if (!create) {
-          console.error(red('  Failed to create Events PR'));
-          process.exit(1);
-        }
-        console.log(green('  Events PR created'));
+      if (!ok) {
+        console.error('');
+        console.error(dim('  Create and merge the Events PR first, then re-run ') + cyan('meridian ship'));
+        console.error('');
+        process.exit(0);
       }
+      const title = branch.replace(/-/g, ' ');
+      const create = createPr(eventsPath, branch, title, 'main');
+      if (!create) {
+        console.error(red('  Failed to create Events PR'));
+        process.exit(1);
+      }
+      console.log(green('  Events PR created'));
     }
 
-    // Poll until merged
-    let merged = isPrMerged(eventsPath, branch);
+    // Poll until merged (merged may already be true if PR was merged earlier)
+    const frames = ['|', '/', '-', '\\'];
+    let frameIndex = 0;
+    let spinner = null;
+    if (!merged) {
+      spinner = setInterval(() => {
+        const c = frames[frameIndex % frames.length];
+        process.stdout.write(`\r  ${c} Waiting for Events PR to be merged to main...   `);
+        frameIndex++;
+      }, 100);
+    }
     while (!merged) {
-      console.log(dim('  Waiting for Events PR to be merged to main...'));
       await new Promise((r) => setTimeout(r, 5000));
       fetchAll(eventsPath);
       merged = isPrMerged(eventsPath, branch);
+    }
+    if (spinner) {
+      clearInterval(spinner);
+      process.stdout.write('\r  ' + green('Merged!') + '                              \n');
     }
   } else {
     const url = getPrUrl(eventsPath, branch) || prUrlFromRemote(getRepoRemoteUrl(eventsPath), branch, 'main');
@@ -458,18 +475,21 @@ async function cmdShip() {
     process.exit(1);
   }
 
-  setEventsRef(meridianPath, eventsMainSha);
+  const currentRef = getEventsRef(meridianPath);
   const shortSha = eventsMainSha.slice(0, 7);
-  const msg = `chore(${branch}): pin events @ ${shortSha}`;
-  const addR = require('./lib/git').git('add private-deps.lock', meridianPath);
-  if (!addR.ok) {
-    console.error(red('  Add failed:'), addR.stderr);
-    process.exit(1);
-  }
-  const commitR = require('./lib/git').git(`commit -m "${msg.replace(/"/g, '\\"')}"`, meridianPath);
-  if (!commitR.ok) {
-    console.error(red('  Commit failed:'), commitR.stderr);
-    process.exit(1);
+  setEventsRef(meridianPath, eventsMainSha);
+  if (currentRef !== eventsMainSha) {
+    const msg = `chore(${branch}): pin events @ ${shortSha}`;
+    const addR = require('./lib/git').git('add private-deps.lock', meridianPath);
+    if (!addR.ok) {
+      console.error(red('  Add failed:'), addR.stderr);
+      process.exit(1);
+    }
+    const commitR = require('./lib/git').git(`commit -m "${msg.replace(/"/g, '\\"')}"`, meridianPath);
+    if (!commitR.ok) {
+      console.error(red('  Commit failed:'), commitR.stderr);
+      process.exit(1);
+    }
   }
 
   // Push Meridian
