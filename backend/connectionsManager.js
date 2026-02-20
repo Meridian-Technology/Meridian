@@ -25,7 +25,7 @@ const getDbUriForSchool = (school) => {
         rpi: process.env.MONGO_URI_RPI,
         // Add more schools here
     };
-    return schoolDbMap[school] || process.env.DEFAULT_MONGO_URI;
+    return schoolDbMap[school] || process.env.MONGODB_URI || process.env.DEFAULT_MONGO_URI;
 };
 
 module.exports = { connectToDatabase };
