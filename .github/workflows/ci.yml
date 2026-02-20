@@ -12,6 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate lockfile
+        run: |
+          REF=$(node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('./private-deps.lock','utf8'));console.log(d?.events?.ref||'')")
+          if [ -z "$REF" ]; then echo "private-deps.lock missing events.ref"; exit 1; fi
+          if ! echo "$REF" | grep -qE '^[a-fA-F0-9]{40}$'; then echo "events.ref must be 40-char hex SHA, got: $REF"; exit 1; fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20

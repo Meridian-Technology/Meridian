@@ -1,5 +1,11 @@
 # Contributing to Study Compass
 
+## Meridian CLI (Full-Stack Features)
+
+For features that span Meridian and Events-Backend, use the **Meridian CLI**. Don't manually checkout across repos unless you know what you're doing. The CLI keeps both repos in sync and ensures the lockfile is updated correctly.
+
+See [docs/DEV_WORKFLOW.md](docs/DEV_WORKFLOW.md) and [docs/CLI.md](docs/CLI.md) for details.
+
 ## How to Contribute
 
 ### Reporting Bugs
