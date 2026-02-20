@@ -22,6 +22,7 @@ jobs:
       - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY_BASE64: ${{ secrets.SSH_PRIVATE_KEY_BASE64 }}
         run: chmod +x ./bin/setup_ssh && ./bin/setup_ssh
 
       - name: Fetch private deps

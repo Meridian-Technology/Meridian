@@ -4,9 +4,14 @@ set -eo pipefail
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 
-# When SSH_PRIVATE_KEY is set (Heroku, CI), use it. When unset (local), rely on default SSH agent.
-if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
-  echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+# When SSH_PRIVATE_KEY or SSH_PRIVATE_KEY_BASE64 is set (Heroku, CI), use it. When unset (local), rely on default SSH agent.
+# Prefer BASE64 so newlines are preserved (GitHub Secrets often mangle multi-line keys and cause "error in libcrypto").
+if [[ -n "${SSH_PRIVATE_KEY_BASE64:-}" ]]; then
+  echo "$SSH_PRIVATE_KEY_BASE64" | base64 -d > ~/.ssh/id_ed25519
+  chmod 600 ~/.ssh/id_ed25519
+elif [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+  # Expand literal \n so keys pasted with backslash-n work
+  printf '%b' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
   chmod 600 ~/.ssh/id_ed25519
 fi
 
