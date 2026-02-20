@@ -1,22 +1,37 @@
 #!/bin/bash
-set -eo pipefail
+set -euo pipefail
 
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 
-# When SSH_PRIVATE_KEY or SSH_PRIVATE_KEY_BASE64 is set (Heroku, CI), use it. When unset (local), rely on default SSH agent.
-# Prefer BASE64 so newlines are preserved (GitHub Secrets often mangle multi-line keys and cause "error in libcrypto").
+# Prefer base64 to preserve newlines perfectly
 if [[ -n "${SSH_PRIVATE_KEY_BASE64:-}" ]]; then
   echo "$SSH_PRIVATE_KEY_BASE64" | base64 -d > ~/.ssh/id_ed25519
   chmod 600 ~/.ssh/id_ed25519
 elif [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
-  # Expand literal \n so keys pasted with backslash-n work
-  printf '%b' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+  # Write literally; strip CR in case of Windows line endings
+  printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+  printf '\n' >> ~/.ssh/id_ed25519
   chmod 600 ~/.ssh/id_ed25519
 fi
 
-ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+# Fail fast if key is malformed
+ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+
+# Known hosts (ensure ed25519 key is included)
+ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
 chmod 644 ~/.ssh/known_hosts
 
-# optional sanity check; doesn't fail build
-ssh -o StrictHostKeyChecking=yes -T git@github.com || true
+# Force identity usage
+cat > ~/.ssh/config <<'CFG'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+  StrictHostKeyChecking yes
+CFG
+chmod 600 ~/.ssh/config
+
+# Optional diagnostic
+ssh -o BatchMode=yes -T git@github.com || true
