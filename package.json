@@ -20,7 +20,7 @@
     "heroku-prebuild": "chmod +x ./bin/setup_ssh ./bin/fetch_private_deps && ./bin/setup_ssh && ./bin/fetch_private_deps",
     "fetch-private": "chmod +x ./bin/setup_ssh ./bin/fetch_private_deps && ./bin/setup_ssh && ./bin/fetch_private_deps",
     "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install --prefix frontend && npm run build --prefix frontend && npm install --prefix backend",
-    "server": "cd backend && nodemon app.js",
+    "server": "cd backend && nodemon server.js",
     "client": "cd frontend && npm start",
     "dev": "concurrently \"npm run server\" \"npm run client\""
   }
