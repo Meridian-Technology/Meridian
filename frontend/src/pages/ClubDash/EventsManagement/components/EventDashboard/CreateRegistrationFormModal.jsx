@@ -6,7 +6,7 @@ import apiRequest from '../../../../../utils/postRequest';
 import { useNotification } from '../../../../../NotificationContext';
 import './CreateRegistrationFormModal.scss';
 
-export default function CreateRegistrationFormModal({ orgId, onCreated, onClose, formId, initialForm }) {
+export default function CreateRegistrationFormModal({ orgId, onCreated, onClose, formId, initialForm, existingResponseCount = 0 }) {
     const { addNotification } = useNotification();
     const [, setSaving] = useState(false);
     const isEdit = Boolean(formId && initialForm);
@@ -64,6 +64,7 @@ export default function CreateRegistrationFormModal({ orgId, onCreated, onClose,
                 onSave={handleSave}
                 handleClose={null}
                 menuComponent={<FormConfigMenu />}
+                existingResponseCount={existingResponseCount}
             />
         </Popup>
     );

@@ -45,15 +45,18 @@ import HeaderContainer from '../HeaderContainer/HeaderContainer';
  * }
  */
 
-const FormBuilder = ({ initialForm = { title: '', description: '', questions: [] }, onSave, handleClose = null, menuComponent = null }) => {
+const FormBuilder = ({ initialForm = { title: '', description: '', questions: [] }, onSave, handleClose = null, menuComponent = null, existingResponseCount = 0 }) => {
     const [form, setForm] = useState({
         allowMultipleResponses: true,
         requireAuth: true,
         acceptingResponses: true,
         headerColor: null,
+        removedQuestions: [],
         ...initialForm
     });
     const [editingQuestion, setEditingQuestion] = useState(null);
+    const [questionToDelete, setQuestionToDelete] = useState(null);
+    const hasExistingResponses = existingResponseCount > 0;
 
     const addQuestion = (type) => {
         const newQuestion = {
@@ -81,10 +84,29 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
     };
 
     const deleteQuestion = (id) => {
-        setForm(prev => ({
-            ...prev,
-            questions: prev.questions.filter(q => q._id !== id)
-        }));
+        if (hasExistingResponses) {
+            const q = form.questions.find((x) => x._id === id);
+            if (q) setQuestionToDelete(q);
+            return;
+        }
+        doDeleteQuestion(id, false);
+    };
+
+    const doDeleteQuestion = (id, keepForDisplay) => {
+        const question = form.questions.find((q) => q._id === id);
+        setForm(prev => {
+            const newQuestions = prev.questions.filter(q => q._id !== id);
+            const newRemoved = keepForDisplay && question
+                ? [...(prev.removedQuestions || []), question]
+                : (prev.removedQuestions || []);
+            return {
+                ...prev,
+                questions: newQuestions,
+                removedQuestions: newRemoved
+            };
+        });
+        setQuestionToDelete(null);
+        setEditingQuestion(null);
     };
 
     const addOption = (questionId) => {
@@ -242,6 +264,7 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
     };
 
     return (
+        <>
         <HeaderContainer header="Form Builder" classN="form-builder-header">
         <div className="form-builder">
             {menuComponent && (
@@ -315,6 +338,38 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
             </div>
         </div>
         </HeaderContainer>
+
+        {questionToDelete && (
+            <div className="form-builder-delete-question-overlay" onClick={() => setQuestionToDelete(null)}>
+                <div
+                    className="form-builder-delete-question-modal"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="form-builder-delete-question-inner">
+                        <h3>Remove question?</h3>
+                        <p>This question has been answered in previous registrations. Removing it will delete that question from previous responses.</p>
+                        <div className="form-builder-delete-question-actions">
+                            <button type="button" className="btn-cancel" onClick={() => setQuestionToDelete(null)}>Cancel</button>
+                            <button
+                                type="button"
+                                className="btn-discard"
+                                onClick={() => doDeleteQuestion(questionToDelete._id, false)}
+                            >
+                                Discard previous answers
+                            </button>
+                            {/* <button
+                                type="button"
+                                className="btn-keep"
+                                onClick={() => doDeleteQuestion(questionToDelete._id, true)}
+                            >
+                                Keep answers (new responses will show —)
+                            </button> */}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+    </>
     );
 };
 

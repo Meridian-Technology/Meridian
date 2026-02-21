@@ -35,20 +35,34 @@ function RegistrationsTab({ event, orgId, onRefresh, color }) {
     const hasForm = Boolean(registrationFormId);
     const currentForm = hasForm ? orgForms.find((f) => f._id === registrationFormId) : null;
     const questions = useMemo(() => {
+        const current = currentForm?.questions || [];
+        const removed = currentForm?.removedQuestions || [];
+        if (current.length || removed.length) return [...current, ...removed];
         const snap = formResponses[0]?.formSnapshot;
         return snap?.questions || [];
-    }, [formResponses]);
+    }, [currentForm, formResponses]);
+
+    const getAnswerForQuestion = (response, questionId) => {
+        const snap = response?.formSnapshot;
+        if (!snap?.questions?.length || !response?.answers) return '—';
+        const qIdx = snap.questions.findIndex((q) => (q._id || q.id)?.toString() === (questionId || '').toString());
+        if (qIdx < 0) return '—';
+        const val = response.answers[qIdx];
+        if (val === undefined || val === null) return '—';
+        return Array.isArray(val) ? val.join(', ') : String(val);
+    };
 
     const summaryByQuestion = useMemo(() => {
         if (!hasForm || !questions.length || !formResponses.length) return [];
         const total = formResponses.length;
-        return questions.map((q, qIdx) => {
+        const getAnswer = getAnswerForQuestion;
+        return questions.map((q) => {
+            const qId = (q._id || q.id)?.toString();
             const counts = {};
             formResponses.forEach((r) => {
-                const val = r.answers?.[qIdx];
-                if (val === undefined || val === null) return;
-                const key = Array.isArray(val) ? val.join(', ') : String(val).trim();
-                const displayKey = key || '(empty)';
+                const val = getAnswer(r, qId);
+                if (val === '—') return;
+                const displayKey = val?.trim() || '(empty)';
                 counts[displayKey] = (counts[displayKey] || 0) + 1;
             });
             const isChoice = q.type === 'multiple_choice' || q.type === 'select_multiple';
@@ -71,7 +85,10 @@ function RegistrationsTab({ event, orgId, onRefresh, color }) {
             const name = getResponseDisplayName(r);
             const email = getResponseEmail(r);
             const date = r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '';
-            const answers = (r.answers || []).map(a => (Array.isArray(a) ? a.join('; ') : String(a)));
+            const answers = questions.map((q) => {
+                const val = getAnswerForQuestion(r, (q._id || q.id)?.toString());
+                return val === '—' ? '' : val;
+            });
             return [name, email, date, ...answers];
         });
         const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
@@ -416,6 +433,7 @@ function RegistrationsTab({ event, orgId, onRefresh, color }) {
                         orgId={orgId}
                         formId={editingFormId || undefined}
                         initialForm={editingFormId ? orgForms.find((f) => f._id === editingFormId) : undefined}
+                        existingResponseCount={editingFormId && registrationFormId === editingFormId ? formResponses.length : 0}
                         onCreated={async (newFormId) => {
                             refetchForms?.();
                             if (!editingFormId && event?._id && orgId) {
@@ -468,9 +486,9 @@ function RegistrationsTab({ event, orgId, onRefresh, color }) {
                                             <td>{getResponseDisplayName(r)}</td>
                                             <td>{getResponseEmail(r)}</td>
                                             <td>{r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '—'}</td>
-                                            {(r.answers || []).map((ans, j) => (
-                                                <td key={j}>
-                                                    {Array.isArray(ans) ? ans.join(', ') : String(ans ?? '—')}
+                                            {questions.map((q, j) => (
+                                                <td key={(q._id || q.id) || j}>
+                                                    {getAnswerForQuestion(r, (q._id || q.id)?.toString())}
                                                 </td>
                                             ))}
                                             <td className="td-actions">
@@ -521,10 +539,10 @@ function RegistrationsTab({ event, orgId, onRefresh, color }) {
                                         </div>
                                     </div>
                                     <div className="registration-card-answers">
-                                        {(r.answers || []).map((ans, j) => (
-                                            <div key={j} className="registration-card-answer">
-                                                <span className="q">{questions[j]?.question || `Q${j + 1}`}</span>
-                                                <span className="a">{Array.isArray(ans) ? ans.join(', ') : String(ans ?? '—')}</span>
+                                        {questions.map((q, j) => (
+                                            <div key={(q._id || q.id) || j} className="registration-card-answer">
+                                                <span className="q">{q.question || `Q${j + 1}`}</span>
+                                                <span className="a">{getAnswerForQuestion(r, (q._id || q.id)?.toString())}</span>
                                             </div>
                                         ))}
                                     </div>
