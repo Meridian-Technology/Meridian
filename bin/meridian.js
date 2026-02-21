@@ -63,8 +63,8 @@ function usage() {
   console.log(dim('  ├─ status       ') + 'Show repo state and lockfile pin');
   console.log(dim('  ├─ start        ') + 'Create fresh feature branch in both repos');
   console.log(dim('  ├─ switch       ') + 'Switch both repos to existing branch');
-  console.log(dim('  ├─ pin          ') + 'Pin events to current origin/main');
-  console.log(dim('  └─ ship         ') + 'Ship full-stack feature (Events PR → merge → pin → Meridian PR)');
+  console.log(dim('  ├─ sync         ') + 'Sync lockfile to current Events main');
+  console.log(dim('  └─ ship         ') + 'Ship full-stack feature (Events PR → merge → sync → Meridian PR)');
   console.log('');
   console.log(cyan('  Examples'));
   console.log(dim('  meridian start MER-123-Org-Forms'));
@@ -191,11 +191,13 @@ function cmdStatus() {
   const lockRef = getEventsRef(meridianPath);
   const lockShort = lockRef ? lockRef.slice(0, 7) : '?';
   let eventsMainSha = null;
-  let matches = false;
+  const eventsHeadSha = getHeadSha(eventsPath, 'HEAD');
+  let matchesMain = false;
+  const matchesLocal = lockRef && eventsHeadSha && lockRef === eventsHeadSha;
   if (lockRef) {
     fetchAll(eventsPath);
     eventsMainSha = getHeadSha(eventsPath, 'origin/main');
-    matches = eventsMainSha && lockRef === eventsMainSha;
+    matchesMain = eventsMainSha && lockRef === eventsMainSha;
   }
 
   const sep = '─'.repeat(50);
@@ -218,7 +220,8 @@ function cmdStatus() {
   console.log('');
   console.log(cyan('  Lockfile'));
   console.log(dim('  ├─ Pinned:    '), lockShort, lockRef ? dim(`(${lockRef})`) : '');
-  console.log(dim('  └─ With main: '), syncStatus(matches), matches ? dim('— pin matches origin/main') : dim(`— Events main is ${eventsMainSha ? eventsMainSha.slice(0, 7) : '?'}`));
+  console.log(dim('  ├─ With main: '), syncStatus(matchesMain), matchesMain ? dim('— lockfile matches origin/main') : dim(`— Events main is ${eventsMainSha ? eventsMainSha.slice(0, 7) : '?'}`));
+  console.log(dim('  └─ With local:'), syncStatus(matchesLocal), matchesLocal ? dim('— lockfile matches Events HEAD') : dim('— run ') + cyan('meridian sync') + dim(' after merging Events to update'));
   console.log('');
 }
 
@@ -333,15 +336,15 @@ async function cmdSwitch(branch) {
   console.log('');
 }
 
-// --- pin ---
-function cmdPin(allowMain = false) {
+// --- sync ---
+function cmdSync(allowMain = false) {
   const { meridianPath, eventsPath } = resolveWorkspace();
   ensureClean(meridianPath, eventsPath);
 
   const merBranch = currentBranch(meridianPath);
   if (merBranch === 'main' && !allowMain) {
     console.error('');
-    console.error(red('  Pin is for feature branches'));
+    console.error(red('  Sync is for feature branches'));
     console.error(dim('  Use --allow-main to override.'));
     console.error('');
     process.exit(1);
@@ -356,10 +359,28 @@ function cmdPin(allowMain = false) {
     process.exit(1);
   }
 
-  setEventsRef(meridianPath, eventsMainSha);
+  const eventsHeadSha = getHeadSha(eventsPath, 'HEAD');
+  const currentRef = getEventsRef(meridianPath);
   const shortSha = eventsMainSha.slice(0, 7);
 
-  const msg = `chore(${merBranch}): pin events @ ${shortSha}`;
+  if (currentRef === eventsMainSha) {
+    if (eventsHeadSha !== eventsMainSha) {
+      const headShort = eventsHeadSha ? eventsHeadSha.slice(0, 7) : '?';
+      console.error('');
+      console.error(yellow('  Unable to sync to a branch'));
+      console.error(dim(`  Events-Backend is at ${headShort}, but lockfile pins to main (${shortSha}).`));
+      console.error(dim('  Sync only updates to origin/main. Merge your Events changes to main first, then run ') + cyan('meridian sync'));
+      console.error('');
+      process.exit(1);
+    }
+    console.log('');
+    console.log(green('  Lockfile already synced to ') + bold(shortSha));
+    console.log('');
+    return;
+  }
+
+  setEventsRef(meridianPath, eventsMainSha);
+  const msg = `chore(${merBranch}): sync events @ ${shortSha}`;
   const addR = require('./lib/git').git('add private-deps.lock', meridianPath);
   if (!addR.ok) {
     console.error(red('  Add failed:'), addR.stderr);
@@ -372,7 +393,7 @@ function cmdPin(allowMain = false) {
   }
 
   console.log('');
-  console.log(green('  Pinned events to ') + bold(shortSha) + green(' in lockfile'));
+  console.log(green('  Synced lockfile to ') + bold(shortSha));
   console.log('');
 }
 
@@ -467,7 +488,7 @@ async function cmdShip() {
     process.exit(0);
   }
 
-  // After merge: pin
+  // After merge: sync lockfile
   fetchAll(eventsPath);
   const eventsMainSha = getHeadSha(eventsPath, 'origin/main');
   if (!eventsMainSha) {
@@ -479,7 +500,7 @@ async function cmdShip() {
   const shortSha = eventsMainSha.slice(0, 7);
   setEventsRef(meridianPath, eventsMainSha);
   if (currentRef !== eventsMainSha) {
-    const msg = `chore(${branch}): pin events @ ${shortSha}`;
+    const msg = `chore(${branch}): sync events @ ${shortSha}`;
     const addR = require('./lib/git').git('add private-deps.lock', meridianPath);
     if (!addR.ok) {
       console.error(red('  Add failed:'), addR.stderr);
@@ -555,8 +576,8 @@ async function main() {
       }
       await cmdSwitch(args[1]);
       break;
-    case 'pin':
-      cmdPin(allowMain);
+    case 'sync':
+      cmdSync(allowMain);
       break;
     case 'ship':
       await cmdShip();
