@@ -277,6 +277,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                 />
                 <div className="event-dashboard-content">
                     <TabbedContainer
+                        key={refreshTrigger}
                         tabs={tabs}
                         defaultTab="overview"
                         activeTab={activeTab}

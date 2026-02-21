@@ -49,7 +49,7 @@ You can override workspace detection with `MERIDIAN_WORKSPACE=/path/to/parent`.
 5. Pins the lockfile to the merged Events SHA.
 6. Pushes the Meridian branch and creates the Meridian PR.
 
-**Important:** Events changes must be merged to `main` before pinning. The CLI never merges PRs automatically—you merge them. After merging the Events PR, the CLI will detect it and continue.
+**Important:** Events changes must be merged to `main` before syncing. The CLI never merges PRs automatically—you merge them. After merging the Events PR, the CLI will detect it and continue.
 
 ## What the Lockfile Is and Why It Matters
 
@@ -66,7 +66,7 @@ If `meridian ship` stops and says "Merge Events PR to main first":
 
 1. Open the Events PR (the CLI prints the URL if available).
 2. Get it reviewed and merged.
-3. Re-run `meridian ship`. It will detect the merge and continue with pinning and the Meridian PR.
+3. Re-run `meridian ship`. It will detect the merge and continue with syncing the lockfile and creating the Meridian PR.
 
 If you don't have `gh` (GitHub CLI) installed, the CLI will print a URL template. Open the PR manually, merge it, then re-run `meridian ship`.
 
@@ -80,12 +80,12 @@ meridian switch MER-123-Org-Forms
 
 Both repos must be clean. If the branch exists remotely, the CLI checks it out tracking the remote. If it doesn't exist, it prompts to create it from `origin/main`.
 
-## Manual Pin (Advanced)
+## Manual Sync (Advanced)
 
 If you've already merged Events to main and only need to update the lockfile:
 
 ```bash
-meridian pin
+meridian sync
 ```
 
 Requires both repos clean and Meridian on a feature branch (not `main`). Use `--allow-main` to override.

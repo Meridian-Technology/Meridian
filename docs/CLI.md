@@ -26,7 +26,7 @@ Shows the current state of both repos and the lockfile.
 - Meridian: branch, clean/dirty, short SHA
 - Events: branch, clean/dirty, short SHA
 - Lockfile: `events.ref` (short SHA)
-- Whether the lockfile pin matches `events/main`
+- Whether the lockfile matches `events/main` and local Events HEAD
 
 **Example:**
 ```bash
@@ -79,9 +79,9 @@ meridian switch MER-123-Org-Forms
 
 ---
 
-### `meridian pin`
+### `meridian sync`
 
-Updates `private-deps.lock` to pin Events to the current `origin/main` SHA.
+Syncs `private-deps.lock` to the current `origin/main` SHA in Events-Backend.
 
 **Requirements:**
 - Both repos clean
@@ -91,12 +91,12 @@ Updates `private-deps.lock` to pin Events to the current `origin/main` SHA.
 1. Fetches Events
 2. Gets `origin/main` SHA
 3. Updates lockfile
-4. Commits in Meridian: `chore(<branch>): pin events @ <shortSha>`
+4. Commits in Meridian: `chore(<branch>): sync events @ <shortSha>`
 
 **Example:**
 ```bash
-meridian pin
-meridian pin --allow-main   # override main check
+meridian sync
+meridian sync --allow-main   # override main check
 ```
 
 ---
@@ -113,7 +113,7 @@ Guided flow to ship a full-stack feature.
 1. Prompts to push Events branch if not pushed
 2. Creates Events PR (or prints URL if `gh` not available)
 3. Waits for Events PR to be merged to `main`
-4. Pins lockfile to merged Events SHA
+4. Syncs lockfile to merged Events SHA
 5. Prompts to push Meridian branch if not pushed
 6. Creates Meridian PR (or prints URL)
 
