@@ -359,10 +359,20 @@ function cmdSync(allowMain = false) {
     process.exit(1);
   }
 
+  const eventsHeadSha = getHeadSha(eventsPath, 'HEAD');
   const currentRef = getEventsRef(meridianPath);
   const shortSha = eventsMainSha.slice(0, 7);
 
   if (currentRef === eventsMainSha) {
+    if (eventsHeadSha !== eventsMainSha) {
+      const headShort = eventsHeadSha ? eventsHeadSha.slice(0, 7) : '?';
+      console.error('');
+      console.error(yellow('  Unable to sync to a branch'));
+      console.error(dim(`  Events-Backend is at ${headShort}, but lockfile pins to main (${shortSha}).`));
+      console.error(dim('  Sync only updates to origin/main. Merge your Events changes to main first, then run ') + cyan('meridian sync'));
+      console.error('');
+      process.exit(1);
+    }
     console.log('');
     console.log(green('  Lockfile already synced to ') + bold(shortSha));
     console.log('');
