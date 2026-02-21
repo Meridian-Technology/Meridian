@@ -49,7 +49,8 @@ function RegistrationsTab({ event, orgId, onRefresh, color }) {
         if (qIdx < 0) return '—';
         const val = response.answers[qIdx];
         if (val === undefined || val === null) return '—';
-        return Array.isArray(val) ? val.join(', ') : String(val);
+        const display = Array.isArray(val) ? val.filter(Boolean).join(', ') : String(val);
+        return display.trim() ? display : '—';
     };
 
     const summaryByQuestion = useMemo(() => {
