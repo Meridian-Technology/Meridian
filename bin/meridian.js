@@ -359,9 +359,17 @@ function cmdSync(allowMain = false) {
     process.exit(1);
   }
 
-  setEventsRef(meridianPath, eventsMainSha);
+  const currentRef = getEventsRef(meridianPath);
   const shortSha = eventsMainSha.slice(0, 7);
 
+  if (currentRef === eventsMainSha) {
+    console.log('');
+    console.log(green('  Lockfile already synced to ') + bold(shortSha));
+    console.log('');
+    return;
+  }
+
+  setEventsRef(meridianPath, eventsMainSha);
   const msg = `chore(${merBranch}): sync events @ ${shortSha}`;
   const addR = require('./lib/git').git('add private-deps.lock', meridianPath);
   if (!addR.ok) {
