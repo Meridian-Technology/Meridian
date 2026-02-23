@@ -1,6 +1,6 @@
-![Study Compass Logo](./study-compass.png)
+![ Logo](./meridian-logo.png)
 
-Welcome to the main Study Compass repository - this repository contains the code for the Study Compass main web app. Read the full documentation here:
+Welcome to the main Meridian repository - this repository contains the code for the Meridian web app. Read the full documentation here:
 
 # Getting Started - Installation
 
