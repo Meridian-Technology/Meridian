@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import './Landing.scss';
 import Header from "../../components/Header/Header";
-import heroImage from "../../assets/Mockups/LandingMockup.png";
+import heroImage from "../../assets/Mockups/LandingMockup1.png";
 import backgroundImage from "../../assets/LandingBackground.png";
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import WorkflowGraph from './WorkflowGraph';
@@ -15,17 +15,27 @@ function Landing() {
     const [width, setWidth] = useState(window.innerWidth);
     const [isLoading, setIsLoading] = useState(true);
     const [assetsLoaded, setAssetsLoaded] = useState(false);
+    const [bannerDismissed, setBannerDismissed] = useState(false);
+    const [bannerScrolled, setBannerScrolled] = useState(false);
 
     const { isAuthenticating, isAuthenticated } = useAuth();
+    const location = useLocation();
 
+    const handleDismissBanner = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setBannerDismissed(true);
+    };
+
+    // Redirect logged-in users from / to events-dashboard; /landing stays accessible
     useEffect(() => {
         if (isAuthenticating) {
             return;
         }
-        if (isAuthenticated) {
+        if (isAuthenticated && location.pathname === '/') {
             navigate('/events-dashboard');
         }
-    }, [isAuthenticating, isAuthenticated]);
+    }, [isAuthenticating, isAuthenticated, location.pathname]);
 
     useEffect(() => {
         window.addEventListener('resize', () => {
@@ -84,6 +94,34 @@ function Landing() {
         loadAssets();
     }, []);
 
+    // Scroll detection for banner (same hysteresis as Header)
+    useEffect(() => {
+        const scrollHandler = () => {
+            const currentPos = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop;
+            const container = document.querySelector('.landing-container');
+            const containerPos = container ? container.scrollTop : 0;
+            const scrollPosition = currentPos || containerPos;
+
+            setBannerScrolled(prev => {
+                if (prev) return scrollPosition > 30;
+                return scrollPosition > 50;
+            });
+        };
+
+        const container = document.querySelector('.landing-container');
+        if (container) container.addEventListener('scroll', scrollHandler, { passive: true });
+        window.addEventListener('scroll', scrollHandler, { passive: true });
+        document.addEventListener('scroll', scrollHandler, { passive: true });
+        scrollHandler();
+
+        return () => {
+            const c = document.querySelector('.landing-container');
+            if (c) c.removeEventListener('scroll', scrollHandler);
+            window.removeEventListener('scroll', scrollHandler);
+            document.removeEventListener('scroll', scrollHandler);
+        };
+    }, []);
+
     // Show loader until assets are ready
     if (!assetsLoaded || isAuthenticating) {
         return (
@@ -95,8 +133,25 @@ function Landing() {
 
     return (
         <div className="landing-container">
-            <div className="landing">
-                <Header/>
+            <div className={`landing ${bannerDismissed ? 'landing--banner-dismissed' : 'landing--banner-visible'}`}>
+                {!bannerDismissed && (
+                    <div className={`landing-launch-banner ${bannerScrolled ? 'landing-launch-banner--scrolled' : ''}`}>
+                        <Link to="/mobile" className="landing-launch-banner__link">
+                            <Icon icon="mdi:apple" />
+                            <span>Meridian is now on iOS — download the app</span>
+                            <Icon icon="mdi:chevron-right" />
+                        </Link>
+                        <button
+                            type="button"
+                            className="landing-launch-banner__close"
+                            onClick={handleDismissBanner}
+                            aria-label="Dismiss banner"
+                        >
+                            <Icon icon="mdi:close" />
+                        </button>
+                    </div>
+                )}
+                <Header />
 
                 {/* Hero */}
                 <section className="hero"style={{backgroundImage: `url(${backgroundImage})`}}>
@@ -888,6 +943,7 @@ function Landing() {
                             <h6>Product</h6>
                             <a href="/contact">Demo</a>
                             <a href="/documentation">Docs</a>
+                            <a href="/mobile">Mobile app</a>
                         </div>
                         <div className="footer__col">
                             <h6>Company</h6>

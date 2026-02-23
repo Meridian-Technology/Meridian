@@ -557,7 +557,8 @@ router.post('/qr-scan-event', async (req, res) => {
 });
 
 router.post('/qr-scan', async (req, res) => {
-    const { QR } = getModels(req, 'QR');
+    const { QR, AnalyticsEvent } = getModels(req, 'QR', 'AnalyticsEvent');
+    const crypto = require('crypto');
 
     try {
         const { name, repeat } = req.body;
@@ -594,6 +595,36 @@ router.post('/qr-scan', async (req, res) => {
         qr.scanHistory.push(scanData);
 
         await qr.save();
+
+        // Insert admin_qr_scan into analytics_events (canonical source for analytics)
+        const anonymousId = crypto.createHash('sha256')
+            .update((req.ip || '') + (req.headers['user-agent'] || ''))
+            .digest('hex').slice(0, 32);
+        const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
+        const analyticsDoc = {
+            schema_version: 1,
+            event_id: crypto.randomUUID(),
+            event: 'admin_qr_scan',
+            ts: new Date(),
+            received_at: new Date(),
+            anonymous_id: anonymousId,
+            user_id: null,
+            session_id: crypto.randomUUID(),
+            platform: 'web',
+            app: 'meridian',
+            app_version: '0.1.0',
+            build: '1',
+            env,
+            context: {},
+            properties: { qr_name: qr.name },
+            ip_hash: null,
+            user_agent_summary: null
+        };
+        try {
+            await AnalyticsEvent.create(analyticsDoc);
+        } catch (err) {
+            if (err.code !== 11000) console.error('Analytics insert error:', err);
+        }
         
         // Redirect to the configured URL
         res.json({ 

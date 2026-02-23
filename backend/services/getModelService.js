@@ -24,6 +24,7 @@ const samlConfigSchema = require('../schemas/samlConfig');
 const notificationSchema = require('../schemas/notification');
 const orgMessageSchema = require('../schemas/orgMessage');
 const contactRequestSchema = require('../schemas/contactRequest');
+const androidTesterSignupSchema = require('../schemas/androidTesterSignup');
 const resourcesConfigSchema = require('../schemas/resources');
 const shuttleConfigSchema = require('../schemas/shuttleConfig');
 // Study Sessions
@@ -110,6 +111,7 @@ const getModels = (req, ...names) => {
         StakeholderRole: req.db.model('StakeholderRole', stakeholderRoleSchema, 'stakeholderRoles'),
         Domain: req.db.model('Domain', domainSchema, 'domains'),
         ContactRequest: req.db.model('ContactRequest', contactRequestSchema, 'contactRequests'),
+        AndroidTesterSignup: req.db.model('AndroidTesterSignup', androidTesterSignupSchema, 'androidTesterSignups'),
         EventAgenda: req.db.model('EventAgenda', eventAgendaSchema, 'eventAgendas'),
         EventJob: req.db.model('EventJob', eventJobSchema, 'eventRoles'),
         OrgEventRole: req.db.model('OrgEventRole', orgEventRoleSchema, 'orgEventRoles'),

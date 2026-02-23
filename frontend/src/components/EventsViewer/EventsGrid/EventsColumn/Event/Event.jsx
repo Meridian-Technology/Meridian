@@ -8,7 +8,7 @@ import defaultAvatar from '../../../../../assets/defaultAvatar.svg'
 import useAuth from '../../../../../hooks/useAuth';
 import RSVPButton from '../../../../RSVPButton/RSVPButton';
 import { useFetch } from '../../../../../hooks/useFetch';
-import { parseMarkdownDescription } from '../../../../../utils/markdownUtils';
+import { parseMarkdownDescription, truncateHtmlToLines } from '../../../../../utils/markdownUtils';
 
 function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate, showRSVP = true, variant = 'regular'}){
     const [optimisticEvent, setOptimisticEvent] = useState(event);
@@ -166,10 +166,9 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
 
                                 {event.description && (
                                     <div className="row event-description" id={`event-description-${event._id}`}>
-                                        <div
-                                            className="event-description-content"
-                                            dangerouslySetInnerHTML={{ __html: parseMarkdownDescription(event.description) }}
-                                        />
+                                        <div className="event-description-content">
+                                            {truncateHtmlToLines(parseMarkdownDescription(event.description), 3)}
+                                        </div>
                                     </div>
                                 )}
                                 <div className="row">
@@ -232,10 +231,9 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
                         </div>
                         {event.description && (
                             <div className="row event-description compact">
-                                <div
-                                    className="event-description-content"
-                                    dangerouslySetInnerHTML={{ __html: parseMarkdownDescription(event.description) }}
-                                />
+                                <div className="event-description-content">
+                                    {truncateHtmlToLines(parseMarkdownDescription(event.description), 2)}
+                                </div>
                             </div>
                         )}
                         <div className="row">

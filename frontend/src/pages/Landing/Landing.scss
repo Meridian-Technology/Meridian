@@ -53,10 +53,114 @@
         z-index: 100;
     }
 
+  .landing-launch-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 101;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height:44px;
+    box-sizing: border-box;
+    padding: 10px 48px 10px 16px;
+    background: rgba(255, 255, 255, 0.12);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+    transition: background 0.3s ease, backdrop-filter 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+
+    &--scrolled {
+      background: #1d1d1f;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+
+      .landing-launch-banner__link {
+        color: rgba(255, 255, 255, 0.95);
+
+        &:hover {
+          color: rgba(255, 255, 255, 0.85);
+        }
+      }
+
+      .landing-launch-banner__close {
+        color: rgba(255, 255, 255, 0.7);
+
+        &:hover {
+          color: rgba(255, 255, 255, 1);
+          background: rgba(255, 255, 255, 0.12);
+        }
+      }
+    }
+
+    &__link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text, #111);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      transition: opacity 0.2s ease, color 0.3s ease;
+
+      &:hover {
+        color: var(--text, #111);
+        opacity: 0.85;
+      }
+
+      iconify-icon {
+        font-size: 18px;
+      }
+    }
+
+    &__close {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      appearance: none;
+      border: none;
+      background: transparent;
+      padding: 6px;
+      cursor: pointer;
+      color: var(--text, #111);
+      opacity: 0.6;
+      border-radius: 6px;
+      transition: opacity 0.2s ease, background 0.2s ease, color 0.3s ease;
+
+      &:hover {
+        opacity: 1;
+        background: rgba(0, 0, 0, 0.06);
+      }
+
+      iconify-icon {
+        font-size: 20px;
+      }
+    }
+  }
+
+  &.landing--banner-visible .Header {
+    top: 44px;
+  }
+
+  &.landing--banner-visible .hero__container {
+    padding-top: 124px;
+  }
+
+  &.landing--banner-dismissed .hero__container {
+    padding-top: 108px;
+  }
+
   .hero {
     width: 100%;
     box-sizing: border-box;
-    height:100vh;
+    height: 100vh;
+    height: 100dvh;
     overflow:hidden;
     background-size:cover;
     position: relative;
@@ -90,7 +194,7 @@
       grid-template-columns: 1.1fr 1fr;
       gap: 48px;
       align-items: center;
-      padding: 108px min(6vw, 72px) 24px;
+      padding: 132px min(6vw, 72px) 24px;
       padding-bottom: 60px;
       box-sizing: border-box;
       position: relative;
@@ -165,6 +269,7 @@
       display: flex;
       gap: 12px;
       align-items: center;
+      flex-direction: row;
       flex-wrap: wrap;
       margin-bottom: 18px;
       opacity: 0;
@@ -2325,6 +2430,21 @@
 
 @media (max-width: 768px) {
   .landing {
+    &.landing--banner-visible .Header {
+      top: 40px;
+    }
+
+    &.landing--banner-visible .hero__container {
+      padding-top: 120px;
+    }
+
+    .landing-launch-banner {
+      padding: 8px 48px 8px 12px;
+
+      &__link {
+        font-size: 13px;
+      }
+    }
     .metrics {
       &__tab {
         padding: 16px;

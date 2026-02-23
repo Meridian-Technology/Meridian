@@ -119,6 +119,7 @@ function createApp() {
   const availabilityPollRoutes = require('./routes/availabilityPollRoutes.js');
   const feedbackRoutes = require('./routes/feedbackRoutes.js');
   const contactRoutes = require('./routes/contactRoutes.js');
+  const androidTesterRoutes = require('./routes/androidTesterRoutes.js');
   const affiliatedEmailRoutes = require('./routes/affiliatedEmailRoutes.js');
   const resourcesRoutes = require('./routes/resourcesRoutes.js');
   const shuttleConfigRoutes = require('./routes/shuttleConfigRoutes.js');
@@ -145,6 +146,7 @@ function createApp() {
   app.use('/notifications', notificationRoutes);
   app.use('/api/qr', qrRoutes);
   app.use(contactRoutes);
+  app.use('/api/android-tester', androidTesterRoutes);
   app.use('/api/inngest', inngestServe);
   app.use('/api/inngest-examples', inngestRoutes);
   app.use(eventsRoutes);
