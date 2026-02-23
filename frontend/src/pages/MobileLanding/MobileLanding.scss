@@ -1,0 +1,585 @@
+// Reuse base landing styles
+@import "../Landing/Landing.scss";
+
+// Mobile landing specific overrides and additions
+.mobile-landing {
+  // Hero title logo (replaces "Meridian" text)
+  .hero__title-logo {
+    display: inline-block;
+    line-height: 0;
+
+    img {
+      height: 1.8em;
+      width: auto;
+      vertical-align: middle;
+      transform: translateX(-0.3em);
+    }
+  }
+
+  // Hero CTA adjustments for store badges
+  &__hero-cta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  &__store-badges {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  &__store-badge,
+  &__store-badge-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.08s ease;
+
+    &:hover {
+      opacity: 0.9;
+    }
+    &:active {
+      transform: scale(0.98);
+    }
+    &:focus {
+      outline: 2px solid rgba(109, 142, 250, 0.35);
+      outline-offset: 2px;
+    }
+
+    img {
+      display: block;
+      width: auto;
+    }
+  }
+
+  // App Store badge
+  &__store-badge img[alt="Download on the App Store"],
+  &__store-badge-btn img[alt="Download on the App Store"] {
+    height: 40px;
+
+    @media (max-width: 768px) {
+      height: 44px;
+    }
+  }
+
+  // Play Store badge is taller
+  &__store-badge img[alt="Get it on Google Play"],
+  &__store-badge-btn img[alt="Get it on Google Play"] {
+    height: 60px;
+
+    @media (max-width: 768px) {
+      height: 56px;
+    }
+  }
+
+  // Mockup - no placeholder outline, clean animation
+  &__mockup-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__mockup {
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 9 / 19;
+    border-radius: 24px;
+    overflow: hidden;
+    background: transparent;
+    outline: none;
+    border: none;
+    margin-top:100px;
+
+    &--hero {
+      max-width: 500px;
+    }
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      opacity: 0;
+      filter: blur(12px);
+      animation: mockup-animation 1.7s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+  }
+
+  // Features section
+  &__features {
+    width: 100%;
+    box-sizing: border-box;
+    background: white;
+  }
+
+  &__features-content {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 80px min(6vw, 72px) 96px;
+    box-sizing: border-box;
+  }
+
+  &__features-head {
+    text-align: center;
+    margin-bottom: 64px;
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text, #111);
+    }
+
+    p {
+      margin: 0;
+      max-width: 720px;
+      margin-left: auto;
+      margin-right: auto;
+      font-size: clamp(16px, 2vw, 18px);
+      color: var(--text-secondary, #666);
+      line-height: 1.6;
+    }
+  }
+
+  &__features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+  }
+
+  &__feature {
+    background: #fff;
+    border: 1px solid #e8e8e8;
+    border-radius: 16px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+
+    &:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      border-color: var(--dark-blue);
+    }
+
+    &-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: #f0f4ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      iconify-icon {
+        font-size: 24px;
+        color: var(--dark-blue);
+      }
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text, #111);
+    }
+
+    p {
+      margin: 0;
+      color: #666;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+  }
+
+  // Install CTA section
+  &__install {
+    width: 100%;
+    box-sizing: border-box;
+    background: #fafafa;
+    background-size: cover;
+    background-position: bottom;
+    position: relative;
+    // linear gradient to smooth transition to top and bottom:;
+    &::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 100%;
+      width:100%;
+      pointer-events: none;
+    //   stepped with percentages
+      background: linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0) 20%, rgba(255, 255, 255, 0) 80%, rgba(255, 255, 255, 1) 100%);
+    }
+  }
+
+  &__install-content {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 200px min(6vw, 72px) 200px min(6vw, 72px);
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  &__install h2 {
+    margin: 0 0 16px;
+    font-size: clamp(28px, 4vw, 40px);
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text, #111);
+  }
+
+  &__install p {
+    margin: 0 0 32px;
+    font-size: clamp(16px, 2vw, 18px);
+    color: var(--text-secondary, #666);
+    line-height: 1.6;
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  &__qr-section {
+    margin-bottom: 32px;
+  }
+
+  &__qr-container {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 24px;
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #eee;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  &__qr {
+    display: block;
+  }
+
+  &__qr-hint {
+    margin: 0;
+    font-size: 14px;
+    color: #666;
+  }
+
+  &__store-badges-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 768px) {
+  .mobile-landing {
+
+    .hero__cta{
+        flex-direction: row;
+    }
+    .hero__container {
+      grid-template-columns: 1fr;
+      gap: 0;
+      position: relative;
+      padding-left:0;
+      padding-right:0;
+      padding-bottom:0;
+    }
+
+    .hero__content {
+      position: relative;
+      z-index: 2;
+      padding-top: 100px;
+      padding-bottom: 40px;
+      padding-left:40px;
+      padding-right:40px;
+      background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgba(255, 255, 255, 0.2) 5%,
+        rgba(255, 255, 255, 0.6) 15%,
+        rgba(255, 255, 255, 0.98) 20%,
+        rgba(255, 255, 255, 1) 100%
+      );
+    }
+
+    .hero__visual {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: flex;
+      align-items: start;
+      justify-content: center;
+      height: 100%;
+      max-width: 100%;
+      margin: 0;
+      outline: none;
+      border: none;
+      margin-top:30px;
+      background: transparent;
+    }
+
+    .mobile-landing__mockup--hero {
+      max-width: 240px;
+      margin-top:0;
+    }
+
+  }
+}
+
+// Top logo in header space when header is hidden on mobile
+.mobile-landing__top-logo {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+
+  img {
+    height: 47px;
+    width: auto;
+  }
+
+  @media (min-width: 768px) {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .mobile-landing__top-logo--visible {
+    opacity: 1;
+  }
+
+  .mobile-landing .Header.Header--hidden {
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+
+  .mobile-landing .Header {
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+
+  .mobile-landing .Header__store-badge {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+
+    img {
+      display: block;
+      height: 40px;
+    }
+
+    img[alt="Get it on Google Play"] {
+      height: 56px;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .mobile-landing {
+    &__features-content {
+      padding: 60px min(6vw, 48px) 72px;
+    }
+
+    .mobile-landing__mockup--hero {
+      max-width: 80vw;
+    }
+
+    .hero__container{
+        max-height: calc(100vh - 56px);
+        max-height: calc(100dvh - 56px);
+        align-items: end;
+    }
+
+    &__features-head {
+      margin-bottom: 48px;
+    }
+
+    &__features-grid {
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+
+    &__install-content {
+      padding: 100px min(6vw, 48px) 100px min(6vw, 48px);
+    }
+
+    &__store-badges-row {
+      flex-direction: row;
+    }
+  }
+}
+
+// Android tester signup popup (portaled to body)
+.mobile-landing__android-signup-popup {
+  .mobile-landing__android-signup {
+    padding: 24px;
+    min-width: 320px;
+    max-width: 400px;
+
+    h3 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text, #111);
+    }
+
+    &-desc {
+      margin: 0 0 20px;
+      font-size: 14px;
+      color: var(--text-secondary, #666);
+      line-height: 1.5;
+    }
+
+    &-input {
+      width: 100%;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 16px;
+      box-sizing: border-box;
+
+      &:focus {
+        outline: 2px solid rgba(109, 142, 250, 0.35);
+        outline-offset: 2px;
+      }
+    }
+
+    &-success {
+      margin: 0 0 8px;
+      font-size: 15px;
+      color: var(--dark-blue, #667eea);
+      font-weight: 600;
+    }
+
+    &-hint {
+      margin: 0 0 20px;
+      font-size: 13px;
+      color: var(--text-secondary, #666);
+      line-height: 1.5;
+    }
+
+    &-success-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    &-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    &-msg {
+      margin: 0 0 12px;
+      font-size: 13px;
+      color: var(--text-secondary, #666);
+
+      &--error {
+        color: #c62828;
+      }
+    }
+
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn,
+    a.btn {
+      display: block;
+      width: 100%;
+      text-align: center;
+      text-decoration: none;
+      box-sizing: border-box;
+      appearance: none;
+      border: none;
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      transition: transform 0.08s ease, box-shadow 0.2s ease, background 0.2s ease;
+      font-family: inherit;
+
+      &:active {
+        transform: translateY(1px);
+      }
+
+      &:focus {
+        outline: 2px solid rgba(109, 142, 250, 0.35);
+        outline-offset: 2px;
+      }
+
+      &:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+
+      &--primary {
+        background: #111;
+        color: #fff;
+
+        &:hover:not(:disabled) {
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+      }
+
+      &--secondary {
+        background: #f2f2f2;
+        color: #111;
+
+        &:hover:not(:disabled) {
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
+      }
+    }
+  }
+}
+
+// Popup is portaled to body, so styles must be at root level
+.mobile-landing__qr-popup {
+  .mobile-landing__qr-container {
+    padding: 32px;
+    text-align: center;
+    min-width: 280px;
+
+    h3 {
+      margin: 0 0 20px;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text, #111);
+    }
+  }
+}
