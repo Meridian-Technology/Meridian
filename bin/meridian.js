@@ -421,8 +421,18 @@ async function cmdShip() {
     process.exit(1);
   }
 
-  // Push Events if not pushed
-  if (!isPushed(eventsPath, branch)) {
+  // Fetch to get latest origin/main
+  fetchAll(eventsPath);
+
+  const eventsHeadSha = getHeadSha(eventsPath, branch);
+  const eventsMainSha = getHeadSha(eventsPath, 'origin/main');
+  const currentRef = getEventsRef(meridianPath);
+  const eventsAlreadyOnMain = eventsHeadSha && eventsMainSha && eventsHeadSha === eventsMainSha;
+  const lockfileAlreadySynced = currentRef === eventsMainSha;
+
+  // Push Events if not pushed (skip if Events HEAD already on main and lockfile synced)
+  const eventsPushSkipped = eventsAlreadyOnMain && lockfileAlreadySynced;
+  if (!eventsPushSkipped && !isPushed(eventsPath, branch)) {
     const ok = await promptYesNo('Push Events branch now?');
     if (!ok) {
       console.error('');
@@ -439,9 +449,10 @@ async function cmdShip() {
 
   const hasGh = ensureGhAvailable();
 
-  // Events PR
-  if (hasGh) {
-    let merged = isPrMerged(eventsPath, branch);
+  // Events PR (skip if Events already on main and lockfile synced)
+  let merged = eventsAlreadyOnMain && lockfileAlreadySynced;
+  if (hasGh && !merged) {
+    merged = isPrMerged(eventsPath, branch);
     if (!merged && !prExists(eventsPath, branch)) {
       const ok = await promptYesNo('Create Events PR for Events branch?');
       if (!ok) {
@@ -479,7 +490,7 @@ async function cmdShip() {
       clearInterval(spinner);
       process.stdout.write('\r  ' + green('Merged!') + '                              \n');
     }
-  } else {
+  } else if (!hasGh && !merged) {
     const url = getPrUrl(eventsPath, branch) || prUrlFromRemote(getRepoRemoteUrl(eventsPath), branch, 'main');
     console.log('');
     console.log(yellow('  Merge Events PR to main first, then re-run ') + cyan('meridian ship'));
@@ -490,16 +501,16 @@ async function cmdShip() {
 
   // After merge: sync lockfile
   fetchAll(eventsPath);
-  const eventsMainSha = getHeadSha(eventsPath, 'origin/main');
-  if (!eventsMainSha) {
+  const mainSha = getHeadSha(eventsPath, 'origin/main');
+  if (!mainSha) {
     console.error(red('  Could not resolve origin/main in Events-Backend'));
     process.exit(1);
   }
 
-  const currentRef = getEventsRef(meridianPath);
-  const shortSha = eventsMainSha.slice(0, 7);
-  setEventsRef(meridianPath, eventsMainSha);
-  if (currentRef !== eventsMainSha) {
+  const lockfileRef = getEventsRef(meridianPath);
+  const shortSha = mainSha.slice(0, 7);
+  setEventsRef(meridianPath, mainSha);
+  if (lockfileRef !== mainSha) {
     const msg = `chore(${branch}): sync events @ ${shortSha}`;
     const addR = require('./lib/git').git('add private-deps.lock', meridianPath);
     if (!addR.ok) {
