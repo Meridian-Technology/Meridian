@@ -29,6 +29,7 @@
     "server": "cd backend && nodemon --exec \"node --preserve-symlinks\" server.js",
     "client": "cd frontend && npm start",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "meridian": "node bin/meridian.js"
+    "meridian": "node bin/meridian.js",
+    "qr-frontend": "node scripts/qr-frontend.js"
   }
 }
