@@ -114,3 +114,27 @@ Tools used:
 - Dashboard view showing:
   - Meeting Minutes  
   - Attendance Records  
+
+
+
+  task list:
+
+  MER-145 Create Meeting Data Model
+
+MER-146 Reuse Event Component for Meetings
+
+MER-147 Implement Recurring Meetings
+
+MER-148 Build RSVP System
+
+MER-149 Implement Attendance Tracking (Admin Check-In + Status Logic)
+
+MER-150 Create Attendance Dashboard & Membership Qualification Logic
+
+MER-151 Build Automated Reminder & Notification System
+
+MER-152 Implement Meeting Minutes (Google Doc Link + Internal Notes Option)
+
+MER-153 Add Required Attendance Role Controls (Members/Officers/Custom)
+
+MER-154 Build Meetings Dashboard & “Plan a Meeting” Flow
