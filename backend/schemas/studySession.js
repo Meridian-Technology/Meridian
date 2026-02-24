@@ -33,11 +33,11 @@ const studySessionSchema = new Schema({
         required: true 
     },
     
-    // Event Integration - CORE CONNECTION
+    // Event Integration - CORE CONNECTION (optional for availability polling mode)
     relatedEvent: { 
         type: Schema.Types.ObjectId, 
         ref: 'Event', 
-        required: true 
+        required: false 
     },
     
     // Participants with RSVP Status

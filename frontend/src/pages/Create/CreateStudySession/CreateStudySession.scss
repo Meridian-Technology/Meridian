@@ -1,0 +1,156 @@
+.poll-link-modal {
+    // Hide the default close button
+    .close-popup {
+        display: none !important;
+    }
+    
+    // Prevent overlay clicks from closing
+    .popup-overlay {
+        pointer-events: auto;
+    }
+    
+    .poll-link-modal-content {
+        padding: 2rem;
+        max-width: 600px;
+        background: white;
+        border-radius: 12px;
+        position: relative;
+        pointer-events: auto;
+        
+        .modal-header {
+            text-align: center;
+            margin-bottom: 2rem;
+            
+            h2 {
+                font-size: 1.75rem;
+                font-weight: 700;
+                color: #2c3e50;
+                margin-bottom: 0.5rem;
+            }
+            
+            p {
+                color: #666;
+                font-size: 1rem;
+            }
+        }
+        
+        .link-section {
+            margin-bottom: 2rem;
+            
+            label {
+                display: block;
+                font-weight: 600;
+                color: #2c3e50;
+                margin-bottom: 0.75rem;
+                font-size: 0.95rem;
+            }
+            
+            .link-input-group {
+                display: flex;
+                gap: 0.5rem;
+                
+                input {
+                    flex: 1;
+                    padding: 0.875rem;
+                    border: 2px solid #e0e0e0;
+                    border-radius: 8px;
+                    font-size: 0.95rem;
+                    background: #f8f9fa;
+                    
+                    &:focus {
+                        outline: none;
+                        border-color: #6D8EFA;
+                        background: white;
+                    }
+                }
+                
+                .copy-button {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    padding: 0.875rem 1.5rem;
+                    background: #6D8EFA;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    
+                    &:hover {
+                        background: #5a7ae8;
+                        transform: translateY(-1px);
+                        box-shadow: 0 4px 12px rgba(109, 142, 250, 0.3);
+                    }
+                    
+                    svg {
+                        font-size: 1.2rem;
+                    }
+                }
+            }
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            
+            .view-responses-button {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.875rem 1.5rem;
+                background: #6D8EFA;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                
+                &:hover {
+                    background: #5a7ae8;
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 12px rgba(109, 142, 250, 0.3);
+                }
+                
+                svg {
+                    font-size: 1.2rem;
+                }
+            }
+            
+            .close-button {
+                padding: 0.875rem 1.5rem;
+                background: #f8f9fa;
+                color: #666;
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                
+                &:hover {
+                    background: #e9ecef;
+                    border-color: #ccc;
+                }
+            }
+        }
+        
+        .invite-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: rgba(109, 142, 250, 0.1);
+            border-radius: 8px;
+            color: #6D8EFA;
+            font-size: 0.9rem;
+            
+            svg {
+                font-size: 1.2rem;
+            }
+        }
+    }
+}
+
