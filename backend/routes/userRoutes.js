@@ -697,4 +697,58 @@ router.post('/register-push-token', verifyToken, async (req, res) => {
     }
 });
 
+/**
+ * DELETE /delete-account
+ * Permanently deletes the authenticated user's account and associated data.
+ * Required for App Store Guideline 2.1 (account creation apps must offer account deletion).
+ */
+router.delete("/delete-account", verifyToken, async (req, res) => {
+    const userId = req.user.userId;
+    const models = getModels(req, 'User', 'Session', 'Friendship', 'StudyHistory', 'StudySession', 'AvailabilityPoll', 'OrgMember', 'OrgFollower', 'Rating', 'Notification', 'OrgInvite', 'OrgMemberApplication', 'Search', 'RepeatedVisit');
+    const { User, Session, Friendship, StudyHistory, StudySession, AvailabilityPoll, OrgMember, OrgFollower, Rating, Notification, OrgInvite, OrgMemberApplication, Search, RepeatedVisit } = models;
+
+    try {
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        // Delete sessions
+        await Session.deleteMany({ userId });
+        // Delete friendships (user as requester or recipient)
+        await Friendship.deleteMany({ $or: [{ requester: userId }, { recipient: userId }] });
+        // Delete study history
+        await StudyHistory.deleteMany({ user_id: userId });
+        // Delete study sessions created by user
+        await StudySession.deleteMany({ creator: userId });
+        // Delete availability polls created by user
+        await AvailabilityPoll.deleteMany({ creatorType: 'User', creatorId: userId });
+        // Delete org memberships
+        await OrgMember.deleteMany({ user_id: userId });
+        // Delete org follows
+        await OrgFollower.deleteMany({ user_id: userId });
+        // Delete ratings
+        await Rating.deleteMany({ user_id: userId });
+        // Delete notifications sent to user
+        await Notification.deleteMany({ recipient: userId, recipientModel: 'User' });
+        // Delete org invites for user
+        await OrgInvite.deleteMany({ user_id: userId });
+        // Delete org member applications
+        await OrgMemberApplication.deleteMany({ user_id: userId });
+        // Delete search history
+        await Search.deleteMany({ user_id: userId });
+        // Delete repeated visit records
+        await RepeatedVisit.deleteMany({ user_id: userId });
+
+        // Delete user document
+        await User.findByIdAndDelete(userId);
+
+        console.log(`DELETE: /delete-account - User ${userId} and associated data deleted`);
+        return res.status(200).json({ success: true, message: 'Account deleted successfully' });
+    } catch (error) {
+        console.error('DELETE: /delete-account failed:', error);
+        return res.status(500).json({ success: false, message: 'Failed to delete account', error: error.message });
+    }
+});
+
 module.exports = router;

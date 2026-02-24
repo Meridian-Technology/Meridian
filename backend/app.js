@@ -123,6 +123,7 @@ function createApp() {
   const affiliatedEmailRoutes = require('./routes/affiliatedEmailRoutes.js');
   const resourcesRoutes = require('./routes/resourcesRoutes.js');
   const shuttleConfigRoutes = require('./routes/shuttleConfigRoutes.js');
+  const noticeRoutes = require('./routes/noticeRoutes.js');
 
   app.use(authRoutes);
   app.use('/auth/saml', samlRoutes);
@@ -155,6 +156,7 @@ function createApp() {
   app.use('/feedback', feedbackRoutes);
   app.use('/api/resources', resourcesRoutes);
   app.use('/api/shuttle-config', shuttleConfigRoutes);
+  app.use('/api/notice', noticeRoutes);
   app.use('/verify-affiliated-email', affiliatedEmailRoutes);
 
   if (process.env.NODE_ENV === 'production') {
