@@ -27,6 +27,7 @@ const contactRequestSchema = require('../schemas/contactRequest');
 const androidTesterSignupSchema = require('../schemas/androidTesterSignup');
 const resourcesConfigSchema = require('../schemas/resources');
 const shuttleConfigSchema = require('../schemas/shuttleConfig');
+const noticeConfigSchema = require('../schemas/noticeConfig');
 // Study Sessions
 const studySessionSchema = require('../schemas/studySession');
 const availabilityPollSchema = require('../schemas/availabilityPoll');
@@ -122,6 +123,7 @@ const getModels = (req, ...names) => {
         EventQR: req.db.model('EventQR', eventQRSchema, 'event_qrs'),
         ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
         ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
+        NoticeConfig: req.db.model('NoticeConfig', noticeConfigSchema, 'noticeConfigs'),
     };
 
     return names.reduce((acc, name) => {

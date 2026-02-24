@@ -6,6 +6,7 @@ import ManageFlow from './ManageFlow/ManageFlow';
 import RSSManagement from './RSSManagement/RSSManagement';
 import RoomManager from './RoomManager/RoomManager';
 import ResourcesManagement from './ResourcesManagement/ResourcesManagement';
+import NoticeManagement from './NoticeManagement/NoticeManagement';
 // import BadgeManager from './BadgeManager/BadgeManager';
 import eventsLogo from '../../assets/Brand Image/EventsLogo.svg';
 
@@ -36,6 +37,11 @@ function RootDash(){
             label: 'Resources', 
             icon: 'mdi:book-open-variant',
             element: <ResourcesManagement/>
+        },
+        { 
+            label: 'Notice', 
+            icon: 'mdi:bullhorn',
+            element: <NoticeManagement/>
         },
     ];
 
