@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import { useFetch } from '../../hooks/useFetch';
 import RSVPButton from '../RSVPButton/RSVPButton';
+import RegistrationPrompt from '../RegistrationPrompt/RegistrationPrompt';
+import {
+    hasAnonymousRegistration,
+    getAnonymousRegistration,
+    removeAnonymousRegistration
+} from '../../utils/anonymousRegistrationStorage';
 import { analytics } from '../../services/analytics/analytics';
 import Popup from '../Popup/Popup';
 import defaultAvatar from '../../assets/defaultAvatar.svg';
@@ -12,6 +19,8 @@ import './RSVPSection.scss';
 
 const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
     const { user } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
     const { addNotification } = useNotification();
     const [registration, setRegistration] = useState(null);
     const [attendees, setAttendees] = useState([]);
@@ -21,14 +30,23 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
     const [selectedUser, setSelectedUser] = useState(null);
     const [showUserPopup, setShowUserPopup] = useState(false);
     const [withdrawing, setWithdrawing] = useState(false);
+    const [anonymousVerified, setAnonymousVerified] = useState(null);
+    const [showRegistrationPromptOpen, setShowRegistrationPromptOpen] = useState(false);
+    const [showClaimPromptFromWithdraw, setShowClaimPromptFromWithdraw] = useState(false);
 
     const enabled = event.registrationEnabled ?? event.rsvpEnabled;
-    const { data: rsvpData } = useFetch(
+    const { data: rsvpData, refetch: refetchRsvp } = useFetch(
         enabled && user && !previewAsUnregistered ? `/my-rsvp/${event._id}` : null
     );
-    const { data: attendeesData } = useFetch(
+    const { data: attendeesData, refetch: refetchAttendees } = useFetch(
         enabled ? `/attendees/${event._id}` : null
     );
+
+    const hasStoredAnonymous = !user && event?._id && hasAnonymousRegistration(event._id);
+    const anonymousRegistered = hasStoredAnonymous && anonymousVerified !== false;
+    const isRegistered = Boolean(registration) || anonymousRegistered;
+    // Keep rendering the Register block (with RSVPButton + prompt) when the post-registration prompt is open
+    const isRegisteredForDisplay = isRegistered && !showRegistrationPromptOpen;
 
     useEffect(() => {
         if (previewAsUnregistered) {
@@ -46,8 +64,47 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
         }
     }, [attendeesData]);
 
+    // Verify anonymous registration with server so we clear localStorage if admin removed it
+    useEffect(() => {
+        if (user || !event?._id || !enabled) {
+            setAnonymousVerified(null);
+            return;
+        }
+        const stored = getAnonymousRegistration(event._id);
+        if (!stored) {
+            setAnonymousVerified(null);
+            return;
+        }
+        if (!stored.guestEmail) {
+            setAnonymousVerified(true);
+            return;
+        }
+        let cancelled = false;
+        const url = `/events/${event._id}/check-anonymous-registration?guestEmail=${encodeURIComponent(stored.guestEmail)}`;
+        postRequest(url, null, { method: 'GET' })
+            .then((data) => {
+                if (cancelled) return;
+                if (data?.error) {
+                    setAnonymousVerified(true);
+                    return;
+                }
+                const registered = data?.registered === true;
+                if (!registered) {
+                    removeAnonymousRegistration(event._id);
+                    setAnonymousVerified(false);
+                } else {
+                    setAnonymousVerified(true);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) setAnonymousVerified(true);
+            });
+        return () => { cancelled = true; };
+    }, [event?._id, user, enabled]);
+
     const handleRegisterUpdate = () => {
-        window.location.reload();
+        if (user) refetchRsvp();
+        refetchAttendees();
     };
 
     const handleWithdraw = async () => {
@@ -146,8 +203,13 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
                     <RSVPButton
                         event={event}
                         onRSVPUpdate={handleRegisterUpdate}
-                        rsvpStatus={registration}
+                        rsvpStatus={registration || (anonymousRegistered ? {} : null)}
                         onRSVPStatusUpdate={() => {}}
+                        onRegistrationPromptOpen={() => setShowRegistrationPromptOpen(true)}
+                        onRegistrationPromptClose={() => {
+                            setShowRegistrationPromptOpen(false);
+                            handleRegisterUpdate();
+                        }}
                     />
                 </div>
             </div>
@@ -160,7 +222,7 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
                 <h3>Registration</h3>
             </div>
 
-            {registration ? (
+            {isRegisteredForDisplay ? (
                 <>
                     {isDeadlinePassed && (
                         <div className="rsvp-deadline-passed">
@@ -193,7 +255,10 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
                         {!isDeadlinePassed && (
                             <button
                                 className="rsvp-withdraw-button"
-                                onClick={handleWithdraw}
+                                onClick={!user && anonymousRegistered
+                                    ? () => setShowClaimPromptFromWithdraw(true)
+                                    : handleWithdraw
+                                }
                                 disabled={withdrawing}
                             >
                                 {withdrawing ? (
@@ -241,8 +306,13 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
                             <RSVPButton
                                 event={event}
                                 onRSVPUpdate={handleRegisterUpdate}
-                                rsvpStatus={registration}
+                                rsvpStatus={registration || (anonymousRegistered ? {} : null)}
                                 onRSVPStatusUpdate={() => {}}
+                                onRegistrationPromptOpen={() => setShowRegistrationPromptOpen(true)}
+                                onRegistrationPromptClose={() => {
+                                    setShowRegistrationPromptOpen(false);
+                                    handleRegisterUpdate();
+                                }}
                             />
                         </>
                     )}
@@ -292,6 +362,28 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
                     </div>
                 )}
             </Popup>
+
+            {showClaimPromptFromWithdraw && (
+                <Popup
+                    isOpen
+                    onClose={() => setShowClaimPromptFromWithdraw(false)}
+                    customClassName="registration-prompt-modal"
+                >
+                    <RegistrationPrompt
+                        eventName={event?.name}
+                        onSignUp={() => {
+                            setShowClaimPromptFromWithdraw(false);
+                            const redirect = encodeURIComponent(location.pathname);
+                            navigate(`/register?redirect=${redirect}`);
+                        }}
+                        onSignUpSuccess={() => {
+                            setShowClaimPromptFromWithdraw(false);
+                            handleRegisterUpdate();
+                        }}
+                        onDismiss={() => setShowClaimPromptFromWithdraw(false)}
+                    />
+                </Popup>
+            )}
         </div>
     );
 };

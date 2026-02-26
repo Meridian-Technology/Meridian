@@ -31,7 +31,7 @@ const { User, Event, Org } = getModels(req, 'User', 'Event', 'Org');
 
 ### 2.2 Adding a new model
 
-1. Add a **schema** under `backend/schemas/` (or `backend/events/schemas/` for event-related models).
+1. Add a **schema** under `backend/schemas/` (or `backend/events/schemas/` for event-related models). Note: **`backend/events` is symlinked to the Events-Backend repo**; event routes and schemas live there.
 2. In `backend/services/getModelService.js`:
    - Require the schema.
    - Add an entry to the `models` object: `ModelName: req.db.model('ModelName', schema, 'collectionName')`.
@@ -147,11 +147,12 @@ Auth middlewares already use `success`, `message`, and `code`. Use `code` for st
 
 ---
 
-## 6. Events Submodule
+## 6. Events (Events-Backend)
 
+- **`backend/events` is symlinked to the Events-Backend repo** (same repo root as Meridian). All event routes and schemas live in Events-Backend; Meridian loads them via this symlink.
 - **Mount**: `backend/events/index.js` is required in `app.js` and mounted as `app.use(eventsRoutes)` (path depends on how `eventsRoutes` is defined in `app.js`).
-- **Routes**: Under `backend/events/routes/` (e.g. `eventSystemConfigRoutes.js`, `analyticsRoutes.js`). These are aggregated in `events/index.js`.
-- **Schemas**: Event-related schemas live in `backend/events/schemas/`. They are required and registered in `getModelService.js`; event routes and middlewares use the same `getModels(req, ...)` pattern.
+- **Routes**: Under `backend/events/routes/` (i.e. `Events-Backend/routes/`) (e.g. `eventRoutes.js`, `eventSystemConfigRoutes.js`, `analyticsRoutes.js`). These are aggregated in `events/index.js`.
+- **Schemas**: Event-related schemas live in `backend/events/schemas/` (Events-Backend). They are required and registered in Meridian’s `getModelService.js`; event routes and middlewares use the same `getModels(req, ...)` pattern.
 - When adding event features, add schemas under `events/schemas/`, register in `getModelService.js`, and add routes under `events/routes/`, then mount in `events/index.js` if needed.
 
 ---

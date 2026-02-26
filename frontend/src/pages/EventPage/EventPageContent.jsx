@@ -94,7 +94,20 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
     return (
         <div className={`event-content ${isMobileVariant ? 'event-content--mobile' : ''}`}>
             {!previewMode && (
-                <div className="back" onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/events-dashboard?page=1')}>
+                <div
+                    className="back"
+                    onClick={() => {
+                        const sameOriginReferrer =
+                            typeof document.referrer === 'string' &&
+                            document.referrer !== '' &&
+                            document.referrer.startsWith(window.location.origin);
+                        if (window.history.length > 1 && sameOriginReferrer) {
+                            navigate(-1);
+                        } else {
+                            navigate('/events-dashboard?page=1');
+                        }
+                    }}
+                >
                     <Icon icon="mdi:arrow-left" />
                     <p>Back to Events</p>
                 </div>
