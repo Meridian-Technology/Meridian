@@ -7,10 +7,13 @@ import { generalIcons } from '../../Icons';
 import './RegistrationPrompt.scss';
 
 /**
- * Shown after an anonymous user completes event registration.
+ * Shown after an anonymous user completes event registration, or to prompt sign-up before an action (e.g. create club).
  * Offers Google/Apple sign-up in place, or link to full register page.
+ * @param {string} [title] - Override default title (e.g. "Create your account")
+ * @param {string} [subtitle] - Override default subtitle
+ * @param {string} [dismissButtonText] - Override "Maybe later" button text (e.g. "Cancel")
  */
-const RegistrationPrompt = ({ onSignUp, onSignUpSuccess, onDismiss, eventName }) => {
+const RegistrationPrompt = ({ onSignUp, onSignUpSuccess, onDismiss, eventName, title: titleProp, subtitle: subtitleProp, dismissButtonText = 'Maybe later' }) => {
     const location = useLocation();
     const { googleLogin } = useAuth();
     const [error, setError] = useState('');
@@ -76,10 +79,10 @@ const RegistrationPrompt = ({ onSignUp, onSignUpSuccess, onDismiss, eventName })
                         <Icon icon="mdi:check-circle" />
                     </div>
                     <h2 className="registration-prompt-title">
-                        You're registered{eventName ? ` for ${eventName}` : ' for this event'}.
+                        {titleProp != null ? titleProp : (eventName ? `You're registered for ${eventName}` : "You're registered for this event.")}
                     </h2>
                     <p className="registration-prompt-subtitle">
-                        Create a free account to manage your events in one place and register with one click next time.
+                        {subtitleProp != null ? subtitleProp : 'Create a free account to manage your events in one place and register with one click next time.'}
                     </p>
                 </div>
                 <div className="registration-prompt-actions">
@@ -121,7 +124,7 @@ const RegistrationPrompt = ({ onSignUp, onSignUpSuccess, onDismiss, eventName })
                         Register with email
                     </button>
                     <button type="button" className="registration-prompt-btn secondary" onClick={onDismiss}>
-                        Maybe later
+                        {dismissButtonText}
                     </button>
                 </div>
             </div>
