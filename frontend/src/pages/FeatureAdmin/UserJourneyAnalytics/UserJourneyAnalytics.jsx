@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
+import FunnelChart from '../../ClubDash/EventsManagement/components/EventDashboard/FunnelChart';
 import './UserJourneyAnalytics.scss';
 
 const REPORT_TABS = [
@@ -15,23 +16,21 @@ function UserJourneyAnalytics() {
     const [activeTab, setActiveTab] = useState('overview');
     const [platform, setPlatform] = useState('web');
     const [startingPoint, setStartingPoint] = useState('');
-    const [customFunnelSteps, setCustomFunnelSteps] = useState('');
+    const defaultFunnelSteps = ['Events Dashboard', 'Explore', 'Event Page', 'event_registration'];
+    const [funnelSteps, setFunnelSteps] = useState([...defaultFunnelSteps]);
 
     const overviewUrl = `/dashboard/all?timeRange=${timeRange}&platform=${platform}`;
     const pathUrl = startingPoint
         ? `/dashboard/user-journey?timeRange=${timeRange}&platform=${platform}&startingPoint=${encodeURIComponent(startingPoint)}`
         : `/dashboard/user-journey?timeRange=${timeRange}&platform=${platform}`;
-    const defaultFunnelSteps = ['Landing', 'Explore', 'Event Page', 'event_registration'];
-    const funnelSteps = customFunnelSteps
-        ? customFunnelSteps.split(',').map(s => s.trim()).filter(Boolean)
-        : defaultFunnelSteps;
-    const funnelUrl = `/dashboard/funnel?timeRange=${timeRange}&platform=${platform}&steps=${encodeURIComponent(funnelSteps.join(','))}`;
+    const appliedFunnelSteps = funnelSteps.filter(Boolean);
+    const funnelUrl = `/dashboard/funnel?timeRange=${timeRange}&platform=${platform}&steps=${encodeURIComponent((appliedFunnelSteps.length ? appliedFunnelSteps : defaultFunnelSteps).join(','))}`;
     const startingPointsUrl = `/dashboard/path-starting-points?timeRange=${timeRange}&platform=${platform}`;
 
     const { data: overviewData, loading: overviewLoading, error: overviewError, refetch: refetchOverview } = useFetch(activeTab === 'overview' ? overviewUrl : null);
     const { data: pathData, loading: pathLoading, error: pathError, refetch: refetchPath } = useFetch(activeTab === 'path' ? pathUrl : null);
     const { data: funnelData, loading: funnelLoading, error: funnelError, refetch: refetchFunnel } = useFetch(activeTab === 'funnel' ? funnelUrl : null);
-    const { data: startingPointsData } = useFetch(activeTab === 'path' ? startingPointsUrl : null);
+    const { data: startingPointsData } = useFetch(activeTab === 'path' || activeTab === 'funnel' ? startingPointsUrl : null);
 
     const formatNumber = (num) => {
         if (num === null || num === undefined) return '0';
@@ -57,6 +56,23 @@ function UserJourneyAnalytics() {
     const funnelResult = funnelData?.data;
     const startingPoints = startingPointsData?.data;
     const allScreens = [...(startingPoints?.screens || []).map(s => ({ ...s, type: 'screen' })), ...(startingPoints?.events || []).map(e => ({ ...e, type: 'event' }))];
+    const funnelOptions = [...new Set([...defaultFunnelSteps, ...(allScreens?.map(s => s.label) || [])])];
+
+    const updateFunnelStep = (index, value) => {
+        setFunnelSteps(prev => {
+            const next = [...prev];
+            next[index] = value;
+            return next;
+        });
+    };
+
+    const addFunnelStep = () => {
+        setFunnelSteps(prev => [...prev, '']);
+    };
+
+    const removeFunnelStep = (index) => {
+        setFunnelSteps(prev => prev.filter((_, i) => i !== index));
+    };
 
     return (
         <div className="user-journey-analytics">
@@ -68,7 +84,7 @@ function UserJourneyAnalytics() {
                         </Link>
                     </div>
                     <h1>User Journey & Explorations</h1>
-                    <p>Path exploration and funnel analysis — similar to Google Analytics Explorations</p>
+                    <p>Path exploration and funnel analysis</p>
                     <div className="uj-tabs">
                         {REPORT_TABS.map((tab) => (
                             <button
@@ -216,13 +232,42 @@ function UserJourneyAnalytics() {
 
                         <div className="uj-funnel-controls">
                             <div className="uj-funnel-steps-input">
-                                <label>Funnel steps (comma-separated):</label>
-                                <input
-                                    type="text"
-                                    value={customFunnelSteps}
-                                    onChange={(e) => setCustomFunnelSteps(e.target.value)}
-                                    placeholder="Landing, Explore, Event Page, event_registration"
-                                />
+                                <label>Funnel steps:</label>
+                                <div className="uj-funnel-steps-list">
+                                    {funnelSteps.map((step, index) => (
+                                        <div key={index} className="uj-funnel-step-row">
+                                            <span className="uj-funnel-step-number">Step {index + 1}</span>
+                                            <select
+                                                value={step}
+                                                onChange={(e) => updateFunnelStep(index, e.target.value)}
+                                                className="uj-funnel-step-select"
+                                            >
+                                                <option value="">Select page or event...</option>
+                                                {funnelOptions.map((opt) => (
+                                                    <option key={opt} value={opt}>{opt}</option>
+                                                ))}
+                                            </select>
+                                            {funnelSteps.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    className="uj-funnel-step-remove"
+                                                    onClick={() => removeFunnelStep(index)}
+                                                    aria-label={`Remove step ${index + 1}`}
+                                                >
+                                                    <Icon icon="mdi:close" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        className="uj-funnel-add-step"
+                                        onClick={addFunnelStep}
+                                    >
+                                        <Icon icon="mdi:plus" />
+                                        Add step
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -235,34 +280,17 @@ function UserJourneyAnalytics() {
                                 <span className="label">Converted</span>
                                 <span className="value">{formatNumber(funnelResult.totalConverted)}</span>
                             </div>
-                            <div className="uj-funnel-summary-item highlight">
-                                <span className="label">Overall conversion</span>
-                                <span className="value">{funnelResult.overallConversionRate?.toFixed(1) || '0'}%</span>
-                            </div>
+                           
                         </div>
 
-                        <div className="uj-funnel-visualization">
-                            {funnelResult.steps?.map((step, idx) => (
-                                <div key={idx} className="uj-funnel-step">
-                                    <div className="uj-funnel-step-header">
-                                        <span className="uj-funnel-step-number">Step {step.index}</span>
-                                        <span className="uj-funnel-step-name">{step.step}</span>
+                        <div className="event-analytics-detail">
+                            <div className="funnel-section">
+                                <div className="funnel-chart-container">
+                                    <div className="funnel-chart-wrapper">
+                                        <FunnelChart data={funnelResult.steps?.map(s => ({ label: s.step, value: s.count })) || []} />
                                     </div>
-                                    <div className="uj-funnel-step-bar-container">
-                                        <div
-                                            className="uj-funnel-step-bar"
-                                            style={{ width: `${step.conversionRate}%` }}
-                                        />
-                                        <span className="uj-funnel-step-value">{formatNumber(step.count)} ({step.conversionRate?.toFixed(1)}%)</span>
-                                    </div>
-                                    {step.dropOff > 0 && (
-                                        <div className="uj-funnel-dropoff">
-                                            <Icon icon="mdi:arrow-down" />
-                                            {formatNumber(step.dropOff)} dropped off
-                                        </div>
-                                    )}
                                 </div>
-                            ))}
+                            </div>
                         </div>
                     </section>
                 )}

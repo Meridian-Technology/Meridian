@@ -1098,9 +1098,9 @@ async function getUserJourneyPaths(AnalyticsEvent, timeRange = '30d', platform, 
     pathData.steps.push({ step: 0, nodes: [{ label: start, count: startCount }] });
 
     let prevSessions = await AnalyticsEvent.distinct('session_id', startMatch);
-    let currentStep = 1;
+    let pathSoFar = [start]; // Nodes we're "coming from" for this step
 
-    while (currentStep <= maxSteps && prevSessions.length > 0) {
+    for (let currentStep = 1; currentStep <= maxSteps && prevSessions.length > 0; currentStep++) {
         const sessionsWithStream = await AnalyticsEvent.aggregate([
             { $match: { ...baseMatch, session_id: { $in: prevSessions } } },
             { $sort: { session_id: 1, ts: 1 } },
@@ -1110,11 +1110,11 @@ async function getUserJourneyPaths(AnalyticsEvent, timeRange = '30d', platform, 
                     stream: {
                         $push: {
                             label: {
-                                $cond: [
-                                    { $eq: ['$event', 'screen_view'] },
-                                    { $ifNull: ['$context.screen', 'Unknown'] },
-                                    '$event'
-                                ]
+                                $cond: {
+                                    if: { $eq: ['$event', 'screen_view'] },
+                                    then: { $ifNull: ['$context.screen', 'Unknown'] },
+                                    else: '$event'
+                                }
                             }
                         }
                     }
@@ -1123,17 +1123,24 @@ async function getUserJourneyPaths(AnalyticsEvent, timeRange = '30d', platform, 
         ]);
 
         const nextLabels = {};
+
         for (const s of sessionsWithStream) {
             const stream = s.stream.map(x => x.label);
-            const startIdx = stream.findIndex(l => l === start);
-            if (startIdx < 0) continue;
-            const afterStart = stream.slice(startIdx + 1);
-            const seen = new Set([start]);
-            for (const lbl of afterStart) {
+            // Find the last index where user was at any of the path-so-far nodes
+            let lastReachedIdx = -1;
+            for (const pathNode of pathSoFar) {
+                const idx = stream.indexOf(pathNode, lastReachedIdx + 1);
+                if (idx > lastReachedIdx) lastReachedIdx = idx;
+            }
+            if (lastReachedIdx < 0) continue;
+
+            const afterStep = stream.slice(lastReachedIdx + 1);
+            const seen = new Set(pathSoFar);
+            for (const lbl of afterStep) {
                 if (!seen.has(lbl)) {
                     seen.add(lbl);
                     nextLabels[lbl] = (nextLabels[lbl] || 0) + 1;
-                    break; // Only first "next" node per session for step 1
+                    break;
                 }
             }
         }
@@ -1147,58 +1154,21 @@ async function getUserJourneyPaths(AnalyticsEvent, timeRange = '30d', platform, 
 
         pathData.steps.push({ step: currentStep, nodes: sorted });
 
-        // For step 2+: get sessions that hit any of the top nodes, then their next node
+        // For next iteration: pathSoFar = top nodes at this step (where we're "coming from")
+        // prevSessions = sessions that reached any of those nodes
         const topNodeLabels = sorted.map(n => n.label);
-        const sessionsAtStep = await AnalyticsEvent.aggregate([
-            { $match: { ...baseMatch, session_id: { $in: prevSessions } } },
-            { $sort: { session_id: 1, ts: 1 } },
-            {
-                $group: {
-                    _id: '$session_id',
-                    stream: {
-                        $push: {
-                            label: {
-                                $cond: [
-                                    { $eq: ['$event', 'screen_view'] },
-                                    { $ifNull: ['$context.screen', 'Unknown'] },
-                                    '$event'
-                                ]
-                            }
-                        }
-                    }
-                }
-            }
-        ]);
+        pathSoFar = topNodeLabels;
 
-        const step2Labels = {};
-        for (const s of sessionsAtStep) {
+        prevSessions = [];
+        for (const s of sessionsWithStream) {
             const stream = s.stream.map(x => x.label);
-            let lastReachedIdx = -1;
             for (const topLabel of topNodeLabels) {
-                const idx = stream.indexOf(topLabel);
-                if (idx > lastReachedIdx) lastReachedIdx = idx;
-            }
-            if (lastReachedIdx < 0) continue;
-            const afterStep = stream.slice(lastReachedIdx + 1);
-            const seen = new Set([start, ...topNodeLabels]);
-            for (const lbl of afterStep) {
-                if (!seen.has(lbl)) {
-                    seen.add(lbl);
-                    step2Labels[lbl] = (step2Labels[lbl] || 0) + 1;
+                if (stream.includes(topLabel)) {
+                    prevSessions.push(s._id);
                     break;
                 }
             }
         }
-
-        const step2Sorted = Object.entries(step2Labels)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, nodesPerStep)
-            .map(([label, count]) => ({ label, count }));
-
-        if (step2Sorted.length > 0) {
-            pathData.steps.push({ step: 2, nodes: step2Sorted });
-        }
-        break;
     }
 
     return { path: pathData, paths: [pathData], timeRange, startingPoint: start };
