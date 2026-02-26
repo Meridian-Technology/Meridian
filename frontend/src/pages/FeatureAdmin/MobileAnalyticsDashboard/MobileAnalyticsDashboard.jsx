@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
@@ -6,8 +6,30 @@ import ProportionalBarList from '../../../components/ProportionalBarList/Proport
 import '../AnalyticsDashboard/AnalyticsDashboard.scss';
 
 function MobileAnalyticsDashboard() {
+    const [useCustomRange, setUseCustomRange] = useState(false);
     const [timeRange, setTimeRange] = useState('30d');
-    const { data: dashboardData, loading, error, refetch } = useFetch(`/dashboard/all?timeRange=${timeRange}&platform=mobile`);
+    const [startDateTime, setStartDateTime] = useState(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 30);
+        d.setHours(0, 0, 0, 0);
+        return d.toISOString().slice(0, 16);
+    });
+    const [endDateTime, setEndDateTime] = useState(() => {
+        const d = new Date();
+        d.setHours(23, 59, 59, 999);
+        return d.toISOString().slice(0, 16);
+    });
+
+    const dashboardUrl = useMemo(() => {
+        if (useCustomRange && startDateTime && endDateTime && endDateTime >= startDateTime) {
+            const startEncoded = encodeURIComponent(startDateTime);
+            const endEncoded = encodeURIComponent(endDateTime);
+            return `/dashboard/all?timeRange=custom&startDate=${startEncoded}&endDate=${endEncoded}&platform=mobile`;
+        }
+        return `/dashboard/all?timeRange=${timeRange}&platform=mobile`;
+    }, [useCustomRange, timeRange, startDateTime, endDateTime]);
+
+    const { data: dashboardData, loading, error, refetch } = useFetch(dashboardUrl);
 
     const formatNumber = (num) => {
         if (num === null || num === undefined) return '0';
@@ -69,14 +91,46 @@ function MobileAnalyticsDashboard() {
                 </div>
                 <div className="header-actions">
                     <div className="time-selector">
-                        <label>Time Range:</label>
-                        <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}>
-                            <option value="1h">Last Hour</option>
-                            <option value="24h">Last 24 Hours</option>
-                            <option value="7d">Last 7 Days</option>
-                            <option value="30d">Last 30 Days</option>
-                            <option value="90d">Last 90 Days</option>
-                        </select>
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={useCustomRange}
+                                onChange={(e) => setUseCustomRange(e.target.checked)}
+                            />
+                            {' '}Custom range
+                        </label>
+                        {useCustomRange ? (
+                            <div className="custom-date-range">
+                                <input
+                                    type="datetime-local"
+                                    value={startDateTime}
+                                    onChange={(e) => setStartDateTime(e.target.value)}
+                                    max={endDateTime}
+                                />
+                                <span>to</span>
+                                <input
+                                    type="datetime-local"
+                                    value={endDateTime}
+                                    onChange={(e) => setEndDateTime(e.target.value)}
+                                    min={startDateTime}
+                                    max={new Date().toISOString().slice(0, 16)}
+                                />
+                                {startDateTime && endDateTime && endDateTime < startDateTime && (
+                                    <span className="date-error">End must be after start</span>
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                <label>Time Range:</label>
+                                <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}>
+                                    <option value="1h">Last Hour</option>
+                                    <option value="24h">Last 24 Hours</option>
+                                    <option value="7d">Last 7 Days</option>
+                                    <option value="30d">Last 30 Days</option>
+                                    <option value="90d">Last 90 Days</option>
+                                </select>
+                            </>
+                        )}
                     </div>
                     <button className="refresh-btn" onClick={refetch}>
                         <Icon icon="mdi:refresh" />
@@ -100,6 +154,16 @@ function MobileAnalyticsDashboard() {
                             <div className="metric-content">
                                 <p>Unique Users</p>
                                 <h3>{formatNumber(overview.uniqueUsers)}</h3>
+                            </div>
+                        </div>
+
+                        <div className="metric-card">
+                            <div className="metric-icon devices">
+                                <Icon icon="mdi:cellphone-link" />
+                            </div>
+                            <div className="metric-content">
+                                <p>Unique Devices</p>
+                                <h3>{formatNumber(overview.uniqueDevices)}</h3>
                             </div>
                         </div>
 
@@ -321,21 +385,32 @@ function MobileAnalyticsDashboard() {
                             emptyMessage="No device model data"
                         />
                         <ProportionalBarList
-                            items={(devices.os || []).slice(0, 15).map((o, i) => {
-                                const osStr = (o.os || '').toLowerCase();
-                                return {
-                                    key: o.os || `os-${i}`,
-                                    label: o.os || 'Unknown',
-                                    icon: osStr.includes('ios') || osStr.includes('iphone') ? 'mdi:apple' : 'mdi:android',
-                                    value: o.users ?? 0
-                                };
-                            })}
-                            header="OS Versions"
+                            items={(devices.osByPlatform?.ios || []).map((o, i) => ({
+                                key: `ios-${o.os || i}`,
+                                label: o.os || 'Unknown',
+                                icon: 'mdi:apple',
+                                value: o.users ?? 0
+                            }))}
+                            header="iOS Versions"
+                            icon="mdi:apple"
+                            classN="proportional-bar-list-container"
+                            size="1rem"
+                            formatValue={(v) => `${formatNumber(v)} users`}
+                            emptyMessage="No iOS version data"
+                        />
+                        <ProportionalBarList
+                            items={(devices.osByPlatform?.android || []).map((o, i) => ({
+                                key: `android-${o.os || i}`,
+                                label: o.os || 'Unknown',
+                                icon: 'mdi:android',
+                                value: o.users ?? 0
+                            }))}
+                            header="Android Versions"
                             icon="mdi:android"
                             classN="proportional-bar-list-container"
                             size="1rem"
                             formatValue={(v) => `${formatNumber(v)} users`}
-                            emptyMessage="No OS version data"
+                            emptyMessage="No Android version data"
                         />
                     </div>
                 </section>

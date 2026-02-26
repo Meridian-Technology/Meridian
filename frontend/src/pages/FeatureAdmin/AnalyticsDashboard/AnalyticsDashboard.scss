@@ -96,6 +96,31 @@
                     font-size: 14px;
                 }
 
+                .custom-date-range {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+
+                    input[type="date"],
+                    input[type="datetime-local"] {
+                        padding: 6px 10px;
+                        border: 1px solid var(--visitors-border);
+                        border-radius: 6px;
+                        font-size: 14px;
+                        font-family: inherit;
+                        background: var(--visitors-bg);
+                        color: var(--visitors-text-primary);
+                        min-width: 160px;
+                    }
+
+                    .date-error {
+                        font-size: 12px;
+                        color: #dc2626;
+                        flex-basis: 100%;
+                    }
+                }
+
                 select {
                     padding: 6px 10px;
                     border: 1px solid var(--visitors-border);
@@ -218,6 +243,12 @@
                     background: #f0fdf4;
                     color: #16a34a;
                     border-color: #dcfce7;
+                }
+
+                &.devices {
+                    background: #ecfeff;
+                    color: #0d9488;
+                    border-color: #ccfbf1;
                 }
 
                 &.views {
