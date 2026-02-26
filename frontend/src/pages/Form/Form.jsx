@@ -18,12 +18,8 @@ function Form() {
     const hasSubmitted = formData?.hasSubmitted || false;
     const isAuthenticated = formData?.isAuthenticated || false;
     const formConfig = form ? {
-        allowMultipleResponses: form.allowMultipleResponses !== false,
-        requireAuth: form.requireAuth !== false,
-        acceptingResponses: form.acceptingResponses !== false,
         allowAnonymous: form.allowAnonymous === true,
-        collectGuestDetails: form.collectGuestDetails !== false,
-        headerColor: form.headerColor
+        collectGuestDetails: form.collectGuestDetails !== false
     } : null;
 
     const handleFormSubmit = async (responseOrPayload) => {

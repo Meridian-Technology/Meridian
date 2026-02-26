@@ -17,6 +17,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const { findWorkspaceRoot, getRepoPaths, assertRepoExists } = require('./lib/workspace');
 const {
   isClean,
@@ -64,11 +65,13 @@ function usage() {
   console.log(dim('  ├─ start        ') + 'Create fresh feature branch in both repos');
   console.log(dim('  ├─ switch       ') + 'Switch both repos to existing branch');
   console.log(dim('  ├─ sync         ') + 'Sync lockfile to current Events main');
-  console.log(dim('  └─ ship         ') + 'Ship full-stack feature (Events PR → merge → sync → Meridian PR)');
+  console.log(dim('  ├─ ship         ') + 'Ship full-stack feature (Events PR → merge → sync → Meridian PR)');
+  console.log(dim('  └─ symlink      ') + 'Replace backend/events with symlink to Events-Backend (for dev)');
   console.log('');
   console.log(cyan('  Examples'));
   console.log(dim('  meridian start MER-123-Org-Forms'));
   console.log(dim('  meridian switch MER-123-Org-Forms'));
+  console.log(dim('  meridian symlink'));
   console.log(dim('  meridian ship'));
   console.log('');
   console.log(dim('  Branch names: MER-<number>-<slug> (e.g. MER-123-Org-Forms)'));
@@ -134,6 +137,48 @@ function resolveWorkspace() {
     process.exit(1);
   }
   return { meridianPath, eventsPath };
+}
+
+function isEventsSymlink(meridianPath) {
+  const eventsPath = path.join(meridianPath, 'backend', 'events');
+  try {
+    return fs.existsSync(eventsPath) && fs.lstatSync(eventsPath).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function cmdSymlink() {
+  const { meridianPath, eventsPath } = resolveWorkspace();
+  const backendEvents = path.join(meridianPath, 'backend', 'events');
+
+  if (isEventsSymlink(meridianPath)) {
+    console.log('');
+    console.log(green('  backend/events is already a symlink to Events-Backend'));
+    console.log('');
+    return;
+  }
+
+  try {
+    if (fs.existsSync(backendEvents)) {
+      const stat = fs.lstatSync(backendEvents);
+      if (stat.isSymbolicLink()) {
+        fs.unlinkSync(backendEvents);
+      } else {
+        fs.rmSync(backendEvents, { recursive: true });
+      }
+    }
+    fs.symlinkSync('../../Events-Backend', backendEvents);
+    console.log('');
+    console.log(green('  Symlinked backend/events → Events-Backend'));
+    console.log(dim('  Run the server with ') + cyan('npm run server') + dim(' (uses --preserve-symlinks)'));
+    console.log('');
+  } catch (err) {
+    console.error('');
+    console.error(red('  Symlink failed:'), err.message);
+    console.error('');
+    process.exit(1);
+  }
 }
 
 async function handleBranchCollision(meridianPath, eventsPath, branch) {
@@ -257,6 +302,11 @@ async function cmdStart(branch) {
     }
     console.log('');
     console.log(green('  Switched to existing branch ') + bold(branch) + green(' in both repos'));
+    if (!isEventsSymlink(meridianPath)) {
+      console.log('');
+      console.log(yellow('  backend/events is a submodule checkout (not a symlink)'));
+      console.log(dim('  For local dev with Events-Backend, run ') + cyan('meridian symlink'));
+    }
     console.log(dim('  Work normally; when ready run ') + cyan('meridian ship'));
     console.log('');
     return;
@@ -333,7 +383,14 @@ async function cmdSwitch(branch) {
 
   console.log('');
   console.log(green('  Switched both repos to ') + bold(branch));
-  console.log('');
+  if (!isEventsSymlink(meridianPath)) {
+    console.log('');
+    console.log(yellow('  backend/events is a submodule checkout (not a symlink)'));
+    console.log(dim('  For local dev with Events-Backend, run ') + cyan('meridian symlink'));
+    console.log('');
+  } else {
+    console.log('');
+  }
 }
 
 // --- sync ---
@@ -589,6 +646,9 @@ async function main() {
       break;
     case 'sync':
       cmdSync(allowMain);
+      break;
+    case 'symlink':
+      cmdSymlink();
       break;
     case 'ship':
       await cmdShip();

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNotification } from './NotificationContext';
 import apiRequest from './utils/postRequest';
 import { analytics } from './services/analytics/analytics';
+import { getAllAnonymousRegistrations, removeAnonymousRegistration } from './utils/anonymousRegistrationStorage';
 
 /** 
 documentation:
@@ -61,6 +62,20 @@ export const AuthProvider = ({ children }) => {
                 if (response.data.user._id) {
                     analytics.identify(response.data.user._id);
                     analytics.setUserRoles(response.data.user.roles);
+                }
+                // Claim any anonymous event registrations from this browser and remove from localStorage
+                const registrations = getAllAnonymousRegistrations();
+                if (registrations.length > 0) {
+                    try {
+                        const claimRes = await apiRequest('/claim-anonymous-registrations', { registrations }, { method: 'POST' });
+                        if (claimRes && claimRes.success && Array.isArray(claimRes.claimed)) {
+                            claimRes.claimed.forEach((id) => {
+                                removeAnonymousRegistration(id != null ? String(id) : '');
+                            });
+                        }
+                    } catch (e) {
+                        // non-fatal: leave anonymous regs in storage to retry next time
+                    }
                 }
                 // console.log(response.data.user);
                 setIsAuthenticated(true);
@@ -131,9 +146,9 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const googleLogin = async (code, isRegister, codeVerifier = null) => {
+    const googleLogin = async (code, isRegister, codeVerifier = null, redirectUriOverride = null) => {
         try {
-            const url = window.location.href;
+            const url = redirectUriOverride != null ? redirectUriOverride : window.location.href;
             const response = await axios.post('/google-login', { 
                 code, 
                 isRegister, 

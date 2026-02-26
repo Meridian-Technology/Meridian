@@ -1,0 +1,82 @@
+.schedule-time-step {
+    .form-section {
+        h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        > p {
+            color: #666;
+            margin-bottom: 1.5rem;
+        }
+    }
+    
+    .time-selection-section {
+        margin-bottom: 2rem;
+        
+        .week-navigation {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            
+            .nav-link {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                cursor: pointer;
+                color: #6D8EFA;
+                font-weight: 500;
+                
+                &:hover {
+                    opacity: 0.8;
+                }
+            }
+        }
+        
+        .calendar-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .selected-time-display {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(109, 142, 250, 0.1);
+            border-radius: 8px;
+            color: #2c3e50;
+        }
+    }
+    
+    .location-section {
+        margin-top: 2rem;
+        
+        h4 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+        }
+        
+        .form-group {
+            label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 500;
+            }
+            
+            input {
+                width: 100%;
+                padding: 0.75rem;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                font-size: 1rem;
+                
+                &:focus {
+                    outline: none;
+                    border-color: #6D8EFA;
+                }
+            }
+        }
+    }
+}
+
