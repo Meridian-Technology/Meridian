@@ -65,8 +65,8 @@ function QR(){
                 height: '100vh',
                 flexDirection: 'column'
             }}>
-                <div style={{ fontSize: '18px', marginBottom: '10px' }}>Processing QR code...</div>
-                <div style={{ fontSize: '14px', color: '#666' }}>Please wait while we redirect you</div>
+                {/* <div style={{ fontSize: '18px', marginBottom: '10px' }}>Processing QR code...</div>
+                <div style={{ fontSize: '14px', color: '#666' }}>Please wait while we redirect you</div> */}
             </div>
         );
     }
