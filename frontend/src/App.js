@@ -224,7 +224,7 @@ function App() {
                                                 <Route path="/domain-dashboard/:domainId" element={<AnimatedPageWrapper><DomainDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
                                             <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
-                                            <Route path='/sign-up-create-club' element={<AnimatedPageWrapper><SignUpCreateClub/></AnimatedPageWrapper>}/>
+                                            <Route path='/org-application' element={<AnimatedPageWrapper><SignUpCreateClub/></AnimatedPageWrapper>}/>
                                             <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsDash/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
