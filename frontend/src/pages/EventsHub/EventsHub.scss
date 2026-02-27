@@ -1,0 +1,450 @@
+// EventsHub - Content-first layout (Phase 2)
+// Explore as default, slim header, bottom nav on mobile, pill nav on desktop
+// Import shared popup styles (signup prompt, create study session)
+@import '../EventsDash/EventsDash.scss';
+
+.events-hub {
+    --hub-primary: #6D8EFA;
+    --hub-bg: #FFFFFF;
+    --hub-surface: var(--background, #fff);
+    --hub-border: var(--lighterborder, #e8e8e8);
+    --hub-text: var(--text, #1a1a1a);
+    --hub-text-muted: var(--light-text, #666);
+    --mobile-nav-height: 64px;
+    --header-height: 56px;
+
+    min-height: 100vh;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--hub-bg);
+    overflow: hidden;
+
+    // Slim top header
+    &-header {
+        flex-shrink: 0;
+        height: var(--header-height);
+        background: var(--hub-surface);
+        border-bottom: 1px solid var(--hub-border);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        z-index: 110;
+        transition: background 0.25s ease, box-shadow 0.25s ease, color 0.25s ease;
+
+        // Overlay mode: position over content (Explore tab only)
+        &--overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+        }
+
+        // Transparent mode: overlay onto Explore cover image when at top
+        &--transparent {
+            background: linear-gradient(
+                to bottom,
+                rgba(0, 0, 0, 0.6) 0%,
+                rgba(0, 0, 0, 0.4) 70%,
+                transparent 100%
+            );
+            border-bottom: none;
+            box-shadow: none;
+
+            .events-hub-logo img {
+                filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+            }
+
+            .events-hub-nav-item {
+                color: #fff !important;
+                text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+
+                iconify-icon {
+                    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+                }
+
+                &:hover {
+                    color: #fff !important;
+                    background: rgba(255, 255, 255, 0.2);
+                }
+
+                &.active {
+                    color: #fff !important;
+                    background: rgba(255, 255, 255, 0.25);
+                }
+            }
+
+            .events-hub-create-btn {
+                background: rgba(255, 255, 255, 0.25);
+                color: #fff;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+                iconify-icon {
+                    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+                }
+
+                &:hover {
+                    background: rgba(255, 255, 255, 0.35);
+                }
+            }
+
+            .events-hub-profile {
+                border-color: rgba(255, 255, 255, 0.8);
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+                &:hover {
+                    border-color: #fff;
+                }
+            }
+
+            .events-hub-login {
+                border-color: rgba(255, 255, 255, 0.8);
+                color: var(--hub-text);
+
+                &:hover {
+                    // border-color: #fff;
+                    // color: #fff;
+                }
+            }
+        }
+
+        &__inner {
+            height: 100%;
+            max-width: 100%;
+            padding: 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+
+        &__actions {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+    }
+
+    &-logo {
+        flex-shrink: 0;
+        padding: 8px;
+        margin: -8px 0 -8px -8px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+
+        img {
+            height: 28px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        &:hover {
+            opacity: 0.85;
+        }
+    }
+
+    // Desktop pill nav
+    &-nav-desktop {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+
+        .events-hub-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: none;
+            background: transparent;
+            color: var(--hub-text-muted);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+
+            iconify-icon {
+                font-size: 18px;
+            }
+
+            &:hover {
+                color: var(--hub-text);
+                background: rgba(109, 142, 250, 0.08);
+            }
+
+            &.active {
+                color: var(--hub-primary);
+                background: rgba(109, 142, 250, 0.15);
+            }
+        }
+    }
+
+    &-create {
+        position: relative;
+
+        &-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 10px;
+            border: none;
+            background: linear-gradient(135deg, var(--hub-primary), #5b7bef);
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(109, 142, 250, 0.3);
+            transition: all 0.2s ease;
+
+            iconify-icon {
+                font-size: 18px;
+            }
+
+            &:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(109, 142, 250, 0.4);
+            }
+        }
+
+        &-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 240px;
+            background: var(--hub-surface);
+            border: 1px solid var(--hub-border);
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+            padding: 8px;
+            z-index: 1000;
+            animation: hubMenuFade 0.2s ease-out;
+
+            @keyframes hubMenuFade {
+                from {
+                    opacity: 0;
+                    transform: translateY(-8px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            &-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: background 0.15s ease;
+
+                iconify-icon {
+                    font-size: 20px;
+                    color: var(--hub-primary);
+                }
+
+                .title {
+                    display: block;
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: var(--hub-text);
+                }
+
+                .subtitle {
+                    display: block;
+                    font-size: 12px;
+                    color: var(--hub-text-muted);
+                }
+
+                &:hover {
+                    background: rgba(109, 142, 250, 0.08);
+                }
+            }
+        }
+    }
+
+    &-profile {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 2px solid var(--hub-border);
+        padding: 0;
+        overflow: hidden;
+        cursor: pointer;
+        background: var(--hub-surface);
+
+        img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        &:hover {
+            border-color: var(--hub-primary);
+        }
+    }
+
+    &-login {
+        padding: 8px 16px;
+        border-radius: 10px;
+        border: 1px solid var(--hub-border);
+        background: var(--hub-surface);
+        color: var(--hub-text);
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover {
+            border-color: var(--hub-primary);
+            color: var(--hub-primary);
+        }
+    }
+
+    // Main content - full width, scrollable
+    &-content {
+        flex: 1;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+
+        // Explore tab: no padding so cover image extends under overlay header
+        &--explore {
+            padding-top: 0;
+
+            // Single scroll: only this container scrolls; .explore must not create its own scroll
+            overflow: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+
+            .explore {
+                flex-shrink: 0;
+                min-height: 100vh; /* content overflows so parent scrolls */
+                overflow: visible !important;
+                overflow-x: hidden;
+                max-height: none;
+                height: auto;
+            }
+        }
+
+        .explore,
+        .my-events,
+        .room-embedded {
+            min-height: 100%;
+        }
+
+        // (explore-specific scroll fix is above under &--explore)
+        .dash {
+            header.header{
+                height:110px;
+                min-height:110px;
+                position: relative;
+                overflow: hidden;
+                display:flex;
+                flex-direction: column;
+                justify-content: center;
+                
+                h1{
+                    position: relative;
+                    z-index: 2;
+                    padding-left:7%;
+                    font-size: 30px;
+                    margin-bottom:0;
+                }
+                p{
+                    position: relative;
+                    padding-left: 7%;
+                    z-index: 2;
+                    font-family: 'Satoshi';
+                    color: var(--lighter-text);
+                }
+                img{
+                    position: absolute;
+                    top:0;
+                    left:0;
+                    height:100%;
+                }
+                
+                .actions{
+                    .action{
+                        display: flex;
+                        border: 1px solid var(--lighterborder);
+                        border-radius: 7px;
+                        padding: 4px 15px;
+                        box-sizing: border-box;
+                        box-shadow: var(--shadow);
+                        cursor: pointer;
+                        transition: all 0.3s;
+                        align-items: center;
+                        gap: 5px;
+                        p{
+                            font-size: 14px;
+                            font-weight: 600;
+                            font-family: 'Inter';
+                            color: var(--lighter-text);
+                        }
+                        iconify-icon{
+                            font-size:13px;
+                            color: var(--lighter-text);
+                        }
+                        &:hover{
+                            background-color: var(--light);
+                        }
+                    }
+                }
+            
+                
+            }
+        }
+    
+
+
+    }
+
+    // Mobile bottom nav
+    &-nav-mobile {
+        flex-shrink: 0;
+        height: var(--mobile-nav-height);
+        display: flex;
+        align-items: center;
+        justify-content: space-around;
+        background: var(--hub-surface);
+        border-top: 1px solid var(--hub-border);
+        padding-bottom: env(safe-area-inset-bottom, 0);
+        z-index: 10;
+
+        &-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 8px 4px;
+            border: none;
+            background: transparent;
+            color: var(--hub-text-muted);
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+
+            iconify-icon {
+                font-size: 22px;
+            }
+
+            &:hover {
+                color: var(--hub-text);
+            }
+
+            &.active {
+                color: var(--hub-primary);
+            }
+        }
+    }
+}
