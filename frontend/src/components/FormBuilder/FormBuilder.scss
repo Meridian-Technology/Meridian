@@ -78,7 +78,7 @@
             border-radius: 0;
             &:focus {
                 outline: none;
-                border-bottom-color: var(--red);
+                border-bottom-color: var(--dark-blue);
             }
         }
 
@@ -96,7 +96,7 @@
 
             &:focus {
                 outline: none;
-                border-bottom-color: var(--red);
+                border-bottom-color: var(--dark-blue);
             }
         }
     }
@@ -115,7 +115,7 @@
         overflow:hidden;
         transition: all 0.5s ease;
         &.editing{
-            border-left: 4px solid var(--red);
+            border-left: 4px solid var(--dark-blue);
         }
         .edit-header {
             display: flex;
@@ -181,8 +181,8 @@
         }
 
         &.editing{
-            // border:1px solid var(--red-transparent);
-            box-shadow: 0px 0px 28px 0px var(--red-transparent);
+            // border:1px solid var(--dark-blue-transparent);
+            box-shadow: 0px 0px 28px 0px var(--dark-blue-transparent);
             scale:1.01;
 
         }
@@ -193,7 +193,7 @@
         padding: 15px;
         // border-radius: 8px;
         cursor:pointer;
-        // border-left: 4px solid var(--red);
+        // border-left: 4px solid var(--dark-blue);
 
         p{
             font-size: 14px;
@@ -202,7 +202,8 @@
             font-weight: 500;
         }
         
-        input[type="text"] {
+        input[type="text"],
+        textarea {
             width: 100%;
             padding: 8px;
             margin-bottom: 10px;
@@ -211,10 +212,15 @@
             background-color: var(--oie-background);
             color: var(--text);
             box-sizing: border-box;
+            resize: vertical;
             &:focus {
                 outline: none;
-                border-color: var(--red);
+                border-color: var(--dark-blue);
             }
+        }
+
+        textarea {
+            min-height: 60px;
         }
 
         label {
@@ -241,14 +247,14 @@
                     background: none;
                     border: none;
                     cursor: pointer;
-                    color: var(--red);
+                    color: var(--dark-blue);
                 }
             }
 
             >button {
                 margin-top: 10px;
                 padding: 8px 16px;
-                background-color: var(--red);
+                background-color: var(--dark-blue);
                 color: white;
                 border: none;
                 border-radius: 4px;
@@ -294,7 +300,7 @@
     .save-button {
         width: 100%;
         padding: 12px;
-        background-color: var(--red);
+        background-color: var(--dark-blue);
         color: white;
         border: none;
         border-radius: 4px;
@@ -306,5 +312,78 @@
         &:hover {
             opacity: 0.9;
         }
+    }
+}
+
+.form-builder-delete-question-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.form-builder-delete-question-modal {
+    .form-builder-delete-question-inner {
+        max-width: 420px;
+        padding: 1.25rem;
+        background: var(--background, #fff);
+        border-radius: 12px;
+    }
+
+    h3 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.125rem;
+    }
+
+    p {
+        margin: 0 0 1.25rem 0;
+        font-size: 0.9375rem;
+        color: var(--lighter-text, #6b7280);
+    }
+
+    .form-builder-delete-question-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+
+    .btn-cancel {
+        padding: 0.5rem 1rem;
+        border: 1px solid var(--lighterborder, #e5e7eb);
+        border-radius: 6px;
+        background: var(--background, #fff);
+        cursor: pointer;
+        font-size: 0.875rem;
+    }
+
+    .btn-discard {
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 6px;
+        background: var(--error, #dc2626);
+        color: #fff;
+        cursor: pointer;
+        font-size: 0.875rem;
+
+        &:hover {
+            filter: brightness(1.05);
+        }
+    }
+
+    .btn-keep {
+        padding: 0.5rem 1rem;
+        border: 1px solid var(--lighterborder, #e5e7eb);
+        border-radius: 6px;
+        background: var(--background, #fff);
+        cursor: pointer;
+        font-size: 0.875rem;
+
+        &:hover {
+            background: var(--lightest, #f9fafb);
+        }
+    }
     }
 }

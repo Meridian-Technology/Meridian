@@ -1,5 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800&display=swap');
 
+.invite-banner {
+    margin: 0 0 12px 0;
+    padding: 10px 14px;
+    background: rgba(99, 102, 241, 0.1);
+    border-radius: 8px;
+    font-size: 14px;
+    color: #414141;
+}
+
 .form, .form-content, .email-form{
     display:flex;
     flex-direction:column;

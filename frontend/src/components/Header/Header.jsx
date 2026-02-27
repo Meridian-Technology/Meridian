@@ -30,7 +30,7 @@ function getLogo() {
 }
 
 
-const Header = React.memo(()=>{
+const Header = React.memo(({ hideUntilScroll = false, scrolled = false, appStoreButton = null, onAppStoreClick, onPlayStoreClick })=>{
     const { isAuthenticating, isAuthenticated, logout, user, checkedIn } = useAuth();
     const [page, setPage] = useState(useLocation().pathname);
     const [pageClass, setPageClass] = useState(null);
@@ -159,8 +159,11 @@ const Header = React.memo(()=>{
         };
       }, [page]); // Re-run when page changes
 
+    const isHidden = hideUntilScroll && !scrolled && width < 768;
+    const showAppStore = !!appStoreButton;
+
     return(
-        <div className={`Header ${isScrolled ? 'scrolled' : ''}`}>
+        <div className={`Header ${isScrolled ? 'scrolled' : ''} ${isHidden ? 'Header--hidden' : ''}`}>
             <div className="header-content">
                 {/* {page === "/login" || page === "/register"  || page === "/"  ? "" :
                     <div className="nav-container">
@@ -184,13 +187,27 @@ const Header = React.memo(()=>{
                     </Link>
                 }
 
-                {page === "/login" || page === "/register" ? "" :
+                {page === "/login" || page === "/register" || page === "/create-event" ? "" :
                     <div className="header-right">
-                        {/* {isAuthenticated ? <NotificationInbox/> : ""}
-                        {isAuthenticated ? <ProfilePicture/> : ""} */}
-                        <button onClick={goToMeridian}>Go to Meridian
+                        {showAppStore && onAppStoreClick && onPlayStoreClick ? (
+                          appStoreButton === 'ios' ? (
+                            <button className="Header__store-badge" onClick={() => onAppStoreClick('header')} aria-label="Download on the App Store">
+                              <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" height="40" />
+                            </button>
+                          ) : appStoreButton === 'android' ? (
+                            <button className="Header__store-badge" onClick={() => onPlayStoreClick('header')} aria-label="Get it on Google Play">
+                              <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="60" />
+                            </button>
+                          ) : (
+                            <button onClick={goToMeridian}>Go to Meridian
+                              <Icon icon="mdi:arrow-right" className="arrow-right" />
+                            </button>
+                          )
+                        ) : (
+                          <button onClick={goToMeridian}>Go to Meridian
                             <Icon icon="mdi:arrow-right" className="arrow-right" />
-                        </button>
+                          </button>
+                        )}
                     </div>    
                 }
             </div>

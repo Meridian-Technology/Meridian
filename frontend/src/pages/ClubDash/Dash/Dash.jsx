@@ -13,7 +13,7 @@ import EventQuickLook from './EventQuickLook/EventQuickLook';
 import { useNavigate } from 'react-router-dom';
 
 
-function Dash({ expandedClass, openMembers, clubName, meetings, org}) {
+function Dash({ expandedClass, openMembers, clubName, meetings, org, canManageEvents = false }) {
     //define welcometext to be either good morning, good afternoon, or good evening, in one line
     const welcomeText = `Good ${new Date().getHours() < 12 ? "Morning" : new Date().getHours() < 18 ? "Afternoon" : "Evening"}`;
     const {AtlasMain} = useGradient();
@@ -46,8 +46,12 @@ function Dash({ expandedClass, openMembers, clubName, meetings, org}) {
 
 
     const handleEventClick = () => {
-        console.log("create event");
-        navigate("/create-event", { state: { origin: clubName } });
+        navigate("/create-event", {
+            state: {
+                origin: clubName,
+                selectedOrg: org?.org?.overview ? { _id: org.org.overview._id } : null
+            }
+        });
     }
 
     return (
@@ -73,7 +77,7 @@ function Dash({ expandedClass, openMembers, clubName, meetings, org}) {
                     actionText="view all" 
                     color="var(--green)" 
                 />
-                <EventQuickLook org={org} />
+                <EventQuickLook org={org} canManageEvents={canManageEvents} />
                 {/* <div className="row stats">
                     <div className="column">
 

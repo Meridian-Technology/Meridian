@@ -11,8 +11,10 @@ import IntegrationManager from './IntegrationManager/IntegrationManager';
 import AnalyticsConfig from './AnalyticsConfig/AnalyticsConfig';
 import ApprovalFlowConfig from './ApprovalFlowConfig/ApprovalFlowConfig';
 import FormConfig from './FormConfig/FormConfig';
+import EventsCoverConfig from './EventsCoverConfig/EventsCoverConfig';
 import { useNotification } from '../../../../NotificationContext';
 import { useGradient } from '../../../../hooks/useGradient';
+import postRequest from '../../../../utils/postRequest';
 
 const EventSystemConfig = () => {
     const [activeTab, setActiveTab] = useState('system');
@@ -38,18 +40,8 @@ const EventSystemConfig = () => {
             if (!config) return false;
             
             try {
-                const response = await fetch('/api/event-system-config', {
-                    method: 'PUT',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    },
-                    credentials: 'include',
-                    body: JSON.stringify(config)
-                });
-                
-                const result = await response.json();
-                
+                const result = await postRequest('/api/event-system-config', config, { method: 'PUT' });
+
                 if (result.success) {
                     setOriginalConfig(JSON.parse(JSON.stringify(config)));
                     addNotification({
@@ -59,7 +51,7 @@ const EventSystemConfig = () => {
                     });
                     return true;
                 } else {
-                    throw new Error(result.message || 'Failed to save configuration');
+                    throw new Error(result.message || result.error || 'Failed to save configuration');
                 }
             } catch (error) {
                 console.error('Failed to save configuration:', error);
@@ -198,6 +190,13 @@ const EventSystemConfig = () => {
                     <Icon icon="mdi:form-select" />
                     Form Config
                 </button>
+                <button 
+                    className={`tab ${activeTab === 'cover' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('cover')}
+                >
+                    <Icon icon="mdi:image" />
+                    Page Header
+                </button>
             </div>
             
             <div className="config-content">
@@ -251,6 +250,21 @@ const EventSystemConfig = () => {
                             setConfig(prev => ({
                                 ...prev,
                                 formConfig: updates.formConfig
+                            }));
+                        }}
+                    />
+                )}
+                
+                {activeTab === 'cover' && (
+                    <EventsCoverConfig
+                        config={config.pageSettings}
+                        onChange={(updates) => {
+                            setConfig(prev => ({
+                                ...prev,
+                                pageSettings: {
+                                    ...prev.pageSettings,
+                                    ...updates
+                                }
                             }));
                         }}
                     />

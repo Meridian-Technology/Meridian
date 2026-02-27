@@ -31,6 +31,10 @@ const OrgSchema= new Schema({
     },
     positions: {
         type: [{
+            _id: {
+                type: Schema.Types.ObjectId,
+                default: () => new mongoose.Types.ObjectId()
+            },
             name: {
                 type: String,
                 required: true
@@ -142,6 +146,19 @@ const OrgSchema= new Schema({
         type: String,
         enum: ['pending', 'approved', 'rejected', 'conditionally_approved', 'under_review', 'escalated'],
         default: 'pending'
+    },
+    // Atlas org approval (new orgs - pending until manual or auto approval)
+    approvalStatus: {
+        type: String,
+        enum: ['pending', 'approved'],
+        default: 'approved'
+    },
+    approvedAt: {
+        type: Date
+    },
+    approvedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'User'
     },
     // Add metadata for role management
     roleManagement: {
@@ -255,6 +272,33 @@ const OrgSchema= new Schema({
         default: [],
         required: false
     },
+    // Unlisted: when true, org is hidden from the public Organizations list (Orgs.jsx)
+    unlisted: {
+        type: Boolean,
+        default: false
+    },
+    // Soft delete
+    isDeleted: {
+        type: Boolean,
+        default: false
+    },
+    deletedAt: {
+        type: Date,
+        default: null
+    },
+    deletedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    }
+});
+
+// Exclude soft-deleted orgs from default find/findOne (use findOneWithDeleted or findWithDeleted for admin if needed)
+OrgSchema.pre('find', function () {
+    this.where({ isDeleted: { $ne: true } });
+});
+OrgSchema.pre('findOne', function () {
+    this.where({ isDeleted: { $ne: true } });
 });
 
 // Add methods for role management
@@ -314,8 +358,17 @@ OrgSchema.methods.getRoleByName = function(roleName) {
 OrgSchema.methods.hasPermission = function(roleName, permission) {
     const role = this.getRoleByName(roleName);
     if (!role) return false;
-    
-    return role.permissions.includes('all') || role.permissions.includes(permission);
+
+    if (role.permissions.includes('all')) return true;
+    if (role.permissions.includes(permission)) return true;
+
+    // Also check boolean flags (roles may have canManageEvents etc. without permissions array)
+    if (permission === 'manage_events' && role.canManageEvents) return true;
+    if (permission === 'manage_members' && role.canManageMembers) return true;
+    if (permission === 'manage_roles' && role.canManageRoles) return true;
+    if (permission === 'view_analytics' && role.canViewAnalytics) return true;
+
+    return false;
 };
 
 // Approval-specific methods

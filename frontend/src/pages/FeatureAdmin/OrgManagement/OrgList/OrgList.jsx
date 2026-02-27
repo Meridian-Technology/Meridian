@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../../../../hooks/useFetch';
 import { useGradient } from '../../../../hooks/useGradient';
-import apiRequest from '../../../../utils/postRequest';
 import { Icon } from '@iconify-icon/react';
+import OrgManageModal from './OrgManageModal';
 import './OrgList.scss';
 
 function OrgList() {
+    const navigate = useNavigate();
+    const [manageOrgId, setManageOrgId] = useState(null);
     const [filters, setFilters] = useState({
         search: '',
         verified: '',
@@ -16,10 +19,6 @@ function OrgList() {
     const { data: orgs, loading, error, refetch } = useFetch(
         `/org-management/organizations?${new URLSearchParams(filters).toString()}`
     );
-
-    useEffect(()=>{
-        console.log(filters);
-    }, [filters])
 
     const handleExport = async (format = 'json') => {
         try {
@@ -180,13 +179,19 @@ function OrgList() {
                                 </div>
 
                                 <div className="org-actions">
-                                    <button className="action-btn view">
-                                        <Icon icon="mdi:eye" />
-                                        View Details
+                                    <button
+                                        className="action-btn view"
+                                        onClick={() => setManageOrgId(org._id)}
+                                    >
+                                        <Icon icon="mdi:cog" />
+                                        Manage
                                     </button>
-                                    <button className="action-btn edit">
-                                        <Icon icon="mdi:pencil" />
-                                        Edit
+                                    <button
+                                        className="action-btn edit"
+                                        onClick={() => navigate(`/club-dashboard/${encodeURIComponent(org.org_name)}?adminView=true`)}
+                                    >
+                                        <Icon icon="mdi:eye" />
+                                        View as Admin
                                     </button>
                                 </div>
                             </div>
@@ -217,6 +222,13 @@ function OrgList() {
                     </div>
                 )}
             </div>
+
+            <OrgManageModal
+                orgId={manageOrgId}
+                isOpen={!!manageOrgId}
+                onClose={() => setManageOrgId(null)}
+                onSuccess={() => refetch()}
+            />
         </div>
     );
 }

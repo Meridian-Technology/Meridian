@@ -7,7 +7,7 @@ import { Icon } from '@iconify-icon/react';
 import DraggableList from '../../../../components/DraggableList/DraggableList';
 import './SocialLinksSettings.scss';
 
-const SocialLinksSettings = ({ org, expandedClass }) => {
+const SocialLinksSettings = ({ org, expandedClass, adminBypass = false }) => {
     const location = useLocation();
     const [formData, setFormData] = useState([]);
     const [permissionsChecked, setPermissionsChecked] = useState(false);
@@ -15,7 +15,7 @@ const SocialLinksSettings = ({ org, expandedClass }) => {
     const [hasAccess, setHasAccess] = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
     const { AtlasMain } = useGradient();
-    const { checkUserPermissions } = useOrgPermissions(org);
+    const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { saveOrgSettings } = useOrgSave(org);
 
     const [originalData, setOriginalData] = useState([]);

@@ -4,7 +4,7 @@ import { useFetch } from '../../hooks/useFetch';
 import postRequest from '../../utils/postRequest';
 import './ApprovalPreview.scss';
 
-const ApprovalPreview = ({ formData }) => {
+const ApprovalPreview = ({ formData, hideUnlessRequired = false }) => {
     const [previewData, setPreviewData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -87,44 +87,51 @@ const ApprovalPreview = ({ formData }) => {
         </div>
     );
 
-    if (loading) {
-        return (
-            <div className="approval-preview loading">
-                <Icon icon="mdi:loading" className="spinning" />
-                <span>Checking required approvals...</span>
-            </div>
-        );
-    }
+    if (hideUnlessRequired) {
+        if (loading || error || !previewData) return null;
+        const { total } = previewData;
+        if (total === 0) return null;
+    } else {
+        if (loading) {
+            return (
+                <div className="approval-preview loading">
+                    <Icon icon="mdi:loading" className="spinning" />
+                    <span>Checking required approvals...</span>
+                </div>
+            );
+        }
 
-    if (error) {
-        return (
-            <div className="approval-preview error">
-                <Icon icon="mdi:alert-circle" />
-                <span>{error}</span>
-            </div>
-        );
-    }
+        if (error) {
+            return (
+                <div className="approval-preview error">
+                    <Icon icon="mdi:alert-circle" />
+                    <span>{error}</span>
+                </div>
+            );
+        }
 
-    if (!previewData) {
-        return (
-            <div className="approval-preview empty">
-                <Icon icon="mdi:information" />
-                <span>Complete event details to see required approvals</span>
-            </div>
-        );
+        if (!previewData) {
+            return (
+                <div className="approval-preview empty">
+                    <Icon icon="mdi:information" />
+                    <span>Complete event details to see required approvals</span>
+                </div>
+            );
+        }
+
+        const { total } = previewData;
+        if (total === 0) {
+            return (
+                <div className="approval-preview no-approvals">
+                    <Icon icon="mdi:check-circle" className="success-icon" />
+                    <h3>No Approvals Required</h3>
+                    <p>This event does not require any approvals, acknowledgements, or notifications. It will be published immediately.</p>
+                </div>
+            );
+        }
     }
 
     const { approvals, acknowledgements, notifications, total } = previewData;
-
-    if (total === 0) {
-        return (
-            <div className="approval-preview no-approvals">
-                <Icon icon="mdi:check-circle" className="success-icon" />
-                <h3>No Approvals Required</h3>
-                <p>This event does not require any approvals, acknowledgements, or notifications. It will be published immediately.</p>
-            </div>
-        );
-    }
 
     return (
         <div className="approval-preview">

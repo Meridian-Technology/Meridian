@@ -25,26 +25,33 @@ const SiteHealth = ({}) => {
     const [good, setGood] = useState(true);
     const [showDetailed, setShowDetailed] = useState(false);
 
+    const statuses = health.data?.statuses;
+    const hasDetailedStatus = statuses && typeof statuses === 'object';
+
     useEffect(()=>{
-        if(health.data){
+        if(health.data && hasDetailedStatus){
             Object.keys(health.data.statuses).map((obj) => {
-                if(health.data.statuses[obj].status != true){     
+                if(health.data.statuses[obj].status != true){
                     setGood(false);
                 }
-            })
-            setTimeout(() => {
-                if(showDetailed){
-                    health.refetch();
-                }
-            }, 1500);
+            });
+        } else if(health.data && !health.data.ok){
+            setGood(false);
         }
-    }, [health.data]);
+        setTimeout(() => {
+            if(showDetailed && health.refetch){
+                health.refetch();
+            }
+        }, 1500);
+    }, [health.data, hasDetailedStatus, showDetailed]);
 
     if(!health.data){
         return(
             <div className="site-health">loading</div>
         )
     }
+
+    const subDomain = health.data.subDomain || 'www';
 
     return(
             <div className="site-health">
@@ -56,7 +63,7 @@ const SiteHealth = ({}) => {
                                 <PulseDot color="var(--green)" size="10px" pulse={true}/>   
                             </div>
                             <h2>
-                                {health.data.subDomain}.meridian.study
+                                {subDomain}.meridian.study
                             </h2>
                         </div>
                         <div className="tag" onClick={() => setShowDetailed(!showDetailed)}>
@@ -70,7 +77,7 @@ const SiteHealth = ({}) => {
                             <PulseDot color="var(--red)" size="10px" pulse={true}/>   
                         </div>
                         <h2>
-                            {health.data.subDomain}.meridian.study
+                            {subDomain}.meridian.study
                         </h2>
                     </div>
                 }
@@ -78,34 +85,27 @@ const SiteHealth = ({}) => {
                     <div className="health-stats-item">
                         <div className="row">
                             <div className="tag">
-                                <p>
-                                    ok
-                                </p>
+                                <p>ok</p>
                             </div>
                             <Icon icon="mingcute:time-fill" />
                             <p>uptime</p>
-                            <p className="stat"><b>{formatUptime(health.data.statuses.backend.uptime)}</b></p>
+                            <p className="stat"><b>{hasDetailedStatus && statuses.backend?.uptime != null ? formatUptime(statuses.backend.uptime) : '—'}</b></p>
                         </div>
                     </div>
                     <div className="health-stats-item">
                         <div className="row">
                             <div className="tag">
-                                <p>
-                                    {health.data.statuses.database.status ? 'ok' : 'problem'}
-                                </p>
+                                <p>{hasDetailedStatus && statuses.database ? (statuses.database.status ? 'ok' : 'problem') : 'ok'}</p>
                             </div>
                             <Icon icon="material-symbols-light:database" />
                             <p>database</p>
-                            <p className="stat">latency: <b><AnimatedNumber value={parseFloat(health.data.statuses.database.latency)} /></b>ms</p>
-
+                            <p className="stat">latency: <b>{hasDetailedStatus && statuses.database?.latency != null ? <><AnimatedNumber value={parseFloat(statuses.database.latency)} /> ms</> : '—'}</b></p>
                         </div>
                     </div>
                     <div className="health-stats-item">
                         <div className="row">
                             <div className="tag">
-                                <p>
-                                    {health.data.statuses.database.status ? 'ok' : 'problem'}
-                                </p>
+                                <p>{hasDetailedStatus && statuses.database ? (statuses.database.status ? 'ok' : 'problem') : 'ok'}</p>
                             </div>
                             <Icon icon="material-symbols:security-rounded" />
                             <p>authorization</p>

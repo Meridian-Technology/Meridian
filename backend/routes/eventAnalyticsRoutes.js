@@ -1,7 +1,57 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const { verifyToken, authorizeRoles, verifyTokenOptional } = require('../middlewares/verifyToken');
 const getModels = require('../services/getModelService');
+
+/**
+ * Parse time range into startDate and endDate
+ */
+function parseTimeRange(timeRange, startDateParam, endDateParam) {
+    const now = new Date();
+    let startDate, endDate;
+
+    if (startDateParam && endDateParam) {
+        startDate = new Date(startDateParam);
+        endDate = new Date(endDateParam);
+    } else {
+        switch (timeRange) {
+            case '7d':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                endDate = now;
+                break;
+            case '30d':
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                endDate = now;
+                break;
+            case '90d':
+                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                endDate = now;
+                break;
+            case '1y':
+                startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+                endDate = now;
+                break;
+            case 'month':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                break;
+            case 'week':
+                const dayOfWeek = now.getDay();
+                startDate = new Date(now);
+                startDate.setDate(now.getDate() - dayOfWeek);
+                startDate.setHours(0, 0, 0, 0);
+                endDate = new Date(startDate);
+                endDate.setDate(startDate.getDate() + 6);
+                endDate.setHours(23, 59, 59, 999);
+                break;
+            default:
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                endDate = now;
+        }
+    }
+    return { startDate, endDate };
+}
 
 // Track anonymous event view (called when non-logged in users view an event page)
 router.post('/track-anonymous-view/:eventId', verifyTokenOptional, async (req, res) => {
@@ -185,7 +235,7 @@ router.post('/track-rsvp/:eventId', verifyToken, async (req, res) => {
 });
 
 // Get analytics overview (admin only)
-router.get('/overview', verifyToken, authorizeRoles('admin'), async (req, res) => {
+router.get('/overview', verifyTokenOptional, async (req, res) => {
     const { EventAnalytics, Event, User } = getModels(req, 'EventAnalytics', 'Event', 'User');
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
@@ -326,54 +376,13 @@ router.get('/overview', verifyToken, authorizeRoles('admin'), async (req, res) =
 });
 
 // Get analytics for a specific event (admin only)
-router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, res) => {
-    const { EventAnalytics, Event } = getModels(req, 'EventAnalytics', 'Event');
+router.get('/event/:eventId', verifyToken, async (req, res) => {
+    const { EventAnalytics, Event, AnalyticsEvent, EventQR } = getModels(req, 'EventAnalytics', 'Event', 'AnalyticsEvent', 'EventQR');
     const { eventId } = req.params;
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 
     try {
-        const now = new Date();
-        let startDate, endDate;
-        
-        // If explicit dates are provided, use them
-        if (startDateParam && endDateParam) {
-            startDate = new Date(startDateParam);
-            endDate = new Date(endDateParam);
-        } else {
-            // Otherwise, calculate based on timeRange
-            switch (timeRange) {
-                case '7d':
-                    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                    endDate = now;
-                    break;
-                case '30d':
-                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    endDate = now;
-                    break;
-                case '90d':
-                    startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-                    endDate = now;
-                    break;
-                case 'month':
-                    // Current calendar month
-                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-                    break;
-                case 'week':
-                    // Current calendar week (Sunday to Saturday)
-                    const dayOfWeek = now.getDay();
-                    startDate = new Date(now);
-                    startDate.setDate(now.getDate() - dayOfWeek);
-                    startDate.setHours(0, 0, 0, 0);
-                    endDate = new Date(startDate);
-                    endDate.setDate(startDate.getDate() + 6);
-                    endDate.setHours(23, 59, 59, 999);
-                    break;
-                default:
-                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    endDate = now;
-            }
-        }
+        const { startDate, endDate } = parseTimeRange(timeRange, startDateParam, endDateParam);
 
         const event = await Event.findById(eventId);
         if (!event) {
@@ -383,40 +392,200 @@ router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, 
             });
         }
 
-        const analytics = await EventAnalytics.findOne({ eventId });
-        if (!analytics) {
-            return res.status(200).json({
-                success: true,
-                data: {
-                    event: {
-                        name: event.name,
-                        start_time: event.start_time,
-                        end_time: event.end_time
-                    },
-                    views: 0,
-                    uniqueViews: 0,
-                    rsvps: 0,
-                    uniqueRsvps: 0,
-                    engagementRate: 0,
-                    viewHistory: [],
-                    rsvpHistory: [],
-                    timeRange
-                }
-            });
-        }
+        // Query analytics_events (new platform pipeline) for granular metrics
+        const eventIdObj = mongoose.Types.ObjectId.isValid(eventId) ? new mongoose.Types.ObjectId(eventId) : null;
+        const platformMatch = {
+            ts: { $gte: startDate, $lte: endDate },
+            $or: [
+                { 'properties.event_id': eventId },
+                ...(eventIdObj ? [{ 'properties.event_id': eventIdObj }] : [])
+            ]
+        };
 
-        // Filter history by time range
-        const filteredViewHistory = analytics.viewHistory.filter(view => 
+        const platformAggregation = await AnalyticsEvent.aggregate([
+            { $match: platformMatch },
+            {
+                $addFields: {
+                    _uid: {
+                        $cond: [
+                            { $and: [{ $ne: ['$user_id', null] }] },
+                            { $toString: '$user_id' },
+                            { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                        ]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: '$event',
+                    count: { $sum: 1 },
+                    uniqueIds: { $addToSet: '$_uid' }
+                }
+            },
+            {
+                $project: {
+                    count: 1,
+                    uniqueCount: {
+                        $size: {
+                            $filter: {
+                                input: '$uniqueIds',
+                                as: 'id',
+                                cond: { $and: [{ $ne: ['$$id', ''] }, { $ne: ['$$id', 'a:'] }] }
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        const platformCounts = {};
+        const platformUniqueCounts = {};
+        const tabViews = {};
+        platformAggregation.forEach(({ _id: eventType, count, uniqueCount }) => {
+            platformCounts[eventType] = count;
+            platformUniqueCounts[eventType] = uniqueCount ?? 0;
+            if (eventType === 'event_workspace_tab_view') {
+                // Tab breakdown is in a separate aggregation
+            }
+        });
+
+        // Get tab breakdown for event_workspace_tab_view
+        const tabBreakdown = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...platformMatch,
+                    event: 'event_workspace_tab_view'
+                }
+            },
+            { $group: { _id: '$properties.tab', count: { $sum: 1 } } },
+            { $sort: { count: -1 } }
+        ]);
+
+        tabBreakdown.forEach(({ _id: tab, count }) => {
+            tabViews[tab || 'unknown'] = count;
+        });
+
+        // Aggregate event_view by derived referrer source (org_page, explore, direct)
+        const referrerSourceMatch = {
+            ...platformMatch,
+            event: 'event_view'
+        };
+        const referrerAggregation = await AnalyticsEvent.aggregate([
+            { $match: referrerSourceMatch },
+            {
+                $addFields: {
+                    source: {
+                        $cond: {
+                            if: {
+                                $and: [
+                                    { $ne: ['$properties.source', null] },
+                                    { $ne: ['$properties.source', ''] },
+                                    { $in: ['$properties.source', ['org_page', 'explore', 'direct']] }
+                                ]
+                            },
+                            then: '$properties.source',
+                            else: {
+                                $switch: {
+                                    branches: [
+                                        {
+                                            case: {
+                                                $or: [
+                                                    { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'org/'] }, -1] },
+                                                    { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'club-dashboard'] }, -1] }
+                                                ]
+                                            },
+                                            then: 'org_page'
+                                        },
+                                        {
+                                            case: { $gt: [{ $indexOfCP: [{ $ifNull: ['$context.referrer', ''] }, 'events-dashboard'] }, -1] },
+                                            then: 'explore'
+                                        }
+                                    ],
+                                    default: 'direct'
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            { $group: { _id: '$source', count: { $sum: 1 } } }
+        ]);
+
+        const referrerSources = { org_page: 0, explore: 0, direct: 0 };
+        referrerAggregation.forEach(({ _id: source, count }) => {
+            if (source && referrerSources.hasOwnProperty(source)) {
+                referrerSources[source] = count;
+            }
+        });
+
+        // Aggregate QR referrer sources (event_view with source=qr, qr_id) - group by qr_id
+        const qrReferrerAgg = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...referrerSourceMatch,
+                    'properties.source': 'qr',
+                    'properties.qr_id': { $exists: true, $ne: null, $ne: '' }
+                }
+            },
+            { $group: { _id: '$properties.qr_id', count: { $sum: 1 } } }
+        ]);
+        const qrReferrerCounts = {};
+        qrReferrerAgg.forEach(({ _id: qrId, count }) => { qrReferrerCounts[qrId] = count; });
+        const shortIds = Object.keys(qrReferrerCounts);
+        const qrDocs = shortIds.length > 0
+            ? await EventQR.find({ shortId: { $in: shortIds }, eventId }).select('shortId name').lean()
+            : [];
+        const shortIdToName = {};
+        qrDocs.forEach(q => { shortIdToName[q.shortId] = q.name; });
+        const qrReferrerSources = shortIds.map(sid => ({
+            qr_id: sid,
+            name: shortIdToName[sid] || 'Deleted QR',
+            count: qrReferrerCounts[sid]
+        })).sort((a, b) => b.count - a.count);
+
+        const registrationFormOpens = platformCounts['event_registration_form_open'] ?? 0;
+        const registrationsCount = platformCounts['event_registration'] ?? 0;
+        const registrationFormBounces = Math.max(0, registrationFormOpens - registrationsCount);
+
+        const platformData = {
+            eventViews: platformCounts['event_view'] ?? 0,
+            agendaViews: platformCounts['event_agenda_view'] ?? 0,
+            registrations: registrationsCount,
+            registrationFormOpens,
+            registrationFormBounces,
+            withdrawals: platformCounts['event_registration_withdraw'] ?? 0,
+            checkins: platformCounts['event_checkin'] ?? 0,
+            checkouts: platformCounts['event_checkout'] ?? 0,
+            workspaceViews: platformCounts['event_workspace_view'] ?? 0,
+            tabViews,
+            referrerSources,
+            qrReferrerSources,
+            // Unique users per event type (for funnel - avoids double-counting repeat actions)
+            uniqueEventViews: platformUniqueCounts['event_view'] ?? 0,
+            uniqueFormOpens: platformUniqueCounts['event_registration_form_open'] ?? 0,
+            uniqueRegistrations: platformUniqueCounts['event_registration'] ?? 0,
+            uniqueCheckins: platformUniqueCounts['event_checkin'] ?? 0
+        };
+
+        // Legacy EventAnalytics (merge for backwards compatibility)
+        const analytics = await EventAnalytics.findOne({ eventId });
+        const viewHistory = analytics?.viewHistory || [];
+        const rsvpOrRegHistory = analytics?.rsvpHistory || analytics?.registrationHistory || [];
+        const filteredViewHistory = viewHistory.filter(view =>
             view.timestamp >= startDate && view.timestamp <= endDate
         );
-        const filteredRsvpHistory = analytics.rsvpHistory.filter(rsvp => 
-            rsvp.timestamp >= startDate && rsvp.timestamp <= endDate
+        const filteredRsvpHistory = rsvpOrRegHistory.filter(entry =>
+            entry.timestamp >= startDate && entry.timestamp <= endDate
         );
 
-        // Calculate engagement rate
-        const engagementRate = analytics.views > 0 
-            ? (analytics.rsvps / analytics.views * 100).toFixed(2)
-            : 0;
+        const legacyViews = analytics?.views ?? 0;
+        const legacyRegistrations = analytics?.registrations ?? analytics?.rsvps ?? 0;
+        const platformTotalViews = platformData.eventViews + platformData.workspaceViews;
+
+        // Prefer platform counts when available, else legacy
+        const views = platformTotalViews > 0 ? platformTotalViews : legacyViews;
+        const registrations = platformData.registrations > 0 ? platformData.registrations : legacyRegistrations;
+        const engagementRate = views > 0 ? ((registrations / views) * 100).toFixed(2) : 0;
 
         const eventAnalytics = {
             event: {
@@ -424,16 +593,18 @@ router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, 
                 start_time: event.start_time,
                 end_time: event.end_time
             },
-            views: analytics.views,
-            uniqueViews: analytics.uniqueViews,
-            anonymousViews: analytics.anonymousViews,
-            uniqueAnonymousViews: analytics.uniqueAnonymousViews,
-            rsvps: analytics.rsvps,
-            uniqueRsvps: analytics.uniqueRsvps,
+            views,
+            uniqueViews: analytics?.uniqueViews ?? 0,
+            anonymousViews: analytics?.anonymousViews ?? 0,
+            uniqueAnonymousViews: analytics?.uniqueAnonymousViews ?? 0,
+            registrations,
+            uniqueRegistrations: analytics?.uniqueRegistrations ?? analytics?.uniqueRsvps ?? 0,
             engagementRate: parseFloat(engagementRate),
             viewHistory: filteredViewHistory,
-            rsvpHistory: filteredRsvpHistory,
-            timeRange
+            registrationHistory: filteredRsvpHistory,
+            timeRange,
+            // New granular metrics from platform analytics
+            platform: platformData
         };
 
         res.status(200).json({
@@ -449,8 +620,213 @@ router.get('/event/:eventId', verifyToken, authorizeRoles('admin'), async (req, 
     }
 });
 
+// Get platform analytics overview (admin only) - from analytics_events
+router.get('/platform-overview', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+    const { AnalyticsEvent, Event } = getModels(req, 'AnalyticsEvent', 'Event');
+    const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
+
+    try {
+        const { startDate, endDate } = parseTimeRange(timeRange, startDateParam, endDateParam);
+
+        const eventTypes = [
+            'event_view',
+            'event_registration',
+            'event_agenda_view',
+            'event_checkin',
+            'event_checkout',
+            'event_create_click',
+            'event_create_submitted',
+            'event_workspace_view',
+            'event_workspace_tab_view'
+        ];
+
+        const platformMatch = {
+            ts: { $gte: startDate, $lte: endDate },
+            event: { $in: eventTypes }
+        };
+
+        // Totals by event type
+        const totalsByType = await AnalyticsEvent.aggregate([
+            { $match: platformMatch },
+            { $group: { _id: '$event', count: { $sum: 1 } } }
+        ]);
+
+        const totals = {};
+        totalsByType.forEach(({ _id, count }) => { totals[_id] = count; });
+
+        // Top events by event_view
+        const topEventsByViews = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...platformMatch,
+                    event: 'event_view',
+                    'properties.event_id': { $exists: true, $ne: null }
+                }
+            },
+            { $group: { _id: '$properties.event_id', views: { $sum: 1 } } },
+            { $sort: { views: -1 } },
+            { $limit: 10 },
+            {
+                $lookup: {
+                    from: 'events',
+                    let: { eid: '$_id' },
+                    pipeline: [
+                        { $match: { $expr: { $eq: [{ $toString: '$_id' }, { $toString: '$$eid' }] } } },
+                        { $project: { name: 1, type: 1 } }
+                    ],
+                    as: 'eventDoc'
+                }
+            },
+            { $unwind: { path: '$eventDoc', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    eventId: '$_id',
+                    eventName: '$eventDoc.name',
+                    eventType: '$eventDoc.type',
+                    views: 1,
+                    participants: { $literal: 0 }
+                }
+            }
+        ]);
+
+        // Normalize event IDs (may be ObjectId or string from lookup)
+        const topEvents = topEventsByViews.map(e => ({
+            id: e.eventId?.toString?.() || e.eventId,
+            name: e.eventName || 'Unknown Event',
+            domain: e.eventType || 'Unknown',
+            participants: e.participants ?? 0,
+            engagement: 0,
+            satisfaction: 0,
+            attendance: 0,
+            views: e.views
+        }));
+
+        // Event type breakdown (domain proxy)
+        const eventsByType = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...platformMatch,
+                    event: { $in: ['event_view', 'event_registration'] },
+                    'properties.event_id': { $exists: true, $ne: null }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'events',
+                    let: { eid: '$properties.event_id' },
+                    pipeline: [
+                        { $match: { $expr: { $eq: [{ $toString: '$_id' }, { $toString: '$$eid' }] } } },
+                        { $project: { type: 1 } }
+                    ],
+                    as: 'eventDoc'
+                }
+            },
+            { $unwind: { path: '$eventDoc', preserveNullAndEmptyArrays: true } },
+            {
+                $group: {
+                    _id: '$eventDoc.type',
+                    events: { $addToSet: '$properties.event_id' },
+                    count: { $sum: 1 }
+                }
+            },
+            {
+                $project: {
+                    type: '$_id',
+                    events: { $size: '$events' },
+                    participants: '$count'
+                }
+            }
+        ]);
+
+        const domainPerformance = eventsByType.map((d, i) => ({
+            id: i + 1,
+            name: d.type || 'Unknown',
+            events: d.events,
+            participants: d.participants,
+            engagement: 0,
+            satisfaction: 0,
+            growth: 0
+        }));
+
+        // Tab engagement
+        const tabEngagement = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...platformMatch,
+                    event: 'event_workspace_tab_view',
+                    'properties.tab': { $exists: true, $ne: '' }
+                }
+            },
+            { $group: { _id: '$properties.tab', count: { $sum: 1 } } },
+            { $sort: { count: -1 } }
+        ]);
+
+        // Engagement trends (daily)
+        const engagementTrends = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...platformMatch,
+                    event: { $in: ['event_view', 'event_registration'] }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } },
+                    events: { $sum: 1 }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        const totalEventViews = totals['event_view'] ?? 0;
+        const totalRegistrations = totals['event_registration'] ?? 0;
+        const totalEvents = await Event.countDocuments({
+            createdAt: { $gte: startDate, $lte: endDate },
+            isDeleted: false
+        });
+
+        const engagementRate = totalEventViews > 0
+            ? ((totalRegistrations / totalEventViews) * 100).toFixed(1)
+            : 0;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                totalEvents,
+                activeEvents: totalEvents,
+                completedEvents: 0,
+                totalParticipants: totalRegistrations,
+                averageAttendance: 0,
+                engagementRate: parseFloat(engagementRate),
+                discoveryRate: 0,
+                domainPerformance,
+                topPerformingEvents: topEvents,
+                engagementTrends: engagementTrends.map(t => ({
+                    month: t._id,
+                    engagement: 0,
+                    events: t.events
+                })),
+                tabEngagement,
+                discoveryMetrics: {
+                    organicDiscovery: 0,
+                    socialMedia: 0,
+                    emailMarketing: 0,
+                    wordOfMouth: 0
+                },
+                timeRange
+            }
+        });
+    } catch (error) {
+        console.error('Error getting platform analytics overview:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
 // Get daily analytics (admin only)
-router.get('/daily', verifyToken, authorizeRoles('admin'), async (req, res) => {
+router.get('/daily', verifyToken, async (req, res) => {
     const { EventAnalytics } = getModels(req, 'EventAnalytics');
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 

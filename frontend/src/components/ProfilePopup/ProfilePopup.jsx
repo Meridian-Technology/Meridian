@@ -89,6 +89,7 @@ function ProfilePopup({
                             <p>Settings</p>
                         </div>
                     </Link>
+
                     {user && user.roles && (user.roles.includes('admin')) && 
                         <Link to="/create-org">
                             <div className="menu-item">
@@ -97,6 +98,12 @@ function ProfilePopup({
                             </div>
                         </Link>
                     }
+                    <Link to="/landing">
+                        <div className="menu-item">
+                            <Icon icon="mdi:home" />
+                            <p>Landing</p>
+                        </div>
+                    </Link>
                     {user && user.roles && (user.roles.includes('admin')||user.roles.includes('oie')) && 
                         <>
                             <hr />
@@ -113,6 +120,12 @@ function ProfilePopup({
                                     <p>Admin Dashboard</p>
                                 </div>
                             </Link>
+                            <a href="/api/android-tester/export" target="_blank" rel="noopener noreferrer" onClick={() => setShowPopup(false)}>
+                                <div className="menu-item">
+                                    <Icon icon="mdi:android" />
+                                    <p>Export Android testers</p>
+                                </div>
+                            </a>
                         </>
                     }
                     {

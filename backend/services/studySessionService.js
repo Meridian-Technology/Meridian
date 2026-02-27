@@ -7,8 +7,8 @@ class StudySessionService {
         this.models = getModels(req, 'StudySession', 'Event', 'User', 'Classroom', 'Schedule', 'AvailabilityPoll', 'Notification');
         this.feedbackService = new FeedbackService(req);
     }
-
     // Get current semester end date
+    ß
     getCurrentSemesterEnd() {
         const now = new Date();
         const currentYear = now.getFullYear();
@@ -22,7 +22,7 @@ class StudySessionService {
         }
     }
 
-    // Create study session with related event
+    // Create study session with related event (for scheduled mode)
     async createStudySession(sessionData, userId) {
         const { StudySession, Event } = this.models;
         
@@ -76,6 +76,102 @@ class StudySessionService {
         await event.save();
 
         return { studySession, event };
+    }
+
+    // Create study session without event (for availability polling mode)
+    async createStudySessionForPolling(sessionData, userId) {
+        const { StudySession } = this.models;
+        
+        // Create the study session without an event
+        const studySessionData = {
+            title: sessionData.title,
+            course: sessionData.course,
+            description: sessionData.description,
+            creator: userId,
+            visibility: sessionData.visibility,
+            status: 'scheduled', // Will be finalized after poll
+            // No relatedEvent - will be created when finalized
+            // No participants yet - will be added when finalized
+        };
+
+        const studySession = new StudySession(studySessionData);
+        await studySession.save();
+
+        return { studySession, event: null };
+    }
+
+    // Create event for study session after finalizing poll
+    async createEventForStudySession(sessionId, userId) {
+        const { StudySession, Event, AvailabilityPoll } = this.models;
+        
+        const session = await StudySession.findById(sessionId);
+        if (!session) {
+            throw new Error('Study session not found');
+        }
+
+        if (!session.isCreator(userId)) {
+            throw new Error('Only the creator can create the event');
+        }
+
+        if (session.relatedEvent) {
+            throw new Error('Event already exists for this study session');
+        }
+
+        if (!session.startTime || !session.endTime) {
+            throw new Error('Study session must have start and end times');
+        }
+
+        // Get poll to find participants
+        let poll = null;
+        if (session.availabilityPoll) {
+            poll = await AvailabilityPoll.findById(session.availabilityPoll)
+                .populate('responses.user', '_id');
+        }
+
+        // Get participants from poll responses (users who haven't declined)
+        const participantIds = poll ? poll.responses.map(r => r.user._id).filter(Boolean) : [];
+        
+        // Create the event
+        const eventData = {
+            name: `${session.title} - Study Session`,
+            type: "study",
+            hostingId: userId,
+            hostingType: "User",
+            location: session.location,
+            start_time: new Date(session.startTime),
+            end_time: new Date(session.endTime),
+            description: session.description || `Study session for ${session.course}`,
+            visibility: "internal", // Never public - keeps off main calendar
+            status: "not-applicable", // Bypasses approval workflow
+            going: [userId, ...participantIds], // Creator and all poll respondents
+            attendees: [],
+            rsvpEnabled: true,
+            rsvpRequired: false,
+            expectedAttendance: participantIds.length + 1,
+            isStudySession: true,
+            isDeleted: false
+        };
+
+        const event = new Event(eventData);
+        await event.save();
+
+        // Link event to study session
+        session.relatedEvent = event._id;
+        session.status = 'scheduled';
+        
+        // Add participants
+        session.participants = [
+            { user: userId, status: 'going' },
+            ...participantIds.map(id => ({ user: id, status: 'going' }))
+        ];
+        
+        await session.save();
+
+        // Link back to study session in event
+        event.studySessionId = session._id;
+        await event.save();
+
+        return { studySession: session, event };
     }
 
     // Update study session and sync with event
@@ -160,7 +256,7 @@ class StudySessionService {
     }
 
     // Check room availability for study session
-    async checkRoomAvailability(startTime, endTime, roomName) {
+    async checkRoomAvailability(startTime, endTime, roomName, excludeEventId = null) {
         const { Schedule, Event, Classroom } = this.models;
         
         const start = new Date(startTime);
@@ -169,12 +265,12 @@ class StudySessionService {
         // Check if room exists and is not restricted
         const room = await Classroom.findOne({ name: roomName });
         if (!room) {
-            return { isAvailable: false, reason: 'Room not found' };
+            return { isAvailable: true, };
         }
         
-        if (room.attributes && room.attributes.includes('restricted')) {
-            return { isAvailable: false, reason: 'Room is restricted' };
-        }
+        // if (room.attributes && room.attributes.includes('restricted')) {
+        //     return { isAvailable: false, reason: 'Room is restricted' };
+        // }
 
         // Check classroom schedule conflicts
         const dayOfWeek = ['M', 'T', 'W', 'R', 'F'][start.getDay() - 1]; // Monday = 0
@@ -195,7 +291,7 @@ class StudySessionService {
         }
 
         // Check event conflicts (including other study sessions)
-        const eventConflicts = await Event.find({
+        const eventQuery = {
             location: roomName,
             $or: [
                 { start_time: { $gte: start, $lt: end } },
@@ -204,7 +300,14 @@ class StudySessionService {
             ],
             status: { $in: ['approved', 'not-applicable'] },
             isDeleted: false
-        });
+        };
+
+        // Exclude current event if provided
+        if (excludeEventId) {
+            eventQuery._id = { $ne: excludeEventId };
+        }
+
+        const eventConflicts = await Event.find(eventQuery);
 
         if (eventConflicts.length > 0) {
             return { 
@@ -215,6 +318,22 @@ class StudySessionService {
         }
 
         return { isAvailable: true };
+    }
+
+    // Check room availability by classroom_id (for events)
+    async checkRoomAvailabilityByClassroomId(startTime, endTime, classroomId, excludeEventId = null) {
+        const { Classroom } = this.models;
+        
+        if (!classroomId) {
+            return { isAvailable: true }; // No room reserved, skip check
+        }
+
+        const room = await Classroom.findById(classroomId);
+        if (!room) {
+            return { isAvailable: false, reason: 'Room not found' };
+        }
+
+        return this.checkRoomAvailability(startTime, endTime, room.name, excludeEventId);
     }
 
     // Get suggested rooms for a time slot

@@ -88,6 +88,11 @@ function getRedirectUri(url) {
     if (!url) {
         throw new Error('Redirect URI is required');
     }
+
+    // Popup auth-code flow: client sends redirect_uri 'postmessage'; backend must use the same when exchanging the code
+    if (url === 'postmessage') {
+        return 'postmessage';
+    }
     
     // Handle iOS native OAuth - reverse client ID format
     // Format: com.googleusercontent.apps.{client-id}:/
@@ -288,7 +293,15 @@ async function authenticateWithGoogle(code, isRegister = false, url, req, codeVe
             if (isIosNative) {
                 throw new Error('iOS native clients require PKCE (code verifier)');
             }
-            tokens = (await client.getToken(code)).tokens;
+            // For web clients, try to get token without PKCE (using client secret)
+            try {
+                tokens = (await client.getToken(code)).tokens;
+            } catch (tokenError) {
+                // If that fails, it might be because Google expects PKCE
+                // Log the error for debugging
+                console.error('Token exchange failed without PKCE:', tokenError.message);
+                throw new Error('Authorization code exchange failed. This might require PKCE (code verifier). Error: ' + tokenError.message);
+            }
         }
         client.setCredentials(tokens);
 

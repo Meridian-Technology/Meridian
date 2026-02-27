@@ -15,11 +15,10 @@ const getModels = require('../services/getModelService.js');
 const { getFriendRequests } = require('../utilities/friendUtils');
 const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, deleteSessionById } = require('../utilities/sessionUtils');
 
-const { Resend } = require('resend');
+const { getResend } = require('../services/resendClient');
 const { render } = require('@react-email/render')
 const React = require('react');
 const ForgotEmail = require('../emails/ForgotEmail').default;
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Store verification codes temporarily (in production, use Redis or similar)
 const verificationCodes = new Map();
@@ -32,6 +31,9 @@ const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`; // 1 minute
 const REFRESH_TOKEN_EXPIRY = `${REFRESH_TOKEN_EXPIRY_DAYS}d`;  // 2 days
 const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000; // 1 minute in milliseconds
 const REFRESH_TOKEN_EXPIRY_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000; // 2 days in milliseconds
+
+// Check if request is from mobile client (token-based auth instead of cookies)
+const isMobileClient = (req) => req.headers['x-client'] === 'mobile';
 
 function validateUsername(username) { //keeping logic external, for easier testing
     // Define the regex pattern
@@ -61,10 +63,26 @@ function validateUsername(username) {
 // Registration endpoint
 router.post('/register', async (req, res) => {
     // Extract user details from request body
-    const { username, email, password } = req.body;
+    const { username, email, password, invite_token: bodyInviteToken } = req.body;
+    const inviteToken = bodyInviteToken || req.cookies?.org_invite_token;
 
     try {
-        const {User} = getModels(req, 'User');
+        const { User, OrgInvite, OrgMember } = getModels(req, 'User', 'OrgInvite', 'OrgMember');
+
+        if (inviteToken) {
+            const invite = await OrgInvite.findOne({ token: inviteToken, status: 'pending' });
+            if (invite && new Date() <= invite.expires_at) {
+                const inviteEmail = invite.email?.toLowerCase();
+                const regEmail = String(email).trim().toLowerCase();
+                if (inviteEmail !== regEmail) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Please register with the same email address the invitation was sent to.',
+                        code: 'INVITE_EMAIL_MISMATCH'
+                    });
+                }
+            }
+        }
 
         if (!validateUsername(username)) {
             console.log(`POST: /register registration of ${username} failed`);
@@ -98,6 +116,39 @@ router.post('/register', async (req, res) => {
             username: username, email: email, password: password,
         });
         await user.save();
+
+        // Process org invite if present
+        if (inviteToken) {
+            const invite = await OrgInvite.findOne({ token: inviteToken, status: 'pending' });
+            if (invite && new Date() <= invite.expires_at) {
+                const inviteEmail = invite.email?.toLowerCase();
+                const userEmail = user.email?.toLowerCase();
+                if (inviteEmail === userEmail) {
+                    const existingMember = await OrgMember.findOne({ org_id: invite.org_id, user_id: user._id });
+                    if (!existingMember) {
+                        const member = new OrgMember({
+                            org_id: invite.org_id,
+                            user_id: user._id,
+                            role: invite.role,
+                            status: 'active',
+                            assignedBy: invite.invited_by
+                        });
+                        await member.save();
+                        if (!user.clubAssociations) user.clubAssociations = [];
+                        if (!user.clubAssociations.some(c => c.toString() === invite.org_id)) {
+                            user.clubAssociations.push(invite.org_id);
+                            await user.save();
+                        }
+                        invite.status = 'accepted';
+                        invite.user_id = user._id;
+                        await invite.save();
+                        const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
+                        await checkAndAutoApproveOrg(req, invite.org_id);
+                    }
+                }
+                res.clearCookie('org_invite_token', { path: '/' });
+            }
+        }
 
         // Generate both tokens
         const accessToken = jwt.sign(
@@ -144,11 +195,15 @@ router.post('/register', async (req, res) => {
         //     school: req.school
         // });
         
-        // Send the response without tokens in body
+        const responseData = { user: user };
+        if (isMobileClient(req)) {
+            responseData.accessToken = accessToken;
+            responseData.refreshToken = refreshToken;
+        }
         res.status(201).json({
             success: true,
             message: 'User registered successfully',
-            data: { user: user }
+            data: responseData
         });
     } catch (error) {
         console.log(`POST: /register registration of ${username} failed`)
@@ -208,12 +263,15 @@ router.post('/login', async (req, res) => {
         });
 
         console.log(`POST: /login user ${user.username} logged in`)
+        const loginData = { user: user };
+        if (isMobileClient(req)) {
+            loginData.accessToken = accessToken;
+            loginData.refreshToken = refreshToken;
+        }
         res.status(200).json({
             success: true,
             message: 'Logged in successfully',
-            data: {
-                user: user
-            }
+            data: loginData
         });
     } catch (error) {
         console.log(`POST: /login login user failed`)
@@ -226,13 +284,19 @@ router.post('/login', async (req, res) => {
 
 // Refresh token endpoint
 router.post('/refresh-token', async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
-    
-    // console.log('🔄 Refresh token request received');
-    // console.log('📦 Cookies:', req.cookies);
+    // Accept refresh token from cookie (web) or header (mobile)
+    let refreshToken = req.cookies.refreshToken;
+    if (!refreshToken && req.headers['x-client'] === 'mobile') {
+        const authHeader = req.headers['authorization'];
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            refreshToken = authHeader.substring(7);
+        } else if (req.headers['x-refresh-token']) {
+            refreshToken = req.headers['x-refresh-token'];
+        }
+    }
     
     if (!refreshToken) {
-        console.log('POST: /refresh-token 403 no refresh token in cookies');
+        console.log('POST: /refresh-token 403 no refresh token provided');
         return res.status(403).json({
             success: false,
             message: 'No refresh token provided'
@@ -260,20 +324,24 @@ router.post('/refresh-token', async (req, res) => {
             { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
 
-        // Set new access token cookie
-        res.cookie('accessToken', newAccessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
-            path: '/'
-        });
+        const isMobile = isMobileClient(req);
+        if (!isMobile) {
+            // Set cookie for web clients
+            res.cookie('accessToken', newAccessToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
+                path: '/'
+            });
+        }
 
         console.log(`POST: /refresh-token user ${user.username}`);
-        res.json({
-            success: true,
-            message: 'Token refreshed successfully'
-        });
+        const response = { success: true, message: 'Token refreshed successfully' };
+        if (isMobile) {
+            response.accessToken = newAccessToken;
+        }
+        res.json(response);
     } catch (error) {
         console.log('POST: /refresh-token 401 refresh token failed', error.message);
         
@@ -308,7 +376,15 @@ router.post('/refresh-token', async (req, res) => {
 
 // Logout endpoint
 router.post('/logout', async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
+    let refreshToken = req.cookies.refreshToken;
+    if (!refreshToken && req.headers['x-client'] === 'mobile') {
+        const authHeader = req.headers['authorization'];
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            refreshToken = authHeader.substring(7);
+        } else if (req.headers['x-refresh-token']) {
+            refreshToken = req.headers['x-refresh-token'];
+        }
+    }
     
     if (refreshToken) {
         try {
@@ -319,7 +395,7 @@ router.post('/logout', async (req, res) => {
         }
     }
 
-    // Clear both cookies
+    // Clear both cookies (no-op for mobile, but harmless)
     res.clearCookie('accessToken', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -340,7 +416,8 @@ router.post('/logout', async (req, res) => {
 
 router.get('/validate-token', verifyToken, async (req, res) => {
     try {
-        const {User, Friendship} = getModels(req, 'User', 'Friendship');
+        const { User, Friendship } = getModels(req, 'User', 'Friendship');
+        const orgInviteService = require('../services/orgInviteService');
 
         const user = await User.findById(req.user.userId)
             .select('-password -refreshToken') // Add fields you want to exclude
@@ -359,13 +436,17 @@ router.get('/validate-token', verifyToken, async (req, res) => {
             lean: true
         });
 
+        // Fetch pending org invites for this user
+        const pendingOrgInvites = await orgInviteService.getPendingForUser(req);
+
         console.log(`GET: /validate-token token is valid for user ${user.username}`)
         res.json({
             success: true,
             message: 'Token is valid',
             data: {
                 user: user,
-                friendRequests: friendRequests
+                friendRequests: friendRequests,
+                pendingOrgInvites: pendingOrgInvites
             }
         });
     } catch (error) {
@@ -456,12 +537,15 @@ router.post('/google-login', async (req, res) => {
             path: '/'
         });
 
+        const googleLoginData = { user: user };
+        if (isMobileClient(req)) {
+            googleLoginData.accessToken = accessToken;
+            googleLoginData.refreshToken = refreshToken;
+        }
         res.status(200).json({
             success: true,
             message: 'Google login successful',
-            data: {
-                user: user
-            }
+            data: googleLoginData
         });
 
     } catch (error) {
@@ -525,12 +609,15 @@ router.post('/apple-login', async (req, res) => {
             path: '/'
         });
 
+        const appleLoginData = { user: authenticatedUser };
+        if (isMobileClient(req)) {
+            appleLoginData.accessToken = accessToken;
+            appleLoginData.refreshToken = refreshToken;
+        }
         res.status(200).json({
             success: true,
             message: 'Apple login successful',
-            data: {
-                user: authenticatedUser
-            }
+            data: appleLoginData
         });
 
     } catch (error) {
@@ -685,6 +772,10 @@ router.post('/forgot-password', async (req, res) => {
             code: verificationCode 
         }));
 
+        const resend = getResend();
+        if (!resend) {
+            return res.status(503).json({ success: false, message: 'Email service not configured' });
+        }
         const { data, error } = await resend.emails.send({
             from: "Meridian Support <support@meridian.study>",
             to: [email],

@@ -112,18 +112,35 @@ availabilityPollSchema.pre('save', function(next) {
 
 // Instance methods
 availabilityPollSchema.methods.isCreator = function(userId, userType = 'User') {
-    return this.creatorType === userType && this.creatorId.toString() === userId.toString();
+    if (!userId) return false;
+    
+    // Handle populated objects (have _id property)
+    const creatorId = this.creatorId?._id ? this.creatorId._id : this.creatorId;
+    
+    return this.creatorType === userType && creatorId && creatorId.toString() === userId.toString();
 };
 
 availabilityPollSchema.methods.canAccess = function(userId) {
+    // Anonymous access if allowed (check first to handle null userId)
+    if (this.allowAnonymous) return true;
+    
+    // If no userId provided, only allow if anonymous access is enabled
+    if (!userId) return false;
+    
     // Creator can always access
     if (this.isCreator(userId)) return true;
     
-    // Invited users can access
-    if (this.invitedUsers.includes(userId)) return true;
+    // Invited users can access (handle both ObjectId and populated objects)
+    const isInvited = this.invitedUsers.some(invited => {
+        // Handle populated objects (have _id property)
+        if (invited && invited._id) {
+            return invited._id.toString() === userId.toString();
+        }
+        // Handle ObjectId references
+        return invited && invited.toString() === userId.toString();
+    });
     
-    // Anonymous access if allowed
-    if (this.allowAnonymous) return true;
+    if (isInvited) return true;
     
     return false;
 };

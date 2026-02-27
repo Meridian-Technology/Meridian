@@ -1,0 +1,151 @@
+.registration-section {
+    .event-options-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--lighterborder, #e9ecef);
+
+        .event-options-title {
+            margin: 0;
+            font-size: 0.9375rem;
+            font-weight: 600;
+            color: var(--text, #212529);
+        }
+
+        .event-options-toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+
+            .toggle-label {
+                font-size: 0.8125rem;
+                color: var(--text-muted, #6c757d);
+            }
+        }
+    }
+
+    .event-options-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .event-option-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        font-size: 0.875rem;
+        border-bottom: 1px solid var(--lighterborder, #f1f3f5);
+
+        &:last-child {
+            border-bottom: none;
+        }
+
+        .option-label {
+            color: var(--text-muted, #6c757d);
+        }
+
+        .option-value {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            cursor: pointer;
+            color: var(--text, #212529);
+            transition: color 0.15s;
+
+            &:hover .option-edit-icon {
+                opacity: 1;
+            }
+
+            .option-edit-icon {
+                font-size: 0.875rem;
+                opacity: 0.5;
+            }
+        }
+
+        .option-inline-input {
+            width: 100px;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+            border: 1px solid var(--lighterborder, #dee2e6);
+            border-radius: 4px;
+            outline: none;
+
+            &:focus {
+                border-color: var(--primary, #007bff);
+            }
+        }
+
+        &.event-option-row-deadline {
+            .option-value-datepicker {
+                cursor: default;
+                display: flex;
+                min-width: 0;
+
+                .registration-deadline-picker {
+                    width: 100%;
+                    min-width: 160px;
+                    max-width: 220px;
+
+                    .rs-input {
+                        padding: 0.35rem 0.5rem;
+                        font-size: 0.875rem;
+                        border-radius: 6px;
+                    }
+                }
+            }
+        }
+
+        &.event-option-row-toggle {
+            .option-value {
+                cursor: default;
+            }
+        }
+
+        &.event-option-row-form {
+            .option-value-wrapper {
+                position: relative;
+            }
+
+            .option-form-dropdown {
+                position: absolute;
+                top: 100%;
+                right: 0;
+                margin-top: 0.25rem;
+                padding: 0.25rem 0;
+                background: var(--background, #fff);
+                border: 1px solid var(--lighterborder, #dee2e6);
+                border-radius: 6px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                z-index: 100;
+                min-width: 180px;
+
+                .option-form-dropdown-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    width: 100%;
+                    padding: 0.5rem 1rem;
+                    border: none;
+                    background: none;
+                    font-size: 0.875rem;
+                    text-align: left;
+                    cursor: pointer;
+                    color: var(--text, #212529);
+
+                    &:hover {
+                        background: var(--hover-bg, #f8f9fa);
+                    }
+
+                    &.option-form-create {
+                        color: var(--primary, #007bff);
+                        border-top: 1px solid var(--lighterborder, #e9ecef);
+                    }
+                }
+            }
+        }
+    }
+}

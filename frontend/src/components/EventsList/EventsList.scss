@@ -1,156 +1,226 @@
 .events-list {
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    width:100%;
+    gap: 24px;
+    width: 100%;
+    padding: 0;
+    position: relative;
     
-    // Smooth transitions for event items
-    .date-group {
-        animation: fadeInUp 0.5s ease-out;
+    // Timeline container
+    .timeline-container {
+        position: relative;
+        padding-left: 32px;
         
-        .event-item {
-            transition: all 0.3s ease;
-            
-            &:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        // Vertical timeline line - starts from first notch
+        .timeline-line {
+            position: absolute;
+            left: 11px;
+            width: 2px;
+            background: rgba(0, 0, 0, 0.1);
+            z-index: 0;
+            pointer-events: none;
+            // Start from first date group's dot position
+            top: 0;
+            bottom: 0;
+        }
+        
+        // Start timeline line at first date group's dot
+        .date-group:first-child {
+            &::before {
+                content: '';
+                position: absolute;
+                left: 11px;
+                top: 0;
+                width: 2px;
+                height: calc(50% - 10px); // Cover area above the dot (accounting for dot center)
+                background: var(--background, #ffffff);
+                z-index: 1;
+            }
+        }
+        
+        // Stop timeline line at last date group dot by covering it with white
+        .date-group:last-child .date-separator {
+            &::after {
+                content: '';
+                position: absolute;
+                left: -21px;
+                top: 22px; // Below the dot
+                width: 2px;
+                height: calc(100vh); // Cover rest of viewport
+                background: var(--background, #ffffff);
+                z-index: 1;
             }
         }
     }
+    
+    // Date group styling - Luma-inspired clean design
     .date-group {
+        margin-bottom:10px;
+        position: relative;
+        z-index: 1;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 16px;
+        animation: fadeInUp 0.4s ease-out;
         
         .date-separator {
-            font-size: 1.2em;
+            font-size: 14px;
             font-weight: 600;
             color: var(--text);
-            padding: 6px 0 10px 0;
-            // border-top: 2px solid var(--red);
-            text-transform: uppercase;
-            font-family: 'Satoshi';
-            font-weight:900;
-            margin-left:10px;
-            margin-top:5px;
+            padding: 12px 0 8px 0;
+            font-family: 'OpenSauce';
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin: 0;
             position: relative;
-            &::after{
+            color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            
+            .date-text {
+                flex: 1;
+            }
+            
+            // Timeline dot - one per day
+            .timeline-dot {
+                position: absolute;
+                left: -27px;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background:var(--primary, #6D8EFA);
+                border: 2px solid #ffffff;
+                box-shadow: 0 0 01px rgba(0, 0, 0, 0.1);
+                z-index: 3;
+                flex-shrink: 0;
+                transition: all 0.2s ease;
+            }
+            
+            // View toggle switch
+            .view-toggle {
+                margin-left: auto;
+                margin-right: 0;
+                position: relative;
+                z-index: 10;
+                
+                :global(.switch) {
+                    font-size: 12px;
+                    min-width: 140px;
+                    
+                    .switch-option {
+                        padding: 6px 10px;
+                        font-size: 11px;
+                        white-space: nowrap;
+                    }
+                }
+            }
+                        
+            // Subtle underline accent
+            &.regular::before {
+                content: '';
+                display: block;
+                width: 40px;
+                height: 2px;
+                background: linear-gradient(90deg, var(--primary), transparent);
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                border-radius: 2px;
+                animation: underline-expand 0.6s ease-out;
+            }
+            &.compact::before {
                 content: '';
                 display: block;
                 width: 100%;
-                height: 2px;
-                background-color: var(--primary);
-                top:0;
-                left:0;
+                height: 1px;
+                background-color: var(--lightborder);
                 position: absolute;
+                bottom: -2px;
+                left: 0;
                 border-radius: 2px;
-                animation: top-load-in 1s ease-in-out;
+                animation: underline-expand 0.6s ease-out;
+            }
+
+        }
+    }
+    
+    // Event component wrapper styling for list view
+    .event-item-wrapper {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        
+        // Last event in last group
+        &:last-child {
+            margin-bottom: 0;
+        }
+    }
+    
+    // Compact view styles
+    &.compact {
+        gap: 12px;
+        
+        .date-group {
+            
+            .date-separator {
+                padding: 8px 0 6px 0;
             }
         }
         
-        .event-item {
-            background: var(--lighter);
-            border: 1px solid var(--lighterborder);
-            border-radius: 10px;
-            padding: 15px;
-            cursor: pointer;
-            transition: all 0.2s ease;
+        .event-item-wrapper {
+            gap: 12px;
+        }
+        
+        .timeline-container {
+            padding-left: 0;
             
-            &:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            .timeline-line {
+                display: none;
             }
             
-            .event-name {
-                font-weight: 600;
-                margin-bottom: 8px;
+            .date-group:first-child::before {
+                display: none;
             }
             
-            .event-time {
-                color: var(--text);
-                font-size: 0.9em;
-                margin-bottom: 4px;
+            .date-group:last-child .date-separator::after {
+                display: none;
             }
             
-            .event-location {
-                color: var(--text);
-                font-size: 0.9em;
+            .date-separator {
+                .timeline-dot {
+                    display: none;
+                }
             }
         }
     }
-    .loader{
-        width:100%;
-    }
 }
 
+// Loading and error states
 .loading, .error {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 100%;
-    font-size: 1.2em;
-    color: var(--text);
+    height: 200px;
+    font-size: 14px;
+    color: rgba(0, 0, 0, 0.6);
 }
 
 .loading-more-container {
     display: flex;
     justify-content: center;
-    padding: 20px 0;
-    margin-top: 20px;
-}
-
-.no-events {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 200px;
-    font-size: 1.1em;
-    color: var(--text);
-    text-align: center;
-    background: var(--lighter);
-    border: 1px solid var(--lighterborder);
-    border-radius: 12px;
-    padding: 40px 20px;
-    
-    &::before {
-        content: '📅';
-        font-size: 2em;
-        margin-bottom: 16px;
-        display: block;
-    }
-}
-
-.friends-filter-indicator {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-    
-    .indicator-content {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        
-        .icon {
-            font-size: 20px;
-            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-        }
-        
-        .text {
-            color: white;
-            font-weight: 600;
-            font-size: 16px;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-        }
-    }
+    padding: 32px 0;
+    margin-top: 24px;
 }
 
 // Animations
 @keyframes fadeInUp {
     from {
         opacity: 0;
-        transform: translateY(20px);
+        transform: translateY(12px);
     }
     to {
         opacity: 1;
@@ -158,11 +228,76 @@
     }
 }
 
-@keyframes top-load-in {
+@keyframes underline-expand {
     from {
         width: 0;
+        opacity: 0;
     }
     to {
-        width: 100%;
+        width: 40px;
+        opacity: 1;
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .events-list {
+        gap: 20px;
+        
+        .date-group {
+            gap: 12px;
+            
+            .date-separator {
+                padding: 10px 0 6px 0;
+                .date-text{
+                    padding: 0 10px;
+                }
+                .timeline-dot {
+                    left: -23px;
+                }
+            }
+        }
+        
+        .timeline-container {
+            padding-left: 24px;
+            
+            .timeline-line {
+                left: 7px;
+            }
+        }
+        
+        .event-item-wrapper {
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+    }
+}
+
+// Reduced motion support
+@media (prefers-reduced-motion: reduce) {
+    .date-group {
+        animation: none;
+    }
+    
+    .event-item-wrapper .event-component {
+        transition: none;
+        
+        &:hover {
+            transform: none;
+        }
+    }
+    
+    @keyframes fadeInUp {
+        from, to {
+            opacity: 1;
+            transform: none;
+        }
+    }
+    
+    @keyframes underline-expand {
+        from, to {
+            width: 40px;
+            opacity: 1;
+        }
     }
 }

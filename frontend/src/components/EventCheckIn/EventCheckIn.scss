@@ -1,0 +1,362 @@
+// QR Code Display
+.qr-code-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+
+  .qr-code-image-container {
+    background: var(--lightbackground, var(--background));
+    padding: 1rem;
+    border-radius: 12px;
+    border: 1px solid var(--lighterborder);
+    box-shadow: var(--shadow);
+
+    .qr-code-image {
+      width: 250px;
+      height: 250px;
+      display: block;
+    }
+  }
+
+  .qr-code-actions {
+    display: flex;
+    gap: 0.75rem;
+    width: 100%;
+    justify-content: center;
+
+    .action-button {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: #4DAA57;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: #45a049;
+      }
+
+      iconify-icon,
+      svg {
+        font-size: 1.1rem;
+      }
+    }
+  }
+}
+
+// Check-In Link Display
+.checkin-link-display {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  .link-container {
+    .link-input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--lighterborder);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-family: monospace;
+      background: var(--lightbackground);
+      color: var(--text);
+      cursor: text;
+
+      &:focus {
+        outline: none;
+        border-color: #4DAA57;
+        background: var(--background);
+      }
+    }
+  }
+
+  .link-actions {
+    display: flex;
+    gap: 0.75rem;
+
+    .action-button {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: #4DAA57;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: #45a049;
+      }
+
+      iconify-icon,
+      svg {
+        font-size: 1.1rem;
+      }
+    }
+  }
+}
+
+// Check-In List
+.checkin-list {
+  .checkin-list-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+
+    .search-input-wrapper {
+      position: relative;
+
+      .search-icon {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 1.25rem;
+        color: var(--light-text);
+      }
+
+      .search-input {
+        width: 100%;
+        padding: 0.65rem 0.75rem 0.65rem 2.5rem;
+        border: 1px solid var(--lighterborder);
+        border-radius: 8px;
+        font-size: 0.9rem;
+        background: var(--lightbackground);
+        color: var(--text);
+
+        &::placeholder {
+          color: var(--light-text);
+        }
+
+        &:focus {
+          outline: none;
+          border-color: #4DAA57;
+          background: var(--background);
+        }
+      }
+    }
+
+    .filter-buttons {
+      display: flex;
+      gap: 0.5rem;
+
+      .filter-button {
+        padding: 0.5rem 1rem;
+        border: 1px solid var(--lighterborder);
+        border-radius: 8px;
+        background: var(--lightbackground);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+
+        &:hover {
+          background: var(--lighterborder);
+        }
+
+        &.active {
+          background: #4DAA57;
+          color: white;
+          border-color: #4DAA57;
+        }
+      }
+    }
+  }
+
+  .attendees-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 600px;
+    overflow-y: auto;
+
+    .attendee-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem;
+      background: var(--lightbackground);
+      border: 1px solid var(--lighterborder);
+      border-radius: 8px;
+      transition: background 0.2s ease;
+
+      &:hover {
+        background: var(--lighterborder);
+      }
+
+      .attendee-info {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex: 1;
+
+        .attendee-avatar {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          overflow: hidden;
+          background: var(--lighterborder);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+
+          iconify-icon,
+          svg {
+            font-size: 1.5rem;
+            color: var(--light-text);
+          }
+        }
+
+        .attendee-details {
+          flex: 1;
+
+          .attendee-name {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+          }
+
+          .attendee-meta {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.8rem;
+            color: var(--light-text);
+
+            .checkin-time,
+            .checkin-method {
+              display: flex;
+              align-items: center;
+              gap: 0.25rem;
+
+              iconify-icon,
+              svg {
+                font-size: 0.9rem;
+              }
+            }
+
+            .checkin-method {
+              &.manual {
+                color: #4DAA57;
+              }
+
+              &.self {
+                color: #2e7d32;
+              }
+            }
+          }
+        }
+      }
+
+      .checked-in-by {
+        font-size: 0.8rem;
+        color: var(--light-text);
+        font-style: italic;
+      }
+
+      .attendee-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-shrink: 0;
+
+        .remove-checkin-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.4rem 0.75rem;
+          font-size: 0.8rem;
+          font-weight: 500;
+          color: var(--light-text);
+          background: transparent;
+          border: 1px solid var(--lighterborder);
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+
+          &:hover {
+            background: var(--lighterborder);
+            color: var(--text);
+          }
+
+          iconify-icon,
+          svg {
+            font-size: 1rem;
+          }
+        }
+      }
+    }
+  }
+
+  .checkin-list-empty {
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+    color: var(--light-text);
+
+    iconify-icon,
+    svg {
+      font-size: 2.5rem;
+      color: var(--light-text);
+      margin-bottom: 1rem;
+      opacity: 0.7;
+    }
+
+    p {
+      font-size: 0.95rem;
+      margin: 0;
+    }
+  }
+
+  .manual-checkin-section {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--lighterborder);
+
+    .manual-checkin-button {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: #4DAA57;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: #45a049;
+      }
+
+      iconify-icon,
+      svg {
+        font-size: 1.1rem;
+      }
+    }
+  }
+}

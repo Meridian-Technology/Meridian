@@ -1,0 +1,31 @@
+.textarea-expand-popup {
+    min-width: min(800px, 90vw);
+    max-width: 90vw;
+
+    .textarea-expand-popup-header {
+        .header-container-content {
+            padding: 1rem;
+        }
+    }
+
+    .textarea-expand-popup-editor {
+        width: 100%;
+        min-height: 280px;
+        padding: 1rem;
+        font-size: 0.875rem;
+        font-family: inherit;
+        resize: vertical;
+        box-sizing: border-box;
+        background: var(--lightest);
+        color: var(--text);
+
+        &:focus {
+            outline: none;
+            border-color: var(--dark-blue);
+        }
+
+        &::placeholder {
+            color: var(--light-text);
+        }
+    }
+}

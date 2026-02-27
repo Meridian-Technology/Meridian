@@ -1,53 +1,154 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
+import { useNotification } from '../../NotificationContext';
 import { useFetch } from '../../hooks/useFetch';
 import RSVPButton from '../RSVPButton/RSVPButton';
+import RegistrationPrompt from '../RegistrationPrompt/RegistrationPrompt';
+import {
+    hasAnonymousRegistration,
+    getAnonymousRegistration,
+    removeAnonymousRegistration
+} from '../../utils/anonymousRegistrationStorage';
+import { analytics } from '../../services/analytics/analytics';
 import Popup from '../Popup/Popup';
 import defaultAvatar from '../../assets/defaultAvatar.svg';
+import postRequest from '../../utils/postRequest';
 import './RSVPSection.scss';
 
-const RSVPSection = ({ event }) => {
+const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
     const { user } = useAuth();
-    const [rsvpStatus, setRsvpStatus] = useState(null);
-    const [attendees, setAttendees] = useState({ going: [], maybe: [], notGoing: [] });
-    const [rsvpStats, setRsvpStats] = useState(null);
-    const [friendsGoing, setFriendsGoing] = useState(0);
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { addNotification } = useNotification();
+    const [registration, setRegistration] = useState(null);
+    const [attendees, setAttendees] = useState([]);
+    const [registrationCount, setRegistrationCount] = useState(0);
+    const [friendsRegistered, setFriendsRegistered] = useState(0);
     const [showAllAttendees, setShowAllAttendees] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
     const [showUserPopup, setShowUserPopup] = useState(false);
+    const [withdrawing, setWithdrawing] = useState(false);
+    const [anonymousVerified, setAnonymousVerified] = useState(null);
+    const [showRegistrationPromptOpen, setShowRegistrationPromptOpen] = useState(false);
+    const [showClaimPromptFromWithdraw, setShowClaimPromptFromWithdraw] = useState(false);
 
-    // Fetch RSVP data for this specific event
-    const { data: rsvpData } = useFetch(
-        event.rsvpEnabled && user ? `/my-rsvp/${event._id}` : null
+    const enabled = event.registrationEnabled ?? event.rsvpEnabled;
+    const { data: rsvpData, refetch: refetchRsvp } = useFetch(
+        enabled && user && !previewAsUnregistered ? `/my-rsvp/${event._id}` : null
+    );
+    const { data: attendeesData, refetch: refetchAttendees } = useFetch(
+        enabled ? `/attendees/${event._id}` : null
     );
 
-    const { data: attendeesData } = useFetch(
-        event.rsvpEnabled ? `/attendees/${event._id}` : null
-    );
+    const hasStoredAnonymous = !user && event?._id && hasAnonymousRegistration(event._id);
+    const anonymousRegistered = hasStoredAnonymous && anonymousVerified !== false;
+    const isRegistered = Boolean(registration) || anonymousRegistered;
+    // Keep rendering the Register block (with RSVPButton + prompt) when the post-registration prompt is open
+    const isRegisteredForDisplay = isRegistered && !showRegistrationPromptOpen;
 
     useEffect(() => {
-        if (rsvpData?.success) {
-            setRsvpStatus(rsvpData.rsvp);
+        if (previewAsUnregistered) {
+            setRegistration(null);
+        } else if (rsvpData?.success) {
+            setRegistration(rsvpData.rsvp);
         }
-    }, [rsvpData]);
+    }, [rsvpData, previewAsUnregistered]);
 
     useEffect(() => {
         if (attendeesData?.success) {
-            setAttendees(attendeesData.attendees);
-            setRsvpStats(attendeesData.rsvpStats);
-            // Use friends data from attendees endpoint if available, otherwise use from event data
-            setFriendsGoing(attendeesData.friendsGoing || event.friendsGoing || 0);
+            setAttendees(attendeesData.attendees || []);
+            setRegistrationCount(attendeesData.registrationCount ?? (attendeesData.attendees || []).length);
+            setFriendsRegistered(attendeesData.friendsRegistered ?? attendeesData.friendsGoing ?? 0);
         }
-    }, [attendeesData, event]);
+    }, [attendeesData]);
 
-    const handleRSVPUpdate = (rsvpData) => {
-        // Refresh attendees data when RSVP is updated
-        window.location.reload();
+    // Verify anonymous registration with server so we clear localStorage if admin removed it
+    useEffect(() => {
+        if (user || !event?._id || !enabled) {
+            setAnonymousVerified(null);
+            return;
+        }
+        const stored = getAnonymousRegistration(event._id);
+        if (!stored) {
+            setAnonymousVerified(null);
+            return;
+        }
+        if (!stored.guestEmail) {
+            setAnonymousVerified(true);
+            return;
+        }
+        let cancelled = false;
+        const url = `/events/${event._id}/check-anonymous-registration?guestEmail=${encodeURIComponent(stored.guestEmail)}`;
+        postRequest(url, null, { method: 'GET' })
+            .then((data) => {
+                if (cancelled) return;
+                if (data?.error) {
+                    setAnonymousVerified(true);
+                    return;
+                }
+                const registered = data?.registered === true;
+                if (!registered) {
+                    removeAnonymousRegistration(event._id);
+                    setAnonymousVerified(false);
+                } else {
+                    setAnonymousVerified(true);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) setAnonymousVerified(true);
+            });
+        return () => { cancelled = true; };
+    }, [event?._id, user, enabled]);
+
+    const handleRegisterUpdate = () => {
+        if (user) refetchRsvp();
+        refetchAttendees();
     };
 
-    const handleRSVPStatusUpdate = (eventId, newRSVPStatus) => {
-        setRsvpStatus(newRSVPStatus);
+    const handleWithdraw = async () => {
+        if (!user) {
+            addNotification({
+                title: 'Login Required',
+                message: 'Please log in to withdraw from events',
+                type: 'error'
+            });
+            return;
+        }
+
+        setWithdrawing(true);
+        try {
+            const response = await postRequest(`/rsvp/${event._id}`, null, {
+                method: 'DELETE'
+            });
+            
+            if (response?.success) {
+                analytics.track('event_registration_withdraw', { event_id: event._id });
+                addNotification({
+                    title: 'Registration Withdrawn',
+                    message: 'You have successfully withdrawn from this event.',
+                    type: 'success'
+                });
+                setRegistration(null);
+                handleRegisterUpdate();
+            } else {
+                addNotification({
+                    title: 'Withdrawal Failed',
+                    message: response?.message || response?.error || 'Failed to withdraw from event',
+                    type: 'error'
+                });
+            }
+        } catch (error) {
+            console.error('Error withdrawing registration:', error);
+            addNotification({
+                title: 'Withdrawal Failed',
+                message: error?.message || 'Failed to withdraw from event',
+                type: 'error'
+            });
+        } finally {
+            setWithdrawing(false);
+        }
     };
 
     const handleUserClick = (attendee) => {
@@ -55,155 +156,234 @@ const RSVPSection = ({ event }) => {
         setShowUserPopup(true);
     };
 
-    const handleCloseUserPopup = () => {
-        setShowUserPopup(false);
-        setSelectedUser(null);
-    };
-
-    const renderAttendeeList = (attendeeList, status) => {
+    const renderAttendeeList = (attendeeList) => {
         if (attendeeList.length === 0) return null;
-
         const displayCount = showAllAttendees ? attendeeList.length : 6;
-        const displayedAttendees = attendeeList.slice(0, displayCount);
-
+        const displayed = attendeeList.slice(0, displayCount);
         return (
             <div className="attendees-section">
                 <div className="attendees-list">
-                    {displayedAttendees.map((attendee, index) => (
-                        <div 
-                            key={attendee.userId._id} 
-                            className="attendee"
-                            onClick={() => handleUserClick(attendee)}
-                            title={`${attendee.userId.name || attendee.userId.username} - ${status}`}
-                        >
-                            <img 
-                                src={attendee.userId.picture || defaultAvatar} 
-                                alt={attendee.userId.name || attendee.userId.username}
-                            />
-                        </div>
-                    ))}
+                    {displayed.map((attendee) => {
+                        const u = attendee.userId;
+                        const id = u?._id ?? u;
+                        return (
+                            <div
+                                key={id}
+                                className="attendee"
+                                onClick={() => handleUserClick(attendee)}
+                                title={u?.name || u?.username || ''}
+                            >
+                                <img
+                                    src={u?.picture || defaultAvatar}
+                                    alt={u?.name || u?.username || ''}
+                                />
+                            </div>
+                        );
+                    })}
                     {!showAllAttendees && attendeeList.length > 6 && (
-                        <div className="more-attendees">
-                            +{attendeeList.length - 6} more
-                        </div>
+                        <div className="more-attendees">+{attendeeList.length - 6} more</div>
                     )}
                 </div>
             </div>
         );
     };
 
-    if (!event.rsvpEnabled) return null;
+    if (!enabled) return null;
 
-    const isRSVPDeadlinePassed = event.rsvpDeadline && new Date() > new Date(event.rsvpDeadline);
-    const isAtCapacity = event.maxAttendees && rsvpStats && rsvpStats.going >= event.maxAttendees;
+    const deadline = event.registrationDeadline ?? event.rsvpDeadline;
+    const isDeadlinePassed = deadline && new Date() > new Date(deadline);
+    const count = event.registrationCount ?? registrationCount;
+    const isAtCapacity = event.maxAttendees && count >= event.maxAttendees;
 
-    const totalAttendees = attendees.going.length + attendees.maybe.length;
+    if (compact) {
+        return (
+            <div className="rsvp-section rsvp-section--compact">
+                <div className="rsvp-compact-line">
+                    <span className="rsvp-compact-count">{count} registered</span>
+                    <RSVPButton
+                        event={event}
+                        onRSVPUpdate={handleRegisterUpdate}
+                        rsvpStatus={registration || (anonymousRegistered ? {} : null)}
+                        onRSVPStatusUpdate={() => {}}
+                        onRegistrationPromptOpen={() => setShowRegistrationPromptOpen(true)}
+                        onRegistrationPromptClose={() => {
+                            setShowRegistrationPromptOpen(false);
+                            handleRegisterUpdate();
+                        }}
+                    />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="rsvp-section">
             <div className="rsvp-header">
-                <h3>Guest List</h3>
-                <div className="rsvp-stats-container">
-                    {rsvpStats && (
-                        <div className="rsvp-stats">
-                            <div className="stat">
-                                <span className="count">{rsvpStats.going}</span>
-                                <span className="label">Going</span>
-                            </div>
-                            <div className="stat">
-                                <span className="count">{rsvpStats.maybe}</span>
-                                <span className="label">Maybe</span>
-                            </div>
-                        </div>
-                    )}
-                    {friendsGoing > 0 && (
-                        <div className="friends-going">
-                            <Icon icon="mdi:account-group" />
-                            <span>{friendsGoing} friend{friendsGoing !== 1 ? 's' : ''} going</span>
-                        </div>
-                    )}
-                </div>
+                <h3>Registration</h3>
             </div>
 
-            {isRSVPDeadlinePassed && (
-                <div className="rsvp-deadline-passed">
-                    <Icon icon="mdi:clock-alert" />
-                    <span>RSVP deadline has passed</span>
-                </div>
+            {isRegisteredForDisplay ? (
+                <>
+                    {isDeadlinePassed && (
+                        <div className="rsvp-deadline-passed">
+                            <Icon icon="mdi:clock-alert" />
+                            <span>Registration deadline has passed</span>
+                        </div>
+                    )}
+
+                    {isAtCapacity && !isDeadlinePassed && (
+                        <div className="rsvp-capacity-reached">
+                            <Icon icon="mdi:account-multiple-remove" />
+                            <span>Event is at capacity</span>
+                        </div>
+                    )}
+
+                    <p className="rsvp-welcome-message">You are registered for this event.</p>
+                    
+                    {user && (
+                        <div className="rsvp-email-field">
+                            <img src={user.picture || defaultAvatar} alt={user.name || user.username || ''}className="user-icon"  />
+                            <span className="email-text">{user.name || user.username} <br/>{user.email}</span>
+                        </div>
+                    )}
+
+                    <div className="rsvp-registered-state">
+                        <div className="rsvp-registered-badge">
+                            <Icon icon="mdi:check-circle" />
+                            <span>Registered</span>
+                        </div>
+                        {!isDeadlinePassed && (
+                            <button
+                                className="rsvp-withdraw-button"
+                                onClick={!user && anonymousRegistered
+                                    ? () => setShowClaimPromptFromWithdraw(true)
+                                    : handleWithdraw
+                                }
+                                disabled={withdrawing}
+                            >
+                                {withdrawing ? (
+                                    <>
+                                        <Icon icon="mdi:loading" className="spinning" />
+                                        <span>Withdrawing...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Icon icon="mdi:close-circle" />
+                                        <span>Withdraw Registration</span>
+                                    </>
+                                )}
+                            </button>
+                        )}
+                    </div>
+                </>
+            ) : (
+                <>
+                    {isDeadlinePassed && (
+                        <div className="rsvp-deadline-passed">
+                            <Icon icon="mdi:clock-alert" />
+                            <span>Registration deadline has passed</span>
+                        </div>
+                    )}
+
+                    {isAtCapacity && (
+                        <div className="rsvp-capacity-reached">
+                            <Icon icon="mdi:account-multiple-remove" />
+                            <span>Event is at capacity</span>
+                        </div>
+                    )}
+
+                    {!isDeadlinePassed && !isAtCapacity && (
+                        <>
+                            <p className="rsvp-welcome-message">Welcome! To join the event, please register below.</p>
+                            
+                            {user && (
+                                <div className="rsvp-email-field">
+                                    <img src={user.picture || defaultAvatar} alt={user.name || user.username || ''} className="user-icon" />
+                                    <span className="email-text">{user.name || user.username} <br/>{user.email}</span>
+                                </div>
+                            )}
+
+                            <RSVPButton
+                                event={event}
+                                onRSVPUpdate={handleRegisterUpdate}
+                                rsvpStatus={registration || (anonymousRegistered ? {} : null)}
+                                onRSVPStatusUpdate={() => {}}
+                                onRegistrationPromptOpen={() => setShowRegistrationPromptOpen(true)}
+                                onRegistrationPromptClose={() => {
+                                    setShowRegistrationPromptOpen(false);
+                                    handleRegisterUpdate();
+                                }}
+                            />
+                        </>
+                    )}
+                </>
             )}
 
-            {isAtCapacity && (
-                <div className="rsvp-capacity-reached">
-                    <Icon icon="mdi:account-multiple-remove" />
-                    <span>Event is at capacity</span>
-                </div>
-            )}
-
-            {/* Show Going attendees */}
-            {attendees.going.length > 0 && (
+            {attendees.length > 0 && (
                 <div className="attendees-category">
-                    <h4>Going ({attendees.going.length})</h4>
-                    {renderAttendeeList(attendees.going, 'Going')}
+                    <h4>Registered ({attendees.length})</h4>
+                    {renderAttendeeList(attendees)}
                 </div>
             )}
 
-            {/* Show Maybe attendees */}
-            {attendees.maybe.length > 0 && (
-                <div className="attendees-category">
-                    <h4>Maybe ({attendees.maybe.length})</h4>
-                    {renderAttendeeList(attendees.maybe, 'Maybe')}
-                </div>
-            )}
-
-            {/* View All/View Less button */}
-            {totalAttendees > 6 && (
-                <button 
+            {attendees.length > 6 && (
+                <button
                     className="view-all-attendees-btn"
                     onClick={() => setShowAllAttendees(!showAllAttendees)}
                 >
-                    {showAllAttendees ? 'View Less' : `View All (${totalAttendees})`}
+                    {showAllAttendees ? 'View Less' : `View All (${attendees.length})`}
                 </button>
             )}
 
-            {/* Use the RSVPButton component */}
-            <RSVPButton 
-                event={event} 
-                onRSVPUpdate={handleRSVPUpdate} 
-                rsvpStatus={rsvpStatus}
-                onRSVPStatusUpdate={handleRSVPStatusUpdate}
-            />
-
-            {/* User Info Popup */}
-            <Popup 
-                isOpen={showUserPopup} 
-                onClose={handleCloseUserPopup}
+            <Popup
+                isOpen={showUserPopup}
+                onClose={() => { setShowUserPopup(false); setSelectedUser(null); }}
                 customClassName="user-info-popup"
             >
                 {selectedUser && (
                     <div className="user-info-content">
                         <div className="user-header">
-                            <img 
-                                src={selectedUser.userId.picture || defaultAvatar} 
-                                alt={selectedUser.userId.name || selectedUser.userId.username}
+                            <img
+                                src={selectedUser.userId?.picture || defaultAvatar}
+                                alt={selectedUser.userId?.name || selectedUser.userId?.username || ''}
                                 className="user-avatar"
                             />
                             <div className="user-details">
-                                <h3>{selectedUser.userId.name || selectedUser.userId.username}</h3>
-                                <p className="user-username">@{selectedUser.userId.username}</p>
-                                {selectedUser.userId.email && (
+                                <h3>{selectedUser.userId?.name || selectedUser.userId?.username || '—'}</h3>
+                                <p className="user-username">@{selectedUser.userId?.username || ''}</p>
+                                {selectedUser.userId?.email && (
                                     <p className="user-email">{selectedUser.userId.email}</p>
                                 )}
                             </div>
                         </div>
                         <div className="user-rsvp-status">
-                            <span className={`status-badge ${selectedUser.status}`}>
-                                {selectedUser.status === 'going' ? 'Going' : 
-                                 selectedUser.status === 'maybe' ? 'Maybe' : 'Not Going'}
-                            </span>
+                            <span className="status-badge">Registered</span>
                         </div>
                     </div>
                 )}
             </Popup>
+
+            {showClaimPromptFromWithdraw && (
+                <Popup
+                    isOpen
+                    onClose={() => setShowClaimPromptFromWithdraw(false)}
+                    customClassName="registration-prompt-modal"
+                >
+                    <RegistrationPrompt
+                        eventName={event?.name}
+                        onSignUp={() => {
+                            setShowClaimPromptFromWithdraw(false);
+                            const redirect = encodeURIComponent(location.pathname);
+                            navigate(`/register?redirect=${redirect}`);
+                        }}
+                        onSignUpSuccess={() => {
+                            setShowClaimPromptFromWithdraw(false);
+                            handleRegisterUpdate();
+                        }}
+                        onDismiss={() => setShowClaimPromptFromWithdraw(false)}
+                    />
+                </Popup>
+            )}
         </div>
     );
 };

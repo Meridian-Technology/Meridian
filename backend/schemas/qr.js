@@ -20,7 +20,12 @@ const QrSchema = new Schema({
     }],
     tags: [{ type: String }],
     location: { type: String },
-    campaign: { type: String }
+    campaign: { type: String },
+    fgColor: { type: String, default: '#414141' },
+    bgColor: { type: String, default: '#ffffff' },
+    transparentBg: { type: Boolean, default: false },
+    dotType: { type: String, enum: ['extra-rounded', 'square', 'dots'], default: 'extra-rounded' },
+    cornerType: { type: String, enum: ['extra-rounded', 'square', 'dot'], default: 'extra-rounded' }
 });
 
 // Index for better query performance

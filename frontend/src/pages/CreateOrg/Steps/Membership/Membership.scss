@@ -1,0 +1,175 @@
+.membership-step {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+
+    .form-section {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+
+        h3 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin: 0 0 8px 0;
+        }
+
+        p {
+            font-size: 16px;
+            color: #6b7280;
+            margin: 0 0 24px 0;
+            line-height: 1.5;
+        }
+
+        .membership-options {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 24px;
+
+            .member-form-option {
+                flex-direction: column;
+                align-items: stretch;
+
+                .member-form-actions {
+                    margin-top: 12px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+
+                    .form-preview {
+                        margin: 0;
+                    }
+
+                    .form-action-buttons {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        flex-wrap: wrap;
+
+                        .btn {
+                            padding: 8px 16px;
+                            border-radius: 8px;
+                            font-size: 14px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            border: none;
+                            transition: all 0.2s ease;
+
+                            &.btn-primary {
+                                background: #6d8efa;
+                                color: white;
+
+                                &:hover {
+                                    background: #5b7ce8;
+                                }
+                            }
+
+                            &.btn-secondary {
+                                background: #e5e7eb;
+                                color: #374151;
+
+                                &:hover {
+                                    background: #d1d5db;
+                                }
+                            }
+
+                            &.btn-outline {
+                                background: transparent;
+                                color: #6b7280;
+                                border: 1px solid #d1d5db;
+
+                                &:hover {
+                                    border-color: #9ca3af;
+                                    color: #4b5563;
+                                }
+                            }
+                        }
+
+                        .skip-hint {
+                            font-size: 14px;
+                            color: #9ca3af;
+                            font-style: italic;
+                        }
+                    }
+                }
+            }
+
+            .membership-option {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 24px;
+                padding: 20px;
+                background: #f9fafb;
+                border: 1px solid #e5e7eb;
+                border-radius: 12px;
+                transition: all 0.2s ease;
+
+                &:hover {
+                    border-color: #d1d5db;
+                }
+
+                .option-content {
+                    flex: 1;
+                    min-width: 0;
+
+                    .option-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        margin-bottom: 8px;
+
+                        .option-icon {
+                            font-size: 24px;
+                            color: #6d8efa;
+                            flex-shrink: 0;
+                        }
+
+                        .option-title {
+                            font-size: 16px;
+                            font-weight: 600;
+                            color: #1f2937;
+                        }
+                    }
+
+                    .option-subtitle {
+                        font-size: 14px;
+                        color: #6b7280;
+                        margin: 0;
+                        line-height: 1.5;
+                    }
+                }
+            }
+        }
+
+        .config-later-note {
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            background: rgba(109, 142, 250, 0.06);
+            border: 1px solid rgba(109, 142, 250, 0.2);
+            border-radius: 8px;
+            margin-top: auto;
+
+            .note-icon {
+                font-size: 20px;
+                color: #6d8efa;
+                flex-shrink: 0;
+                margin-top: 2px;
+            }
+
+            p {
+                margin: 0;
+                font-size: 14px;
+                color: #4b5563;
+                line-height: 1.5;
+
+                strong {
+                    color: #1f2937;
+                }
+            }
+        }
+    }
+}

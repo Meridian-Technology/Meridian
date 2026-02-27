@@ -18,20 +18,23 @@ function Form() {
     const hasSubmitted = formData?.hasSubmitted || false;
     const isAuthenticated = formData?.isAuthenticated || false;
     const formConfig = form ? {
-        allowMultipleResponses: form.allowMultipleResponses !== false, // default true
-        requireAuth: form.requireAuth !== false, // default true
-        acceptingResponses: form.acceptingResponses !== false, // default true
-        headerColor: form.headerColor
+        allowAnonymous: form.allowAnonymous === true,
+        collectGuestDetails: form.collectGuestDetails !== false
     } : null;
 
-    const handleFormSubmit = async (responses) => {
+    const handleFormSubmit = async (responseOrPayload) => {
         try {
             setSubmitStatus(null);
-            console.log('Submitting form:', { formId: id, responsesCount: responses.length, responses });
-            
+            const isPayload = responseOrPayload && typeof responseOrPayload === 'object' && 'responses' in responseOrPayload;
+            const responses = isPayload ? responseOrPayload.responses : responseOrPayload;
+            const guestName = isPayload ? responseOrPayload.guestName : undefined;
+            const guestEmail = isPayload ? responseOrPayload.guestEmail : undefined;
+
             const response = await apiRequest('/submit-form-response', {
                 formId: id,
-                responses: responses
+                responses: responses,
+                ...(guestName ? { guestName } : {}),
+                ...(guestEmail ? { guestEmail } : {})
             });
 
             console.log('Submission response:', response);

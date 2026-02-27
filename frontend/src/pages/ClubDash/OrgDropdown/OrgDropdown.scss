@@ -126,4 +126,16 @@
             }
         }
     }
+
+    &--admin-view {
+        cursor: default;
+        opacity: 0.95;
+
+        .org-dropdown__viewing-label {
+            font-family: 'Inter';
+            font-size: 14px;
+            color: var(--light-text);
+            font-style: italic;
+        }
+    }
 }

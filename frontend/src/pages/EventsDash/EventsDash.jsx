@@ -2,6 +2,7 @@ import React, {useState, useEffect, useRef} from 'react';
 import './EventsDash.scss';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
+import { analytics } from '../../services/analytics/analytics';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import Explore from './Explore/Explore';
 import MyEvents from './MyEvents/MyEvents';
@@ -9,6 +10,7 @@ import Loader from '../../components/Loader/Loader';
 import Orgs from './Orgs/Orgs';
 import eventsLogo from '../../assets/Brand Image/BEACON.svg';
 import useAuth from '../../hooks/useAuth';
+import { useFetch } from '../../hooks/useFetch';
 import Friends from '../Friends/Friends';
 import EventsGrad from '../../assets/Gradients/EventsGrad.png';
 import Popup from '../../components/Popup/Popup';
@@ -84,6 +86,11 @@ function EventsDash({}){
     const createButtonRef = useRef(null);
     const { user, isAuthenticating } = useAuth();
     const navigate = useNavigate();
+    const eligibilityData = useFetch(user ? '/api/event-system-config/event-creation-eligibility' : null);
+    const eligibility = eligibilityData.data?.data;
+    const canCreateEvent = eligibility
+        ? (eligibility.allowIndividualUserHosting || (eligibility.orgsWithEventPermission?.length > 0))
+        : false;
 
     // Helper function to check if sign-up prompt should be shown today
     const shouldShowSignUpPrompt = () => {
@@ -183,6 +190,11 @@ function EventsDash({}){
                 icon: 'mdi:account-group',
                 element: <Friends />
             });
+            items.push({
+                label: 'Orgs',
+                icon: 'mingcute:group-2-fill',
+                element: <Orgs />
+            });
             
             // Add Analytics tab for admin users
             if (user.roles && user.roles.includes('admin')) {
@@ -191,11 +203,7 @@ function EventsDash({}){
                 //     icon: 'mingcute:chart-fill',
                 //     element: <EventsAnalytics />
                 // });
-                items.push({
-                    label: 'Orgs',
-                    icon: 'mingcute:group-2-fill',
-                    element: <Orgs />
-                });
+
             }
         }
         
@@ -210,6 +218,10 @@ function EventsDash({}){
         }, 2500); // 2s delay + 1.5s animation duration
 
         return () => clearTimeout(timer);
+    }, []);
+
+    useEffect(() => {
+        analytics.screen('Events Dashboard');
     }, []);
 
     const handleSignUp = () => {
@@ -236,6 +248,7 @@ function EventsDash({}){
             setCreateType('study-session');
             setShowCreatePopup(true);
         } else if (action === 'event') {
+            analytics.track('event_create_click', { source: 'events_dashboard' });
             navigate('/create-event');
         } else if (action === 'org') {
             navigate('/create-org');
@@ -250,9 +263,9 @@ function EventsDash({}){
     // Create the plus button middle item for authenticated users
     const getMiddleItem = () => {
         if (!user) return null;
-        if(user.roles && !user.roles.includes('admin')){
-            return null;
-        }
+        // if(user.roles && (user.roles.includes('admin') || user.roles.includes('beta'))){
+        //     console.log(user.roles);
+        if(true){
         return (
             <div className="create-button-container">
                 <div className="create-menu-container">
@@ -280,18 +293,20 @@ function EventsDash({}){
                                     <span className="menu-item-subtitle">Create a new study session</span>
                                 </div>
                             </div>
-                            <div 
-                                className="create-menu-item"
-                                onClick={() => handleCreateOption('event')}
-                            >
-                                <div className="menu-item-icon">
-                                    <Icon icon="mingcute:calendar-fill" />
+                            {canCreateEvent && (
+                                <div 
+                                    className="create-menu-item"
+                                    onClick={() => handleCreateOption('event')}
+                                >
+                                    <div className="menu-item-icon">
+                                        <Icon icon="mingcute:calendar-fill" />
+                                    </div>
+                                    <div className="menu-item-content">
+                                        <span className="menu-item-title">Event</span>
+                                        <span className="menu-item-subtitle">Create a new event</span>
+                                    </div>
                                 </div>
-                                <div className="menu-item-content">
-                                    <span className="menu-item-title">Event</span>
-                                    <span className="menu-item-subtitle">Create a new event</span>
-                                </div>
-                            </div>
+                            )}
                             <div 
                                 className="create-menu-item"
                                 onClick={() => handleCreateOption('org')}
@@ -309,6 +324,7 @@ function EventsDash({}){
                 </div>
             </div>
         );
+    }
     };
 
     return (
@@ -336,6 +352,7 @@ function EventsDash({}){
                 middleItem={getMiddleItem()}
                 // Set default page to "My Events" (index 1) if user is logged in, otherwise "Explore" (index 0)
                 defaultPage={0}
+                notificationInbox={false}
             >
             </Dashboard>
 

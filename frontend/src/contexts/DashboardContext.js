@@ -10,6 +10,9 @@ export const useDashboard = () => {
     return context;
 };
 
+/** Returns context or null if outside provider - use for overlay with navigate fallback */
+export const useDashboardOptional = () => useContext(DashboardContext);
+
 export const DashboardProvider = ({ children, setOverlayContent }) => {
     const showOverlay = (content) => {
         setOverlayContent(content);

@@ -50,37 +50,64 @@ const Review = ({ formData, setFormData, onComplete, allStepsValid }) => {
                         </div>
                     </div>
 
-                    {/* Available Times & Location */}
+                    {/* Time & Location */}
                     <div className="review-section">
                         <div className="section-header">
                             <Icon icon="mingcute:time-fill" />
-                            <h4>Available Times & Location</h4>
+                            <h4>{formData.sessionMode === 'poll' ? 'Time Options & Location' : 'Scheduled Time & Location'}</h4>
                         </div>
                         <div className="review-items">
-                            <div className="review-item">
-                                <span className="label">Possible Meeting Times:</span>
-                                <div className="value timeslots-list">
-                                    {formData.selectedTimeslots && formData.selectedTimeslots.length > 0 ? (
-                                        formData.selectedTimeslots.map((timeslot, index) => (
-                                            <div key={timeslot.id || index} className="timeslot-review-item">
-                                                <Icon icon="mingcute:calendar-fill" />
-                                                <span>{timeslot.displayText}</span>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <span className="no-timeslots">No timeslots selected</span>
+                            {formData.sessionMode === 'schedule' ? (
+                                <>
+                                    <div className="review-item">
+                                        <span className="label">Scheduled Time:</span>
+                                        <span className="value">
+                                            {formData.startTime && formData.endTime ? (
+                                                (() => {
+                                                    const start = new Date(formData.startTime);
+                                                    const end = new Date(formData.endTime);
+                                                    const dayName = start.toLocaleDateString('en-US', { weekday: 'long' });
+                                                    const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                                    const startTimeStr = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                                                    const endTimeStr = end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                                                    return `${dayName}, ${dateStr} from ${startTimeStr} to ${endTimeStr}`;
+                                                })()
+                                            ) : 'No time selected'}
+                                        </span>
+                                    </div>
+                                    <div className="review-item">
+                                        <span className="label">Location:</span>
+                                        <span className="value">{formData.location}</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="review-item">
+                                        <span className="label">Possible Meeting Times:</span>
+                                        <div className="value timeslots-list">
+                                            {formData.selectedTimeslots && formData.selectedTimeslots.length > 0 ? (
+                                                formData.selectedTimeslots.map((timeslot, index) => (
+                                                    <div key={timeslot.id || index} className="timeslot-review-item">
+                                                        <Icon icon="mingcute:calendar-fill" />
+                                                        <span>{timeslot.displayText}</span>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <span className="no-timeslots">No timeslots selected</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="review-item">
+                                        <span className="label">Location:</span>
+                                        <span className="value">{formData.location}</span>
+                                    </div>
+                                    {formData.selectedTimeslots && formData.selectedTimeslots.length > 0 && (
+                                        <div className="review-item">
+                                            <span className="label">Total Options:</span>
+                                            <span className="value">{formData.selectedTimeslots.length} possible meeting time{formData.selectedTimeslots.length !== 1 ? 's' : ''}</span>
+                                        </div>
                                     )}
-                                </div>
-                            </div>
-                            <div className="review-item">
-                                <span className="label">Location:</span>
-                                <span className="value">{formData.location}</span>
-                            </div>
-                            {formData.selectedTimeslots && formData.selectedTimeslots.length > 0 && (
-                                <div className="review-item">
-                                    <span className="label">Total Options:</span>
-                                    <span className="value">{formData.selectedTimeslots.length} possible meeting time{formData.selectedTimeslots.length !== 1 ? 's' : ''}</span>
-                                </div>
+                                </>
                             )}
                         </div>
                     </div>

@@ -123,6 +123,107 @@ router.get('/analytics/overview', verifyToken, async (req, res) => {
     }
 });
 
+// Get aggregate QR analytics from AnalyticsEvent (Event-compatible format for chart)
+router.get('/analytics', verifyToken, async (req, res) => {
+    const { QR, AnalyticsEvent } = getModels(req, 'QR', 'AnalyticsEvent');
+
+    try {
+        const qrCodes = await QR.find({}).sort({ createdAt: 1 }).select('-scanHistory').lean();
+        const qrNames = qrCodes.map(q => q.name);
+
+        if (qrCodes.length === 0) {
+            return res.json({
+                summary: { totalQRCodes: 0, totalScans: 0, totalUniqueScans: 0 },
+                dateRange: {},
+                dailyScans: {},
+                byQR: []
+            });
+        }
+
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+        const defaultStart = new Date(qrCodes[0].createdAt);
+        defaultStart.setHours(0, 0, 0, 0);
+        const defaultEnd = today;
+
+        // Allow client to override date range via query params (YYYY-MM-DD)
+        const reqStart = req.query.startDate ? new Date(req.query.startDate + 'T00:00:00') : null;
+        const reqEnd = req.query.endDate ? new Date(req.query.endDate + 'T23:59:59') : null;
+        const startDate = reqStart && !isNaN(reqStart.getTime()) ? reqStart : defaultStart;
+        const endDate = reqEnd && !isNaN(reqEnd.getTime()) ? reqEnd : defaultEnd;
+        if (startDate > endDate) {
+            return res.status(400).json({ error: 'startDate must be before or equal to endDate' });
+        }
+
+        const platformMatch = {
+            event: 'admin_qr_scan',
+            ts: { $gte: startDate, $lte: endDate },
+            'properties.qr_name': { $in: qrNames }
+        };
+
+        const dailyAgg = await AnalyticsEvent.aggregate([
+            { $match: platformMatch },
+            { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } }, count: { $sum: 1 } } },
+            { $sort: { _id: 1 } }
+        ]);
+        const dailyScans = {};
+        dailyAgg.forEach(({ _id, count }) => { dailyScans[_id] = count; });
+
+        const byQRAgg = await AnalyticsEvent.aggregate([
+            { $match: platformMatch },
+            { $group: { _id: '$properties.qr_name', count: { $sum: 1 } } }
+        ]);
+        const byQRCounts = {};
+        byQRAgg.forEach(({ _id: name, count }) => { if (name) byQRCounts[name] = count; });
+
+        const byQRDailyAgg = await AnalyticsEvent.aggregate([
+            { $match: platformMatch },
+            { $group: { _id: { date: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } }, qr_name: '$properties.qr_name' }, count: { $sum: 1 } } },
+            { $sort: { '_id.date': 1 } }
+        ]);
+        const dailyByQR = {};
+        byQRDailyAgg.forEach(({ _id, count }) => {
+            if (_id.qr_name) {
+                if (!dailyByQR[_id.qr_name]) dailyByQR[_id.qr_name] = {};
+                dailyByQR[_id.qr_name][_id.date] = count;
+            }
+        });
+
+        const toDateStr = (d) => d.toISOString().slice(0, 10);
+        const qrCreatedStr = (q) => toDateStr(new Date(q.createdAt));
+
+        const byQR = qrCodes.map(q => {
+            const rawDaily = dailyByQR[q.name] || {};
+            const qrStart = qrCreatedStr(q);
+            const filteredDaily = {};
+            Object.entries(rawDaily).forEach(([date, count]) => {
+                if (date >= qrStart) filteredDaily[date] = count;
+            });
+            return {
+                name: q.name,
+                createdAt: q.createdAt,
+                scans: byQRCounts[q.name] ?? q.scans ?? 0,
+                uniqueScans: q.uniqueScans ?? 0,
+                lastScanned: q.lastScanned,
+                dailyScans: filteredDaily
+            };
+        });
+
+        const totalScans = Object.values(byQRCounts).reduce((a, b) => a + b, 0) || qrCodes.reduce((a, q) => a + (q.scans || 0), 0);
+        const totalUniqueScans = qrCodes.reduce((a, q) => a + (q.uniqueScans || 0), 0);
+
+        res.json({
+            summary: { totalQRCodes: qrCodes.length, totalScans, totalUniqueScans },
+            dateRange: { startDate: startDate.toISOString().slice(0, 10), endDate: endDate.toISOString().slice(0, 10) },
+            dailyScans,
+            byQR
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'An error occurred while fetching QR analytics' });
+    }
+});
+
 // Get a specific QR code with full details
 router.get('/:id', verifyToken, async (req, res) => {
     const { QR } = getModels(req, 'QR');
@@ -146,14 +247,19 @@ router.post('/', verifyToken, async (req, res) => {
     const { QR } = getModels(req, 'QR');
     
     try {
-        const { 
-            name, 
-            description, 
-            redirectUrl, 
+        const {
+            name,
+            description,
+            redirectUrl,
             isActive = true,
             tags = [],
             location,
-            campaign
+            campaign,
+            fgColor = '#414141',
+            bgColor = '#ffffff',
+            transparentBg = false,
+            dotType = 'extra-rounded',
+            cornerType = 'extra-rounded'
         } = req.body;
 
         // Validate required fields
@@ -177,7 +283,12 @@ router.post('/', verifyToken, async (req, res) => {
             isActive,
             tags,
             location,
-            campaign
+            campaign,
+            fgColor,
+            bgColor,
+            transparentBg,
+            dotType,
+            cornerType
         });
 
         await qrCode.save();
@@ -194,13 +305,18 @@ router.put('/:id', verifyToken, async (req, res) => {
     const { QR } = getModels(req, 'QR');
     
     try {
-        const { 
-            description, 
-            redirectUrl, 
+        const {
+            description,
+            redirectUrl,
             isActive,
             tags,
             location,
-            campaign
+            campaign,
+            fgColor,
+            bgColor,
+            transparentBg,
+            dotType,
+            cornerType
         } = req.body;
 
         const qrCode = await QR.findOne({ name: req.params.id });
@@ -219,6 +335,11 @@ router.put('/:id', verifyToken, async (req, res) => {
         if (tags !== undefined) qrCode.tags = tags;
         if (location !== undefined) qrCode.location = location;
         if (campaign !== undefined) qrCode.campaign = campaign;
+        if (fgColor !== undefined) qrCode.fgColor = fgColor;
+        if (bgColor !== undefined) qrCode.bgColor = bgColor;
+        if (transparentBg !== undefined) qrCode.transparentBg = transparentBg;
+        if (dotType !== undefined) qrCode.dotType = dotType;
+        if (cornerType !== undefined) qrCode.cornerType = cornerType;
 
         await qrCode.save();
         

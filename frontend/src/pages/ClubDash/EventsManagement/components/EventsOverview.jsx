@@ -127,7 +127,7 @@ function EventsOverview({ orgId, orgName, refreshTrigger, onRefresh }) {
 
                     <KpiCard
                         icon="mingcute:user-add-fill"
-                        title="Total RSVPs"
+                        title="Total Registrations"
                         value={overview.totalRsvps}
                         subtitle={`${formatNumber(overview.totalUniqueRsvps)} unique`}
                     />
@@ -214,7 +214,7 @@ function EventsOverview({ orgId, orgName, refreshTrigger, onRefresh }) {
                             <div className="header-cell">Type</div>
                             <div className="header-cell">Date</div>
                             <div className="header-cell">Views</div>
-                            <div className="header-cell">RSVPs</div>
+                            <div className="header-cell">Registrations</div>
                             <div className="header-cell">Engagement</div>
                         </div>
                         {topEvents.slice(0, 5).map((event, index) => (
@@ -240,9 +240,9 @@ function EventsOverview({ orgId, orgName, refreshTrigger, onRefresh }) {
                                     <Icon icon="mingcute:eye-fill" />
                                     <span>{formatNumber(event.views)}</span>
                                 </div>
-                                <div className="table-cell rsvps">
+                                <div className="table-cell registrations">
                                     <Icon icon="mingcute:user-add-fill" />
-                                    <span>{formatNumber(event.rsvps)}</span>
+                                    <span>{formatNumber(event.registrations ?? event.rsvps)}</span>
                                 </div>
                                 <div className="table-cell engagement">
                                     <Icon icon="mingcute:trending-up-fill" />

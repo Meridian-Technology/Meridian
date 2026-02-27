@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import './OIEDash.scss';
+import { analytics } from '../../services/analytics/analytics';
 import ApprovalConfig from './ApprovalConfig/ApprovalConfig';
 import EventsCalendar from './EventsCalendar/EventsCalendar';
 import Dashboard from '../../components/Dashboard/Dashboard';
@@ -59,6 +60,12 @@ function OIEDash(){
             setUserInfo(user);
         }
     }, [isAuthenticating, isAuthenticated, user, navigate]);
+
+    useEffect(() => {
+        if (approvalId) {
+            analytics.screen('Approval Dashboard (OIE)', { approval_group: approvalId });
+        }
+    }, [approvalId]);
 
     // Check if approval group exists and user has access
     useEffect(() => {

@@ -1,0 +1,314 @@
+.event-dashboard-onboarding {
+    display: flex;
+    flex-direction: column;
+    min-width: 320px;
+    max-width: 700px;
+    max-height: 85vh;
+    overflow: hidden;
+
+    &__header {
+        margin-bottom: 1.25rem;
+        flex-shrink: 0;
+
+        .event-dashboard-onboarding__title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            margin: 0 0 0.35rem 0;
+        }
+
+        .event-dashboard-onboarding__subtitle {
+            font-size: 0.95rem;
+            color: var(--light-text);
+            margin: 0;
+        }
+    }
+
+    &__slide {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    &__slide-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+        flex-shrink: 0;
+
+        .slide-icon {
+            font-size: 1.5rem;
+            color: #4DAA57;
+        }
+
+        .slide-title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0;
+        }
+    }
+
+    &__snippet-area {
+        position: relative;
+        flex: 1;
+        min-height: 220px;
+        max-height: 280px;
+        overflow: hidden;
+
+        .event-dashboard-onboarding__gradient-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.12;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+
+            img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+        }
+        background: var(--lightbackground);
+        border: 1px solid var(--lighterborder);
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        // Fade at bottom only
+        -webkit-mask-image: linear-gradient(to bottom, black 0%, black 65%, transparent 100%);
+        mask-image: linear-gradient(to bottom, black 0%, black 65%, transparent 100%);
+        -webkit-mask-size: 100% 100%;
+        mask-size: 100% 100%;
+    }
+
+    &__preview-badge {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        z-index: 2;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--light-text);
+        background: var(--background);
+        border: 1px solid var(--lighterborder);
+        border-radius: 6px;
+    }
+
+    &__snippet-inner {
+        position: relative;
+        z-index: 1;
+        padding: 1rem;
+        height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        .event-dashboard{
+            background: none;
+            .event-overview{
+                padding:0;
+            }
+        }
+        .agenda-builder{
+            padding:0;
+        }
+        .roles-manager{
+            padding:0;
+        }
+        .event-analytics-detail{
+            padding:0;
+        }
+        .event-checkin-tab{
+            padding:0;
+        }
+    }
+
+    &__description {
+        font-size: 0.9rem;
+        color: var(--light-text);
+        line-height: 1.5;
+        margin: 0;
+        flex-shrink: 0;
+    }
+
+    &__footer {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-top: 1.25rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--lighterborder);
+        flex-shrink: 0;
+    }
+
+    &__dots {
+        display: flex;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    &__actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+}
+
+.onboarding-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: none;
+    background: var(--lighterborder);
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.2s ease;
+
+    &:hover {
+        background: var(--light-text);
+    }
+
+    &.active {
+        background: #4DAA57;
+        transform: scale(1.2);
+    }
+}
+
+.onboarding-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid var(--lighterborder);
+    background: var(--lightbackground);
+    color: var(--text);
+
+    &:hover:not(:disabled) {
+        background: #4DAA57;
+        color: white;
+        border-color: #4DAA57;
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    &--skip {
+        background: transparent;
+        color: var(--light-text);
+
+        &:hover {
+            color: var(--text);
+            background: var(--lightbackground);
+        }
+    }
+
+    &--next {
+        background: #4DAA57;
+        color: white;
+        border-color: #4DAA57;
+
+        &:hover {
+            background: #45a049;
+            border-color: #45a049;
+        }
+    }
+}
+
+.onboarding-nav-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+// Onboarding-specific overrides for preview snippets
+.event-dashboard-onboarding__snippet-inner {
+    // QR placeholder when no actual QR image (replaces img in qr-code-image-container)
+    .onboarding-qr-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        width: 120px;
+        height: 120px;
+        color: var(--light-text);
+        font-size: 0.75rem;
+
+        iconify-icon {
+            font-size: 2rem;
+            color: #4DAA57;
+            opacity: 0.7;
+        }
+    }
+
+    // Read-only field preview for Details tab
+    .onboarding-field-preview {
+        padding: 0.75rem;
+        font-size: 0.875rem;
+        color: var(--text);
+        border: 1px solid var(--lighterborder);
+        border-radius: 6px;
+        background: var(--lightbackground);
+    }
+
+    // QR tab onboarding preview
+    .event-qr-tab-onboarding {
+        padding: 0.5rem 0;
+
+        .event-qr-overview-cards {
+            margin-bottom: 0.75rem;
+        }
+
+        .event-qr-chart-card {
+            margin-bottom: 0.75rem;
+        }
+
+        .event-qr-list-card .event-qr-list {
+            gap: 0.5rem;
+        }
+
+        .event-qr-item {
+            .styled-qr-container.onboarding-qr-placeholder {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 80px;
+                height: 80px;
+                color: var(--light-text);
+                font-size: 0.7rem;
+
+                iconify-icon {
+                    font-size: 1.5rem;
+                    color: #4DAA57;
+                    opacity: 0.7;
+                }
+            }
+
+            .event-qr-detail-chart {
+                padding: 0 1rem 0.75rem;
+            }
+        }
+    }
+}
+
+// Popup overlay custom class
+.event-dashboard-onboarding-popup.popup-content {
+    max-width: 700px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+}

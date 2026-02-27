@@ -11,7 +11,7 @@ import BasicInfo from './Steps/BasicInfo/BasicInfo';
 import ProfileImage from './Steps/ProfileImage/ProfileImage';
 import BannerImage from './Steps/BannerImage/BannerImage';
 import SocialLinks from './Steps/SocialLinks/SocialLinks';
-import InviteMembers from './Steps/InviteMembers/InviteMembers';
+import Membership from './Steps/Membership/Membership';
 
 const CreateOrg = () => {
     const navigate = useNavigate();
@@ -24,7 +24,8 @@ const CreateOrg = () => {
         profileImage: null,
         bannerImage: null,
         socialLinks: [],
-        invitedMembers: []
+        requireApprovalForJoin: false,
+        memberForm: null,
     });
 
     const steps = [
@@ -54,9 +55,9 @@ const CreateOrg = () => {
         },
         {
             id: 4,
-            title: 'Invite Members',
-            description: 'Invite friends to join your organization',
-            component: InviteMembers,
+            title: 'Membership',
+            description: 'Configure how members join your organization',
+            component: Membership,
         }
     ];
 
@@ -69,7 +70,7 @@ const CreateOrg = () => {
             case 1: // ProfileImage - optional, marked complete when visited
             case 2: // BannerImage - optional, marked complete when visited
             case 3: // SocialLinks - optional, marked complete when visited
-            case 4: // InviteMembers - optional, marked complete when visited
+            case 4: // Membership - optional, marked complete when visited
                 return false; // Don't mark as complete until step component calls onComplete
             default:
                 return false;
@@ -111,6 +112,22 @@ const CreateOrg = () => {
                 submitData.append('bannerImage', formData.bannerImage);
             }
 
+            submitData.append('requireApprovalForJoin', formData.requireApprovalForJoin ? 'true' : 'false');
+
+            if (formData.memberForm) {
+                const formWithoutNewIds = {
+                    ...formData.memberForm,
+                    questions: (formData.memberForm.questions || []).map(q => {
+                        const { _id, ...rest } = q;
+                        if (_id && _id.startsWith('NEW_QUESTION_')) {
+                            return rest;
+                        }
+                        return q;
+                    })
+                };
+                submitData.append('memberForm', JSON.stringify(formWithoutNewIds));
+            }
+
             const response = await postRequest('/create-org', submitData);
             
             if (response.error) {
@@ -122,13 +139,6 @@ const CreateOrg = () => {
             if (response.success && response.org) {
                 
                 await validateToken();
-                
-                // Handle member invitations if provided
-                if (formData.invitedMembers && formData.invitedMembers.length > 0) {
-                    // TODO: Send invitations to members
-                    // This would require a separate API endpoint to invite members
-                    console.log('Members to invite:', formData.invitedMembers);
-                }
                 
                 addNotification({
                     title: 'Organization Created',

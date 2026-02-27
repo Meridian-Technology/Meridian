@@ -1,7 +1,8 @@
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import Event from '../EventsViewer/EventsGrid/EventsColumn/Event/Event';
 import Loader from '../Loader/Loader';
-import useBulkRSVP from '../../hooks/useBulkRSVP';
+import Switch from '../Switch/Switch';
+import EmptyState from '../EmptyState/EmptyState';
 import './EventsList.scss';
 
 const EventsList = ({ 
@@ -15,17 +16,23 @@ const EventsList = ({
 }) => {
     const observerRef = useRef();
     const lastEventElementRef = useRef();
-
-    // Extract all events from grouped events for bulk RSVP fetching
-    const allEvents = groupedEvents.flatMap(group => group.events);
-
-    // Use bulk RSVP hook to fetch RSVP data for all events at once
-    const { getRSVPStatus, updateRSVPStatus } = useBulkRSVP(allEvents);
+    
+    // Load view preference from localStorage
+    const [viewType, setViewType] = useState(() => {
+        const saved = localStorage.getItem('eventsListViewType');
+        return saved === 'compact' ? 1 : 0; // 0 = regular, 1 = compact
+    });
+    
+    // Save preference to localStorage when it changes
+    useEffect(() => {
+        localStorage.setItem('eventsListViewType', viewType === 1 ? 'compact' : 'regular');
+    }, [viewType]);
 
     // Handle intersection observer for infinite scroll
     useEffect(() => {
         if (loading) return;
 
+        // Use document as root for normal page scrolling
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries[0].isIntersecting && hasMore) {
@@ -35,7 +42,7 @@ const EventsList = ({
                 }
             },
             {
-                root: null,
+                root: null, // null means viewport/document
                 rootMargin: '100px', // Start loading 100px before reaching the bottom
                 threshold: 0.1
             }
@@ -69,17 +76,19 @@ const EventsList = ({
     }, []);
 
     if (groupedEvents.length === 0) {
-
-        
         return (
-            <div className="no-events" role="status">
-                {hasFriendsFilter ? 'No events where friends are going' : 'No events found'}
+            <div className="empty-state-center">
+                <EmptyState
+                    icon="proicons:calendar"
+                    title={hasFriendsFilter ? 'No events where friends are going' : 'No events found'}
+                    description={hasFriendsFilter ? 'When your friends RSVP to events, they’ll show up here.' : 'Try adjusting your filters or check back later for new events.'}
+                />
             </div>
         );
     }
 
     return (
-        <div className="events-list" role="list" aria-label="Events list">
+        <div className={`events-list ${viewType === 1 ? 'compact' : 'regular'}`} role="list" aria-label="Events list">
   {/* I'm not sure why we added this i ndicator, i'm removing it for now but leaving as a comment encase the format was wanted elsewhere -Raven */}
             {/* {hasFriendsFilter && (
                 <div className="friends-filter-indicator">
@@ -88,30 +97,50 @@ const EventsList = ({
                     </div>
                 </div>
             )} */}
-            {groupedEvents.map(({ date, events }, groupIndex) => (
-                <div key={date.toISOString()} className="date-group" role="group" aria-label={`Events on ${formatDate(date)}`}>
-                    <div className="date-separator" role="heading" aria-level="2">{formatDate(date)}</div>
-                    {events.map((event, eventIndex) => {
-                        const isLastElement = groupIndex === groupedEvents.length - 1 && 
-                                           eventIndex === events.length - 1;
-                        return (
-                            <div 
-                                key={`${event._id}-${eventIndex}`}
-                                ref={isLastElement ? setLastEventElementRef : null}
-                                role="listitem"
-                            >
-                                <Event 
-                                    event={event} 
-                                    hasFriendsFilter={hasFriendsFilter}
-                                    rsvpStatus={getRSVPStatus(event._id)}
-                                    onRSVPStatusUpdate={updateRSVPStatus}
-                                />
+            <div className="timeline-container">
+                <div className="timeline-line"></div>
+                {groupedEvents.map(({ date, events }, groupIndex) => {
+                    const isLastGroup = groupIndex === groupedEvents.length - 1;
+                    const isLastElement = isLastGroup && events.length > 0;
+                    return (
+                        <div key={date.toISOString()} className="date-group" role="group" aria-label={`Events on ${formatDate(date)}`}>
+                            <div className={`date-separator ${viewType === 1 ? 'compact' : 'regular'}`} role="heading" aria-level="2">
+                                <div className="timeline-dot"></div>
+                                <span className="date-text">{formatDate(date)}</span>
+                                {groupIndex === 0 && (
+                                    <div className="view-toggle">
+                                        <Switch
+                                            options={['regular', 'compact']}
+                                            selectedPass={viewType}
+                                            setSelectedPass={setViewType}
+                                            onChange={setViewType}
+                                            ariaLabel="View type selection"
+                                        />
+                                    </div>
+                                )}
                             </div>
-                        );
-                    })}
-                </div>
-            ))}
-
+                            {events.map((event, eventIndex) => {
+                                const isLastEvent = isLastGroup && eventIndex === events.length - 1;
+                                return (
+                                    <div 
+                                        key={`${event._id}-${eventIndex}`}
+                                        ref={isLastEvent ? setLastEventElementRef : null}
+                                        role="listitem"
+                                        className="event-item-wrapper"
+                                    >
+                                        <Event 
+                                            event={event} 
+                                            hasFriendsFilter={hasFriendsFilter}
+                                            showRSVP={false}
+                                            variant={viewType === 1 ? 'compact' : 'regular'}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 };

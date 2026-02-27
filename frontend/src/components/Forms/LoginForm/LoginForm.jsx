@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import '../Forms.scss';
 import { generalIcons } from '../../../Icons';
 import useAuth from '../../../hooks/useAuth';
@@ -24,22 +24,29 @@ function LoginForm() {
     const [email, setEmail] = useState(false);
     
     const location = useLocation();
+    const [searchParams] = useSearchParams();
     const redirectPathRef = useRef(null);
     const [isGoogleLoginInProgress, setIsGoogleLoginInProgress] = useState(false);
     
     const googleLogo = generalIcons.google;
     
-    // Store the redirect path when component mounts or location changes
-    useEffect(() => {
-        if (location.state?.from?.pathname) {
-            redirectPathRef.current = location.state.from.pathname;
-            console.log('LoginForm - stored redirect path:', redirectPathRef.current);
-        }
-    }, [location.state]);
+    // Resolve redirect: prefer ?redirect= param (for invite links), then sessionStorage (OAuth return), then location.state.from
+    // If redirect is org-invite URL, use dashboard instead - the OrgInviteModal popup will show the invite (avoids double display)
+    const redirectFromUrl = searchParams.get('redirect');
+    const storedRedirect = typeof window !== 'undefined' ? sessionStorage.getItem('login_redirect') : null;
+    const rawFrom = redirectFromUrl || storedRedirect || redirectPathRef.current || location.state?.from?.pathname || '/events-dashboard';
+    const from = rawFrom?.startsWith('/org-invites') ? '/events-dashboard' : rawFrom;
     
-    const from = redirectPathRef.current || location.state?.from?.pathname || '/events-dashboard';
-    console.log('LoginForm - location.state:', location.state);
-    console.log('LoginForm - from pathname:', from);
+    // Store the redirect path when component mounts (for OAuth callbacks - URL is lost on return)
+    useEffect(() => {
+        if (redirectFromUrl) {
+            redirectPathRef.current = redirectFromUrl;
+            sessionStorage.setItem('login_redirect', redirectFromUrl);
+        } else if (location.state?.from?.pathname) {
+            redirectPathRef.current = location.state.from.pathname;
+            sessionStorage.setItem('login_redirect', location.state.from.pathname);
+        }
+    }, [redirectFromUrl, location.state]);
 
     // Get university info for SAML
     const universityName = getUniversityDisplayName();
@@ -49,9 +56,8 @@ function LoginForm() {
 
     useEffect(() => {
       if (isAuthenticated && !isGoogleLoginInProgress){
-        console.log("logged in already");
-        console.log("auto-redirecting to:", from);
-        navigate(from, { replace: true })
+        sessionStorage.removeItem('login_redirect');
+        navigate(from, { replace: true });
       }
     },[isAuthenticated, navigate, from, isGoogleLoginInProgress]);
 
@@ -74,9 +80,8 @@ function LoginForm() {
       e.preventDefault();
       try {
         await login(formData);
-        console.log("logged in");
-        console.log("redirecting to:", from);
-        navigate(from,{ replace: true })
+        sessionStorage.removeItem('login_redirect');
+        navigate(from, { replace: true });
         // Handle success (e.g., store the token and redirect to a protected page)
       } catch (error) {
         console.error('Login failed:', error);
@@ -104,8 +109,7 @@ function LoginForm() {
                 setIsGoogleLoginInProgress(true);
                 const codeResponse = await googleLogin(code, false);
                 console.log("codeResponse: " + codeResponse);
-                console.log("Google login successful, redirecting to:", redirectPathRef.current || from);
-                // Navigate after successful Google login
+                sessionStorage.removeItem('login_redirect');
                 navigate(redirectPathRef.current || from, { replace: true });
             } catch (error){
                 setIsGoogleLoginInProgress(false);
@@ -226,7 +230,7 @@ function LoginForm() {
                 <button type="button" className={`show-email button active ${email ? "disappear-show" : ""}`} onClick={(e)=>{e.preventDefault();setEmail(true)}}>
                     Login with Email
                 </button>
-                <p className={`already ${email ? "disappear-show" : ""}`}>Don't have an account? <Link to="/register" state={{from:location.state?.from || "/room/none"}} replace>Register</Link></p>
+                <p className={`already ${email ? "disappear-show" : ""}`}>Don't have an account? <Link to={from !== '/events-dashboard' ? `/register?redirect=${encodeURIComponent(from)}` : '/register'} state={{ from: { pathname: from } }} replace>Register</Link></p>
             </div>
 
             <form  onSubmit={handleSubmit}  className="form-content" >
@@ -240,7 +244,7 @@ function LoginForm() {
                 </div>
                 <button type="submit" className={`button ${valid ? "active":""}`}>Log In</button>
                 <div className="form-footer">
-                    <p className="already">Don't have an account? <Link to="/register" state={{from:location.state?.from || "/room/none"}}>Register</Link></p>
+                    <p className="already">Don't have an account? <Link to={from !== '/events-dashboard' ? `/register?redirect=${encodeURIComponent(from)}` : '/register'} state={{ from: { pathname: from } }}>Register</Link></p>
                     <Link to="/forgot-password" className="forgot-password-link">
                         Forgot Password?
                     </Link>

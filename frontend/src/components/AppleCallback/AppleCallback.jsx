@@ -67,6 +67,10 @@ const AppleCallback = () => {
                         }
                     }
                 }
+                // Org-invite redirects go to dashboard - the popup will show the invite
+                if (redirectTo?.startsWith('/org-invites')) {
+                    redirectTo = '/events-dashboard';
+                }
                 
                 // If user is admin, redirect to admin dashboard
                 if (user && user.roles && user.roles.includes('admin')) {

@@ -185,6 +185,15 @@ const SystemSettings = ({ config, onChange }) => {
 
     const systemRestrictionsItems = [
         {
+            title: 'Allow Individual User Hosting',
+            subtitle: 'When enabled, users can host events as themselves. When disabled, only organization members with event creation permission can host events.',
+            action:
+                <SlideSwitch
+                    checked={config.systemRestrictions.allowIndividualUserHosting !== false}
+                    onChange={(e) => handleChange('systemRestrictions', 'allowIndividualUserHosting', e.target.checked)}
+                />
+        },
+        {
             title: 'Max Events Per User',
             subtitle: 'Maximum number of events a single user can create',
             action:

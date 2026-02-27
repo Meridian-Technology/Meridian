@@ -14,6 +14,7 @@ classes1.json
 
 # production
 /build
+build/
 venv/
 
 # misc
@@ -47,3 +48,6 @@ scripts/
 !.env.vault
 
 dump/
+
+# Events backend cloned at build time (replaces git submodule)
+backend/events/

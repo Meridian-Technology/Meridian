@@ -361,5 +361,5 @@ def load_json_to_mongo(json_file, uri):
 
 # load_json_to_mongo("classes.json", "mongodb://127.0.0.1:27017/testing" )
 # migrateClassrooms('mongodb://127.0.0.1:27017/ucb', 'ucb')
-migrateClassrooms('mongodb://127.0.0.1:27017', 'studycompass')
+# migrateClassrooms('mongodb://127.0.0.1:27017', 'studycompass')
 # migrateClassrooms('mongodb+srv://jbliu88:1CLPY0FGxc1Etx5l@studycompass.m1gjmdo.mongodb.net/studycompass?retryWrites=true&w=majority', 'studycompass')

@@ -1,0 +1,186 @@
+/* OrgInviteLanding - Match AddMemberForm Atlas styling */
+.org-invite-landing {
+    --am-primary: var(--org-primary, #64AB6C);
+    --am-primary-tint: var(--org-primary-transparent, rgba(100, 171, 108, 0.12));
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: var(--background);
+    box-sizing: border-box;
+}
+
+.org-invite-landing-card {
+    max-width: 560px;
+    width: 100%;
+    padding: 0;
+    background: var(--background);
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-width: 320px;
+}
+
+.org-invite-landing__header {
+    padding: 24px 24px 20px;
+    border-bottom: 1px solid var(--lightborder);
+
+    h2 {
+        margin: 0 0 8px 0;
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text);
+        letter-spacing: -0.02em;
+    }
+
+    p {
+        margin: 0;
+        font-size: 14px;
+        color: var(--light-text);
+        line-height: 1.5;
+    }
+}
+
+.org-invite-landing__body {
+    padding: 24px;
+}
+
+.org-invite-landing-icon {
+    font-size: 2.25rem;
+    color: var(--am-primary);
+    margin-bottom: 16px;
+    display: block;
+
+    &.error {
+        color: var(--light-text);
+    }
+
+    &.warning {
+        color: #d97706;
+    }
+}
+
+.org-invite-landing-loading {
+    padding: 2rem 0;
+    text-align: center;
+
+    .spinner {
+        font-size: 2rem;
+        color: var(--am-primary);
+        margin-bottom: 12px;
+    }
+
+    p {
+        font-size: 14px;
+        color: var(--light-text);
+        margin: 0;
+    }
+}
+
+.org-invite-landing__info-box {
+    display: flex;
+    gap: 14px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    background: var(--am-primary-tint);
+    border: 1px solid rgba(100, 171, 108, 0.2);
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+    text-align: left;
+
+    .org-invite-landing-icon {
+        flex-shrink: 0;
+        margin-bottom: 0;
+    }
+
+    p {
+        margin: 0 0 6px 0;
+        font-size: 13px;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+    }
+
+    strong {
+        font-weight: 600;
+    }
+}
+
+.org-invite-landing-org {
+    font-size: 14px;
+    color: var(--text);
+
+    strong {
+        font-weight: 600;
+    }
+}
+
+.org-invite-landing-inviter {
+    font-size: 13px;
+    color: var(--light-text);
+}
+
+.org-invite-landing-prompt {
+    margin-bottom: 20px;
+    font-size: 14px;
+    color: var(--light-text);
+    line-height: 1.5;
+}
+
+.org-invite-landing-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.org-invite-landing-btn {
+    display: block;
+    width: 100%;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    border: none;
+    transition: filter 0.2s, transform 0.1s;
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    &.primary {
+        background: var(--am-primary);
+        color: white;
+
+        &:hover:not(:disabled) {
+            filter: brightness(1.08);
+        }
+
+        &:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+    }
+
+    &.secondary {
+        padding: 10px 20px;
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--lightborder);
+        font-size: 14px;
+        font-weight: 500;
+
+        &:hover:not(:disabled) {
+            background: var(--am-primary-tint);
+            border-color: rgba(100, 171, 108, 0.3);
+            color: var(--am-primary);
+        }
+    }
+}

@@ -1,0 +1,99 @@
+.mode-selection-step {
+    .form-section {
+        max-width: 800px;
+        margin: 0 auto;
+        
+        h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #2c3e50;
+        }
+        
+        > p {
+            color: #666;
+            margin-bottom: 2rem;
+        }
+    }
+    
+    .mode-options {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+    }
+    
+    .mode-option {
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 1.5rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background: white;
+        
+        &:hover {
+            border-color: #6D8EFA;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(109, 142, 250, 0.15);
+        }
+        
+        &.selected {
+            border-color: #6D8EFA;
+            background: rgba(109, 142, 250, 0.05);
+            box-shadow: 0 4px 12px rgba(109, 142, 250, 0.2);
+        }
+        
+        .mode-icon {
+            font-size: 3rem;
+            color: #6D8EFA;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .mode-content {
+            h4 {
+                font-size: 1.25rem;
+                font-weight: 600;
+                margin-bottom: 0.75rem;
+                color: #2c3e50;
+            }
+            
+            > p {
+                color: #666;
+                margin-bottom: 1rem;
+                line-height: 1.6;
+            }
+            
+            .mode-features {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+                
+                li {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    color: #555;
+                    margin-bottom: 0.5rem;
+                    font-size: 0.9rem;
+                    
+                    svg {
+                        color: #6D8EFA;
+                        font-size: 1rem;
+                    }
+                }
+            }
+        }
+    }
+}
+
+@media (max-width: 768px) {
+    .mode-selection-step {
+        .mode-options {
+            grid-template-columns: 1fr;
+        }
+    }
+}
+

@@ -479,8 +479,86 @@ router.get('/users-by-all', async (req, res) => {
     }
 });
 
+// Event QR scan (public, no auth) - redirects to event with qr_id for attribution
+router.post('/qr-scan-event', async (req, res) => {
+    const { EventQR, Event, AnalyticsEvent } = getModels(req, 'EventQR', 'Event', 'AnalyticsEvent');
+    const crypto = require('crypto');
+
+    try {
+        const { shortId } = req.body;
+        if (!shortId) {
+            return res.status(400).json({ success: false, error: 'shortId is required' });
+        }
+
+        const qr = await EventQR.findOne({ shortId });
+        if (!qr) {
+            return res.status(404).json({ success: false, error: 'QR code not found' });
+        }
+
+        const event = await Event.findById(qr.eventId);
+        if (!event || event.isDeleted) {
+            return res.status(404).json({ success: false, error: 'Event not found' });
+        }
+
+        // Record scan on EventQR
+        const anonymousId = crypto.createHash('sha256')
+            .update((req.ip || '') + (req.headers['user-agent'] || ''))
+            .digest('hex').slice(0, 32);
+        const isRepeat = qr.scanHistory.some(s => s.anonymousId === anonymousId);
+
+        qr.scans++;
+        qr.lastScanned = new Date();
+        if (!isRepeat) qr.uniqueScans++;
+        qr.scanHistory.push({ timestamp: new Date(), anonymousId });
+        await qr.save();
+
+        // Insert event_qr_scan into analytics_events
+        const eventId = crypto.randomUUID();
+        const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
+        const analyticsDoc = {
+            schema_version: 1,
+            event_id: eventId,
+            event: 'event_qr_scan',
+            ts: new Date(),
+            received_at: new Date(),
+            anonymous_id: anonymousId,
+            user_id: null,
+            session_id: crypto.randomUUID(),
+            platform: 'web',
+            app: 'meridian',
+            app_version: '0.1.0',
+            build: '1',
+            env,
+            context: {},
+            properties: {
+                event_id: qr.eventId.toString(),
+                qr_id: qr._id.toString(),
+                qr_short_id: qr.shortId
+            },
+            ip_hash: null,
+            user_agent_summary: null
+        };
+        try {
+            await AnalyticsEvent.create(analyticsDoc);
+        } catch (err) {
+            if (err.code !== 11000) console.error('Analytics insert error:', err);
+        }
+
+        const baseUrl = process.env.NODE_ENV === 'production'
+            ? (req.protocol + '://' + req.get('host'))
+            : (process.env.FRONTEND_URL || 'http://localhost:3000');
+        const redirectUrl = `${baseUrl}/event/${qr.eventId}?source=qr&qr_id=${encodeURIComponent(qr.shortId)}`;
+
+        res.json({ success: true, redirectUrl });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, error: 'An error occurred while processing QR scan' });
+    }
+});
+
 router.post('/qr-scan', async (req, res) => {
-    const { QR } = getModels(req, 'QR');
+    const { QR, AnalyticsEvent } = getModels(req, 'QR', 'AnalyticsEvent');
+    const crypto = require('crypto');
 
     try {
         const { name, repeat } = req.body;
@@ -517,6 +595,36 @@ router.post('/qr-scan', async (req, res) => {
         qr.scanHistory.push(scanData);
 
         await qr.save();
+
+        // Insert admin_qr_scan into analytics_events (canonical source for analytics)
+        const anonymousId = crypto.createHash('sha256')
+            .update((req.ip || '') + (req.headers['user-agent'] || ''))
+            .digest('hex').slice(0, 32);
+        const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
+        const analyticsDoc = {
+            schema_version: 1,
+            event_id: crypto.randomUUID(),
+            event: 'admin_qr_scan',
+            ts: new Date(),
+            received_at: new Date(),
+            anonymous_id: anonymousId,
+            user_id: null,
+            session_id: crypto.randomUUID(),
+            platform: 'web',
+            app: 'meridian',
+            app_version: '0.1.0',
+            build: '1',
+            env,
+            context: {},
+            properties: { qr_name: qr.name },
+            ip_hash: null,
+            user_agent_summary: null
+        };
+        try {
+            await AnalyticsEvent.create(analyticsDoc);
+        } catch (err) {
+            if (err.code !== 11000) console.error('Analytics insert error:', err);
+        }
         
         // Redirect to the configured URL
         res.json({ 

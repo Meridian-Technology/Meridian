@@ -5,15 +5,16 @@ import { Icon } from '@iconify-icon/react';
 import { useGradient } from '../../../../hooks/useGradient';
 import './DangerZone.scss';
 
-const DangerZone = ({ org, expandedClass }) => {
+const DangerZone = ({ org, expandedClass, adminBypass = false }) => {
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [canManageSettings, setCanManageSettings] = useState(false);
+    const [isOwner, setIsOwner] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
 
-    const { checkUserPermissions } = useOrgPermissions(org);
+    const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { deleteOrganization } = useOrgDelete();
     const { AtlasMain } = useGradient();
 
@@ -26,12 +27,13 @@ const DangerZone = ({ org, expandedClass }) => {
     const initializePermissions = async () => {
         const permissions = await checkUserPermissions();
         setCanManageSettings(permissions.canManageSettings);
+        setIsOwner(permissions.isOwner ?? false);
         setHasAccess(permissions.hasAccess);
         setPermissionsChecked(true);
     };
 
     const handleDeleteOrg = () => {
-        if (!canManageSettings || !org) {
+        if (!isOwner || !org) {
             return;
         }
         
@@ -73,7 +75,6 @@ const DangerZone = ({ org, expandedClass }) => {
     }
 
     return (
-        // Placeholder styling because danger zone is so bearbones right now, not sure if we even want to keep it as a menu option in the future.
         <div className="danger-zone-wrapper">
             <div className={`dash settings-section ${expandedClass}`}>
                 <header className="header">
@@ -85,13 +86,16 @@ const DangerZone = ({ org, expandedClass }) => {
                 <div className="danger-zone">
                     <div className="danger-item">
                         <div className="danger-content">
-                            <h3>Delete Organization</h3>
-                            <p>Permanently delete this organization and all its data. This action cannot be undone.</p>
+                            <h3>
+                                <Icon icon="mdi:delete-alert-outline" className="danger-item-icon" />
+                                Delete Organization
+                            </h3>
+                            <p>Permanently delete this organization and all its data. This action cannot be undone. Only the organization owner can delete the organization.</p>
                         </div>
                         <button 
                             className="delete-button"
                             onClick={handleDeleteOrg}
-                            disabled={!canManageSettings}
+                            disabled={!isOwner}
                         >
                             Delete Organization
                         </button>

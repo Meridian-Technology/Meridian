@@ -6,7 +6,8 @@ import BlueGrad1 from '../../assets/BlueGrad1.png';
 import BlueGrad2 from '../../assets/BlueGrad2.png';
 
 import Dashboard from '../../components/Dashboard/Dashboard';
-import General from './General/General'
+import General from './General/General';
+import WebSocketConnectionsPage from './WebSocketConnectionsPage/WebSocketConnectionsPage';
 import BadgeManager from './BadgeManager/BadgeManager';
 import ManageUsers from './ManageUsers/ManageUsers';
 import QRManager from './QRManager/QRManager';
@@ -60,6 +61,11 @@ function Admin(){
                     element: <QRManager/>
                 }
             ]
+        },
+        { 
+            label: 'WebSocket Connections', 
+            icon: 'mdi:connection',
+            element: <WebSocketConnectionsPage/>
         },
         { 
             label: 'Manage Users', 

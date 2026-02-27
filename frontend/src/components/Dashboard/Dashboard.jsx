@@ -5,9 +5,28 @@ import useAuth from '../../hooks/useAuth';
 import { Icon } from '@iconify-icon/react';
 import ProfilePopup from '../ProfilePopup/ProfilePopup';
 import { DashboardProvider } from '../../contexts/DashboardContext';
+import NotificationInbox from '../NotificationInbox/NotificationInbox';
+import {
+    getOverlayStateFromParams,
+    restoreOverlay,
+    clearOverlaySearchParams,
+} from '../../utils/overlayRegistry';
 import './Dashboard.scss'
 
-function Dashboard({ menuItems, children, additionalClass = '', middleItem=null, logo, primaryColor, secondaryColor, enableSubSidebar = false, defaultPage = 0, onBack=null} ) {
+function Dashboard({ 
+    menuItems, 
+    children, 
+    additionalClass = '', 
+    middleItem=null, 
+    logo, 
+    primaryColor, 
+    secondaryColor, 
+    enableSubSidebar = false, 
+    defaultPage = 0, 
+    onBack=null, 
+    notificationInbox=false,
+    contentOverlay=null
+} ) {
     const [expanded, setExpanded] = useState(false);
     const [expandedClass, setExpandedClass] = useState("");
     const [currentDisplay, setCurrentDisplay] = useState(null); // Initialize as null to prevent flash
@@ -17,7 +36,7 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
     const [contentOpacity, setContentOpacity] = useState(1);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const location = useLocation();
     const [transitionDirection, setTransitionDirection] = useState('right');
     const [showBackButton, setShowBackButton] = useState(false);
@@ -27,7 +46,18 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
     const hasInitializedRef = useRef(false); // Track if we've already processed URL params
     const [overlayContent, setOverlayContent] = useState(null);
     const prevDisplayRef = useRef(null);
-    
+    const isRestoringOverlayRef = useRef(false);
+    const urlHadOverlayParamsRef = useRef(false);
+    const overlayContentRef = useRef(overlayContent);
+
+    // Wrapper so closing the overlay also clears persist overlay params from the URL
+    const handleSetOverlayContent = useCallback((content) => {
+        setOverlayContent(content);
+        if (content == null) {
+            setSearchParams((prev) => clearOverlaySearchParams(prev), { replace: true });
+        }
+    }, [setSearchParams]);
+
     const [width, setWidth] = useState(window.innerWidth);
     useEffect(() => { //useEffect for window resizing
         function handleResize() {
@@ -66,10 +96,49 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
     useEffect(() => {
         // Only close overlay if currentDisplay actually changed (not on initial render)
         if (prevDisplayRef.current !== null && prevDisplayRef.current !== currentDisplay && overlayContent) {
-            setOverlayContent(null);
+            handleSetOverlayContent(null);
         }
         prevDisplayRef.current = currentDisplay;
-    }, [currentDisplay, overlayContent]);
+    }, [currentDisplay, overlayContent, handleSetOverlayContent]);
+
+    // Restore persistable overlay from URL (e.g. after refresh or direct link)
+    useEffect(() => {
+        const overlayState = getOverlayStateFromParams(searchParams);
+        if (!overlayState || overlayContent !== null || isRestoringOverlayRef.current) return;
+        isRestoringOverlayRef.current = true;
+        const onClose = () => handleSetOverlayContent(null);
+        restoreOverlay(overlayState.key, overlayState.params, {
+            setOverlayContent: handleSetOverlayContent,
+            onClose,
+        }).finally(() => {
+            isRestoringOverlayRef.current = false;
+        });
+    }, [searchParams, overlayContent, handleSetOverlayContent]);
+
+    // Close overlay only when URL *had* overlay params and now doesn't (e.g. user pressed browser Back).
+    // Non-persisted overlays (e.g. org profile) don't set URL params, so we must not close them here.
+    useEffect(() => {
+        const overlayState = getOverlayStateFromParams(searchParams);
+        const hadOverlayParams = urlHadOverlayParamsRef.current;
+        if (hadOverlayParams && !overlayState && overlayContent !== null) {
+            handleSetOverlayContent(null);
+        }
+        urlHadOverlayParamsRef.current = !!overlayState;
+    }, [searchParams, overlayContent, handleSetOverlayContent]);
+
+    // Keep ref in sync for popstate listener
+    overlayContentRef.current = overlayContent;
+
+    // Browser Back/Forward: when user presses Back and an overlay is open (e.g. org), close it
+    useEffect(() => {
+        const handlePopState = () => {
+            if (overlayContentRef.current != null) {
+                handleSetOverlayContent(null);
+            }
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [handleSetOverlayContent]);
 
     // Close mobile menu when navigating
     const handleMobileNavigation = (callback) => {
@@ -126,9 +195,13 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
     // Set initial URL if no page parameter is present
     useEffect(() => {
         if (!searchParams.get('page') && !searchParams.get('sub') && defaultPage !== 0) {
-            navigate(`?page=${defaultPage}`, { replace: true });
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('page', defaultPage.toString());
+                return next;
+            }, { replace: true });
         }
-    }, [searchParams, navigate, defaultPage]);
+    }, [searchParams, setSearchParams, defaultPage]);
 
     // Fallback timeout to ensure content is shown even if URL processing fails
     useEffect(() => {
@@ -157,24 +230,40 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
                 }]);
                 setCurrentSubItems(data.subItems);
                 setCurrentDisplay(0);
-                navigate(`?page=${data.parentIndex}&sub=0`, { replace: true });
+                setSearchParams(prev => {
+                    const next = new URLSearchParams(prev);
+                    next.set('page', data.parentIndex.toString());
+                    next.set('sub', '0');
+                    return next;
+                }, { replace: true });
             } else if (action === 'backToMain') {
                 setNavigationStack([]);
                 setCurrentSubItems(null);
                 setCurrentDisplay(defaultPage);
-                navigate(`?page=${defaultPage}`, { replace: true });
+                setSearchParams(prev => {
+                    const next = new URLSearchParams(prev);
+                    next.set('page', defaultPage.toString());
+                    next.delete('sub');
+                    return next;
+                }, { replace: true });
             } else if (action === 'backStep') {
                 const newStack = [...navigationStack];
                 newStack.pop();
                 setNavigationStack(newStack);
                 setCurrentSubItems(newStack[newStack.length - 1].items);
                 setCurrentDisplay(newStack[newStack.length - 1].subIndex);
-                navigate(`?page=${newStack[newStack.length - 1].parentIndex}&sub=${newStack[newStack.length - 1].subIndex}`, { replace: true });
+                const stackTop = newStack[newStack.length - 1];
+                setSearchParams(prev => {
+                    const next = new URLSearchParams(prev);
+                    next.set('page', stackTop.parentIndex.toString());
+                    next.set('sub', stackTop.subIndex.toString());
+                    return next;
+                }, { replace: true });
             }
             
             setPendingNavigation(null);
         }
-    }, [pendingNavigation, isTransitioning, navigationStack, menuItems, navigate]);
+    }, [pendingNavigation, isTransitioning, navigationStack, menuItems, setSearchParams]);
 
     const onExpand = () => {
         setExpanded(prev => !prev);
@@ -187,8 +276,12 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
         
         setTimeout(() => {
             setCurrentDisplay(index);
-            // Update URL with the new page number
-            navigate(`?page=${index}`, { replace: true });
+            // Update URL with the new page number, preserving other search params (e.g. adminView)
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('page', index.toString());
+                return next;
+            }, { replace: true });
             
             // Fade content back in
             setTimeout(() => {
@@ -238,7 +331,7 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
             // Regular page change
             handlePageChangeWithMobile(parentIndex);
         }
-    }, [enableSubSidebar, navigate]);
+    }, [enableSubSidebar]);
 
     const handleBackToMain = useCallback(() => {
         // Start opacity transition
@@ -322,8 +415,11 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
             <ul>
                 {items.map((item, index) => (
                     <li key={index} 
-                        className={`${currentDisplay === index ? "selected" : ""}`} 
+                        className={`${currentDisplay === index ? "selected" : ""} ${item.comingSoon ? "coming-soon" : ""}`} 
                         onClick={() => {
+                            // Don't allow clicking on coming soon items
+                            if (item.comingSoon) return;
+                            
                             if (isSubMenu) {
                                 // Handle sub-sub items if they exist
                                 if (enableSubSidebar && item.subItems && item.subItems.length > 0) {
@@ -339,7 +435,12 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
                                         setTimeout(() => {
                                             setCurrentDisplay(index);
                                             const currentParentIndex = navigationStack[navigationStack.length - 1]?.parentIndex || 0;
-                                            navigate(`?page=${currentParentIndex}&sub=${index}`, { replace: true });
+                                            setSearchParams(prev => {
+                                                const next = new URLSearchParams(prev);
+                                                next.set('page', currentParentIndex.toString());
+                                                next.set('sub', index.toString());
+                                                return next;
+                                            }, { replace: true });
                                             
                                             // Fade content back in
                                             setTimeout(() => {
@@ -359,6 +460,9 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
                         }}>
                         <Icon icon={item.icon} />
                         <p>{item.label}</p>
+                        {item.comingSoon && (
+                            <span className="coming-soon-badge">Soon</span>
+                        )}
                         {enableSubSidebar && item.subItems && item.subItems.length > 0 && (
                             <Icon icon="material-symbols:chevron-right" className="sub-indicator" />
                         )}
@@ -437,7 +541,7 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
     }
 
     return (
-        <DashboardProvider setOverlayContent={setOverlayContent}>
+        <DashboardProvider setOverlayContent={handleSetOverlayContent}>
             <div 
                 className={`general-dash ${additionalClass}`} 
                 style={{
@@ -516,6 +620,9 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
                     
                 </div>
                 <div className="bottom">
+                    {notificationInbox && user && (
+                        <NotificationInbox position="bottom-left" />
+                    )}
                     {
                         user && (
                         <ProfilePopup 
@@ -581,6 +688,12 @@ function Dashboard({ menuItems, children, additionalClass = '', middleItem=null,
                 {overlayContent && (
                     <div className="dashboard-overlay">
                         {overlayContent}
+                    </div>
+                )}
+                {/* Content overlay (e.g. pending approval blur) - restricted to dash-right only */}
+                {contentOverlay && (
+                    <div className="dashboard-content-overlay">
+                        {contentOverlay}
                     </div>
                 )}
             </div>

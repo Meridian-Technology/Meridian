@@ -2,6 +2,8 @@ import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from './NotificationContext';
 import apiRequest from './utils/postRequest';
+import { analytics } from './services/analytics/analytics';
+import { getAllAnonymousRegistrations, removeAnonymousRegistration } from './utils/anonymousRegistrationStorage';
 
 /** 
 documentation:
@@ -17,6 +19,8 @@ export const AuthProvider = ({ children }) => {
     const [checkedIn, setCheckedIn] = useState(null);
     const [authMethod, setAuthMethod] = useState(null); // 'google', 'saml', 'email'
     const [friendRequests, setFriendRequests] = useState({ received: [], sent: [] });
+    const [pendingOrgInvites, setPendingOrgInvites] = useState([]);
+    const [showOrgInviteModal, setShowOrgInviteModal] = useState(true);
 
     const { addNotification } = useNotification();
 
@@ -36,6 +40,14 @@ export const AuthProvider = ({ children }) => {
                         sent: response.data.friendRequests.sent || []
                     });
                 }
+                if (response.data.pendingOrgInvites) {
+                    setPendingOrgInvites(response.data.pendingOrgInvites);
+                    if (response.data.pendingOrgInvites.length > 0) {
+                        setShowOrgInviteModal(true);
+                    }
+                } else {
+                    setPendingOrgInvites([]);
+                }
                 // Determine auth method frwom user data
                 if (response.data.user.samlProvider) {
                     setAuthMethod('saml');
@@ -46,6 +58,25 @@ export const AuthProvider = ({ children }) => {
                 } else {
                     setAuthMethod('email');
                 }
+                // Identify user in analytics and set roles (for admin exclusion from tracking)
+                if (response.data.user._id) {
+                    analytics.identify(response.data.user._id);
+                    analytics.setUserRoles(response.data.user.roles);
+                }
+                // Claim any anonymous event registrations from this browser and remove from localStorage
+                const registrations = getAllAnonymousRegistrations();
+                if (registrations.length > 0) {
+                    try {
+                        const claimRes = await apiRequest('/claim-anonymous-registrations', { registrations }, { method: 'POST' });
+                        if (claimRes && claimRes.success && Array.isArray(claimRes.claimed)) {
+                            claimRes.claimed.forEach((id) => {
+                                removeAnonymousRegistration(id != null ? String(id) : '');
+                            });
+                        }
+                    } catch (e) {
+                        // non-fatal: leave anonymous regs in storage to retry next time
+                    }
+                }
                 // console.log(response.data.user);
                 setIsAuthenticated(true);
                 setIsAuthenticating(false);
@@ -53,13 +84,23 @@ export const AuthProvider = ({ children }) => {
             } else {
                 setIsAuthenticated(false);
                 setIsAuthenticating(false);
+                setPendingOrgInvites([]);
             }
         } catch (error) {
             console.log('Token expired or invalid');
             setIsAuthenticated(false);
             setIsAuthenticating(false);
+            setPendingOrgInvites([]);
             return error;
         }
+    };
+
+    const clearPendingOrgInvite = (inviteId) => {
+        setPendingOrgInvites(prev => prev.filter(inv => inv._id !== inviteId));
+    };
+
+    const dismissOrgInviteModal = () => {
+        setShowOrgInviteModal(false);
     };
 
     useEffect(() => {
@@ -75,6 +116,11 @@ export const AuthProvider = ({ children }) => {
                 setIsAuthenticated(true);
                 setUser(response.data.data.user);
                 setAuthMethod('email');
+                // Identify user in analytics and set roles (for admin exclusion from tracking)
+                if (response.data.data.user._id) {
+                    analytics.identify(response.data.data.user._id);
+                    analytics.setUserRoles(response.data.data.user.roles);
+                }
                 // Set friend requests if provided (may not be included in login response)
                 if (response.data.data.friendRequests) {
                     setFriendRequests({
@@ -84,6 +130,9 @@ export const AuthProvider = ({ children }) => {
                 }
                 console.log(response.data);
                 addNotification({ title:'Logged in successfully',type: 'success'});
+                
+                // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
+                await validateToken();
                 
                 // Redirect admin users to admin dashboard
                 if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
@@ -97,10 +146,15 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const googleLogin = async (code, isRegister) => {
+    const googleLogin = async (code, isRegister, codeVerifier = null, redirectUriOverride = null) => {
         try {
-            const url = window.location.href;
-            const response = await axios.post('/google-login', { code, isRegister, url }, {
+            const url = redirectUriOverride != null ? redirectUriOverride : window.location.href;
+            const response = await axios.post('/google-login', { 
+                code, 
+                isRegister, 
+                url,
+                codeVerifier 
+            }, {
                 withCredentials: true
             });
             // Handle response from the backend (e.g., storing the token, redirecting the user)
@@ -109,13 +163,20 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(true);
             setUser(response.data.data.user);
             setAuthMethod('google');
+            // Identify user in analytics and set roles (for admin exclusion from tracking)
+            if (response.data.data.user._id) {
+                analytics.identify(response.data.data.user._id);
+                analytics.setUserRoles(response.data.data.user.roles);
+            }
             // addNotification({title: 'Logged in successfully',type: 'success'});
+            
+            // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
+            await validateToken();
             
             // Redirect admin users to admin dashboard
             if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
                 window.location.href = '/admin';
             }
-            // For example, redirect the user or store the received token in local storage
         } catch (error) {
             console.error('Error sending code to backend:', error);
             // Handle error
@@ -134,7 +195,15 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(true);
             setUser(response.data.data.user);
             setAuthMethod('apple');
+            // Identify user in analytics and set roles (for admin exclusion from tracking)
+            if (response.data.data.user._id) {
+                analytics.identify(response.data.data.user._id);
+                analytics.setUserRoles(response.data.data.user.roles);
+            }
             addNotification({ title: 'Logged in successfully', type: 'success' });
+            
+            // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
+            await validateToken();
             
             // Redirect admin users to admin dashboard
             if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
@@ -175,6 +244,8 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(false);
             setUser(null);
             setAuthMethod(null);
+            // Reset analytics user identification
+            analytics.reset();
             addNotification({title: 'Logged out successfully',type: 'success'});
         }
     };
@@ -250,7 +321,12 @@ export const AuthProvider = ({ children }) => {
             getCheckedIn,
             authMethod,
             friendRequests,
-            refreshFriendRequests
+            refreshFriendRequests,
+            pendingOrgInvites,
+            clearPendingOrgInvite,
+            showOrgInviteModal,
+            dismissOrgInviteModal,
+            setPendingOrgInvites
         }}>
             {children}
         </AuthContext.Provider>

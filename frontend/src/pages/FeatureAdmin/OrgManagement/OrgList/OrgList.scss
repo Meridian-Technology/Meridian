@@ -103,6 +103,8 @@
     }
 
     .org-card {
+        display: flex;
+        flex-direction: column;
         background: var(--background);
         border-radius: 15px;
         padding: 20px;
@@ -142,6 +144,10 @@
                     color: var(--light-text);
                     font-size: 14px;
                     line-height: 1.4;
+                    display: -webkit-box;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 5;
+                    overflow: hidden;
                 }
             }
 
@@ -179,7 +185,7 @@
         }
 
         .org-meta {
-            margin-bottom: 16px;
+            margin-bottom: 0;
 
             .meta-item {
                 display: flex;
@@ -202,6 +208,9 @@
         .org-actions {
             display: flex;
             gap: 8px;
+            margin-top: auto;
+            padding-top: 16px;
+            border-top: 1px solid var(--lightborder);
 
             .action-btn {
                 flex: 1;

@@ -1,8 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { Icon } from '@iconify-icon/react';
 import ImageUpload from '../ImageUpload/ImageUpload';
+import Popup from '../Popup/Popup';
+import TextareaExpandPopup from '../TextareaExpandPopup/TextareaExpandPopup';
+import MarkdownTextarea from '../MarkdownTextarea/MarkdownTextarea';
+import MarkdownTextareaExpandPopup from '../MarkdownTextareaExpandPopup/MarkdownTextareaExpandPopup';
+import Select from '../Select/Select';
 import './DynamicFormField.scss';
 
-const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => {
+// Built-in option items for visibility field (value, label, icon)
+const VISIBILITY_OPTION_ITEMS = [
+    { value: 'public', label: 'Public', icon: 'mdi:earth' },
+    { value: 'unlisted', label: 'Unlisted', icon: 'mdi:link-variant' },
+    { value: 'members_only', label: 'Members only', icon: 'mdi:account-group' },
+];
+
+const DynamicFormField = ({ field, value, onChange, formData, errors = {}, specialStyling = null, color, hideLabel = false }) => {
     // Normalize value to never be null - use empty string instead
     const normalizeValue = (val) => {
         if (val === null || val === undefined) {
@@ -12,6 +25,7 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
     };
     
     const [localValue, setLocalValue] = useState(normalizeValue(value));
+    const [expandPopupOpen, setExpandPopupOpen] = useState(false);
 
     useEffect(() => {
         const normalized = normalizeValue(value);
@@ -118,7 +132,7 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
                 );
 
             case 'textarea':
-                return (
+                const textareaField = (
                     <textarea
                         id={field.name}
                         value={localValue === null || localValue === undefined ? '' : localValue}
@@ -131,8 +145,88 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
                         required={field.isRequired || field.validation?.required}
                     />
                 );
+                if (field.allowExpand) {
+                    return (
+                        <div className="textarea-with-expand">
+                            {textareaField}
+                            <button
+                                type="button"
+                                className="textarea-expand-btn"
+                                onClick={() => setExpandPopupOpen(true)}
+                                title="Open in larger editor"
+                            >
+                                <Icon icon="mdi:open-in-new" />
+                                <span>Expand</span>
+                            </button>
+                            <Popup isOpen={expandPopupOpen} onClose={() => setExpandPopupOpen(false)}defaultStyling={false}>
+                                <TextareaExpandPopup
+                                    label={field.label}
+                                    value={localValue}
+                                    onChange={(value) => handleChange(value)}
+                                    placeholder={field.placeholder || ''}
+                                    maxLength={field.validation?.maxLength}
+                                    minLength={field.validation?.minLength}
+                                />
+                            </Popup>
+                        </div>
+                    );
+                }
+                return textareaField;
+
+            case 'markdown-textarea':
+                const markdownField = (
+                    <MarkdownTextarea
+                        id={field.name}
+                        value={localValue === null || localValue === undefined ? '' : localValue}
+                        onChange={handleChange}
+                        placeholder={field.placeholder || ''}
+                        rows={4}
+                        maxLength={field.validation?.maxLength}
+                        minLength={field.validation?.minLength}
+                        required={field.isRequired || field.validation?.required}
+                        className={errors[field.name] ? 'error' : ''}
+                    />
+                );
+                if (field.allowExpand) {
+                    return (
+                        <div className="textarea-with-expand">
+                            {markdownField}
+                            <button
+                                type="button"
+                                className="textarea-expand-btn"
+                                onClick={() => setExpandPopupOpen(true)}
+                                title="Open in larger editor"
+                            >
+                                <Icon icon="mdi:open-in-new" />
+                                <span>Expand</span>
+                            </button>
+                            <Popup isOpen={expandPopupOpen} onClose={() => setExpandPopupOpen(false)} defaultStyling={false}>
+                                <MarkdownTextareaExpandPopup
+                                    label={field.label}
+                                    value={localValue}
+                                    onChange={(value) => handleChange(value)}
+                                    placeholder={field.placeholder || ''}
+                                    maxLength={field.validation?.maxLength}
+                                    minLength={field.validation?.minLength}
+                                />
+                            </Popup>
+                        </div>
+                    );
+                }
+                return markdownField;
 
             case 'select':
+                // Hardcoded: visibility always uses icon dropdown
+                if (field.name === 'visibility') {
+                    return (
+                        <Select
+                            optionItems={VISIBILITY_OPTION_ITEMS}
+                            defaultValue={localValue || ''}
+                            onChange={handleChange}
+                            placeholder={field.placeholder || 'Select visibility'}
+                        />
+                    );
+                }
                 return (
                     <select
                         id={field.name}
@@ -209,6 +303,7 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
                         onFileSelect={(file) => handleChange(file)}
                         onFileClear={() => handleChange(null)}
                         showPrompt={false}
+                        color={color}
                     />
                 );
 
@@ -243,21 +338,26 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {} }) => 
     };
 
     return (
-        <div className={`dynamic-form-field ${field.type}`}>
-            <label htmlFor={field.name}>
-                {field.label}
-                {(field.isRequired || field.validation?.required) && (
-                    <span className="required-indicator">*</span>
-                )}
-            </label>
-            {field.description && (
+        <div
+            className={`dynamic-form-field ${field.type} ${specialStyling} ${hideLabel ? 'dynamic-form-field--no-label' : ''}`}
+            style={color ? { '--dynamic-form-field-color': color } : undefined}
+        >
+            {!hideLabel && (
+                <label htmlFor={field.name}>
+                    {field.label}
+                    {(field.isRequired || field.validation?.required) && (
+                        <span className="required-indicator">*</span>
+                    )}
+                </label>
+            )}
+            {!hideLabel && field.description && (
                 <p className="field-description">{field.description}</p>
             )}
             {renderField()}
             {errors[field.name] && (
                 <span className="error-message">{errors[field.name]}</span>
             )}
-            {field.helpText && (
+            {!hideLabel && field.helpText && (
                 <p className="help-text">{field.helpText}</p>
             )}
         </div>

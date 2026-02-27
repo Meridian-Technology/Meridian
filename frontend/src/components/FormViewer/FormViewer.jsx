@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './FormViewer.scss';
 import './Question.scss'
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 
+const GUEST_NAME_KEY = '__guestName';
+const GUEST_EMAIL_KEY = '__guestEmail';
+
 const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAuthenticated, formConfig}) => {
   const [responses, setResponses] = useState({});
-  const [animatedPercentage, setAnimatedPercentage] = useState(0);
-  const { isAuthenticated: authStatus, isAuthenticating } = useAuth();
+  const { isAuthenticated: authStatus, isAuthenticating, user } = useAuth();
 
   const handleResponseChange = (questionId, value) => {
     setResponses(prev => ({
@@ -16,13 +18,21 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
     }));
   };
 
+  const showGuestFields = !authStatus && formConfig?.collectGuestDetails;
+  const showSignedInBanner = authStatus && user;
+
   // Check if all required fields are completed
   const areAllRequiredFieldsCompleted = () => {
     if (!form || !form.questions) return false;
-    
+    if (showGuestFields) {
+      const guestName = responses[GUEST_NAME_KEY];
+      const guestEmail = responses[GUEST_EMAIL_KEY];
+      if (!guestName || !guestEmail || String(guestName).trim() === '' || String(guestEmail).trim() === '') {
+        return false;
+      }
+    }
     const requiredQuestions = form.questions.filter(q => q.required);
-    if (requiredQuestions.length === 0) return true; // No required fields, allow submission
-    
+    if (requiredQuestions.length === 0 && !showGuestFields) return true;
     return requiredQuestions.every(q => {
       const response = responses[q._id];
       if (Array.isArray(response)) {
@@ -32,93 +42,57 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
     });
   };
 
-  // Calculate completion percentage for required questions
-  const getCompletionPercentage = () => {
-    if (!form || !form.questions) return 0;
-    
-    const requiredQuestions = form.questions.filter(q => q.required);
-    if (requiredQuestions.length === 0) return 100; // No required fields, show as complete
-    
-    const completedCount = requiredQuestions.filter(q => {
-      const response = responses[q._id];
-      if (Array.isArray(response)) {
-        return response.length > 0;
-      }
-      return response !== undefined && response !== null && response !== '';
-    }).length;
-    
-    return Math.round((completedCount / requiredQuestions.length) * 100);
-  };
-
-  // Calculate current completion percentage
-  const completionPercentage = getCompletionPercentage();
-
-  // Animate percentage smoothly to match progress bar animation (0.5s ease)
-  useEffect(() => {
-    const targetPercentage = completionPercentage;
-    const startPercentage = animatedPercentage;
-    const difference = targetPercentage - startPercentage;
-    const duration = 500; // 0.5s in milliseconds
-    const startTime = performance.now();
-
-    if (difference === 0) return;
-
-    const animate = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // Ease function (ease-out) - matches CSS ease timing
-      const easeProgress = 1 - Math.pow(1 - progress, 3);
-      
-      const currentPercentage = Math.round(startPercentage + (difference * easeProgress));
-      setAnimatedPercentage(currentPercentage);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        setAnimatedPercentage(targetPercentage);
-      }
-    };
-
-    requestAnimationFrame(animate);
-  }, [completionPercentage]);
-
   const handleSubmit = (e) => {
     e.preventDefault();
-    
-    // Validate required questions
-    const missingRequired = form.questions.filter(q => 
+    if (showGuestFields) {
+      const guestName = responses[GUEST_NAME_KEY];
+      const guestEmail = responses[GUEST_EMAIL_KEY];
+      if (!guestName || !guestEmail || String(guestName).trim() === '' || String(guestEmail).trim() === '') {
+        alert('Please enter your name and email.');
+        return;
+      }
+    }
+    const missingRequired = form.questions.filter(q =>
       q.required && (!responses[q._id] || (Array.isArray(responses[q._id]) && responses[q._id].length === 0))
     );
-
     if (missingRequired.length > 0) {
       alert(`Please answer the following required questions: ${missingRequired.map(q => q.question).join(', ')}`);
       return;
     }
-    // Create response in the format expected by the backend
-    const response = Object.keys(responses).map(key => {
-      const question = form.questions.find(q => q._id === key || q._id?.toString() === key);
-      if (!question) {
-        console.warn(`Question not found for key: ${key}`);
-        return null;
-      }
-      return {
-        question: question.question,
-        referenceId: question._id?.toString() || key,
-        type: question.type,
-        answer: responses[key]
-      };
-    }).filter(r => r !== null); // Remove any null entries
-    
-    if (response.length === 0) {
+    const response = Object.keys(responses)
+      .filter(key => key !== GUEST_NAME_KEY && key !== GUEST_EMAIL_KEY)
+      .map(key => {
+        const question = form.questions.find(q => q._id === key || q._id?.toString() === key);
+        if (!question) return null;
+        return {
+          question: question.question,
+          referenceId: question._id?.toString() || key,
+          type: question.type,
+          answer: responses[key]
+        };
+      })
+      .filter(r => r !== null);
+    if (response.length === 0 && !showGuestFields) {
       alert('No valid responses found. Please try again.');
       return;
     }
-    
-    if(handleClose) {
-      handleClose();
+    if (handleClose) handleClose();
+    if (showGuestFields) {
+      onSubmit({
+        responses: response,
+        guestName: String(responses[GUEST_NAME_KEY] || '').trim(),
+        guestEmail: String(responses[GUEST_EMAIL_KEY] || '').trim()
+      });
+    } else if (formConfig?.collectGuestDetails && authStatus && user) {
+      // Logged-in user: include name/email as fallback in case backend doesn't receive auth token
+      onSubmit({
+        responses: response,
+        guestName: String(user?.name || user?.username || '').trim(),
+        guestEmail: String(user?.email || '').trim()
+      });
+    } else {
+      onSubmit(response);
     }
-    onSubmit(response);
   };
 
   const renderQuestion = (question) => {
@@ -187,25 +161,15 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
     }
   };
 
-  // Determine which scenario to show
+  // Determine which scenario to show (production: allowAnonymous, collectGuestDetails only)
   const showScenario = () => {
     if (!form || !formConfig) {
       return 'form'; // Show form if data not loaded yet
     }
     
-    // Check if form is not accepting responses
-    if (formConfig.acceptingResponses === false) {
-      return 'closed';
-    }
-    
-    // Check if authentication is required but user is not authenticated
-    if (formConfig.requireAuth && !authStatus && !isAuthenticating) {
+    // Check if authentication is required but user is not authenticated (when !allowAnonymous)
+    if (!formConfig.allowAnonymous && !authStatus && !isAuthenticating) {
       return 'login_required';
-    }
-    
-    // Check if user has already submitted (and multiple responses not allowed)
-    if (hasSubmitted && formConfig.allowMultipleResponses === false) {
-      return 'already_submitted';
     }
     
     return 'form';
@@ -213,18 +177,32 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
 
   const scenario = showScenario();
 
-  // Default gradient colors (can be customized via formConfig.headerColor)
-  const headerGradient = (formConfig && formConfig.headerColor) || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+  const renderHeader = () =>
+    form && (
+      <div className="form-viewer-header">
+        <h1>{form.title}</h1>
+        {form.description && <p>{form.description}</p>}
+        {showSignedInBanner && (
+          <div className="form-viewer-signed-in-banner">
+            <Icon icon="mdi:account-circle" className="form-viewer-signed-in-icon" />
+            <span>Signed in as {user?.name || user?.username || 'User'}</span>
+          </div>
+        )}
+        {ownerInfo && (
+          <div className="form-viewer-owner">
+            <Icon icon="mdi:account-circle" className="form-viewer-owner-icon" />
+            <span>Created by {ownerInfo.name}</span>
+          </div>
+        )}
+      </div>
+    );
 
   if (scenario === 'closed') {
     return (
       <div className="form-viewer">
-        <div className="form-header" style={{ background: headerGradient }}>
-          <h1>{form?.title || 'Form'}</h1>
-          {form?.description && <p>{form.description}</p>}
-        </div>
-        <div className="form-scenario-screen">
-          <Icon icon="mdi:lock-outline" className="scenario-icon" />
+        {renderHeader()}
+        <div className="form-viewer-scenario">
+          <Icon icon="mdi:lock-outline" className="form-viewer-scenario-icon" />
           <h2>Form Closed</h2>
           <p>This form is no longer accepting responses.</p>
         </div>
@@ -235,15 +213,12 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
   if (scenario === 'login_required') {
     return (
       <div className="form-viewer">
-        <div className="form-header" style={{ background: headerGradient }}>
-          <h1>{form?.title || 'Form'}</h1>
-          {form?.description && <p>{form.description}</p>}
-        </div>
-        <div className="form-scenario-screen">
-          <Icon icon="mdi:account-lock-outline" className="scenario-icon" />
+        {renderHeader()}
+        <div className="form-viewer-scenario">
+          <Icon icon="mdi:account-lock-outline" className="form-viewer-scenario-icon" />
           <h2>Login Required</h2>
           <p>You need to be logged in to respond to this form.</p>
-          <a href="/login" className="login-button">Go to Login</a>
+          <a href="/login" className="form-viewer-btn form-viewer-btn-primary">Go to Login</a>
         </div>
       </div>
     );
@@ -252,12 +227,9 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
   if (scenario === 'already_submitted') {
     return (
       <div className="form-viewer">
-        <div className="form-header" style={{ background: headerGradient }}>
-          <h1>{form?.title || 'Form'}</h1>
-          {form?.description && <p>{form.description}</p>}
-        </div>
-        <div className="form-scenario-screen">
-          <Icon icon="mdi:check-circle-outline" className="scenario-icon success" />
+        {renderHeader()}
+        <div className="form-viewer-scenario">
+          <Icon icon="mdi:check-circle-outline" className="form-viewer-scenario-icon form-viewer-scenario-icon-success" />
           <h2>Already Submitted</h2>
           <p>You have already submitted a response to this form.</p>
         </div>
@@ -268,7 +240,7 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
   if (!form) {
     return (
       <div className="form-viewer">
-        <div className="form-scenario-screen">
+        <div className="form-viewer-scenario">
           <p>Loading form...</p>
         </div>
       </div>
@@ -277,39 +249,57 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
 
   return (
     <div className="form-viewer">
-      <div className="form-header" style={{ background: headerGradient }}>
-        <h1>{form.title}</h1>
-        {form.description && <p>{form.description}</p>}
-        {ownerInfo && (
-          <div className="form-owner">
-            <Icon icon="mdi:account-circle" className="owner-icon" />
-            <span>Created by {ownerInfo.name}</span>
-          </div>
-        )}
-      </div>
-
-      <form onSubmit={handleSubmit}>
-        {form.questions && form.questions.map((question) => (
-          <div key={question._id} className="question-container">
-            <div className="question-header">
-              <h3>{question.question}</h3>
-              {question.required && <span className="required">*</span>}
+      {renderHeader()}
+      <form className="form-viewer-form" onSubmit={handleSubmit}>
+        <div className="form-viewer-body">
+          {showGuestFields && (
+            <>
+              <div className="question-container form-viewer-guest-field">
+                <div className="question-header">
+                  <h3>Name</h3>
+                  <span className="required">*</span>
+                </div>
+                <input
+                  type="text"
+                  value={responses[GUEST_NAME_KEY] || ''}
+                  onChange={(e) => handleResponseChange(GUEST_NAME_KEY, e.target.value)}
+                  placeholder="Your name"
+                />
+              </div>
+              <div className="question-container form-viewer-guest-field">
+                <div className="question-header">
+                  <h3>Email</h3>
+                  <span className="required">*</span>
+                </div>
+                <input
+                  type="email"
+                  value={responses[GUEST_EMAIL_KEY] || ''}
+                  onChange={(e) => handleResponseChange(GUEST_EMAIL_KEY, e.target.value)}
+                  placeholder="Your email"
+                />
+              </div>
+            </>
+          )}
+          {form.questions && form.questions.map((question) => (
+            <div key={question._id} className="question-container">
+              <div className="question-header">
+                <h3>{question.question}</h3>
+                {question.required && <span className="required">*</span>}
+              </div>
+              {renderQuestion(question)}
             </div>
-            {renderQuestion(question)}
-          </div>
-        ))}
+          ))}
+        </div>
+        <div className="form-viewer-footer">
+          <button
+            type="submit"
+            className="form-viewer-btn form-viewer-btn-primary"
+            disabled={!areAllRequiredFieldsCompleted()}
+          >
+            Submit
+          </button>
+        </div>
       </form>
-      <button 
-        type="submit" 
-        className={`submit-button ${animatedPercentage === 100 ? 'complete' : ''}`}
-        onClick={handleSubmit}
-        disabled={!areAllRequiredFieldsCompleted()}
-        style={{ '--progress': `${getCompletionPercentage()}%` }}
-      >
-        <span className="button-text">
-          {animatedPercentage === 100 ? 'Submit' : `${animatedPercentage}%`}
-        </span>
-      </button>
     </div>
   );
 };

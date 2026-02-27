@@ -1,0 +1,27 @@
+#!/bin/bash
+# Fetch private dependencies listed in private-deps.lock (repo, ref, dest).
+# Run from repo root after setup_ssh. ref must be a full 40-char SHA.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+LOCKFILE="$REPO_ROOT/private-deps.lock"
+
+if [[ ! -f "$LOCKFILE" ]]; then
+  echo "Missing private-deps.lock"
+  exit 1
+fi
+
+while IFS=$'\t' read -r name repo ref dest; do
+  echo "Fetching $name -> $dest @ $ref"
+  rm -rf "$dest"
+  mkdir -p "$(dirname "$dest")"
+  git clone "$repo" "$dest"
+  (cd "$dest" && git checkout "$ref" && git rev-parse HEAD)
+done < <(cd "$REPO_ROOT" && node -e "
+const fs = require('fs');
+const deps = JSON.parse(fs.readFileSync('private-deps.lock', 'utf8'));
+for (const [name, cfg] of Object.entries(deps)) {
+  console.log([name, cfg.repo, cfg.ref, cfg.dest].join('\t'));
+}
+")

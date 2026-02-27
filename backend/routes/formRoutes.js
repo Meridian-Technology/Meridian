@@ -30,9 +30,9 @@ router.get("/get-form-by-id/:id", verifyTokenOptional, async (req, res) => {
             ownerInfo = user ? { name: user.name || user.email, email: user.email, type: 'User' } : null;
         }
         
-        // Check if user has already submitted (if allowMultipleResponses is false and user is authenticated)
+        // Check if user has already submitted (production schema: no allowMultipleResponses, always allow multiple)
         let hasSubmitted = false;
-        if (userId && !form.allowMultipleResponses) {
+        if (userId && form.allowMultipleResponses === false) {
             const existingResponse = await FormResponse.findOne({
                 form: formId,
                 submittedBy: userId
@@ -55,9 +55,9 @@ router.get("/get-form-by-id/:id", verifyTokenOptional, async (req, res) => {
 
 
 // ---- SUBMIT FORM RESPONSE ----
-router.post("/submit-form-response", verifyToken, async (req, res) => {
+router.post("/submit-form-response", verifyTokenOptional, async (req, res) => {
     try {
-        const { formId, responses } = req.body;
+        const { formId, responses, guestName, guestEmail } = req.body;
         const { Form, FormResponse } = getModels(req, "Form", "FormResponse");
         const userId = req.user?.userId;
 
@@ -67,34 +67,33 @@ router.post("/submit-form-response", verifyToken, async (req, res) => {
             return res.status(400).json({ success: false, message: "Missing formId or responses" });
         }
 
-        if (!userId) {
-            return res.status(401).json({ success: false, message: "User not authenticated" });
-        }
-
         // Make sure the form exists
         const form = await Form.findById(formId);
         if (!form) {
             return res.status(404).json({ success: false, message: "Form not found" });
         }
 
-        // Check if form is accepting responses
-        if (form.acceptingResponses === false) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "This form is no longer accepting responses" 
-            });
+        // Anonymous submission: require allowAnonymous, check collectGuestDetails
+        if (!userId) {
+            if (!form.allowAnonymous) {
+                return res.status(401).json({ 
+                    success: false, 
+                    message: "Authentication required to submit this form",
+                    code: "AUTH_REQUIRED"
+                });
+            }
+            if (form.collectGuestDetails !== false) {
+                if (!guestName || !guestEmail) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: "Name and email are required for anonymous submissions" 
+                    });
+                }
+            }
         }
 
-        // Check if authentication is required
-        if (form.requireAuth && !userId) {
-            return res.status(401).json({ 
-                success: false, 
-                message: "Authentication required to submit this form" 
-            });
-        }
-
-        // Check if user has already submitted (if multiple responses not allowed)
-        if (!form.allowMultipleResponses && userId) {
+        // Check if user has already submitted (production: no allowMultipleResponses, always allow)
+        if (form.allowMultipleResponses === false && userId) {
             const existingResponse = await FormResponse.findOne({
                 form: formId,
                 submittedBy: userId
@@ -127,14 +126,25 @@ router.post("/submit-form-response", verifyToken, async (req, res) => {
 
         console.log("Converted answers:", answers.length, "answers");
 
-        // Save a new FormResponse using the schema correctly
-        const formResponse = new FormResponse({
+        // Build FormResponse document
+        const formResponseData = {
             formSnapshot: form.toObject(),
             form: formId,
-            submittedBy: userId,
             answers: answers,
             submittedAt: new Date()
-        });
+        };
+
+        if (userId) {
+            formResponseData.submittedBy = userId;
+        } else {
+            formResponseData.submittedBy = null;
+            if (form.collectGuestDetails !== false) {
+                formResponseData.guestName = guestName;
+                formResponseData.guestEmail = guestEmail;
+            }
+        }
+
+        const formResponse = new FormResponse(formResponseData);
 
         await formResponse.save();
 

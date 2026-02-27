@@ -5,6 +5,7 @@ import defaultAvatar from '../../assets/defaultAvatar.svg';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import RSVPSection from '../RSVPSection/RSVPSection';
+import EventCheckInButton from '../EventCheckInButton/EventCheckInButton';
 import EventsByCreator from '../EventsByCreator/EventsByCreator';
 import EventAnalytics from '../EventAnalytics/EventAnalytics';
 import AgendaEditor from '../AgendaEditor/AgendaEditor';
@@ -139,6 +140,7 @@ function EventViewer({
                     )}
                     
                     <RSVPSection event={event} />
+                    <EventCheckInButton event={event} />
                     
                     {/* Agenda Editor */}
                     <AgendaEditor event={event} onUpdate={(updatedEvent) => {
