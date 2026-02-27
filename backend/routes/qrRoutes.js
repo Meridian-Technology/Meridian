@@ -3,6 +3,17 @@ const router = express.Router();
 const getModels = require('../services/getModelService');
 const { verifyToken } = require('../middlewares/verifyToken');
 
+// MER-164: Normalize hex color so UI color picker and stored value stay in sync (e.g. #RRGGBB).
+function normalizeHexColor(value) {
+    if (value == null || typeof value !== 'string') return value;
+    const hex = value.trim().replace(/^#/, '');
+    if (!/^[0-9A-Fa-f]{6}$/.test(hex) && !/^[0-9A-Fa-f]{3}$/.test(hex)) return value;
+    const full = hex.length === 3
+        ? hex.split('').map(c => c + c).join('')
+        : hex;
+    return '#' + full.toLowerCase();
+}
+
 // Helper function to convert relative URLs to absolute URLs
 const normalizeRedirectUrl = (redirectUrl, baseUrl) => {
     if (!redirectUrl) return redirectUrl;
@@ -224,7 +235,7 @@ router.get('/analytics', verifyToken, async (req, res) => {
     }
 });
 
-// Get a specific QR code with full details
+// Get a specific QR code with full details (MER-164: return normalized hex so color picker reflects stored value)
 router.get('/:id', verifyToken, async (req, res) => {
     const { QR } = getModels(req, 'QR');
     
@@ -234,8 +245,10 @@ router.get('/:id', verifyToken, async (req, res) => {
         if (!qrCode) {
             return res.status(404).json({ error: 'QR code not found' });
         }
-        
-        res.json(qrCode);
+        const doc = qrCode.toObject ? qrCode.toObject() : qrCode;
+        doc.fgColor = normalizeHexColor(doc.fgColor) ?? doc.fgColor;
+        doc.bgColor = normalizeHexColor(doc.bgColor) ?? doc.bgColor;
+        res.json(doc);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'An error occurred while fetching QR code' });
@@ -257,10 +270,14 @@ router.post('/', verifyToken, async (req, res) => {
             campaign,
             fgColor = '#414141',
             bgColor = '#ffffff',
+            foregroundColorHex,
+            backgroundColorHex,
             transparentBg = false,
             dotType = 'extra-rounded',
             cornerType = 'extra-rounded'
         } = req.body;
+        const normalizedFg = normalizeHexColor(foregroundColorHex ?? fgColor) ?? '#414141';
+        const normalizedBg = normalizeHexColor(backgroundColorHex ?? bgColor) ?? '#ffffff';
 
         // Validate required fields
         if (!name || !redirectUrl) {
@@ -314,6 +331,8 @@ router.put('/:id', verifyToken, async (req, res) => {
             campaign,
             fgColor,
             bgColor,
+            foregroundColorHex,
+            backgroundColorHex,
             transparentBg,
             dotType,
             cornerType
@@ -325,7 +344,7 @@ router.put('/:id', verifyToken, async (req, res) => {
             return res.status(404).json({ error: 'QR code not found' });
         }
 
-        // Update fields if provided
+        // Update fields if provided (MER-164: normalize hex so color picker stays in sync)
         if (description !== undefined) qrCode.description = description;
         if (redirectUrl !== undefined) {
             // Normalize the redirect URL (convert relative to absolute if needed)
@@ -335,15 +354,21 @@ router.put('/:id', verifyToken, async (req, res) => {
         if (tags !== undefined) qrCode.tags = tags;
         if (location !== undefined) qrCode.location = location;
         if (campaign !== undefined) qrCode.campaign = campaign;
-        if (fgColor !== undefined) qrCode.fgColor = fgColor;
-        if (bgColor !== undefined) qrCode.bgColor = bgColor;
+        if (fgColor !== undefined || foregroundColorHex !== undefined) {
+            qrCode.fgColor = normalizeHexColor(foregroundColorHex ?? fgColor) ?? qrCode.fgColor;
+        }
+        if (bgColor !== undefined || backgroundColorHex !== undefined) {
+            qrCode.bgColor = normalizeHexColor(backgroundColorHex ?? bgColor) ?? qrCode.bgColor;
+        }
         if (transparentBg !== undefined) qrCode.transparentBg = transparentBg;
         if (dotType !== undefined) qrCode.dotType = dotType;
         if (cornerType !== undefined) qrCode.cornerType = cornerType;
 
         await qrCode.save();
-        
-        res.json(qrCode);
+        const updated = qrCode.toObject ? qrCode.toObject() : qrCode;
+        updated.fgColor = normalizeHexColor(updated.fgColor) ?? updated.fgColor;
+        updated.bgColor = normalizeHexColor(updated.bgColor) ?? updated.bgColor;
+        res.json(updated);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'An error occurred while updating QR code' });
