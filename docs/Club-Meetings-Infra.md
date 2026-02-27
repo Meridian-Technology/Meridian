@@ -125,11 +125,11 @@ MER-146 Reuse Event Component for Meetings
 
 MER-147 Implement Recurring Meetings
 
-MER-148 Build RSVP System
+MER-148 integrate with existing RSVP System
 
-MER-149 Implement Attendance Tracking (Admin Check-In + Status Logic)
+MER-149 Integrate with existing Attendance Tracking (Admin Check-In + Status Logic)
 
-MER-150 Create Attendance Dashboard & Membership Qualification Logic
+MER-150 Integrate on top of Attendance Dashboard & Membership Qualification Logic
 
 MER-151 Build Automated Reminder & Notification System
 
