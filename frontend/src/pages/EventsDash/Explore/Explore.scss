@@ -36,6 +36,23 @@ body {
     min-height: 100vh;
     overflow-x: hidden;
     overflow-y: visible; // Ensure no vertical scroll container is created
+
+    // Sentinel for EventsHub IntersectionObserver (transparent header) - minimal height, in-flow
+    .explore-cover-sentinel {
+        height: 1px;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        visibility: hidden;
+    }
+
+    .explore-notice-wrap {
+        padding: 0 20px 16px;
+        flex-shrink: 0;
+        min-width: 0;
+        overflow: hidden;
+    }
     .heading{
         display: flex;
         align-items: center;
