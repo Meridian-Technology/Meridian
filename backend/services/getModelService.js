@@ -58,6 +58,9 @@ const eventEquipmentSchema = require('../schemas/EventEquipment');
 const orgEquipmentSchema = require('../schemas/OrgEquipment');
 const analyticsEventSchema = require('../events/schemas/analyticsEvent');
 const eventQRSchema = require('../events/schemas/eventQR');
+const meetingConfigSchema = require('../events/schemas/meetingConfig');
+const meetingMinutesSchema = require('../events/schemas/meetingMinutes');
+const recurringMeetingRuleSchema = require('../events/schemas/recurringMeetingRule');
 
 
 
@@ -125,6 +128,9 @@ const getModels = (req, ...names) => {
         ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
         ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
         NoticeConfig: req.db.model('NoticeConfig', noticeConfigSchema, 'noticeConfigs'),
+        MeetingConfig: req.db.model('MeetingConfig', meetingConfigSchema, 'meetingConfigs'),
+        MeetingMinutes: req.db.model('MeetingMinutes', meetingMinutesSchema, 'meetingMinutes'),
+        RecurringMeetingRule: req.db.model('RecurringMeetingRule', recurringMeetingRuleSchema, 'recurringMeetingRules'),
     };
 
     return names.reduce((acc, name) => {
