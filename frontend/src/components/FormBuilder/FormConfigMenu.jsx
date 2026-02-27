@@ -4,12 +4,9 @@ import SlideSwitch from '../SlideSwitch/SlideSwitch';
 
 const FormConfigMenu = ({ form, onConfigChange }) => {
     const handleToggle = (field, value) => {
-        const boolFields = ['allowMultipleResponses', 'allowAnonymous', 'collectGuestDetails', 'requireAuth', 'acceptingResponses'];
+        const boolFields = ['allowAnonymous', 'collectGuestDetails'];
         const safeValue = boolFields.includes(field) ? value === true : value;
         const updates = { ...form, [field]: safeValue };
-        if (field === 'allowAnonymous') {
-            updates.requireAuth = !safeValue;
-        }
         onConfigChange(updates);
     };
 
@@ -29,17 +26,6 @@ const FormConfigMenu = ({ form, onConfigChange }) => {
         <div className="form-config-menu">
             <h3>Form Configuration</h3>
             <div className="config-options">
-                <div className="config-option">
-                    <div className="config-label">
-                        <label>Allow Multiple Responses</label>
-                        <p>Let users submit more than one response</p>
-                    </div>
-                    <SlideSwitch
-                        checked={form.allowMultipleResponses !== false}
-                        onChange={handleSwitchChange('allowMultipleResponses')}
-                    />
-                </div>
-
                 <div className="config-option">
                     <div className="config-label">
                         <label>Allow Anonymous Responses</label>
@@ -63,17 +49,6 @@ const FormConfigMenu = ({ form, onConfigChange }) => {
                         />
                     </div>
                 )}
-
-                <div className="config-option">
-                    <div className="config-label">
-                        <label>Accepting Responses</label>
-                        <p>Allow new responses to be submitted</p>
-                    </div>
-                    <SlideSwitch
-                        checked={form.acceptingResponses !== false}
-                        onChange={handleSwitchChange('acceptingResponses')}
-                    />
-                </div>
             </div>
         </div>
     );

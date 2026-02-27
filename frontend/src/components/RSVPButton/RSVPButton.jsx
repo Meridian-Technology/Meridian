@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
@@ -6,14 +7,18 @@ import postRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
 import Popup from '../Popup/Popup';
 import FormViewer from '../FormViewer/FormViewer';
+import RegistrationPrompt from '../RegistrationPrompt/RegistrationPrompt';
 import { hasAnonymousRegistration, saveAnonymousRegistration } from '../../utils/anonymousRegistrationStorage';
 import './RSVPButton.scss';
 
-const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => {
+const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate, onRegistrationPromptOpen, onRegistrationPromptClose }) => {
     const { user } = useAuth();
     const { addNotification } = useNotification();
+    const navigate = useNavigate();
+    const location = useLocation();
     const [loading, setLoading] = useState(false);
     const [showFormModal, setShowFormModal] = useState(false);
+    const [showRegistrationPrompt, setShowRegistrationPrompt] = useState(false);
     const [registrationForm, setRegistrationForm] = useState(event.registrationForm || null);
 
     const enabled = event.registrationEnabled ?? event.rsvpEnabled;
@@ -21,6 +26,8 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
     const count = event.registrationCount ?? event.rsvpStats?.going ?? 0;
     const anonymousRegistered = !user && hasAnonymousRegistration(event?._id);
     const isRegistered = Boolean(rsvpStatus) || anonymousRegistered;
+    // When showing the post-registration prompt, don't early-return as "registered" so the prompt stays visible
+    const isRegisteredForDisplay = isRegistered && !showRegistrationPrompt;
     const hasForm = Boolean(event.registrationFormId);
     const formReady = hasForm && (event.registrationForm || registrationForm);
 
@@ -45,9 +52,13 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                         guestName: guestName || '',
                         guestEmail: guestEmail || ''
                     });
+                    setShowRegistrationPrompt(true);
+                    onRegistrationPromptOpen?.();
+                    // Defer parent callbacks until prompt is dismissed so the page doesn't reload before the prompt is shown
+                } else {
+                    if (onRSVPStatusUpdate) onRSVPStatusUpdate(event._id, {});
+                    if (onRSVPUpdate) onRSVPUpdate();
                 }
-                if (onRSVPStatusUpdate) onRSVPStatusUpdate(event._id, {});
-                if (onRSVPUpdate) onRSVPUpdate();
                 addNotification({
                     title: 'Registered',
                     message: 'You are registered for this event.',
@@ -148,7 +159,7 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
         );
     }
 
-    if (isAtCapacity && !isRegistered) {
+    if (isAtCapacity && !isRegisteredForDisplay) {
         return (
             <div className="rsvp-button capacity-reached">
                 <Icon icon="mdi:account-multiple-remove" />
@@ -157,7 +168,7 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
         );
     }
 
-    if (isRegistered) {
+    if (isRegisteredForDisplay) {
         return (
             <div className="rsvp-button-container">
                 <button className="rsvp-btn going active" disabled>
@@ -174,14 +185,14 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
         <>
             <div className="rsvp-button-container">
                 <button
-                    className="rsvp-btn going"
+                    className={`rsvp-btn going${isRegistered ? ' active' : ''}`}
                     onClick={handleRegister}
-                    disabled={loading || isAtCapacity}
-                    title="Register"
+                    disabled={loading || isAtCapacity || isRegistered}
+                    title={isRegistered ? 'Registered' : 'Register'}
                 >
                     <Icon icon="mdi:check" />
                     <span className="button-text">
-                        {count > 0 ? <><b>{count}</b> Registered — Register</> : 'Register'}
+                        {isRegistered ? 'Registered' : (count > 0 ? <><b>{count}</b> Registered — Register</> : 'Register')}
                     </span>
                 </button>
             </div>
@@ -194,8 +205,6 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                                 onSubmit={handleFormSubmit}
                                 handleClose={null}
                                 formConfig={{
-                                    acceptingResponses: true,
-                                    requireAuth: !form.allowAnonymous,
                                     allowAnonymous: form.allowAnonymous === true,
                                     collectGuestDetails: form.collectGuestDetails !== false
                                 }}
@@ -203,6 +212,34 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate }) => 
                             />
                         </div>
                     </div>
+                </Popup>
+            )}
+            {showRegistrationPrompt && (
+                <Popup
+                    isOpen
+                    onClose={() => {
+                        setShowRegistrationPrompt(false);
+                        onRegistrationPromptClose?.();
+                    }}
+                    customClassName="registration-prompt-modal"
+                >
+                    <RegistrationPrompt
+                        eventName={event?.name}
+                        onSignUp={() => {
+                            setShowRegistrationPrompt(false);
+                            const redirect = encodeURIComponent(location.pathname);
+                            navigate(`/register?redirect=${redirect}`);
+                            onRegistrationPromptClose?.();
+                        }}
+                        onSignUpSuccess={() => {
+                            setShowRegistrationPrompt(false);
+                            onRegistrationPromptClose?.();
+                        }}
+                        onDismiss={() => {
+                            setShowRegistrationPrompt(false);
+                            onRegistrationPromptClose?.();
+                        }}
+                    />
                 </Popup>
             )}
         </>

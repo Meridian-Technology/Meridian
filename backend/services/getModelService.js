@@ -90,6 +90,7 @@ const getModels = (req, ...names) => {
         RssFeed: req.db.model('RssFeed', rssFeedSchema, 'rssFeeds'),
         Form: req.db.model('Form', formSchema, 'forms'),    
         FormResponse: req.db.model('FormResponse', formResponseSchema, 'formResponses'),
+        StudySession: req.db.model('StudySession', studySessionSchema, 'studySessions'),
         OrgVerification: req.db.model('OrgVerification', orgVerificationSchema, 'orgVerifications'),
         OrgManagementConfig: req.db.model('OrgManagementConfig', orgManagementConfigSchema, 'orgManagementConfigs'),
         OrgMemberApplication: req.db.model('OrgMemberApplication', orgMemberApplicationSchema, 'orgMemberApplications'),
