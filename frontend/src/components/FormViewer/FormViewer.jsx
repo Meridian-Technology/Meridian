@@ -161,25 +161,15 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
     }
   };
 
-  // Determine which scenario to show
+  // Determine which scenario to show (production: allowAnonymous, collectGuestDetails only)
   const showScenario = () => {
     if (!form || !formConfig) {
       return 'form'; // Show form if data not loaded yet
     }
     
-    // Check if form is not accepting responses
-    if (formConfig.acceptingResponses === false) {
-      return 'closed';
-    }
-    
-    // Check if authentication is required but user is not authenticated (skip when allowAnonymous)
-    if (formConfig.requireAuth && !formConfig.allowAnonymous && !authStatus && !isAuthenticating) {
+    // Check if authentication is required but user is not authenticated (when !allowAnonymous)
+    if (!formConfig.allowAnonymous && !authStatus && !isAuthenticating) {
       return 'login_required';
-    }
-    
-    // Check if user has already submitted (and multiple responses not allowed)
-    if (hasSubmitted && formConfig.allowMultipleResponses === false) {
-      return 'already_submitted';
     }
     
     return 'form';

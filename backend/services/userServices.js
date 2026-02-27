@@ -88,6 +88,11 @@ function getRedirectUri(url) {
     if (!url) {
         throw new Error('Redirect URI is required');
     }
+
+    // Popup auth-code flow: client sends redirect_uri 'postmessage'; backend must use the same when exchanging the code
+    if (url === 'postmessage') {
+        return 'postmessage';
+    }
     
     // Handle iOS native OAuth - reverse client ID format
     // Format: com.googleusercontent.apps.{client-id}:/

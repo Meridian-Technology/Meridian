@@ -993,7 +993,7 @@ router.post("/leave-org/:orgId", verifyToken, async (req, res) => {
     }
 });
 
-router.post("/check-org-name", verifyToken, async (req, res) => {
+router.post("/check-org-name", verifyTokenOptional, async (req, res) => {
     const { Org } = getModels(req, "Org");
     const { orgName } = req.body;
     try {

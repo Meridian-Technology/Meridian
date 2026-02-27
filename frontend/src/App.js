@@ -28,6 +28,7 @@ import Admin  from './pages/Admin/Admin';
 import OIEDash from './pages/OIEDash/OIEDash';
 import NewBadge from './pages/NewBadge/NewBadge';
 import CreateOrg from './pages/CreateOrg/CreateOrg';
+import SignUpCreateClub from './pages/SignUpCreateClub/SignUpCreateClub';
 import ClubDash from './pages/ClubDash/ClubDash';
 import PendingApprovalScreen from './pages/ClubDash/PendingApprovalScreen/PendingApprovalScreen';
 import OrgDisplay from './pages/Org/OrgDisplay';
@@ -59,6 +60,9 @@ import RebrandingNotice from './components/RebrandingNotice/RebrandingNotice';
 import Beacon from './pages/FeatureAdmin/Beacon/Beacon';
 import Compass from './pages/FeatureAdmin/Compass/Compass';
 import Atlas from './pages/FeatureAdmin/Atlas/Atlas';
+import AnalyticsDashboard from './pages/FeatureAdmin/AnalyticsDashboard/AnalyticsDashboard';
+import MobileAnalyticsDashboard from './pages/FeatureAdmin/MobileAnalyticsDashboard/MobileAnalyticsDashboard';
+import UserJourneyAnalytics from './pages/FeatureAdmin/UserJourneyAnalytics/UserJourneyAnalytics';
 import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
@@ -68,6 +72,8 @@ import CheckInConfirmation from './pages/CheckIn/CheckInConfirmation';
 import OrgInviteLanding from './pages/OrgInviteLanding/OrgInviteLanding';
 import OrgInviteLandingToken from './pages/OrgInviteLanding/OrgInviteLandingToken';
 import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
+import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
+import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -201,6 +207,9 @@ function App() {
                                             {/* admin routes */}
                                             <Route element={ <ProtectedRoute authorizedRoles={['admin']}/> }>
                                                 <Route path="/admin" element={<AnimatedPageWrapper><Admin/></AnimatedPageWrapper>}/>
+                                                <Route path="/analytics-dashboard" element={<AnimatedPageWrapper><AnalyticsDashboard/></AnimatedPageWrapper>}/>
+                                                <Route path="/user-journey-analytics" element={<AnimatedPageWrapper><UserJourneyAnalytics/></AnimatedPageWrapper>}/>
+                                                <Route path="/mobile-analytics-dashboard" element={<AnimatedPageWrapper><MobileAnalyticsDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
 
                                                 <Route path="/club-dashboard/:id/pending-approval" element={<AnimatedPageWrapper><PendingApprovalScreen/></AnimatedPageWrapper>}/>
@@ -215,8 +224,11 @@ function App() {
                                                 <Route path="/domain-dashboard/:domainId" element={<AnimatedPageWrapper><DomainDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
                                             <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
+                                            <Route path='/org-application' element={<AnimatedPageWrapper><SignUpCreateClub/></AnimatedPageWrapper>}/>
                                             <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsDash/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
+                                            <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
+                                            <Route path="/study-session/:sessionId/responses" element={<AnimatedPageWrapper><StudySessionResponses/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId/workspace" element={<AnimatedPageWrapper><EventWorkspace/></AnimatedPageWrapper>}/>
 
                                             {/* oie routes */}

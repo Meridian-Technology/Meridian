@@ -1,0 +1,232 @@
+.study-session-drafts {
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 2px solid var(--lightborder);
+    
+    .drafts-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        
+        h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            
+            .tab {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: var(--lighter);
+                border: 2px solid var(--lightborder);
+                border-radius: 8px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                color: var(--lighter-text);
+                cursor: pointer;
+                transition: all 0.3s ease;
+                
+                &:hover {
+                    background: var(--light);
+                    border-color: var(--darkborder);
+                }
+                
+                &.active {
+                    background: var(--dark-blue);
+                    border-color: var(--dark-blue);
+                    color: var(--background);
+                    
+                    svg {
+                        color: var(--background);
+                    }
+                }
+                
+                svg {
+                    font-size: 1.1rem;
+                    color: var(--lighter-text);
+                }
+            }
+        }
+    }
+    
+    .loading-state {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        padding: 2rem;
+        color: var(--lighter-text);
+        
+        .spinner {
+            font-size: 1.5rem;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    }
+    
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        color: var(--lightest-text);
+        
+        svg {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        p {
+            margin: 0;
+            font-size: 1rem;
+        }
+    }
+    
+    .sessions-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1rem;
+        
+        .session-card {
+            padding: 1.25rem;
+            background: var(--lighter);
+            border: 2px solid var(--lightborder);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            
+            &:hover {
+                border-color: var(--dark-blue);
+                background: var(--lighter);
+                transform: translateY(-2px);
+                box-shadow: var(--shadow-hover);
+            }
+            
+            .session-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 1rem;
+                
+                h4 {
+                    margin: 0;
+                    font-size: 1.1rem;
+                    font-weight: 600;
+                    color: var(--text);
+                    flex: 1;
+                }
+                
+                .status-badge {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.25rem;
+                    padding: 0.25rem 0.75rem;
+                    border-radius: 12px;
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    white-space: nowrap;
+                    
+                    &.unfinalized {
+                        background: var(--yellow);
+                        opacity: 0.15;
+                        color: #B8860B; // Dark goldenrod for readability
+                    }
+                    
+                    &.finalized {
+                        background: var(--green-bg);
+                        color: var(--green-main);
+                    }
+                    
+                    &.scheduled {
+                        background: var(--lightred);
+                        color: var(--dark-blue);
+                    }
+                    
+                    svg {
+                        font-size: 0.9rem;
+                    }
+                }
+            }
+            
+            .session-details {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+                
+                .detail-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    font-size: 0.9rem;
+                    color: var(--lighter-text);
+                    
+                    svg {
+                        font-size: 1rem;
+                        color: var(--dark-blue);
+                    }
+                }
+            }
+            
+            .session-actions {
+                padding-top: 1rem;
+                border-top: 1px solid var(--lightborder);
+                
+                .action-link {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    color: var(--dark-blue);
+                    font-weight: 600;
+                    font-size: 0.9rem;
+                    
+                    svg {
+                        font-size: 1rem;
+                        transition: transform 0.3s ease;
+                    }
+                }
+            }
+            
+            &:hover .action-link svg {
+                transform: translateX(4px);
+            }
+        }
+    }
+}
+
+@media (max-width: 768px) {
+    .study-session-drafts {
+        .drafts-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+            
+            .tabs {
+                width: 100%;
+                
+                .tab {
+                    flex: 1;
+                    justify-content: center;
+                }
+            }
+        }
+        
+        .sessions-list {
+            grid-template-columns: 1fr;
+        }
+    }
+}
+
