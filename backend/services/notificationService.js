@@ -172,12 +172,42 @@ class NotificationService {
     }
 
     /**
-     * Send email notification
+     * Send email notification via Resend. Resolves recipient email when recipientModel is User.
      */
     async sendEmailNotification(notification) {
-        // TODO: Implement email service integration
-        console.log(`Sending email notification: ${notification.title}`);
-        return Promise.resolve();
+        try {
+            const { User } = this.getModels();
+            const recipientId = notification.recipient?._id || notification.recipient;
+            const recipientModel = notification.recipientModel || 'User';
+            let emailTo = null;
+            if (recipientModel === 'User') {
+                const user = await User.findById(recipientId).select('email').lean();
+                emailTo = user?.email;
+            }
+            if (!emailTo) {
+                console.warn(`No email for notification ${notification._id} recipient ${recipientId}`);
+                return Promise.resolve();
+            }
+            const resend = require('./resendClient').getResend();
+            if (!resend) {
+                console.warn('Resend client not configured; skipping email');
+                return Promise.resolve();
+            }
+            const stripHtml = (html) => (html && typeof html === 'string')
+                ? html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+                : '';
+            const textBody = stripHtml(notification.message) || notification.message || '';
+            await resend.emails.send({
+                from: process.env.RESEND_FROM || 'Meridian <support@meridian.study>',
+                to: [emailTo],
+                subject: notification.title || 'Notification',
+                html: notification.message || textBody,
+                text: textBody
+            });
+        } catch (err) {
+            console.error('Error sending email notification:', err);
+            throw err;
+        }
     }
 
     /**
@@ -914,6 +944,28 @@ class NotificationService {
                         label: 'View Details',
                         type: 'link',
                         url: '/transactions/{{transactionId}}',
+                        style: 'primary'
+                    }
+                ]
+            },
+            'admin_outreach_message': {
+                title: '{{title}}',
+                message: '{{messagePreview}}',
+                version: '1.0',
+                priority: 'normal',
+                channels: ['in_app', 'email'],
+                navigation: {
+                    type: 'navigate',
+                    route: 'OutreachMessage',
+                    params: { messageId: '{{outreachMessageId}}' },
+                    deepLink: 'meridian://outreach/{{outreachMessageId}}'
+                },
+                actions: [
+                    {
+                        id: 'view_outreach',
+                        label: 'View Message',
+                        type: 'link',
+                        url: 'meridian://outreach/{{outreachMessageId}}',
                         style: 'primary'
                     }
                 ]
