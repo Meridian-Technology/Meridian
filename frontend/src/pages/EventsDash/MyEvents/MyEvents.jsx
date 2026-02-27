@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import { useCache } from '../../../CacheContext';
 import Search from '../../../components/Search/Search';
+import NoticeBanner from '../../../components/NoticeBanner/NoticeBanner';
 import { useFetch } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import HeaderContainer from '../../../components/HeaderContainer/HeaderContainer';
@@ -15,7 +16,7 @@ import MyEventsContent from './MyEventsContent/MyEventsContent';
 import RecommendedRoomCard from '../../../components/RecommendedRoomCard/RecommendedRoomCard';
 import RecommendedEventPreviewCard from './RecommendedEvents/RecommendedEventPreviewCard/RecommendedEventPreviewCard';
 
-function MyEvents({ onRoomNavigation }){
+function MyEvents({ onRoomNavigation, onTabChange, onTabChangeByKey }){
     //define welcometext to be either good morning, good afternoon, or good evening, in one line
     const welcomeText = `Good ${new Date().getHours() < 12 ? "Morning" : new Date().getHours() < 18 ? "Afternoon" : "Evening"}`;
     const { user, isAuthenticated } = useAuth();
@@ -71,7 +72,9 @@ function MyEvents({ onRoomNavigation }){
     }, [isAuthenticated]); // getFriends is stable from context
 
     const handleAddFriends = () => {
-        navigate('/events-dashboard?page=3');
+        if (onTabChangeByKey) onTabChangeByKey('friends');
+        else if (onTabChange) onTabChange(3);
+        else navigate('/events-dashboard?page=3');
     };
 
     const handleSearchFocus = () => {
@@ -84,28 +87,39 @@ function MyEvents({ onRoomNavigation }){
 
     // Handle navigation to different sections
     const handleNavigateToEvents = () => {
-        navigate('/events-dashboard?page=1'); // Navigate to Explore tab
+        if (onTabChangeByKey) onTabChangeByKey('explore');
+        else if (onTabChange) onTabChange(0);
+        else navigate('/events-dashboard?page=1');
     };
 
     const handleNavigateToRooms = () => {
-        navigate('/events-dashboard?page=2'); // Navigate to Rooms tab
+        if (onTabChangeByKey) onTabChangeByKey('rooms');
+        else if (onTabChange) onTabChange(2);
+        else navigate('/events-dashboard?page=2');
     };
 
     const handleNavigateToOrgs = () => {
-        navigate('/events-dashboard?page=3'); // Navigate to Orgs tab
+        if (onTabChangeByKey) onTabChangeByKey('orgs');
+        else if (onTabChange) onTabChange(4);
+        else navigate('/events-dashboard?page=3');
     };
 
     const handleNavigateToFriends = () => {
         if (isAuthenticated) {
-            navigate('/events-dashboard?page=3'); // Navigate to Friends tab
+            if (onTabChangeByKey) onTabChangeByKey('friends');
+            else if (onTabChange) onTabChange(3);
+            else navigate('/events-dashboard?page=3');
         }
     };
 
     // Handle room press
     const handleRoomPress = (room) => {
-        // Navigate to Rooms tab (index 2 for authenticated users, index 1 for non-authenticated)
-        const roomsTabIndex = 2;
-        navigate(`/events-dashboard?page=${roomsTabIndex}&roomid=${encodeURIComponent(room.name)}`);
+        if (onRoomNavigation) {
+            onRoomNavigation(room);
+        } else {
+            const roomsTabIndex = 2;
+            navigate(`/events-dashboard?page=${roomsTabIndex}&roomid=${encodeURIComponent(room.name)}`);
+        }
     };
 
     // Handle errors
@@ -150,6 +164,10 @@ function MyEvents({ onRoomNavigation }){
                 navigationHandlers={navigationHandlers}
                 setSearching={setSearching}
             />
+
+            <div className="my-events-notice-wrap">
+                <NoticeBanner />
+            </div>
 
             {isAuthenticated && friends.length === 0 && (
                 <div className="friends-notice">
@@ -351,7 +369,7 @@ function MyEvents({ onRoomNavigation }){
                         {/* Authenticated User Content */}
                         {isAuthenticated && (
                             <>
-                                <RecommendedEvents />
+                                <RecommendedEvents onExploreClick={handleNavigateToEvents} />
                                 <MyEventsContent />
                             </>
                         )}
