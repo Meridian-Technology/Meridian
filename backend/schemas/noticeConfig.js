@@ -2,10 +2,20 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 /**
- * Notice shown to users on the mobile app Home screen (after login/register).
- * Supports banner (above action cards) or popup display.
+ * Notice shown to users on mobile app (Home screen) or web (Explore/Home).
+ * Supports banner (above content) or popup display.
  */
 const noticeConfigSchema = new Schema({
+  platform: {
+    type: String,
+    enum: ['mobile', 'web'],
+    default: 'mobile'
+  },
+  showFor: {
+    type: String,
+    enum: ['guest', 'authenticated', 'both'],
+    default: 'both'
+  },
   active: {
     type: Boolean,
     default: false
