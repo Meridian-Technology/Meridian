@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Icon } from '@iconify-icon/react';
 import apiRequest from '../../../utils/postRequest';
+import { useFetch } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import defaultAvatar from '../../../assets/defaultAvatar.svg';
 import './ManageUsers.scss';
@@ -14,6 +16,11 @@ function ManageUsers() {
     const [selectedUser, setSelectedUser] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+    const [impersonating, setImpersonating] = useState(false);
+
+    const { data: analyticsData, loading: analyticsLoading } = useFetch(
+        selectedUser ? `/admin/user/${selectedUser._id}/analytics?limit=50` : null
+    );
 
     const fetchUsers = useCallback(async () => {
         if (!searchQuery.trim()) {
@@ -86,6 +93,40 @@ function ManageUsers() {
         if (!date) return '—';
         const d = new Date(date);
         return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    };
+
+    const formatEventTime = (ts) => {
+        if (!ts) return '—';
+        const d = new Date(ts);
+        return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    };
+
+    const formatEventLabel = (evt) => {
+        const parts = [evt.event];
+        if (evt.context?.screen) parts.push(`→ ${evt.context.screen}`);
+        if (evt.properties?.event_id) parts.push(`(event)`);
+        if (evt.properties?.org_id) parts.push(`(org)`);
+        return parts.join(' ');
+    };
+
+    const analyticsEvents = analyticsData?.success ? (analyticsData.data || []) : [];
+
+    const handleLogInAsUser = async () => {
+        if (!selectedUser) return;
+        setImpersonating(true);
+        try {
+            const res = await apiRequest('/admin/impersonate', { identifier: String(selectedUser._id) }, { method: 'POST' });
+            if (res?.success) {
+                addNotification({ title: 'Logged in', message: `Now viewing as ${selectedUser.username}`, type: 'success' });
+                window.location.href = '/';
+            } else {
+                addNotification({ title: 'Impersonation failed', message: res?.message || 'Request failed', type: 'error' });
+            }
+        } catch (err) {
+            addNotification({ title: 'Impersonation failed', message: err.response?.data?.message || err.message || 'Request failed', type: 'error' });
+        } finally {
+            setImpersonating(false);
+        }
     };
 
     return (
@@ -208,6 +249,27 @@ function ManageUsers() {
                                 )}
                             </div>
 
+                            <div className="user-detail-impersonate">
+                                <button
+                                    type="button"
+                                    className="impersonate-btn"
+                                    onClick={handleLogInAsUser}
+                                    disabled={impersonating}
+                                >
+                                    {impersonating ? (
+                                        <>
+                                            <Icon icon="mdi:loading" className="spin" />
+                                            Logging in…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Icon icon="mdi:account-switch" />
+                                            Log in as {selectedUser.username}
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+
                             <div className="user-detail-roles">
                                 <h4>Roles</h4>
                                 <p className="roles-hint">Click a role to add or remove it</p>
@@ -239,6 +301,26 @@ function ManageUsers() {
                                     </div>
                                 </div>
                             )}
+
+                            <div className="user-detail-analytics">
+                                <h4>Recent activity</h4>
+                                <p className="analytics-hint">Last 50 analytics events</p>
+                                {analyticsLoading ? (
+                                    <div className="analytics-loading">Loading…</div>
+                                ) : analyticsEvents.length === 0 ? (
+                                    <div className="analytics-empty">No recent activity</div>
+                                ) : (
+                                    <div className="analytics-list">
+                                        {analyticsEvents.map((evt, i) => (
+                                            <div key={evt.event_id || i} className="analytics-row">
+                                                <span className="analytics-event">{formatEventLabel(evt)}</span>
+                                                <span className="analytics-platform">{evt.platform}</span>
+                                                <span className="analytics-ts">{formatEventTime(evt.ts)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     ) : (
                         <div className="no-selection">
