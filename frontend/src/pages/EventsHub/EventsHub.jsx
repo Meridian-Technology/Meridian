@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import { analytics } from '../../services/analytics/analytics';
 import Explore from '../EventsDash/Explore/Explore';
-import MyEvents from '../EventsDash/MyEvents/MyEvents';
+import EventsHubHome from './EventsHubHome/EventsHubHome';
 import Orgs from '../EventsDash/Orgs/Orgs';
 import eventsLogo from '../../assets/Brand Image/BEACON.svg';
 import defaultAvatar from '../../assets/defaultAvatar.svg';
@@ -69,6 +69,7 @@ const TAB_CONFIG = {
 };
 
 const EXPLORE_HEADER_SCROLL_THRESHOLD = 50;
+const CONTENT_SCROLL_THRESHOLD = 20;
 
 function EventsHub() {
     const [showSignUpPrompt, setShowSignUpPrompt] = useState(false);
@@ -78,6 +79,7 @@ function EventsHub() {
     const [exploreScrollTop, setExploreScrollTop] = useState(0);
     const [exploreHasCoverImage, setExploreHasCoverImage] = useState(false);
     const [exploreScrolledPastCover, setExploreScrolledPastCover] = useState(false);
+    const [contentScrolled, setContentScrolled] = useState(false);
     const createMenuRef = useRef(null);
     const createButtonRef = useRef(null);
     const contentRef = useRef(null);
@@ -241,26 +243,26 @@ function EventsHub() {
         return () => windowObserver.disconnect();
     }, [currentTab?.key, exploreHasCoverImage]);
 
-    // Keep scroll listener as fallback for exploreScrollTop (e.g. for other uses)
+    // Scroll listener: contentRef is scroll container for all tabs (non-Explore children have overflow overridden)
     useLayoutEffect(() => {
-        if (currentTab?.key !== 'explore') return;
+        const contentEl = contentRef.current;
+        if (!contentEl) return;
 
         const updateScroll = () => {
-            const contentScroll = contentRef.current?.scrollTop ?? 0;
+            const contentScroll = contentEl.scrollTop ?? 0;
             const windowScroll = window.scrollY ?? document.documentElement.scrollTop ?? 0;
-            setExploreScrollTop(Math.max(contentScroll, windowScroll));
+            if (currentTab?.key === 'explore') {
+                setExploreScrollTop(Math.max(contentScroll, windowScroll));
+            }
+            setContentScrolled(contentScroll > CONTENT_SCROLL_THRESHOLD);
         };
 
-        const contentEl = contentRef.current;
-        if (contentEl) {
-            contentEl.addEventListener('scroll', updateScroll, { passive: true });
-        }
+        contentEl.addEventListener('scroll', updateScroll, { passive: true });
         window.addEventListener('scroll', updateScroll, { passive: true });
-
-        updateScroll(); // Initial read
+        updateScroll();
 
         return () => {
-            if (contentEl) contentEl.removeEventListener('scroll', updateScroll);
+            contentEl.removeEventListener('scroll', updateScroll);
             window.removeEventListener('scroll', updateScroll);
         };
     }, [currentTab?.key]);
@@ -304,6 +306,10 @@ function EventsHub() {
         }
     }, [currentTab?.key]);
 
+    const showScrolledHeader =
+        (currentTab?.key === 'explore' && exploreScrolledPastCover) ||
+        (currentTab?.key !== 'explore' && contentScrolled);
+
     const renderContent = () => {
         switch (currentTab?.key) {
             case 'explore':
@@ -317,9 +323,8 @@ function EventsHub() {
                 );
             case 'home':
                 return (
-                    <MyEvents
+                    <EventsHubHome
                         onRoomNavigation={handleRoomNavigation}
-                        onTabChange={setTab}
                         onTabChangeByKey={(key) => {
                             const i = tabs.findIndex((t) => t.key === key);
                             if (i >= 0) setTab(i);
@@ -341,7 +346,7 @@ function EventsHub() {
         <div className="events-hub">
             {/* Slim top header - content-first, transparent overlay when on Explore with cover image */}
             <header
-                className={`events-hub-header ${isExploreHeaderTransparent ? 'events-hub-header--transparent' : ''} ${currentTab?.key === 'explore' ? 'events-hub-header--overlay' : ''}`}
+                className={`events-hub-header ${isExploreHeaderTransparent ? 'events-hub-header--transparent' : ''} ${currentTab?.key === 'explore' ? 'events-hub-header--overlay' : ''} ${showScrolledHeader ? 'events-hub-header--scrolled' : ''}`}
             >
                 <div className="events-hub-header__inner">
                     <button
@@ -435,7 +440,13 @@ function EventsHub() {
                 ref={contentRef}
                 className={`events-hub-content ${currentTab?.key === 'explore' ? 'events-hub-content--explore' : ''}`}
             >
-                {renderContent()}
+                {isAuthenticating ? (
+                    <div className="events-hub-loader">
+                        <div className="events-hub-loader__spinner" />
+                    </div>
+                ) : (
+                    renderContent()
+                )}
             </main>
 
             {/* Mobile: bottom nav */}

@@ -20,15 +20,15 @@
     background-color: var(--hub-bg);
     overflow: hidden;
 
-    // Slim top header
+    // Slim top header - default: transparent, no border (against white content)
     &-header {
         flex-shrink: 0;
         height: var(--header-height);
-        background: var(--hub-surface);
-        border-bottom: 1px solid var(--hub-border);
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        background: transparent;
+        border-bottom: none;
+        box-shadow: none;
         z-index: 110;
-        transition: background 0.25s ease, box-shadow 0.25s ease, color 0.25s ease;
+        transition: background 0.5s ease, box-shadow 0.25s ease, color 0.25s ease, border 0.25s ease;
 
         // Overlay mode: position over content (Explore tab only)
         &--overlay {
@@ -36,6 +36,13 @@
             top: 0;
             left: 0;
             right: 0;
+        }
+
+        // Solid mode: when scrolled past Explore cover (content underneath)
+        &--scrolled {
+            background: var(--hub-surface);
+            border-bottom: 1px solid var(--hub-border);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
         }
 
         // Transparent mode: overlay onto Explore cover image when at top
@@ -138,6 +145,7 @@
             height: 28px;
             width: auto;
             object-fit: contain;
+            transition: filter 0.3s ease;
         }
 
         &:hover {
@@ -165,10 +173,11 @@
             font-size: 14px;
             font-weight: 500;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: color 0.3s ease, background 0.3s ease, text-shadow 0.3s ease;
 
             iconify-icon {
                 font-size: 18px;
+                transition: filter 0.3s ease;
             }
 
             &:hover {
@@ -199,7 +208,11 @@
             font-weight: 600;
             cursor: pointer;
             box-shadow: 0 2px 8px rgba(109, 142, 250, 0.3);
-            transition: all 0.2s ease;
+            transition: background 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+
+            iconify-icon {
+                transition: filter 0.3s ease;
+            }
 
             iconify-icon {
                 font-size: 18px;
@@ -278,6 +291,7 @@
         overflow: hidden;
         cursor: pointer;
         background: var(--hub-surface);
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
 
         img {
             width: 100%;
@@ -299,7 +313,7 @@
         font-size: 14px;
         font-weight: 500;
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: border-color 0.3s ease, color 0.3s ease;
 
         &:hover {
             border-color: var(--hub-primary);
@@ -312,6 +326,27 @@
         flex: 1;
         overflow: auto;
         -webkit-overflow-scrolling: touch;
+
+        // Loader during auth - prevents flash of Explore before auth state is known
+        .events-hub-loader {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100%;
+            background: var(--hub-bg);
+
+            &__spinner {
+                width: 40px;
+                height: 40px;
+                border: 3px solid var(--hub-border);
+                border-top-color: var(--hub-primary);
+                border-radius: 50%;
+                animation: events-hub-spin 0.8s linear infinite;
+            }
+        }
+        @keyframes events-hub-spin {
+            to { transform: rotate(360deg); }
+        }
 
         // Explore tab: no padding so cover image extends under overlay header
         &--explore {
@@ -334,8 +369,22 @@
 
         .explore,
         .my-events,
+        .events-hub-home,
         .room-embedded {
             min-height: 100%;
+        }
+
+        // Non-Explore: make contentRef the scroll container (override child overflow)
+        &:not(&--explore) {
+            .my-events,
+            .events-hub-home,
+            // .room,
+            .friends,
+            .orgs {
+                overflow: visible !important;
+                height: auto !important;
+                min-height: 100%;
+            }
         }
 
         // (explore-specific scroll fix is above under &--explore)
