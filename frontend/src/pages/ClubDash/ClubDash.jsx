@@ -92,10 +92,11 @@ function ClubDash(){
     },[isAuthenticating, isAuthenticated, user]);
 
     useEffect(() => {
-        if (clubId) {
-            analytics.screen('Club Dashboard', { org_id: clubId });
+        const orgId = orgData?.data?.org?.overview?._id;
+        if (orgId) {
+            analytics.screen('Club Dashboard', { org_id: orgId });
         }
-    }, [clubId]);
+    }, [clubId, orgData?.data?.org?.overview?._id]);
 
     useEffect(()=>{
         if(orgData){
