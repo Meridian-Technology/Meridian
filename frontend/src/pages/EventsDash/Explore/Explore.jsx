@@ -264,7 +264,7 @@ function Explore({ scrollContainerRef, coverSentinelRef, onScrollReport, onHasCo
     const groupedEvents = groupEventsByDate(events);
     
     // Fetch page settings for cover image (public endpoint so Explore works without auth)
-    const { data: pageSettingsData } = useFetch('/api/event-system-config/page-settings');
+    const { data: pageSettingsData, loading: pageSettingsLoading } = useFetch('/api/event-system-config/page-settings');
     const pageSettings = pageSettingsData?.success && pageSettingsData?.data?.pageSettings 
         ? pageSettingsData.data.pageSettings 
         : null;
@@ -427,6 +427,7 @@ function Explore({ scrollContainerRef, coverSentinelRef, onScrollReport, onHasCo
                         subtitleStyle={pageSettings?.explorePage?.subtitleStyle}
                         isCompressed={isHeaderCompressed}
                         isSticky={true}
+                        isLoading={pageSettingsLoading}
                     />
                     {coverSentinelRef && <div ref={coverSentinelRef} aria-hidden="true" className="explore-cover-sentinel" />}
                     <div className="explore-notice-wrap">
@@ -447,6 +448,7 @@ function Explore({ scrollContainerRef, coverSentinelRef, onScrollReport, onHasCo
                         subtitleStyle={pageSettings?.explorePage?.subtitleStyle}
                         isCompressed={false}
                         isSticky={false}
+                        isLoading={pageSettingsLoading}
                     />
                     {coverSentinelRef && <div ref={coverSentinelRef} aria-hidden="true" className="explore-cover-sentinel" />}
                     <div className="explore-notice-wrap">
