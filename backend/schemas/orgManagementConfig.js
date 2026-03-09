@@ -360,6 +360,27 @@ const orgManagementConfigSchema = new mongoose.Schema({
             type: Boolean,
             default: true
         },
+        eventAnnouncements: {
+            enabled: {
+                type: Boolean,
+                default: true
+            },
+            /** Allow organizers to send announcements only from this many days before event start. E.g. 7 = from 7 days before onward. Null/undefined/0 = allow anytime. */
+            allowAnnouncementsDaysBeforeEvent: {
+                type: Number,
+                default: null
+            },
+            /** Also include all currently checked-in attendees (in addition to registrants). */
+            includeCheckedIn: {
+                type: Boolean,
+                default: true
+            },
+            /** Include anonymous form respondents in announcement emails when an email can be resolved (guestEmail or custom form field). */
+            includeAnonymousInEmail: {
+                type: Boolean,
+                default: true
+            }
+        },
         notificationSettings: {
             notifyOnNewMessage: {
                 type: Boolean,
@@ -370,6 +391,14 @@ const orgManagementConfigSchema = new mongoose.Schema({
                 default: true
             },
             notifyOnReply: {
+                type: Boolean,
+                default: true
+            },
+            notifyOnEventAnnouncement: {
+                type: Boolean,
+                default: true
+            },
+            eventAnnouncementEmail: {
                 type: Boolean,
                 default: true
             }

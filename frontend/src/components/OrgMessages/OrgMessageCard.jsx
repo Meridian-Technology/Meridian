@@ -317,7 +317,19 @@ const OrgMessageCard = ({ message, orgId, orgData, onUpdate, isJustAdded, onMess
     return (
         <div className={`org-message-card${isJustAdded ? ' org-message-card--just-added' : ''}${isExiting ? ' org-message-card--exiting' : ''}`}>
             <div className="profile-column">
-                {message.authorId?.picture ? (
+                {message.sendAsOrg ? (
+                    orgData?.org?.overview?.org_profile_image && orgData.org.overview.org_profile_image !== '/Logo.svg' ? (
+                        <img 
+                            src={orgData.org.overview.org_profile_image} 
+                            alt={orgData.org.overview.org_name}
+                            className="author-avatar"
+                        />
+                    ) : (
+                        <div className="author-avatar placeholder org-avatar">
+                            <span>{(orgData?.org?.overview?.org_name || 'O').charAt(0).toUpperCase()}</span>
+                        </div>
+                    )
+                ) : message.authorId?.picture ? (
                     <img 
                         src={message.authorId.picture} 
                         alt={message.authorId.name || message.authorId.username}
@@ -336,7 +348,7 @@ const OrgMessageCard = ({ message, orgId, orgData, onUpdate, isJustAdded, onMess
                 <div className="message-header">
                     <div className="comment-author-info">
                         <span className="comment-author">
-                            {message.authorId?.name || message.authorId?.username || 'Unknown'}
+                            {message.sendAsOrg ? (orgData?.org?.overview?.org_name || 'Organization') : (message.authorId?.name || message.authorId?.username || 'Unknown')}
                         </span>
                         {message.authorRoleDisplayName && (
                             <span className="author-role">

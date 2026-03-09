@@ -1,9 +1,16 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
 const mongoose = require('mongoose');
 const {connectToDatabase} = require('../connectionsManager');
 const { getConnections, disconnectSocket, disconnectAll } = require('../socket');
+const { createSession } = require('../utilities/sessionUtils');
+
+const ACCESS_TOKEN_EXPIRY = '1m';
+const REFRESH_TOKEN_EXPIRY = '30d';
+const ACCESS_TOKEN_EXPIRY_MS = 60 * 1000;
+const REFRESH_TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
 
 router.get('/health', async (req, res) => {
   try {
@@ -94,6 +101,118 @@ router.post('/websocket-connections/disconnect-all', verifyToken, authorizeRoles
     res.json({ success: true, message: `Disconnected ${count} connection(s)`, count });
   } catch (err) {
     console.error('POST /websocket-connections/disconnect-all failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * Admin impersonation – log in as another user (admin/root only).
+ * POST /admin/impersonate
+ * Body: { identifier: string } – username, email, or user _id
+ */
+router.post('/admin/impersonate', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier || typeof identifier !== 'string') {
+      return res.status(400).json({ success: false, message: 'identifier (username, email, or user id) is required' });
+    }
+
+    const getModels = require('../services/getModelService');
+    const { User } = getModels(req, 'User');
+
+    const trimmed = identifier.trim();
+    const isObjectId = mongoose.Types.ObjectId.isValid(trimmed) && String(new mongoose.Types.ObjectId(trimmed)) === trimmed;
+    const isEmail = trimmed.includes('@');
+
+    let targetUser;
+    if (isObjectId) {
+      targetUser = await User.findById(trimmed);
+    } else if (isEmail) {
+      targetUser = await User.findOne({ email: trimmed.toLowerCase() });
+    } else {
+      targetUser = await User.findOne({ username: { $regex: new RegExp(`^${trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    }
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const accessToken = jwt.sign(
+      { userId: targetUser._id, roles: targetUser.roles },
+      process.env.JWT_SECRET,
+      { expiresIn: ACCESS_TOKEN_EXPIRY }
+    );
+
+    const refreshToken = jwt.sign(
+      { userId: targetUser._id, type: 'refresh' },
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+      { expiresIn: REFRESH_TOKEN_EXPIRY }
+    );
+
+    await createSession(targetUser._id, refreshToken, req);
+
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: ACCESS_TOKEN_EXPIRY_MS,
+      path: '/'
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: REFRESH_TOKEN_EXPIRY_MS,
+      path: '/'
+    });
+
+    const userObj = targetUser.toObject ? targetUser.toObject() : targetUser;
+    delete userObj.password;
+
+    console.log(`POST: /admin/impersonate - Admin ${req.user.userId} logged in as ${targetUser.username} (${targetUser._id})`);
+
+    res.status(200).json({
+      success: true,
+      message: `Logged in as ${targetUser.username}`,
+      data: { user: userObj }
+    });
+  } catch (err) {
+    console.error('POST /admin/impersonate failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * Get recent analytics events for a user (admin/root only).
+ * GET /admin/user/:userId/analytics?limit=50
+ */
+router.get('/admin/user/:userId/analytics', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID' });
+    }
+
+    const getModels = require('../services/getModelService');
+    const { AnalyticsEvent } = getModels(req, 'AnalyticsEvent');
+
+    const events = await AnalyticsEvent.find(
+      { user_id: new mongoose.Types.ObjectId(userId) },
+      { event_id: 1, event: 1, ts: 1, platform: 1, context: 1, properties: 1 }
+    )
+      .sort({ ts: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({
+      success: true,
+      data: events
+    });
+  } catch (err) {
+    console.error('GET /admin/user/:userId/analytics failed:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

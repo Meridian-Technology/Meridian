@@ -3,9 +3,11 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { analytics } from '../../../../../services/analytics/analytics';
 import { useNotification } from '../../../../../NotificationContext';
+import useAuth from '../../../../../hooks/useAuth';
 import { useGradient } from '../../../../../hooks/useGradient';
 import TabbedContainer from '../../../../../components/TabbedContainer';
 import Popup from '../../../../../components/Popup/Popup';
+import EventAnnouncementCompose from './EventAnnouncementCompose';
 import EventDashboardHeader from './EventDashboardHeader';
 import EventDashboardOnboarding from './EventDashboardOnboarding/EventDashboardOnboarding';
 import EventOverview from './EventOverview';
@@ -16,6 +18,7 @@ import EventAnalyticsDetail from './EventAnalyticsDetail';
 import EventCheckInTab from './EventCheckInTab/EventCheckInTab';
 import EventQRTab from './EventQRTab/EventQRTab';
 import RegistrationsTab from './RegistrationsTab/RegistrationsTab';
+import CommunicationsTab from './CommunicationsTab/CommunicationsTab';
 import ComingSoon from './ComingSoon';
 // Temporarily disabled - EquipmentManager functionality commented out
 // import EquipmentManager from './EventEquipment/EquipmentManager';
@@ -26,6 +29,7 @@ const FORCE_EVENT_DASHBOARD_ONBOARDING = false;
 
 function EventDashboard({ event, orgId, onClose, className = '' }) {
     const { addNotification } = useNotification();
+    const { user } = useAuth();
     const { AtlasMain } = useGradient();
     const [dashboardData, setDashboardData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -33,6 +37,8 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     const hasNotifiedErrorRef = useRef(false);
     const [activeTab, setActiveTab] = useState('overview');
     const [showOnboarding, setShowOnboarding] = useState(false);
+    const [showAnnouncementSpotlight, setShowAnnouncementSpotlight] = useState(false);
+    const [openRegistrationSettingsFromAnnouncement, setOpenRegistrationSettingsFromAnnouncement] = useState(false);
 
     // Fetch dashboard data
     const { data, loading: dataLoading, error, refetch } = useFetch(
@@ -108,6 +114,28 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             localStorage.setItem('eventDashboardOnboardingSeen', 'true');
         }
         setShowOnboarding(false);
+    }, []);
+
+    const handleSendAnnouncementClick = useCallback(() => {
+        setShowAnnouncementSpotlight(true);
+    }, []);
+
+    const handleAnnouncementSent = useCallback(() => {
+        addNotification({
+            title: 'Announcement sent',
+            message: 'Event attendees have been notified.',
+            type: 'success'
+        });
+        handleRefresh();
+    }, [addNotification]);
+
+    const handleAnnouncementClose = useCallback(() => {
+        setShowAnnouncementSpotlight(false);
+    }, []);
+
+    const handleOpenRegistrationSettings = useCallback(() => {
+        setActiveTab('registrations');
+        setOpenRegistrationSettingsFromAnnouncement(true);
     }, []);
 
     if (loading) {
@@ -206,6 +234,21 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         orgId={orgId}
                         onRefresh={handleRefresh}
                         color="var(--primary-color)"
+                        openRegistrationSettingsFromAnnouncement={openRegistrationSettingsFromAnnouncement}
+                        onConsumeOpenRegistrationSettings={() => setOpenRegistrationSettingsFromAnnouncement(false)}
+                    />
+        },
+        {
+            id: 'communications',
+            label: 'Communications',
+            icon: 'mdi:message-text',
+            description: 'Send announcements and manage event communications',
+            content: <CommunicationsTab
+                        event={dashboardData.event}
+                        orgId={orgId}
+                        onSendAnnouncement={handleSendAnnouncementClick}
+                        onOpenRegistrationSettings={handleOpenRegistrationSettings}
+                        onNavigateToAnalytics={() => handleTabChange('analytics')}
                     />
         },
         {
@@ -254,14 +297,6 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             //         </div>
             //     </div>
             // )
-        },
-        {
-            id: 'communications',
-            label: 'Communications',
-            icon: 'mdi:message-text',
-            description: 'Message volunteers and attendees',
-            comingSoon: true,
-            content: <ComingSoon feature="Communications" />
         }
     ];
 
@@ -274,6 +309,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         onClose={onClose}
                         onRefresh={handleRefresh}
                         orgId={orgId}
+                        onSendAnnouncement={handleSendAnnouncementClick}
                 />
                 <div className="event-dashboard-content">
                     <TabbedContainer
@@ -303,6 +339,20 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             >
                 <EventDashboardOnboarding onClose={handleOnboardingClose} />
             </Popup>
+            <EventAnnouncementCompose
+                isOpen={showAnnouncementSpotlight}
+                onClose={handleAnnouncementClose}
+                orgId={orgId}
+                eventId={event?._id}
+                eventName={dashboardData?.event?.name}
+                eventStartTime={dashboardData?.event?.start_time}
+                orgName={dashboardData?.event?.hostingId?.org_name}
+                orgProfileImage={dashboardData?.event?.hostingId?.org_profile_image}
+                organizerName={user?.name || user?.username}
+                organizerPicture={user?.picture}
+                onSent={handleAnnouncementSent}
+                onOpenRegistrationSettings={handleOpenRegistrationSettings}
+            />
         </>
     );
 }

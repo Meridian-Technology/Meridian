@@ -5,7 +5,7 @@ import { useNotification } from '../../../../../NotificationContext';
 import apiRequest from '../../../../../utils/postRequest';
 import './EventDashboard.scss';
 
-function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
+function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendAnnouncement }) {
     const [publishing, setPublishing] = useState(false);
     const { AtlasMain } = useGradient();
     const { addNotification } = useNotification();
@@ -163,6 +163,16 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId }) {
                         >
                             <Icon icon="mdi:share-variant" />
                         </button>
+                        {onSendAnnouncement && event?._id && orgId && (
+                            <button
+                                className="action-btn announcement"
+                                onClick={onSendAnnouncement}
+                                title="Send announcement to event attendees"
+                            >
+                                <Icon icon="mdi:bullhorn" />
+                                <span>Send announcement</span>
+                            </button>
+                        )}
                         <button 
                             className="action-btn preview" 
                             onClick={handlePreview}

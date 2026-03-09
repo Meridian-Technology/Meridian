@@ -10,6 +10,7 @@ import './OrgMessages.scss';
 const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
     const [content, setContent] = useState('');
     const [visibility, setVisibility] = useState('members_and_followers');
+    const [sendAsOrg, setSendAsOrg] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [validationError, setValidationError] = useState('');
     const [characterLimit, setCharacterLimit] = useState(500);
@@ -119,7 +120,7 @@ const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
             return;
         }
 
-        const payload = { content: content.trim(), visibility };
+        const payload = { content: content.trim(), visibility, sendAsOrg };
         const contentToRestore = content;
 
         // Optimistic: clear input immediately so the user sees the post "sent"
@@ -220,6 +221,32 @@ const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
                             <option value="members_and_followers">Members & Followers</option>
                             <option value="public">Public</option>
                         </select>
+                    </div>
+                    <div className="composer-send-as">
+                        <label>
+                            <Icon icon="mdi:account-group" />
+                            <span>Send as:</span>
+                        </label>
+                        <div className="composer-send-as-options">
+                            <label className="composer-send-as-option">
+                                <input
+                                    type="radio"
+                                    name="sendAs"
+                                    checked={!sendAsOrg}
+                                    onChange={() => setSendAsOrg(false)}
+                                />
+                                <span>Myself</span>
+                            </label>
+                            <label className="composer-send-as-option">
+                                <input
+                                    type="radio"
+                                    name="sendAs"
+                                    checked={sendAsOrg}
+                                    onChange={() => setSendAsOrg(true)}
+                                />
+                                <span>Organization</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
                 

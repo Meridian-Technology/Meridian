@@ -111,6 +111,22 @@
     border-radius: 0;
   }
 
+  /* Event settings modals (portaled): same-element width so styles apply */
+  .popup-overlay .popup-content.event-settings-modal {
+    max-width: 90vw;
+    width: 800px;
+    background: var(--background);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .popup-overlay .popup-content.event-settings-modal.event-settings-modal--registration {
+    width: 100%;
+    max-width: min(90vw, 800px);
+  }
+
   
   .popup-overlay .popup-content.no-padding {
     padding: 0;

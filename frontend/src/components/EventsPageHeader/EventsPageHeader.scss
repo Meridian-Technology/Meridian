@@ -47,7 +47,22 @@
         background-position: center;
         background-repeat: no-repeat;
         overflow: hidden;
-        transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+
+        &--loading {
+            background: linear-gradient(
+                110deg,
+                #e8e8e8 25%,
+                #f0f0f0 37%,
+                #e8e8e8 63%
+            );
+            background-size: 400% 100%;
+            animation: header-shimmer 1.4s ease-in-out infinite;
+        }
+
+        &--loaded {
+            animation: header-fade-in 0.3s ease-out;
+        }
         
         // White gradient fade at the bottom
         &::after {
@@ -139,6 +154,24 @@
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
+    }
+}
+
+@keyframes header-shimmer {
+    0% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0 50%;
+    }
+}
+
+@keyframes header-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
     }
 }
 

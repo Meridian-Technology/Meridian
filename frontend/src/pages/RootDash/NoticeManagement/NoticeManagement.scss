@@ -23,6 +23,33 @@
     color: #6b7280;
   }
 
+  &__tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  &__tab {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #6b7280;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    margin-bottom: -1px;
+
+    &:hover {
+      color: #374151;
+    }
+
+    &.active {
+      color: #6d8efa;
+      border-bottom-color: #6d8efa;
+    }
+  }
+
   &__form {
     display: flex;
     flex-direction: column;

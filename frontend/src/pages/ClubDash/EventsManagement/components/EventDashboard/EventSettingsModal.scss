@@ -1,16 +1,6 @@
 /* Shared styles for event settings modals (Registration, Check-In) */
 
 .event-settings-modal {
-    .popup-content {
-        max-width: 90vw;
-        width: 560px;
-        background: var(--background);
-        border-radius: 12px;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-    }
-
     .event-settings-modal-content {
         display: flex;
         flex-direction: column;
@@ -57,7 +47,7 @@
                 width: 18px;
                 height: 18px;
                 cursor: pointer;
-                accent-color: var(--event-settings-color, var(--primary-color, #4DAA57));
+                accent-color: var(--event-settings-color, var(--green, #4DAA57));
             }
 
             input[type="datetime-local"],
@@ -73,7 +63,7 @@
 
                 &:focus {
                     outline: none;
-                    border-color: var(--event-settings-color, var(--primary-color, #4DAA57));
+                    border-color: var(--event-settings-color, var(--green, #4DAA57));
                 }
             }
 
@@ -100,7 +90,7 @@
             transition: all 0.15s ease;
 
             &.primary {
-                background: var(--event-settings-color, var(--primary-color, #4DAA57));
+                background: var(--event-settings-color, var(--green, #4DAA57));
                 color: white;
 
                 &:hover:not(:disabled) {
@@ -146,7 +136,7 @@
 
             &:focus {
                 outline: none;
-                border-color: var(--event-settings-color, var(--primary-color, #4DAA57));
+                border-color: var(--event-settings-color, var(--green, #4DAA57));
             }
         }
 
@@ -165,9 +155,9 @@
         }
 
         .create-form-btn {
-            color: var(--event-settings-color, var(--primary-color, #4DAA57));
+            color: var(--event-settings-color, var(--green, #4DAA57));
             background: transparent;
-            border: 1px solid var(--event-settings-color, var(--primary-color, #4DAA57));
+            border: 1px solid var(--event-settings-color, var(--green, #4DAA57));
 
             &:hover {
                 background: rgba(77, 170, 87, 0.08);
@@ -201,7 +191,7 @@
             color: var(--text);
 
             input[type="radio"] {
-                accent-color: var(--event-settings-color, var(--primary-color, #4DAA57));
+                accent-color: var(--event-settings-color, var(--green, #4DAA57));
                 cursor: pointer;
             }
         }

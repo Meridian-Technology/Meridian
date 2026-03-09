@@ -51,6 +51,34 @@
             border-radius: 10px 0 0 10px;
         }
     }
+    .impersonate-container {
+        .impersonate-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--background);
+            border: 1px solid var(--lighterborder);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+
+            &:hover:not(:disabled) {
+                border-color: var(--red);
+                background: var(--red-transparent, rgba(225, 29, 72, 0.08));
+            }
+
+            &:disabled {
+                opacity: 0.7;
+                cursor: not-allowed;
+            }
+
+            .spin {
+                animation: manage-user-spin 0.8s linear infinite;
+            }
+        }
+    }
+
     .dangerous-actions{
         background-color: var(--red-transparent);
         border-radius: 10px;
@@ -75,4 +103,8 @@
             }
         }
     }
+}
+
+@keyframes manage-user-spin {
+    to { transform: rotate(360deg); }
 }

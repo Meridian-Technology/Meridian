@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Icon } from '@iconify-icon/react';
 import './ManageUser.scss';
 import CardHeader from '../../../../components/ProfileCard/CardHeader/CardHeader';
 import HeaderContainer from '../../../../components/HeaderContainer/HeaderContainer';
@@ -7,6 +8,7 @@ import postRequest from '../../../../utils/postRequest';
 
 function ManageUser({user, refetch}){
     const [roleInput, setRoleInput] = useState('');
+    const [impersonating, setImpersonating] = useState(false);
     const {addNotification} = useNotification();
     const updateRole = async () => {
         const result = await postRequest('/manage-roles',{role: roleInput, userId: user._id});
@@ -22,7 +24,24 @@ function ManageUser({user, refetch}){
             }
             setRoleInput('');
         }
-    }
+    };
+
+    const handleLogInAsUser = async () => {
+        setImpersonating(true);
+        try {
+            const res = await postRequest('/admin/impersonate', { identifier: String(user._id) }, { method: 'POST' });
+            if (res?.success) {
+                addNotification({ title: 'Logged in', message: `Now viewing as ${user.username}`, type: 'success' });
+                window.location.href = '/';
+            } else {
+                addNotification({ title: 'Impersonation failed', message: res?.message || 'Request failed', type: 'error' });
+            }
+        } catch (err) {
+            addNotification({ title: 'Impersonation failed', message: err.response?.data?.message || err.message || 'Request failed', type: 'error' });
+        } finally {
+            setImpersonating(false);
+        }
+    };
     return (
         <div className="manage-user">
             <CardHeader userInfo={user} />
@@ -57,6 +76,26 @@ function ManageUser({user, refetch}){
                             </button>
                         </label>
                     </div>
+                </HeaderContainer>
+                <HeaderContainer header="log in as user" icon="mdi:account-switch" classN="impersonate-container" size="14px">
+                    <button
+                        type="button"
+                        className="action impersonate-btn"
+                        onClick={handleLogInAsUser}
+                        disabled={impersonating}
+                    >
+                        {impersonating ? (
+                            <>
+                                <Icon icon="mdi:loading" className="spin" />
+                                <p>Logging in…</p>
+                            </>
+                        ) : (
+                            <>
+                                <Icon icon="mdi:account-switch" />
+                                <p>Log in as {user.username}</p>
+                            </>
+                        )}
+                    </button>
                 </HeaderContainer>
                 <div className="dangerous-actions">
                     <button className="action">

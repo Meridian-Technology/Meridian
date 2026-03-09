@@ -13,7 +13,8 @@ function RegistrationSettingsModal({ isOpen, onClose, event, orgId, orgForms = [
         registrationRequired: false,
         registrationDeadline: null,
         maxAttendees: null,
-        registrationFormId: null
+        registrationFormId: null,
+        notificationEmailQuestionId: null
     });
     const [saving, setSaving] = useState(false);
     const [showCreateFormModal, setShowCreateFormModal] = useState(false);
@@ -25,10 +26,11 @@ function RegistrationSettingsModal({ isOpen, onClose, event, orgId, orgForms = [
                 registrationRequired: event.registrationRequired ?? false,
                 registrationDeadline: event.registrationDeadline ? new Date(event.registrationDeadline) : null,
                 maxAttendees: event.maxAttendees ?? null,
-                registrationFormId: event.registrationFormId ?? null
+                registrationFormId: event.registrationFormId ?? null,
+                notificationEmailQuestionId: event.notificationEmailQuestionId ?? null
             });
         }
-    }, [isOpen, event?.registrationRequired, event?.registrationDeadline, event?.maxAttendees, event?.registrationFormId]);
+    }, [isOpen, event?.registrationRequired, event?.registrationDeadline, event?.maxAttendees, event?.registrationFormId, event?.notificationEmailQuestionId]);
 
     const handleSave = async () => {
         if (!orgId || !event?._id) return;
@@ -40,7 +42,8 @@ function RegistrationSettingsModal({ isOpen, onClose, event, orgId, orgForms = [
                     registrationRequired: form.registrationRequired,
                     registrationDeadline: form.registrationDeadline ? form.registrationDeadline.toISOString() : null,
                     maxAttendees: form.maxAttendees ?? null,
-                    registrationFormId: form.registrationFormId || null
+                    registrationFormId: form.registrationFormId || null,
+                    notificationEmailQuestionId: form.notificationEmailQuestionId || null
                 },
                 { method: 'PUT' }
             );
@@ -101,7 +104,14 @@ function RegistrationSettingsModal({ isOpen, onClose, event, orgId, orgForms = [
                 <div className="registration-form-select-row">
                     <select
                         value={form.registrationFormId || ''}
-                        onChange={(e) => setForm(s => ({ ...s, registrationFormId: e.target.value || null }))}
+                        onChange={(e) => {
+                            const newFormId = e.target.value || null;
+                            setForm((s) => ({
+                                ...s,
+                                registrationFormId: newFormId,
+                                notificationEmailQuestionId: newFormId ? s.notificationEmailQuestionId : null
+                            }));
+                        }}
                     >
                         <option value="">None</option>
                         {orgForms.map((f) => (
@@ -120,7 +130,27 @@ function RegistrationSettingsModal({ isOpen, onClose, event, orgId, orgForms = [
                     )}
                 </div>
             )
-        }
+        },
+        ...((form.registrationFormId && (() => {
+            const selectedForm = orgForms.find((f) => f._id === form.registrationFormId);
+            const questions = selectedForm?.questions || [];
+            return questions.length > 0 ? [{
+                title: 'Guest notification email (for announcements)',
+                subtitle: 'Form question to use as email for guests who register without an account',
+                action: (
+                    <select
+                        value={form.notificationEmailQuestionId || ''}
+                        onChange={(e) => setForm((s) => ({ ...s, notificationEmailQuestionId: e.target.value || null }))}
+                        className="notification-email-question-select"
+                    >
+                        <option value="">None (use standard guest email only)</option>
+                        {questions.map((q) => (
+                            <option key={q._id} value={q._id}>{q.question || 'Question'}</option>
+                        ))}
+                    </select>
+                )
+            }] : [];
+        })()) ?? [])
     ];
 
     return (
@@ -128,7 +158,7 @@ function RegistrationSettingsModal({ isOpen, onClose, event, orgId, orgForms = [
             <Popup
                 isOpen={isOpen}
                 onClose={onClose}
-                customClassName="event-settings-modal"
+                customClassName="event-settings-modal event-settings-modal--registration"
                 defaultStyling={false}
                 hideCloseButton={true}
             >

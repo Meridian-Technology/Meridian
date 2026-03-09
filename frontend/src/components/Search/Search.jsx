@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './Search.scss';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import { useNavigate } from 'react-router-dom';
@@ -60,6 +60,7 @@ const DEFAULT_SEARCH_TYPES = [
  */
 function Search({ 
     variant = 'default', // 'default' | 'compact'
+    spotlightMode = false,
     onSearchFocus,
     onSearchBlur,
     isSearchFocused,
@@ -70,6 +71,10 @@ function Search({
     navigationHandlers = {}, // Custom navigation handlers
     setSearching = () => {}
 }) {
+    const inputRef = useRef(null);
+    const containerRef = useRef(null);
+    const resultsListRef = useRef(null);
+    const [selectedIndex, setSelectedIndex] = useState(-1);
     const [search, setSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [activeTab, setActiveTab] = useState('all');
@@ -77,6 +82,28 @@ function Search({
     const [error, setError] = useState(null);
     const navigate = useNavigate();
     const { user } = useAuth();
+
+    // Blur input when parent closes overlay (e.g. backdrop click)
+    useEffect(() => {
+        if (isSearchFocused === false && inputRef.current === document.activeElement) {
+            inputRef.current.blur();
+        }
+    }, [isSearchFocused]);
+
+    // Auto-focus when opened in spotlight (e.g. portal remount)
+    useEffect(() => {
+        if (isSearchFocused && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [isSearchFocused]);
+
+    // Scroll selected item into view
+    useEffect(() => {
+        if (selectedIndex >= 0 && resultsListRef.current) {
+            const el = resultsListRef.current.querySelector(`[data-result-index="${selectedIndex}"]`);
+            el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }, [selectedIndex]);
 
     // Filter enabled search types and add users conditionally
     const enabledSearchTypes = useMemo(() => {
@@ -289,6 +316,46 @@ function Search({
         });
     };
 
+    const handleEventClick = (event) => {
+        if (navigationHandlers.events) {
+            navigationHandlers.events(event);
+        } else {
+            navigate(`/event/${event._id}`);
+        }
+        setSearch('');
+        if (onSearchBlur) onSearchBlur();
+    };
+
+    const handleOrgClick = (org) => {
+        if (navigationHandlers.organizations) {
+            navigationHandlers.organizations(org);
+        } else {
+            navigate(`/org/${org.org_name}`);
+        }
+        setSearch('');
+        if (onSearchBlur) onSearchBlur();
+    };
+
+    const handleUserClick = (userItem) => {
+        if (navigationHandlers.users) {
+            navigationHandlers.users(userItem);
+        } else {
+            navigate(`/profile/${userItem.username}`);
+        }
+        setSearch('');
+        if (onSearchBlur) onSearchBlur();
+    };
+
+    const handleRoomClick = (room) => {
+        if (navigationHandlers.rooms) {
+            navigationHandlers.rooms(room);
+        } else {
+            navigate(`/room/${room._id}`);
+        }
+        setSearch('');
+        if (onSearchBlur) onSearchBlur();
+    };
+
     // Get filtered results based on active tab
     const filteredResults = useMemo(() => {
         if (activeTab === 'all') {
@@ -305,6 +372,52 @@ function Search({
         });
         return singleResults;
     }, [activeTab, results, variant, enabledSearchTypes]);
+
+    // Flat list of selectable items for keyboard navigation (spotlight mode)
+    const flatSelectableItems = useMemo(() => {
+        const items = [];
+        if (activeTab === 'all') {
+            enabledSearchTypes.forEach(type => {
+                (filteredResults[type.key] || []).forEach(item => {
+                    const handler = type.key === 'events' ? handleEventClick : type.key === 'organizations' ? handleOrgClick : type.key === 'users' ? handleUserClick : handleRoomClick;
+                    items.push({ item, type: type.key, handler });
+                });
+            });
+        } else {
+            const type = enabledSearchTypes.find(t => t.key === activeTab);
+            if (type) {
+                (filteredResults[type.key] || []).forEach(item => {
+                    const handler = type.key === 'events' ? handleEventClick : type.key === 'organizations' ? handleOrgClick : type.key === 'users' ? handleUserClick : handleRoomClick;
+                    items.push({ item, type: type.key, handler });
+                });
+            }
+        }
+        return items;
+    }, [activeTab, filteredResults, enabledSearchTypes]);
+
+    // Keyboard navigation (spotlight mode)
+    useEffect(() => {
+        if (!spotlightMode || !isSearchFocused) return;
+        const handleKeyDown = (e) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSelectedIndex(i => Math.min(i + 1, flatSelectableItems.length - 1));
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectedIndex(i => Math.max(i - 1, -1));
+            } else if (e.key === 'Enter' && selectedIndex >= 0 && flatSelectableItems[selectedIndex]) {
+                e.preventDefault();
+                flatSelectableItems[selectedIndex].handler(flatSelectableItems[selectedIndex].item);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [spotlightMode, isSearchFocused, selectedIndex, flatSelectableItems]);
+
+    // Reset selection when search or results change
+    useEffect(() => {
+        setSelectedIndex(-1);
+    }, [debouncedSearch, filteredResults, activeTab]);
 
     // Get total count for each category
     const counts = useMemo(() => {
@@ -348,48 +461,11 @@ function Search({
         }
     }, [tabs, activeTab]);
 
-    const handleEventClick = (event) => {
-        if (navigationHandlers.events) {
-            navigationHandlers.events(event);
-        } else {
-            navigate(`/event/${event._id}`);
-        }
-        setSearch('');
-        if (onSearchBlur) onSearchBlur();
-    };
-
-    const handleOrgClick = (org) => {
-        if (navigationHandlers.organizations) {
-            navigationHandlers.organizations(org);
-        } else {
-            navigate(`/org/${org.org_name}`);
-        }
-        setSearch('');
-        if (onSearchBlur) onSearchBlur();
-    };
-
-    const handleUserClick = (user) => {
-        if (navigationHandlers.users) {
-            navigationHandlers.users(user);
-        } else {
-            navigate(`/profile/${user.username}`);
-        }
-        setSearch('');
-        if (onSearchBlur) onSearchBlur();
-    };
-
-    const handleRoomClick = (room) => {
-        if (navigationHandlers.rooms) {
-            navigationHandlers.rooms(room);
-        } else {
-            navigate(`/room/${room._id}`);
-        }
-        setSearch('');
-        if (onSearchBlur) onSearchBlur();
-    };
-
     const handleSearchFocus = () => {
-        if (onSearchFocus) onSearchFocus();
+        if (onSearchFocus) {
+            const rect = containerRef.current?.getBoundingClientRect?.();
+            onSearchFocus(rect);
+        }
     };
 
     const handleSearchBlur = () => {
@@ -403,17 +479,21 @@ function Search({
         (isSearchFocused && debouncedSearch && debouncedSearch.length >= 2) :
         (debouncedSearch && debouncedSearch.length >= 2);
 
+    // Spotlight: always show panel when focused (empty state or results)
+    const shouldShowSpotlightPanel = spotlightMode && isSearchFocused;
+
     // Don't render if no search types are enabled
     if (enabledSearchTypes.length === 0) {
         return null;
     }
 
     return (
-        <div className={`search-component ${variant} ${className}`}>
-            <div className="search-container">
+        <div ref={containerRef} className={`search-component ${variant} ${className} ${spotlightMode ? 'search-component--spotlight' : ''}`}>
+            <div className={`search-container ${spotlightMode ? 'search-container--unified' : ''}`}>
                 <div className="search-input-wrapper">
                     <Icon icon="mingcute:search-fill" className="search-icon" />
                     <input 
+                        ref={inputRef}
                         className="search-input" 
                         placeholder={placeholder}
                         value={search} 
@@ -450,8 +530,36 @@ function Search({
                 </div>
             )}
 
-            {shouldShowResults && (
-                <div className="search-results">
+            {/* Spotlight empty state - show when focused but no search query yet */}
+            {shouldShowSpotlightPanel && !debouncedSearch && (
+                <div className="search-spotlight-empty" ref={resultsListRef}>
+                    <div className="search-spotlight-empty__content">
+                        <Icon icon="mingcute:search-fill" className="search-spotlight-empty__icon" />
+                        <p className="search-spotlight-empty__title">Start typing to search</p>
+                        <p className="search-spotlight-empty__hint">Find events, rooms, organizations, and people</p>
+                        <div className="search-spotlight-empty__quick">
+                            <span className="search-spotlight-empty__label">Try searching for</span>
+                            <div className="search-spotlight-empty__chips">
+                                {enabledSearchTypes.slice(0, 4).map(type => (
+                                    <button
+                                        key={type.key}
+                                        type="button"
+                                        className="search-spotlight-empty__chip"
+                                        onClick={() => setSearch(type.label.slice(0, -1))}
+                                    >
+                                        <Icon icon={type.icon} />
+                                        {type.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <p className="search-spotlight-empty__keys">↑↓ Navigate · ↵ Select · Esc Close</p>
+                    </div>
+                </div>
+            )}
+
+            {(shouldShowResults || (shouldShowSpotlightPanel && debouncedSearch)) && (
+                <div className={`search-results ${spotlightMode ? 'search-results--unified' : ''}`} ref={resultsListRef}>
                     {tabs.length > 1 && (
                         <div className="tabs">
                             {tabs.map(tab => (
@@ -479,7 +587,9 @@ function Search({
                         ) : (
                             <>
                                 {/* All Results */}
-                                {activeTab === 'all' && (
+                                {activeTab === 'all' && (() => {
+                                    let globalIndex = 0;
+                                    return (
                                     <div className="all-results">
                                         {enabledSearchTypes.map(type => {
                                             const typeResults = filteredResults[type.key] || [];
@@ -490,10 +600,16 @@ function Search({
                                                     <h3>{type.label}</h3>
                                                     <div className="result-grid">
                                                         {typeResults.map(item => {
+                                                            const idx = globalIndex++;
+                                                            const isSelected = spotlightMode && selectedIndex === idx;
+                                                            const cardProps = spotlightMode ? {
+                                                                'data-result-index': idx,
+                                                                onMouseEnter: () => setSelectedIndex(idx),
+                                                            } : {};
                                                             switch (type.key) {
                                                                 case 'events':
                                                                     return (
-                                                                        <div key={item._id} className="result-card event-card" onClick={() => handleEventClick(item)}>
+                                                                        <div key={item._id} className={`result-card event-card ${isSelected ? 'result-card--selected' : ''}`} onClick={() => handleEventClick(item)} {...cardProps}>
                                                                             <div className="card-header">
                                                                                 <h4>{highlightMatch(item.name, debouncedSearch)}</h4>
                                                                                 <span className="date">{formatDate(item.start_time)}</span>
@@ -507,7 +623,7 @@ function Search({
                                                                     );
                                                                 case 'organizations':
                                                                     return (
-                                                                        <div key={item._id} className="result-card org-card" onClick={() => handleOrgClick(item)}>
+                                                                        <div key={item._id} className={`result-card org-card ${isSelected ? 'result-card--selected' : ''}`} onClick={() => handleOrgClick(item)} {...cardProps}>
                                                                             <div className="card-header">
                                                                                 <img src={item.org_profile_image || '/default-org.png'} alt="" className="org-image" />
                                                                                 <div>
@@ -519,7 +635,7 @@ function Search({
                                                                     );
                                                                 case 'users':
                                                                     return (
-                                                                        <div key={item._id} className="result-card user-card" onClick={() => handleUserClick(item)}>
+                                                                        <div key={item._id} className={`result-card user-card ${isSelected ? 'result-card--selected' : ''}`} onClick={() => handleUserClick(item)} {...cardProps}>
                                                                             <div className="card-header">
                                                                                 <img src={item.picture || '/default-user.png'} alt="" className="user-image" />
                                                                                 <div>
@@ -531,7 +647,7 @@ function Search({
                                                                     );
                                                                 case 'rooms':
                                                                     return (
-                                                                        <div key={item._id} className="result-card room-card" onClick={() => handleRoomClick(item)}>
+                                                                        <div key={item._id} className={`result-card room-card ${isSelected ? 'result-card--selected' : ''}`} onClick={() => handleRoomClick(item)} {...cardProps}>
                                                                             <div className="card-header">
                                                                                 <img src={item.image || '/default-room.png'} alt="" className="room-image" />
                                                                                 <div>
@@ -563,7 +679,8 @@ function Search({
                                             </div>
                                         )}
                                     </div>
-                                )}
+                                    );
+                                })()}
 
                                 {/* Individual Tab Results */}
                                 {activeTab !== 'all' && enabledSearchTypes.map(type => {
@@ -575,11 +692,17 @@ function Search({
                                         <div key={type.key} className={`${type.key}-results`}>
                                             {typeResults.length > 0 ? (
                                                 <div className="result-grid">
-                                                    {typeResults.map(item => {
+                                                    {typeResults.map((item, i) => {
+                                                        const idx = i; // For single-tab view, indices are 0, 1, 2...
+                                                        const isSelected = spotlightMode && selectedIndex === idx;
+                                                        const cardProps = spotlightMode ? {
+                                                            'data-result-index': idx,
+                                                            onMouseEnter: () => setSelectedIndex(idx),
+                                                        } : {};
                                                         switch (type.key) {
                                                             case 'events':
                                                                 return (
-                                                                    <div key={item._id} className="result-card event-card" onClick={() => handleEventClick(item)}>
+                                                                    <div key={item._id} className={`result-card event-card ${isSelected ? 'result-card--selected' : ''}`} onClick={() => handleEventClick(item)} {...cardProps}>
                                                                         <div className="card-header">
                                                                             <h4>{highlightMatch(item.name, debouncedSearch)}</h4>
                                                                             <span className="date">{formatDate(item.start_time)}</span>
@@ -593,7 +716,7 @@ function Search({
                                                                 );
                                                             case 'organizations':
                                                                 return (
-                                                                    <div key={item._id} className="result-card org-card" onClick={() => handleOrgClick(item)}>
+                                                                    <div key={item._id} className={`result-card org-card ${isSelected ? 'result-card--selected' : ''}`} onClick={() => handleOrgClick(item)} {...cardProps}>
                                                                         <div className="card-header">
                                                                             <img src={item.org_profile_image || '/default-org.png'} alt="" className="org-image" />
                                                                             <div>
@@ -605,7 +728,7 @@ function Search({
                                                                 );
                                                             case 'users':
                                                                 return (
-                                                                    <div key={item._id} className="result-card user-card" onClick={() => handleUserClick(item)}>
+                                                                    <div key={item._id} className={`result-card user-card ${isSelected ? 'result-card--selected' : ''}`} onClick={() => handleUserClick(item)} {...cardProps}>
                                                                         <div className="card-header">
                                                                             <img src={item.picture || '/default-user.png'} alt="" className="user-image" />
                                                                             <div>
@@ -617,7 +740,7 @@ function Search({
                                                                 );
                                                             case 'rooms':
                                                                 return (
-                                                                    <div key={item._id} className="result-card room-card" onClick={() => handleRoomClick(item)}>
+                                                                    <div key={item._id} className={`result-card room-card ${isSelected ? 'result-card--selected' : ''}`} onClick={() => handleRoomClick(item)} {...cardProps}>
                                                                         <div className="card-header">
                                                                             <img src={item.image || ''} alt="" className="room-image" />
                                                                             <div>

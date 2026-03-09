@@ -70,11 +70,13 @@ function usage() {
   console.log('');
   console.log(cyan('  Examples'));
   console.log(dim('  meridian start MER-123-Org-Forms'));
+  console.log(dim('  meridian start MER-123-Org-Forms ') + cyan('--from-current') + dim('   (create from current branch)'));
   console.log(dim('  meridian switch MER-123-Org-Forms'));
   console.log(dim('  meridian symlink'));
   console.log(dim('  meridian ship'));
   console.log('');
   console.log(dim('  Branch names: MER-<number>-<slug> (e.g. MER-123-Org-Forms)'));
+  console.log(dim('  start: use ') + cyan('--from-current') + dim(' or MERIDIAN_START_FROM_CURRENT=1 to create from current branch instead of main'));
   console.log('');
 }
 
@@ -271,7 +273,7 @@ function cmdStatus() {
 }
 
 // --- start ---
-async function cmdStart(branch) {
+async function cmdStart(branch, fromCurrent = false) {
   validateBranchName(branch);
   const { meridianPath, eventsPath } = resolveWorkspace();
   ensureClean(meridianPath, eventsPath);
@@ -312,7 +314,30 @@ async function cmdStart(branch) {
     return;
   }
 
+  if (fromCurrent) {
+    // Create new branch from current HEAD (no checkout main / no pull)
+    const merCur = currentBranch(meridianPath);
+    const evCur = currentBranch(eventsPath);
+    const merCreate = checkoutBranch(meridianPath, branch, merCur || 'HEAD');
+    if (!merCreate.ok) {
+      console.error(red('  Failed to create Meridian branch:'), merCreate.stderr);
+      process.exit(1);
+    }
+    const evCreate = checkoutBranch(eventsPath, branch, evCur || 'HEAD');
+    if (!evCreate.ok) {
+      console.error(red('  Failed to create Events branch:'), evCreate.stderr);
+      process.exit(1);
+    }
+    console.log('');
+    console.log(green('  Created branch ') + bold(branch) + green(' from current branch in both repos'));
+    console.log(dim('  Work normally; when ready run ') + cyan('meridian ship'));
+    console.log('');
+    return;
+  }
+
   // Create new branch from origin/main
+  fetchAll(meridianPath);
+  fetchAll(eventsPath);
   const merR = require('./lib/git').git('checkout main', meridianPath);
   if (!merR.ok) {
     console.error(red('  Failed to checkout Meridian main:'), merR.stderr);
@@ -626,15 +651,20 @@ async function main() {
     case 'status':
       cmdStatus();
       break;
-    case 'start':
-      if (!args[1]) {
+    case 'start': {
+      const startFlags = ['--from-current', '-c'];
+      const startArgs = args.slice(1).filter((a) => !startFlags.includes(a));
+      const branchArg = startArgs[0];
+      if (!branchArg) {
         console.error('');
-        console.error(red('  Usage: ') + 'meridian start <branch>');
+        console.error(red('  Usage: ') + 'meridian start <branch> [--from-current]');
         console.error('');
         process.exit(1);
       }
-      await cmdStart(args[1]);
+      const fromCurrent = args.includes('--from-current') || args.includes('-c') || process.env.MERIDIAN_START_FROM_CURRENT === '1';
+      await cmdStart(branchArg, fromCurrent);
       break;
+    }
     case 'switch':
       if (!args[1]) {
         console.error('');

@@ -16,6 +16,7 @@ import postRequest from '../../../utils/postRequest';
 import { useNotification } from '../../../NotificationContext';
 import Loader from '../../../components/Loader/Loader';
 import EmptyState from '../../../components/EmptyState/EmptyState';
+import NoticeBanner from '../../../components/NoticeBanner/NoticeBanner';
 import eventsLogo from '../../../assets/Brand Image/EventsLogo.svg';
 import exploreBackgroundGradient from '../../../assets/Gradients/ExploreBackgroundGradient.png';
 import { analytics } from '../../../services/analytics/analytics';
@@ -27,7 +28,7 @@ const getSunday = () => {
     return new Date(today.setDate(diff));
 }
 
-function Explore(){
+function Explore({ scrollContainerRef, coverSentinelRef, onScrollReport, onHasCoverImage }){
     const {user} = useAuth();
     const {addNotification} = useNotification();
     const roles = [''];
@@ -263,10 +264,27 @@ function Explore(){
     const groupedEvents = groupEventsByDate(events);
     
     // Fetch page settings for cover image (public endpoint so Explore works without auth)
-    const { data: pageSettingsData } = useFetch('/api/event-system-config/page-settings');
+    const { data: pageSettingsData, loading: pageSettingsLoading } = useFetch('/api/event-system-config/page-settings');
     const pageSettings = pageSettingsData?.success && pageSettingsData?.data?.pageSettings 
         ? pageSettingsData.data.pageSettings 
         : null;
+
+    // Report cover image presence and scroll (for EventsHub transparent header overlay)
+    useEffect(() => {
+        if (onHasCoverImage && pageSettings) {
+            onHasCoverImage(!!pageSettings?.explorePage?.coverImage);
+        }
+    }, [pageSettings, onHasCoverImage]);
+
+    // Report scroll for EventsHub transparent header (list view: parent; calendar view: explore-events)
+    useEffect(() => {
+        if (!onScrollReport) return;
+        const scrollEl = viewType === 0 ? scrollContainerRef?.current : exploreContentRef.current;
+        if (!scrollEl) return;
+        const handler = () => onScrollReport(scrollEl.scrollTop);
+        scrollEl.addEventListener('scroll', handler, { passive: true });
+        return () => scrollEl.removeEventListener('scroll', handler);
+    }, [viewType, onScrollReport, scrollContainerRef]);
 
     // Render sidebar content
     const renderSidebar = () => (
@@ -409,7 +427,12 @@ function Explore(){
                         subtitleStyle={pageSettings?.explorePage?.subtitleStyle}
                         isCompressed={isHeaderCompressed}
                         isSticky={true}
+                        isLoading={pageSettingsLoading}
                     />
+                    {coverSentinelRef && <div ref={coverSentinelRef} aria-hidden="true" className="explore-cover-sentinel" />}
+                    <div className="explore-notice-wrap">
+                        <NoticeBanner />
+                    </div>
                     <div className="explore-content">
                         {renderSidebar()}
                         {renderEventsContent()}
@@ -425,7 +448,12 @@ function Explore(){
                         subtitleStyle={pageSettings?.explorePage?.subtitleStyle}
                         isCompressed={false}
                         isSticky={false}
+                        isLoading={pageSettingsLoading}
                     />
+                    {coverSentinelRef && <div ref={coverSentinelRef} aria-hidden="true" className="explore-cover-sentinel" />}
+                    <div className="explore-notice-wrap">
+                        <NoticeBanner />
+                    </div>
                     <div className="explore-content">
                         {renderSidebar()}
                         {renderEventsContent()}

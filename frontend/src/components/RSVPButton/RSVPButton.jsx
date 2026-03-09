@@ -197,7 +197,7 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate, onReg
                 </button>
             </div>
             {showFormModal && form && (
-                <Popup isOpen onClose={() => setShowFormModal(false)} customClassName="rsvp-registration-form-modal">
+                <Popup isOpen onClose={() => setShowFormModal(false)} customClassName="rsvp-registration-form-modal medium-content" defaultStyling={false}>
                     <div className="rsvp-registration-form-modal-inner">
                         <div className="rsvp-registration-form-modal-body">
                             <FormViewer

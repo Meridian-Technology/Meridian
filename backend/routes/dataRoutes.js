@@ -41,8 +41,6 @@ router.get('/featured-all', async (req, res) => {
         ]);
 
         // Get 5 random events
-        //prioritize events that have an image
-        //no past events, choose from events in the next 2 weeks
         //populate hostingId, org or user
         const events = await Event.aggregate([
             { $match: { start_time: { $gte: new Date(), $lte: new Date(Date.now() + 2 * 7 * 24 * 60 * 60 * 1000) } }, },
@@ -117,6 +115,445 @@ router.get('/featured-all', async (req, res) => {
             message: 'Error retrieving featured content', 
             error: error.message 
         });
+    }
+});
+
+// Helper to fetch and return an event doc for suggested action
+async function fetchEventForSuggestion(Event, eventId, now) {
+    const eventDoc = await Event.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(String(eventId)),
+                start_time: { $gte: now },
+                $or: [{ isDeleted: { $ne: true } }, { isDeleted: { $exists: false } }]
+            }
+        },
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'hostingId',
+                foreignField: '_id',
+                as: 'userHost'
+            }
+        },
+        {
+            $lookup: {
+                from: 'orgs',
+                localField: 'hostingId',
+                foreignField: '_id',
+                as: 'orgHost'
+            }
+        },
+        {
+            $addFields: {
+                hostingId: {
+                    $cond: {
+                        if: { $eq: ['$hostingType', 'User'] },
+                        then: { $arrayElemAt: ['$userHost', 0] },
+                        else: { $arrayElemAt: ['$orgHost', 0] }
+                    }
+                }
+            }
+        },
+        {
+            $project: {
+                _id: 1,
+                name: 1,
+                description: 1,
+                start_time: 1,
+                end_time: 1,
+                location: 1,
+                image: 1,
+                type: 1,
+                hostingId: { _id: 1, name: 1, org_name: 1, image: 1, org_profile_image: 1 },
+                hostingType: 1,
+                rsvp_count: 1,
+                max_capacity: 1
+            }
+        }
+    ]);
+    return eventDoc && eventDoc.length > 0 ? eventDoc[0] : null;
+}
+
+// Suggested action: one item based on user's past analytics, or "hot right now" fallback
+router.get('/suggested-action', verifyTokenOptional, async (req, res) => {
+    const log = (msg, data) => console.log(`[suggested-action] ${msg}`, data !== undefined ? data : '');
+    try {
+        const { AnalyticsEvent, Event, Org } = getModels(req, 'AnalyticsEvent', 'Event', 'Org');
+        const userId = req.user ? req.user.userId : null;
+        const userIdObj = userId ? new mongoose.Types.ObjectId(userId) : null;
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        log('Evaluating suggestion', { userId: userId || 'guest', now: now.toISOString() });
+
+        if (userIdObj) {
+            const registeredEventIds = await AnalyticsEvent.distinct('properties.event_id', {
+                user_id: userIdObj,
+                event: 'event_registration',
+                'properties.event_id': { $exists: true, $ne: null }
+            });
+            const registeredSet = new Set(registeredEventIds.map((id) => String(id)));
+
+            // 1. Event management / workspace – org power users managing events (organizers/admins)
+            log('Step 1: Checking event workspace usage (events user managed in last 30d)');
+            const workspaceEvents = await AnalyticsEvent.aggregate([
+                {
+                    $match: {
+                        user_id: userIdObj,
+                        ts: { $gte: thirtyDaysAgo },
+                        $or: [
+                            { event: { $in: ['event_workspace_view', 'event_workspace_tab_view'] }, 'properties.event_id': { $exists: true, $ne: null } },
+                            { event: 'screen_view', 'context.screen': 'Event Workspace', 'properties.event_id': { $exists: true, $ne: null } }
+                        ]
+                    }
+                },
+                { $group: { _id: '$properties.event_id', count: { $sum: 1 } } },
+                { $sort: { count: -1 } },
+                { $limit: 10 }
+            ]);
+            log('Workspace events (by visit count)', workspaceEvents.map(r => ({ eventId: r._id, count: r.count })));
+            for (const row of workspaceEvents) {
+                const eventId = row._id;
+                const item = await fetchEventForSuggestion(Event, eventId, now);
+                if (item) {
+                    const orgId = item.hostingType === 'Org' && item.hostingId?._id ? item.hostingId._id.toString() : null;
+                    const orgName = item.hostingType === 'Org' && item.hostingId?.org_name ? item.hostingId.org_name : null;
+                    log('→ SUGGEST: Event workspace (priority 1)', { eventId: item._id, name: item.name, orgId, orgName });
+                    return res.json({
+                        success: true,
+                        data: {
+                            type: 'event',
+                            id: item._id.toString(),
+                            item,
+                            isHotRightNow: false,
+                            destination: 'workspace',
+                            orgId,
+                            orgName,
+                            suggestionReason: 'See how your event is doing'
+                        }
+                    });
+                }
+            }
+            log('Step 1: No match (no workspace events found)');
+
+            // 2. Org management – Events Management, Club Dashboard, Org Page (manage/browse orgs)
+            log('Step 2: Checking org management screens (Events Management, Club Dashboard, Org Page)');
+            const orgManagementScreens = ['Events Management', 'Club Dashboard', 'Org Page'];
+            const orgFromScreens = await AnalyticsEvent.aggregate([
+                {
+                    $match: {
+                        user_id: userIdObj,
+                        ts: { $gte: thirtyDaysAgo },
+                        event: 'screen_view',
+                        'context.screen': { $in: orgManagementScreens },
+                        'properties.org_id': { $exists: true, $ne: null }
+                    }
+                },
+                { $group: { _id: '$properties.org_id', count: { $sum: 1 } } },
+                { $sort: { count: -1 } },
+                { $limit: 5 }
+            ]);
+            log('Org management screens (by visit count)', orgFromScreens.map(r => ({ orgId: r._id, count: r.count })));
+            for (const row of orgFromScreens) {
+                const orgId = row._id;
+                const orgIdStr = orgId != null ? String(orgId) : '';
+                if (!/^[a-fA-F0-9]{24}$/.test(orgIdStr)) {
+                    log(`  Skipping org ${orgId}: not a valid ObjectId`);
+                    continue;
+                }
+                const orgDoc = await Org.findById(orgIdStr).select('_id org_name org_profile_image').lean();
+                if (orgDoc) {
+                    log('→ SUGGEST: Org dashboard (priority 2)', { orgId: orgDoc._id, orgName: orgDoc.org_name });
+                    return res.json({
+                        success: true,
+                        data: {
+                            type: 'org',
+                            id: orgDoc._id.toString(),
+                            item: orgDoc,
+                            isHotRightNow: false,
+                            destination: 'dashboard',
+                            suggestionReason: 'Pick up where you left off'
+                        }
+                    });
+                }
+            }
+            log('Step 2: No match (no org management screens found)');
+
+            // 3. Event view – viewed events not yet registered
+            log('Step 3: Checking event views (events user viewed in last 30d, excluding registered)');
+            const viewedEvents = await AnalyticsEvent.aggregate([
+                {
+                    $match: {
+                        user_id: userIdObj,
+                        ts: { $gte: thirtyDaysAgo },
+                        event: 'event_view',
+                        'properties.event_id': { $exists: true, $ne: null }
+                    }
+                },
+                { $group: { _id: '$properties.event_id', views: { $sum: 1 } } },
+                { $sort: { views: -1 } },
+                { $limit: 20 }
+            ]);
+            log('Viewed events (by view count)', viewedEvents.map(r => ({ eventId: r._id, views: r.views })));
+            for (const row of viewedEvents) {
+                const eventId = row._id;
+                if (registeredSet.has(String(eventId))) {
+                    log(`  Skipping event ${eventId}: user already registered`);
+                    continue;
+                }
+                const item = await fetchEventForSuggestion(Event, eventId, now);
+                if (item) {
+                    log('→ SUGGEST: Event view (priority 3)', { eventId: item._id, name: item.name });
+                    return res.json({
+                        success: true,
+                        data: {
+                            type: 'event',
+                            id: item._id.toString(),
+                            item,
+                            isHotRightNow: false,
+                            suggestionReason: 'You viewed this event'
+                        }
+                    });
+                }
+            }
+            log('Step 3: No match (no unregistered viewed events found)');
+
+            // 4. Org engagement – org_join, org_follow
+            log('Step 4: Checking org engagement (org_join, org_follow in last 30d)');
+            const orgEngagement = await AnalyticsEvent.aggregate([
+                {
+                    $match: {
+                        user_id: userIdObj,
+                        ts: { $gte: thirtyDaysAgo },
+                        event: { $in: ['org_join', 'org_follow'] },
+                        'properties.org_id': { $exists: true, $ne: null }
+                    }
+                },
+                { $group: { _id: '$properties.org_id', count: { $sum: 1 } } },
+                { $sort: { count: -1 } },
+                { $limit: 5 }
+            ]);
+            log('Org engagement events', orgEngagement.map(r => ({ orgId: r._id, count: r.count })));
+            for (const row of orgEngagement) {
+                const orgId = row._id;
+                const orgIdStr = orgId != null ? String(orgId) : '';
+                if (!/^[a-fA-F0-9]{24}$/.test(orgIdStr)) {
+                    log(`  Skipping org ${orgId}: not a valid ObjectId`);
+                    continue;
+                }
+                const orgDoc = await Org.findById(orgIdStr).select('_id org_name org_profile_image').lean();
+                if (orgDoc) {
+                    log('→ SUGGEST: Org engagement (priority 4)', { orgId: orgDoc._id, orgName: orgDoc.org_name });
+                    return res.json({
+                        success: true,
+                        data: {
+                            type: 'org',
+                            id: orgDoc._id.toString(),
+                            item: orgDoc,
+                            isHotRightNow: false,
+                            suggestionReason: 'Check out your organization'
+                        }
+                    });
+                }
+            }
+            log('Step 4: No match (no org engagement found)');
+        } else {
+            log('User not logged in: skipping personalized steps 1–4');
+        }
+
+        // 5. Hot right now fallback: 7-day views weighted by expected attendance (rsvp_count + max_capacity)
+        log('Step 5: Hot right now fallback (7d views × attendance weight, max score wins)');
+        const hotWithEvents = await Event.aggregate([
+            {
+                $match: {
+                    start_time: { $gte: now },
+                    $or: [{ isDeleted: { $ne: true } }, { isDeleted: { $exists: false } }]
+                }
+            },
+            {
+                $lookup: {
+                    from: 'analytics_events',
+                    let: { eventId: { $toString: '$_id' } },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: { $eq: [{ $toString: '$properties.event_id' }, '$$eventId'] },
+                                ts: { $gte: sevenDaysAgo },
+                                event: 'event_view'
+                            }
+                        },
+                        { $group: { _id: null, views: { $sum: 1 } } }
+                    ],
+                    as: 'viewStats'
+                }
+            },
+            {
+                $addFields: {
+                    views: {
+                        $let: {
+                            vars: { first: { $arrayElemAt: ['$viewStats', 0] } },
+                            in: { $ifNull: ['$$first.views', 0] }
+                        }
+                    },
+                    rsvp: { $ifNull: ['$rsvp_count', 0] },
+                    capacity: { $ifNull: ['$max_capacity', 0] }
+                }
+            },
+            {
+                $addFields: {
+                    attendanceWeight: {
+                        $add: [
+                            1,
+                            { $divide: [{ $add: ['$rsvp', '$capacity'] }, 50] }
+                        ]
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    hotScore: { $multiply: ['$views', '$attendanceWeight'] }
+                }
+            },
+            { $sort: { hotScore: -1, rsvp_count: -1 } },
+            { $limit: 1 },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'hostingId',
+                    foreignField: '_id',
+                    as: 'userHost'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'orgs',
+                    localField: 'hostingId',
+                    foreignField: '_id',
+                    as: 'orgHost'
+                }
+            },
+            {
+                $addFields: {
+                    hostingId: {
+                        $cond: {
+                            if: { $eq: ['$hostingType', 'User'] },
+                            then: { $arrayElemAt: ['$userHost', 0] },
+                            else: { $arrayElemAt: ['$orgHost', 0] }
+                        }
+                    }
+                }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    name: 1,
+                    description: 1,
+                    start_time: 1,
+                    end_time: 1,
+                    location: 1,
+                    image: 1,
+                    type: 1,
+                    hostingId: { _id: 1, name: 1, org_name: 1, image: 1, org_profile_image: 1 },
+                    hostingType: 1,
+                    rsvp_count: 1,
+                    max_capacity: 1
+                }
+            }
+        ]);
+
+        if (hotWithEvents && hotWithEvents.length > 0) {
+            const h = hotWithEvents[0];
+            log('→ SUGGEST: Hot right now (priority 5)', { eventId: h._id, name: h.name, rsvp_count: h.rsvp_count, max_capacity: h.max_capacity });
+            return res.json({
+                success: true,
+                data: {
+                    type: 'event',
+                    id: hotWithEvents[0]._id.toString(),
+                    item: hotWithEvents[0],
+                    isHotRightNow: true,
+                    suggestionReason: 'Hot right now'
+                }
+            });
+        }
+        log('Step 5: No match (no upcoming events with view data)');
+
+        // 6. Fallback: Event by rsvp_count
+        log('Step 6: Fallback by rsvp_count (highest RSVPs)');
+        const topByRsvp = await Event.aggregate([
+            {
+                $match: {
+                    start_time: { $gte: now },
+                    $or: [{ isDeleted: { $ne: true } }, { isDeleted: { $exists: false } }]
+                }
+            },
+            { $sort: { rsvp_count: -1 } },
+            { $limit: 1 },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'hostingId',
+                    foreignField: '_id',
+                    as: 'userHost'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'orgs',
+                    localField: 'hostingId',
+                    foreignField: '_id',
+                    as: 'orgHost'
+                }
+            },
+            {
+                $addFields: {
+                    hostingId: {
+                        $cond: {
+                            if: { $eq: ['$hostingType', 'User'] },
+                            then: { $arrayElemAt: ['$userHost', 0] },
+                            else: { $arrayElemAt: ['$orgHost', 0] }
+                        }
+                    }
+                }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    name: 1,
+                    description: 1,
+                    start_time: 1,
+                    end_time: 1,
+                    location: 1,
+                    image: 1,
+                    type: 1,
+                    hostingId: { _id: 1, name: 1, org_name: 1, image: 1, org_profile_image: 1 },
+                    hostingType: 1,
+                    rsvp_count: 1,
+                    max_capacity: 1
+                }
+            }
+        ]);
+        if (topByRsvp && topByRsvp.length > 0) {
+            log('→ SUGGEST: Top by RSVP (priority 6)', { eventId: topByRsvp[0]._id, name: topByRsvp[0].name, rsvp_count: topByRsvp[0].rsvp_count });
+            return res.json({
+                success: true,
+                data: {
+                    type: 'event',
+                    id: topByRsvp[0]._id.toString(),
+                    item: topByRsvp[0],
+                    isHotRightNow: true,
+                    suggestionReason: 'Popular right now'
+                }
+            });
+        }
+        log('Step 6: No match');
+
+        log('→ No suggestion (no eligible events/orgs found)');
+        return res.json({ success: true, data: null });
+    } catch (error) {
+        console.error('GET /suggested-action failed:', error);
+        return res.status(500).json({ success: false, message: 'Error getting suggested action', error: error.message });
     }
 });
 
