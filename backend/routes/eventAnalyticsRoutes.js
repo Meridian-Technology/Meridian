@@ -465,7 +465,7 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             tabViews[tab || 'unknown'] = count;
         });
 
-        // Aggregate event_view by derived referrer source (org_page, explore, direct)
+        // Aggregate event_view by derived referrer source (org_page, explore, direct, email)
         const referrerSourceMatch = {
             ...platformMatch,
             event: 'event_view'
@@ -480,7 +480,7 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
                                 $and: [
                                     { $ne: ['$properties.source', null] },
                                     { $ne: ['$properties.source', ''] },
-                                    { $in: ['$properties.source', ['org_page', 'explore', 'direct']] }
+                                    { $in: ['$properties.source', ['org_page', 'explore', 'direct', 'email']] }
                                 ]
                             },
                             then: '$properties.source',
@@ -511,7 +511,7 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             { $group: { _id: '$source', count: { $sum: 1 } } }
         ]);
 
-        const referrerSources = { org_page: 0, explore: 0, direct: 0 };
+        const referrerSources = { org_page: 0, explore: 0, direct: 0, email: 0 };
         referrerAggregation.forEach(({ _id: source, count }) => {
             if (source && referrerSources.hasOwnProperty(source)) {
                 referrerSources[source] = count;
@@ -543,6 +543,23 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             count: qrReferrerCounts[sid]
         })).sort((a, b) => b.count - a.count);
 
+        // Aggregate email views by announcement_id (event_view with source=email and properties.announcement_id)
+        const emailByAnnouncementAgg = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...referrerSourceMatch,
+                    'properties.source': 'email',
+                    'properties.announcement_id': { $exists: true, $ne: null, $ne: '' }
+                }
+            },
+            { $group: { _id: '$properties.announcement_id', count: { $sum: 1 } } }
+        ]);
+        const emailViewsByAnnouncement = {};
+        emailByAnnouncementAgg.forEach(({ _id: announcementId, count }) => {
+            const idStr = announcementId != null ? String(announcementId) : '';
+            if (idStr) emailViewsByAnnouncement[idStr] = count;
+        });
+
         const registrationFormOpens = platformCounts['event_registration_form_open'] ?? 0;
         const registrationsCount = platformCounts['event_registration'] ?? 0;
         const registrationFormBounces = Math.max(0, registrationFormOpens - registrationsCount);
@@ -560,6 +577,8 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             tabViews,
             referrerSources,
             qrReferrerSources,
+            /** Map of announcement (message) id -> view count for email-driven event views */
+            emailViewsByAnnouncement,
             // Unique users per event type (for funnel - avoids double-counting repeat actions)
             uniqueEventViews: platformUniqueCounts['event_view'] ?? 0,
             uniqueFormOpens: platformUniqueCounts['event_registration_form_open'] ?? 0,
