@@ -6,6 +6,8 @@ const { requireOrgPermission } = require('../middlewares/orgPermissions');
 const { clean, isProfane } = require('../services/profanityFilterService');
 const { parseMessageContent } = require('../utilities/messageParser');
 const NotificationService = require('../services/notificationService');
+const eventAnnouncementService = require('../services/eventAnnouncementService');
+const { ORG_PERMISSIONS } = require('../constants/permissions');
 
 /**
  * Helper function to determine user's relationship to org
@@ -72,13 +74,105 @@ async function ensureMessageMentionData(message, orgId, Event) {
 }
 
 /**
+ * POST /:orgId/events/:eventId/announcements
+ * Create an event-specific announcement (org-hosted event only). Sends to event attendees (in-app + email).
+ * Body: { content, excludeUserIds?: string[], excludeEmails?: string[], channels?: { inApp?: boolean, email?: boolean } }
+ */
+router.post('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), async (req, res) => {
+    const { orgId, eventId } = req.params;
+    const { content, subject, excludeUserIds, excludeEmails, channels, sendAsOrg } = req.body;
+
+    try {
+        const options = {};
+        if (subject != null) options.subject = typeof subject === 'string' ? subject : String(subject);
+        if (sendAsOrg === true) options.sendAsOrg = true;
+        if (Array.isArray(excludeUserIds)) options.excludeUserIds = excludeUserIds.map(id => String(id));
+        if (Array.isArray(excludeEmails)) options.excludeEmails = excludeEmails.map(e => String(e).trim().toLowerCase()).filter(Boolean);
+        if (channels && typeof channels === 'object') options.channels = { inApp: channels.inApp, email: channels.email };
+        const { message } = await eventAnnouncementService.sendEventAnnouncement(req, orgId, eventId, content || '', options);
+        res.status(201).json({
+            success: true,
+            message: 'Event announcement sent successfully',
+            data: message
+        });
+    } catch (error) {
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
+            success: false,
+            message: error.message || 'Error sending event announcement',
+            code: error.code
+        });
+    }
+});
+
+/**
+ * GET /:orgId/events/:eventId/announcement-recipients
+ * List attendees who would receive an event announcement (for recipient picker and counts).
+ */
+router.get('/:orgId/events/:eventId/announcement-recipients', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), async (req, res) => {
+    try {
+        const result = await eventAnnouncementService.getAnnouncementRecipients(req, req.params.orgId, req.params.eventId);
+        res.json({
+            success: true,
+            data: {
+                recipients: result.list,
+                anonymousWithNoEmailCount: result.anonymousWithNoEmailCount ?? 0
+            }
+        });
+    } catch (error) {
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
+            success: false,
+            message: error.message || 'Error loading recipients',
+            code: error.code
+        });
+    }
+});
+
+/**
+ * GET /:orgId/events/:eventId/announcements
+ * List past event announcements (OrgMessages with this eventId), newest first.
+ */
+router.get('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), async (req, res) => {
+    const { orgId, eventId } = req.params;
+    try {
+        const { OrgMessage, Org, Event } = getModels(req, 'OrgMessage', 'Org', 'Event');
+        const org = await Org.findById(orgId);
+        if (!org) return res.status(404).json({ success: false, message: 'Organization not found' });
+        const event = await Event.findOne({ _id: eventId, hostingId: orgId });
+        if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+        const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+        const announcements = await OrgMessage.find({
+            orgId,
+            eventId,
+            parentMessageId: null,
+            isDeleted: false
+        })
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .populate('authorId', 'name username picture')
+            .lean();
+        res.json({
+            success: true,
+            data: { announcements }
+        });
+    } catch (error) {
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
+            success: false,
+            message: error.message || 'Error loading announcements'
+        });
+    }
+});
+
+/**
  * POST /:orgId/messages
  * Create a new message
  */
 router.post('/:orgId/messages', verifyToken, async (req, res) => {
     const { OrgMessage, Org, OrgMember, Event, OrgManagementConfig } = getModels(req, 'OrgMessage', 'Org', 'OrgMember', 'Event', 'OrgManagementConfig');
     const { orgId } = req.params;
-    const { content, visibility, parentMessageId } = req.body;
+        const { content, visibility, parentMessageId, sendAsOrg } = req.body;
     const userId = req.user.userId;
 
     try {
@@ -182,6 +276,7 @@ router.post('/:orgId/messages', verifyToken, async (req, res) => {
         // Determine visibility
         const messageVisibility = visibility || org.messageSettings.visibility || 'members_and_followers';
 
+        const sendAsOrg = req.body.sendAsOrg === true;
         // Create message
         const message = new OrgMessage({
             orgId: orgId,
@@ -191,6 +286,7 @@ router.post('/:orgId/messages', verifyToken, async (req, res) => {
             mentionedEvents: parsed.eventIds,
             links: parsed.links,
             parentMessageId: parentMessageId || null,
+            sendAsOrg,
             likes: [],
             likeCount: 0,
             replyCount: 0
@@ -332,10 +428,11 @@ router.get('/:orgId/messages', verifyToken, async (req, res) => {
 
         let messages;
         if (includeReplies === 'true') {
-            // Get all messages including replies
+            // Get all messages including replies (exclude event-specific announcements)
             messages = await OrgMessage.find({
                 orgId: orgId,
-                isDeleted: false
+                isDeleted: false,
+                $or: [{ eventId: null }, { eventId: { $exists: false } }]
             })
             .sort({ createdAt: -1 })
             .skip(skip)
@@ -383,7 +480,8 @@ router.get('/:orgId/messages', verifyToken, async (req, res) => {
         const totalQuery = {
             orgId: orgId,
             isDeleted: false,
-            parentMessageId: null
+            parentMessageId: null,
+            $or: [{ eventId: null }, { eventId: { $exists: false } }]
         };
 
         // Apply visibility filter for count

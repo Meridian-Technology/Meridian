@@ -61,6 +61,57 @@ function buildNewUserInviteEmail({ orgName, orgDescription, role, roleDisplayNam
     `;
 }
 
+/**
+ * Build event announcement email: looks like an email sent from the org.
+ * Layout: event header (name + optional details), sender line, subject (if set), full message body,
+ * "View Event" CTA, then disclaimer (Luma-style): "You received this email because you are registered for [Event] on [Platform]. To contact the host, reply to this email."
+ * @param {Object} opts - orgName, eventName, eventStartTime, authorName, authorPicture?, messageHtml, eventUrl, platformName, subject?, sendAsOrg?
+ * @param {boolean} sendAsOrg - When true, omit org name from header (first mention) since sender is already the org
+ */
+function buildEventAnnouncementEmail({ orgName, eventName, eventStartTime, authorName, authorPicture, messageHtml, eventUrl, platformName = 'Meridian', subject, sendAsOrg }) {
+    const safeOrgName = escapeHtml(orgName);
+    const safeEventName = escapeHtml(eventName);
+    const safeAuthor = escapeHtml(authorName || orgName);
+    const safePlatform = escapeHtml(platformName);
+    const safeEventUrl = String(eventUrl || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const bodyHtml = messageHtml && String(messageHtml).trim() ? String(messageHtml).trim() : '<p>No message content.</p>';
+    const dateLine = eventStartTime
+        ? new Date(eventStartTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+        : null;
+    const showOrgInHeader = !sendAsOrg;
+    const subjectHtml = subject && String(subject).trim()
+        ? `<h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: #1f2937;">${escapeHtml(subject)}</h2>`
+        : '';
+    const safeAuthorPicture = authorPicture && String(authorPicture).trim()
+        ? String(authorPicture).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        : '';
+    const avatarHtml = safeAuthorPicture
+        ? `<img src="${safeAuthorPicture}" alt="" width="28" height="28" style="display: inline-block; width: 28px; height: 28px; border-radius: 50%; object-fit: cover; margin-right: 8px; vertical-align: middle;" />`
+        : `<span style="display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: #4DAA57; color: white; border-radius: 50%; font-weight: 600; font-size: 13px; margin-right: 8px; vertical-align: middle;">${(safeAuthor.charAt(0) || 'O').toUpperCase()}</span>`;
+    return `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
+            <div style="margin-bottom: 24px;">
+                <h1 style="margin: 0 0 4px 0; font-size: 22px; font-weight: 700; color: #1f2937;">${safeEventName}</h1>
+                ${dateLine ? `<p style="margin: 0 0 2px 0; font-size: 14px; color: #6b7280;">${escapeHtml(dateLine)}</p>` : ''}
+                ${showOrgInHeader ? `<p style="margin: 0; font-size: 14px; color: #6b7280;">${safeOrgName}</p>` : ''}
+            </div>
+            <div style="margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
+                <p style="margin: 0; font-size: 14px;">
+                    ${avatarHtml}
+                    <strong>${safeAuthor}</strong>
+                </p>
+            </div>
+            <div style="font-size: 15px; line-height: 1.6; margin-bottom: 24px;">${subjectHtml}${bodyHtml}</div>
+            <p style="margin: 0 0 24px 0;">
+                <a href="${safeEventUrl}" style="display: inline-block; padding: 12px 24px; background: #4DAA57; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">View Event</a>
+            </p>
+            <p style="margin: 0; font-size: 13px; color: #6b7280; line-height: 1.5;">
+                You received this email because you are registered for <a href="${safeEventUrl}" style="color: #2563eb;">${safeEventName}</a> on ${safePlatform}. To contact the host, reply to this email.
+            </p>
+        </div>
+    `;
+}
+
 const INVITE_EXPIRY_DAYS = 7;
 const BATCH_MAX = 30;
 
@@ -462,5 +513,7 @@ module.exports = {
     declineInviteByToken,
     getPendingForUser,
     validateToken,
-    listOrgInvites
+    listOrgInvites,
+    getBaseUrl,
+    buildEventAnnouncementEmail
 };
