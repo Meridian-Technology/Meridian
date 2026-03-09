@@ -1,0 +1,217 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap');
+
+$block: 'event-email-preview';
+
+.#{$block} {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+
+  &_ui__header {
+    padding: 12px 0px 0;
+    display: flex;
+    gap: 16px;
+
+    .#{$block}_ui__org-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .#{$block}_ui__org-name-container {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+
+      .#{$block}_ui__org-name {
+        font-size: 0.875rem;
+        font-weight: 800;
+        color: #202124;
+        letter-spacing: -0.02em;
+        margin: 0;
+        font-family: 'Google Sans', sans-serif;
+      }
+
+      .#{$block}_ui__recipient {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #6b7280;
+        letter-spacing: -0.02em;
+        margin: 0;
+        font-family: 'Google Sans', sans-serif;
+      }
+    }
+  }
+
+  &_ui__date-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  &_ui__date {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #6b7280;
+    letter-spacing: -0.02em;
+    margin: 0;
+    font-family: 'Google Sans', sans-serif;
+  }
+  &__header {
+    margin-bottom: 24px;
+    padding: 24px 56px 0;
+
+    .#{$block}__title {
+      margin: 0 0 4px 0;
+      font-size: 22px;
+      font-weight: 700;
+      color: #1f2937;
+      line-height: 1.3;
+    }
+
+    .#{$block}__date {
+      margin: 0 0 2px 0;
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .#{$block}__org {
+      margin: 0;
+      font-size: 14px;
+      color: #6b7280;
+    }
+  }
+
+  &__sender {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 0 0px 16px;
+    margin-left: 56px;
+    margin-right: 40px;
+    border-bottom: 1px solid #e5e7eb;
+
+    .#{$block}__avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 560;
+      color: white;
+      background: #4DAA57;
+      object-fit: cover;
+
+      &--img {
+        padding: 0;
+      }
+    }
+
+    .#{$block}__sender-name {
+      font-size: 14px;
+      font-weight: 560;
+      color: #1f2937;
+    }
+  }
+
+  &__content-block {
+    flex: 1;
+    min-height: 120px;
+    overflow-y: auto;
+    padding: 0 60px 20px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: #1f2937;
+
+    .#{$block}__subject {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      font-weight: 560;
+      color: #1f2937;
+    }
+
+    .#{$block}__content {
+      margin-bottom: 24px;
+
+      p {
+        margin: 0 0 0.75em 0;
+
+        &:first-child {
+          margin-top: 0;
+        }
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
+
+      a {
+        color: #2563eb;
+        text-decoration: none;
+
+        &:hover {
+          text-decoration: underline;
+        }
+      }
+
+      ul,
+      ol {
+        margin: 0 0 0.75em 0;
+        padding-left: 1.5em;
+      }
+
+      li {
+        margin-bottom: 0.25em;
+      }
+
+      strong,
+      b {
+        font-weight: 560;
+      }
+
+      em,
+      i {
+        font-style: italic;
+      }
+    }
+
+    .#{$block}__placeholder {
+      margin: 0 0 24px 0;
+      font-size: 0.875rem;
+      color: #5f6368;
+      font-style: italic;
+    }
+
+    .#{$block}__cta-btn {
+      display: inline-block;
+      padding: 12px 24px;
+      margin: 0 0 24px 0;
+      background: #4DAA57;
+      color: white;
+      border-radius: 8px;
+      font-weight: 560;
+      font-size: 0.9375rem;
+    }
+
+    .#{$block}__disclaimer {
+      margin: 0;
+      font-size: 13px;
+      color: #6b7280;
+      line-height: 1.5;
+
+      .#{$block}__disclaimer-link {
+        color: #2563eb;
+        text-decoration: none;
+      }
+    }
+  }
+}
