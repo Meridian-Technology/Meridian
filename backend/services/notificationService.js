@@ -796,6 +796,28 @@ class NotificationService {
                     }
                 ]
             },
+            'org_event_announcement': {
+                title: '{{orgName}}: announcement for {{eventName}}',
+                message: '{{messagePreview}}',
+                version: '1.0',
+                priority: 'normal',
+                channels: ['in_app', 'push'],
+                navigation: {
+                    type: 'navigate',
+                    route: 'EventDetails',
+                    params: { eventId: '{{eventId}}' },
+                    deepLink: 'meridian://event/{{eventId}}'
+                },
+                actions: [
+                    {
+                        id: 'view_event_announcement',
+                        label: 'View Announcement',
+                        type: 'link',
+                        url: 'meridian://event/{{eventId}}',
+                        style: 'primary'
+                    }
+                ]
+            },
             'org_member_applied': {
                 title: 'New Member Applied',
                 message: '<strong>{{senderName|capitalize}}</strong> has applied to join <strong>{{orgName}}</strong>.',
