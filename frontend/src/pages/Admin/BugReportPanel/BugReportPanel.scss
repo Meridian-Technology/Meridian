@@ -1,0 +1,60 @@
+.bug_report_panel{
+    .bug-report-content{
+        padding: 25px 30px;
+
+        .priority-breakdown {
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            background-color: var(--lighter);
+            border-radius: 15px;
+            padding: 14px 20px;
+            
+            h3{
+                margin: 0;
+                color: var(--text);
+                font-weight: 600;
+                font-size: 16px;
+                margin-bottom: 10px;
+            }
+            .stat-cards {
+                display:flex;
+                gap: 15px;
+                .stat-card {
+                    background-color: var(--background);
+                    border-radius: 13px;
+                    padding: 10px 20px;
+    
+                    h2, h3, p {
+                    margin:0;
+                    font-family: 'Inter';
+                    }
+                    h2{
+                        margin: 0;
+                        color: var(--primary-color);
+                        font-size: 30px;
+                        font-weight:700;
+                        font-family: 'Inter';
+                        margin-bottom: 2;
+                    }
+                    h3{
+                        margin: 0;
+                        color: var(--text);
+                        font-size: 20px;
+                        font-weight: 600;
+                        font-family: 'Inter';
+                        margin-bottom: 2px;
+                    }
+                    p {
+                        margin: 0;
+                        color: var(--lighter-text);
+                        font-size: 13px;
+                        font-weight: 500;
+                        font-family: 'Inter';
+                    }
+                }
+            }
+            
+        }
+
+    }
+}
