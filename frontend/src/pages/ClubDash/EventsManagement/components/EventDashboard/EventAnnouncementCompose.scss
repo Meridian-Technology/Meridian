@@ -743,6 +743,57 @@
   border-radius: 6px;
 }
 
+.event-announcement-compose__recipients-additional-label {
+  margin-top: 0.75rem;
+  padding: 0.35rem 1rem 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--lighter-text, #6b7280);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.event-announcement-compose__recipients-list--additional {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.event-announcement-compose__recipient--additional {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.03);
+  }
+
+  .event-announcement-compose__recipient-email {
+    margin-left: 0;
+    flex: 1;
+  }
+}
+
+.event-announcement-compose__recipient-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lighter-text, #6b7280);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.event-announcement-compose__recipient-remove:hover {
+  background: rgba(185, 28, 28, 0.1);
+  color: var(--error, #b91c1c);
+}
+
 .event-announcement-compose__anonymous-no-email {
   margin: 0.5rem 1rem 0;
   padding: 0.5rem 0.75rem;

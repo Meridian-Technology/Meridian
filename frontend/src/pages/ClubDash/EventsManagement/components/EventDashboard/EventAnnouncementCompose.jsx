@@ -178,6 +178,10 @@ function EventAnnouncementCompose({
     const selectAll = () => setIncludedUserIds(new Set(recipients.map(r => r.userId)));
     const selectNone = () => setIncludedUserIds(new Set());
 
+    const removeAdditionalEmail = (email) => {
+        setAdditionalEmails(prev => prev.filter(e => e !== email));
+    };
+
     const canSend = (channelInApp && recipients.some(r => includedUserIds.has(r.userId) && !r.isAnonymous)) || (channelEmail && (recipients.some(r => includedUserIds.has(r.userId) && r.email) || additionalEmails.length > 0));
 
     const handleEditorKeyDown = useCallback((e) => {
@@ -502,6 +506,29 @@ function EventAnnouncementCompose({
                                             </li>
                                         ))}
                                     </ul>
+                                    {additionalEmails.length > 0 && (
+                                        <>
+                                            <div className="event-announcement-compose__recipients-additional-label">
+                                                Additional emails (added manually)
+                                            </div>
+                                            <ul className="event-announcement-compose__recipients-list event-announcement-compose__recipients-list--additional">
+                                                {additionalEmails.map((email) => (
+                                                    <li key={email} className="event-announcement-compose__recipient event-announcement-compose__recipient--additional">
+                                                        <span className="event-announcement-compose__recipient-email">{email}</span>
+                                                        <button
+                                                            type="button"
+                                                            className="event-announcement-compose__recipient-remove"
+                                                            onClick={() => removeAdditionalEmail(email)}
+                                                            aria-label={`Remove ${email}`}
+                                                            title="Remove"
+                                                        >
+                                                            <Icon icon="ep:close-bold" aria-hidden />
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </>
+                                    )}
                                     {anonymousWithNoEmailCount > 0 && (
                                         <p className="event-announcement-compose__anonymous-no-email">
                                             {anonymousWithNoEmailCount} guest{anonymousWithNoEmailCount !== 1 ? 's' : ''} registered without an email address and cannot receive announcements.
