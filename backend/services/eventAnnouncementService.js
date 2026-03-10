@@ -321,6 +321,16 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
         }
     }
 
+    // Include organizer-supplied additional emails (e.g. manually added, max 20). Email-only; dedupe with existing.
+    const additionalEmails = (options.additionalEmails || []).slice(0, 20).map(e => String(e).trim().toLowerCase()).filter(isValidEmail);
+    const existingEmailSet = new Set(attendeesWithEmail.map(({ email }) => email));
+    additionalEmails.forEach((email) => {
+        if (!existingEmailSet.has(email)) {
+            existingEmailSet.add(email);
+            attendeesWithEmail.push({ userId: null, email });
+        }
+    });
+
     // In development, send all announcement emails and in-app notifications only to james@meridian.study
     const isDev = process.env.NODE_ENV === 'development';
     const DEV_ANNOUNCEMENT_EMAIL = 'james@activeherb.com';

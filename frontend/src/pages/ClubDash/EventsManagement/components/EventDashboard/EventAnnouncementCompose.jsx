@@ -11,6 +11,27 @@ import { parseMarkdownDescription } from '../../../../../utils/markdownUtils';
 import './EventAnnouncementCompose.scss';
 
 const CLOSE_ANIMATION_MS = 280;
+const MAX_ADDITIONAL_EMAILS = 20;
+
+function isValidEmail(str) {
+    if (!str || typeof str !== 'string') return false;
+    const t = str.trim().toLowerCase();
+    return t.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+}
+
+function parseCommaSeparatedEmails(text, existingSet, maxNew = MAX_ADDITIONAL_EMAILS) {
+    const seen = new Set(existingSet);
+    const result = [];
+    const raw = (text || '').split(/[\n,;]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    for (const part of raw) {
+        if (result.length >= maxNew) break;
+        const email = part.trim().toLowerCase();
+        if (!isValidEmail(email) || seen.has(email)) continue;
+        seen.add(email);
+        result.push(email);
+    }
+    return result;
+}
 
 /**
  * Spotlight-style compose UI for event announcements: implications, channel toggles,
@@ -34,6 +55,7 @@ function EventAnnouncementCompose({
     const [isClosing, setIsClosing] = useState(false);
     const closeTimeoutRef = useRef(null);
     const popupRef = useRef(null);
+    const subjectInputRef = useRef(null);
     const [content, setContent] = useState('');
     const [subject, setSubject] = useState('');
     const [sendAsOrg, setSendAsOrg] = useState(false);
@@ -45,6 +67,9 @@ function EventAnnouncementCompose({
     const [showSettingsPopover, setShowSettingsPopover] = useState(false);
     const settingsAnchorRef = useRef(null);
     const [showEmailPreview, setShowEmailPreview] = useState(false);
+    const [additionalEmails, setAdditionalEmails] = useState([]);
+    const [showAddEmailsPopup, setShowAddEmailsPopup] = useState(false);
+    const [addEmailsInput, setAddEmailsInput] = useState('');
     const { addNotification } = useNotification();
 
     const recipientsUrl = isOpen && orgId && eventId
@@ -79,6 +104,7 @@ function EventAnnouncementCompose({
             setContent('');
             setSubject('');
             setSendAsOrg(false);
+            setAdditionalEmails([]);
         }, CLOSE_ANIMATION_MS);
     }, [isClosing, onClose]);
 
@@ -103,6 +129,7 @@ function EventAnnouncementCompose({
                     sendAsOrg,
                     excludeUserIds,
                     excludeEmails: excludeEmails.length ? excludeEmails : undefined,
+                    additionalEmails: additionalEmails.length ? additionalEmails : undefined,
                     channels: { inApp: channelInApp, email: channelEmail }
                 },
                 { method: 'POST' }
@@ -151,18 +178,90 @@ function EventAnnouncementCompose({
     const selectAll = () => setIncludedUserIds(new Set(recipients.map(r => r.userId)));
     const selectNone = () => setIncludedUserIds(new Set());
 
+    const canSend = (channelInApp && recipients.some(r => includedUserIds.has(r.userId) && !r.isAnonymous)) || (channelEmail && (recipients.some(r => includedUserIds.has(r.userId) && r.email) || additionalEmails.length > 0));
+
+    const handleEditorKeyDown = useCallback((e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault();
+            if (!isSubmitting && canSend) handleSend();
+        }
+    }, [isSubmitting, canSend]);
+
     useEffect(() => {
         if (!isOpen || isClosing) return;
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
-                if (showEmailPreview) setShowEmailPreview(false);
+                if (showAddEmailsPopup) setShowAddEmailsPopup(false);
+                else if (showEmailPreview) setShowEmailPreview(false);
                 else if (showSettingsPopover) setShowSettingsPopover(false);
                 else handleClose();
             }
         };
         window.addEventListener('keydown', handleEscape);
         return () => window.removeEventListener('keydown', handleEscape);
-    }, [isOpen, isClosing, handleClose, showSettingsPopover, showEmailPreview]);
+    }, [isOpen, isClosing, handleClose, showSettingsPopover, showEmailPreview, showAddEmailsPopup]);
+
+    useEffect(() => {
+        if (!isOpen || isClosing) return;
+        if (recipients.length > 0 && subjectInputRef.current) {
+            subjectInputRef.current.focus();
+        }
+    }, [isOpen, isClosing, recipients.length]);
+
+    // Focus trap and initial focus: keep Tab inside the dialog (popup is portaled so focus can escape)
+    useEffect(() => {
+        if (!isOpen || isClosing || recipients.length === 0) return;
+        const dialog = popupRef.current;
+        if (!dialog) return;
+
+        const getFocusable = () => {
+            const sel = 'button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+            return Array.from(dialog.querySelectorAll(sel)).filter((el) => {
+                return el.offsetParent !== null && !el.hasAttribute('aria-hidden');
+            });
+        };
+
+        // Defer initial focus so the subject input is in the DOM
+        const focusSubject = () => {
+            if (subjectInputRef.current) subjectInputRef.current.focus();
+            else getFocusable()[0]?.focus();
+        };
+        const raf = requestAnimationFrame(() => {
+            requestAnimationFrame(focusSubject);
+        });
+
+        const handleKeyDown = (e) => {
+            if (e.key !== 'Tab') return;
+            const focusable = getFocusable();
+            if (focusable.length === 0) return;
+            const current = document.activeElement;
+            const currentIndex = focusable.indexOf(current);
+            if (currentIndex === -1) {
+                // Focus is outside dialog (e.g. overlay or page); redirect into dialog
+                e.preventDefault();
+                if (e.shiftKey) focusable[focusable.length - 1].focus();
+                else focusable[0].focus();
+                return;
+            }
+            if (e.shiftKey) {
+                if (currentIndex === 0) {
+                    e.preventDefault();
+                    focusable[focusable.length - 1].focus();
+                }
+            } else {
+                if (currentIndex === focusable.length - 1) {
+                    e.preventDefault();
+                    focusable[0].focus();
+                }
+            }
+        };
+
+        dialog.addEventListener('keydown', handleKeyDown, true);
+        return () => {
+            cancelAnimationFrame(raf);
+            dialog.removeEventListener('keydown', handleKeyDown, true);
+        };
+    }, [isOpen, isClosing, recipients.length]);
 
     useEffect(() => {
         return () => {
@@ -170,13 +269,41 @@ function EventAnnouncementCompose({
         };
     }, []);
 
+    useEffect(() => {
+        if (showAddEmailsPopup) setAddEmailsInput('');
+    }, [showAddEmailsPopup]);
+
+    const handleAddEmailsSubmit = useCallback(() => {
+        const existingSet = new Set([
+            ...recipients.map(r => r.email).filter(Boolean),
+            ...additionalEmails
+        ]);
+        const maxNew = MAX_ADDITIONAL_EMAILS - additionalEmails.length;
+        const parsed = parseCommaSeparatedEmails(addEmailsInput, existingSet, maxNew);
+        setAdditionalEmails(prev => [...prev, ...parsed].slice(0, MAX_ADDITIONAL_EMAILS));
+        setAddEmailsInput('');
+        setShowAddEmailsPopup(false);
+        if (parsed.length > 0) {
+            addNotification({
+                title: 'Emails added',
+                message: `${parsed.length} email${parsed.length !== 1 ? 's' : ''} added to this announcement.`,
+                type: 'success'
+            });
+        } else if ((addEmailsInput || '').trim()) {
+            addNotification({
+                title: 'No new emails added',
+                message: 'Addresses were invalid or already in the recipient list. Use comma-separated format (max 20).',
+                type: 'info'
+            });
+        }
+    }, [addEmailsInput, additionalEmails, recipients, addNotification]);
+
     if (!isOpen && !isClosing) return null;
 
     const includedCount = recipients.filter(r => includedUserIds.has(r.userId)).length;
     const withEmailCount = recipients.filter(r => includedUserIds.has(r.userId) && r.email).length;
     const inAppCount = channelInApp ? recipients.filter(r => includedUserIds.has(r.userId) && !r.isAnonymous).length : 0;
     const emailCount = channelEmail ? withEmailCount : 0;
-    const canSend = (channelInApp && recipients.some(r => includedUserIds.has(r.userId) && !r.isAnonymous)) || (channelEmail && recipients.some(r => includedUserIds.has(r.userId) && r.email));
 
     return createPortal(
         <div
@@ -270,6 +397,18 @@ function EventAnnouncementCompose({
                                     <div className="event-announcement-compose__recipients-controls">
                                         <button
                                             type="button"
+                                            className="event-announcement-compose__add-emails-btn"
+                                            onClick={() => setShowAddEmailsPopup(true)}
+                                            aria-label={`Add email recipients (${additionalEmails.length}/${MAX_ADDITIONAL_EMAILS} used)`}
+                                        >
+                                            <Icon icon="mdi:email-plus-outline" />
+                                            Add emails
+                                            {additionalEmails.length > 0 && (
+                                                <span className="event-announcement-compose__add-emails-count">+{additionalEmails.length}</span>
+                                            )}
+                                        </button>
+                                        <button
+                                            type="button"
                                             className="event-announcement-compose__recipients-chevron"
                                             onClick={() => setShowRecipientList((v) => !v)}
                                             aria-expanded={showRecipientList}
@@ -315,6 +454,16 @@ function EventAnnouncementCompose({
                                                         >
                                                             Open Registration settings
                                                         </button>
+                                                        {(anonymousWithEmailCount > 0 || anonymousWithNoEmailCount > 0) && (
+                                                            <button
+                                                                type="button"
+                                                                className="event-announcement-compose__settings-popover-btn event-announcement-compose__settings-popover-btn--secondary"
+                                                                onClick={() => { setShowSettingsPopover(false); setShowAddEmailsPopup(true); }}
+                                                            >
+                                                                <Icon icon="mdi:email-plus-outline" />
+                                                                Add emails manually
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </>
                                             )}
@@ -362,8 +511,8 @@ function EventAnnouncementCompose({
                             )}
 
                             <div className="event-announcement-compose__delivery-sender-row">
-                                <div className="event-announcement-compose__channels-row event-announcement-compose__option-block">
-                                    <label className="event-announcement-compose__option-label">Delivery</label>
+                                <div className="event-announcement-compose__channels-row event-announcement-compose__option-block" role="group" aria-labelledby="event-announcement-delivery-label">
+                                    <label id="event-announcement-delivery-label" className="event-announcement-compose__option-label">Delivery</label>
                                     <span className="event-announcement-compose__option-hint">Click to toggle on or off</span>
                                     <div className="event-announcement-compose__channels event-announcement-compose__option-box">
                                     <label className={`event-announcement-compose__channel-toggle ${channelInApp ? 'event-announcement-compose__channel-toggle--checked' : ''}`}>
@@ -390,8 +539,8 @@ function EventAnnouncementCompose({
                                     </label>
                                 </div>
                                 </div>
-                                <div className="event-announcement-compose__send-as-row event-announcement-compose__option-block">
-                                    <label className="event-announcement-compose__option-label">Sender</label>
+                                <div className="event-announcement-compose__send-as-row event-announcement-compose__option-block" role="group" aria-labelledby="event-announcement-sender-label">
+                                    <label id="event-announcement-sender-label" className="event-announcement-compose__option-label">Sender</label>
                                     <span className="event-announcement-compose__option-hint">Click to choose</span>
                                     <div className="event-announcement-compose__send-as-options event-announcement-compose__option-box">
                                     <label className={`event-announcement-compose__send-as-option ${!sendAsOrg ? 'event-announcement-compose__send-as-option--selected' : ''}`}>
@@ -438,21 +587,24 @@ function EventAnnouncementCompose({
                                 <label className="event-announcement-compose__editor-label" htmlFor="event-announcement-subject">Subject</label>
                                 <input
                                     id="event-announcement-subject"
+                                    ref={subjectInputRef}
                                     type="text"
                                     className="event-announcement-compose__subject-input"
                                     value={subject}
                                     onChange={(e) => setSubject(e.target.value)}
                                     placeholder={`e.g. Reminder: ${eventName || 'event'} this weekend`}
                                     maxLength={200}
+                                    aria-label="Email subject"
                                 />
                             </div>
-                            <div className="event-announcement-compose__editor">
-                                <label className="event-announcement-compose__editor-label">Message</label>
+                            <div className="event-announcement-compose__editor" role="group" aria-labelledby="event-announcement-message-label">
+                                <label id="event-announcement-message-label" className="event-announcement-compose__editor-label">Message</label>
                                 <MarkdownTextarea
                                     value={content}
                                     onChange={setContent}
                                     placeholder={`Share a message with your guests for ${eventName || 'this event'}...`}
                                     rows={10}
+                                    onKeyDown={handleEditorKeyDown}
                                 />
                             </div>
                         </>
@@ -463,37 +615,43 @@ function EventAnnouncementCompose({
                     <div className="event-announcement-compose__footer">
                         <button
                             type="button"
-                            className="event-announcement-compose__footer-send"
-                            onClick={handleSend}
-                            disabled={isSubmitting || !canSend}
-                        >
-                            <Icon icon="mdi:send-outline" />
-                            {isSubmitting ? 'Sending...' : 'Send'}
-                        </button>
-                        <button
-                            type="button"
-                            className="event-announcement-compose__footer-schedule"
-                            disabled
-                            title="Coming soon"
-                        >
-                            Schedule
-                        </button>
-                        <button
-                            type="button"
-                            className="event-announcement-compose__footer-preview"
-                            onClick={() => setShowEmailPreview(true)}
-                            title="Preview email"
-                        >
-                            Preview
-                        </button>
-                        <button
-                            type="button"
                             className="event-announcement-compose__footer-cancel"
                             onClick={handleClose}
                             disabled={isSubmitting}
+                            aria-label="Cancel and close"
                         >
                             Cancel
                         </button>
+                        <div className="event-announcement-compose__footer-actions">
+                            <button
+                                type="button"
+                                className="event-announcement-compose__footer-preview"
+                                onClick={() => setShowEmailPreview(true)}
+                                title="Preview email"
+                                aria-label="Preview email"
+                            >
+                                Preview
+                            </button>
+                            <button
+                                type="button"
+                                className="event-announcement-compose__footer-schedule"
+                                disabled
+                                title="Coming soon"
+                                aria-label="Schedule (coming soon)"
+                            >
+                                Schedule
+                            </button>
+                            <button
+                                type="button"
+                                className="event-announcement-compose__footer-send"
+                                onClick={handleSend}
+                                disabled={isSubmitting || !canSend}
+                                aria-label={isSubmitting ? 'Sending announcement' : 'Send announcement'}
+                            >
+                                <Icon icon="mdi:send-outline" aria-hidden />
+                                {isSubmitting ? 'Sending...' : 'Send'}
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -527,6 +685,50 @@ function EventAnnouncementCompose({
                         </button>
                     </div>
                 </Popup>
+            <Popup
+                isOpen={showAddEmailsPopup}
+                onClose={() => { setShowAddEmailsPopup(false); setAddEmailsInput(''); }}
+                customClassName="event-announcement-compose__add-emails-popup"
+            >
+                <div className="event-announcement-compose__add-emails-header">
+                    <h3 id="event-announcement-add-emails-title">Add email recipients</h3>
+                </div>
+                <div className="event-announcement-compose__add-emails-body">
+                    <p className="event-announcement-compose__add-emails-desc">
+                        Enter a comma-separated list of email addresses to include in this announcement (max {MAX_ADDITIONAL_EMAILS} total). Duplicates and addresses already in the recipient list will be ignored.
+                    </p>
+                    <textarea
+                        aria-labelledby="event-announcement-add-emails-title"
+                        className="event-announcement-compose__add-emails-textarea"
+                        value={addEmailsInput}
+                        onChange={(e) => setAddEmailsInput(e.target.value)}
+                        placeholder="e.g. guest1@example.com, guest2@example.com"
+                        rows={4}
+                    />
+                    {additionalEmails.length > 0 && (
+                        <p className="event-announcement-compose__add-emails-count-msg">
+                            {additionalEmails.length} of {MAX_ADDITIONAL_EMAILS} extra email{additionalEmails.length !== 1 ? 's' : ''} added for this announcement.
+                        </p>
+                    )}
+                </div>
+                <div className="event-announcement-compose__add-emails-footer">
+                    <button
+                        type="button"
+                        className="event-announcement-compose__footer-cancel"
+                        onClick={() => { setShowAddEmailsPopup(false); setAddEmailsInput(''); }}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        className="event-announcement-compose__footer-send"
+                        onClick={handleAddEmailsSubmit}
+                        disabled={additionalEmails.length >= MAX_ADDITIONAL_EMAILS}
+                    >
+                        Add emails
+                    </button>
+                </div>
+            </Popup>
         </div>,
         document.body
     );

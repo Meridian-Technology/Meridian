@@ -99,6 +99,13 @@ function TabbedContainer({
         onTabChange?.(tabId);
     }, [controlledActiveTab, onTabChange, lazyLoad]);
 
+    // When activeTab changes (e.g. controlled switch from outside), ensure it's in loadedTabs so content renders
+    useEffect(() => {
+        if (lazyLoad && activeTab) {
+            setLoadedTabs(prev => prev.has(activeTab) ? prev : new Set([...prev, activeTab]));
+        }
+    }, [lazyLoad, activeTab]);
+
     // Handle tab reorder
     const handleTabReorder = useCallback((dragIndex, hoverIndex) => {
         if (allowTabReorder && onTabReorder) {
