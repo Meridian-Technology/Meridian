@@ -491,10 +491,35 @@
 .event-announcement-compose__recipients-pills .event-announcement-compose__recipients-controls {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 0.35rem;
   margin-left: auto;
   border-left: 1px solid rgba(0, 0, 0, 0.08);
   padding-left: 0.5rem;
+}
+
+.event-announcement-compose__add-emails-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--green, #4DAA57);
+  background: transparent;
+  border: 1px solid rgba(77, 170, 87, 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+
+  &:hover {
+    background: rgba(77, 170, 87, 0.1);
+    border-color: var(--green, #4DAA57);
+  }
+
+  .event-announcement-compose__add-emails-count {
+    font-size: 0.75rem;
+    opacity: 0.9;
+  }
 }
 
 .event-announcement-compose__recipients-pills .event-announcement-compose__recipients-chevron {
@@ -616,6 +641,18 @@
 .event-announcement-compose__settings-popover-btn:hover {
   background: rgba(77, 170, 87, 0.18);
   border-color: var(--green, #4DAA57);
+}
+
+.event-announcement-compose__settings-popover-btn--secondary {
+  margin-top: 0.5rem;
+  background: transparent;
+  border-color: rgba(0, 0, 0, 0.12);
+  color: var(--text, #1f2937);
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.2);
+  }
 }
 
 .event-announcement-compose__recipients-header {
@@ -878,6 +915,12 @@
   background: rgba(255, 255, 255, 0.6);
 }
 
+.event-announcement-compose__footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .event-announcement-compose__footer-send {
   display: inline-flex;
   align-items: center;
@@ -931,7 +974,6 @@
 }
 
 .event-announcement-compose__footer-cancel {
-  margin-left: auto;
   padding: 0.5rem 1rem;
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.15);
@@ -954,6 +996,76 @@
    Stack above the compose modal (z-index 9999) when opened from it */
 .popup-overlay:has(.event-announcement-compose__preview-popup) {
   z-index: 10001;
+}
+
+.popup-overlay:has(.event-announcement-compose__add-emails-popup) {
+  z-index: 10001;
+}
+
+.popup-content.event-announcement-compose__add-emails-popup {
+  width: min(95%, 440px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.event-announcement-compose__add-emails-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+
+  h3 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text, #1f2937);
+  }
+}
+
+.event-announcement-compose__add-emails-body {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.event-announcement-compose__add-emails-desc {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--lighter-text, #6b7280);
+  line-height: 1.45;
+}
+
+.event-announcement-compose__add-emails-textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9375rem;
+  border: 1px solid var(--lighterborder, #e5e7eb);
+  border-radius: 8px;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+  font-family: inherit;
+
+  &::placeholder {
+    color: var(--lighter-text, #6b7280);
+  }
+}
+
+.event-announcement-compose__add-emails-count-msg {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--lighter-text, #6b7280);
+}
+
+.event-announcement-compose__add-emails-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .popup-content.event-announcement-compose__preview-popup {

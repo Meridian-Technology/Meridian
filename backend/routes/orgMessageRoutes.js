@@ -76,11 +76,11 @@ async function ensureMessageMentionData(message, orgId, Event) {
 /**
  * POST /:orgId/events/:eventId/announcements
  * Create an event-specific announcement (org-hosted event only). Sends to event attendees (in-app + email).
- * Body: { content, excludeUserIds?: string[], excludeEmails?: string[], channels?: { inApp?: boolean, email?: boolean } }
+ * Body: { content, excludeUserIds?: string[], excludeEmails?: string[], additionalEmails?: string[], channels?: { inApp?: boolean, email?: boolean } }
  */
 router.post('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), async (req, res) => {
     const { orgId, eventId } = req.params;
-    const { content, subject, excludeUserIds, excludeEmails, channels, sendAsOrg } = req.body;
+    const { content, subject, excludeUserIds, excludeEmails, additionalEmails, channels, sendAsOrg } = req.body;
 
     try {
         const options = {};
@@ -88,6 +88,13 @@ router.post('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPerm
         if (sendAsOrg === true) options.sendAsOrg = true;
         if (Array.isArray(excludeUserIds)) options.excludeUserIds = excludeUserIds.map(id => String(id));
         if (Array.isArray(excludeEmails)) options.excludeEmails = excludeEmails.map(e => String(e).trim().toLowerCase()).filter(Boolean);
+        if (Array.isArray(additionalEmails)) {
+            const MAX_ADDITIONAL = 20;
+            options.additionalEmails = additionalEmails
+                .map(e => String(e).trim().toLowerCase())
+                .filter(Boolean)
+                .slice(0, MAX_ADDITIONAL);
+        }
         if (channels && typeof channels === 'object') options.channels = { inApp: channels.inApp, email: channels.email };
         const { message } = await eventAnnouncementService.sendEventAnnouncement(req, orgId, eventId, content || '', options);
         res.status(201).json({

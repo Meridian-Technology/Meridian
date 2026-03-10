@@ -106,7 +106,7 @@ function CommunicationsTab({
                                 </thead>
                                 <tbody>
                                     {announcements.map((msg) => {
-                                        const author = msg.authorId;
+                                        const author = msg.authorId;        
                                         const authorName = author?.name || author?.username || 'Someone';
                                         const msgSubject = msg.subject && String(msg.subject).trim() ? msg.subject : null;
                                         const snippet = stripHtml(msg.content).substring(0, 60);

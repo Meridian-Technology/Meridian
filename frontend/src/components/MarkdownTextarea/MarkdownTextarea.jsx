@@ -17,6 +17,7 @@ const MarkdownTextarea = ({
     id,
     className = '',
     required = false,
+    onKeyDown,
 }) => {
     const editorRef = useRef(null);
     const isInternalChangeRef = useRef(false);
@@ -77,6 +78,10 @@ const MarkdownTextarea = ({
     };
 
     const handleKeyDown = (e) => {
+        if (onKeyDown) {
+            onKeyDown(e);
+            if (e.defaultPrevented) return;
+        }
         if (e.key === ' ') {
             const selection = window.getSelection();
             if (!selection || selection.rangeCount === 0) return;
@@ -130,6 +135,7 @@ const MarkdownTextarea = ({
             <div className="markdown-textarea-toolbar">
                 <button
                     type="button"
+                    tabIndex={-1}
                     className="markdown-toolbar-btn"
                     onClick={() => handleToolbar('bold')}
                     title="Bold"
@@ -139,6 +145,7 @@ const MarkdownTextarea = ({
                 </button>
                 <button
                     type="button"
+                    tabIndex={-1}
                     className="markdown-toolbar-btn"
                     onClick={() => handleToolbar('italic')}
                     title="Italic"
@@ -148,6 +155,7 @@ const MarkdownTextarea = ({
                 </button>
                 <button
                     type="button"
+                    tabIndex={-1}
                     className="markdown-toolbar-btn"
                     onClick={() => handleToolbar('insertUnorderedList')}
                     title="Bullet list"
@@ -157,6 +165,7 @@ const MarkdownTextarea = ({
                 </button>
                 <button
                     type="button"
+                    tabIndex={-1}
                     className="markdown-toolbar-btn"
                     onClick={() => handleToolbar('insertParagraph')}
                     title="New line"
