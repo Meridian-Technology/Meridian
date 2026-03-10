@@ -4,6 +4,7 @@ import useAuth from '../../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import BlueGrad1 from '../../assets/BlueGrad1.png';
 import BlueGrad2 from '../../assets/BlueGrad2.png';
+import BugReportPanel from './BugReportPanel/BugReportPanel';
 
 import Dashboard from '../../components/Dashboard/Dashboard';
 import General from './General/General';
@@ -76,6 +77,11 @@ function Admin(){
             label: 'Badge Grants', 
             icon: 'bx:stats',
             element: <BadgeManager/>
+        },
+        {
+            label: 'Bug Reports',
+            icon: 'solar:bug-bold',
+            element: <BugReportPanel/>
         }
     ]
 

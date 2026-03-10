@@ -193,7 +193,7 @@ function App() {
                                             <Route path="/documentation" element={<Redirect/>}/>
                                             <Route path="/new-badge/:hash" element={<AnimatedPageWrapper><NewBadge/></AnimatedPageWrapper>}/>
                                             <Route path="/new-badge" element={<AnimatedPageWrapper><NewBadge/></AnimatedPageWrapper>}/>
-
+                                            
                                             {/* logged in routes */}
                                             <Route element={ <ProtectedRoute/> }>
                                                 <Route path="/profile" element={<AnimatedPageWrapper><Profile/></AnimatedPageWrapper>}/>
