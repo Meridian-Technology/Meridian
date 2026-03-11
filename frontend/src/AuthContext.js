@@ -4,6 +4,7 @@ import { useNotification } from './NotificationContext';
 import apiRequest from './utils/postRequest';
 import { analytics } from './services/analytics/analytics';
 import { getAllAnonymousRegistrations, removeAnonymousRegistration } from './utils/anonymousRegistrationStorage';
+import { isWww, isPathAllowedOnWww, getTenantRedirectUrl, getLastTenant } from './config/tenantRedirect';
 
 /** 
 documentation:
@@ -32,6 +33,20 @@ export const AuthProvider = ({ children }) => {
             // console.log('Token validation response:', response.data);
             // Handle response...
             if (response.success) {
+                // On www, if this path requires a tenant, redirect to user's tenant (single-tenant = no picker)
+                if (isWww() && !isPathAllowedOnWww(window.location.pathname)) {
+                    const communities = response.data.communities || [];
+                    const last = getLastTenant();
+                    const tenant = communities.length === 1
+                        ? communities[0]
+                        : (communities.includes(last) ? last : communities[0]);
+                    if (tenant) {
+                        window.location.href = getTenantRedirectUrl(tenant);
+                        return;
+                    }
+                    window.location.href = '/login';
+                    return;
+                }
                 setUser(response.data.user);
                 // Set friend requests if provided
                 if (response.data.friendRequests) {
@@ -134,6 +149,11 @@ export const AuthProvider = ({ children }) => {
                 // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
                 await validateToken();
                 
+                // On www, redirect to the tenant they logged in for (no extra step for single-tenant)
+                if (isWww() && credentials.school) {
+                    window.location.href = getTenantRedirectUrl(credentials.school);
+                    return;
+                }
                 // Redirect admin users to admin dashboard
                 if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
                     window.location.href = '/admin';
@@ -146,15 +166,12 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const googleLogin = async (code, isRegister, codeVerifier = null, redirectUriOverride = null) => {
+    const googleLogin = async (code, isRegister, codeVerifier = null, redirectUriOverride = null, options = {}) => {
         try {
             const url = redirectUriOverride != null ? redirectUriOverride : window.location.href;
-            const response = await axios.post('/google-login', { 
-                code, 
-                isRegister, 
-                url,
-                codeVerifier 
-            }, {
+            const body = { code, isRegister, url, codeVerifier };
+            if (isWww() && options.school) body.school = options.school;
+            const response = await axios.post('/google-login', body, {
                 withCredentials: true
             });
             // Handle response from the backend (e.g., storing the token, redirecting the user)
@@ -173,6 +190,10 @@ export const AuthProvider = ({ children }) => {
             // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
             await validateToken();
             
+            if (isWww() && options.school) {
+                window.location.href = getTenantRedirectUrl(options.school);
+                return;
+            }
             // Redirect admin users to admin dashboard
             if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
                 window.location.href = '/admin';
@@ -184,9 +205,11 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const appleLogin = async (idToken, user) => {
+    const appleLogin = async (idToken, user, options = {}) => {
         try {
-            const response = await axios.post('/apple-login', { idToken, user }, {
+            const body = { idToken, user };
+            if (isWww() && options.school) body.school = options.school;
+            const response = await axios.post('/apple-login', body, {
                 withCredentials: true
             });
             // Handle response from the backend
@@ -205,6 +228,10 @@ export const AuthProvider = ({ children }) => {
             // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
             await validateToken();
             
+            if (isWww() && options.school) {
+                window.location.href = getTenantRedirectUrl(options.school);
+                return;
+            }
             // Redirect admin users to admin dashboard
             if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
                 window.location.href = '/admin';

@@ -9,6 +9,7 @@ import axios from 'axios';
 import Flag from '../../Flag/Flag';
 import SAMLLoginButton from '../SAMLLoginButton/SAMLLoginButton';
 import { isSAMLEnabled, getUniversityDisplayName, getUniversityLogo, getUniversityClassName } from '../../../config/universities';
+import { isWww, getTenantKeys, getLastTenant, setLastTenant } from '../../../config/tenantRedirect';
 import {Icon} from '@iconify-icon/react/dist/iconify.mjs';
 
 function LoginForm() {
@@ -17,7 +18,8 @@ function LoginForm() {
     const [valid, setValid] = useState(false);
     const [formData, setFormData] = useState({
         email: '',
-        password: ''
+        password: '',
+        ...(typeof window !== 'undefined' && isWww() ? { school: getLastTenant() || 'rpi' } : {})
     });
     const [errorText, setErrorText] = useState("");
     const [loadContent, setLoadContent] = useState(false);
@@ -79,14 +81,17 @@ function LoginForm() {
     const handleSubmit = async (e) => {
       e.preventDefault();
       try {
-        await login(formData);
-        sessionStorage.removeItem('login_redirect');
-        navigate(from, { replace: true });
-        // Handle success (e.g., store the token and redirect to a protected page)
+        const payload = { ...formData };
+        if (isWww() && formData.school) payload.school = formData.school;
+        await login(payload);
+        if (!isWww()) {
+          sessionStorage.removeItem('login_redirect');
+          navigate(from, { replace: true });
+        }
+        // When on www, AuthContext redirects to tenant
       } catch (error) {
         console.error('Login failed:', error);
         setErrorText("Invalid Username/Email or Password. Please try again");
-        // Handle errors (e.g., display error message)
       }
     }
 
@@ -107,10 +112,13 @@ function LoginForm() {
         async function googleLog(code) {
             try{
                 setIsGoogleLoginInProgress(true);
-                const codeResponse = await googleLogin(code, false);
+                const school = isWww() ? sessionStorage.getItem('login_school') : null;
+                const opts = school ? { school } : {};
+                const codeResponse = await googleLogin(code, false, undefined, undefined, opts);
                 console.log("codeResponse: " + codeResponse);
                 sessionStorage.removeItem('login_redirect');
-                navigate(redirectPathRef.current || from, { replace: true });
+                sessionStorage.removeItem('login_school');
+                if (!isWww()) navigate(redirectPathRef.current || from, { replace: true });
             } catch (error){
                 setIsGoogleLoginInProgress(false);
                 if(error.response.status  === 409){
@@ -141,7 +149,17 @@ function LoginForm() {
         flow: 'auth-code',
         ux_mode: 'redirect',
         onFailure: () => {failed("Google login failed. Please try again")},
-    })
+    });
+
+    const handleGoogleClick = () => {
+        if (isWww()) sessionStorage.setItem('login_school', formData.school || getLastTenant() || 'rpi');
+        google();
+    };
+
+    const handleAppleClick = () => {
+        if (isWww()) sessionStorage.setItem('login_school', formData.school || getLastTenant() || 'rpi');
+        handleAppleSignIn();
+    };
 
     // Initialize Apple Sign In
     useEffect(() => {
@@ -187,6 +205,23 @@ function LoginForm() {
     return (
       <div className='form'>
           <h1>Welcome Back!</h1>
+        {isWww() && (
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label htmlFor="login-school">School / community</label>
+            <select
+              id="login-school"
+              name="school"
+              value={formData.school || getLastTenant() || 'rpi'}
+              onChange={(e) => setFormData({ ...formData, school: e.target.value })}
+              className="input"
+              style={{ width: '100%', padding: '0.5rem' }}
+            >
+              {getTenantKeys().map(key => (
+                <option key={key} value={key}>{key === 'rpi' ? 'RPI' : key === 'tvcog' ? 'TVCOG' : key}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {errorText !== "" && 
             <Flag text={errorText} img={circleWarning} color={"#FD5858"} primary={"rgba(250, 117, 109, 0.16)"} accent={"#FD5858"} /> 
         }
@@ -203,7 +238,7 @@ function LoginForm() {
         )}
 
         {/* Google Login Button */}
-        <button type="button" className="button google" onClick={() => google()}>
+        <button type="button" className="button google" onClick={handleGoogleClick}>
         <img src={googleLogo} alt="google"/>
             Continue with Google
             </button>
@@ -212,7 +247,7 @@ function LoginForm() {
         <button 
             type="button" 
             className="button apple" 
-            onClick={handleAppleSignIn}
+            onClick={handleAppleClick}
         >
             <Icon icon="mdi:apple" />
             Continue with Apple

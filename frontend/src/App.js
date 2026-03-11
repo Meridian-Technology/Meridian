@@ -5,6 +5,7 @@ import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
+import { isWww, setLastTenant } from './config/tenantRedirect';
 
 import Room from './pages/Room/Room';
 import Room1 from './pages/Room/Room1';
@@ -90,6 +91,14 @@ function App() {
         initAnalytics().catch(error => {
             console.error('Failed to initialize analytics:', error);
         });
+    }, []);
+
+    // Remember tenant for next time user visits www (single-tenant: no picker)
+    useEffect(() => {
+        if (typeof window !== 'undefined' && !isWww() && window.location.hostname) {
+            const sub = window.location.hostname.split('.')[0];
+            if (sub && sub !== 'www') setLastTenant(sub);
+        }
     }, []);
 
     useEffect(() => {
