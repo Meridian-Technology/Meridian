@@ -9,6 +9,7 @@ This document gives developers the context needed to work safely and consistentl
 - **Stack**: Express, Mongoose, JWT (cookies + Bearer), optional Passport/SAML.
 - **Multi-tenant DB**: Tenant is derived from **subdomain** (e.g. `rpi` from `rpi.meridian.study`). In development, `localhost` and IP hosts default to `rpi`.
 - **Per-request DB**: Every request gets `req.db` (a Mongoose connection) and `req.school` (subdomain string) from a global middleware in `app.js`. **Never** use a default `mongoose` connection or `mongoose.model()` directly; always use the request-scoped connection and `getModelService` (see below).
+- **Global DB**: Every request also gets `req.globalDb` (a separate Mongoose connection for cross-tenant data). Use it only via `getGlobalModelService(req, ...)` for `GlobalUser`, `PlatformRole`, `TenantMembership`, and global `Session`. Tenant-specific data stays in tenant DBs only.
 
 ---
 
@@ -46,6 +47,7 @@ const { User, Event, Org } = getModels(req, 'User', 'Event', 'Org');
   - `req.db = await connectToDatabase(subdomain)`
   - `req.school = subdomain`
 - **Adding a school**: Extend the `schoolDbMap` in `getDbUriForSchool()` with the new subdomain and env var (e.g. `MONGO_URI_<SCHOOL>`). Fallback is `DEFAULT_MONGO_URI`.
+- **Global/platform DB**: Use `connectToGlobalDatabase()` from `connectionsManager.js`; it reads `MONGO_URI_PLATFORM` or `MONGO_URI_GLOBAL`, or derives a DB from the default URI (e.g. `meridian_platform`). Set in app middleware as `req.globalDb`. **First platform admin**: Set `PLATFORM_ADMIN_EMAILS=admin@example.com` and run `node scripts/seedPlatformAdmins.js` from `backend/`. **Existing users**: Run `node scripts/migrateUsersToGlobalIdentity.js` to backfill GlobalUser and TenantMembership for existing tenant users (edit `tenantKeys` in the script to match your tenants).
 
 ---
 
@@ -62,23 +64,27 @@ Typical order on a route: **auth first**, then **org/permission** (if needed), t
 
 - **verifyToken(req, res, next)**  
   - Reads JWT from `req.cookies.accessToken` or `Authorization: Bearer <token>`.
-  - On success: sets `req.user = { userId, roles }` and calls `next()`.
+  - **New token shape**: On success, sets `req.user` with `globalUserId`, `userId` (tenant user for current `req.school`), `tenantUserId`, `roles`, and optional `platformRoles`. The tenant user is resolved from the global DB (`TenantMembership` for current school). **Legacy token shape** (only `userId` and `roles`) is still accepted; `req.user` is set as before.
   - On missing token: `401` with `{ success: false, message: 'No access token provided', code: 'NO_TOKEN' }`.
   - On expired: `401` with `code: 'TOKEN_EXPIRED'`.
   - On invalid: `403` with `code: 'INVALID_TOKEN'`.
 
 - **verifyTokenOptional(req, res, next)**  
-  - Same token sources. If no token or invalid, continues without `req.user`. If token is expired, may try to refresh via `refreshToken` cookie and set a new `accessToken` cookie and `req.user`.
+  - Same token sources. If no token or invalid, continues without `req.user`. If token is expired, may try to refresh via `refreshToken` cookie (global or tenant session) and set a new `accessToken` cookie and `req.user`.
 
 - **authorizeRoles(...allowedRoles)**  
   - Use **after** `verifyToken`. Checks `req.user.roles`; if the user has none of `allowedRoles`, responds `403 Forbidden`.
+
+- **requireAdmin** (from `middlewares/requireAdmin.js`)  
+  - Use **after** `verifyToken` for routes that should allow **platform admins** (ubiquitous across all tenants) or tenant admins. Checks `req.user.platformRoles` and global `PlatformRole` first, then tenant `User.roles`. Use this instead of `authorizeRoles('admin', 'root')` for admin-only routes so platform admins have access on every tenant.
 
 Example:
 
 ```js
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 
-router.get('/admin-only', verifyToken, authorizeRoles('admin'), async (req, res) => {
+router.get('/admin-only', verifyToken, requireAdmin, async (req, res) => {
     const { User } = getModels(req, 'User');
     // ...
 });
@@ -172,7 +178,8 @@ Auth middlewares already use `success`, `message`, and `code`. Use `code` for st
 | DB / models          | Always `getModels(req, 'ModelName', ...)` with the request-scoped `req`. Never use global `mongoose` for app data. |
 | Tenant               | Use `req.db` and `req.school` set by app middleware; do not infer tenant elsewhere. |
 | Auth                 | Use `verifyToken` for protected routes; `verifyTokenOptional` for optional auth. |
-| Roles                | Use `authorizeRoles(...)` after `verifyToken` for role checks. |
+| Admin / platform     | Use `requireAdmin` for admin-only routes (platform admins + tenant admins). |
+| Roles                | Use `authorizeRoles(...)` after `verifyToken` for tenant-role-only checks. |
 | Org permissions      | Use `requireOrgPermission` / `requireAnyOrgPermission` / `requireOrgOwner` from `orgPermissions.js` with constants from `constants/permissions.js`. |
 | Responses            | Use `{ success, message?, code?, data? }` JSON and appropriate status codes. |
 | New model            | Add schema, then register in `getModelService.js` with `req.db.model('Name', schema, 'collectionName')`. |
@@ -196,6 +203,7 @@ Auth middlewares already use `success`, `message`, and `code`. Use `code` for st
 | App entry, CORS, DB middleware, route mounting | `app.js` |
 | Per-tenant DB connections | `connectionsManager.js` |
 | Request-scoped models | `services/getModelService.js` |
+| Global (cross-tenant) models | `services/getGlobalModelService.js` — use only for auth and platform-admin logic. |
 | JWT auth              | `middlewares/verifyToken.js` |
 | Org permission checks | `middlewares/orgPermissions.js` |
 | Permission constants  | `constants/permissions.js` |
