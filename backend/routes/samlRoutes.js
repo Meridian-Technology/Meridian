@@ -9,7 +9,8 @@ require('dotenv').config();
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 const getModels = require('../services/getModelService.js');
-const { createSession, deleteSession } = require('../utilities/sessionUtils');
+const { deleteSession } = require('../utilities/sessionUtils');
+const authGlobalService = require('../services/authGlobalService');
 
 // Token configuration
 const ACCESS_TOKEN_EXPIRY_MINUTES = 1;
@@ -48,9 +49,10 @@ async function getSAMLConfig(school, req) {
     }
 }
 
-async function createOrUpdateUserFromSAML(profile, school) {
+async function createOrUpdateUserFromSAML(profile, req) {
     try {
-        const { User } = getModels({ school }, 'User');
+        const school = req.school || 'rpi';
+        const { User } = getModels(req, 'User');
         
         //extract user info
         const email = profile['urn:oid:1.3.6.1.4.1.5923.1.1.1.6'] || profile.email || profile.mail;
@@ -119,7 +121,7 @@ function configureSAMLStrategy(school, req) {
             
             const strategy = new SamlStrategy(config, async (profile, done) => {
                 try {
-                    const user = await createOrUpdateUserFromSAML(profile, school);
+                    const user = await createOrUpdateUserFromSAML(profile, req);
                     return done(null, user);
                 } catch (error) {
                     return done(error, null);
@@ -190,39 +192,10 @@ router.post('/callback', async (req, res) => {
             }
             
             try {
-                //generate tokens
-                const accessToken = jwt.sign(
-                    { userId: user._id, roles: user.roles }, 
-                    process.env.JWT_SECRET, 
-                    { expiresIn: ACCESS_TOKEN_EXPIRY }
-                );
-                
-                const refreshToken = jwt.sign(
-                    { userId: user._id, type: 'refresh' }, 
-                    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-                    { expiresIn: REFRESH_TOKEN_EXPIRY }
-                );
-
-                // Create session instead of storing refresh token directly on user
-                // req should already have db from middleware in app.js
-                await createSession(user._id, refreshToken, req);
-
-                //set cookies
-                res.cookie('accessToken', accessToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: ACCESS_TOKEN_EXPIRY_MS,
-                    path: '/'
-                });
-
-                res.cookie('refreshToken', refreshToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: REFRESH_TOKEN_EXPIRY_MS,
-                    path: '/'
-                });
+                const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
+                await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
+                const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+                await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
 
                 // RelayState is echoed back by IdP in POST body (no server session)
                 const relayState = req.body?.RelayState || '/room/none';
