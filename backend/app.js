@@ -8,7 +8,7 @@ const passport = require('passport');
 require('dotenv').config();
 const { createServer } = require('http');
 const enforce = require('express-sslify');
-const { connectToDatabase } = require('./connectionsManager');
+const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
 
 const s3 = require('./aws-config');
@@ -18,13 +18,13 @@ function createApp() {
   const server = createServer(app);
 
   const corsOrigin = process.env.NODE_ENV === 'production'
-    ? ['https://www.meridian.study', 'https://meridian.study']
+    ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
     : 'http://localhost:3000';
   initSocket(server, { origin: corsOrigin });
 
   const corsOptions = {
     origin: process.env.NODE_ENV === 'production'
-      ? ['https://www.meridian.study', 'https://meridian.study']
+      ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
       : 'http://localhost:3000',
     credentials: true,
     optionsSuccessStatus: 200
@@ -77,6 +77,7 @@ function createApp() {
         
         req.db = await connectToDatabase(subdomain);
         req.school = subdomain;
+        req.globalDb = await connectToGlobalDatabase();
         next();
     } catch (error) {
         console.error('Error establishing database connection:', error);
