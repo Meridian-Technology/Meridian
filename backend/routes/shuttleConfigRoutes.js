@@ -1,6 +1,7 @@
 const express = require('express');
 const getModels = require('../services/getModelService');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 
 const router = express.Router();
 
@@ -55,7 +56,7 @@ router.get('/', async (req, res) => {
  */
 router.post('/', [
 //   verifyToken,
-//   authorizeRoles('admin', 'root')
+//   requireAdmin
 ], async (req, res) => {
   try {
     const { school, apiBaseUrl, enabled } = req.body;
@@ -118,7 +119,7 @@ router.post('/', [
  */
 router.get('/admin', [
   verifyToken,
-  authorizeRoles('admin', 'root')
+  requireAdmin
 ], async (req, res) => {
   try {
     const { ShuttleConfig } = getModels(req, 'ShuttleConfig');
@@ -146,7 +147,7 @@ router.get('/admin', [
  */
 router.delete('/:school', [
   verifyToken,
-  authorizeRoles('admin', 'root')
+  requireAdmin
 ], async (req, res) => {
   try {
     const { school } = req.params;

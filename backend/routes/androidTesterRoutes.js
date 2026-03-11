@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const getModels = require("../services/getModelService");
 const { verifyToken, authorizeRoles } = require("../middlewares/verifyToken");
+const { requireAdmin } = require("../middlewares/requireAdmin");
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -54,7 +55,7 @@ router.post("/signup", async (req, res) => {
 });
 
 // Admin: list signups (for adding to Play Console)
-router.get("/list", verifyToken, authorizeRoles("admin", "root"), async (req, res) => {
+router.get("/list", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { AndroidTesterSignup } = getModels(req, "AndroidTesterSignup");
     const signups = await AndroidTesterSignup.find({})
@@ -73,7 +74,7 @@ router.get("/list", verifyToken, authorizeRoles("admin", "root"), async (req, re
 });
 
 // Admin: export as CSV (one email per line for easy copy into Play Console)
-router.get("/export", verifyToken, authorizeRoles("admin", "root"), async (req, res) => {
+router.get("/export", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { AndroidTesterSignup } = getModels(req, "AndroidTesterSignup");
     const signups = await AndroidTesterSignup.find({})

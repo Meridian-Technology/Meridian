@@ -1,5 +1,6 @@
 const express = require('express');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const getModels = require('../services/getModelService');
 const { body, validationResult } = require('express-validator');
 const fs = require('fs');
@@ -59,7 +60,7 @@ router.get('/', async (req, res) => {
  * @desc    Get resources configuration for admin (includes metadata)
  * @access  Private (Admin/Root)
  */
-router.get('/admin', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/admin', verifyToken, requireAdmin, async (req, res) => {
   try {
     const { ResourcesConfig } = getModels(req, 'ResourcesConfig');
     
@@ -104,7 +105,7 @@ router.get('/admin', verifyToken, authorizeRoles('admin', 'root'), async (req, r
  */
 router.put('/', [
   verifyToken,
-  authorizeRoles('admin', 'root'),
+  requireAdmin,
   body('resources').isArray().withMessage('Resources must be an array'),
   body('resources.*.id').notEmpty().withMessage('Each resource must have an id'),
   body('resources.*.title').notEmpty().withMessage('Each resource must have a title'),
@@ -172,7 +173,7 @@ router.put('/', [
  */
 router.post('/dev/populate', [
   verifyToken,
-  authorizeRoles('admin', 'root'),
+  requireAdmin,
 ], async (req, res) => {
   try {
     // Only allow in development

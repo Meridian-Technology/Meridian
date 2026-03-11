@@ -1,5 +1,6 @@
 const express = require('express');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const getModels = require('../services/getModelService');
 const FeedbackService = require('../services/feedbackService');
 const { body, validationResult } = require('express-validator');
@@ -17,7 +18,7 @@ const withFeedbackService = (req, res, next) => {
 // Get all feedback configurations
 router.get('/configs', [
     verifyToken,
-    authorizeRoles('admin', 'root')
+    requireAdmin
 ], withFeedbackService, async (req, res) => {
     try {
         const { FeedbackConfig } = getModels(req, 'FeedbackConfig');
@@ -46,7 +47,7 @@ router.get('/configs', [
 // Create new feedback configuration
 router.post('/configs', [
     verifyToken,
-    authorizeRoles('admin', 'root'),
+    requireAdmin,
     body('feature').trim().isLength({ min: 1, max: 50 }).withMessage('Feature is required (max 50 chars)'),
     body('version').trim().isLength({ min: 1 }).withMessage('Version is required'),
     body('name').trim().isLength({ min: 1, max: 100 }).withMessage('Name is required (max 100 chars)'),
@@ -109,7 +110,7 @@ router.post('/configs', [
 // Update feedback configuration
 router.put('/configs/:configId', [
     verifyToken,
-    authorizeRoles('admin', 'root'),
+    requireAdmin,
     body('name').optional().trim().isLength({ min: 1, max: 100 }),
     body('description').optional().trim().isLength({ max: 500 }),
     body('fields').optional().isArray({ min: 1 }),
@@ -177,7 +178,7 @@ router.get('/system-version', verifyToken, withFeedbackService, async (req, res)
 // Update system version (admin only)
 router.post('/system-version', [
     verifyToken,
-    authorizeRoles('admin', 'root'),
+    requireAdmin,
     body('version').trim().isLength({ min: 1 }).withMessage('Version is required')
 ], withFeedbackService, async (req, res) => {
     try {
@@ -221,7 +222,7 @@ router.post('/system-version', [
 // Get feedback analytics by feature
 router.get('/analytics/:feature', [
     verifyToken,
-    authorizeRoles('admin', 'root')
+    requireAdmin
 ], withFeedbackService, async (req, res) => {
     try {
         const { feature } = req.params;
@@ -251,7 +252,7 @@ router.get('/analytics/:feature', [
 // Initialize default feedback configurations
 router.post('/initialize', [
     verifyToken,
-    authorizeRoles('admin', 'root')
+    requireAdmin
 ], withFeedbackService, async (req, res) => {
     try {
         const configs = await req.feedbackService.initializeDefaultConfigs(req.user.userId);

@@ -1,5 +1,6 @@
 const express = require('express');
 const { verifyToken, verifyTokenOptional, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const getModels = require('../services/getModelService');
 const { body, validationResult } = require('express-validator');
 
@@ -102,7 +103,7 @@ router.get('/web', verifyTokenOptional, async (req, res) => {
  * @desc    Get notice configs for admin (mobile + web, includes inactive)
  * @access  Private (Admin/Root)
  */
-router.get('/admin', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/admin', verifyToken, requireAdmin, async (req, res) => {
   try {
     const { NoticeConfig } = getModels(req, 'NoticeConfig');
     const [mobileConfig, webConfig] = await Promise.all([
@@ -157,7 +158,7 @@ router.get('/admin', verifyToken, authorizeRoles('admin', 'root'), async (req, r
  */
 router.put('/', [
   verifyToken,
-  authorizeRoles('admin', 'root'),
+  requireAdmin,
   body('platform').optional().isIn(['mobile', 'web']),
   body('showFor').optional().isIn(['guest', 'authenticated', 'both']),
   body('active').optional().isBoolean(),
