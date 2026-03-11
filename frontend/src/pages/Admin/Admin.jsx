@@ -8,6 +8,7 @@ import BlueGrad2 from '../../assets/BlueGrad2.png';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import General from './General/General';
 import WebSocketConnectionsPage from './WebSocketConnectionsPage/WebSocketConnectionsPage';
+import PlatformAdminsPage from './PlatformAdminsPage/PlatformAdminsPage';
 import BadgeManager from './BadgeManager/BadgeManager';
 import ManageUsers from './ManageUsers/ManageUsers';
 import QRManager from './QRManager/QRManager';
@@ -66,6 +67,11 @@ function Admin(){
             label: 'WebSocket Connections', 
             icon: 'mdi:connection',
             element: <WebSocketConnectionsPage/>
+        },
+        { 
+            label: 'Platform Admins', 
+            icon: 'mdi:shield-account',
+            element: <PlatformAdminsPage/>
         },
         { 
             label: 'Manage Users', 
