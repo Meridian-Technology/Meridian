@@ -85,6 +85,20 @@ function createApp() {
     }
   });
 
+  // When on www, only allow landing/auth paths; require tenant subdomain for app APIs (least friction: redirect happens on frontend)
+  const wwwAllowedPathPrefixes = ['/login', '/register', '/validate-token', '/refresh-token', '/logout', '/forgot-password', '/verify-code', '/reset-password', '/verify-email', '/google-login', '/apple-login', '/auth/apple/callback', '/join-tenant', '/sessions', '/auth/saml', '/health', '/claim-anonymous-registrations'];
+  app.use((req, res, next) => {
+    if (req.school !== 'www') return next();
+    const path = (req.path || req.url || '').split('?')[0];
+    const allowed = wwwAllowedPathPrefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'));
+    if (allowed) return next();
+    res.status(403).json({
+      success: false,
+      message: 'Use your school’s site (e.g. rpi.meridian.study) for this page.',
+      code: 'USE_TENANT_SUBDOMAIN'
+    });
+  });
+
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
