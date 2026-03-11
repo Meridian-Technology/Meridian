@@ -91,6 +91,7 @@
     "build": "node scripts/build.js",
     "test": "node scripts/test.js"
   },
+  "proxy": "http://localhost:5001/",
   "eslintConfig": {
     "extends": [
       "react-app",
@@ -109,7 +110,6 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:5001/",
   "jest": {
     "roots": [
       "<rootDir>/src"
