@@ -23,6 +23,7 @@ const getDbUriForSchool = (school) => {
     const schoolDbMap = {
         // berkeley: process.env.MONGO_URI_BERKELEY,
         rpi: process.env.MONGO_URI_RPI,
+        tvcog: process.env.MONGO_URI_TVCOG,
         // Add more schools here
     };
     return schoolDbMap[school] || process.env.MONGODB_URI || process.env.DEFAULT_MONGO_URI;
