@@ -70,9 +70,18 @@ function createApp() {
         // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' or IP -> 'rpi'
         let subdomain = host.split('.')[0];
         
-        // In development, if host is localhost or an IP address, default to 'rpi'
+        // In development, if host is localhost or an IP address, treat as www (no default tenant)
         if (host.includes('localhost') || /^\d+\.\d+\.\d+\.\d+/.test(subdomain) || !host.includes('.')) {
-            subdomain = 'rpi';
+            subdomain = 'www';
+        }
+
+        // Development only: allow X-Tenant header or ?school= to override tenant (for local testing)
+        if (process.env.NODE_ENV !== 'production') {
+            const override = req.headers['x-tenant'] || req.query.school;
+            const validTenants = ['rpi', 'tvcog']; // keep in sync with connectionsManager
+            if (override && validTenants.includes(override.toLowerCase())) {
+                subdomain = override.toLowerCase();
+            }
         }
         
         req.db = await connectToDatabase(subdomain);
@@ -85,8 +94,8 @@ function createApp() {
     }
   });
 
-  // When on www, only allow landing/auth paths; require tenant subdomain for app APIs (least friction: redirect happens on frontend)
-  const wwwAllowedPathPrefixes = ['/login', '/register', '/validate-token', '/refresh-token', '/logout', '/forgot-password', '/verify-code', '/reset-password', '/verify-email', '/google-login', '/apple-login', '/auth/apple/callback', '/join-tenant', '/sessions', '/auth/saml', '/health', '/claim-anonymous-registrations'];
+  // When on www, only allow minimal paths (landing only; auth requires tenant subdomain)
+  const wwwAllowedPathPrefixes = ['/health', '/validate-token', '/log-visit', '/log-repeated-visit'];
   app.use((req, res, next) => {
     if (req.school !== 'www') return next();
     const path = (req.path || req.url || '').split('?')[0];
