@@ -26,12 +26,12 @@ const ForgotEmail = require('../emails/ForgotEmail').default;
 const verificationCodes = new Map();
 
 
-const ACCESS_TOKEN_EXPIRY_MINUTES = 1;
+const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 // Token configuration
-const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`; // 1 minute
+const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`;
 const REFRESH_TOKEN_EXPIRY = `${REFRESH_TOKEN_EXPIRY_DAYS}d`;  // 2 days
-const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000; // 1 minute in milliseconds
+const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000;
 const REFRESH_TOKEN_EXPIRY_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000; // 2 days in milliseconds
 
 // Check if request is from mobile client (token-based auth instead of cookies)
