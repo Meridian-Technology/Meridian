@@ -10,6 +10,7 @@ import Search from '../../../components/Search/Search';
 import MyEventCard from '../../EventsDash/MyEvents/MyEventCard/MyEventCard';
 import RecommendedEventPreviewCard from '../../EventsDash/MyEvents/RecommendedEvents/RecommendedEventPreviewCard/RecommendedEventPreviewCard';
 import RecommendedRoomCard from '../../../components/RecommendedRoomCard/RecommendedRoomCard';
+import OrgResult from '../../EventsDash/Orgs/OrgResult/OrgResult';
 import EmptyState from '../../../components/EmptyState/EmptyState';
 import GlobeIcon from '../../../assets/Brand Image/Globe.svg';
 import './EventsHubHome.scss';
@@ -363,16 +364,7 @@ function EventsHubHome({ onRoomNavigation, onTabChangeByKey }) {
           <div className="events-hub-home__orgs-grid">
             {myOrgs.map((org) => (
               <div key={org._id || org.org_name} className="events-hub-home__org-card">
-                <div className="events-hub-home__org-header">
-                  <div className="events-hub-home__org-avatar">
-                    {org.org_profile_image ? (
-                      <img src={org.org_profile_image} alt="" />
-                    ) : (
-                      <span>{org.org_name?.slice(0, 2).toUpperCase() || '?'}</span>
-                    )}
-                  </div>
-                  <span className="events-hub-home__org-name">{org.org_name}</span>
-                </div>
+                <OrgResult org={org} />
                 <div className="events-hub-home__org-actions">
                   <button
                     type="button"
