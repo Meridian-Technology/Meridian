@@ -10,6 +10,17 @@ const { getResend } = require('./resendClient');
 const { clean, isProfane } = require('./profanityFilterService');
 const { getBaseUrl, buildEventAnnouncementEmail } = require('./orgInviteService');
 
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const PDF_MIME = 'application/pdf';
+
+/** Sanitize attachment filename: strip path, limit length, ensure .pdf extension for display */
+function sanitizeAttachmentFilename(name) {
+    if (!name || typeof name !== 'string') return 'attachment.pdf';
+    const base = name.replace(/^.*[/\\]/, '').trim().substring(0, 200);
+    return base.toLowerCase().endsWith('.pdf') ? base : (base || 'attachment') + '.pdf';
+}
+
 function stripHtml(html) {
     if (!html || typeof html !== 'string') return '';
     return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
@@ -368,6 +379,34 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
     }
 
     if (sendEmail && eventAnnouncementEmail && attendeesWithEmail.length > 0) {
+        let resendAttachments = [];
+        const rawAttachments = options.attachments;
+        if (rawAttachments && Array.isArray(rawAttachments) && rawAttachments.length > 0) {
+            if (rawAttachments.length > MAX_ATTACHMENTS) {
+                const err = new Error(`Maximum ${MAX_ATTACHMENTS} attachments allowed`);
+                err.statusCode = 400;
+                throw err;
+            }
+            for (let i = 0; i < rawAttachments.length; i++) {
+                const a = rawAttachments[i];
+                if (!a || !Buffer.isBuffer(a.content) || typeof a.filename !== 'string') {
+                    const err = new Error('Each attachment must have filename and content (Buffer)');
+                    err.statusCode = 400;
+                    throw err;
+                }
+                if (a.content.length > MAX_ATTACHMENT_SIZE_BYTES) {
+                    const err = new Error(`Attachment "${a.filename}" exceeds ${MAX_ATTACHMENT_SIZE_BYTES / (1024 * 1024)}MB limit`);
+                    err.statusCode = 400;
+                    throw err;
+                }
+                resendAttachments.push({
+                    filename: sanitizeAttachmentFilename(a.filename),
+                    content: a.content,
+                    content_type: PDF_MIME
+                });
+            }
+        }
+
         const baseUrl = getBaseUrl(req);
         const announcementParam = message._id ? `&announcement=${encodeURIComponent(message._id.toString())}` : '';
         const eventUrl = `${baseUrl}/event/${encodeURIComponent(eventId)}?source=email${announcementParam}`;
@@ -393,13 +432,20 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
             const fromDisplay = String(org.org_name || 'Meridian').replace(/[<>"\\]/g, '').trim() || 'Meridian';
             const from = `${fromDisplay} <support@meridian.study>`;
             const uniqueEmails = [...new Set(attendeesWithEmail.map(({ email }) => email).filter(Boolean))];
+            const sendPayload = {
+                from,
+                to: [],
+                subject: emailSubject,
+                html: emailHTML
+            };
+            if (resendAttachments.length > 0) {
+                sendPayload.attachments = resendAttachments;
+            }
             await Promise.allSettled(
                 uniqueEmails.map((email) =>
                     resendClient.emails.send({
-                        from,
-                        to: [email],
-                        subject: emailSubject,
-                        html: emailHTML
+                        ...sendPayload,
+                        to: [email]
                     })
                 )
             );

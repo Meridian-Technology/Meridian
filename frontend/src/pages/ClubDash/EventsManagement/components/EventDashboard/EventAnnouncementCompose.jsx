@@ -12,6 +12,8 @@ import './EventAnnouncementCompose.scss';
 
 const CLOSE_ANIMATION_MS = 280;
 const MAX_ADDITIONAL_EMAILS = 20;
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
 function isValidEmail(str) {
     if (!str || typeof str !== 'string') return false;
@@ -70,6 +72,8 @@ function EventAnnouncementCompose({
     const [additionalEmails, setAdditionalEmails] = useState([]);
     const [showAddEmailsPopup, setShowAddEmailsPopup] = useState(false);
     const [addEmailsInput, setAddEmailsInput] = useState('');
+    const [attachmentFiles, setAttachmentFiles] = useState([]); // { id: string, file: File }[]
+    const attachmentInputRef = useRef(null);
     const { addNotification } = useNotification();
 
     const recipientsUrl = isOpen && orgId && eventId
@@ -105,6 +109,7 @@ function EventAnnouncementCompose({
             setSubject('');
             setSendAsOrg(false);
             setAdditionalEmails([]);
+            setAttachmentFiles([]);
         }, CLOSE_ANIMATION_MS);
     }, [isClosing, onClose]);
 
@@ -121,9 +126,21 @@ function EventAnnouncementCompose({
         });
         setIsSubmitting(true);
         try {
-            const res = await apiRequest(
-                `/org-messages/${orgId}/events/${eventId}/announcements`,
-                {
+            const url = `/org-messages/${orgId}/events/${eventId}/announcements`;
+            let res;
+            if (attachmentFiles.length > 0) {
+                const formData = new FormData();
+                formData.append('content', content || '');
+                formData.append('subject', subject.trim());
+                formData.append('sendAsOrg', sendAsOrg);
+                formData.append('excludeUserIds', JSON.stringify(excludeUserIds));
+                formData.append('excludeEmails', JSON.stringify(excludeEmails));
+                formData.append('additionalEmails', JSON.stringify(additionalEmails));
+                formData.append('channels', JSON.stringify({ inApp: channelInApp, email: channelEmail }));
+                attachmentFiles.forEach(({ file }) => formData.append('attachments', file));
+                res = await apiRequest(url, formData, { method: 'POST' });
+            } else {
+                res = await apiRequest(url, {
                     content: content || '',
                     subject: subject.trim() || undefined,
                     sendAsOrg,
@@ -131,9 +148,8 @@ function EventAnnouncementCompose({
                     excludeEmails: excludeEmails.length ? excludeEmails : undefined,
                     additionalEmails: additionalEmails.length ? additionalEmails : undefined,
                     channels: { inApp: channelInApp, email: channelEmail }
-                },
-                { method: 'POST' }
-            );
+                }, { method: 'POST' });
+            }
             if (res.success) {
                 onSent?.();
                 handleClose();
@@ -180,6 +196,45 @@ function EventAnnouncementCompose({
 
     const removeAdditionalEmail = (email) => {
         setAdditionalEmails(prev => prev.filter(e => e !== email));
+    };
+
+    const handleAttachmentChange = (e) => {
+        const files = e.target.files ? Array.from(e.target.files) : [];
+        if (files.length === 0) return;
+        const next = [...attachmentFiles];
+        for (const file of files) {
+            if (next.length >= MAX_ATTACHMENTS) {
+                addNotification({
+                    title: 'Attachment limit',
+                    message: `Maximum ${MAX_ATTACHMENTS} PDF attachments allowed.`,
+                    type: 'warning'
+                });
+                break;
+            }
+            if (file.type !== 'application/pdf') {
+                addNotification({
+                    title: 'Invalid file',
+                    message: `"${file.name}" is not a PDF. Only PDF files are allowed.`,
+                    type: 'error'
+                });
+                continue;
+            }
+            if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+                addNotification({
+                    title: 'File too large',
+                    message: `"${file.name}" exceeds 10MB.`,
+                    type: 'error'
+                });
+                continue;
+            }
+            next.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, file });
+        }
+        setAttachmentFiles(next);
+        e.target.value = '';
+    };
+
+    const removeAttachment = (id) => {
+        setAttachmentFiles(prev => prev.filter(a => a.id !== id));
     };
 
     const canSend = (channelInApp && recipients.some(r => includedUserIds.has(r.userId) && !r.isAnonymous)) || (channelEmail && (recipients.some(r => includedUserIds.has(r.userId) && r.email) || additionalEmails.length > 0));
@@ -623,6 +678,53 @@ function EventAnnouncementCompose({
                                     maxLength={200}
                                     aria-label="Email subject"
                                 />
+                            </div>
+                            <div className="event-announcement-compose__attachments-row event-announcement-compose__option-block">
+                                <label className="event-announcement-compose__option-label">Attachments</label>
+                                <span className="event-announcement-compose__option-hint">PDF only, max {MAX_ATTACHMENTS} files, 10MB each</span>
+                                <div className="event-announcement-compose__attachments event-announcement-compose__option-box">
+                                    <input
+                                        ref={attachmentInputRef}
+                                        type="file"
+                                        accept=".pdf,application/pdf"
+                                        multiple
+                                        className="event-announcement-compose__attachments-input"
+                                        aria-label="Add PDF attachments"
+                                        onChange={handleAttachmentChange}
+                                    />
+                                    <button
+                                        type="button"
+                                        className="event-announcement-compose__attachments-add"
+                                        onClick={() => attachmentInputRef.current?.click()}
+                                        disabled={attachmentFiles.length >= MAX_ATTACHMENTS}
+                                        aria-label={`Add PDF attachment (${attachmentFiles.length}/${MAX_ATTACHMENTS})`}
+                                    >
+                                        <Icon icon="mdi:paperclip" aria-hidden />
+                                        Add PDF
+                                    </button>
+                                    {attachmentFiles.length > 0 && (
+                                        <ul className="event-announcement-compose__attachments-list">
+                                            {attachmentFiles.map(({ id, file }) => (
+                                                <li key={id} className="event-announcement-compose__attachment-item">
+                                                    <Icon icon="mdi:file-pdf-box" className="event-announcement-compose__attachment-icon" aria-hidden />
+                                                    <span className="event-announcement-compose__attachment-name" title={file.name}>{file.name}</span>
+                                                    <span className="event-announcement-compose__attachment-size">
+                                                        ({(file.size / 1024).toFixed(1)} KB)
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className="event-announcement-compose__attachment-remove"
+                                                        onClick={() => removeAttachment(id)}
+                                                        aria-label={`Remove ${file.name}`}
+                                                        title="Remove"
+                                                    >
+                                                        <Icon icon="ep:close-bold" aria-hidden />
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
                             </div>
                             <div className="event-announcement-compose__editor" role="group" aria-labelledby="event-announcement-message-label">
                                 <label id="event-announcement-message-label" className="event-announcement-compose__editor-label">Message</label>
