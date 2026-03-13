@@ -53,6 +53,8 @@ import Layout from './pages/Layout/Layout';
 import axios from 'axios';
 import CreateEvent from './pages/CreateEventV3/CreateEventV3';
 import EventsDash from './pages/EventsDash/EventsDash';
+// Mockup only — safe to delete
+import AdminOutreachMock from './mockups/AdminOutreach/AdminOutreachMock';
 import EventsHub from './pages/EventsHub/EventsHub';
 import EventPage from './pages/EventPage/EventPage';
 import EventWorkspace from './pages/EventWorkspace/EventWorkspace';
@@ -241,6 +243,8 @@ function App() {
                                                 <Route path="/feature-admin/atlas" element={<AnimatedPageWrapper><OrgManagement/></AnimatedPageWrapper>}/>
                                             </Route>
                                             <Route path="/create-event" element={<AnimatedPageWrapper><CreateEvent/></AnimatedPageWrapper   >}/>
+                                            {/* Mockup only — Admin Outreach wireframes; no auth, no prod */}
+                                            {/* <Route path="/mockup/admin-outreach" element={<AdminOutreachMock />}/> */}
                                         </Route>
                                     </Routes>
                                     </ProfileCreationProvider>
