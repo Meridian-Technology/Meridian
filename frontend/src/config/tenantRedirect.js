@@ -1,22 +1,22 @@
 /**
- * Tenant / www handling: meridian.study (www) is for landing + login/register only.
- * App and dashboard require a tenant subdomain (e.g. rpi.meridian.study).
+ * Tenant / www handling: www.meridian.study is for landing pages only.
+ * Subdomain is enforced for auth and app; user must choose school on first login/register.
  */
 
 const ROOT_HOSTS = ['www.meridian.study', 'meridian.study'];
-const TENANT_KEYS = ['rpi', 'tvcog']; // used for school dropdown on www; keep in sync with backend connectionsManager
+const TENANT_KEYS = ['rpi', 'tvcog']; // keep in sync with backend connectionsManager
 
 export function isWww() {
   if (typeof window === 'undefined') return false;
   const host = window.location.hostname || '';
-  return ROOT_HOSTS.includes(host.toLowerCase());
+  if (ROOT_HOSTS.includes(host.toLowerCase())) return true;
+  if (process.env.NODE_ENV !== 'production' && host === 'localhost') return true;
+  return false;
 }
 
-/** Paths that are allowed on www (landing + auth). Everything else requires a tenant subdomain. */
+/** Paths allowed on www (landing only). Everything else requires a tenant subdomain. */
 const WWW_ALLOWED_PATHS = [
   '/',
-  '/login',
-  '/register',
   '/landing',
   '/mobile',
   '/contact',
@@ -24,21 +24,10 @@ const WWW_ALLOWED_PATHS = [
   '/privacy-policy',
   '/terms-of-service',
   '/child-safety-standards',
-  '/forgot-password',
-  '/reset-password',
-  '/auth/saml/callback',
-  '/auth/apple/callback',
   '/booking',
-  '/org-invites',
-  '/org-invites/landing',
-  '/org-invites/accept',
-  '/org-invites/decline',
-  '/qr',
-  '/check-in',
   '/documentation',
-  '/new-badge',
-  '/org',
   '/error',
+  '/select-school',
 ];
 
 export function isPathAllowedOnWww(pathname) {
