@@ -273,12 +273,13 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                 loggedInViews.length > 0) && (
                 <div className="analytics-sources-row">
                     {totalViews > 0 && (() => {
-                        const referrerSources = platform.referrerSources || { org_page: 0, explore: 0, direct: 0 };
+                        const referrerSources = platform.referrerSources || { org_page: 0, explore: 0, direct: 0, email: 0 };
                         const qrSources = platform.qrReferrerSources || [];
                         const sourceItems = [
                             { key: 'direct', label: 'Direct', icon: 'mdi:arrow-right', value: referrerSources.direct },
                             { key: 'explore', label: 'Explore', icon: 'mingcute:compass-fill', value: referrerSources.explore },
                             { key: 'org_page', label: 'Org Page', icon: 'mdi:domain', value: referrerSources.org_page },
+                            { key: 'email', label: 'Email', icon: 'mdi:email-open', value: referrerSources.email },
                             ...qrSources.map(({ qr_id, name, count }) => ({
                                 key: `qr_${qr_id}`,
                                 label: name,

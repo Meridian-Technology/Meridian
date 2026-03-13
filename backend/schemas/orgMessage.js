@@ -31,6 +31,24 @@ const orgMessageSchema = new Schema({
         ref: 'Event',
         index: true
     }],
+    eventId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Event',
+        default: null,
+        index: true
+    },
+    /** Optional email subject for event announcements (when eventId is set) */
+    subject: {
+        type: String,
+        trim: true,
+        maxlength: 200,
+        default: null
+    },
+    /** When true, display org name/picture instead of author (for both event and org announcements) */
+    sendAsOrg: {
+        type: Boolean,
+        default: false
+    },
     links: [{
         type: String,
         trim: true
@@ -76,6 +94,7 @@ orgMessageSchema.index({ orgId: 1, createdAt: -1 });
 orgMessageSchema.index({ authorId: 1, createdAt: -1 });
 orgMessageSchema.index({ parentMessageId: 1, createdAt: 1 });
 orgMessageSchema.index({ mentionedEvents: 1 });
+orgMessageSchema.index({ eventId: 1 });
 orgMessageSchema.index({ isDeleted: 1 });
 
 // Pre-save middleware to update denormalized counts
@@ -100,6 +119,9 @@ orgMessageSchema.statics.findByOrg = function(orgId, userRelationship, options =
         isDeleted: false,
         parentMessageId: null // Only top-level messages by default
     };
+
+    // Exclude event-specific announcements (they live in the event's Communications tab)
+    query.$or = [{ eventId: null }, { eventId: { $exists: false } }];
 
     // Apply visibility filtering based on user's relationship to org
     if (userRelationship === 'member') {

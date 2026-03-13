@@ -33,10 +33,11 @@ function EventsManagement({ orgId, expandedClass, orgData: orgDataProp }) {
     };
 
     useEffect(() => {
-        if (orgId) {
-            analytics.screen('Events Management', { org_id: orgId });
+        const orgIdForAnalytics = orgData?.org?.overview?._id;
+        if (orgIdForAnalytics) {
+            analytics.screen('Events Management', { org_id: orgIdForAnalytics });
         }
-    }, [orgId]);
+    }, [orgId, orgData?.org?.overview?._id]);
 
     const handleViewEvent = (event) => {
         const orgIdForDashboard = orgData?.org?.overview?._id;

@@ -1586,8 +1586,7 @@
 
     // Style "coming soon" tabs to indicate they're not fully available
     // Target specific tabs by their data-tab-id attribute
-    .tabbed-container__tab[data-tab-id="equipment"],
-    .tabbed-container__tab[data-tab-id="communications"] {
+    .tabbed-container__tab[data-tab-id="equipment"] {
         opacity: 0.6;
         position: relative;
         

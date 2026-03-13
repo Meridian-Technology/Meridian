@@ -1004,6 +1004,59 @@ function Configuration({ section = 'general' }) {
                         <label>
                             <input
                                 type="checkbox"
+                                checked={localConfig.messaging?.eventAnnouncements?.enabled !== false}
+                                onChange={(e) => updateConfig('messaging.eventAnnouncements.enabled', e.target.checked)}
+                            />
+                            Allow event-specific announcements
+                        </label>
+                        <p>Allow organizations to send announcements targeted at specific org-hosted events (attendees only)</p>
+                    </div>
+
+                    {localConfig.messaging?.eventAnnouncements?.enabled !== false && (
+                        <>
+                            <div className="config-item">
+                                <label>Allow organizers to send announcements starting this many days before the event</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={localConfig.messaging?.eventAnnouncements?.allowAnnouncementsDaysBeforeEvent ?? ''}
+                                    placeholder="Any time (no restriction)"
+                                    onChange={(e) => {
+                                        const v = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                                        updateConfig('messaging.eventAnnouncements.allowAnnouncementsDaysBeforeEvent', (v !== null && !isNaN(v) && v >= 0) ? v : null);
+                                    }}
+                                />
+                                <p>Leave empty or 0 to allow anytime. Set to e.g. 7 to unlock sending only from 7 days before the event start onward.</p>
+                            </div>
+                            <div className="config-item">
+                                <label>
+                                    <input
+                                        type="checkbox"
+                                        checked={localConfig.messaging?.eventAnnouncements?.includeCheckedIn !== false}
+                                        onChange={(e) => updateConfig('messaging.eventAnnouncements.includeCheckedIn', e.target.checked)}
+                                    />
+                                    Also include currently checked-in attendees
+                                </label>
+                                <p>In addition to registrants, include everyone who is currently checked in to the event</p>
+                            </div>
+                            <div className="config-item">
+                                <label>
+                                    <input
+                                        type="checkbox"
+                                        checked={localConfig.messaging?.eventAnnouncements?.includeAnonymousInEmail !== false}
+                                        onChange={(e) => updateConfig('messaging.eventAnnouncements.includeAnonymousInEmail', e.target.checked)}
+                                    />
+                                    Include anonymous registrants in announcement emails
+                                </label>
+                                <p>When event has a registration form, include guests who registered without an account (email only), when an email can be resolved from guest details or a custom form field.</p>
+                            </div>
+                        </>
+                    )}
+
+                    <div className="config-item">
+                        <label>
+                            <input
+                                type="checkbox"
                                 checked={localConfig.messaging?.allowLinks !== false}
                                 onChange={(e) => updateConfig('messaging.allowLinks', e.target.checked)}
                             />
@@ -1054,6 +1107,30 @@ function Configuration({ section = 'general' }) {
                                 Notify on Replies
                             </label>
                             <p>Send notifications when messages receive replies</p>
+                        </div>
+
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={localConfig.messaging?.notificationSettings?.notifyOnEventAnnouncement !== false}
+                                    onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnEventAnnouncement', e.target.checked)}
+                                />
+                                Notify on event announcement
+                            </label>
+                            <p>Send in-app and push notifications when an event-specific announcement is sent</p>
+                        </div>
+
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={localConfig.messaging?.notificationSettings?.eventAnnouncementEmail !== false}
+                                    onChange={(e) => updateConfig('messaging.notificationSettings.eventAnnouncementEmail', e.target.checked)}
+                                />
+                                Send email for event announcements
+                            </label>
+                            <p>Email event attendees when an organization sends an event-specific announcement</p>
                         </div>
                     </div>
                 </div>

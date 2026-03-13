@@ -337,6 +337,35 @@
                 }
             }
         }
+
+        .composer-send-as {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+
+            .composer-send-as-label,
+            label {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                color: #666;
+                font-weight: 500;
+            }
+
+            .composer-send-as-options {
+                display: flex;
+                gap: 1rem;
+            }
+
+            .composer-send-as-option {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+                cursor: pointer;
+                color: #333;
+            }
+        }
     }
 
     .validation-error {
@@ -644,6 +673,22 @@
             width: 30px;
             height: 30px;
             border-radius: 50%;
+        }
+
+        .author-avatar.placeholder {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+
+            &.org-avatar {
+                background: #4DAA57;
+                color: white;
+                font-size: 14px;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
         }
     }
 

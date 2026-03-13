@@ -10,6 +10,7 @@ import './OrgMessages.scss';
 const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
     const [content, setContent] = useState('');
     const [visibility, setVisibility] = useState('members_and_followers');
+    const [sendAsOrg, setSendAsOrg] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [validationError, setValidationError] = useState('');
     const [characterLimit, setCharacterLimit] = useState(500);
@@ -119,7 +120,7 @@ const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
             return;
         }
 
-        const payload = { content: content.trim(), visibility };
+        const payload = { content: content.trim(), visibility, sendAsOrg };
         const contentToRestore = content;
 
         // Optimistic: clear input immediately so the user sees the post "sent"
@@ -207,19 +208,49 @@ const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
                 
                 <div className="composer-options">
                     <div className="visibility-selector">
-                        <label>
-                            <Icon icon="mdi:eye" />
+                        <label htmlFor="composer-visibility">
+                            <Icon icon="mdi:eye" aria-hidden />
                             <span>Visibility:</span>
                         </label>
                         <select
+                            id="composer-visibility"
                             value={visibility}
                             onChange={(e) => setVisibility(e.target.value)}
                             className="visibility-select"
+                            aria-label="Post visibility"
                         >
                             <option value="members_only">Members Only</option>
                             <option value="members_and_followers">Members & Followers</option>
                             <option value="public">Public</option>
                         </select>
+                    </div>
+                    <div className="composer-send-as" role="group" aria-labelledby="composer-send-as-label">
+                        <span id="composer-send-as-label" className="composer-send-as-label">
+                            <Icon icon="mdi:account-group" aria-hidden />
+                            <span>Send as:</span>
+                        </span>
+                        <div className="composer-send-as-options">
+                            <label className="composer-send-as-option">
+                                <input
+                                    type="radio"
+                                    name="sendAs"
+                                    checked={!sendAsOrg}
+                                    onChange={() => setSendAsOrg(false)}
+                                    aria-label="Send as myself"
+                                />
+                                <span>Myself</span>
+                            </label>
+                            <label className="composer-send-as-option">
+                                <input
+                                    type="radio"
+                                    name="sendAs"
+                                    checked={sendAsOrg}
+                                    onChange={() => setSendAsOrg(true)}
+                                    aria-label="Send as organization"
+                                />
+                                <span>Organization</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
                 
@@ -243,6 +274,7 @@ const OrgMessageComposer = ({ orgId, orgData, onMessageCreated }) => {
                         type="submit"
                         className="submit-btn"
                         disabled={!isValid || isSubmitting}
+                        aria-label={isSubmitting ? 'Posting announcement' : 'Post announcement'}
                     >
                         {isSubmitting ? (
                             <>

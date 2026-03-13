@@ -1,11 +1,52 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const getModels = require('../services/getModelService');
 const { verifyToken } = require('../middlewares/verifyToken');
 const { requireOrgPermission } = require('../middlewares/orgPermissions');
 const { clean, isProfane } = require('../services/profanityFilterService');
 const { parseMessageContent } = require('../utilities/messageParser');
 const NotificationService = require('../services/notificationService');
+const eventAnnouncementService = require('../services/eventAnnouncementService');
+const { ORG_PERMISSIONS } = require('../constants/permissions');
+
+const announcementAttachmentUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype !== 'application/pdf') {
+            cb(new Error('Only PDF attachments are allowed'));
+            return;
+        }
+        cb(null, true);
+    }
+}).array('attachments', 3);
+
+function parseAnnouncementBody(body) {
+    const content = body.content != null ? String(body.content) : '';
+    const subject = body.subject != null ? (typeof body.subject === 'string' ? body.subject : String(body.subject)) : '';
+    const sendAsOrg = body.sendAsOrg === true || body.sendAsOrg === 'true';
+    let excludeUserIds = body.excludeUserIds;
+    if (typeof excludeUserIds === 'string') {
+        try { excludeUserIds = JSON.parse(excludeUserIds || '[]'); } catch { excludeUserIds = []; }
+    }
+    if (!Array.isArray(excludeUserIds)) excludeUserIds = [];
+    let excludeEmails = body.excludeEmails;
+    if (typeof excludeEmails === 'string') {
+        try { excludeEmails = JSON.parse(excludeEmails || '[]'); } catch { excludeEmails = []; }
+    }
+    if (!Array.isArray(excludeEmails)) excludeEmails = [];
+    let additionalEmails = body.additionalEmails;
+    if (typeof additionalEmails === 'string') {
+        try { additionalEmails = JSON.parse(additionalEmails || '[]'); } catch { additionalEmails = []; }
+    }
+    if (!Array.isArray(additionalEmails)) additionalEmails = [];
+    let channels = body.channels;
+    if (typeof channels === 'string') {
+        try { channels = JSON.parse(channels || '{}'); } catch { channels = {}; }
+    }
+    return { content, subject, sendAsOrg, excludeUserIds, excludeEmails, additionalEmails, channels };
+}
 
 /**
  * Helper function to determine user's relationship to org
@@ -72,13 +113,134 @@ async function ensureMessageMentionData(message, orgId, Event) {
 }
 
 /**
+ * Middleware: run multer for announcement PDF attachments only when request is multipart.
+ */
+function conditionalAnnouncementMulter(req, res, next) {
+    if (!req.is('multipart/form-data')) return next();
+    announcementAttachmentUpload(req, res, (err) => {
+        if (err) {
+            const statusCode = err.message && err.message.includes('PDF') ? 400 : 500;
+            return res.status(statusCode).json({
+                success: false,
+                message: err.message || 'File upload failed',
+                code: err.code
+            });
+        }
+        next();
+    });
+}
+
+/**
+ * POST /:orgId/events/:eventId/announcements
+ * Create an event-specific announcement (org-hosted event only). Sends to event attendees (in-app + email).
+ * Body (JSON): { content, subject?, excludeUserIds?, excludeEmails?, additionalEmails?, channels?, sendAsOrg? }
+ * Body (multipart): same fields as form fields; optional "attachments" = up to 3 PDF files (10MB each).
+ */
+router.post('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), conditionalAnnouncementMulter, async (req, res) => {
+    const { orgId, eventId } = req.params;
+    const { content, subject, sendAsOrg, excludeUserIds, excludeEmails, additionalEmails, channels } = parseAnnouncementBody(req.body || {});
+
+    try {
+        const options = {};
+        if (subject != null && subject !== '') options.subject = subject;
+        if (sendAsOrg === true) options.sendAsOrg = true;
+        options.excludeUserIds = excludeUserIds.map(id => String(id));
+        options.excludeEmails = excludeEmails.map(e => String(e).trim().toLowerCase()).filter(Boolean);
+        if (Array.isArray(additionalEmails)) {
+            const MAX_ADDITIONAL = 20;
+            options.additionalEmails = additionalEmails
+                .map(e => String(e).trim().toLowerCase())
+                .filter(Boolean)
+                .slice(0, MAX_ADDITIONAL);
+        }
+        if (channels && typeof channels === 'object') options.channels = { inApp: channels.inApp, email: channels.email };
+        if (req.files && req.files.length > 0) {
+            options.attachments = req.files.map((f) => ({ filename: f.originalname || 'attachment.pdf', content: f.buffer }));
+        }
+        const { message } = await eventAnnouncementService.sendEventAnnouncement(req, orgId, eventId, content || '', options);
+        res.status(201).json({
+            success: true,
+            message: 'Event announcement sent successfully',
+            data: message
+        });
+    } catch (error) {
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
+            success: false,
+            message: error.message || 'Error sending event announcement',
+            code: error.code
+        });
+    }
+});
+
+/**
+ * GET /:orgId/events/:eventId/announcement-recipients
+ * List attendees who would receive an event announcement (for recipient picker and counts).
+ */
+router.get('/:orgId/events/:eventId/announcement-recipients', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), async (req, res) => {
+    try {
+        const result = await eventAnnouncementService.getAnnouncementRecipients(req, req.params.orgId, req.params.eventId);
+        res.json({
+            success: true,
+            data: {
+                recipients: result.list,
+                anonymousWithNoEmailCount: result.anonymousWithNoEmailCount ?? 0
+            }
+        });
+    } catch (error) {
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
+            success: false,
+            message: error.message || 'Error loading recipients',
+            code: error.code
+        });
+    }
+});
+
+/**
+ * GET /:orgId/events/:eventId/announcements
+ * List past event announcements (OrgMessages with this eventId), newest first.
+ */
+router.get('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), async (req, res) => {
+    const { orgId, eventId } = req.params;
+    try {
+        const { OrgMessage, Org, Event } = getModels(req, 'OrgMessage', 'Org', 'Event');
+        const org = await Org.findById(orgId);
+        if (!org) return res.status(404).json({ success: false, message: 'Organization not found' });
+        const event = await Event.findOne({ _id: eventId, hostingId: orgId });
+        if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+        const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+        const announcements = await OrgMessage.find({
+            orgId,
+            eventId,
+            parentMessageId: null,
+            isDeleted: false
+        })
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .populate('authorId', 'name username picture')
+            .lean();
+        res.json({
+            success: true,
+            data: { announcements }
+        });
+    } catch (error) {
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
+            success: false,
+            message: error.message || 'Error loading announcements'
+        });
+    }
+});
+
+/**
  * POST /:orgId/messages
  * Create a new message
  */
 router.post('/:orgId/messages', verifyToken, async (req, res) => {
     const { OrgMessage, Org, OrgMember, Event, OrgManagementConfig } = getModels(req, 'OrgMessage', 'Org', 'OrgMember', 'Event', 'OrgManagementConfig');
     const { orgId } = req.params;
-    const { content, visibility, parentMessageId } = req.body;
+        const { content, visibility, parentMessageId, sendAsOrg } = req.body;
     const userId = req.user.userId;
 
     try {
@@ -182,6 +344,7 @@ router.post('/:orgId/messages', verifyToken, async (req, res) => {
         // Determine visibility
         const messageVisibility = visibility || org.messageSettings.visibility || 'members_and_followers';
 
+        const sendAsOrg = req.body.sendAsOrg === true;
         // Create message
         const message = new OrgMessage({
             orgId: orgId,
@@ -191,6 +354,7 @@ router.post('/:orgId/messages', verifyToken, async (req, res) => {
             mentionedEvents: parsed.eventIds,
             links: parsed.links,
             parentMessageId: parentMessageId || null,
+            sendAsOrg,
             likes: [],
             likeCount: 0,
             replyCount: 0
@@ -332,10 +496,11 @@ router.get('/:orgId/messages', verifyToken, async (req, res) => {
 
         let messages;
         if (includeReplies === 'true') {
-            // Get all messages including replies
+            // Get all messages including replies (exclude event-specific announcements)
             messages = await OrgMessage.find({
                 orgId: orgId,
-                isDeleted: false
+                isDeleted: false,
+                $or: [{ eventId: null }, { eventId: { $exists: false } }]
             })
             .sort({ createdAt: -1 })
             .skip(skip)
@@ -383,7 +548,8 @@ router.get('/:orgId/messages', verifyToken, async (req, res) => {
         const totalQuery = {
             orgId: orgId,
             isDeleted: false,
-            parentMessageId: null
+            parentMessageId: null,
+            $or: [{ eventId: null }, { eventId: { $exists: false } }]
         };
 
         // Apply visibility filter for count

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Icon } from '@iconify-icon/react';
 import ImageUpload from '../ImageUpload/ImageUpload';
 import Popup from '../Popup/Popup';
 import TextareaExpandPopup from '../TextareaExpandPopup/TextareaExpandPopup';
 import MarkdownTextarea from '../MarkdownTextarea/MarkdownTextarea';
-import MarkdownTextareaExpandPopup from '../MarkdownTextareaExpandPopup/MarkdownTextareaExpandPopup';
+import RichTextEditorSpotlight from '../RichTextEditorSpotlight/RichTextEditorSpotlight';
 import Select from '../Select/Select';
 import './DynamicFormField.scss';
 
@@ -26,6 +26,8 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
     
     const [localValue, setLocalValue] = useState(normalizeValue(value));
     const [expandPopupOpen, setExpandPopupOpen] = useState(false);
+    const [expandOriginRect, setExpandOriginRect] = useState(null);
+    const expandButtonRef = useRef(null);
 
     useEffect(() => {
         const normalized = normalizeValue(value);
@@ -158,7 +160,7 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
                                 <Icon icon="mdi:open-in-new" />
                                 <span>Expand</span>
                             </button>
-                            <Popup isOpen={expandPopupOpen} onClose={() => setExpandPopupOpen(false)}defaultStyling={false}>
+                            <Popup isOpen={expandPopupOpen} onClose={() => setExpandPopupOpen(false)} defaultStyling={false}>
                                 <TextareaExpandPopup
                                     label={field.label}
                                     value={localValue}
@@ -192,24 +194,33 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
                         <div className="textarea-with-expand">
                             {markdownField}
                             <button
+                                ref={expandButtonRef}
                                 type="button"
                                 className="textarea-expand-btn"
-                                onClick={() => setExpandPopupOpen(true)}
+                                onClick={() => {
+                                    const rect = expandButtonRef.current?.getBoundingClientRect?.();
+                                    setExpandOriginRect(rect ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height } : null);
+                                    setExpandPopupOpen(true);
+                                }}
                                 title="Open in larger editor"
                             >
                                 <Icon icon="mdi:open-in-new" />
                                 <span>Expand</span>
                             </button>
-                            <Popup isOpen={expandPopupOpen} onClose={() => setExpandPopupOpen(false)} defaultStyling={false}>
-                                <MarkdownTextareaExpandPopup
-                                    label={field.label}
-                                    value={localValue}
-                                    onChange={(value) => handleChange(value)}
-                                    placeholder={field.placeholder || ''}
-                                    maxLength={field.validation?.maxLength}
-                                    minLength={field.validation?.minLength}
-                                />
-                            </Popup>
+                            <RichTextEditorSpotlight
+                                isOpen={expandPopupOpen}
+                                onClose={() => {
+                                    setExpandPopupOpen(false);
+                                    setExpandOriginRect(null);
+                                }}
+                                label={field.label}
+                                value={localValue}
+                                onChange={(v) => handleChange(v)}
+                                placeholder={field.placeholder || ''}
+                                maxLength={field.validation?.maxLength}
+                                minLength={field.validation?.minLength}
+                                originRect={expandOriginRect}
+                            />
                         </div>
                     );
                 }

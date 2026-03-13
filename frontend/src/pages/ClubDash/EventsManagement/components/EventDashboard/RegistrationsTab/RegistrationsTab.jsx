@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
@@ -15,7 +15,7 @@ const VIEW_MODES = [
     { id: 'summary', label: 'Summary', icon: 'mdi:chart-bar' }
 ];
 
-function RegistrationsTab({ event, orgId, onRefresh, color }) {
+function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSettingsFromAnnouncement, onConsumeOpenRegistrationSettings }) {
     const { addNotification } = useNotification();
     const [updatingForm, setUpdatingForm] = useState(false);
     const [viewMode, setViewMode] = useState('table');
@@ -30,6 +30,13 @@ function RegistrationsTab({ event, orgId, onRefresh, color }) {
     const [showCreateFormModal, setShowCreateFormModal] = useState(false);
     const [editingFormId, setEditingFormId] = useState(null);
     const [showRegistrationSettingsModal, setShowRegistrationSettingsModal] = useState(false);
+
+    useEffect(() => {
+        if (openRegistrationSettingsFromAnnouncement && typeof onConsumeOpenRegistrationSettings === 'function') {
+            setShowRegistrationSettingsModal(true);
+            onConsumeOpenRegistrationSettings();
+        }
+    }, [openRegistrationSettingsFromAnnouncement, onConsumeOpenRegistrationSettings]);
 
     const { registrations = [], formResponses = [], registrationFormId } = data?.data || {};
     const hasForm = Boolean(registrationFormId);

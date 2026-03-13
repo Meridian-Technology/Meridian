@@ -9,7 +9,7 @@ import HeaderContainer from "../../../../components/HeaderContainer/HeaderContai
 import EventCard from "./RecommendedEventPreviewCard/RecommendedEventPreviewCard";
 import RecommendedRoomCard from "../../../../components/RecommendedRoomCard/RecommendedRoomCard";
 
-const RecommendedEvents = () => {
+const RecommendedEvents = ({ onExploreClick }) => {
     const navigate = useNavigate();
     const { addNotification } = useNotification();
     
@@ -52,7 +52,7 @@ const RecommendedEvents = () => {
     const recommendedRoom = roomData?.data || null;
 
     const exploreButton = (
-        <div className="explore-events-button" onClick={() => navigate('/events-dashboard?page=1')}>
+        <div className="explore-events-button" onClick={() => (onExploreClick ? onExploreClick() : navigate('/events-dashboard?page=1'))}>
             Explore Events <Icon icon="mingcute:arrow-right-line" />
         </div>
     );

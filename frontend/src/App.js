@@ -53,6 +53,7 @@ import Layout from './pages/Layout/Layout';
 import axios from 'axios';
 import CreateEvent from './pages/CreateEventV3/CreateEventV3';
 import EventsDash from './pages/EventsDash/EventsDash';
+import EventsHub from './pages/EventsHub/EventsHub';
 import EventPage from './pages/EventPage/EventPage';
 import EventWorkspace from './pages/EventWorkspace/EventWorkspace';
 import SubSidebarExample from './components/Dashboard/SubSidebarExample';
@@ -225,7 +226,8 @@ function App() {
                                             </Route>
                                             <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
                                             <Route path='/org-application' element={<AnimatedPageWrapper><SignUpCreateClub/></AnimatedPageWrapper>}/>
-                                            <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsDash/></AnimatedPageWrapper>}/>
+                                            <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsHub/></AnimatedPageWrapper>}/>
+                                            <Route path="/events" element={<AnimatedPageWrapper><EventsHub/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session/:sessionId/responses" element={<AnimatedPageWrapper><StudySessionResponses/></AnimatedPageWrapper>}/>

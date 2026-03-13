@@ -66,6 +66,12 @@
         }
     }
 
+    .my-events-notice-wrap {
+        padding: 0 20px 16px;
+        min-width: 0;
+        overflow: hidden;
+    }
+
     .my-events-search.compact {
         .search-container{
             margin: 10px 40px 0 40px;
