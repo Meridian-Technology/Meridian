@@ -14,6 +14,8 @@ const CLOSE_ANIMATION_MS = 280;
 const MAX_ADDITIONAL_EMAILS = 20;
 const MAX_ATTACHMENTS = 3;
 const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+/** Show a notice to open registration settings when this many guests have no email (even if some recipients exist) */
+const ANONYMOUS_NO_EMAIL_NOTICE_THRESHOLD = 5;
 
 function isValidEmail(str) {
     if (!str || typeof str !== 'string') return false;
@@ -442,6 +444,26 @@ function EventAnnouncementCompose({
 
                     {!recipientsLoading && !recipientsError && recipients.length > 0 && (
                         <>
+                            {anonymousWithNoEmailCount >= ANONYMOUS_NO_EMAIL_NOTICE_THRESHOLD && (
+                                <div className="event-announcement-compose__anonymous-notice">
+                                    <span className="event-announcement-compose__anonymous-notice-text">
+                                        {anonymousWithNoEmailCount} guest{anonymousWithNoEmailCount !== 1 ? 's' : ''} registered without an email address and will not receive this announcement.
+                                    </span>
+                                    <span className="event-announcement-compose__empty-hint">
+                                        Enable &quot;Collect guest details&quot; on your registration form, or set a &quot;Notification email&quot; question in Registration settings to reach them.
+                                    </span>
+                                    {typeof onOpenRegistrationSettings === 'function' && (
+                                        <button
+                                            type="button"
+                                            className="event-announcement-compose__empty-action"
+                                            onClick={() => { onOpenRegistrationSettings(); handleClose(); }}
+                                        >
+                                            <Icon icon="mdi:cog-outline" />
+                                            Open Registration settings
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                             <div className="event-announcement-compose__recipients-row event-announcement-compose__option-block">
                                 <label className="event-announcement-compose__option-label">Recipients</label>
                                 <div className="event-announcement-compose__recipients-pills event-announcement-compose__option-box">
@@ -679,6 +701,16 @@ function EventAnnouncementCompose({
                                     aria-label="Email subject"
                                 />
                             </div>
+                            <div className="event-announcement-compose__editor" role="group" aria-labelledby="event-announcement-message-label">
+                                <label id="event-announcement-message-label" className="event-announcement-compose__editor-label">Message</label>
+                                <MarkdownTextarea
+                                    value={content}
+                                    onChange={setContent}
+                                    placeholder={`Share a message with your guests for ${eventName || 'this event'}...`}
+                                    rows={10}
+                                    onKeyDown={handleEditorKeyDown}
+                                />
+                            </div>
                             <div className="event-announcement-compose__attachments-row event-announcement-compose__option-block">
                                 <label className="event-announcement-compose__option-label">Attachments</label>
                                 <span className="event-announcement-compose__option-hint">PDF only, max {MAX_ATTACHMENTS} files, 10MB each</span>
@@ -725,16 +757,6 @@ function EventAnnouncementCompose({
                                         </ul>
                                     )}
                                 </div>
-                            </div>
-                            <div className="event-announcement-compose__editor" role="group" aria-labelledby="event-announcement-message-label">
-                                <label id="event-announcement-message-label" className="event-announcement-compose__editor-label">Message</label>
-                                <MarkdownTextarea
-                                    value={content}
-                                    onChange={setContent}
-                                    placeholder={`Share a message with your guests for ${eventName || 'this event'}...`}
-                                    rows={10}
-                                    onKeyDown={handleEditorKeyDown}
-                                />
                             </div>
                         </>
                     )}

@@ -226,7 +226,7 @@ function App() {
                                             </Route>
                                             <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
                                             <Route path='/org-application' element={<AnimatedPageWrapper><SignUpCreateClub/></AnimatedPageWrapper>}/>
-                                            <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsDash/></AnimatedPageWrapper>}/>
+                                            <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsHub/></AnimatedPageWrapper>}/>
                                             <Route path="/events" element={<AnimatedPageWrapper><EventsHub/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
