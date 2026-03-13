@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { isWww } from '../config/tenantRedirect';
 import axios from 'axios';
 import logo from '../assets/red_logo.svg';
 import { useNotification } from '../NotificationContext';
@@ -37,6 +38,11 @@ function ResetPassword() {
         setEmail(emailParam);
         setCode(codeParam);
     }, [location, navigate, addNotification]);
+
+    if (isWww() && !(process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && localStorage.getItem('devTenantOverride'))) {
+        const path = '/reset-password' + (location.search || '');
+        return <Navigate to={`/select-school?next=${encodeURIComponent(path)}`} replace />;
+    }
 
     // Validate passwords match
     const passwordsMatch = newPassword === confirmPassword;

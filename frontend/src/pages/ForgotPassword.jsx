@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { isWww } from '../config/tenantRedirect';
 import axios from 'axios';
 import Header from '../components/Header/Header';
 import logo from '../assets/Brand Image/BEACON.svg';
@@ -180,6 +181,10 @@ function ForgotPassword() {
         
         return baseClass;
     };
+
+    if (isWww() && !(process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && localStorage.getItem('devTenantOverride'))) {
+        return <Navigate to={`/select-school?next=${encodeURIComponent('/forgot-password')}`} replace />;
+    }
 
     return (
         <div className="main-login" style={{justifyContent: 'center'}}>
