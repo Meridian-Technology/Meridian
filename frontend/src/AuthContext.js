@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }) => {
             // console.log('Token validation response:', response.data);
             // Handle response...
             if (response.success) {
-                // On www, if this path requires a tenant, redirect to user's tenant (single-tenant = no picker)
+                // On www, if this path requires a tenant, redirect to tenant or school picker
                 if (isWww() && !isPathAllowedOnWww(window.location.pathname)) {
                     const communities = response.data.communities || [];
                     const last = getLastTenant();
@@ -44,7 +44,9 @@ export const AuthProvider = ({ children }) => {
                         window.location.href = getTenantRedirectUrl(tenant);
                         return;
                     }
-                    window.location.href = '/login';
+                    const path = window.location.pathname + (window.location.search || '');
+                    const next = path !== '/' ? `?next=${encodeURIComponent(path)}` : '';
+                    window.location.href = `/select-school${next}`;
                     return;
                 }
                 setUser(response.data.user);
