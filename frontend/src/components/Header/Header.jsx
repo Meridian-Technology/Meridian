@@ -12,20 +12,20 @@ import NotificationInbox from '../NotificationInbox/NotificationInbox';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 
 function getLogo() {
-    const hostname = window.location.hostname;
-    const parts = hostname.split('.');
+    // const hostname = window.location.hostname;
+    // const parts = hostname.split('.');
 
-    if (parts.length > 2) {
-        let subdomain = parts[0];
-        if (subdomain.toLowerCase() === 'www') {
-            subdomain = parts[1]; 
-        }
-        if (subdomain.toLowerCase() === 'rpi') {
-            return RpiLogo;
-        } else if (subdomain.toLowerCase() === 'berkeley') {
-            return BerkeleyLogo;
-        }
-    }
+    // if (parts.length > 2) {
+    //     let subdomain = parts[0];
+    //     if (subdomain.toLowerCase() === 'www') {
+    //         subdomain = parts[1]; 
+    //     }
+    //     if (subdomain.toLowerCase() === 'rpi') {
+    //         return RpiLogo;
+    //     } else if (subdomain.toLowerCase() === 'berkeley') {
+    //         return BerkeleyLogo;
+    //     }
+    // }
     return logo; 
 }
 
@@ -41,7 +41,7 @@ const Header = React.memo(({ hideUntilScroll = false, scrolled = false, appStore
     const [width, setWidth] = useState(window.innerWidth);
 
     const goToMeridian = ()=>{
-        navigate('/events-dashboard');
+        navigate('/select-school');
     }
 
     const goHome = ()=>{
