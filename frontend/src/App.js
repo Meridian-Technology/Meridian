@@ -75,6 +75,9 @@ import OrgInviteLandingToken from './pages/OrgInviteLanding/OrgInviteLandingToke
 import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
+import AdminOutreach from './pages/AdminOutreach/AdminOutreach';
+
+
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -232,6 +235,7 @@ function App() {
                                             <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session/:sessionId/responses" element={<AnimatedPageWrapper><StudySessionResponses/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId/workspace" element={<AnimatedPageWrapper><EventWorkspace/></AnimatedPageWrapper>}/>
+                                            <Route path='admin-outreach' element={<AnimatedPageWrapper><AdminOutreach/></AnimatedPageWrapper>}/>
 
                                             {/* oie routes */}
                                             <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'oie']}/> }>
