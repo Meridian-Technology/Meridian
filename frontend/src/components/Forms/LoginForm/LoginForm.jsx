@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
+import { useNavigate, Link, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import '../Forms.scss';
 import { generalIcons } from '../../../Icons';
 import useAuth from '../../../hooks/useAuth';
@@ -9,7 +9,7 @@ import axios from 'axios';
 import Flag from '../../Flag/Flag';
 import SAMLLoginButton from '../SAMLLoginButton/SAMLLoginButton';
 import { isSAMLEnabled, getUniversityDisplayName, getUniversityLogo, getUniversityClassName } from '../../../config/universities';
-import { isWww, getTenantKeys, getLastTenant, setLastTenant } from '../../../config/tenantRedirect';
+import { isWww } from '../../../config/tenantRedirect';
 import {Icon} from '@iconify-icon/react/dist/iconify.mjs';
 
 function LoginForm() {
@@ -18,8 +18,7 @@ function LoginForm() {
     const [valid, setValid] = useState(false);
     const [formData, setFormData] = useState({
         email: '',
-        password: '',
-        ...(typeof window !== 'undefined' && isWww() ? { school: getLastTenant() || 'rpi' } : {})
+        password: ''
     });
     const [errorText, setErrorText] = useState("");
     const [loadContent, setLoadContent] = useState(false);
@@ -81,14 +80,9 @@ function LoginForm() {
     const handleSubmit = async (e) => {
       e.preventDefault();
       try {
-        const payload = { ...formData };
-        if (isWww() && formData.school) payload.school = formData.school;
-        await login(payload);
-        if (!isWww()) {
-          sessionStorage.removeItem('login_redirect');
-          navigate(from, { replace: true });
-        }
-        // When on www, AuthContext redirects to tenant
+        await login(formData);
+        sessionStorage.removeItem('login_redirect');
+        navigate(from, { replace: true });
       } catch (error) {
         console.error('Login failed:', error);
         setErrorText("Invalid Username/Email or Password. Please try again");
@@ -112,13 +106,13 @@ function LoginForm() {
         async function googleLog(code) {
             try{
                 setIsGoogleLoginInProgress(true);
-                const school = isWww() ? sessionStorage.getItem('login_school') : null;
+                const school = sessionStorage.getItem('login_school');
                 const opts = school ? { school } : {};
                 const codeResponse = await googleLogin(code, false, undefined, undefined, opts);
                 console.log("codeResponse: " + codeResponse);
                 sessionStorage.removeItem('login_redirect');
                 sessionStorage.removeItem('login_school');
-                if (!isWww()) navigate(redirectPathRef.current || from, { replace: true });
+                navigate(redirectPathRef.current || from, { replace: true });
             } catch (error){
                 setIsGoogleLoginInProgress(false);
                 if(error.response.status  === 409){
@@ -152,12 +146,10 @@ function LoginForm() {
     });
 
     const handleGoogleClick = () => {
-        if (isWww()) sessionStorage.setItem('login_school', formData.school || getLastTenant() || 'rpi');
         google();
     };
 
     const handleAppleClick = () => {
-        if (isWww()) sessionStorage.setItem('login_school', formData.school || getLastTenant() || 'rpi');
         handleAppleSignIn();
     };
 
@@ -199,29 +191,14 @@ function LoginForm() {
     if (!loadContent) {
         return ("");
     }
+
+    if (isWww() && !(process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && localStorage.getItem('devTenantOverride'))) {
+        return <Navigate to="/select-school" replace />;
+    }
   
-    
-    
     return (
       <div className='form'>
           <h1>Welcome Back!</h1>
-        {isWww() && (
-          <div className="form-group" style={{ marginBottom: '1rem' }}>
-            <label htmlFor="login-school">School / community</label>
-            <select
-              id="login-school"
-              name="school"
-              value={formData.school || getLastTenant() || 'rpi'}
-              onChange={(e) => setFormData({ ...formData, school: e.target.value })}
-              className="input"
-              style={{ width: '100%', padding: '0.5rem' }}
-            >
-              {getTenantKeys().map(key => (
-                <option key={key} value={key}>{key === 'rpi' ? 'RPI' : key === 'tvcog' ? 'TVCOG' : key}</option>
-              ))}
-            </select>
-          </div>
-        )}
         {errorText !== "" && 
             <Flag text={errorText} img={circleWarning} color={"#FD5858"} primary={"rgba(250, 117, 109, 0.16)"} accent={"#FD5858"} /> 
         }

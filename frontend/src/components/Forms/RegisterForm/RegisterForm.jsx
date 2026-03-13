@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import '../Forms.scss';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import useAuth from '../../../hooks/useAuth';
 import { useGoogleLogin } from '@react-oauth/google';
 import circleWarning from '../../../assets/circle-warning.svg';
 import { generalIcons } from '../../../Icons';
 import Flag from '../../Flag/Flag';
 import apiRequest from '../../../utils/postRequest';
-import { isWww, getTenantKeys, getLastTenant, getTenantRedirectUrl } from '../../../config/tenantRedirect';
+import { isWww } from '../../../config/tenantRedirect';
 
 function RegisterForm() {
     const { isAuthenticated, googleLogin, appleLogin, login } = useAuth();
@@ -16,8 +16,7 @@ function RegisterForm() {
     const [formData, setFormData] = useState({
         username: '',
         email: '',
-        password: '',
-        ...(typeof window !== 'undefined' && isWww() ? { school: getLastTenant() || 'rpi' } : {})
+        password: ''
     });
     const [sent, setSent] = useState(false);
     const [loadContent, setLoadContent] = useState(false);
@@ -52,7 +51,7 @@ function RegisterForm() {
                     codeVerifier = verifierFromUrl;
                 }
                 
-                const codeResponse = await googleLogin(code, true, codeVerifier, undefined, isWww() ? { school: sessionStorage.getItem('register_school') || getLastTenant() || 'rpi' } : {});
+                const codeResponse = await googleLogin(code, true, codeVerifier, undefined, {});
                 console.log("codeResponse: " + codeResponse);
                 
                 // Clear code verifier after use
@@ -85,7 +84,7 @@ function RegisterForm() {
 
 
     useEffect(() => {
-        if (isAuthenticated && isAuthenticated !== null && !isWww()) {
+        if (isAuthenticated && isAuthenticated !== null) {
             navigate(from, { replace: true });
         }
     }, [isAuthenticated, navigate, from]);
@@ -137,14 +136,9 @@ function RegisterForm() {
             if (inviteToken) {
                 payload.invite_token = inviteToken;
             }
-            if (isWww() && formData.school) payload.school = formData.school;
             const response = await axios.post('/register', payload);
             console.log(response.data);
             await login(formData);
-            if (isWww() && formData.school) {
-                window.location.href = getTenantRedirectUrl(formData.school);
-                return;
-            }
             navigate(from, { replace: true });
         } catch (error) {
             if (error.response?.status === 400) {
@@ -159,7 +153,6 @@ function RegisterForm() {
         }
     }
     const handleGoogleClick = () => {
-        if (isWww()) sessionStorage.setItem('register_school', formData.school || getLastTenant() || 'rpi');
         google();
     };
 
@@ -196,7 +189,6 @@ function RegisterForm() {
             failed("Apple Sign In is not available. Please check your browser compatibility.");
             return;
         }
-        if (isWww()) sessionStorage.setItem('login_school', formData.school || getLastTenant() || 'rpi');
         // Store redirect path in state for callback to use
         const redirectState = JSON.stringify({ redirect: from });
         
@@ -219,26 +211,13 @@ function RegisterForm() {
         return ("");
     }
 
+    if (isWww() && !(process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && localStorage.getItem('devTenantOverride'))) {
+        return <Navigate to="/select-school" replace />;
+    }
+
     return (
         <form onSubmit={handleSubmit} className='form'>
             <h1>Register</h1>
-            {isWww() && (
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                    <label htmlFor="register-school">School / community</label>
-                    <select
-                        id="register-school"
-                        name="school"
-                        value={formData.school || getLastTenant() || 'rpi'}
-                        onChange={(e) => setFormData({ ...formData, school: e.target.value })}
-                        className="input"
-                        style={{ width: '100%', padding: '0.5rem' }}
-                    >
-                        {getTenantKeys().map(key => (
-                            <option key={key} value={key}>{key === 'rpi' ? 'RPI' : key === 'tvcog' ? 'TVCOG' : key}</option>
-                        ))}
-                    </select>
-                </div>
-            )}
             {inviteData?.orgName && (
                 <p className="invite-banner">You're signing up to join <strong>{inviteData.orgName}</strong></p>
             )}
