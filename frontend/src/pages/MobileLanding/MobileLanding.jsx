@@ -495,8 +495,8 @@ function MobileLanding() {
             </div>
             <div className="footer__col">
               <h6>Company</h6>
-              <a href="/login">Sign in</a>
-              <a href="/register">Create account</a>
+              <a href="/select-school?next=%2Flogin">Sign in</a>
+              <a href="/select-school?next=%2Fregister">Create account</a>
             </div>
             <div className="footer__col">
               <h6>Legal</h6>
