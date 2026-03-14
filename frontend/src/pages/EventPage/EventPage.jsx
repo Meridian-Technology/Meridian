@@ -12,7 +12,9 @@ import { Icon } from '@iconify-icon/react';
 import Logo from '../../assets/Brand Image/BEACON.svg';
 import { useFetch } from '../../hooks/useFetch';
 import { useEventRoom } from '../../WebSocketContext';
+import { SimulatedTimeProvider } from '../../contexts/SimulatedTimeContext';
 import EventPageContent from './EventPageContent';
+import DevSimulatedTimePanel from '../../components/DevSimulatedTimePanel/DevSimulatedTimePanel';
 import { analytics } from '../../services/analytics/analytics';
 
 function EventPage() {
@@ -54,18 +56,28 @@ function EventPage() {
         );
     }
 
+    const isDev = process.env.NODE_ENV === 'development';
+
     return (
-        <div className="event-page">
-            <div className="header">
-                <img src={Logo} alt="Logo" className="logo" />
+        <SimulatedTimeProvider>
+            <div className="event-page">
+                {isDev && (
+                    <div className="event-page__dev-banner">
+                        <span>Dev: Use the panel (bottom-right) to simulate time and preview the checked-in view</span>
+                    </div>
+                )}
+                <div className="header">
+                    <img src={Logo} alt="Logo" className="logo" />
+                </div>
+                <EventPageContent
+                    event={event}
+                    onRefetch={refetchEvent}
+                    previewMode={false}
+                    showAnalytics={true}
+                />
+                <DevSimulatedTimePanel event={event} />
             </div>
-            <EventPageContent
-                event={event}
-                onRefetch={refetchEvent}
-                previewMode={false}
-                showAnalytics={true}
-            />
-        </div>
+        </SimulatedTimeProvider>
     );
 }
 
