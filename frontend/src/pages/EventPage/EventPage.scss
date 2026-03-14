@@ -1,6 +1,5 @@
 .event-page {
     min-height: 100vh;
-    max-height: 100vh;
     position: relative;
     overflow-x: hidden;
 
@@ -657,6 +656,7 @@
         }
         .event-content {
             padding: 1rem;
+            padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px) + 120px);
 
             .event-layout {
                 flex-direction: column;
