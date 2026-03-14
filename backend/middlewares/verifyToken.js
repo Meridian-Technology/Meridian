@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const getModels = require('../services/getModelService');
+const { validateSession } = require('../utilities/sessionUtils');
 
 // Constants for token expiry (matching authRoutes.js)
 const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
@@ -74,36 +75,42 @@ function createVerifyTokenOptional(options = {}) {
     const refreshToken = req.cookies.refreshToken;
 
     const tryRefresh = async () => {
-      if (!refreshToken) return false;
-      try {
-        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
-        const { User } = getModels(req, 'User');
-        const user = await User.findById(decoded.userId);
-        if (user && user.refreshToken === refreshToken) {
-          const newAccessToken = jwt.sign(
-            { userId: user._id, roles: user.roles },
-            process.env.JWT_SECRET,
-            { expiresIn: ACCESS_TOKEN_EXPIRY }
-          );
-          res.cookie('accessToken', newAccessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: ACCESS_TOKEN_EXPIRY_MS,
-            path: '/'
-          });
-          req.user = { userId: user._id, roles: user.roles };
-          console.log('🔄 Token refreshed successfully for user:', user._id);
-          return true;
-        }
-      } catch (refreshError) {
-        console.log('🔄 Refresh token failed:', refreshError.message);
+      if (!refreshToken) {
+        console.log('[Auth] tryRefresh: no refresh token in cookies');
+        return false;
       }
-      return false;
+      try {
+        const validation = await validateSession(refreshToken, req);
+        if (!validation.valid) {
+          console.log('[Auth] tryRefresh: session invalid:', validation.error);
+          return false;
+        }
+        const { user } = validation;
+        const newAccessToken = jwt.sign(
+          { userId: user._id, roles: user.roles },
+          process.env.JWT_SECRET,
+          { expiresIn: ACCESS_TOKEN_EXPIRY }
+        );
+        res.cookie('accessToken', newAccessToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: ACCESS_TOKEN_EXPIRY_MS,
+          path: '/'
+        });
+        req.user = { userId: user._id, roles: user.roles };
+        console.log('[Auth] Token refreshed successfully for user:', user._id);
+        return true;
+      } catch (refreshError) {
+        console.log('[Auth] Refresh failed:', refreshError.message);
+        return false;
+      }
     };
 
     if (token == null) {
-      await tryRefresh();
+      console.log('[Auth] No access token, attempting refresh from refreshToken cookie');
+      const refreshed = await tryRefresh();
+      console.log('[Auth] Refresh result:', refreshed ? 'success' : 'failed');
       return next();
     }
 
