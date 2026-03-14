@@ -336,6 +336,8 @@ async function authenticateWithGoogle(code, isRegister = false, url, req, codeVe
             });
             await user.save();
             sendDiscordMessage(`New user registered`, `user ${user.username} registered`, "newUser");
+            const { runAutoClaimAsync } = require('./autoClaimEventRegistrationsService');
+            runAutoClaimAsync(req, user._id.toString(), user.email);
             
             // Fetch the user again with populated fields
             user = await User.findById(user._id)
@@ -475,6 +477,8 @@ async function authenticateWithApple(idToken, user, req) {
 
         await newUser.save();
         sendDiscordMessage(`New user registered`, `user ${newUser.username} registered via Apple Sign In`, "newUser");
+        const { runAutoClaimAsync } = require('./autoClaimEventRegistrationsService');
+        runAutoClaimAsync(req, newUser._id.toString(), newUser.email);
 
         // Fetch the user again with populated fields
         const userDoc = await User.findById(newUser._id)
