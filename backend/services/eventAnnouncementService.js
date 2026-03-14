@@ -400,7 +400,7 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
 
     // In development, send all announcement emails and in-app notifications only to james@meridian.study
     const isDev = process.env.NODE_ENV === 'development';
-    const DEV_ANNOUNCEMENT_EMAIL = 'james@activeherb.com';
+    const DEV_ANNOUNCEMENT_EMAIL = 'liuj43@rpi.edu';
     if (isDev && (recipients.length > 0 || attendeesWithEmail.length > 0)) {
         const devUser = await User.findOne({ email: new RegExp(`^${DEV_ANNOUNCEMENT_EMAIL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }).select('_id').lean();
         if (devUser) {
