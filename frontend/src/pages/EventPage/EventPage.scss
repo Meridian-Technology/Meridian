@@ -4,10 +4,26 @@
     position: relative;
     overflow-x: hidden;
 
+    &__dev-banner {
+        padding: 0.4rem 1rem;
+        font-size: 0.8rem;
+        background: #6D8EFA;
+        color: white;
+        text-align: center;
+    }
+
     .header{
         padding: 1rem 3rem;
         box-sizing: border-box;
         padding-bottom: 0;
+    }
+
+    .event-page-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
     }
 
     .back{
@@ -20,11 +36,35 @@
         cursor: pointer;
         transition: all 0.3s ease;
         gap: 0.5rem;
-        margin-bottom: 1rem;
 
         &.event-preview-label {
             color: var(--light-text);
             cursor: default;
+        }
+    }
+
+    .event-management-panel-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        font-family: 'OpenSauce';
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: var(--dark-blue, #1e3a5f);
+        background: rgba(30, 58, 95, 0.08);
+        border: 1px solid rgba(30, 58, 95, 0.2);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover {
+            background: rgba(30, 58, 95, 0.12);
+            border-color: rgba(30, 58, 95, 0.35);
+        }
+
+        iconify-icon {
+            font-size: 1.1rem;
         }
     }
 

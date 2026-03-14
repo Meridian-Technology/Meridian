@@ -208,6 +208,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             description: 'Detailed event analytics and insights',
             content: <EventAnalyticsDetail
                         event={dashboardData.event}
+                        stats={dashboardData.stats}
                         orgId={orgId}
                         onRefresh={handleRefresh}
                     />

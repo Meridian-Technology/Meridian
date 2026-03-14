@@ -4,6 +4,7 @@ const { verifyToken } = require('../middlewares/verifyToken');
 const getModels  = require('../services/getModelService');
 const { requireEventManagement, requireOrgPermission } = require('../middlewares/orgPermissions');
 const StudySessionService = require('../services/studySessionService');
+const { resolveAnonymousEmail, resolveAnonymousName } = require('../services/eventAnnouncementService');
 
 // ==================== ORGANIZATION EVENT ANALYTICS ====================
 
@@ -999,13 +1000,15 @@ router.get('/:orgId/events/:eventId/registration-responses', verifyToken, requir
             });
         }
 
-        const registrations = (event.attendees || []).map(a => ({
-            userId: a.userId,
-            registeredAt: a.registeredAt,
-            guestCount: a.guestCount,
-            checkedIn: a.checkedIn,
-            checkedInAt: a.checkedInAt
-        }));
+        const registrations = (event.attendees || [])
+            .filter(a => !a.walkIn)
+            .map(a => ({
+                userId: a.userId,
+                registeredAt: a.registeredAt,
+                guestCount: a.guestCount,
+                checkedIn: a.checkedIn,
+                checkedInAt: a.checkedInAt
+            }));
 
         let formResponses = [];
         if (event.registrationFormId) {
@@ -1364,6 +1367,82 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
         res.status(500).json({
             success: false,
             message: 'Error updating event',
+            error: error.message
+        });
+    }
+});
+
+// Get check-in registrations (logged-in + anonymous when allowAnonymousCheckIn)
+router.get('/:orgId/events/:eventId/check-in/registrations', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, FormResponse, User } = getModels(req, 'Event', 'FormResponse', 'User');
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        }).populate('attendees.userId', 'name email');
+
+        if (!event) {
+            return res.status(404).json({
+                success: false,
+                message: 'Event not found'
+            });
+        }
+
+        const registrations = [];
+
+        // Logged-in: from event.attendees (not checked in)
+        const notCheckedIn = (event.attendees || []).filter(a => a.userId && !a.checkedIn);
+        for (const a of notCheckedIn) {
+            registrations.push({
+                type: 'logged-in',
+                userId: a.userId?._id,
+                formResponseId: null,
+                displayName: a.userId?.name || 'User',
+                email: a.userId?.email || '',
+                guestName: null,
+                guestEmail: null
+            });
+        }
+
+        // Anonymous: from FormResponse where submittedBy null, not in attendees
+        if (event.checkInSettings?.allowAnonymousCheckIn && event.registrationFormId) {
+            const inAttendeesFormIds = (event.attendees || [])
+                .filter(a => a.formResponseId)
+                .map(a => a.formResponseId);
+            const anonymousQuery = { event: eventId, submittedBy: null };
+            if (inAttendeesFormIds.length > 0) {
+                anonymousQuery._id = { $nin: inAttendeesFormIds };
+            }
+            const anonymousResponses = await FormResponse.find(anonymousQuery).lean();
+
+            for (const fr of anonymousResponses) {
+                const guestName = resolveAnonymousName(fr, event) || (fr.guestName && String(fr.guestName).trim()) || 'Guest';
+                const guestEmail = resolveAnonymousEmail(fr, event) || fr.guestEmail || '';
+                registrations.push({
+                    type: 'anonymous',
+                    userId: null,
+                    formResponseId: fr._id,
+                    displayName: guestName,
+                    email: guestEmail,
+                    guestName,
+                    guestEmail
+                });
+            }
+        }
+
+        res.status(200).json({
+            success: true,
+            data: { registrations }
+        });
+    } catch (error) {
+        console.error('Error fetching check-in registrations:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching check-in registrations',
             error: error.message
         });
     }

@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import defaultAvatar from '../../assets/defaultAvatar.svg';
 import useAuth from '../../hooks/useAuth';
+import { useSimulatedTime } from '../../contexts/SimulatedTimeContext';
 import { analytics } from '../../services/analytics/analytics';
 import RSVPSection from '../../components/RSVPSection/RSVPSection';
 import EventCheckInButton from '../../components/EventCheckInButton/EventCheckInButton';
+import EventCheckedInView from './EventCheckedInView/EventCheckedInView';
 import Popup from '../../components/Popup/Popup';
 import EmptyState from '../../components/EmptyState/EmptyState';
 import AgendaDailyCalendar from '../ClubDash/EventsManagement/components/EventDashboard/EventAgendaBuilder/AgendaDailyCalendar/AgendaDailyCalendar';
@@ -22,6 +24,8 @@ import AgendaItemDetailView from '../../components/AgendaItemDetailView/AgendaIt
  */
 function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics = false, variant = 'desktop' }) {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const { now } = useSimulatedTime();
     const { user } = useAuth();
     const [showAgendaModal, setShowAgendaModal] = useState(false);
     const [agendaViewMode, setAgendaViewMode] = useState('list'); // 'list' | 'calendar'
@@ -45,9 +49,10 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
 
     if (!event) return null;
 
+    const simulateCheckedIn = process.env.NODE_ENV === 'development' && searchParams.get('simulate_checked_in') === '1';
+    const checkedIn = simulateCheckedIn || event?.currentUserCheckedIn === true;
     const date = new Date(event.start_time);
     const dateEnd = new Date(event.end_time || event.start_time);
-    const now = new Date();
     const isLive = now >= date && now <= dateEnd;
 
     const isMultiDay =
@@ -94,22 +99,40 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
     return (
         <div className={`event-content ${isMobileVariant ? 'event-content--mobile' : ''}`}>
             {!previewMode && (
-                <div
-                    className="back"
-                    onClick={() => {
-                        const sameOriginReferrer =
-                            typeof document.referrer === 'string' &&
-                            document.referrer !== '' &&
-                            document.referrer.startsWith(window.location.origin);
-                        if (window.history.length > 1 && sameOriginReferrer) {
-                            navigate(-1);
-                        } else {
-                            navigate('/events-dashboard?page=1');
-                        }
-                    }}
-                >
-                    <Icon icon="mdi:arrow-left" />
-                    <p>Back to Events</p>
+                <div className="event-page-header">
+                    <div
+                        className="back"
+                        onClick={() => {
+                            const sameOriginReferrer =
+                                typeof document.referrer === 'string' &&
+                                document.referrer !== '' &&
+                                document.referrer.startsWith(window.location.origin);
+                            if (window.history.length > 1 && sameOriginReferrer) {
+                                navigate(-1);
+                            } else {
+                                navigate('/events-dashboard?page=1');
+                            }
+                        }}
+                    >
+                        <Icon icon="mdi:arrow-left" />
+                        <p>Back to Events</p>
+                    </div>
+                    {event.canManageEvent && event.hostingType === 'Org' && event.hostingId && (
+                        <button
+                            type="button"
+                            className="event-management-panel-btn"
+                            onClick={() => {
+                                const orgId = event.hostingId?._id || event.hostingId;
+                                const orgName = event.hostingId?.org_name;
+                                if (orgId && orgName) {
+                                    navigate(`/club-dashboard/${encodeURIComponent(orgName)}?page=1&overlay=event-dashboard&eventId=${event._id}&orgId=${orgId}`);
+                                }
+                            }}
+                        >
+                            <Icon icon="mdi:cog" />
+                            <span>Management Panel</span>
+                        </button>
+                    )}
                 </div>
             )}
             <div className="event-layout">
@@ -153,7 +176,15 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                         </div>
                     </div>
 
-                    {event.description && (
+                    {event.externalLink && (
+                        <div className="row external-link">
+                            <a href={event.externalLink} target="_blank" rel="noopener noreferrer">
+                                <Icon icon="heroicons:arrow-top-right-on-square-20-solid" />
+                                <p>View Event External Link</p>
+                            </a>
+                        </div>
+                    )}
+                    {event.description && !(checkedIn && isLive) && (
                         <div className="row event-description">
                             <div
                                 ref={descriptionRef}
@@ -171,15 +202,7 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                             )}
                         </div>
                     )}
-                    {event.externalLink && (
-                        <div className="row external-link">
-                            <a href={event.externalLink} target="_blank" rel="noopener noreferrer">
-                                <Icon icon="heroicons:arrow-top-right-on-square-20-solid" />
-                                <p>View Event External Link</p>
-                            </a>
-                        </div>
-                    )}
-                    {event.eventAgenda?.isPublished && (event.eventAgenda?.items?.length ?? 0) > 0 && (
+                    {event.eventAgenda?.isPublished && (event.eventAgenda?.items?.length ?? 0) > 0 && !(checkedIn && isLive) && (
                         <div className="row view-agenda">
                             <button
                                 onClick={() => {
@@ -193,7 +216,13 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                             </button>
                         </div>
                     )}
-                    {isLive ? (
+                    {checkedIn && isLive ? (
+                        <EventCheckedInView
+                            event={previewMode ? { ...event, currentUserCheckedIn: false } : (simulateCheckedIn ? { ...event, currentUserCheckedIn: true } : event)}
+                            onRefetch={onRefetch}
+                            onViewAgenda={() => setShowAgendaModal(true)}
+                        />
+                    ) : isLive ? (
                         <div className="event-checkin-and-registration">
                             <EventCheckInButton event={previewMode ? { ...event, currentUserCheckedIn: false } : event} onCheckedIn={onRefetch} />
                             <RSVPSection event={event} compact previewAsUnregistered={previewMode} />
@@ -203,6 +232,25 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                             <RSVPSection event={event} previewAsUnregistered={previewMode} />
                             <EventCheckInButton event={previewMode ? { ...event, currentUserCheckedIn: false } : event} onCheckedIn={onRefetch} />
                         </>
+                    )}
+
+                    {event.description && (checkedIn && isLive) && (
+                        <div className="row event-description">
+                            <div
+                                ref={descriptionRef}
+                                className={`event-description-content ${!descriptionExpanded ? 'event-description-clamped' : ''}`}
+                                dangerouslySetInnerHTML={{ __html: parseMarkdownDescription(event.description) }}
+                            />
+                            {(descriptionOverflows || descriptionExpanded) && (
+                                <button
+                                    type="button"
+                                    className="event-description-expand-btn"
+                                    onClick={() => setDescriptionExpanded((prev) => !prev)}
+                                >
+                                    {descriptionExpanded ? 'Show less' : 'Expand'}
+                                </button>
+                            )}
+                        </div>
                     )}
 
                     {showAnalytics && user?.roles?.includes('admin') && (
