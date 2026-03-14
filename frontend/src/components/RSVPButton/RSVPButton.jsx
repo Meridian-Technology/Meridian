@@ -87,7 +87,17 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate, onReg
         if (e) e.stopPropagation();
         const form = event.registrationForm || registrationForm;
         const allowAnonymous = form?.allowAnonymous === true;
-        if (!user && !allowAnonymous) {
+        // Only block when we have the form and it explicitly disallows anonymous.
+        // When form isn't loaded yet, defer to fetch block (don't assume allowAnonymous is false).
+        if (!user && formReady && !allowAnonymous) {
+            addNotification({
+                title: 'Login Required',
+                message: 'Please log in to register for this event',
+                type: 'error'
+            });
+            return;
+        }
+        if (!user && !hasForm) {
             addNotification({
                 title: 'Login Required',
                 message: 'Please log in to register for events',
