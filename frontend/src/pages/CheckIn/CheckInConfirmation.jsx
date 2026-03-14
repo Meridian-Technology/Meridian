@@ -11,6 +11,26 @@ import backgroundImage from '../../assets/LandingBackground.png';
 import loginMockup from '../../assets/Mockups/LoginMobile.png';
 import './CheckInConfirmation.scss';
 
+/** Wraps matching substrings in <mark> for search highlight */
+function HighlightMatch({ text, query }) {
+    if (!query || !text) return text;
+    const q = query.trim().toLowerCase();
+    if (!q) return text;
+    const str = String(text);
+    const lower = str.toLowerCase();
+    const parts = [];
+    let lastEnd = 0;
+    let idx = lower.indexOf(q);
+    while (idx !== -1) {
+        parts.push(str.slice(lastEnd, idx));
+        parts.push(<mark key={idx} className="checkin-pick__highlight">{str.slice(idx, idx + q.length)}</mark>);
+        lastEnd = idx + q.length;
+        idx = lower.indexOf(q, lastEnd);
+    }
+    parts.push(str.slice(lastEnd));
+    return <>{parts}</>;
+}
+
 const APP_STORE_URL = 'https://apps.apple.com/us/app/meridian-go/id6755217537';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.meridian.mobile';
 
@@ -34,6 +54,7 @@ function CheckInConfirmation() {
     const [checkingIn, setCheckingIn] = useState(false);
     const [checkedIn, setCheckedIn] = useState(false);
     const [tokenInvalid, setTokenInvalid] = useState(false);
+    const [anonymousSearchQuery, setAnonymousSearchQuery] = useState('');
 
     // Fetch event details
     const { data: eventResponse, loading: eventLoading, error: eventError } = useFetch(
@@ -42,6 +63,24 @@ function CheckInConfirmation() {
 
     const event = eventResponse?.event;
     const useSelfCheckIn = !token && user;
+    const useAnonymousPick = token && !user;
+
+    // Registrations for anonymous pick (token flow, no login)
+    const { data: registrationsResponse, loading: loadingRegistrations, refetch: refetchRegistrations } = useFetch(
+        useAnonymousPick && eventId && token
+            ? `/events/${eventId}/check-in/self-registrations?token=${encodeURIComponent(token)}`
+            : null
+    );
+    const registrations = registrationsResponse?.success ? (registrationsResponse.data?.registrations || []) : [];
+    const filteredRegistrations = useMemo(() => {
+        if (!anonymousSearchQuery.trim()) return registrations;
+        const q = anonymousSearchQuery.trim().toLowerCase();
+        return registrations.filter((reg) => {
+            const name = (reg.displayName || reg.guestName || '').toLowerCase();
+            const email = (reg.email || '').toLowerCase();
+            return name.includes(q) || email.includes(q);
+        });
+    }, [registrations, anonymousSearchQuery]);
 
     // Initialize checkedIn from event when using self check-in (logged-in user, no token)
     useEffect(() => {
@@ -169,6 +208,36 @@ function CheckInConfirmation() {
         }
     };
 
+    const handleAnonymousCheckIn = async (reg) => {
+        if (!eventId || !token) return;
+        setCheckingIn(true);
+        try {
+            const body = reg.formResponseId
+                ? { token, formResponseId: reg.formResponseId }
+                : { token, userId: reg.userId };
+            const response = await apiRequest(`/events/${eventId}/check-in/anonymous`, body, { method: 'POST' });
+            if (response.success) {
+                setCheckedIn(true);
+                addNotification({
+                    title: 'Success',
+                    message: 'You have successfully checked in!',
+                    type: 'success'
+                });
+                refetchRegistrations?.({ silent: true });
+            } else {
+                const msg = response.error || response.message || 'Failed to check in';
+                addNotification({ title: 'Error', message: msg, type: 'error' });
+                if (/invalid|expired|not valid/i.test(msg)) setTokenInvalid(true);
+            }
+        } catch (error) {
+            const msg = error.message || 'Failed to check in. Please try again.';
+            addNotification({ title: 'Error', message: msg, type: 'error' });
+            if (/invalid|expired|not valid/i.test(msg)) setTokenInvalid(true);
+        } finally {
+            setCheckingIn(false);
+        }
+    };
+
     const pageWrapper = (content) => (
         <div className="checkin-confirmation-page" style={{ backgroundImage: `url(${backgroundImage})` }}>
             {content}
@@ -221,22 +290,7 @@ function CheckInConfirmation() {
         );
     }
 
-    // Token invalid: show friendly error with View Event option (don't redirect to home)
-    if (tokenInvalid) {
-        return pageWrapper(
-            <div className="checkin-error">
-                <Icon icon="mdi:link-off" />
-                <h2>Check-In Link Invalid</h2>
-                <p>This check-in link may have expired or is no longer valid. You can still view the event details.</p>
-                <div className="checkin-error__actions">
-                    <button onClick={() => navigate(`/event/${eventId}`, { replace: true })}>View Event</button>
-                    <button className="checkin-error__secondary" onClick={() => navigate('/', { replace: true })}>Go Home</button>
-                </div>
-            </div>
-        );
-    }
-
-    // Check if event allows check-in (time window)
+    // Check if event allows check-in (time window) - applies to both logged-in and anonymous flows
     const now = new Date();
     const startTime = new Date(event.start_time);
     const endTime = new Date(event.end_time);
@@ -257,6 +311,130 @@ function CheckInConfirmation() {
                     Event time: {startTime.toLocaleString()} - {endTime.toLocaleString()}
                 </p>
                 <button onClick={() => navigate(`/event/${eventId}`, { replace: true })}>View Event</button>
+            </div>
+        );
+    }
+
+    // Token but not logged in: anonymous pick-your-registration flow
+    if (useAnonymousPick) {
+        const loading = loadingRegistrations;
+        const hasSearchQuery = Boolean(anonymousSearchQuery.trim());
+        const noResults = filteredRegistrations.length === 0;
+        const showRegisterPrompt = noResults;
+
+        return pageWrapper(
+            <div className="checkin-container">
+                <article className="checkin-card checkin-pick">
+                    {event?.image && (
+                        <div className="checkin-card__image">
+                            <img src={event.image || event.previewImage} alt="" />
+                        </div>
+                    )}
+                    <div className="checkin-card__body">
+                        <h1 className="checkin-card__title">{event?.name}</h1>
+                        <p className="checkin-pick__intro">Find your registration to check in.</p>
+                        <div className="checkin-pick__search-wrap">
+                            <Icon icon="mdi:magnify" className="checkin-pick__search-icon" />
+                            <input
+                                type="text"
+                                className="checkin-pick__search"
+                                placeholder="Search by name or email..."
+                                value={anonymousSearchQuery}
+                                onChange={(e) => setAnonymousSearchQuery(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                        {loading ? (
+                            <p className="checkin-pick__loading">
+                                <Icon icon="mdi:loading" className="spinner" />
+                                Loading registrations...
+                            </p>
+                        ) : noResults ? (
+                            <div className="checkin-pick__empty">
+                                <p className="checkin-pick__empty-msg">
+                                    {hasSearchQuery ? 'No matches for your search.' : 'No registrations found.'}
+                                </p>
+                                {showRegisterPrompt && (
+                                    <div className="checkin-pick__register-prompt">
+                                        <Icon icon="mdi:account-plus-outline" />
+                                        <p>You may need to register for this event first.</p>
+                                        <button
+                                            type="button"
+                                            className="checkin-card__btn checkin-card__btn--primary"
+                                            onClick={() => navigate(`/event/${eventId}`, { replace: true })}
+                                        >
+                                            Register for Event
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <ul className="checkin-pick__list">
+                                {filteredRegistrations.map((reg) => {
+                                    const key = reg.formResponseId ? `anon-${reg.formResponseId}` : `user-${reg.userId}`;
+                                    const displayName = reg.displayName || reg.guestName || 'Unknown';
+                                    const email = reg.email && String(reg.email).trim().toLowerCase() !== String(displayName).trim().toLowerCase()
+                                        ? reg.email
+                                        : null;
+                                    return (
+                                        <li key={key} className="checkin-pick__item">
+                                            <span className="checkin-pick__name">
+                                                <HighlightMatch text={displayName} query={anonymousSearchQuery} />
+                                                {email && (
+                                                    <>
+                                                        {' ('}
+                                                        <HighlightMatch text={email} query={anonymousSearchQuery} />
+                                                        {')'}
+                                                    </>
+                                                )}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className="checkin-card__btn checkin-card__btn--primary checkin-pick__btn"
+                                                onClick={() => handleAnonymousCheckIn(reg)}
+                                                disabled={checkingIn}
+                                            >
+                                                {checkingIn ? (
+                                                    <>
+                                                        <Icon icon="mdi:loading" className="spinner" />
+                                                        Checking In...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Icon icon="mdi:check-circle-outline" />
+                                                        Check In
+                                                    </>
+                                                )}
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                        <button
+                            className="checkin-card__btn checkin-card__btn--secondary"
+                            onClick={() => navigate(`/event/${eventId}`, { replace: true })}
+                            disabled={checkingIn}
+                        >
+                            View Event
+                        </button>
+                    </div>
+                </article>
+            </div>
+        );
+    }
+
+    // Token invalid: show friendly error with View Event option (don't redirect to home)
+    if (tokenInvalid) {
+        return pageWrapper(
+            <div className="checkin-error">
+                <Icon icon="mdi:link-off" />
+                <h2>Check-In Link Invalid</h2>
+                <p>This check-in link may have expired or is no longer valid. You can still view the event details.</p>
+                <div className="checkin-error__actions">
+                    <button onClick={() => navigate(`/event/${eventId}`, { replace: true })}>View Event</button>
+                    <button className="checkin-error__secondary" onClick={() => navigate('/', { replace: true })}>Go Home</button>
+                </div>
             </div>
         );
     }

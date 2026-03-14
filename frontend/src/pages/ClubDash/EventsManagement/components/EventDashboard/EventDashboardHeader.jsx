@@ -14,7 +14,10 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
         if (!event?.start_time) return null;
         const now = new Date();
         const start = new Date(event.start_time);
-        return start > now ? 'upcoming' : 'passed';
+        const end = new Date(event.end_time || event.start_time);
+        if (start > now) return 'upcoming';
+        if (end < now) return 'passed';
+        return 'live';
     };
 
     const formatDate = (dateString) => {
@@ -41,10 +44,12 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
         if (!event?.start_time) return '';
         const now = new Date();
         const start = new Date(event.start_time);
+        const end = new Date(event.end_time || event.start_time);
         const diff = start - now;
 
         if (diff < 0) {
-            return 'Event has started';
+            if (now <= end) return 'Happening now';
+            return 'Event has ended';
         }
 
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -193,7 +198,9 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
                             )}
                             {eventStatus && event?.status !== 'draft' && (
                                 <span className={`event-status-bubble ${eventStatus}`}>
-                                    {eventStatus === 'upcoming' ? 'Upcoming' : 'Passed'}
+                                    {eventStatus === 'upcoming' && 'Upcoming'}
+                                    {eventStatus === 'live' && 'Live'}
+                                    {eventStatus === 'passed' && 'Passed'}
                                 </span>
                             )}
                         </div>

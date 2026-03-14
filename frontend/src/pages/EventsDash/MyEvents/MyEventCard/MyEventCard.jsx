@@ -8,6 +8,8 @@ const MyEventCard = ({ event }) => {
     const navigate = useNavigate();
     const { user } = useAuth();
     const date = new Date(event?.start_time || Date.now());
+    const dateEnd = new Date(event?.end_time || event?.start_time || Date.now());
+    const isLive = date <= new Date() && dateEnd >= new Date();
     
     // Check if user is hosting this event
     const isHosting = user && event && (
@@ -66,6 +68,12 @@ const MyEventCard = ({ event }) => {
                 <div className="row">
                     <Icon icon="heroicons:calendar-16-solid" />
                     <p>{date.toLocaleString('default', {weekday: 'long'})} {date.toLocaleString('default', {month: 'numeric'})}/{date.getDate()}</p>
+                    {isLive && (
+                        <span className="my-event-card__live-badge" role="status">
+                            <Icon icon="mdi:circle" className="my-event-card__live-dot" />
+                            Live
+                        </span>
+                    )}
                 </div>
 
                 {/* Location Row */}

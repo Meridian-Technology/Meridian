@@ -11,9 +11,9 @@ import './EventCheckInButton.scss';
  * Check-in button for the event page. Shown when:
  * - Event has check-in enabled
  * - On-page check-in is allowed (checkInSettings.allowOnPageCheckIn !== false)
- * - User is logged in
  * - Current time allows check-in (during event, or before if allowEarlyCheckIn)
- * Navigates to check-in confirmation page for check-in; check-out stays on page.
+ * Logged-in users: can check in/out on page or via confirmation.
+ * Anonymous users: button navigates to check-in page (log in or use token link).
  */
 function EventCheckInButton({ event, onCheckedIn }) {
     const navigate = useNavigate();
@@ -26,7 +26,7 @@ function EventCheckInButton({ event, onCheckedIn }) {
         setCheckedIn(!!event?.currentUserCheckedIn);
     }, [event?.currentUserCheckedIn, event?._id]);
 
-    if (!event || !user) return null;
+    if (!event) return null;
     if (!event.checkInEnabled) return null;
     if (event.checkInSettings?.allowOnPageCheckIn === false) return null;
 
@@ -38,7 +38,12 @@ function EventCheckInButton({ event, onCheckedIn }) {
     if (now > end) return null;
 
     const handleCheckIn = () => {
-        navigate(`/check-in/${event._id}`);
+        // Anonymous users need the token to access the pick-your-registration flow
+        if (!user && event.checkInToken) {
+            navigate(`/check-in/${event._id}/${event.checkInToken}`);
+        } else {
+            navigate(`/check-in/${event._id}`);
+        }
     };
 
     const handleCheckOut = async () => {

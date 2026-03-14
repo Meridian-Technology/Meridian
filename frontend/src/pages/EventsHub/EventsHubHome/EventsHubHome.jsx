@@ -114,7 +114,11 @@ function EventsHubHome({ onRoomNavigation, onTabChangeByKey }) {
     const now = new Date();
     const going = goingData?.events || [];
     const hosting = hostingData?.events || [];
-    const all = [...going, ...hosting].filter((e) => new Date(e.start_time) >= now);
+    const all = [...going, ...hosting].filter((e) => {
+      const start = new Date(e.start_time);
+      const end = new Date(e.end_time || e.start_time);
+      return end >= now; // Include live (start <= now && end >= now) and future (start >= now)
+    });
     return all.sort((a, b) => new Date(a.start_time) - new Date(b.start_time)).slice(0, 6);
   }, [goingData, hostingData]);
 

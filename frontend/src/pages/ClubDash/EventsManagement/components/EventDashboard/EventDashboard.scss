@@ -185,6 +185,12 @@
                             border: 1px solid rgba(77, 170, 87, 0.2);
                         }
 
+                        &.live {
+                            background: rgba(76, 175, 80, 0.2);
+                            color: #2e7d32;
+                            border: 1px solid rgba(76, 175, 80, 0.4);
+                        }
+
                         &.passed {
                             background: rgba(108, 117, 125, 0.1);
                             color: #6c757d;
