@@ -74,12 +74,17 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: 1rem 1.25rem;
     overflow: hidden;
 
     &:first-child {
       border-right: 1px solid var(--lighterborder, #e5e7eb);
       max-width: 45%;
+      padding: 1rem 1.25rem;
+    }
+
+    &.manual-checkin-modal__to-check-in {
+      padding: 1rem 1.5rem;
+      overflow-x: hidden;
     }
   }
 
@@ -113,15 +118,30 @@
     overflow-y: auto;
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 
     li {
-      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 0.9rem;
       font-size: 0.95rem;
-      border-radius: 6px;
-      margin-bottom: 0.25rem;
+      font-weight: 500;
+      border-radius: 8px;
+      margin: 0;
+      background: var(--background, #fff);
+      border: 1px solid var(--lighterborder, #e5e7eb);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 
-      &:nth-child(odd) {
-        background: var(--lightbackground, #f9fafb);
+      &::before {
+        content: '';
+        flex-shrink: 0;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--primary, #4DAA57);
       }
     }
   }
@@ -130,6 +150,8 @@
     position: relative;
     margin-bottom: 0.75rem;
     flex-shrink: 0;
+    min-width: 0;
+    width: 100%;
   }
 
   .manual-checkin-modal__search-icon {
@@ -144,6 +166,9 @@
 
   .manual-checkin-modal__search {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     padding: 0.6rem 0.75rem 0.6rem 2.25rem;
     font-size: 0.95rem;
     border: 1px solid var(--lighterborder, #e5e7eb);
@@ -190,6 +215,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .manual-checkin-modal__highlight {
+    background: rgba(77, 170, 87, 0.35);
+    color: inherit;
+    padding: 0.1em 0.15em;
+    border-radius: 3px;
+    font-weight: 600;
   }
 
   .manual-checkin-modal__check-in-btn {

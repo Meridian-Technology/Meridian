@@ -8,6 +8,7 @@ import CheckInLink from '../../../../../../components/EventCheckIn/CheckInLink';
 import CheckInList from '../../../../../../components/EventCheckIn/CheckInList';
 import EmptyState from '../../../../../../components/EmptyState/EmptyState';
 import CheckInSettingsModal from './CheckInSettingsModal';
+import Popup from '../../../../../../components/Popup/Popup';
 import ManualCheckInModal from './ManualCheckInModal';
 import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
 import KpiCard from '../../../../../../components/Analytics/Dashboard/KpiCard';
@@ -392,17 +393,24 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                 onSaved={() => onRefresh?.()}
             />
 
-            <ManualCheckInModal
+            <Popup
                 isOpen={showManualCheckInModal}
                 onClose={() => setShowManualCheckInModal(false)}
-                event={event}
-                orgId={orgId}
-                checkedInAttendees={attendees}
-                onCheckInSuccess={async () => {
-                    await refetchAttendees({ silent: true });
-                }}
-                onOpenSettings={() => setShowSettingsModal(true)}
-            />
+                customClassName="manual-checkin-modal manual-checkin-modal--streamlined wide-content no-padding"
+                hideCloseButton={true}
+                disableOutsideClick={true}
+            >
+                <ManualCheckInModal
+                    onClose={() => setShowManualCheckInModal(false)}
+                    event={event}
+                    orgId={orgId}
+                    checkedInAttendees={attendees}
+                    onCheckInSuccess={async () => {
+                        await refetchAttendees({ silent: true });
+                    }}
+                    onOpenSettings={() => setShowSettingsModal(true)}
+                />
+            </Popup>
         </div>
     );
 }
