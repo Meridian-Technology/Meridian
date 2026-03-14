@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
@@ -11,10 +12,11 @@ import './EventCheckInButton.scss';
  * - Event has check-in enabled
  * - On-page check-in is allowed (checkInSettings.allowOnPageCheckIn !== false)
  * - User is logged in
- * - Current time is within event start_time and end_time
- * Calls POST /events/:eventId/check-in/self (no token required).
+ * - Current time allows check-in (during event, or before if allowEarlyCheckIn)
+ * Navigates to check-in confirmation page for check-in; check-out stays on page.
  */
 function EventCheckInButton({ event, onCheckedIn }) {
+    const navigate = useNavigate();
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const [loading, setLoading] = useState(false);
@@ -31,30 +33,12 @@ function EventCheckInButton({ event, onCheckedIn }) {
     const now = new Date();
     const start = new Date(event.start_time);
     const end = new Date(event.end_time);
-    if (now < start || now > end) return null;
+    const allowEarly = event.checkInSettings?.allowEarlyCheckIn;
+    if (!allowEarly && now < start) return null;
+    if (now > end) return null;
 
-    const handleCheckIn = async () => {
-        setLoading(true);
-        try {
-            const response = await apiRequest(
-                `/events/${event._id}/check-in/self`,
-                {},
-                { method: 'POST' }
-            );
-            if (response?.success) {
-                analytics.track('event_checkin', { event_id: event._id });
-                setCheckedIn(true);
-                addNotification?.('You’re checked in!', 'success');
-                onCheckedIn?.();
-            } else {
-                addNotification?.(response?.message || 'Check-in failed', 'error');
-            }
-        } catch (err) {
-            const msg = err.response?.data?.message || err.message || 'Check-in failed';
-            addNotification?.(msg, 'error');
-        } finally {
-            setLoading(false);
-        }
+    const handleCheckIn = () => {
+        navigate(`/check-in/${event._id}`);
     };
 
     const handleCheckOut = async () => {
@@ -68,7 +52,7 @@ function EventCheckInButton({ event, onCheckedIn }) {
             if (response?.success) {
                 analytics.track('event_checkout', { event_id: event._id });
                 setCheckedIn(false);
-                addNotification?.('You’ve checked out.', 'success');
+                addNotification?.("You've checked out.", 'success');
                 onCheckedIn?.();
             } else {
                 addNotification?.(response?.message || 'Check-out failed', 'error');
