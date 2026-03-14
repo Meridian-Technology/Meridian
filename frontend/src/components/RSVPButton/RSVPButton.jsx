@@ -11,7 +11,7 @@ import RegistrationPrompt from '../RegistrationPrompt/RegistrationPrompt';
 import { hasAnonymousRegistration, saveAnonymousRegistration } from '../../utils/anonymousRegistrationStorage';
 import './RSVPButton.scss';
 
-const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate, onRegistrationPromptOpen, onRegistrationPromptClose }) => {
+const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate, onRegistrationPromptOpen, onRegistrationPromptClose, addAnotherOnly = false }) => {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const navigate = useNavigate();
@@ -168,7 +168,7 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate, onReg
         );
     }
 
-    if (isRegisteredForDisplay) {
+    if (isRegisteredForDisplay && !addAnotherOnly) {
         return (
             <div className="rsvp-button-container">
                 <button className="rsvp-btn going active" disabled>
@@ -176,6 +176,42 @@ const RSVPButton = ({ event, onRSVPUpdate, rsvpStatus, onRSVPStatusUpdate, onReg
                     <span className="button-text">Registered</span>
                 </button>
             </div>
+        );
+    }
+
+    if (addAnotherOnly && isRegisteredForDisplay) {
+        return (
+            <>
+                <div className="rsvp-button-container">
+                    <button
+                        className="rsvp-btn going add-another"
+                        onClick={handleRegister}
+                        disabled={loading || isAtCapacity}
+                        title="Add another registration"
+                    >
+                        <Icon icon="mdi:account-plus" />
+                        <span className="button-text">Add another registration</span>
+                    </button>
+                </div>
+                {showFormModal && form && (
+                    <Popup isOpen onClose={() => setShowFormModal(false)} customClassName="rsvp-registration-form-modal medium-content" defaultStyling={false}>
+                        <div className="rsvp-registration-form-modal-inner">
+                            <div className="rsvp-registration-form-modal-body">
+                                <FormViewer
+                                    form={form}
+                                    onSubmit={handleFormSubmit}
+                                    handleClose={null}
+                                    formConfig={{
+                                        allowAnonymous: form.allowAnonymous === true,
+                                        collectGuestDetails: form.collectGuestDetails !== false
+                                    }}
+                                    hasSubmitted={false}
+                                />
+                            </div>
+                        </div>
+                    </Popup>
+                )}
+            </>
         );
     }
 

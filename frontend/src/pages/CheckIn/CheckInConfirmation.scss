@@ -559,6 +559,49 @@
             min-width: 0;
             font-size: 15px;
             color: var(--text-primary, #1a1a1a);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+
+        &__badge {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-weight: 500;
+
+            &--checked-in {
+                background: rgba(16, 185, 129, 0.15);
+                color: #059669;
+            }
+        }
+
+        &__item-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        &__view-details-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--dark-blue, #1e3a5f);
+            background: transparent;
+            border: 1px solid var(--dark-blue, #1e3a5f);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+
+            &:hover {
+                background: rgba(30, 58, 95, 0.08);
+            }
         }
 
         &__btn {
@@ -566,6 +609,66 @@
             width: auto;
             padding: 10px 16px;
         }
+    }
+}
+
+.checkin-registration-details {
+    padding: 24px;
+    max-width: 480px;
+    max-height: 80vh;
+    overflow-y: auto;
+
+    &__title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 20px 0;
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text-primary, #1a1a1a);
+    }
+
+    &__form-title {
+        margin: 0 0 8px 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-secondary, #6b7280);
+    }
+
+    &__meta {
+        font-size: 13px;
+        color: var(--text-tertiary, #9ca3af);
+        margin: 0 0 16px 0;
+    }
+
+    &__form {
+        margin-bottom: 20px;
+    }
+
+    &__qa {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border-color, #e5e7eb);
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+
+    &__question {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary, #1a1a1a);
+        margin-bottom: 6px;
+    }
+
+    &__answer {
+        font-size: 14px;
+        color: var(--text-secondary, #6b7280);
+    }
+
+    &__no-answer {
+        font-style: italic;
+        color: var(--text-tertiary, #9ca3af);
     }
 }
 
