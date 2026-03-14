@@ -17,18 +17,31 @@ import EventPageContent from './EventPageContent';
 import DevSimulatedTimePanel from '../../components/DevSimulatedTimePanel/DevSimulatedTimePanel';
 import { analytics } from '../../services/analytics/analytics';
 
+const IOS_BANNER_STORAGE_KEY = 'meridian-ios-banner-dismissed';
+
 function EventPage() {
     const { eventId } = useParams();
     const [searchParams] = useSearchParams();
     const source = searchParams.get('source');
     const qrId = searchParams.get('qr_id');
     const announcementId = searchParams.get('announcement');
-    const [bannerDismissed, setBannerDismissed] = useState(false);
+    const [bannerDismissed, setBannerDismissed] = useState(() => {
+        try {
+            return localStorage.getItem(IOS_BANNER_STORAGE_KEY) === 'true';
+        } catch {
+            return false;
+        }
+    });
 
     const handleDismissBanner = (e) => {
         e.preventDefault();
         e.stopPropagation();
         setBannerDismissed(true);
+        try {
+            localStorage.setItem(IOS_BANNER_STORAGE_KEY, 'true');
+        } catch {
+            // ignore
+        }
     };
 
     const { data: eventData, loading: eventLoading, refetch: refetchEvent } = useFetch(
