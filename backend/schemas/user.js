@@ -148,7 +148,15 @@ const userSchema = new mongoose.Schema({
         trim: true
     },
 
-    
+    // Student attributes for admin outreach targeting (MER-155)
+    studentProfile: {
+        major: { type: String, trim: true, default: null },
+        department: { type: String, trim: true, default: null },
+        graduationYear: { type: Number, default: null },
+        programType: { type: String, enum: ['undergraduate', 'graduate', 'professional', 'other', null], default: null },
+        enrollmentStatus: { type: String, enum: ['active', 'leave', 'graduated', 'full-time', 'part-time', 'other', null], default: null }
+    },
+
     // you can add more fields here if needed, like 'createdAt', 'updatedAt', etc.
 }, {
     timestamps: true // automatically adds 'createdAt' and 'updatedAt' fields
@@ -171,5 +179,10 @@ userSchema.index({ username: 1 }); // For username lookups
 userSchema.index({ roles: 1 }); // For role-based queries
 userSchema.index({ approvalRoles: 1 }); // For approval role queries
 userSchema.index({ admin: 1 }); // For admin queries
+userSchema.index({ 'studentProfile.major': 1 });
+userSchema.index({ 'studentProfile.department': 1 });
+userSchema.index({ 'studentProfile.graduationYear': 1 });
+userSchema.index({ 'studentProfile.programType': 1 });
+userSchema.index({ 'studentProfile.enrollmentStatus': 1 });
 
 module.exports = userSchema;

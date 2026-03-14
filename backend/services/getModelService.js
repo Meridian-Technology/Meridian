@@ -58,6 +58,9 @@ const eventEquipmentSchema = require('../schemas/EventEquipment');
 const orgEquipmentSchema = require('../schemas/OrgEquipment');
 const analyticsEventSchema = require('../events/schemas/analyticsEvent');
 const eventQRSchema = require('../events/schemas/eventQR');
+const outreachAudienceSchema = require('../schemas/outreachAudience');
+const outreachMessageSchema = require('../schemas/outreachMessage');
+const outreachReceiptSchema = require('../schemas/outreachReceipt');
 
 
 
@@ -125,6 +128,9 @@ const getModels = (req, ...names) => {
         ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
         ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
         NoticeConfig: req.db.model('NoticeConfig', noticeConfigSchema, 'noticeConfigs'),
+        OutreachAudience: req.db.model('OutreachAudience', outreachAudienceSchema, 'outreach_audiences'),
+        OutreachMessage: req.db.model('OutreachMessage', outreachMessageSchema, 'outreach_messages'),
+        OutreachReceipt: req.db.model('OutreachReceipt', outreachReceiptSchema, 'outreach_receipts'),
     };
 
     return names.reduce((acc, name) => {

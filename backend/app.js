@@ -107,6 +107,8 @@ function createApp() {
   const orgMessageRoutes = require('./routes/orgMessageRoutes.js');
   const roomRoutes = require('./routes/roomRoutes.js');
   const adminRoutes = require('./routes/adminRoutes.js');
+  const adminOutreachRoutes = require('./routes/adminOutreachRoutes.js');
+  const studentOutreachRoutes = require('./routes/studentOutreachRoutes.js');
   const eventsRoutes = require('./events/index.js');
   const notificationRoutes = require('./routes/notificationRoutes.js');
   const qrRoutes = require('./routes/qrRoutes.js');
@@ -143,6 +145,8 @@ function createApp() {
   app.use('/org-event-management', orgEventManagementRoutes);
   app.use('/admin', roomRoutes);
   app.use(adminRoutes);
+  app.use('/admin/outreach', adminOutreachRoutes);
+  app.use('/me', studentOutreachRoutes);
   app.use(formRoutes);
   app.use('/notifications', notificationRoutes);
   app.use('/api/qr', qrRoutes);

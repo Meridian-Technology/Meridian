@@ -53,7 +53,8 @@ const SYSTEM_PERMISSIONS = {
     MANAGE_SYSTEM_SETTINGS: 'manage_system_settings',
     VIEW_SYSTEM_ANALYTICS: 'view_system_analytics',
     MANAGE_GLOBAL_USERS: 'manage_global_users',
-    ACCESS_ADMIN_PANEL: 'access_admin_panel'
+    ACCESS_ADMIN_PANEL: 'access_admin_panel',
+    ADMIN_OUTREACH: 'admin_outreach'
 };
 
 // Permission groups for easier management
