@@ -86,9 +86,44 @@ const sendTestConnectionEvent = async (testId, message, callbackUrl) => {
   }
 };
 
+/**
+ * Send meeting reminder event (manual or from cron)
+ * @param {string} eventId - Event ID
+ * @param {string} school - Tenant/school subdomain
+ */
+const sendMeetingReminderEvent = async (eventId, school = 'rpi') => {
+  try {
+    await inngest.send({
+      name: 'meeting/reminder.send',
+      data: { eventId, school },
+    });
+    console.log(`Meeting reminder event sent for event ${eventId}`);
+  } catch (error) {
+    console.error('Error sending meeting reminder event:', error);
+  }
+};
+
+/**
+ * Trigger recurring meeting instance generation (manual or cron)
+ * @param {string} school - Tenant/school subdomain
+ */
+const sendRecurringMeetingGenerateEvent = async (school = 'rpi') => {
+  try {
+    await inngest.send({
+      name: 'meeting/recurring.generate',
+      data: { school },
+    });
+    console.log(`Recurring meeting generate event sent for school ${school}`);
+  } catch (error) {
+    console.error('Error sending recurring meeting generate event:', error);
+  }
+};
+
 module.exports = {
   sendUserRegisteredEvent,
   sendRoomCheckoutEvent,
   sendRoomCheckinEvent,
   sendTestConnectionEvent,
+  sendMeetingReminderEvent,
+  sendRecurringMeetingGenerateEvent,
 };
