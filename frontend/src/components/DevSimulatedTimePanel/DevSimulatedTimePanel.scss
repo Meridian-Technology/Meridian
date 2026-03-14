@@ -1,0 +1,150 @@
+.dev-simulated-time-panel {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    z-index: 9999;
+    font-family: var(--default-font, system-ui, sans-serif);
+    font-size: 0.8rem;
+
+    &--collapsed &__content {
+        display: none;
+    }
+
+    &__toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.5rem 0.75rem;
+        background: var(--dark-blue, #6D8EFA);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+
+        iconify-icon {
+            font-size: 1.1rem;
+        }
+    }
+
+    &__badge {
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    &__content {
+        position: absolute;
+        bottom: 100%;
+        right: 0;
+        margin-bottom: 0.5rem;
+        padding: 1rem;
+        background: white;
+        border: 1px solid var(--lighterborder);
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+        min-width: 240px;
+    }
+
+    &__title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--light-text);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.75rem;
+    }
+
+    &__preview-btn {
+        width: 100%;
+        padding: 0.6rem 0.75rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        background: var(--green, #64AB6C);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+
+        &:hover {
+            opacity: 0.9;
+        }
+    }
+
+    &__current {
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 0.75rem;
+    }
+
+    &__presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-bottom: 0.75rem;
+
+        button {
+            padding: 0.3rem 0.5rem;
+            font-size: 0.75rem;
+            background: var(--lighter);
+            border: 1px solid var(--lighterborder);
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text);
+
+            &:hover {
+                background: var(--lighterborder);
+            }
+        }
+    }
+
+    &__input {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+
+        input {
+            flex: 1;
+            padding: 0.4rem 0.5rem;
+            font-size: 0.8rem;
+            border: 1px solid var(--lighterborder);
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 0.4rem 0.6rem;
+            font-size: 0.8rem;
+            background: var(--dark-blue, #6D8EFA);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+    }
+
+    &__checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.8rem;
+        color: var(--text);
+        cursor: pointer;
+    }
+
+    &__clear {
+        width: 100%;
+        padding: 0.4rem;
+        font-size: 0.8rem;
+        background: transparent;
+        border: 1px solid var(--lighterborder);
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--light-text);
+
+        &:hover {
+            background: var(--lighter);
+        }
+    }
+}
