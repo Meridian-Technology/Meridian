@@ -63,20 +63,12 @@ export const useDashboardOverlay = () => {
     };
 
     /**
-     * Show an EventWorkspace overlay (or navigate to workspace page when no overlay)
-     * @param {string} eventId - The event ID to display workspace for
+     * @deprecated EventWorkspace is legacy. Navigates to event page.
+     * @param {string} eventId - The event ID
      */
     const showEventWorkspace = (eventId) => {
         if (!eventId) return;
-        if (hasOverlay && showOverlay) {
-            import('../pages/EventWorkspace/EventWorkspace').then(({ default: EventWorkspace }) => {
-                showOverlay(
-                    <EventWorkspace eventId={eventId} onClose={hide} />
-                );
-            });
-        } else {
-            navigate(`/event/${eventId}/workspace`);
-        }
+        navigate(`/event/${eventId}`);
     };
 
     /**

@@ -118,6 +118,29 @@ function EventsHubHome({ onRoomNavigation, onTabChangeByKey }) {
     return all.sort((a, b) => new Date(a.start_time) - new Date(b.start_time)).slice(0, 6);
   }, [goingData, hostingData]);
 
+  // Prioritize attending event (ongoing or coming up soon) for the suggestion banner
+  const attendingEventForBanner = useMemo(() => {
+    const now = new Date();
+    const soonCutoff = new Date(now.getTime() + 24 * 60 * 60 * 1000); // within 24 hours
+    const going = goingData?.events || [];
+    const hosting = hostingData?.events || [];
+    const all = [...going, ...hosting];
+    const ongoing = all.filter((e) => {
+      const start = new Date(e.start_time);
+      const end = new Date(e.end_time || e.start_time);
+      return start <= now && end >= now;
+    });
+    const comingUpSoon = all.filter((e) => {
+      const start = new Date(e.start_time);
+      return start > now && start <= soonCutoff;
+    });
+    if (ongoing.length > 0) return ongoing[0];
+    if (comingUpSoon.length > 0) {
+      return comingUpSoon.sort((a, b) => new Date(a.start_time) - new Date(b.start_time))[0];
+    }
+    return null;
+  }, [goingData, hostingData]);
+
   const suggestedEvents = useMemo(() => {
     const now = new Date();
     const featured = featuredData?.data?.events || [];
@@ -272,56 +295,70 @@ function EventsHubHome({ onRoomNavigation, onTabChangeByKey }) {
         document.body
       )}
 
-      {/* Suggested action: banner based on past behavior or hot right now */}
-      {!suggestedActionLoading && suggestedActionData?.success && suggestedActionData?.data && (
-        <section className=" events-hub-home__section--suggested">
-          <button
-            type="button"
-            className="events-hub-home__suggested-banner"
-            onClick={() => {
-              const d = suggestedActionData.data;
-              if (d.type === 'event') {
-                if (d.destination === 'workspace' && d.orgId && d.orgName) {
-                  navigate(`/club-dashboard/${encodeURIComponent(d.orgName)}?page=1&overlay=event-dashboard&eventId=${d.id}&orgId=${d.orgId}`);
-                } else if (d.destination === 'workspace') {
-                  navigate(`/event/${d.id}/workspace`);
-                } else {
-                  navigate(`/event/${d.id}`);
-                }
-              } else if (d.type === 'org') {
-                navigate(d.destination === 'dashboard' ? `/club-dashboard/${encodeURIComponent(d.item.org_name)}` : `/org/${encodeURIComponent(d.item.org_name)}`);
-              }
-              else if (d.type === 'room') handleRoomPress(d.item);
-            }}
-          >
-            <div className="events-hub-home__suggested-banner__content">
-              <div className="events-hub-home__suggested-banner__thumb">
-                {suggestedActionData.data.type === 'event' && (suggestedActionData.data.item?.image || suggestedActionData.data.item?.previewImage) ? (
-                  <img src={suggestedActionData.data.item.image || suggestedActionData.data.item.previewImage} alt="" />
-                ) : suggestedActionData.data.type === 'org' && suggestedActionData.data.item?.org_profile_image ? (
-                  <img src={suggestedActionData.data.item.org_profile_image} alt="" />
-                ) : suggestedActionData.data.type === 'room' && suggestedActionData.data.item?.image ? (
-                  <img src={suggestedActionData.data.item.image} alt="" />
-                ) : (
-                  <Icon icon="mingcute:calendar-fill" />
-                )}
+      {/* Suggested action: attending event (ongoing/soon) takes priority, else API suggestion */}
+      {(() => {
+        const d = attendingEventForBanner
+          ? {
+              type: 'event',
+              id: attendingEventForBanner._id,
+              item: attendingEventForBanner,
+              suggestionReason: (() => {
+                const now = new Date();
+                const start = new Date(attendingEventForBanner.start_time);
+                const end = new Date(attendingEventForBanner.end_time || attendingEventForBanner.start_time);
+                if (start <= now && end >= now) return 'Happening now';
+                return 'Coming up soon';
+              })(),
+            }
+          : !suggestedActionLoading && suggestedActionData?.success && suggestedActionData?.data
+            ? suggestedActionData.data
+            : null;
+        if (!d) return null;
+        return (
+          <section key={d.id || 'suggested'} className="events-hub-home__section--suggested">
+            <button
+              type="button"
+              className="events-hub-home__suggested-banner"
+              onClick={() => {
+                if (d.type === 'event') {
+                  if (d.destination === 'workspace' && d.orgId && d.orgName) {
+                    navigate(`/club-dashboard/${encodeURIComponent(d.orgName)}?page=1&overlay=event-dashboard&eventId=${d.id}&orgId=${d.orgId}`);
+                  } else {
+                    navigate(`/event/${d.id}`);
+                  }
+                } else if (d.type === 'org') {
+                  navigate(d.destination === 'dashboard' ? `/club-dashboard/${encodeURIComponent(d.item.org_name)}` : `/org/${encodeURIComponent(d.item.org_name)}`);
+                } else if (d.type === 'room') handleRoomPress(d.item);
+              }}
+            >
+              <div className="events-hub-home__suggested-banner__content">
+                <div className="events-hub-home__suggested-banner__thumb">
+                  {d.type === 'event' && (d.item?.image || d.item?.previewImage) ? (
+                    <img src={d.item.image || d.item.previewImage} alt="" />
+                  ) : d.type === 'org' && d.item?.org_profile_image ? (
+                    <img src={d.item.org_profile_image} alt="" />
+                  ) : d.type === 'room' && d.item?.image ? (
+                    <img src={d.item.image} alt="" />
+                  ) : (
+                    <Icon icon="mingcute:calendar-fill" />
+                  )}
+                </div>
+                <div className="events-hub-home__suggested-banner__text">
+                  <span className="events-hub-home__suggested-banner__label">
+                    {d.suggestionReason || (d.isHotRightNow ? 'Hot right now' : 'Suggested for you')}
+                  </span>
+                  <span className="events-hub-home__suggested-banner__title">
+                    {d.type === 'event' && d.item?.name}
+                    {d.type === 'org' && d.item?.org_name}
+                    {d.type === 'room' && d.item?.name}
+                  </span>
+                </div>
               </div>
-              <div className="events-hub-home__suggested-banner__text">
-                <span className="events-hub-home__suggested-banner__label">
-                  {suggestedActionData.data.suggestionReason ||
-                    (suggestedActionData.data.isHotRightNow ? 'Hot right now' : 'Suggested for you')}
-                </span>
-                <span className="events-hub-home__suggested-banner__title">
-                  {suggestedActionData.data.type === 'event' && suggestedActionData.data.item?.name}
-                  {suggestedActionData.data.type === 'org' && suggestedActionData.data.item?.org_name}
-                  {suggestedActionData.data.type === 'room' && suggestedActionData.data.item?.name}
-                </span>
-              </div>
-            </div>
-            <Icon icon="mingcute:arrow-right-fill" className="events-hub-home__suggested-banner__arrow" />
-          </button>
-        </section>
-      )}
+              <Icon icon="mingcute:arrow-right-fill" className="events-hub-home__suggested-banner__arrow" />
+            </button>
+          </section>
+        );
+      })()}
 
       {/* Scrollable content: Events, Organizations, Saved spaces */}
       <section className="events-hub-home__section">
