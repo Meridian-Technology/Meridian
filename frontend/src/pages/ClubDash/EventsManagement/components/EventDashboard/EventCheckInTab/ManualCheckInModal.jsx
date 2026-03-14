@@ -3,7 +3,6 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
-import Popup from '../../../../../../components/Popup/Popup';
 import './ManualCheckInModal.scss';
 
 function getCheckedInDisplayName(attendee) {
@@ -16,7 +15,27 @@ function getCheckedInDisplayName(attendee) {
     return user?.name || user?.username || 'Unknown User';
 }
 
-function ManualCheckInModal({
+/** Wraps all matching substrings in <mark> for search highlight */
+function HighlightMatch({ text, query }) {
+    if (!query || !text) return text;
+    const q = query.trim().toLowerCase();
+    if (!q) return text;
+    const str = String(text);
+    const lower = str.toLowerCase();
+    const parts = [];
+    let lastEnd = 0;
+    let idx = lower.indexOf(q);
+    while (idx !== -1) {
+        parts.push(str.slice(lastEnd, idx));
+        parts.push(<mark key={idx} className="manual-checkin-modal__highlight">{str.slice(idx, idx + q.length)}</mark>);
+        lastEnd = idx + q.length;
+        idx = lower.indexOf(q, lastEnd);
+    }
+    parts.push(str.slice(lastEnd));
+    return <>{parts}</>;
+}
+
+function ManualCheckInModalContent({
     isOpen,
     onClose,
     event,
@@ -121,14 +140,7 @@ function ManualCheckInModal({
     const loading = loadingRegistrations || (fetchOwnAttendees && loadingAttendees);
 
     return (
-        <Popup
-            isOpen={isOpen}
-            onClose={onClose}
-            customClassName="manual-checkin-modal manual-checkin-modal--streamlined wide-content no-padding"
-            hideCloseButton={true}
-            disableOutsideClick={true}
-        >
-            <div className="manual-checkin-modal__root">
+        <div className="manual-checkin-modal__root">
                 <div className="manual-checkin-modal__header">
                     <h3 className="manual-checkin-modal__title">
                         <Icon icon="mdi:account-plus" />
@@ -211,13 +223,22 @@ function ManualCheckInModal({
                                 {filteredRegistrations.map((reg) => {
                                     const key = reg.formResponseId ? `anon-${reg.formResponseId}` : `user-${reg.userId}`;
                                     const displayName = reg.displayName || reg.guestName || 'Unknown';
-                                    const sub = reg.email && String(reg.email).trim().toLowerCase() !== String(displayName).trim().toLowerCase()
-                                        ? ` (${reg.email})`
-                                        : '';
+                                    const email = reg.email && String(reg.email).trim().toLowerCase() !== String(displayName).trim().toLowerCase()
+                                        ? reg.email
+                                        : null;
                                     const isCheckingIn = checkingInId === key;
                                     return (
                                         <li key={key}>
-                                            <span className="manual-checkin-modal__reg-name">{displayName}{sub}</span>
+                                            <span className="manual-checkin-modal__reg-name">
+                                                <HighlightMatch text={displayName} query={searchQuery} />
+                                                {email && (
+                                                    <>
+                                                        {' ('}
+                                                        <HighlightMatch text={email} query={searchQuery} />
+                                                        {')'}
+                                                    </>
+                                                )}
+                                            </span>
                                             <button
                                                 type="button"
                                                 className="manual-checkin-modal__check-in-btn"
@@ -240,8 +261,12 @@ function ManualCheckInModal({
                     </div>
                 </div>
             </div>
-        </Popup>
     );
+}
+
+function ManualCheckInModal(props) {
+    const { onClose, ...rest } = props;
+    return <ManualCheckInModalContent {...rest} onClose={onClose} isOpen={true} />;
 }
 
 export default ManualCheckInModal;
