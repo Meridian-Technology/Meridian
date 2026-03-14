@@ -4,6 +4,88 @@
     position: relative;
     overflow-x: hidden;
 
+    &--banner-visible {
+        padding-top: 44px;
+    }
+
+    &__mobile-banner-wrapper {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 101;
+        height: 44px;
+    }
+
+    &__mobile-banner-bg {
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(ellipse 90% 120% at 75% 20%, rgba(120, 180, 255, 0.45) 0%, transparent 55%),
+            radial-gradient(ellipse 70% 100% at 15% 80%, rgba(80, 140, 220, 0.35) 0%, transparent 50%),
+            radial-gradient(ellipse 50% 80% at 50% 50%, rgba(255, 255, 255, 0.2) 0%, transparent 70%),
+            linear-gradient(145deg, #6D8EFA 0%, #306bac 25%, #2a5a9e 50%, #1e4a7a 75%, #ffffff 100%);
+    }
+
+    &__mobile-banner {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 100%;
+        box-sizing: border-box;
+        padding: 10px 48px 10px 16px;
+        background: rgba(255, 255, 255, 0.12);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(180%);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+
+        &__link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.95);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+
+            &:hover {
+                color: rgba(255, 255, 255, 0.85);
+            }
+
+            iconify-icon {
+                font-size: 18px;
+            }
+        }
+
+        &__close {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            appearance: none;
+            border: none;
+            background: transparent;
+            padding: 6px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.7);
+            opacity: 0.9;
+            border-radius: 6px;
+
+            &:hover {
+                opacity: 1;
+                color: #fff;
+                background: rgba(255, 255, 255, 0.15);
+            }
+
+            iconify-icon {
+                font-size: 20px;
+            }
+        }
+    }
+
     &__dev-banner {
         padding: 0.4rem 1rem;
         font-size: 0.8rem;

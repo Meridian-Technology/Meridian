@@ -1,19 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useFetch } from '../../hooks/useFetch';
 import apiRequest from '../../utils/postRequest';
 import { useNotification } from '../../NotificationContext';
 import useAuth from '../../hooks/useAuth';
 import { parseMarkdownDescription } from '../../utils/markdownUtils';
 import backgroundImage from '../../assets/LandingBackground.png';
+import loginMockup from '../../assets/Mockups/LoginMobile.png';
 import './CheckInConfirmation.scss';
+
+const APP_STORE_URL = 'https://apps.apple.com/us/app/meridian-go/id6755217537';
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.meridian.mobile';
+
+function useDeviceDetection() {
+    return useMemo(() => {
+        if (typeof window === 'undefined') return { isMobile: false, isIOS: false, isAndroid: false };
+        const ua = navigator.userAgent || navigator.vendor || '';
+        const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isAndroid = /android/i.test(ua);
+        const isMobile = isIOS || isAndroid || /Mobi|Android/i.test(ua);
+        return { isMobile, isIOS, isAndroid };
+    }, []);
+}
 
 function CheckInConfirmation() {
     const { eventId, token } = useParams();
     const { user } = useAuth();
     const navigate = useNavigate();
     const { addNotification } = useNotification();
+    const { isMobile, isIOS, isAndroid } = useDeviceDetection();
     const [checkingIn, setCheckingIn] = useState(false);
     const [checkedIn, setCheckedIn] = useState(false);
     const [tokenInvalid, setTokenInvalid] = useState(false);
@@ -68,7 +85,6 @@ function CheckInConfirmation() {
                         message: 'You have successfully checked in!',
                         type: 'success'
                     });
-                    setTimeout(() => navigate(`/event/${eventId}`, { replace: true }), 2000);
                 } else {
                     const msg = response.error || response.message || 'Failed to check in';
                     addNotification({
@@ -94,6 +110,15 @@ function CheckInConfirmation() {
         })();
         return () => { cancelled = true; };
     }, [event, eventId, token, useSelfCheckIn, eventLoading, eventError, checkingIn, checkedIn, tokenInvalid, addNotification, navigate]);
+
+    // Auto-redirect to event page after successful check-in
+    useEffect(() => {
+        if (!checkedIn || !eventId) return;
+        const timer = setTimeout(() => {
+            navigate(`/event/${eventId}`, { replace: true });
+        }, 5000);
+        return () => clearTimeout(timer);
+    }, [checkedIn, eventId, navigate]);
 
     const handleCheckIn = async () => {
         if (!eventId) {
@@ -126,7 +151,6 @@ function CheckInConfirmation() {
                     message: 'You have successfully checked in!',
                     type: 'success'
                 });
-                setTimeout(() => navigate(`/event/${eventId}`, { replace: true }), 2000);
             } else {
                 const msg = response.error || response.message || 'Failed to check in';
                 setTokenInvalid(/invalid|expired|not valid/i.test(msg));
@@ -238,12 +262,91 @@ function CheckInConfirmation() {
     }
 
     if (checkedIn) {
+        const mobileUrl = typeof window !== 'undefined' ? `${window.location.origin}/mobile` : 'https://meridian.study/mobile';
+        const eventName = event.name || 'this event';
         return pageWrapper(
             <div className="checkin-success">
                 <Icon icon="mdi:check-circle" className="success-icon" />
-                <h2>Successfully Checked In!</h2>
-                <p>You have been checked in to {event.name}.</p>
-                <p className="redirect-message">Redirecting to event page...</p>
+                <h2>You're in!</h2>
+                <p>You're checked in to <strong>{eventName}</strong>.</p>
+                <div
+                    className={`checkin-success__mobile-ad ${!isMobile ? 'checkin-success__mobile-ad--with-mockup' : ''}`}
+                    style={{ backgroundImage: `url(${backgroundImage})` }}
+                >
+                    <div className="checkin-success__mobile-ad-bg" aria-hidden />
+                    {!isMobile && (
+                        <div className="checkin-success__mobile-ad-mockup">
+                            <img src={loginMockup} alt="Meridian app on mobile" />
+                        </div>
+                    )}
+                    <div className="checkin-success__mobile-ad-promo">
+                        <span className="checkin-success__mobile-ad-eyebrow">Download the app</span>
+                        <h3 className="checkin-success__mobile-ad-title">Meridian Go</h3>
+                        <p className="checkin-success__mobile-ad-blurb">
+                            Take {eventName} with you — live updates, rooms, and everything happening at this event.
+                        </p>
+                        {isMobile ? (
+                            <div className="checkin-success__store-badges">
+                                {isIOS && (
+                                    <a
+                                        href={APP_STORE_URL}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="checkin-success__store-badge checkin-success__store-badge--ios"
+                                        aria-label="Download on the App Store"
+                                    >
+                                        <img
+                                            src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg"
+                                            alt="Download on the App Store"
+                                            height="40"
+                                        />
+                                    </a>
+                                )}
+                                {isAndroid && (
+                                    <a
+                                        href={PLAY_STORE_URL}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="checkin-success__store-badge checkin-success__store-badge--android"
+                                        aria-label="Get it on Google Play"
+                                    >
+                                        <img
+                                            src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png"
+                                            alt="Get it on Google Play"
+                                            height="60"
+                                        />
+                                    </a>
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                <div className="checkin-success__qr-wrap">
+                                    <QRCodeSVG
+                                        value={mobileUrl}
+                                        size={120}
+                                        level="M"
+                                        fgColor="#ffffff"
+                                        bgColor="transparent"
+                                    />
+                                    <span className="checkin-success__qr-hint">Scan to download</span>
+                                </div>
+                                <a
+                                    href="/mobile"
+                                    className="checkin-success__mobile-link"
+                                    onClick={(e) => { e.preventDefault(); navigate('/mobile'); }}
+                                >
+                                    meridian.study/mobile
+                                </a>
+                            </>
+                        )}
+                    </div>
+                </div>
+                <button
+                    className="checkin-success__view-event"
+                    onClick={() => navigate(`/event/${eventId}`, { replace: true })}
+                >
+                    View Event
+                </button>
             </div>
         );
     }
