@@ -65,7 +65,8 @@ function CheckInConfirmation() {
 
     const event = eventResponse?.event;
     const useSelfCheckIn = !token && user;
-    const useAnonymousPick = token && !user;
+    // When token is present, use pick flow for everyone (avoids "must register" for anonymous registrants who later logged in)
+    const useAnonymousPick = !!token;
 
     // Registrations for anonymous pick (token flow, no login)
     const { data: registrationsResponse, loading: loadingRegistrations, refetch: refetchRegistrations } = useFetch(
