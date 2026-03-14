@@ -56,7 +56,6 @@ function CheckInConfirmation() {
     const [checkedIn, setCheckedIn] = useState(false);
     const [tokenInvalid, setTokenInvalid] = useState(false);
     const [anonymousSearchQuery, setAnonymousSearchQuery] = useState('');
-    const [viewingFormResponseId, setViewingFormResponseId] = useState(null);
 
     // Fetch event details
     const { data: eventResponse, loading: eventLoading, error: eventError } = useFetch(
@@ -75,13 +74,6 @@ function CheckInConfirmation() {
             : null
     );
     const registrations = registrationsResponse?.success ? (registrationsResponse.data?.registrations || []) : [];
-    const formResponseIdStr = viewingFormResponseId != null ? String(viewingFormResponseId) : null;
-    const { data: formDetailsResponse, loading: loadingFormDetails } = useFetch(
-        formResponseIdStr && eventId && token
-            ? `/events/${eventId}/check-in/registration/${formResponseIdStr}?token=${encodeURIComponent(token)}`
-            : null
-    );
-    const formDetails = formDetailsResponse?.success ? formDetailsResponse.data : null;
     const filteredRegistrations = useMemo(() => {
         if (!anonymousSearchQuery.trim()) return registrations;
         const q = anonymousSearchQuery.trim().toLowerCase();
@@ -388,7 +380,6 @@ function CheckInConfirmation() {
                                             ? reg.email
                                             : null;
                                         const isCheckedIn = reg.checkedIn === true;
-                                        const isAnonymous = reg.formResponseId != null;
                                         return (
                                             <li key={key} className="checkin-pick__item">
                                                 <span className="checkin-pick__name">
@@ -407,17 +398,6 @@ function CheckInConfirmation() {
                                                     )}
                                                 </span>
                                                 <div className="checkin-pick__item-actions">
-                                                    {isAnonymous && (
-                                                        <button
-                                                            type="button"
-                                                            className="checkin-pick__view-details-btn"
-                                                            onClick={() => setViewingFormResponseId(reg.formResponseId)}
-                                                            title="View registration details"
-                                                        >
-                                                            <Icon icon="mdi:file-document-outline" />
-                                                            View details
-                                                        </button>
-                                                    )}
                                                     {!isCheckedIn && (
                                                         <button
                                                             type="button"
@@ -443,61 +423,6 @@ function CheckInConfirmation() {
                                         );
                                     })}
                                 </ul>
-                                <Popup
-                                    isOpen={!!viewingFormResponseId}
-                                    onClose={() => setViewingFormResponseId(null)}
-                                    defaultStyling={true}
-                                    customClassName="checkin-registration-details-popup"
-                                >
-                                    {formDetails && (
-                                        <div className="checkin-registration-details">
-                                            <h3 className="checkin-registration-details__title">
-                                                <Icon icon="mdi:file-document-outline" />
-                                                Registration Details
-                                            </h3>
-                                            <div className="checkin-registration-details__form">
-                                                {formDetails.formSnapshot?.title && (
-                                                    <h4 className="checkin-registration-details__form-title">{formDetails.formSnapshot.title}</h4>
-                                                )}
-                                                {formDetails.submittedAt && (
-                                                    <p className="checkin-registration-details__meta">
-                                                        Submitted: {new Date(formDetails.submittedAt).toLocaleDateString()}
-                                                    </p>
-                                                )}
-                                                {(formDetails.formSnapshot?.questions || []).map((q, idx) => (
-                                                    <div key={q._id || idx} className="checkin-registration-details__qa">
-                                                        <div className="checkin-registration-details__question">{q.question}</div>
-                                                        <div className="checkin-registration-details__answer">
-                                                            {formDetails.answers?.[idx] != null ? (
-                                                                Array.isArray(formDetails.answers[idx])
-                                                                    ? formDetails.answers[idx].join(', ')
-                                                                    : String(formDetails.answers[idx])
-                                                            ) : (
-                                                                <span className="checkin-registration-details__no-answer">No answer provided</span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <button
-                                                type="button"
-                                                className="checkin-card__btn checkin-card__btn--secondary"
-                                                onClick={() => setViewingFormResponseId(null)}
-                                            >
-                                                Close
-                                            </button>
-                                        </div>
-                                    )}
-                                    {viewingFormResponseId && loadingFormDetails && (
-                                        <p className="checkin-pick__loading">
-                                            <Icon icon="mdi:loading" className="spinner" />
-                                            Loading...
-                                        </p>
-                                    )}
-                                    {viewingFormResponseId && !loadingFormDetails && !formDetails && (
-                                        <p className="checkin-pick__empty-msg">Unable to load registration details.</p>
-                                    )}
-                                </Popup>
                             </>
                         )}
                         <button
