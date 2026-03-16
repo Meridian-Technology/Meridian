@@ -62,6 +62,7 @@ import Atlas from './pages/FeatureAdmin/Atlas/Atlas';
 import AnalyticsDashboard from './pages/FeatureAdmin/AnalyticsDashboard/AnalyticsDashboard';
 import MobileAnalyticsDashboard from './pages/FeatureAdmin/MobileAnalyticsDashboard/MobileAnalyticsDashboard';
 import UserJourneyAnalytics from './pages/FeatureAdmin/UserJourneyAnalytics/UserJourneyAnalytics';
+import IndividualUserJourney from './pages/FeatureAdmin/IndividualUserJourney/IndividualUserJourney';
 import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
@@ -208,6 +209,8 @@ function App() {
                                                 <Route path="/admin" element={<AnimatedPageWrapper><Admin/></AnimatedPageWrapper>}/>
                                                 <Route path="/analytics-dashboard" element={<AnimatedPageWrapper><AnalyticsDashboard/></AnimatedPageWrapper>}/>
                                                 <Route path="/user-journey-analytics" element={<AnimatedPageWrapper><UserJourneyAnalytics/></AnimatedPageWrapper>}/>
+                                                <Route path="/user-journey" element={<AnimatedPageWrapper><IndividualUserJourney/></AnimatedPageWrapper>}/>
+                                                <Route path="/user-journey/:type/:identifier" element={<AnimatedPageWrapper><IndividualUserJourney/></AnimatedPageWrapper>}/>
                                                 <Route path="/mobile-analytics-dashboard" element={<AnimatedPageWrapper><MobileAnalyticsDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
 
