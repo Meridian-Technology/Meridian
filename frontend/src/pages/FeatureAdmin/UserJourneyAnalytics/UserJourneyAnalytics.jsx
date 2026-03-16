@@ -82,6 +82,10 @@ function UserJourneyAnalytics() {
                         <Link to="/analytics-dashboard" className="uj-breadcrumb-link">
                             <Icon icon="mdi:arrow-left" /> Web Analytics
                         </Link>
+                        <span className="uj-breadcrumb-sep">·</span>
+                        <Link to="/user-journey" className="uj-breadcrumb-link">
+                            <Icon icon="mdi:account-search" /> Individual Journey
+                        </Link>
                     </div>
                     <h1>User Journey & Explorations</h1>
                     <p>Path exploration and funnel analysis</p>
