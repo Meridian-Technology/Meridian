@@ -92,15 +92,35 @@ function generateFakeRegistrations(eventCreated, dayBeforeEvent, targetAttendanc
     return registrations;
 }
 
-function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount }) {
+const MAX_X_TICKS = 8;
+const MAX_X_TICKS_DENSE = 6;
+
+function getSparseTickValues(values, maxTicks = MAX_X_TICKS) {
+    if (!values?.length) return undefined;
+    if (values.length <= maxTicks) return undefined;
+    const step = Math.ceil(values.length / maxTicks);
+    const result = [];
+    for (let i = 0; i < values.length; i += step) result.push(values[i]);
+    if (result[result.length - 1] !== values[values.length - 1]) {
+        result.push(values[values.length - 1]);
+    }
+    return result;
+}
+
+function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount, rsvpGrowth: rsvpGrowthProp, report = false }) {
     const [isCumulative, setIsCumulative] = useState(true);
     const [useFakeRsvpData, setUseFakeRsvpData] = useState(false);
 
     const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
-    const rsvpGrowthUrl = eventId && orgId
+    const rsvpGrowthUrl = eventId && orgId && !rsvpGrowthProp
         ? `/org-event-management/${orgId}/events/${eventId}/rsvp-growth${timezone ? `?timezone=${encodeURIComponent(timezone)}` : ''}`
         : null;
-    const { data: growthData, loading, error } = useFetch(rsvpGrowthUrl);
+    const { data: fetchedData, loading, error } = useFetch(rsvpGrowthUrl);
+
+    // Use pre-fetched data when provided (e.g. from PDF export where fetch may fail in separate React root)
+    const growthData = rsvpGrowthProp
+        ? { success: true, data: rsvpGrowthProp }
+        : fetchedData;
 
     const { dailyData, requiredGrowth, targetAttendance, isFrozen, requiredPerDay } = useMemo(() => {
         if (!growthData?.success || !growthData?.data) {
@@ -184,7 +204,7 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
         </div>
     );
 
-    if (loading) {
+    if (loading && !rsvpGrowthProp) {
         return (
             <div className="rsvp-growth-chart rsvp-growth-chart-visx">
                 {statsFromProps && (
@@ -197,7 +217,7 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
         );
     }
 
-    if (error || !growthData?.success) {
+    if ((error || !growthData?.success) && !rsvpGrowthProp) {
         return (
             <div className="rsvp-growth-chart rsvp-growth-chart-visx">
                 {statsFromProps && (
@@ -250,10 +270,16 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
         );
     }
 
-    const beforeFilter = isCumulative
+    const useCumulative = report ? true : isCumulative;
+    const beforeFilter = useCumulative
         ? dailyData.map((day) => ({ x: day.date, y: day.cumulativeRSVPs }))
         : dailyData.map((day) => ({ x: day.date, y: day.dailyRSVPs }));
     const actualData = beforeFilter.filter((d) => d.x <= todayStr);
+
+    const xTickValues = getSparseTickValues(
+        dailyData.map((d) => d.date),
+        dailyData.length > 30 ? MAX_X_TICKS_DENSE : MAX_X_TICKS
+    );
 
     console.log('[RSVPGrowthChart] chart data', {
         todayStr,
@@ -265,7 +291,7 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
         filterRemoved: beforeFilter.filter((d) => d.x > todayStr)
     });
 
-    const requiredData = isCumulative
+    const requiredData = useCumulative
         ? requiredGrowth.map((day) => ({ x: day.date, y: day.required }))
         : dailyData.map((day) => ({
               x: day.date,
@@ -293,63 +319,59 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
                             <span className="chart-stat-label">Expected</span>
                         </div>
                     )}
-                    <div className="chart-stat-item">
-                        <span className="chart-stat-value">{todayDaily}</span>
-                        <span className="chart-stat-label">
-                            Daily
-                            {dailyChangePercent !== 0 && (
-                                <span
-                                    className={`chart-stat-change ${dailyChangePercent > 0 ? 'up' : 'down'}`}
-                                    title={dailyChangePercent > 0 ? `Up ${dailyChangePercent}% from yesterday` : `Down ${Math.abs(dailyChangePercent)}% from yesterday`}
-                                >
-                                    {dailyChangePercent > 0 ? (
-                                        <Icon icon="mdi:trending-up" />
-                                    ) : (
-                                        <Icon icon="mdi:trending-down" />
-                                    )}
-                                    {Math.abs(dailyChangePercent)}%
-                                </span>
-                            )}
-                        </span>
-                    </div>
-                </div>
-                <div className="chart-header-right">
-                    {useFakeRsvpData && (
-                        <span className="frozen-badge" style={{ background: 'var(--beacon-accent, #998df2)' }}>
-                            Fake data
-                        </span>
+                    {!report && (
+                        <div className="chart-stat-item">
+                            <span className="chart-stat-value">{todayDaily}</span>
+                            <span className="chart-stat-label">
+                                Daily
+                                {dailyChangePercent !== 0 && (
+                                    <span
+                                        className={`chart-stat-change ${dailyChangePercent > 0 ? 'up' : 'down'}`}
+                                        title={dailyChangePercent > 0 ? `Up ${dailyChangePercent}% from yesterday` : `Down ${Math.abs(dailyChangePercent)}% from yesterday`}
+                                    >
+                                        {dailyChangePercent > 0 ? (
+                                            <Icon icon="mdi:trending-up" />
+                                        ) : (
+                                            <Icon icon="mdi:trending-down" />
+                                        )}
+                                        {Math.abs(dailyChangePercent)}%
+                                    </span>
+                                )}
+                            </span>
+                        </div>
                     )}
-                    {isFrozen && (
-                        <span className="frozen-badge">
-                            <Icon icon="mdi:lock" />
-                            Frozen
-                        </span>
-                    )}
-                    <div className="chart-controls">
-                        {/* <button
-                            type="button"
-                            className={`toggle-btn ${useFakeRsvpData ? 'active' : ''}`}
-                            onClick={() => setUseFakeRsvpData((v) => !v)}
-                            title="Toggle fake RSVP data for preview"
-                        >
-                            Fake RSVP
-                        </button> */}
-                        <button
-                            type="button"
-                            className={`toggle-btn ${isCumulative ? 'active' : ''}`}
-                            onClick={() => setIsCumulative(true)}
-                        >
-                            Cumulative
-                        </button>
-                        <button
-                            type="button"
-                            className={`toggle-btn ${!isCumulative ? 'active' : ''}`}
-                            onClick={() => setIsCumulative(false)}
-                        >
-                            Daily
-                        </button>
-                    </div>
                 </div>
+                {!report && (
+                    <div className="chart-header-right">
+                        {useFakeRsvpData && (
+                            <span className="frozen-badge" style={{ background: 'var(--beacon-accent, #998df2)' }}>
+                                Fake data
+                            </span>
+                        )}
+                        {isFrozen && (
+                            <span className="frozen-badge">
+                                <Icon icon="mdi:lock" />
+                                Frozen
+                            </span>
+                        )}
+                        <div className="chart-controls">
+                            <button
+                                type="button"
+                                className={`toggle-btn ${isCumulative ? 'active' : ''}`}
+                                onClick={() => setIsCumulative(true)}
+                            >
+                                Cumulative
+                            </button>
+                            <button
+                                type="button"
+                                className={`toggle-btn ${!isCumulative ? 'active' : ''}`}
+                                onClick={() => setIsCumulative(false)}
+                            >
+                                Daily
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="chart-container chart-container-visx">
@@ -369,12 +391,13 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
                     <Axis
                         orientation="bottom"
                         tickFormat={formatSemanticDate}
+                        tickValues={xTickValues}
                         tickLabelProps={() => ({
                             fill: 'var(--light-text)',
                             fontSize: 10,
                             textAnchor: 'middle',
                         })}
-                        numTicks={Math.min(dailyData.length, 12)}
+                        numTicks={xTickValues ? xTickValues.length : Math.min(dailyData.length, 12)}
                     />
                     <Axis
                         orientation="left"
@@ -482,14 +505,14 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
                                     {actualDatum && (
                                         <div className="rsvp-chart-tooltip-row">
                                             <span className="rsvp-chart-tooltip-dot rsvp-chart-tooltip-dot-actual" />
-                                            {isCumulative ? 'Registrations' : 'Daily'}:{' '}
+                                            {useCumulative ? 'Registrations' : 'Daily'}:{' '}
                                             {Math.round(actualDatum.y)}
                                         </div>
                                     )}
                                     {requiredDatum && (
                                         <div className="rsvp-chart-tooltip-row">
                                             <span className="rsvp-chart-tooltip-dot rsvp-chart-tooltip-dot-required" />
-                                            {isCumulative ? 'Goal' : 'Daily Goal'}:{' '}
+                                            {useCumulative ? 'Goal' : 'Daily Goal'}:{' '}
                                             {Math.round(requiredDatum.y * 10) / 10}
                                         </div>
                                     )}
@@ -500,16 +523,18 @@ function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount
                 </XYChart>
             </div>
 
-            <div className="chart-legend">
-                <span className="chart-legend-item">
-                    <span className="chart-legend-dot chart-legend-dot-actual" />
-                    {isCumulative ? 'Registrations' : 'Daily'}
-                </span>
-                <span className="chart-legend-item">
-                    <span className="chart-legend-dot chart-legend-dot-required" />
-                    {isCumulative ? 'Required' : 'Required daily'}
-                </span>
-            </div>
+            {!report && (
+                <div className="chart-legend">
+                    <span className="chart-legend-item">
+                        <span className="chart-legend-dot chart-legend-dot-actual" />
+                        {useCumulative ? 'Registrations' : 'Daily'}
+                    </span>
+                    <span className="chart-legend-item">
+                        <span className="chart-legend-dot chart-legend-dot-required" />
+                        {useCumulative ? 'Required' : 'Required daily'}
+                    </span>
+                </div>
+            )}
         </div>
     );
 }
