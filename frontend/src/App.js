@@ -76,6 +76,7 @@ import OrgInviteLandingToken from './pages/OrgInviteLanding/OrgInviteLandingToke
 import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
+import PostMortemPdfPreview from './pages/ClubDash/EventsManagement/components/EventPostMortem/PostMortemPdfPreview';
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -198,6 +199,7 @@ function App() {
 
                                             {/* logged in routes */}
                                             <Route element={ <ProtectedRoute/> }>
+                                                <Route path="/post-mortem-preview/:orgId/:eventId" element={<AnimatedPageWrapper><PostMortemPdfPreview /></AnimatedPageWrapper>}/>
                                                 <Route path="/profile" element={<AnimatedPageWrapper><Profile/></AnimatedPageWrapper>}/>
                                                 <Route path="/onboard" element={<AnimatedPageWrapper><Onboard /></AnimatedPageWrapper>}/>
                                                 {/* <Route path="/friends" element={<AnimatedPageWrapper><Friends/></AnimatedPageWrapper>}/> */}

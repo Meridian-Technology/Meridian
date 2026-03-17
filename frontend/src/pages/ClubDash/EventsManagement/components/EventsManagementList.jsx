@@ -2,9 +2,11 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Icon } from '@iconify-icon/react';
 import { useNavigate } from 'react-router-dom';
 import { useCache } from '../../../../CacheContext';
+import { useDashboardOverlay } from '../../../../hooks/useDashboardOverlay';
 import './EventsManagementList.scss';
 
 function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, onCreateEvent }) {
+    const { showEventPostMortem } = useDashboardOverlay();
     const navigate = useNavigate();
     const { getOrgEvents, refreshOrgEvents } = useCache();
     const [allEvents, setAllEvents] = useState([]);
@@ -225,6 +227,18 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, on
             onViewEvent(event);
         }
     }, [onViewEvent]);
+
+    const handlePostMortem = useCallback((e, event) => {
+        e.stopPropagation();
+        if (orgId && event?._id) {
+            showEventPostMortem(event, orgId);
+        }
+    }, [orgId, showEventPostMortem]);
+
+    const isEventPast = useCallback((event) => {
+        if (!event?.end_time) return false;
+        return new Date(event.end_time) < new Date();
+    }, []);
 
     const handleCreateEvent = useCallback(() => {
         if (onCreateEvent) {
@@ -494,7 +508,19 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, on
                                 </div>
                             </div>
 
-        
+                            <div className="list-item-actions">
+                                {isEventPast(event) && (
+                                    <button
+                                        type="button"
+                                        className="action-btn post-mortem"
+                                        onClick={(e) => handlePostMortem(e, event)}
+                                        title="View post-mortem report"
+                                    >
+                                        <Icon icon="mdi:chart-box-outline" />
+                                        <span>Post-Mortem</span>
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>

@@ -4,6 +4,7 @@ import { useFetch } from '../../../../../hooks/useFetch';
 import { analytics } from '../../../../../services/analytics/analytics';
 import { useNotification } from '../../../../../NotificationContext';
 import useAuth from '../../../../../hooks/useAuth';
+import { useDashboardOverlay } from '../../../../../hooks/useDashboardOverlay';
 import { useGradient } from '../../../../../hooks/useGradient';
 import TabbedContainer from '../../../../../components/TabbedContainer';
 import Popup from '../../../../../components/Popup/Popup';
@@ -31,6 +32,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     const { addNotification } = useNotification();
     const { user } = useAuth();
     const { AtlasMain } = useGradient();
+    const { showEventPostMortem } = useDashboardOverlay();
     const [dashboardData, setDashboardData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -137,6 +139,14 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
         setActiveTab('registrations');
         setOpenRegistrationSettingsFromAnnouncement(true);
     }, []);
+
+    const isEventCompleted = dashboardData?.stats?.operationalStatus === 'completed';
+    const handlePostMortem = useCallback(() => {
+        const eventToShow = dashboardData?.event || event;
+        if (eventToShow?._id && orgId) {
+            showEventPostMortem(eventToShow, orgId, { returnToEventDashboard: true });
+        }
+    }, [dashboardData, event, orgId, showEventPostMortem]);
 
     if (loading) {
         return (
@@ -311,6 +321,8 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         onRefresh={handleRefresh}
                         orgId={orgId}
                         onSendAnnouncement={handleSendAnnouncementClick}
+                        onPostMortem={handlePostMortem}
+                        showPostMortem={isEventCompleted}
                 />
                 <div className="event-dashboard-content">
                     <TabbedContainer

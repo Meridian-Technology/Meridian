@@ -5,7 +5,7 @@ import { useNotification } from '../../../../../NotificationContext';
 import apiRequest from '../../../../../utils/postRequest';
 import './EventDashboard.scss';
 
-function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendAnnouncement }) {
+function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendAnnouncement, onPostMortem, showPostMortem }) {
     const [publishing, setPublishing] = useState(false);
     const { AtlasMain } = useGradient();
     const { addNotification } = useNotification();
@@ -187,6 +187,16 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
                             <Icon icon="mdi:open-in-new" />
                             <span>Preview</span>
                         </button>
+                        {showPostMortem && (
+                            <button
+                                className="action-btn post-mortem"
+                                onClick={onPostMortem}
+                                title="View post-mortem report"
+                            >
+                                <Icon icon="mdi:chart-box-outline" />
+                                <span>Post-Mortem</span>
+                            </button>
+                        )}
                     </div>
                 </div>
                 <div className="header-main">
