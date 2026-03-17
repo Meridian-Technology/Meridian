@@ -117,4 +117,17 @@
       }
     }
   }
+
+  .rating-scale {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+
+    .option-label {
+      flex: 1;
+      min-width: 60px;
+      justify-content: center;
+      text-align: center;
+    }
+  }
 }

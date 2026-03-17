@@ -143,6 +143,12 @@ const orgManagementConfigSchema = new mongoose.Schema({
         type: Number,
         default: 0 // Minimum members required for auto-approval
     },
+    /** When true, auto-claim anonymous event registrations when users sign up with matching email (platform-wide). */
+    autoClaimEnabled: {
+        type: Boolean,
+        default: false
+    },
+
     // Atlas org approval config
     orgApproval: {
         mode: {

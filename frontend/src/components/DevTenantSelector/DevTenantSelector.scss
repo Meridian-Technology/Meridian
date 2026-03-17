@@ -1,0 +1,61 @@
+.DevTenantSelector {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 9999;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+
+  &__trigger {
+    padding: 6px 12px;
+    background: #333;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+
+    &:hover {
+      background: #444;
+    }
+  }
+
+  &__label {
+    font-weight: 500;
+  }
+
+  &__dropdown {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    margin-bottom: 8px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 140px;
+    overflow: hidden;
+  }
+
+  &__option {
+    &--active {
+      background: #e8f4fd;
+      font-weight: 600;
+    }
+  }
+
+  &__dropdown button {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
+
+    &:hover {
+      background: #f5f5f5;
+    }
+  }
+}

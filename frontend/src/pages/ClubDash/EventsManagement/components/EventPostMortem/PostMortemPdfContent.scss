@@ -1,0 +1,301 @@
+/* PDF report: document-style layout for export */
+.post-mortem-pdf-export {
+    width: 100%;
+    max-width: 210mm;
+    margin: 0 auto;
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    color: #1a1a1a;
+}
+
+.pdf-report {
+    padding: 1.5rem 1.25rem 1.5rem;
+}
+
+.pdf-report .event-post-mortem-slide {
+    max-width: none;
+    padding: 0 0.5rem;
+}
+
+/* Keep section title + content together (no split across pages) */
+.pdf-report .event-post-mortem-slide__section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report__header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #64AB6C;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report__logo {
+    height: 40px;
+    width: auto;
+    flex-shrink: 0;
+}
+
+.pdf-report__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+    color: #1a1a1a;
+    letter-spacing: -0.02em;
+}
+
+.pdf-report__subtitle {
+    font-size: 0.8rem;
+    color: #666;
+    margin: 0;
+}
+
+.pdf-report__footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e0e0e0;
+    font-size: 0.75rem;
+    color: #888;
+    text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.post-mortem-pdf-export .pdf-page {
+    padding: 0 0 1.5rem;
+}
+
+/* Report-style section headings */
+.pdf-report .event-post-mortem-slide__title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #666;
+    margin: 0 0 0.5rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid #e0e0e0;
+    text-align: left;
+}
+
+.pdf-report .event-post-mortem-slide__subtitle {
+    font-size: 0.8rem;
+    color: #888;
+    margin: 0 0 0.75rem;
+    text-align: left;
+}
+
+/* Clean card/section styling - document feel */
+.pdf-report .event-post-mortem-slide__card {
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    background: #fafafa;
+    box-shadow: none;
+    border-left: 3px solid #64AB6C;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+/* Overview: compact report layout with stats in header (PDF only) */
+.pdf-report .overview-slide__header {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.25rem 1rem;
+    padding: 0.75rem 1rem;
+    text-align: left;
+}
+
+.pdf-report .overview-slide__header .overview-slide__event-image,
+.pdf-report .overview-slide__header .overview-slide__org-logo {
+    grid-row: 1 / -1;
+    align-self: start;
+}
+
+.pdf-report .overview-slide__header-content {
+    min-width: 0;
+}
+
+.pdf-report .overview-slide__header-stats {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+    padding: 0.75rem 0 0;
+    border-top: 1px solid #e0e0e0;
+}
+
+.pdf-report .overview-slide__header-stats .overview-slide__stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem 1rem;
+    min-width: 0;
+}
+
+.pdf-report .overview-slide__event-image {
+    max-width: 100px;
+    height: auto;
+    border-radius: 4px;
+    object-fit: contain;
+}
+
+.pdf-report .overview-slide__org-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    object-fit: cover;
+}
+
+.pdf-report .overview-slide__event-name {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 0.2rem;
+}
+
+.pdf-report .overview-slide__org-name,
+.pdf-report .overview-slide__date {
+    font-size: 0.8rem;
+    margin: 0 0 0.15rem;
+}
+
+.pdf-report .overview-slide__stats {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.pdf-report .overview-slide__stat {
+    padding: 0.5rem 1rem;
+    min-width: 90px;
+}
+
+.pdf-report .overview-slide__stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #64AB6C;
+}
+
+.pdf-report .overview-slide__stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Trends summary - simple list */
+.pdf-report .trends-slide__summary {
+    background: #fff;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .trends-summary__item {
+    font-size: 0.85rem;
+}
+
+.pdf-report .trends-summary__item iconify-icon {
+    display: none;
+}
+
+/* Conversion stats - table-like */
+.pdf-report .conversion-stats__grid {
+    display: block;
+}
+
+.pdf-report .conversion-stat {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #eee;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .conversion-stat:last-child {
+    border-bottom: none;
+}
+
+.pdf-report .conversion-stat__value {
+    font-size: 1.1rem;
+}
+
+.pdf-report .conversion-stat__label {
+    font-size: 0.8rem;
+}
+
+.pdf-report .conversion-stat__detail {
+    font-size: 0.75rem;
+}
+
+/* Insights - compact list */
+.pdf-report .insights-slide__item {
+    padding: 0.6rem 1rem;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .insights-slide__icon {
+    display: none;
+}
+
+.pdf-report .insights-slide__text {
+    font-size: 0.9rem;
+}
+
+.pdf-report .insights-slide__sub {
+    font-size: 0.8rem;
+}
+
+/* Funnel - keep chart, simplify container */
+.pdf-report .funnel-slide__chart {
+    padding: 0.75rem;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+/* Traffic - table style */
+.pdf-report .traffic-slide__sources {
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .traffic-slide__sources .proportional-bar-list__row {
+    border-bottom: 1px solid #eee;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .traffic-slide__sources .proportional-bar-list__row:last-child {
+    border-bottom: none;
+}
+
+.pdf-report .traffic-slide__proportional {
+    border: none;
+}
+
+/* Feedback slide - rating bars and sample answers */
+.pdf-report .feedback-slide__rating-block {
+    margin-bottom: 1rem;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .feedback-slide__rating-row {
+    padding: 0.25rem 0;
+}
+
+.pdf-report .feedback-slide__sample-item {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #eee;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .feedback-slide__sample-item:last-child {
+    border-bottom: none;
+}

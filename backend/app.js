@@ -162,6 +162,7 @@ function createApp() {
   app.use('/api/shuttle-config', shuttleConfigRoutes);
   app.use('/api/notice', noticeRoutes);
   app.use('/verify-affiliated-email', affiliatedEmailRoutes);
+  app.use('/proxy-image', require('./routes/proxyImageRoutes.js'));
 
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, '../frontend/build')));

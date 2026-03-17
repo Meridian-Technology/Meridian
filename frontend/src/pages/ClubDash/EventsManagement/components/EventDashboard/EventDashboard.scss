@@ -49,6 +49,7 @@
     }
 
     .event-dashboard-header {
+        position: relative;
         background: var(--background);
         border-bottom: 1px solid var(--lighterborder);
         padding: 2rem;
@@ -185,6 +186,12 @@
                             border: 1px solid rgba(77, 170, 87, 0.2);
                         }
 
+                        &.live {
+                            background: rgba(76, 175, 80, 0.2);
+                            color: #2e7d32;
+                            border: 1px solid rgba(76, 175, 80, 0.4);
+                        }
+
                         &.passed {
                             background: rgba(108, 117, 125, 0.1);
                             color: #6c757d;
@@ -263,6 +270,49 @@
         }
     }
 
+    .event-dashboard-postmortem-banner {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.875rem 1.5rem;
+        background: linear-gradient(135deg, rgba(77, 170, 87, 0.1) 0%, rgba(77, 170, 87, 0.05) 100%);
+        border-bottom: 1px solid rgba(77, 170, 87, 0.2);
+    }
+
+    .event-dashboard-postmortem-banner__icon {
+        font-size: 1.5rem;
+        color: var(--org-primary, #4DAA57);
+        flex-shrink: 0;
+    }
+
+    .event-dashboard-postmortem-banner__text {
+        flex: 1;
+        margin: 0;
+        font-size: 0.9375rem;
+        color: var(--text, #1a1a1a);
+    }
+
+    .event-dashboard-postmortem-banner__btn {
+        position: relative;
+        z-index: 1;
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: white;
+        background: var(--org-primary, #4DAA57);
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        flex-shrink: 0;
+        pointer-events: auto;
+
+        &:hover {
+            opacity: 0.9;
+        }
+    }
+
     .event-dashboard-content {
         display: flex;
         flex-direction: column;
@@ -288,6 +338,65 @@
         width: 100%;
         max-width: 100%;
         overflow-x: hidden; // Prevent horizontal scrolling
+
+        .overview-feedback-prompt {
+            background: linear-gradient(135deg, rgba(77, 170, 87, 0.08) 0%, rgba(77, 170, 87, 0.04) 100%);
+            border: 1px solid rgba(77, 170, 87, 0.25);
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .overview-feedback-prompt__content {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            flex-wrap: wrap;
+        }
+
+        .overview-feedback-prompt__icon {
+            font-size: 2rem;
+            color: var(--org-primary, #4DAA57);
+            flex-shrink: 0;
+        }
+
+        .overview-feedback-prompt__text {
+            flex: 1;
+            min-width: 200px;
+
+            h3 {
+                margin: 0 0 0.25rem;
+                font-size: 1rem;
+                font-weight: 600;
+                color: var(--text);
+            }
+
+            p {
+                margin: 0;
+                font-size: 0.9rem;
+                color: var(--light-text, #666);
+                line-height: 1.4;
+            }
+        }
+
+        .overview-feedback-prompt__btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1rem;
+            background: var(--org-primary, #4DAA57);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            flex-shrink: 0;
+
+            &:hover {
+                opacity: 0.9;
+            }
+        }
 
         // Standardized card header - used across Event Preview, Registration Chart, Readiness, Schedule
         .event-dashboard-card-header {
@@ -492,6 +601,15 @@
                 gap: 1.5rem;
                 box-sizing: border-box;
                 overflow: hidden; // Prevent content from expanding beyond bounds
+
+                .overview-card .feedback-slide--embedded {
+                    margin: 0;
+                    padding: 0;
+                }
+
+                .overview-feedback-prompt {
+                    margin-bottom: 0;
+                }
             }
 
             .overview-right-column {

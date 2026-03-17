@@ -53,9 +53,10 @@ import Layout from './pages/Layout/Layout';
 import axios from 'axios';
 import CreateEvent from './pages/CreateEventV3/CreateEventV3';
 import EventsDash from './pages/EventsDash/EventsDash';
+// Mockup only — safe to delete
+import AdminOutreachMock from './mockups/AdminOutreach/AdminOutreachMock';
 import EventsHub from './pages/EventsHub/EventsHub';
 import EventPage from './pages/EventPage/EventPage';
-import EventWorkspace from './pages/EventWorkspace/EventWorkspace';
 import SubSidebarExample from './components/Dashboard/SubSidebarExample';
 import RebrandingNotice from './components/RebrandingNotice/RebrandingNotice';
 import Beacon from './pages/FeatureAdmin/Beacon/Beacon';
@@ -75,6 +76,7 @@ import OrgInviteLandingToken from './pages/OrgInviteLanding/OrgInviteLandingToke
 import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
+import PostMortemPdfPreview from './pages/ClubDash/EventsManagement/components/EventPostMortem/PostMortemPdfPreview';
 import AdminOutreach from './pages/AdminOutreach/AdminOutreach';
 
 
@@ -170,6 +172,7 @@ function App() {
                                             <Route path="/qr/e/:shortId" element={<EventQRRedirect/>}/>
                                             <Route path="/qr/:id" element={<QR/>}/>
                                             <Route path="/check-in/:eventId/:token" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
+                                            <Route path="/check-in/:eventId" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route index element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />
                                             <Route path="/room/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/room1/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
@@ -199,6 +202,7 @@ function App() {
 
                                             {/* logged in routes */}
                                             <Route element={ <ProtectedRoute/> }>
+                                                <Route path="/post-mortem-preview/:orgId/:eventId" element={<AnimatedPageWrapper><PostMortemPdfPreview /></AnimatedPageWrapper>}/>
                                                 <Route path="/profile" element={<AnimatedPageWrapper><Profile/></AnimatedPageWrapper>}/>
                                                 <Route path="/onboard" element={<AnimatedPageWrapper><Onboard /></AnimatedPageWrapper>}/>
                                                 {/* <Route path="/friends" element={<AnimatedPageWrapper><Friends/></AnimatedPageWrapper>}/> */}
@@ -245,6 +249,8 @@ function App() {
                                                 <Route path="/feature-admin/atlas" element={<AnimatedPageWrapper><OrgManagement/></AnimatedPageWrapper>}/>
                                             </Route>
                                             <Route path="/create-event" element={<AnimatedPageWrapper><CreateEvent/></AnimatedPageWrapper   >}/>
+                                            {/* Mockup only — Admin Outreach wireframes; no auth, no prod */}
+                                            {/* <Route path="/mockup/admin-outreach" element={<AdminOutreachMock />}/> */}
                                         </Route>
                                     </Routes>
                                     </ProfileCreationProvider>

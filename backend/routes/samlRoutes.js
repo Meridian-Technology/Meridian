@@ -48,9 +48,10 @@ async function getSAMLConfig(school, req) {
     }
 }
 
-async function createOrUpdateUserFromSAML(profile, school) {
+async function createOrUpdateUserFromSAML(profile, school, req) {
     try {
-        const { User } = getModels({ school }, 'User');
+        const modelsReq = req && req.db ? req : { db: await require('../connectionsManager').connectToDatabase(school) };
+        const { User } = getModels(modelsReq, 'User');
         
         //extract user info
         const email = profile['urn:oid:1.3.6.1.4.1.5923.1.1.1.6'] || profile.email || profile.mail;
@@ -102,6 +103,8 @@ async function createOrUpdateUserFromSAML(profile, school) {
             });
             
             await user.save();
+            const { runAutoClaimAsync } = require('../services/autoClaimEventRegistrationsService');
+            runAutoClaimAsync(modelsReq, user._id.toString(), user.email);
         }
 
         return user;
@@ -119,7 +122,7 @@ function configureSAMLStrategy(school, req) {
             
             const strategy = new SamlStrategy(config, async (profile, done) => {
                 try {
-                    const user = await createOrUpdateUserFromSAML(profile, school);
+                    const user = await createOrUpdateUserFromSAML(profile, school, req);
                     return done(null, user);
                 } catch (error) {
                     return done(error, null);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useNotification } from '../../../../../../NotificationContext';
+import { useFetch } from '../../../../../../hooks/useFetch';
 import apiRequest from '../../../../../../utils/postRequest';
 import Popup from '../../../../../../components/Popup/Popup';
 import SettingsList from '../../../../../../components/SettingsList/SettingsList';
@@ -12,20 +13,29 @@ function CheckInSettingsModal({ isOpen, onClose, event, orgId, onSaved, color })
         method: 'both',
         allowOnPageCheckIn: true,
         requireRegistration: false,
-        autoCheckIn: false
+        autoCheckIn: false,
+        allowEarlyCheckIn: false,
+        allowAnonymousCheckIn: false,
+        notificationEmailQuestionId: null
     });
     const [saving, setSaving] = useState(false);
 
+    const { data: formsData } = useFetch(orgId && isOpen ? `/org-event-management/${orgId}/forms` : null);
+    const orgForms = formsData?.success ? (formsData.data || []) : [];
+
     useEffect(() => {
-        if (isOpen && event?.checkInSettings) {
+        if (isOpen && event) {
             setForm({
                 method: event.checkInSettings?.method || 'both',
                 allowOnPageCheckIn: event.checkInSettings?.allowOnPageCheckIn !== false,
                 requireRegistration: event.checkInSettings?.requireRegistration ?? false,
-                autoCheckIn: event.checkInSettings?.autoCheckIn || false
+                autoCheckIn: event.checkInSettings?.autoCheckIn || false,
+                allowEarlyCheckIn: event.checkInSettings?.allowEarlyCheckIn || false,
+                allowAnonymousCheckIn: event.checkInSettings?.allowAnonymousCheckIn || false,
+                notificationEmailQuestionId: event.notificationEmailQuestionId ?? null
             });
         }
-    }, [isOpen, event?.checkInSettings?.method, event?.checkInSettings?.allowOnPageCheckIn, event?.checkInSettings?.requireRegistration, event?.checkInSettings?.autoCheckIn]);
+    }, [isOpen, event?.checkInSettings?.method, event?.checkInSettings?.allowOnPageCheckIn, event?.checkInSettings?.requireRegistration, event?.checkInSettings?.autoCheckIn, event?.checkInSettings?.allowEarlyCheckIn, event?.checkInSettings?.allowAnonymousCheckIn, event?.notificationEmailQuestionId]);
 
     const handleSave = async () => {
         if (!orgId || !event?._id) return;
@@ -38,8 +48,11 @@ function CheckInSettingsModal({ isOpen, onClose, event, orgId, onSaved, color })
                         method: form.method,
                         allowOnPageCheckIn: form.allowOnPageCheckIn,
                         requireRegistration: form.requireRegistration,
-                        autoCheckIn: form.autoCheckIn
-                    }
+                        autoCheckIn: form.autoCheckIn,
+                        allowEarlyCheckIn: form.allowEarlyCheckIn,
+                        allowAnonymousCheckIn: form.allowAnonymousCheckIn
+                    },
+                    notificationEmailQuestionId: form.notificationEmailQuestionId || null
                 },
                 { method: 'PUT' }
             );
@@ -110,7 +123,53 @@ function CheckInSettingsModal({ isOpen, onClose, event, orgId, onSaved, color })
                     onChange={(e) => setForm(s => ({ ...s, autoCheckIn: e.target.checked }))}
                 />
             )
-        }
+        },
+        {
+            title: 'Allow check-in before event starts',
+            subtitle: 'Let attendees check in via QR or link before the event start time',
+            action: (
+                <input
+                    type="checkbox"
+                    checked={form.allowEarlyCheckIn}
+                    onChange={(e) => setForm(s => ({ ...s, allowEarlyCheckIn: e.target.checked }))}
+                />
+            )
+        },
+        ...(event?.registrationFormId
+            ? [
+                {
+                    title: 'Allow manual check-in for anonymous attendees',
+                    subtitle: 'Let organizers manually check in attendees who registered without an account (by name/email).',
+                    action: (
+                        <input
+                            type="checkbox"
+                            checked={form.allowAnonymousCheckIn}
+                            onChange={(e) => setForm(s => ({ ...s, allowAnonymousCheckIn: e.target.checked }))}
+                        />
+                    )
+                },
+                ...(form.allowAnonymousCheckIn ? (() => {
+                    const selectedForm = orgForms.find((f) => f._id === event.registrationFormId);
+                    const questions = selectedForm?.questions || [];
+                    return questions.length > 0 ? [{
+                        title: 'Identifying field for anonymous attendees',
+                        subtitle: 'Form question to use to identify guests who register without an account (check-in list, announcements). Use any field that helps you find them—name, email, phone, ticket ID, etc.',
+                        action: (
+                            <select
+                                value={form.notificationEmailQuestionId || ''}
+                                onChange={(e) => setForm((s) => ({ ...s, notificationEmailQuestionId: e.target.value || null }))}
+                                className="notification-email-question-select"
+                            >
+                                <option value="">None (use standard guest name/email only)</option>
+                                {questions.map((q) => (
+                                    <option key={q._id} value={q._id}>{q.question || 'Question'}</option>
+                                ))}
+                            </select>
+                        )
+                    }] : [];
+                })() : [])
+            ]
+            : [])
     ];
 
     return (

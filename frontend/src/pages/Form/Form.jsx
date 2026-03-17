@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import './Form.scss';
 import FormViewer from '../../components/FormViewer/FormViewer';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useFetch } from '../../hooks/useFetch';
 import apiRequest from '../../utils/postRequest';
 
 function Form() {
     const { id } = useParams();
+    const [searchParams] = useSearchParams();
+    const eventId = searchParams.get('event');
     const [submitStatus, setSubmitStatus] = useState(null); // 'success', 'error', or null
     const [isSubmitted, setIsSubmitted] = useState(false);
 
@@ -34,7 +36,8 @@ function Form() {
                 formId: id,
                 responses: responses,
                 ...(guestName ? { guestName } : {}),
-                ...(guestEmail ? { guestEmail } : {})
+                ...(guestEmail ? { guestEmail } : {}),
+                ...(eventId ? { eventId } : {})
             });
 
             console.log('Submission response:', response);
