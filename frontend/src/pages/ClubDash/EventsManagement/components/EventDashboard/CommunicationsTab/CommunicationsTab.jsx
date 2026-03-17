@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
 import Popup from '../../../../../../components/Popup/Popup';
 import EventEmailPreview from '../EventEmailPreview';
+import FeedbackSlide from '../../EventPostMortem/slides/FeedbackSlide';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { parseMarkdownDescription } from '../../../../../../utils/markdownUtils';
 import './CommunicationsTab.scss';
@@ -15,6 +16,7 @@ function stripHtml(html) {
 function CommunicationsTab({
     event,
     orgId,
+    onRefresh,
     onSendAnnouncement,
     onOpenRegistrationSettings,
     onNavigateToAnalytics
@@ -193,6 +195,22 @@ function CommunicationsTab({
                 <p className="communications-tab-card__text">
                     When you send an announcement, you can enable in-app notifications so signed-in attendees see the update in their Meridian inbox as well as by email.
                 </p>
+            </HeaderContainer>
+
+            <HeaderContainer
+                icon="mdi:message-star-outline"
+                header="Attendee feedback"
+                subheader="Collect experience ratings and feedback from attendees"
+                classN="communications-tab-card"
+                size="1rem"
+            >
+                <FeedbackSlide
+                    orgId={orgId}
+                    eventId={event?._id}
+                    event={event}
+                    onRefresh={onRefresh}
+                    embedded={true}
+                />
             </HeaderContainer>
 
             {/* Preview modal via Popup */}

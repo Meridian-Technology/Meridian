@@ -1,0 +1,18 @@
+.feedback-form-config {
+    position: relative;
+
+    &__saving {
+        position: absolute;
+        bottom: 1rem;
+        right: 1rem;
+        font-size: 0.85rem;
+        color: var(--light-text, #666);
+    }
+}
+
+.feedback-form-config-modal {
+    max-width: 90vw;
+    width: 720px;
+    max-height: 90vh;
+    overflow: auto;
+}

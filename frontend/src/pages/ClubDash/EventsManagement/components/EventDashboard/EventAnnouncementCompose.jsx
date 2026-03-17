@@ -54,7 +54,9 @@ function EventAnnouncementCompose({
     organizerName,
     organizerPicture,
     onSent,
-    onOpenRegistrationSettings
+    onOpenRegistrationSettings,
+    initialSubject,
+    initialContent
 }) {
     const [isClosing, setIsClosing] = useState(false);
     const closeTimeoutRef = useRef(null);
@@ -62,6 +64,10 @@ function EventAnnouncementCompose({
     const subjectInputRef = useRef(null);
     const [content, setContent] = useState('');
     const [subject, setSubject] = useState('');
+    useEffect(() => {
+        if (isOpen && initialSubject != null) setSubject(initialSubject);
+        if (isOpen && initialContent != null) setContent(initialContent);
+    }, [isOpen, initialSubject, initialContent]);
     const [sendAsOrg, setSendAsOrg] = useState(false);
     const [channelInApp, setChannelInApp] = useState(true);
     const [channelEmail, setChannelEmail] = useState(true);
