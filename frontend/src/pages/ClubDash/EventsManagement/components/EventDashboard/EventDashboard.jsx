@@ -181,8 +181,6 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         event={dashboardData.event}
                         stats={dashboardData.stats}
                         agenda={dashboardData.agenda}
-                        roles={dashboardData.roles}
-                        equipment={dashboardData.equipment}
                         orgId={orgId}
                         onRefresh={handleRefresh}
                         onTabChange={handleTabChange}
@@ -257,6 +255,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             content: <CommunicationsTab
                         event={dashboardData.event}
                         orgId={orgId}
+                        onRefresh={handleRefresh}
                         onSendAnnouncement={handleSendAnnouncementClick}
                         onOpenRegistrationSettings={handleOpenRegistrationSettings}
                         onNavigateToAnalytics={() => handleTabChange('analytics')}
@@ -324,6 +323,21 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         onPostMortem={handlePostMortem}
                         showPostMortem={isEventCompleted}
                 />
+                {isEventCompleted && (
+                    <div className="event-dashboard-postmortem-banner">
+                        <Icon icon="mdi:chart-box-outline" className="event-dashboard-postmortem-banner__icon" />
+                        <p className="event-dashboard-postmortem-banner__text">
+                            Review your event performance and collect attendee feedback in the post-mortem report.
+                        </p>
+                        <button
+                            type="button"
+                            className="event-dashboard-postmortem-banner__btn"
+                            onClick={handlePostMortem}
+                        >
+                            View post-mortem
+                        </button>
+                    </div>
+                )}
                 <div className="event-dashboard-content">
                     <TabbedContainer
                         key={refreshTrigger}
