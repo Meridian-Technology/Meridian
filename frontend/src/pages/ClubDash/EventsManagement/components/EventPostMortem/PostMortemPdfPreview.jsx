@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
+import { analytics as analyticsService } from '../../../../../services/analytics/analytics';
 import PostMortemPdfContent from './PostMortemPdfContent';
 import './PostMortemPdfPreview.scss';
 
@@ -40,6 +41,12 @@ function PostMortemPdfPreview() {
             setLoading(false);
         }
     }, [isReady, dashboardData, analyticsData, rsvpGrowthData]);
+
+    useEffect(() => {
+        if (!loading && !error && eventId && orgId && analyticsService?.track) {
+            analyticsService.track('post_mortem_view', { event_id: eventId, org_id: orgId, source: 'pdf_preview' });
+        }
+    }, [loading, error, eventId, orgId]);
 
     const dashboard = dashboardData?.success ? dashboardData.data : null;
     const analytics = analyticsData?.success ? analyticsData.data : null;

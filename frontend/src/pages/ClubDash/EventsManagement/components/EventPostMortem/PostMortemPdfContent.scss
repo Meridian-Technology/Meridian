@@ -277,3 +277,25 @@
 .pdf-report .traffic-slide__proportional {
     border: none;
 }
+
+/* Feedback slide - rating bars and sample answers */
+.pdf-report .feedback-slide__rating-block {
+    margin-bottom: 1rem;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .feedback-slide__rating-row {
+    padding: 0.25rem 0;
+}
+
+.pdf-report .feedback-slide__sample-item {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #eee;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.pdf-report .feedback-slide__sample-item:last-child {
+    border-bottom: none;
+}

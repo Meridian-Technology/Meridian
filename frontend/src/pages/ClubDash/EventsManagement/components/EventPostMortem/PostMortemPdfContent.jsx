@@ -6,6 +6,7 @@ import FunnelSlide from './slides/FunnelSlide';
 import ConversionStatsSlide from './slides/ConversionStatsSlide';
 import TrafficSourcesSlide from './slides/TrafficSourcesSlide';
 import InsightsSlide from './slides/InsightsSlide';
+import FeedbackSlide from './slides/FeedbackSlide';
 import { usePostMortemInsights, INSIGHT_CATEGORIES } from './usePostMortemInsights';
 import AtlasLogo from '../../../../../assets/Brand Image/ATLAS.svg';
 import './EventPostMortem.scss';
@@ -29,7 +30,8 @@ function PostMortemPdfContent({
     actualCheckIns,
     uniqueViewersForConversion,
     formatNumber,
-    forExport = false
+    forExport = false,
+    onRefresh
 }) {
     const eventData = event;
     const formatDate = (d) => (d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '');
@@ -118,6 +120,15 @@ function PostMortemPdfContent({
                         insightsByCategory[INSIGHT_CATEGORIES.trafficInvestment],
                         ...(insightsByCategory[INSIGHT_CATEGORIES.strategic] || []),
                     ].filter(Boolean)}
+                />
+            </div>
+            <div className="pdf-page" data-pdf-no-split>
+                <FeedbackSlide
+                    orgId={orgId}
+                    eventId={eventId}
+                    event={eventData}
+                    forExport={forExport}
+                    onRefresh={onRefresh}
                 />
             </div>
             <div className="pdf-page" data-pdf-no-split>

@@ -29,12 +29,14 @@ function InsightsSlide({
     if (insights.length === 0) {
         return (
             <div className="event-post-mortem-slide">
-                <h2 className="event-post-mortem-slide__title">Key Insights</h2>
-                <p className="event-post-mortem-slide__subtitle">
-                    Auto-generated takeaways from your event data
-                </p>
-                <div className="event-post-mortem-slide__card insights-slide__empty">
-                    <p>Not enough data to generate insights yet.</p>
+                <div className="event-post-mortem-slide__section" data-pdf-no-split>
+                    <h2 className="event-post-mortem-slide__title">Key Insights</h2>
+                    <p className="event-post-mortem-slide__subtitle">
+                        Auto-generated takeaways from your event data
+                    </p>
+                    <div className="event-post-mortem-slide__card insights-slide__empty">
+                        <p>Not enough data to generate insights yet.</p>
+                    </div>
                 </div>
             </div>
         );
@@ -42,11 +44,12 @@ function InsightsSlide({
 
     return (
         <div className="event-post-mortem-slide">
-            <h2 className="event-post-mortem-slide__title">Key Insights</h2>
-            <p className="event-post-mortem-slide__subtitle">
-                Auto-generated takeaways from your event data
-            </p>
-            <div className="insights-slide__list">
+            <div className="event-post-mortem-slide__section" data-pdf-no-split>
+                <h2 className="event-post-mortem-slide__title">Key Insights</h2>
+                <p className="event-post-mortem-slide__subtitle">
+                    Auto-generated takeaways from your event data
+                </p>
+                <div className="insights-slide__list">
                 {insights.map((item, i) => (
                     <div key={i} className="event-post-mortem-slide__card insights-slide__item">
                         <div className="insights-slide__icon">
@@ -60,6 +63,7 @@ function InsightsSlide({
                         </div>
                     </div>
                 ))}
+                </div>
             </div>
         </div>
     );

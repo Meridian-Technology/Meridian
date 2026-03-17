@@ -390,6 +390,138 @@
     }
 }
 
+.feedback-slide {
+    &__setup {
+        text-align: center;
+        padding: 2rem;
+    }
+
+    &__setup-content {
+        max-width: 400px;
+        margin: 0 auto;
+    }
+
+    &__setup-icon {
+        font-size: 3rem;
+        color: var(--org-primary, #64AB6C);
+        margin-bottom: 1rem;
+    }
+
+    &__setup-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.25rem;
+        background: var(--org-primary, #64AB6C);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 1rem;
+
+        &:hover {
+            opacity: 0.9;
+        }
+    }
+
+    &__actions-header {
+        margin-bottom: 1rem;
+    }
+
+    &__edit-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.4rem 0.75rem;
+        font-size: 0.85rem;
+        background: transparent;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        cursor: pointer;
+        color: var(--light-text, #666);
+
+        &:hover {
+            background: #f9fafb;
+        }
+    }
+
+    &__results h3 {
+        margin: 0 0 1rem;
+        font-size: 1rem;
+    }
+
+    &__rating-block {
+        margin-bottom: 1.25rem;
+    }
+
+    &__rating-question {
+        margin: 0 0 0.5rem;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    &__rating-bars {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    &__rating-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.85rem;
+    }
+
+    &__rating-label {
+        min-width: 2ch;
+    }
+
+    &__rating-bar-wrap {
+        flex: 1;
+        height: 8px;
+        background: #f3f4f6;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    &__rating-bar {
+        height: 100%;
+        background: var(--org-primary, #64AB6C);
+        border-radius: 4px;
+        min-width: 2px;
+    }
+
+    &__rating-count {
+        min-width: 2ch;
+        color: var(--light-text, #666);
+    }
+
+    &__sample-answers h4 {
+        margin: 1rem 0 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    &__sample-item {
+        padding: 0.5rem 0;
+        font-size: 0.9rem;
+        color: var(--text);
+        border-bottom: 1px solid #f3f4f6;
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+
+    &__no-long {
+        margin: 0.5rem 0 0;
+        font-size: 0.85rem;
+        color: var(--light-text, #666);
+    }
+}
+
 .export-slide {
     &__content {
         text-align: center;

@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../NotificationContext';
+import { analytics as analyticsService } from '../../../../../services/analytics/analytics';
 import PostMortemPdfContent from './PostMortemPdfContent';
 import ExportSlide from './slides/ExportSlide';
 import './EventPostMortem.scss';
@@ -21,7 +22,7 @@ function EventPostMortem({ event, orgId, onClose }) {
         ? `/org-event-management/${orgId}/events/${eventId}/rsvp-growth?timezone=${encodeURIComponent(timezone)}`
         : null;
 
-    const { data: dashboardData } = useFetch(dashboardUrl);
+    const { data: dashboardData, refetch: refetchDashboard } = useFetch(dashboardUrl);
     const { data: analyticsData } = useFetch(analyticsUrl);
     const { data: rsvpGrowthData } = useFetch(rsvpGrowthUrl);
 
@@ -38,6 +39,12 @@ function EventPostMortem({ event, orgId, onClose }) {
             setLoading(false);
         }
     }, [isReady, dashboardData, analyticsData, rsvpGrowthData]);
+
+    useEffect(() => {
+        if (!loading && !error && eventId && orgId && analyticsService?.track) {
+            analyticsService.track('post_mortem_view', { event_id: eventId, org_id: orgId, source: 'overlay' });
+        }
+    }, [loading, error, eventId, orgId]);
 
     const dashboard = dashboardData?.success ? dashboardData.data : null;
     const analytics = analyticsData?.success ? analyticsData.data : null;
@@ -123,6 +130,7 @@ function EventPostMortem({ event, orgId, onClose }) {
                             uniqueViewersForConversion={uniqueViewersForConversion}
                             formatNumber={formatNumber}
                             forExport={false}
+                            onRefresh={refetchDashboard}
                         />
                     </div>
                     <div
