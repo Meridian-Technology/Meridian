@@ -92,7 +92,9 @@
   "scripts": {
     "start": "node scripts/start.js",
     "build": "node scripts/build.js",
-    "test": "node scripts/test.js"
+    "test": "node scripts/test.js",
+    "test:ci": "CI=true node scripts/test.js --watch=false --runInBand",
+    "test:coverage": "CI=true node scripts/test.js --watch=false --runInBand --coverage"
   },
   "eslintConfig": {
     "extends": [

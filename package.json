@@ -30,6 +30,9 @@
     "client": "cd frontend && npm start",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "meridian": "node bin/meridian.js",
-    "qr-frontend": "node scripts/qr-frontend.js"
+    "qr-frontend": "node scripts/qr-frontend.js",
+    "test:backend": "npm --prefix backend run test:coverage",
+    "test:frontend": "npm --prefix frontend run test:coverage",
+    "test:ci": "npm run test:backend && npm run test:frontend"
   }
 }

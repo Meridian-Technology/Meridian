@@ -46,6 +46,14 @@ If you are adding or changing functionality, update the documentation accordingl
 
 Ensure that your changes include tested results. Run all possible tests to make sure your changes don't break anything else.
 
+Recommended pre-PR command from repo root:
+
+- `npm run test:ci`
+
+Testing framework reference:
+
+- `docs/TESTING_FRAMEWORK.md`
+
 ## Community
 
 ### Code of Conduct

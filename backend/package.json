@@ -40,8 +40,15 @@
   "version": "1.0.0",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:coverage",
+    "test:unit": "NODE_ENV=test jest --runInBand --testPathPattern=tests/unit",
+    "test:integration": "NODE_ENV=test jest --runInBand --testPathPattern=tests/integration",
+    "test:coverage": "NODE_ENV=test jest --runInBand --coverage",
     "setup-saml": "node scripts/setupSAML.js"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "supertest": "^7.2.2"
   },
   "keywords": [],
   "author": "",
