@@ -66,7 +66,7 @@ function ExportSlide({
                     Export a condensed PDF with key metrics, conversion stats, funnel data, and traffic sources.
                 </p>
                 <div className="export-slide__actions">
-                    <a
+                    {/* <a
                         href={eventId && orgId ? `/post-mortem-preview/${orgId}/${eventId}` : '#'}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -74,7 +74,7 @@ function ExportSlide({
                     >
                         <Icon icon="mdi:eye" />
                         Preview layout
-                    </a>
+                    </a> */}
                     <button
                         type="button"
                         className="export-slide__btn"
