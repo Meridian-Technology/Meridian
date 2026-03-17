@@ -23,7 +23,15 @@ Meridian (formerly Study Compass) is a full-stack web app for university campus 
 - **Node.js 20.x** is required (`engines` in root `package.json`). Use `nvm use 20` to activate.
 - **MongoDB** must be running locally. Start with: `mongod --dbpath /data/db --fork --logpath /var/log/mongodb/mongod.log`
 - **Events-Backend (CRITICAL)**: The `backend/events/` directory contains the Events-Backend module, which is **essential** for the server to start and operate correctly. It is a separate private GitHub repo (`git@github.com:Meridian-Technology/Events-Backend.git`), not a submodule. In the repo, `backend/events` is tracked as a symlink pointing to `../../Events-Backend` (for developers who have both repos side by side). The production build system clones it via `bin/fetch_private_deps` using the SHA pinned in `private-deps.lock`.
-  - **To set up properly**: Clone the Events-Backend repo so the symlink resolves: `git clone git@github.com:Meridian-Technology/Events-Backend.git ../../Events-Backend` (requires SSH access to the private repo). Alternatively, run `bin/fetch_private_deps` which clones directly into `backend/events/`.
+  - **To set up in Cloud Agent**: Remove the symlink and clone the repo directly into `backend/events/`:
+    ```
+    rm -f backend/events
+    gh repo clone Meridian-Technology/Events-Backend backend/events
+    ```
+    Then check out the pinned SHA from `private-deps.lock`:
+    ```
+    cd backend/events && git checkout $(node -e "console.log(JSON.parse(require('fs').readFileSync('../../private-deps.lock','utf8')).events.ref)")
+    ```
   - **Fallback (stub mode)**: If you do NOT have access to the private repo, you can create minimal stubs so the server starts (but events functionality will not work):
     1. Remove the symlink: `rm backend/events`
     2. Create the directory: `mkdir -p backend/events/schemas`
