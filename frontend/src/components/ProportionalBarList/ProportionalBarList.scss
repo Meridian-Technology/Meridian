@@ -50,7 +50,8 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.4rem 0.6rem;
+        padding: 0.5rem 0.6rem;
+        min-height: 2.5rem;
     }
 
     &__label-wrap {
@@ -58,6 +59,7 @@
         align-items: center;
         gap: 0.5rem;
         min-width: 0;
+        flex: 1;
     }
 
     &__icon-wrap {
@@ -76,10 +78,23 @@
         font-size: 0.9rem;
     }
 
+    &__label-block {
+        display: flex;
+        flex-direction: column;
+        gap: 0.05rem;
+        min-width: 0;
+    }
+
     &__label {
         font-size: 0.95rem;
         font-weight: 500;
         color: var(--text, #1a1a1a);
+    }
+
+    &__sub-label {
+        font-size: 0.78rem;
+        font-weight: 500;
+        color: var(--org-primary, #64AB6C);
     }
 
     &__value {

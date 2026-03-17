@@ -1,5 +1,5 @@
 import React from 'react';
-import { Icon } from '@iconify-icon/react';
+import { PdfIcon } from '../../contexts/PdfExportContext';
 import HeaderContainer from '../HeaderContainer/HeaderContainer';
 import './ProportionalBarList.scss';
 
@@ -8,7 +8,7 @@ import './ProportionalBarList.scss';
  * (width = value / total). Wraps content in HeaderContainer with icon + title.
  *
  * @param {Object} props
- * @param {Array<{ key: string, label: string, icon?: string, value: number }>} props.items - Data items
+ * @param {Array<{ key: string, label: string, icon?: string, value: number, subLabel?: string }>} props.items - Data items
  * @param {string} [props.header] - Header title (shown in HeaderContainer)
  * @param {string} [props.icon] - Iconify icon for header
  * @param {string} [props.classN] - Class for HeaderContainer (e.g. 'analytics-card')
@@ -60,7 +60,7 @@ function ProportionalBarList({
                 style={backgroundColor ? { '--pbl-bg': backgroundColor } : undefined}
             >
                 <div className="proportional-bar-list__rows">
-                    {processed.map(({ key, label, icon, value }) => (
+                    {processed.map(({ key, label, icon, value, subLabel }) => (
                         <div key={key} className="proportional-bar-list__row">
                             {showBarChart && (
                                 <div
@@ -75,10 +75,15 @@ function ProportionalBarList({
                                 <div className="proportional-bar-list__label-wrap">
                                     {icon && (
                                         <div className="proportional-bar-list__icon-wrap">
-                                            <Icon icon={icon} className="proportional-bar-list__icon" />
+                                            <PdfIcon icon={icon} className="proportional-bar-list__icon" />
                                         </div>
                                     )}
-                                    <span className="proportional-bar-list__label">{label}</span>
+                                    <div className="proportional-bar-list__label-block">
+                                        <span className="proportional-bar-list__label">{label}</span>
+                                        {subLabel && (
+                                            <span className="proportional-bar-list__sub-label">{subLabel}</span>
+                                        )}
+                                    </div>
                                 </div>
                                 <span className="proportional-bar-list__value">
                                     {formatValue(value ?? 0)}
