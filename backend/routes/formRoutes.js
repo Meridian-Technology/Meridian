@@ -57,7 +57,7 @@ router.get("/get-form-by-id/:id", verifyTokenOptional, async (req, res) => {
 // ---- SUBMIT FORM RESPONSE ----
 router.post("/submit-form-response", verifyTokenOptional, async (req, res) => {
     try {
-        const { formId, responses, guestName, guestEmail } = req.body;
+        const { formId, responses, guestName, guestEmail, eventId } = req.body;
         const { Form, FormResponse } = getModels(req, "Form", "FormResponse");
         const userId = req.user?.userId;
 
@@ -133,6 +133,9 @@ router.post("/submit-form-response", verifyTokenOptional, async (req, res) => {
             answers: answers,
             submittedAt: new Date()
         };
+        if (eventId) {
+            formResponseData.event = eventId;
+        }
 
         if (userId) {
             formResponseData.submittedBy = userId;

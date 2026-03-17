@@ -541,6 +541,78 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
     }
 });
 
+// Get feedback form responses for an event
+router.get('/:orgId/events/:eventId/feedback-responses', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, FormResponse } = getModels(req, 'Event', 'FormResponse');
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        }).select('feedbackFormId');
+
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const feedbackFormId = event.feedbackFormId;
+        if (!feedbackFormId) {
+            return res.status(200).json({
+                success: true,
+                data: { responses: [], aggregated: null, responseCount: 0 }
+            });
+        }
+
+        const responses = await FormResponse.find({
+            event: eventId,
+            form: feedbackFormId
+        })
+            .populate('submittedBy', 'name username email')
+            .sort({ submittedAt: -1 })
+            .lean();
+
+        const formSnapshot = responses[0]?.formSnapshot;
+        const questions = formSnapshot?.questions || [];
+
+        const aggregated = {};
+        questions.forEach((q, idx) => {
+            if (q.type === 'rating_scale' && q.options?.length) {
+                const counts = {};
+                q.options.forEach((opt) => { counts[opt] = 0; });
+                responses.forEach((r) => {
+                    const ans = r.answers?.[idx];
+                    if (ans != null && counts.hasOwnProperty(ans)) counts[ans]++;
+                });
+                aggregated[q._id?.toString() || idx] = {
+                    question: q.question,
+                    options: q.options,
+                    counts,
+                    total: responses.length
+                };
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                responses,
+                aggregated,
+                responseCount: responses.length
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching feedback responses:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching feedback responses',
+            error: error.message
+        });
+    }
+});
+
 // ==================== EVENT QR CODES ====================
 
 // List event QRs
