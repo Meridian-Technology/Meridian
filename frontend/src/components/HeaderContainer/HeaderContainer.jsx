@@ -1,6 +1,6 @@
 import React from 'react';
 import './HeaderContainer.scss';
-import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
+import { PdfIcon } from '../../contexts/PdfExportContext';
 
 /**
  * HeaderContainer Component
@@ -38,7 +38,7 @@ const HeaderContainer = ({children, icon, header, scroll, subheader, right, size
                     <div>
                         {icon && (
                             <div className="header-container-header-icon">
-                                <Icon icon={icon}/>
+                                <PdfIcon icon={icon}/>
                             </div>
                         )}
                         <div className="header-container-header-text">
