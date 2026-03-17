@@ -29,7 +29,7 @@ function Campaigns() {
 
                         <div className="campaign-header">
                             <p>Recent campaign</p>
-                            <p>3 Campaign</p>
+                            <p>3 campaigns</p>
                         </div>
 
                         
@@ -38,7 +38,7 @@ function Campaigns() {
                             <div className="campaign-content-body">
                                 <p>CS Class of 2027 - Intership Fair</p>
                                 <div className="campaign-content-stats">
-                                    <p>Mar 10, 2026</p>
+                                    <p>Mar 10, 2025</p>
                                     <p>•</p>
                                     <p>342 recipients</p>
                                 </div>
@@ -52,11 +52,11 @@ function Campaigns() {
 
                         <div className="campaign-content">
                             <div className="campaign-content-body">
-                                <p>CS Class of 2027 - Intership Fair</p>
+                                <p>Graduate Students - Thesis Deadlines</p>
                                 <div className="campaign-content-stats">
-                                    <p>Mar 10, 2026</p>
+                                    <p>Mar 8, 2025</p>
                                     <p>•</p>
-                                    <p>342 recipients</p>
+                                    <p>89 recipients</p>
                                 </div>
                             </div>
 
@@ -68,11 +68,11 @@ function Campaigns() {
 
                          <div className="campaign-content">
                             <div className="campaign-content-body">
-                                <p>CS Class of 2027 - Intership Fair</p>
+                                <p>Undergrad Active - Spring Events</p>
                                 <div className="campaign-content-stats">
-                                    <p>Mar 10, 2026</p>
+                                    <p>Mar 5, 2025</p>
                                     <p>•</p>
-                                    <p>342 recipients</p>
+                                    <p>1204 recipients</p>
                                 </div>
                             </div>
 
