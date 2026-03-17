@@ -5,6 +5,9 @@ import { useNavigate } from 'react-router-dom';
 
 import Dashboard from '../../components/Dashboard/Dashboard';
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
+import Campaigns from './Campaigns/Campaigns';
+import NewOutreach from './NewOutreach/NewOutreach';
+import Configurations from './Configurations/Configurations';
 
 
 import './AdminOutreach.scss';
@@ -27,16 +30,17 @@ function AdminOutreach(){
         { 
             label: 'Campaigns', 
             icon: 'mdi:email-multiple',
-            element: <></>
+            element: <Campaigns/>
         },
         { 
             label: 'New Outreach', 
             icon: 'mdi:send',
+            element: <NewOutreach/>
         },
         { 
             label: 'Configurations', 
             icon: 'mdi:cog',
-            element: <></>
+            element: <Configurations/>
         }
         
     ]
