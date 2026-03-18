@@ -41,9 +41,9 @@
   "main": "app.js",
   "scripts": {
     "test": "npm run test:coverage",
-    "test:unit": "NODE_ENV=test jest --runInBand --testPathPattern=tests/unit",
-    "test:integration": "NODE_ENV=test jest --runInBand --testPathPattern=tests/integration",
-    "test:routes": "NODE_ENV=test jest --runInBand --testPathPattern=tests/route-outcomes",
+    "test:unit": "NODE_ENV=test jest --runInBand --testPathPatterns=tests/unit",
+    "test:integration": "NODE_ENV=test jest --runInBand --testPathPatterns=tests/integration",
+    "test:routes": "NODE_ENV=test jest --runInBand --testPathPatterns=tests/route-outcomes",
     "test:coverage": "NODE_ENV=test jest --runInBand --coverage",
     "setup-saml": "node scripts/setupSAML.js"
   },
