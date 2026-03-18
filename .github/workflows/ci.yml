@@ -40,7 +40,7 @@ jobs:
       - name: Install frontend deps
         run: npm install --prefix frontend
 
-      - name: Run backend test suite with coverage
+      - name: Run backend comprehensive test suite with coverage
         run: npm --prefix backend run test:coverage
 
       - name: Run frontend test suite with coverage
