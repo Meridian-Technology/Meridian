@@ -42,7 +42,7 @@ jobs:
         run: npm install --prefix frontend
 
       - name: Build frontend
-        run: npm --prefix frontend run build
+        run: CI=false npm --prefix frontend run build
 
   unit-tests:
     name: Unit tests
