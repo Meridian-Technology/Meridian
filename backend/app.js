@@ -94,9 +94,22 @@ function createApp() {
     }
   });
 
-  // When on www, only allow minimal paths (landing only; auth requires tenant subdomain)
-  // Landing APIs: visit logging, analytics (config + event ingestion), android tester signup
+  // When on www, allow landing pages + APIs. Block tenant-only routes (auth, events, etc.).
+  // Page paths: SPA routes (/, /landing, etc.) and static assets
   const wwwAllowedPathPrefixes = [
+    '/',
+    '/landing',
+    '/mobile',
+    '/contact',
+    '/support',
+    '/privacy-policy',
+    '/terms-of-service',
+    '/child-safety-standards',
+    '/booking',
+    '/documentation',
+    '/error',
+    '/select-school',
+    '/static',
     '/health',
     '/validate-token',
     '/log-visit',
