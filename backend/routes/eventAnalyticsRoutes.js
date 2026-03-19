@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const { verifyToken, authorizeRoles, verifyTokenOptional } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const getModels = require('../services/getModelService');
 
 /**
@@ -794,7 +795,7 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
 });
 
 // Get platform analytics overview (admin only) - from analytics_events
-router.get('/platform-overview', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/platform-overview', verifyToken, requireAdmin, async (req, res) => {
     const { AnalyticsEvent, Event } = getModels(req, 'AnalyticsEvent', 'Event');
     const { timeRange = '30d', startDate: startDateParam, endDate: endDateParam } = req.query;
 

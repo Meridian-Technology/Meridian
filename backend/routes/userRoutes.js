@@ -1,5 +1,6 @@
 const express = require('express');
 const { verifyToken, verifyTokenOptional, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const cron = require('node-cron');
 const axios = require('axios');
 const { isProfane } = require('../services/profanityFilterService');
@@ -358,7 +359,7 @@ router.get("/search-users", verifyToken, async (req, res) => {
     }
 });
 
-router.post('/create-badge-grant', verifyToken, authorizeRoles('admin'), async (req, res) => {
+router.post('/create-badge-grant', verifyToken, requireAdmin, async (req, res) => {
     const { BadgeGrant } = getModels(req, 'BadgeGrant');
     try {
         const { badgeContent, badgeColor, daysValid } = req.body;
@@ -438,7 +439,7 @@ router.post('/grant-badge', verifyToken, async (req, res) => {
     }
 });
 
-router.post('/renew-badge-grant', verifyToken, authorizeRoles('admin'), async (req,res) => {
+router.post('/renew-badge-grant', verifyToken, requireAdmin, async (req,res) => {
     const { BadgeGrant } = getModels(req, 'BadgeGrant');
     try {
         const { badgeGrantId, daysValid } = req.body;
@@ -472,7 +473,7 @@ router.post('/renew-badge-grant', verifyToken, authorizeRoles('admin'), async (r
     }
 })
 
-router.get('/get-badge-grants', verifyToken, authorizeRoles('admin'), async (req,res) => {
+router.get('/get-badge-grants', verifyToken, requireAdmin, async (req,res) => {
     const { User, BadgeGrant } = getModels(req, 'User', 'BadgeGrant');
     try{
         const user = await User.findById(req.user.userId);
@@ -560,7 +561,7 @@ router.post("/upload-user-image", verifyToken, upload.single('image'), async (re
 
 //add or remove role from user
 
-router.post('/manage-roles', verifyToken, authorizeRoles('admin'), async (req,res) => {
+router.post('/manage-roles', verifyToken, requireAdmin, async (req,res) => {
     const { role, userId } = req.body;
     const { User } = getModels(req, 'User');
     try{

@@ -62,3 +62,43 @@ export function getLastTenant() {
     return null;
   }
 }
+
+/** In dev, when we have devTenantOverride, we're effectively on that tenant (same origin). */
+export function hasDevTenantOverride() {
+  if (process.env.NODE_ENV === 'production') return false;
+  try {
+    return !!localStorage.getItem('devTenantOverride');
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Display names for tenants (keep in sync with SelectSchool DOMAIN_META). */
+const TENANT_DISPLAY_NAMES = {
+  rpi: 'Rensselaer Polytechnic Institute',
+  tvcog: 'Center of Gravity',
+};
+
+/** Get current tenant key from hostname (production) or devTenantOverride (dev). */
+export function getCurrentTenantKey() {
+  if (typeof window === 'undefined') return null;
+  const host = window.location.hostname || '';
+  if (process.env.NODE_ENV !== 'production' && host === 'localhost') {
+    try {
+      return localStorage.getItem('devTenantOverride') || getLastTenant() || null;
+    } catch (_) {
+      return getLastTenant();
+    }
+  }
+  const sub = host.split('.')[0];
+  if (sub && sub !== 'www' && sub !== 'meridian') {
+    return sub;
+  }
+  return null;
+}
+
+/** Get display name for current tenant. */
+export function getCurrentTenantDisplayName() {
+  const key = getCurrentTenantKey();
+  return (key && TENANT_DISPLAY_NAMES[key]) || key || 'Institution';
+}

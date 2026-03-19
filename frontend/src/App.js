@@ -5,6 +5,7 @@ import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
+import { isWww, setLastTenant } from './config/tenantRedirect';
 
 import Room from './pages/Room/Room';
 import Room1 from './pages/Room/Room1';
@@ -59,6 +60,7 @@ import EventsHub from './pages/EventsHub/EventsHub';
 import EventPage from './pages/EventPage/EventPage';
 import SubSidebarExample from './components/Dashboard/SubSidebarExample';
 import RebrandingNotice from './components/RebrandingNotice/RebrandingNotice';
+import DevTenantSelector from './components/DevTenantSelector/DevTenantSelector';
 import Beacon from './pages/FeatureAdmin/Beacon/Beacon';
 import Compass from './pages/FeatureAdmin/Compass/Compass';
 import Atlas from './pages/FeatureAdmin/Atlas/Atlas';
@@ -72,6 +74,7 @@ import Form from './pages/Form/Form';
 import Support from './pages/Support/Support';
 import CheckInConfirmation from './pages/CheckIn/CheckInConfirmation';
 import OrgInviteLanding from './pages/OrgInviteLanding/OrgInviteLanding';
+import SelectSchool from './pages/SelectSchool/SelectSchool';
 import OrgInviteLandingToken from './pages/OrgInviteLanding/OrgInviteLandingToken';
 import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
@@ -92,6 +95,14 @@ function App() {
         initAnalytics().catch(error => {
             console.error('Failed to initialize analytics:', error);
         });
+    }, []);
+
+    // Remember tenant for next time user visits www (single-tenant: no picker)
+    useEffect(() => {
+        if (typeof window !== 'undefined' && !isWww() && window.location.hostname) {
+            const sub = window.location.hostname.split('.')[0];
+            if (sub && sub !== 'www') setLastTenant(sub);
+        }
     }, []);
 
     useEffect(() => {
@@ -156,6 +167,7 @@ function App() {
     return (
         <GoogleOAuthProvider clientId="639818062398-k4qnm9l320phu967ctc2l1jt1sp9ib7p.apps.googleusercontent.com">
             <RebrandingNotice />
+            <DevTenantSelector />
             <ErrorProvider>
                 <NotificationProvider>
                     <WebSocketProvider>
@@ -178,6 +190,7 @@ function App() {
                                             <Route path="/org-invites/landing/:token" element={<AnimatedPageWrapper><OrgInviteLandingToken /></AnimatedPageWrapper>}/>
                                             <Route path="/org-invites/accept" element={<OrgInviteRedirect />}/>
                                             <Route path="/org-invites/decline" element={<OrgInviteRedirect />}/>
+                                            <Route path="/select-school" element={<AnimatedPageWrapper><SelectSchool /></AnimatedPageWrapper>}/>
                                             <Route path="/login" element={<AnimatedPageWrapper><Login /></AnimatedPageWrapper>}/>
                                             <Route path="/contact" element={<AnimatedPageWrapper><Contact /></AnimatedPageWrapper>}/>
                                             <Route path="/support" element={<AnimatedPageWrapper><Support /></AnimatedPageWrapper>}/>

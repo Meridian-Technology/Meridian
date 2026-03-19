@@ -8,7 +8,7 @@ const passport = require('passport');
 require('dotenv').config();
 const { createServer } = require('http');
 const enforce = require('express-sslify');
-const { connectToDatabase } = require('./connectionsManager');
+const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
 
 const s3 = require('./aws-config');
@@ -18,13 +18,13 @@ function createApp() {
   const server = createServer(app);
 
   const corsOrigin = process.env.NODE_ENV === 'production'
-    ? ['https://www.meridian.study', 'https://meridian.study']
+    ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
     : 'http://localhost:3000';
   initSocket(server, { origin: corsOrigin });
 
   const corsOptions = {
     origin: process.env.NODE_ENV === 'production'
-      ? ['https://www.meridian.study', 'https://meridian.study']
+      ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
       : 'http://localhost:3000',
     credentials: true,
     optionsSuccessStatus: 200
@@ -70,18 +70,51 @@ function createApp() {
         // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' or IP -> 'rpi'
         let subdomain = host.split('.')[0];
         
-        // In development, if host is localhost or an IP address, default to 'rpi'
+        // In development, if host is localhost or an IP address, treat as www (no default tenant)
         if (host.includes('localhost') || /^\d+\.\d+\.\d+\.\d+/.test(subdomain) || !host.includes('.')) {
-            subdomain = 'rpi';
+            subdomain = 'www';
+        }
+
+        // Development only: allow X-Tenant header or ?school= to override tenant (for local testing)
+        if (process.env.NODE_ENV !== 'production') {
+            const override = req.headers['x-tenant'] || req.query.school;
+            const validTenants = ['rpi', 'tvcog']; // keep in sync with connectionsManager
+            if (override && validTenants.includes(override.toLowerCase())) {
+                subdomain = override.toLowerCase();
+            }
         }
         
         req.db = await connectToDatabase(subdomain);
         req.school = subdomain;
+        req.globalDb = await connectToGlobalDatabase();
         next();
     } catch (error) {
         console.error('Error establishing database connection:', error);
         res.status(500).send('Database connection error');
     }
+  });
+
+  // When on www, only allow minimal paths (landing only; auth requires tenant subdomain)
+  // Landing APIs: visit logging, analytics (config + event ingestion), android tester signup
+  const wwwAllowedPathPrefixes = [
+    '/health',
+    '/validate-token',
+    '/log-visit',
+    '/log-repeated-visit',
+    '/v1/events',
+    '/api/event-system-config/analytics-config',
+    '/api/android-tester',
+  ];
+  app.use((req, res, next) => {
+    if (req.school !== 'www') return next();
+    const path = (req.path || req.url || '').split('?')[0];
+    const allowed = wwwAllowedPathPrefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'));
+    if (allowed) return next();
+    res.status(403).json({
+      success: false,
+      message: 'Use your school’s site (e.g. rpi.meridian.study) for this page.',
+      code: 'USE_TENANT_SUBDOMAIN'
+    });
   });
 
   const upload = multer({

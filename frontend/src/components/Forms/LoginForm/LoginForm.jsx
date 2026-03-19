@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
+import { useNavigate, Link, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import '../Forms.scss';
 import { generalIcons } from '../../../Icons';
 import useAuth from '../../../hooks/useAuth';
@@ -9,6 +9,8 @@ import axios from 'axios';
 import Flag from '../../Flag/Flag';
 import SAMLLoginButton from '../SAMLLoginButton/SAMLLoginButton';
 import { isSAMLEnabled, getUniversityDisplayName, getUniversityLogo, getUniversityClassName } from '../../../config/universities';
+import { isWww } from '../../../config/tenantRedirect';
+import TenantSelectorBanner from '../TenantSelectorBanner/TenantSelectorBanner';
 import {Icon} from '@iconify-icon/react/dist/iconify.mjs';
 
 function LoginForm() {
@@ -82,11 +84,9 @@ function LoginForm() {
         await login(formData);
         sessionStorage.removeItem('login_redirect');
         navigate(from, { replace: true });
-        // Handle success (e.g., store the token and redirect to a protected page)
       } catch (error) {
         console.error('Login failed:', error);
         setErrorText("Invalid Username/Email or Password. Please try again");
-        // Handle errors (e.g., display error message)
       }
     }
 
@@ -107,9 +107,12 @@ function LoginForm() {
         async function googleLog(code) {
             try{
                 setIsGoogleLoginInProgress(true);
-                const codeResponse = await googleLogin(code, false);
+                const school = sessionStorage.getItem('login_school');
+                const opts = school ? { school } : {};
+                const codeResponse = await googleLogin(code, false, undefined, undefined, opts);
                 console.log("codeResponse: " + codeResponse);
                 sessionStorage.removeItem('login_redirect');
+                sessionStorage.removeItem('login_school');
                 navigate(redirectPathRef.current || from, { replace: true });
             } catch (error){
                 setIsGoogleLoginInProgress(false);
@@ -141,7 +144,15 @@ function LoginForm() {
         flow: 'auth-code',
         ux_mode: 'redirect',
         onFailure: () => {failed("Google login failed. Please try again")},
-    })
+    });
+
+    const handleGoogleClick = () => {
+        google();
+    };
+
+    const handleAppleClick = () => {
+        handleAppleSignIn();
+    };
 
     // Initialize Apple Sign In
     useEffect(() => {
@@ -181,18 +192,21 @@ function LoginForm() {
     if (!loadContent) {
         return ("");
     }
+
+    if (isWww() && !(process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && localStorage.getItem('devTenantOverride'))) {
+        return <Navigate to="/select-school" replace />;
+    }
   
-    
-    
     return (
       <div className='form'>
+          <TenantSelectorBanner />
           <h1>Welcome Back!</h1>
         {errorText !== "" && 
             <Flag text={errorText} img={circleWarning} color={"#FD5858"} primary={"rgba(250, 117, 109, 0.16)"} accent={"#FD5858"} /> 
         }
 
         {/* SAML Login Button - Show first if enabled */}
-        {samlEnabled && (
+        {/* {samlEnabled && (
             <SAMLLoginButton
                 universityName={universityName}
                 universityLogo={universityLogo}
@@ -200,10 +214,10 @@ function LoginForm() {
                 onError={setErrorText}
                 relayState={from}
             />
-        )}
+        )} */}
 
         {/* Google Login Button */}
-        <button type="button" className="button google" onClick={() => google()}>
+        <button type="button" className="button google" onClick={handleGoogleClick}>
         <img src={googleLogo} alt="google"/>
             Continue with Google
             </button>
@@ -212,7 +226,7 @@ function LoginForm() {
         <button 
             type="button" 
             className="button apple" 
-            onClick={handleAppleSignIn}
+            onClick={handleAppleClick}
         >
             <Icon icon="mdi:apple" />
             Continue with Apple

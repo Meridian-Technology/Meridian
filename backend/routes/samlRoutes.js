@@ -9,7 +9,8 @@ require('dotenv').config();
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 const getModels = require('../services/getModelService.js');
-const { createSession, deleteSession } = require('../utilities/sessionUtils');
+const { deleteSession } = require('../utilities/sessionUtils');
+const authGlobalService = require('../services/authGlobalService');
 
 // Token configuration
 const ACCESS_TOKEN_EXPIRY_MINUTES = 1;
@@ -76,7 +77,7 @@ async function createOrUpdateUserFromSAML(profile, school, req) {
         if (user) {
             //update existing user with SAML information
             user.samlId = uid;
-            user.samlProvider = 'rpi';
+            user.samlProvider = school;
             user.name = displayName || `${givenName} ${surname}`.trim();
             user.samlAttributes = profile;
             
@@ -97,7 +98,7 @@ async function createOrUpdateUserFromSAML(profile, school, req) {
                 username: username,
                 name: displayName || `${givenName} ${surname}`.trim(),
                 samlId: uid,
-                samlProvider: 'rpi',
+                samlProvider: school,
                 samlAttributes: profile,
                 roles: affiliation && affiliation.includes('faculty') ? ['user', 'admin'] : ['user']
             });
@@ -193,39 +194,10 @@ router.post('/callback', async (req, res) => {
             }
             
             try {
-                //generate tokens
-                const accessToken = jwt.sign(
-                    { userId: user._id, roles: user.roles }, 
-                    process.env.JWT_SECRET, 
-                    { expiresIn: ACCESS_TOKEN_EXPIRY }
-                );
-                
-                const refreshToken = jwt.sign(
-                    { userId: user._id, type: 'refresh' }, 
-                    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-                    { expiresIn: REFRESH_TOKEN_EXPIRY }
-                );
-
-                // Create session instead of storing refresh token directly on user
-                // req should already have db from middleware in app.js
-                await createSession(user._id, refreshToken, req);
-
-                //set cookies
-                res.cookie('accessToken', accessToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: ACCESS_TOKEN_EXPIRY_MS,
-                    path: '/'
-                });
-
-                res.cookie('refreshToken', refreshToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: REFRESH_TOKEN_EXPIRY_MS,
-                    path: '/'
-                });
+                const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
+                await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
+                const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+                await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
 
                 // RelayState is echoed back by IdP in POST body (no server session)
                 const relayState = req.body?.RelayState || '/room/none';

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '../../hooks/useAuth';
+import { isWww } from '../../config/tenantRedirect';
 import './AppleCallback.scss';
 
 const AppleCallback = () => {
@@ -43,7 +44,8 @@ const AppleCallback = () => {
                 }
                 
                 // Call the backend with the ID token
-                await appleLogin(idToken, userInfo);
+                const school = isWww() ? sessionStorage.getItem('login_school') : null;
+                await appleLogin(idToken, userInfo, school ? { school } : {});
                 
                 // Validate token to ensure authentication succeeded
                 await validateToken();

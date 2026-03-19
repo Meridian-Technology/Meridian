@@ -1,6 +1,51 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
 
+/**
+ * Authenticated request with credentials and 401 refresh retry.
+ * Use for one-off mutations (POST/PUT/DELETE) so components don't use axios directly.
+ * @param {string} url
+ * @param {{ method?: string, data?: any, headers?: object, params?: object }} options
+ * @returns {Promise<{ data?: any, error?: string, code?: string }>}
+ */
+export const authenticatedRequest = async (url, options = {}) => {
+  const method = options.method || "GET";
+  const reqConfig = {
+    url,
+    method,
+    data: options.data ?? null,
+    headers: options.headers || {},
+    withCredentials: true,
+    params: options.params || {},
+  };
+  try {
+    const response = await axios(reqConfig);
+    return { data: response.data };
+  } catch (err) {
+    if (
+      err.response?.status === 401 &&
+      (err.response?.data?.code === "TOKEN_EXPIRED" || err.response?.data?.code === "NO_TOKEN")
+    ) {
+      try {
+        await axios.post("/refresh-token", {}, { withCredentials: true });
+        const retryResponse = await axios(reqConfig);
+        return { data: retryResponse.data };
+      } catch (refreshError) {
+        if (
+          refreshError.response?.data?.code === "REFRESH_TOKEN_EXPIRED" ||
+          refreshError.response?.data?.code === "INVALID_REFRESH_TOKEN" ||
+          refreshError.response?.data?.code === "REFRESH_FAILED"
+        ) {
+          window.location.href = "/login";
+        }
+        return { error: "Authentication required" };
+      }
+    }
+    const message = err.response?.data?.message || err.response?.data?.error || err.message;
+    return { error: message, code: err.response?.status };
+  }
+};
+
 export const useFetch = (url, options = { method: "GET", data: null }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);

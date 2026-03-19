@@ -1,57 +1,72 @@
 const jwt = require('jsonwebtoken');
 const getModels = require('../services/getModelService');
+const authGlobalService = require('../services/authGlobalService');
 const { validateSession } = require('../utilities/sessionUtils');
 
-// Constants for token expiry (matching authRoutes.js)
 const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
 const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`;
 const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000;
 
-const verifyToken = (req, res, next) => {
-    // Check for token in cookies first, then headers (for backward compatibility)
-    const token = req.cookies.accessToken || 
-                  (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
-  
-    // console.log('🔍 Verifying token for:', req.path);
-    // console.log('📦 Cookies:', req.cookies);
-    // console.log('Token found:', !!token);
-  
+/**
+ * Resolve req.user from decoded JWT: for new tokens (globalUserId) resolve tenant user from TenantMembership;
+ * for legacy tokens (userId only) pass through.
+ */
+async function resolveRequestUser(req, decodedToken) {
+    if (decodedToken.globalUserId) {
+        const { tenantUserId, tenantUser } = await authGlobalService.resolveTenantUserForRequest(req, decodedToken.globalUserId);
+        const roles = tenantUser && tenantUser.roles ? tenantUser.roles : (decodedToken.roles || ['user']);
+        req.user = {
+            globalUserId: decodedToken.globalUserId,
+            userId: tenantUserId,
+            tenantUserId,
+            roles,
+            platformRoles: decodedToken.platformRoles || [],
+        };
+        return;
+    }
+    // Legacy token: userId and roles only
+    req.user = {
+        userId: decodedToken.userId,
+        roles: decodedToken.roles || ['user'],
+    };
+}
+
+const verifyToken = async (req, res, next) => {
+    const token = req.cookies.accessToken ||
+        (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
+
     if (token == null) {
-        console.log('❌ No token provided');
-        return res.status(401).json({ 
-            success: false, 
+        console.log('No token provided');
+        return res.status(401).json({
+            success: false,
             message: 'No access token provided',
-            code: 'NO_TOKEN'
+            code: 'NO_TOKEN',
         });
     }
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, decodedToken) => {
-        if (err) {
-            if (err.name === 'TokenExpiredError') {
-                console.log('⏰ Token expired');
-                return res.status(401).json({ 
-                    success: false, 
-                    message: 'Access token expired',
-                    code: 'TOKEN_EXPIRED'
-                });
-            }
-            console.log('❌ Invalid token:', err.message);
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Invalid access token',
-                code: 'INVALID_TOKEN'
+    try {
+        const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        await resolveRequestUser(req, decodedToken);
+        return next();
+    } catch (err) {
+        if (err.name === 'TokenExpiredError') {
+            return res.status(401).json({
+                success: false,
+                message: 'Access token expired',
+                code: 'TOKEN_EXPIRED',
             });
         }
-        //log time left
-        // console.log('✅ Token valid for user:', decodedToken.userId);
-        req.user = decodedToken;
-        next();
-    });
+        return res.status(403).json({
+            success: false,
+            message: 'Invalid access token',
+            code: 'INVALID_TOKEN',
+        });
+    }
 };
 
 function authorizeRoles(...allowedRoles) {
     return (req, res, next) => {
-        const { roles } = req.user;
+        const { roles } = req.user || {};
         if (!roles || !allowedRoles.some(role => roles.includes(role))) {
             return res.status(403).json({ message: 'Forbidden' });
         }
@@ -85,21 +100,37 @@ function createVerifyTokenOptional(options = {}) {
           console.log('[Auth] tryRefresh: session invalid:', validation.error);
           return false;
         }
-        const { user } = validation;
-        const newAccessToken = jwt.sign(
-          { userId: user._id, roles: user.roles },
-          process.env.JWT_SECRET,
-          { expiresIn: ACCESS_TOKEN_EXPIRY }
-        );
-        res.cookie('accessToken', newAccessToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: ACCESS_TOKEN_EXPIRY_MS,
-          path: '/'
-        });
-        req.user = { userId: user._id, roles: user.roles };
-        console.log('[Auth] Token refreshed successfully for user:', user._id);
+        const { user, globalUser } = validation;
+        if (globalUser) {
+          const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+          await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
+          req.user = {
+            globalUserId: globalUser._id,
+            userId: user ? user._id : null,
+            tenantUserId: user ? user._id : null,
+            roles: user ? (user.roles || ['user']) : ['user'],
+            platformRoles: platformRoles || [],
+          };
+        } else if (user) {
+          const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: ACCESS_TOKEN_EXPIRY_MS,
+            path: '/',
+          };
+          if (process.env.NODE_ENV === 'production') cookieOptions.domain = '.meridian.study';
+          const newAccessToken = jwt.sign(
+            { userId: user._id, roles: user.roles },
+            process.env.JWT_SECRET,
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
+          );
+          res.cookie('accessToken', newAccessToken, cookieOptions);
+          req.user = { userId: user._id, roles: user.roles };
+        } else {
+          return false;
+        }
+        console.log('[Auth] Token refreshed successfully for user:', user ? user._id : globalUser?._id);
         return true;
       } catch (refreshError) {
         console.log('[Auth] Refresh failed:', refreshError.message);
@@ -114,30 +145,38 @@ function createVerifyTokenOptional(options = {}) {
       return next();
     }
 
-    jwt.verify(token, process.env.JWT_SECRET, async (err, decodedToken) => {
-      if (!err) {
-        req.user = decodedToken;
+    try {
+      const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+      await resolveRequestUser(req, decodedToken);
+      return next();
+    } catch (err) {
+      if (err.name !== 'TokenExpiredError') {
+        if (requireAuthWhenTokenPresent) {
+          return res.status(401).json({
+            success: false,
+            message: 'Invalid access token',
+            code: 'INVALID_TOKEN'
+          });
+        }
         return next();
       }
-
-      if (err.name === 'TokenExpiredError') {
-        await tryRefresh();
+      const refreshed = await tryRefresh();
+      if (refreshed) {
+        return next();
       }
-
       if (requireAuthWhenTokenPresent && !req.user) {
         return res.status(401).json({
           success: false,
-          message: err?.name === 'TokenExpiredError' ? 'Access token expired' : 'Invalid access token',
-          code: err?.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN'
+          message: 'Access token expired',
+          code: 'TOKEN_EXPIRED'
         });
       }
-
-      next();
-    });
+      return next();
+    }
   };
 }
 
 const verifyTokenOptional = createVerifyTokenOptional();
 verifyTokenOptional.withOptions = createVerifyTokenOptional;
 
-module.exports = { verifyToken, verifyTokenOptional, authorizeRoles };
+module.exports = { verifyToken, verifyTokenOptional, authorizeRoles, resolveRequestUser };

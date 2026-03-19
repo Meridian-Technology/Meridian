@@ -12,8 +12,10 @@ const { verifyToken } = require('../middlewares/verifyToken.js');
 const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser, authenticateWithGoogleIdToken } = require('../services/userServices.js');
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getModels = require('../services/getModelService.js');
+const getGlobalModels = require('../services/getGlobalModelService.js');
 const { getFriendRequests } = require('../utilities/friendUtils');
-const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, deleteSessionById } = require('../utilities/sessionUtils');
+const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, getUserSessionsForGlobalUser, deleteSessionById, deleteSessionByIdForGlobalUser, revokeAllOtherSessionsForGlobalUser } = require('../utilities/sessionUtils');
+const authGlobalService = require('../services/authGlobalService');
 
 const { getResend } = require('../services/resendClient');
 const { render } = require('@react-email/render')
@@ -24,12 +26,12 @@ const ForgotEmail = require('../emails/ForgotEmail').default;
 const verificationCodes = new Map();
 
 
-const ACCESS_TOKEN_EXPIRY_MINUTES = 1;
+const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 // Token configuration
-const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`; // 1 minute
+const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`;
 const REFRESH_TOKEN_EXPIRY = `${REFRESH_TOKEN_EXPIRY_DAYS}d`;  // 2 days
-const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000; // 1 minute in milliseconds
+const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000;
 const REFRESH_TOKEN_EXPIRY_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000; // 2 days in milliseconds
 
 // Check if request is from mobile client (token-based auth instead of cookies)
@@ -62,6 +64,16 @@ function validateUsername(username) {
 
 // Registration endpoint
 router.post('/register', async (req, res) => {
+    // When on www, require school in body so we use the correct tenant DB (landing is www-only; app is tenant-only)
+    if (req.school === 'www') {
+        const school = (req.body && req.body.school) ? String(req.body.school).trim().toLowerCase() : null;
+        if (!school) {
+            return res.status(400).json({ success: false, message: 'Please select your school or use your school’s login page (e.g. rpi.meridian.study).', code: 'SCHOOL_REQUIRED' });
+        }
+        req.school = school;
+        req.db = await require('../connectionsManager').connectToDatabase(school);
+    }
+
     // Extract user details from request body
     const { username, email, password, invite_token: bodyInviteToken } = req.body;
     const inviteToken = bodyInviteToken || req.cookies?.org_invite_token;
@@ -153,55 +165,18 @@ router.post('/register', async (req, res) => {
             }
         }
 
-        // Generate both tokens
-        const accessToken = jwt.sign(
-            { userId: user._id, roles: user.roles }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: ACCESS_TOKEN_EXPIRY }
-        );
-        
-        const refreshToken = jwt.sign(
-            { userId: user._id, type: 'refresh' }, 
-            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-            { expiresIn: REFRESH_TOKEN_EXPIRY }
-        );
-
-        // Create session instead of storing refresh token directly on user
-        await createSession(user._id, refreshToken, req);
-
-        // Set both cookies
-        res.cookie('accessToken', accessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
-            path: '/'
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: REFRESH_TOKEN_EXPIRY_MS, // 2 days
-            path: '/'
-        });
+        const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
+        await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
+        const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+        const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
 
         console.log(`POST: /register new user ${username}`);
         sendDiscordMessage(`New user registered`, `user ${username} registered`, "newUser");
-        
-        // Send Inngest event for user registration
-        // await sendUserRegisteredEvent({
-        //     id: user._id,
-        //     email: user.email,
-        //     username: user.username,
-        //     name: user.name,
-        //     school: req.school
-        // });
-        
+
         const responseData = { user: user };
         if (isMobileClient(req)) {
-            responseData.accessToken = accessToken;
-            responseData.refreshToken = refreshToken;
+            responseData.accessToken = tokens.accessToken;
+            responseData.refreshToken = tokens.refreshToken;
         }
         res.status(201).json({
             success: true,
@@ -226,50 +201,31 @@ router.post('/register', async (req, res) => {
 
 // Login endpoint
 router.post('/login', async (req, res) => {
+    if (req.school === 'www') {
+        const school = (req.body && req.body.school) ? String(req.body.school).trim().toLowerCase() : null;
+        if (!school) {
+            return res.status(400).json({ success: false, message: 'Please select your school or use your school’s login page (e.g. rpi.meridian.study).', code: 'SCHOOL_REQUIRED' });
+        }
+        req.school = school;
+        req.db = await require('../connectionsManager').connectToDatabase(school);
+    }
+
     const { email, password } = req.body;
 
     try {
         //check if it is an email or username, case insensitive for email
         const { user } = await loginUser({ email, password, req });
-        
-        // Generate both tokens
-        const accessToken = jwt.sign(
-            { userId: user._id, roles: user.roles }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: ACCESS_TOKEN_EXPIRY }
-        );
-        
-        const refreshToken = jwt.sign(
-            { userId: user._id, type: 'refresh' }, 
-            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-            { expiresIn: REFRESH_TOKEN_EXPIRY }
-        );
 
-        // Create session instead of storing refresh token directly on user
-        await createSession(user._id, refreshToken, req);
+        const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
+        await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
+        const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+        const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
 
-        // Set both cookies
-        res.cookie('accessToken', accessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
-            path: '/'
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: REFRESH_TOKEN_EXPIRY_MS, // 2 days
-            path: '/'
-        });
-
-        console.log(`POST: /login user ${user.username} logged in`)
+        console.log(`POST: /login user ${user.username} logged in`);
         const loginData = { user: user };
         if (isMobileClient(req)) {
-            loginData.accessToken = accessToken;
-            loginData.refreshToken = refreshToken;
+            loginData.accessToken = tokens.accessToken;
+            loginData.refreshToken = tokens.refreshToken;
         }
         res.status(200).json({
             success: true,
@@ -307,9 +263,9 @@ router.post('/refresh-token', async (req, res) => {
     }
 
     try {
-        // Validate session using session utilities
+        // Validate session using session utilities (supports both global and legacy tokens)
         const validation = await validateSession(refreshToken, req);
-        
+
         if (!validation.valid) {
             console.log('POST: /refresh-token 401', validation.error);
             return res.status(401).json({
@@ -317,33 +273,38 @@ router.post('/refresh-token', async (req, res) => {
                 message: validation.error || 'Invalid refresh token'
             });
         }
-        
-        const { user, session } = validation;
 
-        // Generate new access token
+        const { user, globalUser } = validation;
+        const isMobile = isMobileClient(req);
+
+        if (globalUser) {
+            const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+            const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
+            const response = { success: true, message: 'Token refreshed successfully' };
+            if (isMobile) response.accessToken = tokens.accessToken;
+            return res.json(response);
+        }
+
         const newAccessToken = jwt.sign(
-            { userId: user._id, roles: user.roles }, 
-            process.env.JWT_SECRET, 
+            { userId: user._id, roles: user.roles },
+            process.env.JWT_SECRET,
             { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
-
-        const isMobile = isMobileClient(req);
+        const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: ACCESS_TOKEN_EXPIRY_MS,
+            path: '/'
+        };
+        if (process.env.NODE_ENV === 'production') cookieOptions.domain = '.meridian.study';
         if (!isMobile) {
-            // Set cookie for web clients
-            res.cookie('accessToken', newAccessToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
-                maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
-                path: '/'
-            });
+            res.cookie('accessToken', newAccessToken, cookieOptions);
         }
 
         console.log(`POST: /refresh-token user ${user.username}`);
         const response = { success: true, message: 'Token refreshed successfully' };
-        if (isMobile) {
-            response.accessToken = newAccessToken;
-        }
+        if (isMobile) response.accessToken = newAccessToken;
         res.json(response);
     } catch (error) {
         console.log('POST: /refresh-token 401 refresh token failed', error.message);
@@ -399,19 +360,15 @@ router.post('/logout', async (req, res) => {
     }
 
     // Clear both cookies (no-op for mobile, but harmless)
-    res.clearCookie('accessToken', {
+    const clearOpts = {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
         path: '/'
-    });
-    
-    res.clearCookie('refreshToken', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        path: '/'
-    });
+    };
+    if (process.env.NODE_ENV === 'production') clearOpts.domain = '.meridian.study';
+    res.clearCookie('accessToken', clearOpts);
+    res.clearCookie('refreshToken', clearOpts);
 
     console.log(`POST: /logout user logged out`);
     res.json({ success: true, message: 'Logged out successfully' });
@@ -419,6 +376,17 @@ router.post('/logout', async (req, res) => {
 
 router.get('/validate-token', verifyToken, async (req, res) => {
     try {
+        // On www we only return communities (no tenant DB); frontend uses this to redirect to tenant.
+        if (req.school === 'www') {
+            if (!req.user || !req.user.globalUserId) {
+                return res.json({ success: true, message: 'Token is valid', data: { user: null, communities: [] } });
+            }
+            const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
+            const memberships = await TenantMembership.find({ globalUserId: req.user.globalUserId, status: 'active' }).lean();
+            const communities = memberships.map(m => m.tenantKey);
+            return res.json({ success: true, message: 'Token is valid', data: { user: null, communities } });
+        }
+
         const { User, Friendship } = getModels(req, 'User', 'Friendship');
         const orgInviteService = require('../services/orgInviteService');
 
@@ -428,6 +396,16 @@ router.get('/validate-token', verifyToken, async (req, res) => {
             .populate('clubAssociations'); 
             
         if (!user) {
+            if (req.user.globalUserId) {
+                const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
+                const memberships = await TenantMembership.find({ globalUserId: req.user.globalUserId, status: 'active' }).lean();
+                const communities = memberships.map(m => m.tenantKey);
+                return res.json({
+                    success: true,
+                    message: 'Token is valid',
+                    data: { user: null, communities }
+                });
+            }
             console.log(`GET: /validate-token token is invalid`);
             return res.status(404).json({ success: false, message: 'User not found' });
         }
@@ -443,14 +421,20 @@ router.get('/validate-token', verifyToken, async (req, res) => {
         const pendingOrgInvites = await orgInviteService.getPendingForUser(req);
 
         console.log(`GET: /validate-token token is valid for user ${user.username}`)
+        const data = {
+            user: user,
+            friendRequests: friendRequests,
+            pendingOrgInvites: pendingOrgInvites
+        };
+        if (req.user.globalUserId) {
+            const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
+            const memberships = await TenantMembership.find({ globalUserId: req.user.globalUserId, status: 'active' }).lean();
+            data.communities = memberships.map(m => m.tenantKey);
+        }
         res.json({
             success: true,
             message: 'Token is valid',
-            data: {
-                user: user,
-                friendRequests: friendRequests,
-                pendingOrgInvites: pendingOrgInvites
-            }
+            data
         });
     } catch (error) {
         console.log(`GET: /validate-token token is invalid`, error)
@@ -459,6 +443,80 @@ router.get('/validate-token', verifyToken, async (req, res) => {
             message: 'Error fetching user details',
             error: error.message
         });
+    }
+});
+
+/**
+ * POST /join-tenant – create tenant user + membership for current school (global user with no local account).
+ * Requires global identity (logged in with new JWT shape). Body empty; tenant from req.school.
+ */
+router.post('/join-tenant', verifyToken, async (req, res) => {
+    try {
+        if (!req.user.globalUserId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Global identity required. Log in again to get a full account.'
+            });
+        }
+        const { TenantMembership, GlobalUser } = getGlobalModels(req, 'TenantMembership', 'GlobalUser');
+        const existing = await TenantMembership.findOne({ globalUserId: req.user.globalUserId, tenantKey: req.school, status: 'active' });
+        if (existing) {
+            const { User } = getModels(req, 'User');
+            const user = await User.findById(existing.tenantUserId).lean();
+            return res.json({
+                success: true,
+                message: 'Already a member',
+                data: { user, alreadyMember: true }
+            });
+        }
+        const globalUser = await GlobalUser.findById(req.user.globalUserId);
+        if (!globalUser) {
+            return res.status(400).json({ success: false, message: 'Global user not found.' });
+        }
+        const { User } = getModels(req, 'User');
+        const email = globalUser.email.toLowerCase();
+        let tenantUser = await User.findOne({ email });
+        if (!tenantUser) {
+            const base = email.split('@')[0].replace(/\W/g, '');
+            let username = base + '_' + req.school;
+            let exists = await User.findOne({ username });
+            let suffix = 0;
+            while (exists) {
+                username = base + '_' + req.school + '_' + (suffix++);
+                exists = await User.findOne({ username });
+            }
+            tenantUser = new User({
+                email,
+                name: globalUser.name,
+                picture: globalUser.picture,
+                googleId: globalUser.googleId,
+                appleId: globalUser.appleId,
+                samlId: globalUser.samlId,
+                samlProvider: globalUser.samlProvider,
+                username,
+                roles: ['user'],
+                clubAssociations: []
+            });
+            await tenantUser.save();
+        }
+        const membership = new TenantMembership({
+            globalUserId: globalUser._id,
+            tenantKey: req.school,
+            tenantUserId: tenantUser._id,
+            status: 'active'
+        });
+        await membership.save();
+        const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+        await authGlobalService.issueTokens(req, res, globalUser, tenantUser, platformRoles);
+        const userObj = tenantUser.toObject ? tenantUser.toObject() : tenantUser;
+        res.json({
+            success: true,
+            message: 'Joined tenant',
+            data: { user: userObj }
+        });
+    } catch (error) {
+        console.error('POST /join-tenant failed', error);
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
@@ -479,6 +537,15 @@ router.post('/verify-email', async (req, res) => {
   });
 
 router.post('/google-login', async (req, res) => {
+    if (req.school === 'www') {
+        const school = (req.body && req.body.school) ? String(req.body.school).trim().toLowerCase() : null;
+        if (!school) {
+            return res.status(400).json({ success: false, message: 'Please select your school or use your school’s login page.', code: 'SCHOOL_REQUIRED' });
+        }
+        req.school = school;
+        req.db = await require('../connectionsManager').connectToDatabase(school);
+    }
+
     const { code, codeVerifier, isRegister, url, idToken } = req.body;
 
     // Handle two different flows:
@@ -507,43 +574,15 @@ router.post('/google-login', async (req, res) => {
             user = result.user;
         }
         
-        // Generate both tokens
-        const accessToken = jwt.sign(
-            { userId: user._id, roles: user.roles }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: ACCESS_TOKEN_EXPIRY }
-        );
-        
-        const refreshToken = jwt.sign(
-            { userId: user._id, type: 'refresh' }, 
-            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-            { expiresIn: REFRESH_TOKEN_EXPIRY }
-        );
-
-        // Create session instead of storing refresh token directly on user
-        await createSession(user._id, refreshToken, req);
-
-        // Set both cookies
-        res.cookie('accessToken', accessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
-            path: '/'
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: REFRESH_TOKEN_EXPIRY_MS, // 2 days
-            path: '/'
-        });
+        const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
+        await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
+        const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+        const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
 
         const googleLoginData = { user: user };
         if (isMobileClient(req)) {
-            googleLoginData.accessToken = accessToken;
-            googleLoginData.refreshToken = refreshToken;
+            googleLoginData.accessToken = tokens.accessToken;
+            googleLoginData.refreshToken = tokens.refreshToken;
         }
         res.status(200).json({
             success: true,
@@ -567,6 +606,15 @@ router.post('/google-login', async (req, res) => {
 });
 
 router.post('/apple-login', async (req, res) => {
+    if (req.school === 'www') {
+        const school = (req.body && req.body.school) ? String(req.body.school).trim().toLowerCase() : null;
+        if (!school) {
+            return res.status(400).json({ success: false, message: 'Please select your school or use your school’s login page.', code: 'SCHOOL_REQUIRED' });
+        }
+        req.school = school;
+        req.db = await require('../connectionsManager').connectToDatabase(school);
+    }
+
     const { idToken, user } = req.body;
 
     if (!idToken) {
@@ -578,44 +626,16 @@ router.post('/apple-login', async (req, res) => {
 
     try {
         const { user: authenticatedUser } = await authenticateWithApple(idToken, user, req);
-        
-        // Generate both tokens
-        const accessToken = jwt.sign(
-            { userId: authenticatedUser._id, roles: authenticatedUser.roles }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: ACCESS_TOKEN_EXPIRY }
-        );
-        
-        const refreshToken = jwt.sign(
-            { userId: authenticatedUser._id, type: 'refresh' }, 
-            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-            { expiresIn: REFRESH_TOKEN_EXPIRY }
-        );
 
-        // Create session instead of storing refresh token directly on user
-        await createSession(authenticatedUser._id, refreshToken, req);
-
-        // Set both cookies
-        res.cookie('accessToken', accessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: ACCESS_TOKEN_EXPIRY_MS, // 1 minute
-            path: '/'
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: REFRESH_TOKEN_EXPIRY_MS, // 2 days
-            path: '/'
-        });
+        const globalUser = await authGlobalService.getOrCreateGlobalUser(req, authenticatedUser);
+        await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, authenticatedUser);
+        const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+        const tokens = await authGlobalService.issueTokens(req, res, globalUser, authenticatedUser, platformRoles);
 
         const appleLoginData = { user: authenticatedUser };
         if (isMobileClient(req)) {
-            appleLoginData.accessToken = accessToken;
-            appleLoginData.refreshToken = refreshToken;
+            appleLoginData.accessToken = tokens.accessToken;
+            appleLoginData.refreshToken = tokens.refreshToken;
         }
         res.status(200).json({
             success: true,
@@ -663,39 +683,11 @@ router.post('/auth/apple/callback', async (req, res) => {
         }
 
         const { user: authenticatedUser } = await authenticateWithApple(idToken, userInfo, req);
-        
-        // Generate both tokens
-        const accessToken = jwt.sign(
-            { userId: authenticatedUser._id, roles: authenticatedUser.roles }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: ACCESS_TOKEN_EXPIRY }
-        );
-        
-        const refreshToken = jwt.sign(
-            { userId: authenticatedUser._id, type: 'refresh' }, 
-            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-            { expiresIn: REFRESH_TOKEN_EXPIRY }
-        );
 
-        // Create session instead of storing refresh token directly on user
-        await createSession(authenticatedUser._id, refreshToken, req);
-
-        // Set both cookies
-        res.cookie('accessToken', accessToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: ACCESS_TOKEN_EXPIRY_MS,
-            path: '/'
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: REFRESH_TOKEN_EXPIRY_MS,
-            path: '/'
-        });
+        const globalUser = await authGlobalService.getOrCreateGlobalUser(req, authenticatedUser);
+        await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, authenticatedUser);
+        const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+        await authGlobalService.issueTokens(req, res, globalUser, authenticatedUser, platformRoles);
 
         // Determine redirect destination
         const frontendUrl = process.env.NODE_ENV === 'production' 
@@ -922,8 +914,10 @@ router.post('/reset-password', async (req, res) => {
 // Get all active sessions for the current user
 router.get('/sessions', verifyToken, async (req, res) => {
     try {
-        const sessions = await getUserSessions(req.user.userId, req);
-        
+        const sessions = req.user.globalUserId
+            ? await getUserSessionsForGlobalUser(req.user.globalUserId, req)
+            : await getUserSessions(req.user.userId, req);
+
         // Format sessions for response (exclude sensitive info)
         const formattedSessions = sessions.map(session => ({
             id: session._id,
@@ -935,8 +929,9 @@ router.get('/sessions', verifyToken, async (req, res) => {
             expiresAt: session.expiresAt,
             isCurrent: req.cookies.refreshToken === session.refreshToken
         }));
-        
-        console.log(`GET: /sessions user ${req.user.userId} retrieved ${formattedSessions.length} sessions`);
+
+        const userLabel = req.user.globalUserId ? req.user.globalUserId : req.user.userId;
+        console.log(`GET: /sessions user ${userLabel} retrieved ${formattedSessions.length} sessions`);
         res.json({
             success: true,
             data: {
@@ -957,10 +952,13 @@ router.get('/sessions', verifyToken, async (req, res) => {
 router.delete('/sessions/:sessionId', verifyToken, async (req, res) => {
     try {
         const { sessionId } = req.params;
-        const deleted = await deleteSessionById(sessionId, req.user.userId, req);
-        
+        const deleted = req.user.globalUserId
+            ? await deleteSessionByIdForGlobalUser(sessionId, req.user.globalUserId, req)
+            : await deleteSessionById(sessionId, req.user.userId, req);
+
         if (deleted) {
-            console.log(`DELETE: /sessions/${sessionId} session revoked by user ${req.user.userId}`);
+            const userLabel = req.user.globalUserId ? req.user.globalUserId : req.user.userId;
+            console.log(`DELETE: /sessions/${sessionId} session revoked by user ${userLabel}`);
             res.json({
                 success: true,
                 message: 'Session revoked successfully'
@@ -985,16 +983,22 @@ router.delete('/sessions/:sessionId', verifyToken, async (req, res) => {
 router.post('/sessions/revoke-all-others', verifyToken, async (req, res) => {
     try {
         const currentRefreshToken = req.cookies.refreshToken;
-        const allSessions = await getUserSessions(req.user.userId, req);
-        
-        // Delete all sessions except the current one
-        const { Session } = getModels(req, 'Session');
-        await Session.deleteMany({
-            userId: req.user.userId,
-            refreshToken: { $ne: currentRefreshToken }
-        });
-        
-        console.log(`POST: /sessions/revoke-all-others user ${req.user.userId} revoked ${allSessions.length - 1} other sessions`);
+        let revokedCount;
+
+        if (req.user.globalUserId) {
+            revokedCount = await revokeAllOtherSessionsForGlobalUser(req.user.globalUserId, currentRefreshToken, req);
+        } else {
+            const allSessions = await getUserSessions(req.user.userId, req);
+            const { Session } = getModels(req, 'Session');
+            await Session.deleteMany({
+                userId: req.user.userId,
+                refreshToken: { $ne: currentRefreshToken }
+            });
+            revokedCount = allSessions.length - 1;
+        }
+
+        const userLabel = req.user.globalUserId ? req.user.globalUserId : req.user.userId;
+        console.log(`POST: /sessions/revoke-all-others user ${userLabel} revoked ${revokedCount} other sessions`);
         res.json({
             success: true,
             message: 'All other sessions revoked successfully'
