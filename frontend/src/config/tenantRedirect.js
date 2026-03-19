@@ -10,6 +10,7 @@ export function isWww() {
   if (typeof window === 'undefined') return false;
   const host = window.location.hostname || '';
   if (ROOT_HOSTS.includes(host.toLowerCase())) return true;
+  if (host.toLowerCase().startsWith('www.')) return true;
   if (process.env.NODE_ENV !== 'production' && host === 'localhost') return true;
   return false;
 }
@@ -38,11 +39,23 @@ export function isPathAllowedOnWww(pathname) {
   });
 }
 
+/** Derive base domain from current host (e.g. www.pinkpulse.org → pinkpulse.org). */
+function getBaseDomain() {
+  if (typeof window === 'undefined') return 'meridian.study';
+  const host = window.location.hostname || '';
+  if (host.startsWith('www.')) {
+    return host.split('.').slice(1).join('.') || 'meridian.study';
+  }
+  return host || 'meridian.study';
+}
+
 export function getTenantRedirectUrl(tenantKey, pathname = window.location.pathname, search = window.location.search) {
   if (process.env.NODE_ENV !== 'production') {
     return `${window.location.origin}${pathname}${search}`;
   }
-  return `https://${tenantKey}.meridian.study${pathname}${search}`;
+  const base = getBaseDomain();
+  const protocol = window.location.protocol || 'https:';
+  return `${protocol}//${tenantKey}.${base}${pathname}${search}`;
 }
 
 export function getTenantKeys() {
