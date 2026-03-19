@@ -5,7 +5,7 @@ import Banner from '../../components/Banner/Banner'; // Import your Banner compo
 import OrgInviteModal from '../../components/OrgInviteModal/OrgInviteModal';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
-import { isWww, isPathAllowedOnWww } from '../../config/tenantRedirect';
+import { isWww, isPathAllowedOnWww, hasDevTenantOverride, getLastTenant, getTenantKeys, getTenantRedirectUrl } from '../../config/tenantRedirect';
 
 function Layout() {
   const [visible, setVisible] = useState(false);
@@ -33,12 +33,33 @@ function Layout() {
     setPendingOrgInvites(prev => prev.filter(inv => inv._id !== invite._id));
   };
 
+  // On www: if user has a saved tenant from a previous domain selection, auto-redirect there
+  if (isWww() && !hasDevTenantOverride()) {
+    const lastTenant = getLastTenant();
+    const validTenants = getTenantKeys();
+    if (lastTenant && validTenants.includes(lastTenant)) {
+      const path = location.pathname + (location.search || '');
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          localStorage.setItem('devTenantOverride', lastTenant);
+        } catch (_) {}
+      }
+      const url = getTenantRedirectUrl(lastTenant, path);
+      window.location.href = url;
+      return null;
+    }
+  }
+
   // Redirect to domain picker when on www/localhost without tenant and path requires tenant
-  const hasDevTenantOverride = process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && localStorage.getItem('devTenantOverride');
-  if (isWww() && !hasDevTenantOverride && !isPathAllowedOnWww(location.pathname)) {
+  if (isWww() && !hasDevTenantOverride() && !isPathAllowedOnWww(location.pathname)) {
     const path = location.pathname + (location.search || '');
     const next = path !== '/' ? `?next=${encodeURIComponent(path)}` : '';
     return <Navigate to={`/select-school${next}`} replace />;
+  }
+
+  // On tenant subdomain, / goes straight to events dashboard (no landing)
+  if (!isWww() && location.pathname === '/') {
+    return <Navigate to="/events-dashboard" replace />;
   }
   
   return (
