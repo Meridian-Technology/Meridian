@@ -10,6 +10,7 @@ import { generalIcons } from '../../../Icons';
 import Flag from '../../Flag/Flag';
 import apiRequest from '../../../utils/postRequest';
 import { isWww } from '../../../config/tenantRedirect';
+import TenantSelectorBanner from '../TenantSelectorBanner/TenantSelectorBanner';
 
 function RegisterForm() {
     const { isAuthenticated, googleLogin, appleLogin, validateToken } = useAuth();
@@ -225,6 +226,7 @@ function RegisterForm() {
 
     return (
         <form onSubmit={handleSubmit} className='form'>
+            <TenantSelectorBanner />
             <h1>Register</h1>
             {inviteData?.orgName && (
                 <p className="invite-banner">You're signing up to join <strong>{inviteData.orgName}</strong></p>

@@ -10,6 +10,7 @@ import Flag from '../../Flag/Flag';
 import SAMLLoginButton from '../SAMLLoginButton/SAMLLoginButton';
 import { isSAMLEnabled, getUniversityDisplayName, getUniversityLogo, getUniversityClassName } from '../../../config/universities';
 import { isWww } from '../../../config/tenantRedirect';
+import TenantSelectorBanner from '../TenantSelectorBanner/TenantSelectorBanner';
 import {Icon} from '@iconify-icon/react/dist/iconify.mjs';
 
 function LoginForm() {
@@ -198,13 +199,14 @@ function LoginForm() {
   
     return (
       <div className='form'>
+          <TenantSelectorBanner />
           <h1>Welcome Back!</h1>
         {errorText !== "" && 
             <Flag text={errorText} img={circleWarning} color={"#FD5858"} primary={"rgba(250, 117, 109, 0.16)"} accent={"#FD5858"} /> 
         }
 
         {/* SAML Login Button - Show first if enabled */}
-        {samlEnabled && (
+        {/* {samlEnabled && (
             <SAMLLoginButton
                 universityName={universityName}
                 universityLogo={universityLogo}
@@ -212,7 +214,7 @@ function LoginForm() {
                 onError={setErrorText}
                 relayState={from}
             />
-        )}
+        )} */}
 
         {/* Google Login Button */}
         <button type="button" className="button google" onClick={handleGoogleClick}>
