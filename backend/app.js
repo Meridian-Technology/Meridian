@@ -95,7 +95,16 @@ function createApp() {
   });
 
   // When on www, only allow minimal paths (landing only; auth requires tenant subdomain)
-  const wwwAllowedPathPrefixes = ['/health', '/validate-token', '/log-visit', '/log-repeated-visit'];
+  // Landing APIs: visit logging, analytics (config + event ingestion), android tester signup
+  const wwwAllowedPathPrefixes = [
+    '/health',
+    '/validate-token',
+    '/log-visit',
+    '/log-repeated-visit',
+    '/v1/events',
+    '/api/event-system-config/analytics-config',
+    '/api/android-tester',
+  ];
   app.use((req, res, next) => {
     if (req.school !== 'www') return next();
     const path = (req.path || req.url || '').split('?')[0];
