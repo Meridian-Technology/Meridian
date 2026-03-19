@@ -1,14 +1,14 @@
 import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
-import { getCurrentTenantKey, getCurrentTenantDisplayName } from '../../../config/tenantRedirect';
+import { getCurrentTenantKey, getCurrentTenantDisplayName, getWwwUrl } from '../../../config/tenantRedirect';
 import './TenantSelectorBanner.scss';
 
 /**
  * Banner shown on login/register pages to display current institution and allow changing it.
+ * Change redirects to www subdomain so user picks from the domain picker.
  */
 function TenantSelectorBanner() {
-  const navigate = useNavigate();
   const location = useLocation();
   const tenantKey = getCurrentTenantKey();
   const displayName = getCurrentTenantDisplayName();
@@ -18,7 +18,7 @@ function TenantSelectorBanner() {
   const handleChange = () => {
     const path = location.pathname + (location.search || '');
     const next = path !== '/' ? `?next=${encodeURIComponent(path)}` : '';
-    navigate(`/select-school${next}`);
+    window.location.href = getWwwUrl(`/select-school${next}`);
   };
 
   return (

@@ -39,14 +39,26 @@ export function isPathAllowedOnWww(pathname) {
   });
 }
 
-/** Derive base domain from current host (e.g. www.pinkpulse.org → pinkpulse.org). */
+/** Derive base domain from current host (e.g. rpi.pinkpulse.org → pinkpulse.org, www.pinkpulse.org → pinkpulse.org). */
 function getBaseDomain() {
   if (typeof window === 'undefined') return 'meridian.study';
   const host = window.location.hostname || '';
-  if (host.startsWith('www.')) {
-    return host.split('.').slice(1).join('.') || 'meridian.study';
+  const parts = host.split('.');
+  if (parts.length >= 2) {
+    return parts.slice(-2).join('.');
   }
   return host || 'meridian.study';
+}
+
+/** Get the www URL for the current domain (e.g. rpi.pinkpulse.org → https://www.pinkpulse.org). In dev, returns same origin. */
+export function getWwwUrl(pathname = '/', search = '') {
+  if (typeof window === 'undefined') return '';
+  if (process.env.NODE_ENV !== 'production' && window.location.hostname === 'localhost') {
+    return `${window.location.origin}${pathname}${search}`;
+  }
+  const base = getBaseDomain();
+  const protocol = window.location.protocol || 'https:';
+  return `${protocol}//www.${base}${pathname}${search}`;
 }
 
 export function getTenantRedirectUrl(tenantKey, pathname = window.location.pathname, search = window.location.search) {
