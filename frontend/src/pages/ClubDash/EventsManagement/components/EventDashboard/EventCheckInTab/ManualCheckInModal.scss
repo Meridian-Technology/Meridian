@@ -1,0 +1,310 @@
+/* Manual check-in modal - streamlined door/nametag flow */
+.popup-overlay .popup-content.manual-checkin-modal.manual-checkin-modal--streamlined {
+  height: 70vh;
+  min-height: 450px;
+  max-height: 85vh;
+  width: min(95%, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 12px;
+}
+
+.manual-checkin-modal__root {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  .manual-checkin-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--lighterborder, #e5e7eb);
+    flex-shrink: 0;
+  }
+
+  .manual-checkin-modal__title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text);
+
+    iconify-icon,
+    svg {
+      font-size: 1.25rem;
+    }
+  }
+
+  .manual-checkin-modal__close-btn {
+    padding: 0.35rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover {
+      background: var(--lightbackground, #f3f4f6);
+    }
+
+    iconify-icon,
+    svg {
+      font-size: 1.25rem;
+    }
+  }
+
+  .manual-checkin-modal__body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .manual-checkin-modal__column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+
+    &:first-child {
+      border-right: 1px solid var(--lighterborder, #e5e7eb);
+      max-width: 45%;
+      padding: 1rem 1.25rem;
+    }
+
+    &.manual-checkin-modal__to-check-in {
+      padding: 1rem 1.5rem;
+      overflow-x: hidden;
+    }
+  }
+
+  .manual-checkin-modal__column-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 0.75rem 0;
+
+    iconify-icon,
+    svg {
+      font-size: 1.1rem;
+      opacity: 0.9;
+    }
+  }
+
+  .manual-checkin-modal__loading,
+  .manual-checkin-modal__empty-msg {
+    font-size: 0.9rem;
+    color: var(--light-text, #6b7280);
+    margin: 0;
+  }
+
+  .manual-checkin-modal__attendees-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 0.9rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+      border-radius: 8px;
+      margin: 0;
+      background: var(--background, #fff);
+      border: 1px solid var(--lighterborder, #e5e7eb);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+
+      &::before {
+        content: '';
+        flex-shrink: 0;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--primary, #4DAA57);
+      }
+    }
+  }
+
+  .manual-checkin-modal__search-wrap {
+    position: relative;
+    margin-bottom: 0.75rem;
+    flex-shrink: 0;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .manual-checkin-modal__search-icon {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.1rem;
+    color: var(--light-text, #9ca3af);
+    pointer-events: none;
+  }
+
+  .manual-checkin-modal__search {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0.6rem 0.75rem 0.6rem 2.25rem;
+    font-size: 0.95rem;
+    border: 1px solid var(--lighterborder, #e5e7eb);
+    border-radius: 8px;
+    background: var(--background, #fff);
+    color: var(--text);
+
+    &::placeholder {
+      color: var(--light-text, #9ca3af);
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--primary, #4DAA57);
+      box-shadow: 0 0 0 2px rgba(77, 170, 87, 0.2);
+    }
+  }
+
+  .manual-checkin-modal__to-check-in-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--lighterborder, #e5e7eb);
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      background: var(--background, #fff);
+    }
+  }
+
+  .manual-checkin-modal__reg-name {
+    flex: 1;
+    font-size: 0.95rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .manual-checkin-modal__highlight {
+    background: rgba(77, 170, 87, 0.35);
+    color: inherit;
+    padding: 0.1em 0.15em;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+
+  .manual-checkin-modal__check-in-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--primary, #4DAA57);
+    background: rgba(77, 170, 87, 0.1);
+    border: 1px solid var(--primary, #4DAA57);
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+
+    &:hover:not(:disabled) {
+      background: rgba(77, 170, 87, 0.2);
+    }
+
+    &:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    iconify-icon,
+    svg {
+      font-size: 1.1rem;
+
+      &.spin {
+        animation: spin 0.8s linear infinite;
+      }
+    }
+  }
+
+  .manual-checkin-modal__anonymous-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
+    background: rgba(245, 158, 11, 0.12);
+    border-radius: 6px;
+    border-left: 3px solid #d97706;
+    flex-shrink: 0;
+
+    iconify-icon,
+    svg {
+      flex-shrink: 0;
+      font-size: 1rem;
+      margin-top: 0.05em;
+      color: #d97706;
+    }
+
+    strong {
+      color: var(--text);
+    }
+
+    .manual-checkin-modal__anonymous-action {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.3rem 0.6rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #d97706;
+      background: rgba(217, 119, 6, 0.15);
+      border: 1px solid #d97706;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+
+      &:hover {
+        background: rgba(217, 119, 6, 0.25);
+      }
+    }
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

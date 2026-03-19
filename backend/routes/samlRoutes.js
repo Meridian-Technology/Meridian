@@ -49,10 +49,10 @@ async function getSAMLConfig(school, req) {
     }
 }
 
-async function createOrUpdateUserFromSAML(profile, req) {
+async function createOrUpdateUserFromSAML(profile, school, req) {
     try {
-        const school = req.school || 'rpi';
-        const { User } = getModels(req, 'User');
+        const modelsReq = req && req.db ? req : { db: await require('../connectionsManager').connectToDatabase(school) };
+        const { User } = getModels(modelsReq, 'User');
         
         //extract user info
         const email = profile['urn:oid:1.3.6.1.4.1.5923.1.1.1.6'] || profile.email || profile.mail;
@@ -77,7 +77,7 @@ async function createOrUpdateUserFromSAML(profile, req) {
         if (user) {
             //update existing user with SAML information
             user.samlId = uid;
-            user.samlProvider = 'rpi';
+            user.samlProvider = school;
             user.name = displayName || `${givenName} ${surname}`.trim();
             user.samlAttributes = profile;
             
@@ -98,12 +98,14 @@ async function createOrUpdateUserFromSAML(profile, req) {
                 username: username,
                 name: displayName || `${givenName} ${surname}`.trim(),
                 samlId: uid,
-                samlProvider: 'rpi',
+                samlProvider: school,
                 samlAttributes: profile,
                 roles: affiliation && affiliation.includes('faculty') ? ['user', 'admin'] : ['user']
             });
             
             await user.save();
+            const { runAutoClaimAsync } = require('../services/autoClaimEventRegistrationsService');
+            runAutoClaimAsync(modelsReq, user._id.toString(), user.email);
         }
 
         return user;
@@ -121,7 +123,7 @@ function configureSAMLStrategy(school, req) {
             
             const strategy = new SamlStrategy(config, async (profile, done) => {
                 try {
-                    const user = await createOrUpdateUserFromSAML(profile, req);
+                    const user = await createOrUpdateUserFromSAML(profile, school, req);
                     return done(null, user);
                 } catch (error) {
                     return done(error, null);

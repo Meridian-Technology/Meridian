@@ -116,6 +116,12 @@
     color: var(--lighter-text, #6b7280);
 }
 
+// Embedded attendee feedback (FeedbackSlide)
+.communications-tab-card .feedback-slide--embedded {
+    margin: 0;
+    padding: 0;
+}
+
 // Past announcements: analytics summary + table
 .communications-tab-analytics-summary {
     display: flex;

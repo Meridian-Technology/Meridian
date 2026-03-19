@@ -3,6 +3,7 @@ import axios from 'axios';
 import '../Forms.scss';
 import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import useAuth from '../../../hooks/useAuth';
+import { useNotification } from '../../../NotificationContext';
 import { useGoogleLogin } from '@react-oauth/google';
 import circleWarning from '../../../assets/circle-warning.svg';
 import { generalIcons } from '../../../Icons';
@@ -11,7 +12,8 @@ import apiRequest from '../../../utils/postRequest';
 import { isWww } from '../../../config/tenantRedirect';
 
 function RegisterForm() {
-    const { isAuthenticated, googleLogin, appleLogin, login } = useAuth();
+    const { isAuthenticated, googleLogin, appleLogin, validateToken } = useAuth();
+    const { addNotification } = useNotification();
     const [valid, setValid] = useState(false);
     const [formData, setFormData] = useState({
         username: '',
@@ -136,10 +138,16 @@ function RegisterForm() {
             if (inviteToken) {
                 payload.invite_token = inviteToken;
             }
-            const response = await axios.post('/register', payload);
-            console.log(response.data);
-            await login(formData);
-            navigate(from, { replace: true });
+            const response = await axios.post('/register', payload, { withCredentials: true });
+            if (response.data?.success) {
+                addNotification({ title: 'Registered successfully', type: 'success' });
+                await validateToken();
+                if (response.data?.data?.user?.roles?.includes('admin')) {
+                    window.location.href = '/admin';
+                } else {
+                    navigate(from, { replace: true });
+                }
+            }
         } catch (error) {
             if (error.response?.status === 400) {
                 if (error.response?.data?.code === 'INVITE_EMAIL_MISMATCH') {

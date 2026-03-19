@@ -561,6 +561,158 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             if (idStr) emailViewsByAnnouncement[idStr] = count;
         });
 
+        // Attribute registrations to source: for each event_registration, find the last event_view
+        // before it from the same user, and use that view's source.
+        const registrationsBySourceAgg = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ...platformMatch,
+                    event: 'event_registration'
+                }
+            },
+            {
+                $addFields: {
+                    _uid: {
+                        $cond: [
+                            { $and: [{ $ne: ['$user_id', null] }] },
+                            { $toString: '$user_id' },
+                            { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                        ]
+                    },
+                    _regTs: '$ts',
+                    _eventId: '$properties.event_id'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'analytics_events',
+                    let: { regTs: '$_regTs', regUid: '$_uid', evId: '$_eventId' },
+                    pipeline: [
+                        {
+                            $match: {
+                                event: 'event_view',
+                                $expr: {
+                                    $and: [
+                                        { $or: [
+                                            { $eq: ['$properties.event_id', '$$evId'] },
+                                            { $eq: [{ $toString: '$properties.event_id' }, { $toString: '$$evId' }] }
+                                        ] },
+                                        { $lt: ['$ts', '$$regTs'] }
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            $addFields: {
+                                _uid: {
+                                    $cond: [
+                                        { $and: [{ $ne: ['$user_id', null] }] },
+                                        { $toString: '$user_id' },
+                                        { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                                    ]
+                                }
+                            }
+                        },
+                        { $match: { $expr: { $eq: ['$_uid', '$$regUid'] } } },
+                        { $sort: { ts: -1 } },
+                        { $limit: 1 },
+                        {
+                            $project: {
+                                qr_id: '$properties.qr_id',
+                                explicitSource: '$properties.source',
+                                referrer: '$context.referrer'
+                            }
+                        }
+                    ],
+                    as: 'lastView'
+                }
+            },
+            {
+                $addFields: {
+                    _attributedSource: {
+                        $cond: [
+                            { $gt: [{ $size: '$lastView' }, 0] },
+                            { $arrayElemAt: ['$lastView.explicitSource', 0] },
+                            null
+                        ]
+                    },
+                    _attributedQrId: {
+                        $cond: [
+                            { $and: [
+                                { $gt: [{ $size: '$lastView' }, 0] },
+                                { $eq: [{ $arrayElemAt: ['$lastView.explicitSource', 0] }, 'qr'] }
+                            ] },
+                            { $arrayElemAt: ['$lastView.qr_id', 0] },
+                            null
+                        ]
+                    },
+                    _referrer: { $arrayElemAt: ['$lastView.referrer', 0] }
+                }
+            },
+            {
+                $addFields: {
+                    attributedSource: {
+                        $cond: [
+                            { $and: [
+                                { $ne: ['$_attributedSource', null] },
+                                { $ne: ['$_attributedSource', ''] },
+                                { $in: ['$_attributedSource', ['org_page', 'explore', 'direct', 'email', 'qr']] }
+                            ] },
+                            '$_attributedSource',
+                            {
+                                $switch: {
+                                    branches: [
+                                        {
+                                            case: {
+                                                $or: [
+                                                    { $gt: [{ $indexOfCP: [{ $ifNull: ['$_referrer', ''] }, 'org/'] }, -1] },
+                                                    { $gt: [{ $indexOfCP: [{ $ifNull: ['$_referrer', ''] }, 'club-dashboard'] }, -1] }
+                                                ]
+                                            },
+                                            then: 'org_page'
+                                        },
+                                        {
+                                            case: { $gt: [{ $indexOfCP: [{ $ifNull: ['$_referrer', ''] }, 'events-dashboard'] }, -1] },
+                                            then: 'explore'
+                                        }
+                                    ],
+                                    default: 'direct'
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        source: '$attributedSource',
+                        qr_id: { $cond: [{ $eq: ['$attributedSource', 'qr'] }, '$_attributedQrId', null] }
+                    },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const referrerRegistrations = { org_page: 0, explore: 0, direct: 0, email: 0 };
+        const qrReferrerRegistrations = {};
+        registrationsBySourceAgg.forEach(({ _id: { source, qr_id }, count }) => {
+            if (source === 'qr' && qr_id) {
+                qrReferrerRegistrations[qr_id] = (qrReferrerRegistrations[qr_id] || 0) + count;
+            } else if (source && referrerRegistrations.hasOwnProperty(source)) {
+                referrerRegistrations[source] = (referrerRegistrations[source] || 0) + count;
+            } else if (source === 'direct' || !source) {
+                referrerRegistrations.direct += count;
+            }
+        });
+        // Enhance qrReferrerSources with registration counts for conversion rates
+        const qrReferrerSourcesWithReg = shortIds.map(sid => ({
+            qr_id: sid,
+            name: shortIdToName[sid] || 'Deleted QR',
+            count: qrReferrerCounts[sid] || 0,
+            registrations: qrReferrerRegistrations[sid] || 0
+        })).sort((a, b) => (b.count || 0) - (a.count || 0));
+
         const registrationFormOpens = platformCounts['event_registration_form_open'] ?? 0;
         const registrationsCount = platformCounts['event_registration'] ?? 0;
         const registrationFormBounces = Math.max(0, registrationFormOpens - registrationsCount);
@@ -577,7 +729,9 @@ router.get('/event/:eventId', verifyToken, async (req, res) => {
             workspaceViews: platformCounts['event_workspace_view'] ?? 0,
             tabViews,
             referrerSources,
-            qrReferrerSources,
+            /** Registrations attributed to each source (for conversion rate: registrations/views) */
+            referrerRegistrations,
+            qrReferrerSources: qrReferrerSourcesWithReg,
             /** Map of announcement (message) id -> view count for email-driven event views */
             emailViewsByAnnouncement,
             // Unique users per event type (for funnel - avoids double-counting repeat actions)

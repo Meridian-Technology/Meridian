@@ -10,6 +10,17 @@ const { getResend } = require('./resendClient');
 const { clean, isProfane } = require('./profanityFilterService');
 const { getBaseUrl, buildEventAnnouncementEmail } = require('./orgInviteService');
 
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const PDF_MIME = 'application/pdf';
+
+/** Sanitize attachment filename: strip path, limit length, ensure .pdf extension for display */
+function sanitizeAttachmentFilename(name) {
+    if (!name || typeof name !== 'string') return 'attachment.pdf';
+    const base = name.replace(/^.*[/\\]/, '').trim().substring(0, 200);
+    return base.toLowerCase().endsWith('.pdf') ? base : (base || 'attachment') + '.pdf';
+}
+
 function stripHtml(html) {
     if (!html || typeof html !== 'string') return '';
     return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
@@ -26,10 +37,10 @@ function isValidEmail(str) {
 /**
  * Resolve email for an anonymous FormResponse (submittedBy null).
  * 1. Use guestEmail if present and valid.
- * 2. Else if event.notificationEmailQuestionId is set, find that question in formSnapshot.questions, get the corresponding answer, validate as email.
+ * 2. Else if event.autoClaimEmailQuestionId or event.notificationEmailQuestionId is set, find that question in formSnapshot.questions, get the corresponding answer, validate as email.
  * 3. Else return null.
  * @param {Object} formResponse - FormResponse doc (or lean) with guestEmail, formSnapshot, answers
- * @param {Object} event - Event doc with optional notificationEmailQuestionId
+ * @param {Object} event - Event doc with optional autoClaimEmailQuestionId, notificationEmailQuestionId
  * @returns {string | null} Normalized email or null
  */
 function resolveAnonymousEmail(formResponse, event) {
@@ -37,7 +48,7 @@ function resolveAnonymousEmail(formResponse, event) {
     if (guestEmail && isValidEmail(guestEmail)) {
         return String(guestEmail).trim().toLowerCase();
     }
-    const questionId = event?.notificationEmailQuestionId;
+    const questionId = event?.autoClaimEmailQuestionId || event?.notificationEmailQuestionId;
     if (!questionId) return null;
     const snapshot = formResponse.formSnapshot;
     const answers = formResponse.answers;
@@ -49,6 +60,33 @@ function resolveAnonymousEmail(formResponse, event) {
     const str = value != null ? String(value).trim() : '';
     if (!str || !isValidEmail(str)) return null;
     return str.toLowerCase();
+}
+
+/**
+ * Resolve display value for an anonymous FormResponse (used in lists).
+ * 1. Use guestName if present and non-empty.
+ * 2. Else if event.notificationEmailQuestionId is set, get answer from that question (any value - name, email, phone, etc.).
+ * 3. Else return null (caller may use 'Guest').
+ * @param {Object} formResponse - FormResponse with guestName, formSnapshot, answers
+ * @param {Object} event - Event with optional notificationEmailQuestionId
+ * @returns {string | null}
+ */
+function resolveAnonymousName(formResponse, event) {
+    const guestName = formResponse.guestName;
+    if (guestName && String(guestName).trim()) {
+        return String(guestName).trim();
+    }
+    const questionId = event?.notificationEmailQuestionId;
+    if (!questionId) return null;
+    const snapshot = formResponse.formSnapshot;
+    const answers = formResponse.answers;
+    if (!snapshot?.questions || !Array.isArray(answers)) return null;
+    const idStr = questionId.toString();
+    const idx = snapshot.questions.findIndex((q) => (q._id && q._id.toString()) === idStr);
+    if (idx < 0 || idx >= answers.length) return null;
+    const value = answers[idx];
+    const str = value != null ? String(value).trim() : '';
+    return str || null;
 }
 
 /**
@@ -66,14 +104,24 @@ function getEligibleAttendees(event, config, excludeUserId) {
     const eligible = [];
     (event.attendees || []).forEach((a) => {
         const uid = a.userId?._id || a.userId;
-        if (!uid) return;
-        const idStr = uid.toString();
-        if (idStr === (excludeUserId && excludeUserId.toString())) return;
-        if (seen.has(idStr)) return;
-        const isCheckedIn = a.checkedIn === true;
-        if (includeCheckedIn || isCheckedIn) {
-            seen.add(idStr);
-            eligible.push(a);
+        const formResponseIdVal = a.formResponseId?._id || a.formResponseId;
+        if (uid) {
+            const idStr = uid.toString();
+            if (idStr === (excludeUserId && excludeUserId.toString())) return;
+            if (seen.has(idStr)) return;
+            const isCheckedIn = a.checkedIn === true;
+            if (includeCheckedIn || isCheckedIn) {
+                seen.add(idStr);
+                eligible.push(a);
+            }
+        } else if (formResponseIdVal) {
+            const idStr = `anon-${formResponseIdVal.toString()}`;
+            if (seen.has(idStr)) return;
+            const isCheckedIn = a.checkedIn === true;
+            if (includeCheckedIn || isCheckedIn) {
+                seen.add(idStr);
+                eligible.push(a);
+            }
         }
     });
     return eligible;
@@ -255,17 +303,31 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
     const attendeesWithEmail = [];
     const recipientIds = new Set();
 
+    const formResponseIdsInAttendees = new Set(
+        (event.attendees || []).filter(a => a.formResponseId).map(a => (a.formResponseId?._id || a.formResponseId).toString())
+    );
+
     eligibleAttendees.forEach((a) => {
         const uid = a.userId?._id || a.userId;
-        if (!uid) return;
-        const idStr = uid.toString();
-        if (excludeUserIds.has(idStr)) return;
-        if (recipientIds.has(idStr)) return;
-        recipientIds.add(idStr);
-        recipients.push({ id: uid, model: 'User' });
-        const email = a.userId?.email || (a.userId && a.userId.email);
-        if (email) {
-            attendeesWithEmail.push({ userId: uid, email: String(email).trim().toLowerCase() });
+        const formResponseIdVal = a.formResponseId?._id || a.formResponseId;
+        if (uid) {
+            const idStr = uid.toString();
+            if (excludeUserIds.has(idStr)) return;
+            if (recipientIds.has(idStr)) return;
+            recipientIds.add(idStr);
+            recipients.push({ id: uid, model: 'User' });
+            const email = a.userId?.email || (a.userId && a.userId.email);
+            if (email) {
+                attendeesWithEmail.push({ userId: uid, email: String(email).trim().toLowerCase() });
+            }
+        } else if (formResponseIdVal) {
+            const idStr = `anon-${formResponseIdVal.toString()}`;
+            if (recipientIds.has(idStr)) return;
+            recipientIds.add(idStr);
+            const email = (a.guestEmail && isValidEmail(a.guestEmail)) ? String(a.guestEmail).trim().toLowerCase() : null;
+            if (email) {
+                attendeesWithEmail.push({ userId: null, email });
+            }
         }
     });
 
@@ -294,21 +356,26 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
 
     // Include anonymous form respondents in email only (when config allows and email can be resolved)
     const includeAnonymousInEmail = eventAnnouncementConfig?.includeAnonymousInEmail !== false;
+    const includeCheckedIn = eventAnnouncementConfig?.includeCheckedIn !== false;
     if (event.registrationFormId && includeAnonymousInEmail) {
-        const eventObjectId = mongoose.Types.ObjectId.isValid(eventId) ? new mongoose.Types.ObjectId(eventId) : eventId;
-        const anonymousResponses = await FormResponse.find({
-            event: eventObjectId,
-            submittedBy: null
-        })
-            .select('guestEmail guestName formSnapshot answers')
-            .lean();
-        const emailSet = new Set(attendeesWithEmail.map(({ email }) => email));
-        (anonymousResponses || []).forEach((fr) => {
-            const email = resolveAnonymousEmail(fr, event);
-            if (!email || emailSet.has(email)) return;
-            emailSet.add(email);
-            attendeesWithEmail.push({ userId: null, email });
-        });
+        if (includeCheckedIn) {
+            const eventObjectId = mongoose.Types.ObjectId.isValid(eventId) ? new mongoose.Types.ObjectId(eventId) : eventId;
+            const excludeIds = Array.from(formResponseIdsInAttendees).map(id => new mongoose.Types.ObjectId(id));
+            const anonymousQuery = { event: eventObjectId, submittedBy: null };
+            if (excludeIds.length > 0) {
+                anonymousQuery._id = { $nin: excludeIds };
+            }
+            const anonymousResponses = await FormResponse.find(anonymousQuery)
+                .select('guestEmail guestName formSnapshot answers')
+                .lean();
+            const emailSet = new Set(attendeesWithEmail.map(({ email }) => email));
+            (anonymousResponses || []).forEach((fr) => {
+                const email = resolveAnonymousEmail(fr, event);
+                if (!email || emailSet.has(email)) return;
+                emailSet.add(email);
+                attendeesWithEmail.push({ userId: null, email });
+            });
+        }
     }
 
     // Exclude anonymous by email when organizer unchecked them in the recipient list
@@ -333,7 +400,7 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
 
     // In development, send all announcement emails and in-app notifications only to james@meridian.study
     const isDev = process.env.NODE_ENV === 'development';
-    const DEV_ANNOUNCEMENT_EMAIL = 'james@activeherb.com';
+    const DEV_ANNOUNCEMENT_EMAIL = 'liuj43@rpi.edu';
     if (isDev && (recipients.length > 0 || attendeesWithEmail.length > 0)) {
         const devUser = await User.findOne({ email: new RegExp(`^${DEV_ANNOUNCEMENT_EMAIL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }).select('_id').lean();
         if (devUser) {
@@ -368,6 +435,34 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
     }
 
     if (sendEmail && eventAnnouncementEmail && attendeesWithEmail.length > 0) {
+        let resendAttachments = [];
+        const rawAttachments = options.attachments;
+        if (rawAttachments && Array.isArray(rawAttachments) && rawAttachments.length > 0) {
+            if (rawAttachments.length > MAX_ATTACHMENTS) {
+                const err = new Error(`Maximum ${MAX_ATTACHMENTS} attachments allowed`);
+                err.statusCode = 400;
+                throw err;
+            }
+            for (let i = 0; i < rawAttachments.length; i++) {
+                const a = rawAttachments[i];
+                if (!a || !Buffer.isBuffer(a.content) || typeof a.filename !== 'string') {
+                    const err = new Error('Each attachment must have filename and content (Buffer)');
+                    err.statusCode = 400;
+                    throw err;
+                }
+                if (a.content.length > MAX_ATTACHMENT_SIZE_BYTES) {
+                    const err = new Error(`Attachment "${a.filename}" exceeds ${MAX_ATTACHMENT_SIZE_BYTES / (1024 * 1024)}MB limit`);
+                    err.statusCode = 400;
+                    throw err;
+                }
+                resendAttachments.push({
+                    filename: sanitizeAttachmentFilename(a.filename),
+                    content: a.content,
+                    content_type: PDF_MIME
+                });
+            }
+        }
+
         const baseUrl = getBaseUrl(req);
         const announcementParam = message._id ? `&announcement=${encodeURIComponent(message._id.toString())}` : '';
         const eventUrl = `${baseUrl}/event/${encodeURIComponent(eventId)}?source=email${announcementParam}`;
@@ -393,13 +488,20 @@ async function sendEventAnnouncement(req, orgId, eventId, content, options = {})
             const fromDisplay = String(org.org_name || 'Meridian').replace(/[<>"\\]/g, '').trim() || 'Meridian';
             const from = `${fromDisplay} <support@meridian.study>`;
             const uniqueEmails = [...new Set(attendeesWithEmail.map(({ email }) => email).filter(Boolean))];
+            const sendPayload = {
+                from,
+                to: [],
+                subject: emailSubject,
+                html: emailHTML
+            };
+            if (resendAttachments.length > 0) {
+                sendPayload.attachments = resendAttachments;
+            }
             await Promise.allSettled(
                 uniqueEmails.map((email) =>
                     resendClient.emails.send({
-                        from,
-                        to: [email],
-                        subject: emailSubject,
-                        html: emailHTML
+                        ...sendPayload,
+                        to: [email]
                     })
                 )
             );
@@ -469,19 +571,34 @@ async function getAnnouncementRecipients(req, orgId, eventId) {
     const eligibleAttendees = getEligibleAttendees(event, eventAnnouncementConfig, userId);
     const seenIds = new Set();
     const list = [];
+    const formResponseIdsInAttendees = new Set(
+        (event.attendees || []).filter(a => a.formResponseId).map(a => (a.formResponseId?._id || a.formResponseId).toString())
+    );
 
     eligibleAttendees.forEach((a) => {
         const uid = a.userId?._id || a.userId;
-        if (!uid) return;
-        const idStr = uid.toString();
-        if (seenIds.has(idStr)) return;
-        seenIds.add(idStr);
-        const u = a.userId;
-        list.push({
-            userId: idStr,
-            name: u?.name || u?.username || 'Unknown',
-            email: u?.email ? String(u.email).trim() : null
-        });
+        const formResponseIdVal = a.formResponseId?._id || a.formResponseId;
+        if (uid) {
+            const idStr = uid.toString();
+            if (seenIds.has(idStr)) return;
+            seenIds.add(idStr);
+            const u = a.userId;
+            list.push({
+                userId: idStr,
+                name: u?.name || u?.username || 'Unknown',
+                email: u?.email ? String(u.email).trim() : null
+            });
+        } else if (formResponseIdVal) {
+            const idStr = `anon-${formResponseIdVal.toString()}`;
+            if (seenIds.has(idStr)) return;
+            seenIds.add(idStr);
+            list.push({
+                userId: idStr,
+                isAnonymous: true,
+                name: (a.guestName && String(a.guestName).trim()) ? String(a.guestName).trim() : 'Guest',
+                email: (a.guestEmail && isValidEmail(a.guestEmail)) ? String(a.guestEmail).trim() : null
+            });
+        }
     });
 
     // Include form-based registrants (event.registrationFormId): FormResponse with event + submittedBy
@@ -508,11 +625,13 @@ async function getAnnouncementRecipients(req, orgId, eventId) {
 
     // Option B: include anonymous with resolved email (email-only recipients)
     const includeAnonymousInEmail = eventAnnouncementConfig?.includeAnonymousInEmail !== false;
+    const includeCheckedIn = eventAnnouncementConfig?.includeCheckedIn !== false;
     let anonymousWithNoEmailCount = 0;
-    if (event.registrationFormId && includeAnonymousInEmail) {
+    if (event.registrationFormId && includeAnonymousInEmail && includeCheckedIn) {
         const anonymousResponses = await FormResponse.find({
             event: eventObjectId,
-            submittedBy: null
+            submittedBy: null,
+            _id: { $nin: Array.from(formResponseIdsInAttendees).map(id => new mongoose.Types.ObjectId(id)) }
         })
             .select('_id guestEmail guestName formSnapshot answers')
             .lean();
@@ -522,7 +641,7 @@ async function getAnnouncementRecipients(req, orgId, eventId) {
                 list.push({
                     userId: `anon-${fr._id}`,
                     isAnonymous: true,
-                    name: fr.guestName && String(fr.guestName).trim() ? String(fr.guestName).trim() : 'Guest',
+                    name: resolveAnonymousName(fr, event) || (fr.guestName && String(fr.guestName).trim()) || 'Guest',
                     email
                 });
             } else {
@@ -536,5 +655,7 @@ async function getAnnouncementRecipients(req, orgId, eventId) {
 
 module.exports = {
     sendEventAnnouncement,
-    getAnnouncementRecipients
+    getAnnouncementRecipients,
+    resolveAnonymousEmail,
+    resolveAnonymousName
 };

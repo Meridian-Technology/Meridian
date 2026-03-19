@@ -135,15 +135,15 @@ function RegistrationSettingsModal({ isOpen, onClose, event, orgId, orgForms = [
             const selectedForm = orgForms.find((f) => f._id === form.registrationFormId);
             const questions = selectedForm?.questions || [];
             return questions.length > 0 ? [{
-                title: 'Guest notification email (for announcements)',
-                subtitle: 'Form question to use as email for guests who register without an account',
+                title: 'Identifying field for anonymous attendees',
+                subtitle: 'Form question to use to identify guests who register without an account (check-in list, announcements). Use any field that helps you find them—name, email, phone, ticket ID, etc.',
                 action: (
                     <select
                         value={form.notificationEmailQuestionId || ''}
                         onChange={(e) => setForm((s) => ({ ...s, notificationEmailQuestionId: e.target.value || null }))}
                         className="notification-email-question-select"
                     >
-                        <option value="">None (use standard guest email only)</option>
+                        <option value="">None (use standard guest name/email only)</option>
                         {questions.map((q) => (
                             <option key={q._id} value={q._id}>{q.question || 'Question'}</option>
                         ))}

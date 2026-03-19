@@ -129,6 +129,9 @@ router.post('/register', async (req, res) => {
         });
         await user.save();
 
+        const { runAutoClaimAsync } = require('../services/autoClaimEventRegistrationsService');
+        runAutoClaimAsync(req, user._id.toString(), user.email);
+
         // Process org invite if present
         if (inviteToken) {
             const invite = await OrgInvite.findOne({ token: inviteToken, status: 'pending' });

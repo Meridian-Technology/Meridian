@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const getModels = require('../services/getModelService');
 const authGlobalService = require('../services/authGlobalService');
+const { validateSession } = require('../utilities/sessionUtils');
 
 const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
 const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`;
@@ -73,67 +74,109 @@ function authorizeRoles(...allowedRoles) {
     };
 }
 
-const verifyTokenOptional = async (req, res, next) => {
+/**
+ * Creates verifyTokenOptional middleware.
+ * @param {Object} [options]
+ * @param {boolean} [options.requireAuthWhenTokenPresent] - When true, if a token was present but
+ *   could not be authenticated (expired + refresh failed, or invalid), return 401 so the client
+ *   can retry after refreshing. When false/omitted, proceed without req.user (backwards compatible).
+ */
+function createVerifyTokenOptional(options = {}) {
+  const requireAuthWhenTokenPresent = options.requireAuthWhenTokenPresent === true;
+
+  return async (req, res, next) => {
     const token = req.cookies.accessToken ||
-        (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
+      (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
+    const refreshToken = req.cookies.refreshToken;
+
+    const tryRefresh = async () => {
+      if (!refreshToken) {
+        console.log('[Auth] tryRefresh: no refresh token in cookies');
+        return false;
+      }
+      try {
+        const validation = await validateSession(refreshToken, req);
+        if (!validation.valid) {
+          console.log('[Auth] tryRefresh: session invalid:', validation.error);
+          return false;
+        }
+        const { user, globalUser } = validation;
+        if (globalUser) {
+          const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+          await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
+          req.user = {
+            globalUserId: globalUser._id,
+            userId: user ? user._id : null,
+            tenantUserId: user ? user._id : null,
+            roles: user ? (user.roles || ['user']) : ['user'],
+            platformRoles: platformRoles || [],
+          };
+        } else if (user) {
+          const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: ACCESS_TOKEN_EXPIRY_MS,
+            path: '/',
+          };
+          if (process.env.NODE_ENV === 'production') cookieOptions.domain = '.meridian.study';
+          const newAccessToken = jwt.sign(
+            { userId: user._id, roles: user.roles },
+            process.env.JWT_SECRET,
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
+          );
+          res.cookie('accessToken', newAccessToken, cookieOptions);
+          req.user = { userId: user._id, roles: user.roles };
+        } else {
+          return false;
+        }
+        console.log('[Auth] Token refreshed successfully for user:', user ? user._id : globalUser?._id);
+        return true;
+      } catch (refreshError) {
+        console.log('[Auth] Refresh failed:', refreshError.message);
+        return false;
+      }
+    };
 
     if (token == null) {
-        return next();
+      console.log('[Auth] No access token, attempting refresh from refreshToken cookie');
+      const refreshed = await tryRefresh();
+      console.log('[Auth] Refresh result:', refreshed ? 'success' : 'failed');
+      return next();
     }
 
     try {
-        const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
-        await resolveRequestUser(req, decodedToken);
-        return next();
+      const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+      await resolveRequestUser(req, decodedToken);
+      return next();
     } catch (err) {
-        if (err.name !== 'TokenExpiredError') {
-            return next();
-        }
-        // Try refresh
-        const refreshToken = req.cookies.refreshToken;
-        if (!refreshToken) {
-            return next();
-        }
-        try {
-            const { validateSession } = require('../utilities/sessionUtils');
-            const validation = await validateSession(refreshToken, req);
-            if (!validation.valid || !validation.user) {
-                return next();
-            }
-            const user = validation.user;
-            const globalUser = validation.globalUser;
-            if (globalUser) {
-                const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-                await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
-                req.user = {
-                    globalUserId: globalUser._id,
-                    userId: user._id,
-                    tenantUserId: user._id,
-                    roles: user.roles || ['user'],
-                    platformRoles: platformRoles,
-                };
-            } else {
-                const cookieOptions = {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: ACCESS_TOKEN_EXPIRY_MS,
-                    path: '/',
-                };
-                if (process.env.NODE_ENV === 'production') cookieOptions.domain = '.meridian.study';
-                const newAccessToken = jwt.sign(
-                    { userId: user._id, roles: user.roles },
-                    process.env.JWT_SECRET,
-                    { expiresIn: ACCESS_TOKEN_EXPIRY }
-                );
-                res.cookie('accessToken', newAccessToken, cookieOptions);
-                req.user = { userId: user._id, roles: user.roles };
-            }
-        } catch (refreshError) {
-            // Continue without req.user
+      if (err.name !== 'TokenExpiredError') {
+        if (requireAuthWhenTokenPresent) {
+          return res.status(401).json({
+            success: false,
+            message: 'Invalid access token',
+            code: 'INVALID_TOKEN'
+          });
         }
         return next();
+      }
+      const refreshed = await tryRefresh();
+      if (refreshed) {
+        return next();
+      }
+      if (requireAuthWhenTokenPresent && !req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Access token expired',
+          code: 'TOKEN_EXPIRED'
+        });
+      }
+      return next();
     }
-};
+  };
+}
+
+const verifyTokenOptional = createVerifyTokenOptional();
+verifyTokenOptional.withOptions = createVerifyTokenOptional;
 
 module.exports = { verifyToken, verifyTokenOptional, authorizeRoles, resolveRequestUser };

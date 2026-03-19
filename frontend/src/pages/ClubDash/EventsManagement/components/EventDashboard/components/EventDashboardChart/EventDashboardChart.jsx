@@ -25,6 +25,21 @@ const chartTheme = buildChartTheme({
     tickLength: 0,
 });
 
+const MAX_X_TICKS = 8;
+const MAX_X_TICKS_DENSE = 6;
+
+function getSparseTickValues(values, maxTicks = MAX_X_TICKS) {
+    if (!values?.length) return undefined;
+    if (values.length <= maxTicks) return undefined;
+    const step = Math.ceil(values.length / maxTicks);
+    const result = [];
+    for (let i = 0; i < values.length; i += step) result.push(values[i]);
+    if (result[result.length - 1] !== values[values.length - 1]) {
+        result.push(values[values.length - 1]);
+    }
+    return result;
+}
+
 function formatSemanticDate(dateStr) {
     const date = new Date(dateStr + 'T12:00:00');
     const today = new Date();
@@ -78,6 +93,13 @@ function EventDashboardChart({
     const isMultiSeries = series && series.length > 0;
     const displayData = isMultiSeries ? series.flatMap((s) => s.data) : data;
     const allValues = isMultiSeries ? series.flatMap((s) => s.data.map((d) => d.y)) : data.map((d) => d.y);
+    const xValues = isMultiSeries
+        ? [...new Set(series.flatMap((s) => s.data.map((d) => xAccessor(d))))].sort()
+        : data.map((d) => xAccessor(d));
+    const xTickValues = getSparseTickValues(
+        xValues,
+        xValues.length > 30 ? MAX_X_TICKS_DENSE : MAX_X_TICKS
+    );
 
     if ((!isMultiSeries && (!data || data.length === 0)) || (isMultiSeries && series.every((s) => !s.data?.length))) {
         return (
@@ -123,12 +145,13 @@ function EventDashboardChart({
                 <Axis
                     orientation="bottom"
                     tickFormat={xTickFormat}
+                    tickValues={xTickValues}
                     tickLabelProps={() => ({
                         fill: 'var(--light-text)',
                         fontSize: 10,
                         textAnchor: 'middle',
                     })}
-                    numTicks={Math.min(xDomain?.length ?? displayData.length, 12)}
+                    numTicks={xTickValues ? xTickValues.length : Math.min(xDomain?.length ?? displayData.length, 12)}
                 />
                 <Axis
                     orientation="left"

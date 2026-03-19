@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const getModels = require('../services/getModelService');
 const { verifyToken } = require('../middlewares/verifyToken');
 const { requireOrgPermission } = require('../middlewares/orgPermissions');
@@ -8,6 +9,44 @@ const { parseMessageContent } = require('../utilities/messageParser');
 const NotificationService = require('../services/notificationService');
 const eventAnnouncementService = require('../services/eventAnnouncementService');
 const { ORG_PERMISSIONS } = require('../constants/permissions');
+
+const announcementAttachmentUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype !== 'application/pdf') {
+            cb(new Error('Only PDF attachments are allowed'));
+            return;
+        }
+        cb(null, true);
+    }
+}).array('attachments', 3);
+
+function parseAnnouncementBody(body) {
+    const content = body.content != null ? String(body.content) : '';
+    const subject = body.subject != null ? (typeof body.subject === 'string' ? body.subject : String(body.subject)) : '';
+    const sendAsOrg = body.sendAsOrg === true || body.sendAsOrg === 'true';
+    let excludeUserIds = body.excludeUserIds;
+    if (typeof excludeUserIds === 'string') {
+        try { excludeUserIds = JSON.parse(excludeUserIds || '[]'); } catch { excludeUserIds = []; }
+    }
+    if (!Array.isArray(excludeUserIds)) excludeUserIds = [];
+    let excludeEmails = body.excludeEmails;
+    if (typeof excludeEmails === 'string') {
+        try { excludeEmails = JSON.parse(excludeEmails || '[]'); } catch { excludeEmails = []; }
+    }
+    if (!Array.isArray(excludeEmails)) excludeEmails = [];
+    let additionalEmails = body.additionalEmails;
+    if (typeof additionalEmails === 'string') {
+        try { additionalEmails = JSON.parse(additionalEmails || '[]'); } catch { additionalEmails = []; }
+    }
+    if (!Array.isArray(additionalEmails)) additionalEmails = [];
+    let channels = body.channels;
+    if (typeof channels === 'string') {
+        try { channels = JSON.parse(channels || '{}'); } catch { channels = {}; }
+    }
+    return { content, subject, sendAsOrg, excludeUserIds, excludeEmails, additionalEmails, channels };
+}
 
 /**
  * Helper function to determine user's relationship to org
@@ -74,20 +113,39 @@ async function ensureMessageMentionData(message, orgId, Event) {
 }
 
 /**
+ * Middleware: run multer for announcement PDF attachments only when request is multipart.
+ */
+function conditionalAnnouncementMulter(req, res, next) {
+    if (!req.is('multipart/form-data')) return next();
+    announcementAttachmentUpload(req, res, (err) => {
+        if (err) {
+            const statusCode = err.message && err.message.includes('PDF') ? 400 : 500;
+            return res.status(statusCode).json({
+                success: false,
+                message: err.message || 'File upload failed',
+                code: err.code
+            });
+        }
+        next();
+    });
+}
+
+/**
  * POST /:orgId/events/:eventId/announcements
  * Create an event-specific announcement (org-hosted event only). Sends to event attendees (in-app + email).
- * Body: { content, excludeUserIds?: string[], excludeEmails?: string[], additionalEmails?: string[], channels?: { inApp?: boolean, email?: boolean } }
+ * Body (JSON): { content, subject?, excludeUserIds?, excludeEmails?, additionalEmails?, channels?, sendAsOrg? }
+ * Body (multipart): same fields as form fields; optional "attachments" = up to 3 PDF files (10MB each).
  */
-router.post('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), async (req, res) => {
+router.post('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPermission(ORG_PERMISSIONS.SEND_ANNOUNCEMENTS, 'orgId'), conditionalAnnouncementMulter, async (req, res) => {
     const { orgId, eventId } = req.params;
-    const { content, subject, excludeUserIds, excludeEmails, additionalEmails, channels, sendAsOrg } = req.body;
+    const { content, subject, sendAsOrg, excludeUserIds, excludeEmails, additionalEmails, channels } = parseAnnouncementBody(req.body || {});
 
     try {
         const options = {};
-        if (subject != null) options.subject = typeof subject === 'string' ? subject : String(subject);
+        if (subject != null && subject !== '') options.subject = subject;
         if (sendAsOrg === true) options.sendAsOrg = true;
-        if (Array.isArray(excludeUserIds)) options.excludeUserIds = excludeUserIds.map(id => String(id));
-        if (Array.isArray(excludeEmails)) options.excludeEmails = excludeEmails.map(e => String(e).trim().toLowerCase()).filter(Boolean);
+        options.excludeUserIds = excludeUserIds.map(id => String(id));
+        options.excludeEmails = excludeEmails.map(e => String(e).trim().toLowerCase()).filter(Boolean);
         if (Array.isArray(additionalEmails)) {
             const MAX_ADDITIONAL = 20;
             options.additionalEmails = additionalEmails
@@ -96,6 +154,9 @@ router.post('/:orgId/events/:eventId/announcements', verifyToken, requireOrgPerm
                 .slice(0, MAX_ADDITIONAL);
         }
         if (channels && typeof channels === 'object') options.channels = { inApp: channels.inApp, email: channels.email };
+        if (req.files && req.files.length > 0) {
+            options.attachments = req.files.map((f) => ({ filename: f.originalname || 'attachment.pdf', content: f.buffer }));
+        }
         const { message } = await eventAnnouncementService.sendEventAnnouncement(req, orgId, eventId, content || '', options);
         res.status(201).json({
             success: true,

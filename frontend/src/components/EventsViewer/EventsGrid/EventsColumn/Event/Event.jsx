@@ -90,15 +90,16 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
     }
 
     const date = new Date(event.start_time);
+    const dateEnd = event.end_time ? new Date(event.end_time) : new Date(date.getTime() + (event.duration || 60) * 60000);
 
     const isOngoing = () => {
         const now = new Date();
-        return date.getTime() < now.getTime() && date.getTime() + event.duration * 60000 > now.getTime();
+        return date.getTime() <= now.getTime() && dateEnd.getTime() >= now.getTime();
     }
 
     const isInactive = () => {
         const now = new Date();
-        return date.getTime() + event.duration * 60000 < now.getTime();
+        return dateEnd.getTime() < now.getTime();
     }
 
     const getEventStatus = () => {
@@ -148,6 +149,12 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
                                             <time dateTime={date.toISOString()}>
                                                 <strong>{formatTime(date)}</strong> {formatDate(date)}
                                             </time>
+                                            {eventStatus === 'ongoing' && (
+                                                <span className="event-live-badge" role="status">
+                                                    <Icon icon="mdi:circle" className="event-live-dot" />
+                                                    Live
+                                                </span>
+                                            )}
                                         </div>
                                         <h2>{event.name}</h2>
                                         {renderHostingStatus()}
@@ -223,6 +230,12 @@ function Event({event, hasFriendsFilter = false, rsvpStatus, onRSVPStatusUpdate,
                             <time dateTime={date.toISOString()}>
                                 <strong>{formatTime(date)}</strong>
                             </time>
+                            {eventStatus === 'ongoing' && (
+                                <span className="event-live-badge event-live-badge--compact" role="status">
+                                    <Icon icon="mdi:circle" className="event-live-dot" />
+                                    Live
+                                </span>
+                            )}
                         </div>
                     </div>
                     <div className="col">
