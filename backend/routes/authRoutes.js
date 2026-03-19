@@ -14,7 +14,7 @@ const { sendUserRegisteredEvent } = require('../inngest/events.js');
 const getModels = require('../services/getModelService.js');
 const getGlobalModels = require('../services/getGlobalModelService.js');
 const { getFriendRequests } = require('../utilities/friendUtils');
-const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, deleteSessionById } = require('../utilities/sessionUtils');
+const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, getUserSessionsForGlobalUser, deleteSessionById, deleteSessionByIdForGlobalUser, revokeAllOtherSessionsForGlobalUser } = require('../utilities/sessionUtils');
 const authGlobalService = require('../services/authGlobalService');
 
 const { getResend } = require('../services/resendClient');
@@ -914,8 +914,10 @@ router.post('/reset-password', async (req, res) => {
 // Get all active sessions for the current user
 router.get('/sessions', verifyToken, async (req, res) => {
     try {
-        const sessions = await getUserSessions(req.user.userId, req);
-        
+        const sessions = req.user.globalUserId
+            ? await getUserSessionsForGlobalUser(req.user.globalUserId, req)
+            : await getUserSessions(req.user.userId, req);
+
         // Format sessions for response (exclude sensitive info)
         const formattedSessions = sessions.map(session => ({
             id: session._id,
@@ -927,8 +929,9 @@ router.get('/sessions', verifyToken, async (req, res) => {
             expiresAt: session.expiresAt,
             isCurrent: req.cookies.refreshToken === session.refreshToken
         }));
-        
-        console.log(`GET: /sessions user ${req.user.userId} retrieved ${formattedSessions.length} sessions`);
+
+        const userLabel = req.user.globalUserId ? req.user.globalUserId : req.user.userId;
+        console.log(`GET: /sessions user ${userLabel} retrieved ${formattedSessions.length} sessions`);
         res.json({
             success: true,
             data: {
@@ -949,10 +952,13 @@ router.get('/sessions', verifyToken, async (req, res) => {
 router.delete('/sessions/:sessionId', verifyToken, async (req, res) => {
     try {
         const { sessionId } = req.params;
-        const deleted = await deleteSessionById(sessionId, req.user.userId, req);
-        
+        const deleted = req.user.globalUserId
+            ? await deleteSessionByIdForGlobalUser(sessionId, req.user.globalUserId, req)
+            : await deleteSessionById(sessionId, req.user.userId, req);
+
         if (deleted) {
-            console.log(`DELETE: /sessions/${sessionId} session revoked by user ${req.user.userId}`);
+            const userLabel = req.user.globalUserId ? req.user.globalUserId : req.user.userId;
+            console.log(`DELETE: /sessions/${sessionId} session revoked by user ${userLabel}`);
             res.json({
                 success: true,
                 message: 'Session revoked successfully'
@@ -977,16 +983,22 @@ router.delete('/sessions/:sessionId', verifyToken, async (req, res) => {
 router.post('/sessions/revoke-all-others', verifyToken, async (req, res) => {
     try {
         const currentRefreshToken = req.cookies.refreshToken;
-        const allSessions = await getUserSessions(req.user.userId, req);
-        
-        // Delete all sessions except the current one
-        const { Session } = getModels(req, 'Session');
-        await Session.deleteMany({
-            userId: req.user.userId,
-            refreshToken: { $ne: currentRefreshToken }
-        });
-        
-        console.log(`POST: /sessions/revoke-all-others user ${req.user.userId} revoked ${allSessions.length - 1} other sessions`);
+        let revokedCount;
+
+        if (req.user.globalUserId) {
+            revokedCount = await revokeAllOtherSessionsForGlobalUser(req.user.globalUserId, currentRefreshToken, req);
+        } else {
+            const allSessions = await getUserSessions(req.user.userId, req);
+            const { Session } = getModels(req, 'Session');
+            await Session.deleteMany({
+                userId: req.user.userId,
+                refreshToken: { $ne: currentRefreshToken }
+            });
+            revokedCount = allSessions.length - 1;
+        }
+
+        const userLabel = req.user.globalUserId ? req.user.globalUserId : req.user.userId;
+        console.log(`POST: /sessions/revoke-all-others user ${userLabel} revoked ${revokedCount} other sessions`);
         res.json({
             success: true,
             message: 'All other sessions revoked successfully'

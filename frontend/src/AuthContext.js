@@ -4,7 +4,7 @@ import { useNotification } from './NotificationContext';
 import apiRequest from './utils/postRequest';
 import { analytics } from './services/analytics/analytics';
 import { getAllAnonymousRegistrations, removeAnonymousRegistration } from './utils/anonymousRegistrationStorage';
-import { isWww, isPathAllowedOnWww, getTenantRedirectUrl, getLastTenant } from './config/tenantRedirect';
+import { isWww, isPathAllowedOnWww, getTenantRedirectUrl, getLastTenant, hasDevTenantOverride } from './config/tenantRedirect';
 
 /** 
 documentation:
@@ -33,8 +33,10 @@ export const AuthProvider = ({ children }) => {
             // console.log('Token validation response:', response.data);
             // Handle response...
             if (response.success) {
-                // On www, if this path requires a tenant, redirect to tenant or school picker
-                if (isWww() && !isPathAllowedOnWww(window.location.pathname)) {
+                // On www, if this path requires a tenant, redirect to tenant or school picker.
+                // In dev with devTenantOverride, we're already on the tenant (same origin + X-Tenant);
+                // skip redirect to avoid reload loop (getTenantRedirectUrl returns same origin in dev).
+                if (isWww() && !hasDevTenantOverride() && !isPathAllowedOnWww(window.location.pathname)) {
                     const communities = response.data.communities || [];
                     const last = getLastTenant();
                     const tenant = communities.length === 1
@@ -65,39 +67,43 @@ export const AuthProvider = ({ children }) => {
                 } else {
                     setPendingOrgInvites([]);
                 }
-                // Determine auth method frwom user data
-                if (response.data.user.samlProvider) {
-                    setAuthMethod('saml');
-                } else if (response.data.user.googleId) {
-                    setAuthMethod('google');
-                } else if (response.data.user.appleId) {
-                    setAuthMethod('apple');
-                } else {
-                    setAuthMethod('email');
-                }
-                // Identify user in analytics and set roles (for admin exclusion from tracking)
-                if (response.data.user._id) {
-                    analytics.identify(response.data.user._id);
-                    analytics.setUserRoles(response.data.user.roles);
-                }
-                // Claim any anonymous event registrations from this browser and remove from localStorage
-                const registrations = getAllAnonymousRegistrations();
-                if (registrations.length > 0) {
-                    try {
-                        const claimRes = await apiRequest('/claim-anonymous-registrations', { registrations }, { method: 'POST' });
-                        if (claimRes && claimRes.success && Array.isArray(claimRes.claimed)) {
-                            claimRes.claimed.forEach((id) => {
-                                removeAnonymousRegistration(id != null ? String(id) : '');
-                            });
-                        }
-                    } catch (e) {
-                        // non-fatal: leave anonymous regs in storage to retry next time
+                // Determine auth method from user data (only when user exists)
+                const u = response.data.user;
+                if (u) {
+                    if (u.samlProvider) {
+                        setAuthMethod('saml');
+                    } else if (u.googleId) {
+                        setAuthMethod('google');
+                    } else if (u.appleId) {
+                        setAuthMethod('apple');
+                    } else {
+                        setAuthMethod('email');
+                    }
+                    // Identify user in analytics and set roles (for admin exclusion from tracking)
+                    if (u._id) {
+                        analytics.identify(u._id);
+                        analytics.setUserRoles(u.roles);
                     }
                 }
-                // console.log(response.data.user);
-                setIsAuthenticated(true);
+                // Claim any anonymous event registrations from this browser and remove from localStorage (only when we have a tenant user)
+                if (u) {
+                    const registrations = getAllAnonymousRegistrations();
+                    if (registrations.length > 0) {
+                        try {
+                            const claimRes = await apiRequest('/claim-anonymous-registrations', { registrations }, { method: 'POST' });
+                            if (claimRes && claimRes.success && Array.isArray(claimRes.claimed)) {
+                                claimRes.claimed.forEach((id) => {
+                                    removeAnonymousRegistration(id != null ? String(id) : '');
+                                });
+                            }
+                        } catch (e) {
+                            // non-fatal: leave anonymous regs in storage to retry next time
+                        }
+                    }
+                    setIsAuthenticated(true);
+                    getCheckedIn();
+                }
                 setIsAuthenticating(false);
-                getCheckedIn();
             } else {
                 setIsAuthenticated(false);
                 setIsAuthenticating(false);

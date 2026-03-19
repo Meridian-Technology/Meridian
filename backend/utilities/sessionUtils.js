@@ -210,7 +210,7 @@ async function deleteAllUserSessions(userId, req) {
 }
 
 /**
- * Delete a specific session by ID
+ * Delete a specific session by ID (tenant DB)
  */
 async function deleteSessionById(sessionId, userId, req) {
     const { Session } = getModels(req, 'Session');
@@ -224,16 +224,55 @@ async function deleteSessionById(sessionId, userId, req) {
 }
 
 /**
- * Get all active sessions for a user
+ * Delete a specific session by ID (global DB, for users with global identity)
+ */
+async function deleteSessionByIdForGlobalUser(sessionId, globalUserId, req) {
+    const { Session } = getGlobalModels(req, 'Session');
+    const session = await Session.findOne({ _id: sessionId, globalUserId });
+    if (session) {
+        await Session.deleteOne({ _id: sessionId });
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Get all active sessions for a user (tenant DB)
  */
 async function getUserSessions(userId, req) {
     const { Session } = getModels(req, 'Session');
-    const sessions = await Session.find({ 
+    const sessions = await Session.find({
         userId,
         expiresAt: { $gt: new Date() }
     }).sort({ lastUsed: -1 });
-    
+
     return sessions;
+}
+
+/**
+ * Get all active sessions for a global user (global DB).
+ * Use when req.user.globalUserId is set and req.user.userId may be null (no tenant membership).
+ */
+async function getUserSessionsForGlobalUser(globalUserId, req) {
+    const { Session } = getGlobalModels(req, 'Session');
+    const sessions = await Session.find({
+        globalUserId,
+        expiresAt: { $gt: new Date() }
+    }).sort({ lastUsed: -1 });
+
+    return sessions;
+}
+
+/**
+ * Revoke all sessions except the current one for a global user (global DB).
+ */
+async function revokeAllOtherSessionsForGlobalUser(globalUserId, currentRefreshToken, req) {
+    const { Session } = getGlobalModels(req, 'Session');
+    const result = await Session.deleteMany({
+        globalUserId,
+        refreshToken: { $ne: currentRefreshToken }
+    });
+    return result.deletedCount;
 }
 
 /**
@@ -255,7 +294,10 @@ module.exports = {
     deleteSession,
     deleteAllUserSessions,
     deleteSessionById,
+    deleteSessionByIdForGlobalUser,
     getUserSessions,
+    getUserSessionsForGlobalUser,
+    revokeAllOtherSessionsForGlobalUser,
     cleanupExpiredSessions,
     getDeviceInfo
 };
