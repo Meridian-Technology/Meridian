@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const { connectToDatabase, connectToGlobalDatabase } = require('../connectionsManager');
 const { getConnections, disconnectSocket, disconnectAll } = require('../socket');
 const { createSession } = require('../utilities/sessionUtils');
+const { getCookieDomain } = require('../utilities/cookieUtils');
 
 const ACCESS_TOKEN_EXPIRY = '1m';
 const REFRESH_TOKEN_EXPIRY = '30d';
@@ -159,7 +160,8 @@ router.post('/admin/impersonate', verifyToken, requireAdmin, async (req, res) =>
       maxAge: ACCESS_TOKEN_EXPIRY_MS,
       path: '/'
     };
-    if (process.env.NODE_ENV === 'production') cookieOpts.domain = '.meridian.study';
+    const domain = getCookieDomain(req);
+    if (domain) cookieOpts.domain = domain;
     res.cookie('accessToken', accessToken, cookieOpts);
     res.cookie('refreshToken', refreshToken, { ...cookieOpts, maxAge: REFRESH_TOKEN_EXPIRY_MS });
 

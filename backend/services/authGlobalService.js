@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const getModels = require('./getModelService');
 const getGlobalModels = require('./getGlobalModelService');
 const { createGlobalSession } = require('../utilities/sessionUtils');
+const { getCookieDomain } = require('../utilities/cookieUtils');
 
 const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRY || '15m';
 const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY || '30d';
@@ -164,9 +165,8 @@ async function issueTokens(req, res, globalUser, tenantUser, platformRoles = [])
         sameSite: 'strict',
         path: '/',
     };
-    if (process.env.NODE_ENV === 'production') {
-        cookieOptions.domain = '.meridian.study';
-    }
+    const domain = getCookieDomain(req);
+    if (domain) cookieOptions.domain = domain;
 
     res.cookie('accessToken', accessToken, { ...cookieOptions, maxAge: ACCESS_TOKEN_EXPIRY_MS });
     res.cookie('refreshToken', refreshToken, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });

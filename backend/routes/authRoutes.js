@@ -15,6 +15,7 @@ const getModels = require('../services/getModelService.js');
 const getGlobalModels = require('../services/getGlobalModelService.js');
 const { getFriendRequests } = require('../utilities/friendUtils');
 const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, getUserSessionsForGlobalUser, deleteSessionById, deleteSessionByIdForGlobalUser, revokeAllOtherSessionsForGlobalUser } = require('../utilities/sessionUtils');
+const { getCookieDomain } = require('../utilities/cookieUtils');
 const authGlobalService = require('../services/authGlobalService');
 
 const { getResend } = require('../services/resendClient');
@@ -297,7 +298,8 @@ router.post('/refresh-token', async (req, res) => {
             maxAge: ACCESS_TOKEN_EXPIRY_MS,
             path: '/'
         };
-        if (process.env.NODE_ENV === 'production') cookieOptions.domain = '.meridian.study';
+        const domain = getCookieDomain(req);
+        if (domain) cookieOptions.domain = domain;
         if (!isMobile) {
             res.cookie('accessToken', newAccessToken, cookieOptions);
         }
@@ -366,7 +368,8 @@ router.post('/logout', async (req, res) => {
         sameSite: 'strict',
         path: '/'
     };
-    if (process.env.NODE_ENV === 'production') clearOpts.domain = '.meridian.study';
+    const domain = getCookieDomain(req);
+    if (domain) clearOpts.domain = domain;
     res.clearCookie('accessToken', clearOpts);
     res.clearCookie('refreshToken', clearOpts);
 
