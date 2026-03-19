@@ -27,6 +27,39 @@
       }
     }
   }
+  .platform-admins-migrate {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    .platform-admins-migrate-desc {
+      margin: 0 0 0.75rem 0;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      background: var(--primary, #2563eb);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+    }
+    .platform-admins-migrate-result {
+      margin: 1rem 0 0 0;
+      padding: 0.75rem;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      overflow-x: auto;
+    }
+  }
   .platform-admins-list {
     list-style: none;
     padding: 0;
