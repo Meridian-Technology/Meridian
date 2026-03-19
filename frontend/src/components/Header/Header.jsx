@@ -40,9 +40,9 @@ const Header = React.memo(({ hideUntilScroll = false, scrolled = false, appStore
 
     const [width, setWidth] = useState(window.innerWidth);
 
-    const goToMeridian = ()=>{
-        navigate('/select-school');
-    }
+    const goToMeridian = () => {
+        navigate(`/select-school?next=${encodeURIComponent('/events-dashboard')}`);
+    };
 
     const goHome = ()=>{
         if(!page.includes("/room")){

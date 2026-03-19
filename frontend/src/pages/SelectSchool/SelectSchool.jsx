@@ -2,6 +2,7 @@ import React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import { getTenantKeys, getTenantRedirectUrl, setLastTenant } from '../../config/tenantRedirect';
+import useAuth from '../../hooks/useAuth';
 import backgroundImage from '../../assets/LandingBackground.png';
 import logo from '../../assets/Brand Image/BEACON.svg';
 import './SelectSchool.scss';
@@ -27,8 +28,10 @@ const DOMAIN_META = {
  */
 function SelectSchool() {
   const [searchParams] = useSearchParams();
+  const { isAuthenticated } = useAuth();
   const nextParam = searchParams.get('next');
-  const nextPath = nextParam || '/login';
+  // When already logged in, go to dashboard instead of login to avoid flash/redirect loop
+  const nextPath = nextParam || (isAuthenticated ? '/events-dashboard' : '/login');
   const tenantKeys = getTenantKeys();
 
   const redirectToTenant = (school, path) => {
