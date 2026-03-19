@@ -10,6 +10,7 @@ const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 const getModels = require('../services/getModelService.js');
 const { deleteSession } = require('../utilities/sessionUtils');
+const { getCookieDomain } = require('../utilities/cookieUtils');
 const authGlobalService = require('../services/authGlobalService');
 
 // Token configuration
@@ -229,9 +230,12 @@ router.post('/logout', verifyToken, async (req, res) => {
         const school = req.school || 'rpi';
         const config = await getSAMLConfig(school);
         
-        //clear cookies
-        res.clearCookie('accessToken');
-        res.clearCookie('refreshToken');
+        // Clear cookies (must match domain used when setting)
+        const clearOpts = { path: '/', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' };
+        const domain = getCookieDomain(req);
+        if (domain) clearOpts.domain = domain;
+        res.clearCookie('accessToken', clearOpts);
+        res.clearCookie('refreshToken', clearOpts);
         
         // Delete the specific session instead of clearing user's refreshToken
         const refreshToken = req.cookies.refreshToken;

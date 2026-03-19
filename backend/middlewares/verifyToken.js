@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const getModels = require('../services/getModelService');
 const authGlobalService = require('../services/authGlobalService');
 const { validateSession } = require('../utilities/sessionUtils');
+const { getCookieDomain } = require('../utilities/cookieUtils');
 
 const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
 const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`;
@@ -119,7 +120,8 @@ function createVerifyTokenOptional(options = {}) {
             maxAge: ACCESS_TOKEN_EXPIRY_MS,
             path: '/',
           };
-          if (process.env.NODE_ENV === 'production') cookieOptions.domain = '.meridian.study';
+          const domain = getCookieDomain(req);
+          if (domain) cookieOptions.domain = domain;
           const newAccessToken = jwt.sign(
             { userId: user._id, roles: user.roles },
             process.env.JWT_SECRET,
