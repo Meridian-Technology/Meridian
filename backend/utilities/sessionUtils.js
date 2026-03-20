@@ -130,7 +130,7 @@ async function validateSession(refreshToken, req) {
         session.lastUsed = new Date();
         await session.save();
 
-        return { valid: true, session, user };
+        return { valid: true, session, user, decoded };
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
             await Session.deleteOne({ refreshToken }).catch(() => {});
@@ -171,7 +171,7 @@ async function validateGlobalSession(refreshToken, req) {
         session.lastUsed = new Date();
         await session.save();
         const { tenantUser } = await authGlobalService.resolveTenantUserForRequest(req, globalUser._id);
-        return { valid: true, session, globalUser, user: tenantUser };
+        return { valid: true, session, globalUser, user: tenantUser, decoded };
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
             return { valid: false, error: 'Token expired' };

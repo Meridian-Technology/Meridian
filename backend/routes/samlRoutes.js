@@ -12,6 +12,15 @@ const getModels = require('../services/getModelService.js');
 const { deleteSession } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
 const authGlobalService = require('../services/authGlobalService');
+const {
+    isAdminLevelAccount,
+    getMfaStatus,
+    buildTokenMfaClaims,
+    createPendingMfaToken,
+    getMfaPendingCookieOptions,
+} = require('../services/adminMfaService');
+
+const ADMIN_MFA_PENDING_COOKIE = 'adminMfaPending';
 
 // Token configuration
 const ACCESS_TOKEN_EXPIRY_MINUTES = 1;
@@ -198,7 +207,26 @@ router.post('/callback', async (req, res) => {
                 const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
                 await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
                 const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-                await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
+                const isAdmin = isAdminLevelAccount(user, platformRoles);
+                const mfaStatus = getMfaStatus(user);
+                let requiresMfa = false;
+                if (isAdmin && mfaStatus.configured) {
+                    const pendingToken = createPendingMfaToken({
+                        globalUserId: globalUser._id.toString(),
+                        tenantUserId: user._id.toString(),
+                        school,
+                        platformRoles,
+                    });
+                    res.cookie(ADMIN_MFA_PENDING_COOKIE, pendingToken, getMfaPendingCookieOptions(req));
+                    requiresMfa = true;
+                } else {
+                    const tokenMfaClaims = buildTokenMfaClaims({
+                        isAdminLevel: isAdmin,
+                        mfaConfigured: mfaStatus.configured,
+                        mfaVerified: !isAdmin,
+                    });
+                    await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles, tokenMfaClaims);
+                }
 
                 // RelayState is echoed back by IdP in POST body (no server session)
                 const relayState = req.body?.RelayState || '/room/none';
@@ -210,6 +238,9 @@ router.post('/callback', async (req, res) => {
                     ? 'https://study-compass.com'
                     : 'http://localhost:3000';
                 
+                if (requiresMfa) {
+                    return res.redirect(`${frontendUrl}/login?mfa=required`);
+                }
                 res.redirect(`${frontendUrl}/auth/saml/callback?relayState=${encodeURIComponent(relayState)}`);
                 
             } catch (error) {
@@ -236,6 +267,7 @@ router.post('/logout', verifyToken, async (req, res) => {
         if (domain) clearOpts.domain = domain;
         res.clearCookie('accessToken', clearOpts);
         res.clearCookie('refreshToken', clearOpts);
+        res.clearCookie(ADMIN_MFA_PENDING_COOKIE, clearOpts);
         
         // Delete the specific session instead of clearing user's refreshToken
         const refreshToken = req.cookies.refreshToken;

@@ -17,6 +17,25 @@ const { getFriendRequests } = require('../utilities/friendUtils');
 const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, getUserSessionsForGlobalUser, deleteSessionById, deleteSessionByIdForGlobalUser, revokeAllOtherSessionsForGlobalUser } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
 const authGlobalService = require('../services/authGlobalService');
+const {
+    isAdminLevelAccount,
+    getMfaStatus,
+    buildTokenMfaClaims,
+    createPendingMfaToken,
+    verifyPendingMfaToken,
+    getMfaPendingCookieOptions,
+    getPendingMfaTokenFromRequest,
+    createTotpEnrollment,
+    enableTotpEnrollment,
+    verifyTotpForLogin,
+    disableTotp,
+    getPasskeySummary,
+    generatePasskeyRegistration,
+    verifyPasskeyRegistration,
+    generatePasskeyAuthentication,
+    verifyPasskeyAuthentication,
+    removePasskey,
+} = require('../services/adminMfaService');
 
 const { getResend } = require('../services/resendClient');
 const { render } = require('@react-email/render')
@@ -34,9 +53,90 @@ const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`;
 const REFRESH_TOKEN_EXPIRY = `${REFRESH_TOKEN_EXPIRY_DAYS}d`;  // 2 days
 const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000;
 const REFRESH_TOKEN_EXPIRY_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000; // 2 days in milliseconds
+const ADMIN_MFA_PENDING_COOKIE = 'adminMfaPending';
 
 // Check if request is from mobile client (token-based auth instead of cookies)
 const isMobileClient = (req) => req.headers['x-client'] === 'mobile';
+
+function setPendingMfaCookie(req, res, pendingToken) {
+    res.cookie(ADMIN_MFA_PENDING_COOKIE, pendingToken, getMfaPendingCookieOptions(req));
+}
+
+function clearPendingMfaCookie(req, res) {
+    const clearOpts = { ...getMfaPendingCookieOptions(req) };
+    delete clearOpts.maxAge;
+    res.clearCookie(ADMIN_MFA_PENDING_COOKIE, clearOpts);
+}
+
+async function getCurrentTenantAdminUser(req) {
+    if (!req.user || !req.user.userId) {
+        throw new Error('A tenant admin account is required for MFA management');
+    }
+    const { User } = getModels(req, 'User');
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+        throw new Error('User not found');
+    }
+    if (!isAdminLevelAccount(user, req.user.platformRoles || [])) {
+        throw new Error('Admin access required');
+    }
+    return user;
+}
+
+async function completeLoginWithAdminMfa(req, res, globalUser, tenantUser, platformRoles, message) {
+    const isAdmin = isAdminLevelAccount(tenantUser, platformRoles);
+    const mfaStatus = getMfaStatus(tenantUser);
+
+    if (isAdmin && mfaStatus.configured) {
+        const pendingToken = createPendingMfaToken({
+            globalUserId: globalUser._id.toString(),
+            tenantUserId: tenantUser?._id?.toString() || null,
+            school: req.school,
+            platformRoles: platformRoles || [],
+        });
+        setPendingMfaCookie(req, res, pendingToken);
+        const data = {
+            requiresMfa: true,
+            methods: mfaStatus.methods,
+            school: req.school,
+        };
+        if (isMobileClient(req)) data.mfaToken = pendingToken;
+        return {
+            status: 200,
+            body: {
+                success: true,
+                message: 'Additional verification required for admin account',
+                data,
+            },
+        };
+    }
+
+    const tokenMfaClaims = buildTokenMfaClaims({
+        isAdminLevel: isAdmin,
+        mfaConfigured: mfaStatus.configured,
+        mfaVerified: !isAdmin,
+    });
+    const tokens = await authGlobalService.issueTokens(req, res, globalUser, tenantUser, platformRoles, tokenMfaClaims);
+    clearPendingMfaCookie(req, res);
+
+    const responseData = {
+        user: tenantUser,
+        adminMfaSetupRequired: isAdmin && !mfaStatus.configured,
+    };
+    if (isMobileClient(req)) {
+        responseData.accessToken = tokens.accessToken;
+        responseData.refreshToken = tokens.refreshToken;
+    }
+
+    return {
+        status: 200,
+        body: {
+            success: true,
+            message,
+            data: responseData,
+        },
+    };
+}
 
 function validateUsername(username) { //keeping logic external, for easier testing
     // Define the regex pattern
@@ -169,7 +269,12 @@ router.post('/register', async (req, res) => {
         const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
         await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
         const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-        const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
+        const tokenMfaClaims = buildTokenMfaClaims({
+            isAdminLevel: false,
+            mfaConfigured: false,
+            mfaVerified: true,
+        });
+        const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles, tokenMfaClaims);
 
         console.log(`POST: /register new user ${username}`);
         sendDiscordMessage(`New user registered`, `user ${username} registered`, "newUser");
@@ -220,19 +325,9 @@ router.post('/login', async (req, res) => {
         const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
         await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
         const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-        const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
-
+        const loginResult = await completeLoginWithAdminMfa(req, res, globalUser, user, platformRoles, 'Logged in successfully');
         console.log(`POST: /login user ${user.username} logged in`);
-        const loginData = { user: user };
-        if (isMobileClient(req)) {
-            loginData.accessToken = tokens.accessToken;
-            loginData.refreshToken = tokens.refreshToken;
-        }
-        res.status(200).json({
-            success: true,
-            message: 'Logged in successfully',
-            data: loginData
-        });
+        res.status(loginResult.status).json(loginResult.body);
     } catch (error) {
         console.log(`POST: /login login user failed`)
         res.status(500).json({
@@ -280,7 +375,17 @@ router.post('/refresh-token', async (req, res) => {
 
         if (globalUser) {
             const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-            const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
+            const tokens = await authGlobalService.issueTokens(
+                req,
+                res,
+                globalUser,
+                user,
+                platformRoles,
+                {
+                    mfaConfigured: Boolean(validation.decoded?.mfaConfigured),
+                    mfaVerified: Boolean(validation.decoded?.mfaVerified),
+                },
+            );
             const response = { success: true, message: 'Token refreshed successfully' };
             if (isMobile) response.accessToken = tokens.accessToken;
             return res.json(response);
@@ -372,6 +477,7 @@ router.post('/logout', async (req, res) => {
     if (domain) clearOpts.domain = domain;
     res.clearCookie('accessToken', clearOpts);
     res.clearCookie('refreshToken', clearOpts);
+    res.clearCookie(ADMIN_MFA_PENDING_COOKIE, clearOpts);
 
     console.log(`POST: /logout user logged out`);
     res.json({ success: true, message: 'Logged out successfully' });
@@ -510,7 +616,13 @@ router.post('/join-tenant', verifyToken, async (req, res) => {
         });
         await membership.save();
         const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-        await authGlobalService.issueTokens(req, res, globalUser, tenantUser, platformRoles);
+        const mfaStatus = getMfaStatus(tenantUser);
+        const tokenMfaClaims = buildTokenMfaClaims({
+            isAdminLevel: isAdminLevelAccount(tenantUser, platformRoles),
+            mfaConfigured: mfaStatus.configured,
+            mfaVerified: false,
+        });
+        await authGlobalService.issueTokens(req, res, globalUser, tenantUser, platformRoles, tokenMfaClaims);
         const userObj = tenantUser.toObject ? tenantUser.toObject() : tenantUser;
         res.json({
             success: true,
@@ -580,18 +692,8 @@ router.post('/google-login', async (req, res) => {
         const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
         await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
         const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-        const tokens = await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
-
-        const googleLoginData = { user: user };
-        if (isMobileClient(req)) {
-            googleLoginData.accessToken = tokens.accessToken;
-            googleLoginData.refreshToken = tokens.refreshToken;
-        }
-        res.status(200).json({
-            success: true,
-            message: 'Google login successful',
-            data: googleLoginData
-        });
+        const loginResult = await completeLoginWithAdminMfa(req, res, globalUser, user, platformRoles, 'Google login successful');
+        res.status(loginResult.status).json(loginResult.body);
 
     } catch (error) {
         if (error.message === 'Email already exists') {
@@ -633,18 +735,8 @@ router.post('/apple-login', async (req, res) => {
         const globalUser = await authGlobalService.getOrCreateGlobalUser(req, authenticatedUser);
         await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, authenticatedUser);
         const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-        const tokens = await authGlobalService.issueTokens(req, res, globalUser, authenticatedUser, platformRoles);
-
-        const appleLoginData = { user: authenticatedUser };
-        if (isMobileClient(req)) {
-            appleLoginData.accessToken = tokens.accessToken;
-            appleLoginData.refreshToken = tokens.refreshToken;
-        }
-        res.status(200).json({
-            success: true,
-            message: 'Apple login successful',
-            data: appleLoginData
-        });
+        const loginResult = await completeLoginWithAdminMfa(req, res, globalUser, authenticatedUser, platformRoles, 'Apple login successful');
+        res.status(loginResult.status).json(loginResult.body);
 
     } catch (error) {
         if (error.message === 'Email already exists') {
@@ -690,7 +782,7 @@ router.post('/auth/apple/callback', async (req, res) => {
         const globalUser = await authGlobalService.getOrCreateGlobalUser(req, authenticatedUser);
         await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, authenticatedUser);
         const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-        await authGlobalService.issueTokens(req, res, globalUser, authenticatedUser, platformRoles);
+        const loginResult = await completeLoginWithAdminMfa(req, res, globalUser, authenticatedUser, platformRoles, 'Apple login successful');
 
         // Determine redirect destination
         const frontendUrl = process.env.NODE_ENV === 'production' 
@@ -717,6 +809,10 @@ router.post('/auth/apple/callback', async (req, res) => {
         // Redirect admin users to admin dashboard
         if (authenticatedUser.roles && authenticatedUser.roles.includes('admin')) {
             redirectTo = '/admin';
+        }
+
+        if (loginResult.body?.data?.requiresMfa) {
+            redirectTo = '/login?mfa=required';
         }
 
         // Redirect to frontend
@@ -911,6 +1007,288 @@ router.post('/reset-password', async (req, res) => {
             message: 'Error resetting password',
             error: error.message
         });
+    }
+});
+
+async function resolvePendingMfaContext(req) {
+    const pendingMfaToken = getPendingMfaTokenFromRequest(req);
+    if (!pendingMfaToken) {
+        throw new Error('No pending MFA challenge found');
+    }
+    const payload = verifyPendingMfaToken(pendingMfaToken);
+    if (!payload || payload.school !== req.school) {
+        throw new Error('Invalid MFA challenge for this tenant');
+    }
+    const { User } = getModels(req, 'User');
+    const { GlobalUser } = getGlobalModels(req, 'GlobalUser');
+    const tenantUser = await User.findById(payload.tenantUserId);
+    if (!tenantUser) {
+        throw new Error('Admin account no longer exists');
+    }
+    const globalUser = await GlobalUser.findById(payload.globalUserId);
+    if (!globalUser) {
+        throw new Error('Global identity no longer exists');
+    }
+    const platformRoles = Array.isArray(payload.platformRoles) ? payload.platformRoles : [];
+    if (!isAdminLevelAccount(tenantUser, platformRoles)) {
+        throw new Error('MFA challenge is not valid for this account');
+    }
+    return {
+        pendingMfaToken,
+        platformRoles,
+        tenantUser,
+        globalUser,
+    };
+}
+
+router.get('/mfa/admin/status', verifyToken, async (req, res) => {
+    try {
+        const adminUser = await getCurrentTenantAdminUser(req);
+        const status = getMfaStatus(adminUser);
+        res.json({
+            success: true,
+            data: {
+                ...status,
+                passkeys: getPasskeySummary(adminUser),
+            },
+        });
+    } catch (error) {
+        const code = error.message === 'Admin access required' ? 403 : 400;
+        res.status(code).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/mfa/admin/totp/setup', verifyToken, async (req, res) => {
+    try {
+        const adminUser = await getCurrentTenantAdminUser(req);
+        const setup = await createTotpEnrollment(adminUser);
+        res.json({
+            success: true,
+            message: 'Authenticator setup started',
+            data: setup,
+        });
+    } catch (error) {
+        const code = error.message === 'Admin access required' ? 403 : 400;
+        res.status(code).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/mfa/admin/totp/enable', verifyToken, async (req, res) => {
+    try {
+        const { code } = req.body || {};
+        if (!code) {
+            return res.status(400).json({ success: false, message: 'Authenticator code is required' });
+        }
+        const adminUser = await getCurrentTenantAdminUser(req);
+        await enableTotpEnrollment(adminUser, code);
+        res.json({
+            success: true,
+            message: 'Authenticator app enabled for admin MFA',
+            data: getMfaStatus(adminUser),
+        });
+    } catch (error) {
+        const code = error.message === 'Admin access required' ? 403 : 400;
+        res.status(code).json({ success: false, message: error.message });
+    }
+});
+
+router.delete('/mfa/admin/totp', verifyToken, async (req, res) => {
+    try {
+        const { code } = req.body || {};
+        if (!code) {
+            return res.status(400).json({ success: false, message: 'Current authenticator code is required' });
+        }
+        const adminUser = await getCurrentTenantAdminUser(req);
+        await disableTotp(adminUser, code);
+        res.json({
+            success: true,
+            message: 'Authenticator app removed from admin MFA',
+            data: getMfaStatus(adminUser),
+        });
+    } catch (error) {
+        const code = error.message === 'Admin access required' ? 403 : 400;
+        res.status(code).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/mfa/admin/passkey/registration-options', verifyToken, async (req, res) => {
+    try {
+        const adminUser = await getCurrentTenantAdminUser(req);
+        const options = await generatePasskeyRegistration(req, adminUser);
+        res.json({
+            success: true,
+            data: {
+                options,
+            },
+        });
+    } catch (error) {
+        const code = error.message === 'Admin access required' ? 403 : 400;
+        res.status(code).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/mfa/admin/passkey/register', verifyToken, async (req, res) => {
+    try {
+        const { credential, nickname } = req.body || {};
+        if (!credential) {
+            return res.status(400).json({ success: false, message: 'Passkey credential is required' });
+        }
+        const adminUser = await getCurrentTenantAdminUser(req);
+        await verifyPasskeyRegistration(req, adminUser, credential, nickname);
+        res.json({
+            success: true,
+            message: 'Passkey added for admin MFA',
+            data: {
+                ...getMfaStatus(adminUser),
+                passkeys: getPasskeySummary(adminUser),
+            },
+        });
+    } catch (error) {
+        const code = error.message === 'Admin access required' ? 403 : 400;
+        res.status(code).json({ success: false, message: error.message });
+    }
+});
+
+router.delete('/mfa/admin/passkeys/:credentialId', verifyToken, async (req, res) => {
+    try {
+        const { credentialId } = req.params;
+        const adminUser = await getCurrentTenantAdminUser(req);
+        const removed = await removePasskey(adminUser, credentialId);
+        if (!removed) {
+            return res.status(404).json({ success: false, message: 'Passkey not found' });
+        }
+        res.json({
+            success: true,
+            message: 'Passkey removed',
+            data: {
+                ...getMfaStatus(adminUser),
+                passkeys: getPasskeySummary(adminUser),
+            },
+        });
+    } catch (error) {
+        const code = error.message === 'Admin access required' ? 403 : 400;
+        res.status(code).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/mfa/pending', async (req, res) => {
+    try {
+        const context = await resolvePendingMfaContext(req);
+        const status = getMfaStatus(context.tenantUser);
+        res.json({
+            success: true,
+            data: {
+                requiresMfa: true,
+                methods: status.methods,
+                school: req.school,
+            },
+        });
+    } catch (error) {
+        res.status(401).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/mfa/passkey/authentication-options', async (req, res) => {
+    try {
+        const context = await resolvePendingMfaContext(req);
+        const status = getMfaStatus(context.tenantUser);
+        if (!status.methods.includes('passkey')) {
+            return res.status(400).json({ success: false, message: 'Passkey MFA is not configured for this account' });
+        }
+        const options = await generatePasskeyAuthentication(req, context.tenantUser, context.pendingMfaToken);
+        res.json({
+            success: true,
+            data: { options },
+        });
+    } catch (error) {
+        res.status(401).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/mfa/verify-totp', async (req, res) => {
+    try {
+        const { code } = req.body || {};
+        if (!code) {
+            return res.status(400).json({ success: false, message: 'Authenticator code is required' });
+        }
+        const context = await resolvePendingMfaContext(req);
+        const status = getMfaStatus(context.tenantUser);
+        if (!status.methods.includes('totp')) {
+            return res.status(400).json({ success: false, message: 'Authenticator app MFA is not configured for this account' });
+        }
+        const isValid = await verifyTotpForLogin(context.tenantUser, code);
+        if (!isValid) {
+            return res.status(401).json({ success: false, message: 'Invalid authenticator code' });
+        }
+
+        const tokenMfaClaims = buildTokenMfaClaims({
+            isAdminLevel: true,
+            mfaConfigured: true,
+            mfaVerified: true,
+        });
+        const tokens = await authGlobalService.issueTokens(
+            req,
+            res,
+            context.globalUser,
+            context.tenantUser,
+            context.platformRoles,
+            tokenMfaClaims,
+        );
+        clearPendingMfaCookie(req, res);
+        const data = { user: context.tenantUser };
+        if (isMobileClient(req)) {
+            data.accessToken = tokens.accessToken;
+            data.refreshToken = tokens.refreshToken;
+        }
+        res.json({
+            success: true,
+            message: 'Admin MFA verification successful',
+            data,
+        });
+    } catch (error) {
+        res.status(401).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/mfa/verify-passkey', async (req, res) => {
+    try {
+        const { credential } = req.body || {};
+        if (!credential) {
+            return res.status(400).json({ success: false, message: 'Passkey assertion is required' });
+        }
+        const context = await resolvePendingMfaContext(req);
+        const status = getMfaStatus(context.tenantUser);
+        if (!status.methods.includes('passkey')) {
+            return res.status(400).json({ success: false, message: 'Passkey MFA is not configured for this account' });
+        }
+
+        await verifyPasskeyAuthentication(req, context.tenantUser, context.pendingMfaToken, credential);
+        const tokenMfaClaims = buildTokenMfaClaims({
+            isAdminLevel: true,
+            mfaConfigured: true,
+            mfaVerified: true,
+        });
+        const tokens = await authGlobalService.issueTokens(
+            req,
+            res,
+            context.globalUser,
+            context.tenantUser,
+            context.platformRoles,
+            tokenMfaClaims,
+        );
+        clearPendingMfaCookie(req, res);
+        const data = { user: context.tenantUser };
+        if (isMobileClient(req)) {
+            data.accessToken = tokens.accessToken;
+            data.refreshToken = tokens.refreshToken;
+        }
+        res.json({
+            success: true,
+            message: 'Admin MFA verification successful',
+            data,
+        });
+    } catch (error) {
+        res.status(401).json({ success: false, message: error.message });
     }
 });
 
