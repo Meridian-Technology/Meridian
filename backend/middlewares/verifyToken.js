@@ -22,6 +22,8 @@ async function resolveRequestUser(req, decodedToken) {
             tenantUserId,
             roles,
             platformRoles: decodedToken.platformRoles || [],
+            mfaConfigured: Boolean(decodedToken.mfaConfigured),
+            mfaVerified: Boolean(decodedToken.mfaVerified),
         };
         return;
     }
@@ -104,13 +106,18 @@ function createVerifyTokenOptional(options = {}) {
         const { user, globalUser } = validation;
         if (globalUser) {
           const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
-          await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles);
+          await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles, {
+            mfaConfigured: Boolean(validation.decoded?.mfaConfigured),
+            mfaVerified: Boolean(validation.decoded?.mfaVerified),
+          });
           req.user = {
             globalUserId: globalUser._id,
             userId: user ? user._id : null,
             tenantUserId: user ? user._id : null,
             roles: user ? (user.roles || ['user']) : ['user'],
             platformRoles: platformRoles || [],
+            mfaConfigured: Boolean(validation.decoded?.mfaConfigured),
+            mfaVerified: Boolean(validation.decoded?.mfaVerified),
           };
         } else if (user) {
           const cookieOptions = {

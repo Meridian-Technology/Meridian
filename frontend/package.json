@@ -8,6 +8,7 @@
     "@nivo/funnel": "^0.99.0",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.5.3",
     "@react-oauth/google": "^0.12.1",
+    "@simplewebauthn/browser": "^13.3.0",
     "@squircle-js/react": "^1.2.17",
     "@svgr/webpack": "^5.5.0",
     "@testing-library/jest-dom": "^5.17.0",

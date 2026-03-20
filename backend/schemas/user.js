@@ -126,6 +126,69 @@ const userSchema = new mongoose.Schema({
         default: ['user'],
         enum: ['user', 'admin', 'moderator', 'developer', 'oie', 'beta'], // Adjust roles as needed
     },
+    adminMfa: {
+        totp: {
+            enabled: {
+                type: Boolean,
+                default: false,
+            },
+            secret: {
+                type: String,
+                default: null,
+            },
+            pendingSecret: {
+                type: String,
+                default: null,
+            },
+            enabledAt: {
+                type: Date,
+                default: null,
+            },
+            lastUsedAt: {
+                type: Date,
+                default: null,
+            },
+        },
+        passkeys: [{
+            id: {
+                type: String,
+                required: true,
+            },
+            publicKey: {
+                type: String,
+                required: true,
+            },
+            counter: {
+                type: Number,
+                default: 0,
+            },
+            transports: {
+                type: [String],
+                default: [],
+            },
+            deviceType: {
+                type: String,
+                default: null,
+            },
+            backedUp: {
+                type: Boolean,
+                default: false,
+            },
+            nickname: {
+                type: String,
+                default: null,
+                trim: true,
+            },
+            createdAt: {
+                type: Date,
+                default: Date.now,
+            },
+            lastUsedAt: {
+                type: Date,
+                default: null,
+            },
+        }],
+    },
     approvalRoles: {
         type: [String],
         default: [],
