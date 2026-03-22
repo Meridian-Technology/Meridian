@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link, useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
@@ -6,13 +6,47 @@ import './IndividualUserJourney.scss';
 
 function ManualLookupForm({ timeRange }) {
     const navigate = useNavigate();
-    const [userId, setUserId] = useState('');
+    const [userQuery, setUserQuery] = useState('');
     const [anonymousId, setAnonymousId] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [searching, setSearching] = useState(false);
+    const debounceRef = useRef(null);
+
+    const isObjectId = (str) => /^[a-fA-F0-9]{24}$/.test(str);
+
+    useEffect(() => {
+        const q = userQuery.trim();
+        if (!q || isObjectId(q)) {
+            setSearchResults([]);
+            setSearching(false);
+            return;
+        }
+        setSearching(true);
+        clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(async () => {
+            try {
+                const { default: axios } = await import('axios');
+                const res = await axios.get(`/search-users?query=${encodeURIComponent(q)}&limit=8`, { withCredentials: true });
+                setSearchResults(res.data?.data || []);
+            } catch {
+                setSearchResults([]);
+            } finally {
+                setSearching(false);
+            }
+        }, 300);
+        return () => clearTimeout(debounceRef.current);
+    }, [userQuery]);
 
     const handleUserLookup = (e) => {
         e.preventDefault();
-        const id = userId.trim();
-        if (id) navigate(`/user-journey/user/${id}?timeRange=${timeRange}`);
+        const q = userQuery.trim();
+        if (q) navigate(`/user-journey/user/${q}?timeRange=${timeRange}`);
+    };
+
+    const handlePickUser = (id) => {
+        setUserQuery('');
+        setSearchResults([]);
+        navigate(`/user-journey/user/${id}?timeRange=${timeRange}`);
     };
 
     const handleAnonymousLookup = (e) => {
@@ -23,15 +57,44 @@ function ManualLookupForm({ timeRange }) {
 
     return (
         <div className="ij-manual-forms">
-            <form className="ij-lookup-form" onSubmit={handleUserLookup}>
-                <label>User ID (ObjectId):</label>
-                <input
-                    type="text"
-                    placeholder="e.g. 507f1f77bcf86cd799439011"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                />
-                <button type="submit" disabled={!userId.trim()}>View Journey</button>
+            <form className="ij-lookup-form ij-user-search-form" onSubmit={handleUserLookup}>
+                <label>Search by name, username, or ObjectId:</label>
+                <div className="ij-search-input-wrap">
+                    <input
+                        type="text"
+                        placeholder="e.g. John, @johndoe, or 507f1f77bcf86cd799439011"
+                        value={userQuery}
+                        onChange={(e) => setUserQuery(e.target.value)}
+                    />
+                    {isObjectId(userQuery.trim()) && (
+                        <button type="submit">View Journey</button>
+                    )}
+                </div>
+                {searching && <span className="ij-search-hint">Searching…</span>}
+                {searchResults.length > 0 && (
+                    <div className="ij-search-results">
+                        {searchResults.map((u) => (
+                            <button
+                                key={u._id}
+                                type="button"
+                                className="ij-search-result-item"
+                                onClick={() => handlePickUser(u._id)}
+                            >
+                                <span className="ij-result-name">
+                                    {u.name || u.username || u.email || u._id}
+                                </span>
+                                <span className="ij-result-meta">
+                                    {u.username && `@${u.username}`}
+                                    {u.username && u.email && ' · '}
+                                    {u.email}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {!searching && userQuery.trim() && !isObjectId(userQuery.trim()) && searchResults.length === 0 && (
+                    <span className="ij-search-hint">No users found</span>
+                )}
             </form>
             <form className="ij-lookup-form" onSubmit={handleAnonymousLookup}>
                 <label>Anonymous ID (UUID):</label>
@@ -65,9 +128,59 @@ function IndividualUserJourney() {
     const identity = result?.identity;
     const userProfile = result?.userProfile;
     const events = result?.events || [];
-    const sessions = result?.sessions || [];
     const summary = result?.summary;
     const identifiers = identifiersData?.data;
+
+    const sessionGroups = React.useMemo(() => {
+        const rawSessions = [...(result?.sessions || [])].sort((a, b) => {
+            const endA = a.end ? new Date(a.end).getTime() : 0;
+            const endB = b.end ? new Date(b.end).getTime() : 0;
+            return endB - endA;
+        });
+        const eventMap = new Map();
+        for (const ev of events) {
+            const sid = ev.session_id || 'unknown';
+            if (!eventMap.has(sid)) eventMap.set(sid, []);
+            eventMap.get(sid).push(ev);
+        }
+        return rawSessions.map((s) => ({
+            ...s,
+            events: eventMap.get(s.sessionId) || [],
+        }));
+    }, [result?.sessions, events]);
+
+    const SESSIONS_BATCH = 5;
+    const [visibleSessionsCount, setVisibleSessionsCount] = useState(SESSIONS_BATCH);
+    const [expandedSessions, setExpandedSessions] = useState(new Set());
+    const loadMoreRef = useRef(null);
+
+    useEffect(() => {
+        setVisibleSessionsCount(SESSIONS_BATCH);
+        setExpandedSessions(new Set());
+    }, [type, identifier]);
+
+    useEffect(() => {
+        if (!loadMoreRef.current || sessionGroups.length <= visibleSessionsCount) return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting) {
+                    setVisibleSessionsCount((n) => Math.min(n + SESSIONS_BATCH, sessionGroups.length));
+                }
+            },
+            { rootMargin: '200px', threshold: 0 }
+        );
+        observer.observe(loadMoreRef.current);
+        return () => observer.disconnect();
+    }, [sessionGroups.length, visibleSessionsCount]);
+
+    const toggleSession = (sessionId) => {
+        setExpandedSessions((prev) => {
+            const next = new Set(prev);
+            if (next.has(sessionId)) next.delete(sessionId);
+            else next.add(sessionId);
+            return next;
+        });
+    };
 
     const formatTime = (dt) => {
         if (!dt) return '—';
@@ -261,49 +374,64 @@ function IndividualUserJourney() {
                                 <section className="ij-section ij-sessions-section">
                                     <h2 className="ij-section-title">
                                         <Icon icon="mdi:web" />
-                                        Sessions
+                                        Sessions ({sessionGroups.length})
                                     </h2>
                                     <div className="ij-sessions-list">
-                                        {sessions.map((s, i) => (
-                                            <div key={i} className="ij-session-card">
-                                                <span className="ij-session-id">{String(s.sessionId).slice(0, 8)}…</span>
-                                                <span className="ij-session-events">{s.eventCount} events</span>
-                                                <span className="ij-session-duration">{formatDuration(s.durationSeconds)}</span>
-                                                <span className="ij-session-time">{formatTime(s.start)} → {formatTime(s.end)}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </section>
-
-                                <section className="ij-section ij-events-section">
-                                    <h2 className="ij-section-title">
-                                        <Icon icon="mdi:timeline" />
-                                        Event Timeline
-                                    </h2>
-                                    <div className="ij-timeline">
-                                        {events.map((ev, i) => (
-                                            <div key={i} className={`ij-timeline-item ${ev.user_id ? 'authenticated' : 'anonymous'}`}>
-                                                <div className="ij-timeline-marker">
-                                                    <Icon icon={getEventIcon(ev)} />
-                                                </div>
-                                                <div className="ij-timeline-content">
-                                                    <div className="ij-timeline-header">
-                                                        <span className="ij-timeline-event">{getEventLabel(ev)}</span>
-                                                        <span className="ij-timeline-time">{formatTime(ev.ts)}</span>
-                                                    </div>
-                                                    <div className="ij-timeline-badges">
-                                                        {ev.user_id && <span className="ij-badge auth">Authenticated</span>}
-                                                        {!ev.user_id && <span className="ij-badge anon">Anonymous</span>}
-                                                        <span className="ij-badge platform">{ev.platform || 'web'}</span>
-                                                    </div>
-                                                    {ev.properties && Object.keys(ev.properties).length > 0 && (
-                                                        <pre className="ij-timeline-props">
-                                                            {JSON.stringify(ev.properties, null, 2)}
-                                                        </pre>
+                                        {sessionGroups.slice(0, visibleSessionsCount).map((s) => {
+                                            const isExpanded = expandedSessions.has(s.sessionId);
+                                            return (
+                                                <div key={s.sessionId} className={`ij-session-group ${isExpanded ? 'expanded' : ''}`}>
+                                                    <button
+                                                        className="ij-session-card"
+                                                        onClick={() => toggleSession(s.sessionId)}
+                                                    >
+                                                        <Icon
+                                                            icon="mdi:chevron-right"
+                                                            className="ij-session-chevron"
+                                                        />
+                                                        <span className="ij-session-id">{String(s.sessionId).slice(0, 8)}…</span>
+                                                        <span className="ij-session-events">{s.eventCount} events</span>
+                                                        <span className="ij-session-duration">{formatDuration(s.durationSeconds)}</span>
+                                                        <span className="ij-session-time">{formatTime(s.start)} → {formatTime(s.end)}</span>
+                                                    </button>
+                                                    {isExpanded && (
+                                                        <div className="ij-session-events-list">
+                                                            {s.events.length > 0 ? s.events.map((ev, i) => (
+                                                                <div key={i} className={`ij-timeline-item ${ev.user_id ? 'authenticated' : 'anonymous'}`}>
+                                                                    <div className="ij-timeline-marker">
+                                                                        <Icon icon={getEventIcon(ev)} />
+                                                                    </div>
+                                                                    <div className="ij-timeline-content">
+                                                                        <div className="ij-timeline-header">
+                                                                            <span className="ij-timeline-event">{getEventLabel(ev)}</span>
+                                                                            <span className="ij-timeline-time">{formatTime(ev.ts)}</span>
+                                                                        </div>
+                                                                        <div className="ij-timeline-badges">
+                                                                            {ev.user_id && <span className="ij-badge auth">Authenticated</span>}
+                                                                            {!ev.user_id && <span className="ij-badge anon">Anonymous</span>}
+                                                                            <span className="ij-badge platform">{ev.platform || 'web'}</span>
+                                                                        </div>
+                                                                        {ev.properties && Object.keys(ev.properties).length > 0 && (
+                                                                            <pre className="ij-timeline-props">
+                                                                                {JSON.stringify(ev.properties, null, 2)}
+                                                                            </pre>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            )) : (
+                                                                <div className="ij-session-no-events">No events recorded for this session</div>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </div>
+                                            );
+                                        })}
+                                        {sessionGroups.length > visibleSessionsCount && (
+                                            <div ref={loadMoreRef} className="ij-sessions-load-more">
+                                                <Icon icon="mdi:loading" className="spin" />
+                                                Loading more sessions…
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
                                 </section>
                             </>
