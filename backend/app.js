@@ -67,12 +67,14 @@ function createApp() {
         // console.log(`[${timestamp}] ${method}: ${path} | School: ${req.headers.host?.split('.')[0] || 'unknown'} | User-Agent: ${userAgent.substring(0, 50)}`);
         
         const host = req.headers.host || '';
-        // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' or IP -> 'rpi'
+        // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' -> default tenant
         let subdomain = host.split('.')[0];
         
-        // In development, if host is localhost or an IP address, treat as www (no default tenant)
+        // In development, if host is localhost or an IP address, default to rpi so tenant features
+        // (rooms, events, etc.) work. Use ?school= or X-Tenant header to override. Production www
+        // uses www subdomain explicitly (e.g. www.meridian.study).
         if (host.includes('localhost') || /^\d+\.\d+\.\d+\.\d+/.test(subdomain) || !host.includes('.')) {
-            subdomain = 'www';
+            subdomain = process.env.NODE_ENV === 'production' ? 'www' : 'rpi';
         }
 
         // Development only: allow X-Tenant header or ?school= to override tenant (for local testing)

@@ -25,11 +25,15 @@ jest.mock('../../services/profanityFilterService', () => ({
 
 jest.mock('../../utilities/sessionUtils', () => ({
   createSession: jest.fn().mockResolvedValue(undefined),
+  createGlobalSession: jest.fn().mockResolvedValue(undefined),
   validateSession: jest.fn(),
   deleteSession: jest.fn(),
   deleteAllUserSessions: jest.fn(),
   getUserSessions: jest.fn(),
+  getUserSessionsForGlobalUser: jest.fn(),
   deleteSessionById: jest.fn(),
+  deleteSessionByIdForGlobalUser: jest.fn(),
+  revokeAllOtherSessionsForGlobalUser: jest.fn(),
 }));
 
 jest.mock('../../services/autoClaimEventRegistrationsService', () => ({
@@ -51,7 +55,7 @@ jest.mock('../../services/getModelService.js', () => {
 });
 
 const { isProfane } = require('../../services/profanityFilterService');
-const { createSession } = require('../../utilities/sessionUtils');
+const { createSession, createGlobalSession } = require('../../utilities/sessionUtils');
 const authRoutes = require('../../routes/authRoutes');
 
 describe('auth route outcome tests', () => {
@@ -65,7 +69,7 @@ describe('auth route outcome tests', () => {
     process.env.JWT_REFRESH_SECRET =
       process.env.JWT_REFRESH_SECRET || 'test-jwt-refresh-secret';
 
-    mongo = await createMongoMemoryConnection();
+    mongo = await createMongoMemoryConnection({ withGlobalDb: true });
     User = getOrCreateModel(mongo.connection, 'User', userSchema, 'users');
     OrgInvite = getOrCreateModel(
       mongo.connection,
@@ -79,6 +83,7 @@ describe('auth route outcome tests', () => {
     app.use(cookieParser());
     app.use((req, _res, next) => {
       req.db = mongo.connection;
+      req.globalDb = mongo.globalConnection;
       req.school = 'rpi';
       next();
     });
@@ -112,7 +117,7 @@ describe('auth route outcome tests', () => {
         expect.stringContaining('refreshToken='),
       ])
     );
-    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(createGlobalSession).toHaveBeenCalledTimes(1);
 
     const savedUser = await User.findOne({ email: payload.email }).lean();
     expect(savedUser).toBeTruthy();

@@ -46,6 +46,8 @@ Frontend package commands:
 
 Route-outcome tests are the preferred path for API correctness: they execute real route handlers and real Mongoose persistence while still keeping CI deterministic.
 
+**Multi-tenant compatibility**: Route-outcome tests must set `req.db`, `req.school`, and `req.globalDb` (when the route uses global identity) so handlers receive the correct tenant context. Auth routes that call `authGlobalService` require `createMongoMemoryConnection({ withGlobalDb: true })` and `req.globalDb = mongo.globalConnection`.
+
 ## Frontend Test Layout
 
 - `frontend/src/**/__tests__/**/*.test.js` for unit/component tests.

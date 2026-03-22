@@ -3,11 +3,16 @@ const request = require('supertest');
 
 jest.mock('../../connectionsManager', () => ({
   connectToDatabase: jest.fn(),
+  connectToGlobalDatabase: jest.fn(),
 }));
 
 jest.mock('../../middlewares/verifyToken', () => ({
   verifyToken: (req, res, next) => next(),
   authorizeRoles: () => (req, res, next) => next(),
+}));
+
+jest.mock('../../middlewares/requireAdmin', () => ({
+  requireAdmin: (req, res, next) => next(),
 }));
 
 jest.mock('../../socket', () => ({
