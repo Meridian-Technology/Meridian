@@ -50,4 +50,4 @@ scripts/
 dump/
 
 # Events backend cloned at build time (replaces git submodule)
-backend/events/
+backend/events

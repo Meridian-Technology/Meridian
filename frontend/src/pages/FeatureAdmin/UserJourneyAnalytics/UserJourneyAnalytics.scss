@@ -28,6 +28,15 @@
 
             .uj-breadcrumb {
                 margin-bottom: 12px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+
+                .uj-breadcrumb-sep {
+                    color: var(--uj-text-muted);
+                    font-size: 12px;
+                }
 
                 .uj-breadcrumb-link {
                     display: inline-flex;

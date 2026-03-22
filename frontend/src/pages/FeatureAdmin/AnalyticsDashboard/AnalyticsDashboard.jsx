@@ -77,6 +77,9 @@ function AnalyticsDashboard() {
                         <Link to="/user-journey-analytics" className="platform-tab">
                             <Icon icon="mdi:graph" /> User Journey
                         </Link>
+                        <Link to="/user-journey" className="platform-tab">
+                            <Icon icon="mdi:account-search" /> Individual Journey
+                        </Link>
                     </div>
                 </div>
                 <div className="header-actions">
