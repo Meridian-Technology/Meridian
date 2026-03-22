@@ -37,5 +37,25 @@ jobs:
       - name: Install backend deps
         run: npm install --prefix backend
 
-      - name: Smoke test backend
-        run: node -e "const { createApp } = require('./backend/app'); createApp(); console.log('ok')"
+      - name: Install frontend deps
+        run: npm install --prefix frontend
+
+      - name: Run backend comprehensive test suite with coverage
+        run: npm --prefix backend run test:coverage
+
+      - name: Run frontend test suite with coverage
+        run: npm --prefix frontend run test:coverage
+
+      - name: Upload backend coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage/lcov.info
+          if-no-files-found: warn
+
+      - name: Upload frontend coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/lcov.info
+          if-no-files-found: warn
