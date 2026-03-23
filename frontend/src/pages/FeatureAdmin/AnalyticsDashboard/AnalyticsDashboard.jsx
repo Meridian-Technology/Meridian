@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
 import ProportionalBarList from '../../../components/ProportionalBarList/ProportionalBarList';
@@ -67,20 +66,6 @@ function AnalyticsDashboard() {
                 <div className="header-content">
                     <h1>Web Analytics</h1>
                     <p>Analytics for the Meridian web platform</p>
-                    <div className="platform-switcher">
-                        <span className="platform-tab active">
-                            <Icon icon="mdi:web" /> Web
-                        </span>
-                        <Link to="/mobile-analytics-dashboard" className="platform-tab">
-                            <Icon icon="mdi:cellphone" /> Mobile App
-                        </Link>
-                        <Link to="/user-journey-analytics" className="platform-tab">
-                            <Icon icon="mdi:graph" /> User Journey
-                        </Link>
-                        <Link to="/user-journey" className="platform-tab">
-                            <Icon icon="mdi:account-search" /> Individual Journey
-                        </Link>
-                    </div>
                 </div>
                 <div className="header-actions">
                     <div className="time-selector">
