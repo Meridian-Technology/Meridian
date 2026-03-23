@@ -137,14 +137,19 @@ function FunnelChart({ width, height, data }) {
 
 function FunnelChartWithSize(props) {
     return (
-        <ParentSize>
-            {(parent) => (
-                <FunnelChart
-                    {...props}
-                    width={parent?.width ?? 400}
-                    height={parent?.height ?? 160}
-                />
-            )}
+        <ParentSize debounceTime={120}>
+            {(parent) => {
+                const width = Math.floor(parent?.width ?? 0);
+                const height = Math.floor(parent?.height ?? 0);
+                if (width < 40 || height < 40) return null;
+                return (
+                    <FunnelChart
+                        {...props}
+                        width={width}
+                        height={height}
+                    />
+                );
+            }}
         </ParentSize>
     );
 }
