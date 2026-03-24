@@ -55,6 +55,119 @@
             }
             
         }
+        .bug-cards {
+            display: flex;
+            gap: 15px;
+            .bug-card {
+                display:flex;
+                justify-content: space-between;
+                background-color: var(--background);
+                border-radius: 13px;
+                padding: 10px 20px;
+                border-bottom: 1px solid var(--lighterborder);
 
+                &:last-child {
+                    border-bottom: none;
+                }
+
+                h3, h4, p {
+                margin:0;
+                font-family: 'Inter';
+                }
+                
+                .icon-title-date {
+                    justify-content: space-between;
+                    display: flex;
+                    color: var(--primary-color);
+                    
+                    .title-date {
+                        display: flex;
+                        flex-direction: column;
+                        h3 { //title
+                            margin: 0;
+                            color: var(--text);
+                            font-size: 15px;
+                            font-weight:700;
+                            font-family: 'Inter';
+                            margin-bottom: 2;
+                        }
+                        p { //date
+                            margin: 0;
+                            color: var(--dark-blue);
+                            font-size: 10px;
+                            font-weight:700;
+                            font-family: 'Inter';
+                            margin-bottom: 2;
+                        }
+                    }
+                }
+
+                .number-priority-status {
+                    display:flex;
+                    align-items: center;
+                    flex-direction: row;
+                    gap: 10px;
+                    padding-right: 5;
+                    
+                    h4 { //bugNumber
+                        margin: 0;
+                        color: var(--light-text);
+                        font-size: 10px;
+                        font-weight:700;
+                        font-family: 'Inter';
+                        margin-bottom: 2;
+                        padding: 5px 5px;
+                        gap: 0.5rem;
+                        background: #f5f5f5;
+                        border-radius: 8px;
+                        padding: 0.25rem;
+                        
+                    }
+                    h3 { //priority
+                        margin: 0;
+                        color: var(--primary-color);
+                        font-size: 10px;
+                        font-weight:700;
+                        font-family: 'Inter';
+                        margin-bottom: 2;
+                        padding: 5px 5px;
+                        gap: 0.5rem;
+                        background: #f5f5f5;
+                        border-radius: 8px;
+                        padding: 0.25rem;
+
+                        &.critical{
+                            color: var(--primary-color);
+                            background-color: var(--red-transparent);
+                        }
+                        &.high{
+                            color: #EA8F35;
+                            background-color: rgba(243,143,53, 0.22);
+                        }
+                        &.medium {
+                            color: #EAD535;
+                            background-color: rgba(234,213,53,0.22);
+                        }
+                        &.low {
+                            color: #3589EA;
+                            background-color: rgba(53,137,234,0.22);
+                        }
+                    }
+                    h3 { //status
+                        margin: 0;
+                        color: var(--lighter-text);
+                        font-size: 10px;
+                        font-weight:700;
+                        font-family: 'Inter';
+                        margin-bottom: 2;
+                        padding: 5px 5px;
+                        gap: 0.5rem;
+                        background: #f5f5f5;
+                        border-radius: 8px;
+                        padding: 0.25rem;
+                    }
+                }
+            }
+        }
     }
 }

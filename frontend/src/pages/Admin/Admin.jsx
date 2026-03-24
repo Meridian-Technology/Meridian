@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import BlueGrad1 from '../../assets/BlueGrad1.png';
 import BlueGrad2 from '../../assets/BlueGrad2.png';
 import BugReportPanel from './BugReportPanel/BugReportPanel';
-
+import IndividualBugReport from './BugReportPanel/IndividualBugReport/IndividualBugReport';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import General from './General/General';
 import WebSocketConnectionsPage from './WebSocketConnectionsPage/WebSocketConnectionsPage';
@@ -82,6 +82,11 @@ function Admin(){
             label: 'Bug Reports',
             icon: 'solar:bug-bold',
             element: <BugReportPanel/>
+        },
+        {
+            label: 'Individual Bug Report',
+            icon: 'solar:bug-bold',
+            element: <IndividualBugReport/>
         }
     ]
 
