@@ -69,18 +69,8 @@ function NewOutreach() {
                                         <p className="live-count"> 342 students (live count)</p>
 
                                     </div>
-
-                          
-
-
-
-
                                 </div>
-
                             </div>
-
-
-
                         </div>
                 </div>
 
@@ -89,9 +79,43 @@ function NewOutreach() {
                 <div className="new-outreach-list">
                     <div className="new-outreach-card">
                         <div className="new-outreach-header">
-                            <p>Recent campaign</p>
-                            <p>3 campaigns</p>
-                           </div>
+                            <p>Message</p>
+                        </div>
+
+                            <div className="new-outreach-body">
+
+                                <div className="search-wrapper">
+                                    <p className="subject">
+                                        Subject
+                                    </p>
+                                    <input
+                                        type="text"
+                                        className="search-input"
+                                        placeholder="e.g. Internship Fair - Class of 2017"
+                                        autoFocus
+                                    />
+
+                                    <p className="subject">
+                                        Body
+                                    </p>
+                                    <textarea 
+                                        className="search-input search-input-body" 
+                                        placeholder="Write your announcement. Supports plain text and links." 
+                                        autoFocus>
+                                    </textarea>
+
+                                    <p className="delivery">Delivery: Email + in-app notification (configured in Configuration).</p>
+
+                                    <div className="send">
+                                        <button className="btn btn-send">Send to 342 students</button>
+                                        <button className="btn btn-draft">Save draft</button>
+                                    </div>
+
+                                    
+                                </div>
+                            </div>
+                                    
+                           
                     </div>
                 </div>
                 

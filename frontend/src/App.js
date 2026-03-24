@@ -238,7 +238,6 @@ function App() {
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session/:sessionId/responses" element={<AnimatedPageWrapper><StudySessionResponses/></AnimatedPageWrapper>}/>
-                                            <Route path="/event/:eventId/workspace" element={<AnimatedPageWrapper><EventWorkspace/></AnimatedPageWrapper>}/>
                                             <Route path='admin-outreach' element={<AnimatedPageWrapper><AdminOutreach/></AnimatedPageWrapper>}/>
 
                                             {/* oie routes */}
