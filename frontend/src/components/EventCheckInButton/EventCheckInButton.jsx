@@ -7,6 +7,12 @@ import apiRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
 import './EventCheckInButton.scss';
 
+const ANON_EVENT_CHECKIN_KEY_PREFIX = 'meridian_anon_event_checked_in_';
+
+function getAnonEventCheckInKey(eventId) {
+    return `${ANON_EVENT_CHECKIN_KEY_PREFIX}${eventId}`;
+}
+
 /**
  * Check-in button for the event page. Shown when:
  * - Event has check-in enabled
@@ -20,11 +26,21 @@ function EventCheckInButton({ event, onCheckedIn }) {
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const [loading, setLoading] = useState(false);
-    const [checkedIn, setCheckedIn] = useState(!!event?.currentUserCheckedIn);
+    const [checkedIn, setCheckedIn] = useState(false);
 
     useEffect(() => {
-        setCheckedIn(!!event?.currentUserCheckedIn);
-    }, [event?.currentUserCheckedIn, event?._id]);
+        const loggedInCheckedIn = !!event?.currentUserCheckedIn;
+        if (loggedInCheckedIn) {
+            setCheckedIn(true);
+            return;
+        }
+        if (!user && event?._id && event?.checkInSettings?.fullyAnonymousCheckIn) {
+            const anonCheckedIn = localStorage.getItem(getAnonEventCheckInKey(event._id)) === '1';
+            setCheckedIn(anonCheckedIn);
+            return;
+        }
+        setCheckedIn(false);
+    }, [event?.currentUserCheckedIn, event?._id, event?.checkInSettings?.fullyAnonymousCheckIn, user]);
 
     if (!event) return null;
     if (!event.checkInEnabled) return null;
@@ -71,22 +87,25 @@ function EventCheckInButton({ event, onCheckedIn }) {
     };
 
     if (checkedIn) {
+        const showCheckOut = !!user;
         return (
             <div className="event-check-in-button checked-in">
                 <Icon icon="mdi:check-circle" />
                 <span>You're checked in</span>
-                <button
-                    type="button"
-                    className="check-out-btn"
-                    onClick={handleCheckOut}
-                    disabled={loading}
-                >
-                    {loading ? (
-                        <Icon icon="mdi:loading" className="spinner" />
-                    ) : (
-                        'Check out'
-                    )}
-                </button>
+                {showCheckOut && (
+                    <button
+                        type="button"
+                        className="check-out-btn"
+                        onClick={handleCheckOut}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <Icon icon="mdi:loading" className="spinner" />
+                        ) : (
+                            'Check out'
+                        )}
+                    </button>
+                )}
             </div>
         );
     }

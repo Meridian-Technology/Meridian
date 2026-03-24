@@ -384,6 +384,18 @@
             gap: 10px;
         }
 
+        &__anonymous-note {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.4;
+            color: var(--text-secondary, #6b7280);
+            background: #f8fafc;
+            border: 1px dashed var(--border-color, #dbe3ee);
+            border-radius: 10px;
+            padding: 10px 12px;
+            text-align: left;
+        }
+
         &__btn {
             width: 100%;
             padding: 14px 20px;

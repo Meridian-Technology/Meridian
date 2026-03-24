@@ -306,6 +306,11 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                         value={`${stats.checkInRate}%`}
                         icon="mdi:chart-line"
                     />
+                    <KpiCard
+                        title="Anonymous User Check-Ins"
+                        value={stats.anonymousBrowserCheckIns ?? 0}
+                        icon="mdi:incognito"
+                    />
                 </div>
             )}
 
