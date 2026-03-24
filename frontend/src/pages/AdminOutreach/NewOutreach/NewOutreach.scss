@@ -1,0 +1,178 @@
+.new-outreach{
+    z-index: 1;
+    height:100vh;
+    box-sizing: border-box;
+    padding: 25px 30px;
+    width:100%;
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    width: 1200px;
+    gap: 24px;
+}
+
+.new-outreach-header {
+    h2 {
+        margin: 0;
+        font-family: 'Inter', sans-serif;
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--text);
+    }
+
+    .subtitle {
+        margin: 4px 0 0;
+        font-size: 14px;
+        color: var(--lighter-text);
+        font-weight: 500;
+    }
+}
+
+
+
+.new-outreach-toolbar {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+
+    .new-outreach-list {
+        display: grid;
+        // gap: 24px;
+        width: 100%;
+        height: 100%;
+        
+
+
+        .new-outreach-card {
+            display: flex;
+            flex-direction: column;
+            // gap: 12px;
+            width: 100%;
+            height: 100%;
+            height: 500px;
+            background: var(--background);
+            border: 1px solid var(--lightborder);
+            border-radius: 12px;
+            // padding: 24px;
+            box-sizing: border-box;
+            overflow: hidden;
+
+        }
+
+        .new-outreach-header {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 20px 20px;
+            box-sizing: border-box;
+            gap: 10px;
+            p {
+                font-size: 17px;
+                font-weight: 600;
+            }
+
+            .subtext{
+                font-size: 14px;
+                color: var(--lighter-text);
+                font-weight: 400;
+            }
+            
+            width: 100%;
+        }
+
+        .search-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 0px 20px;
+
+            .subject{
+                font-size: 15px;
+                font-weight: 500;
+            }
+    
+            .search-input {
+                box-sizing: border-box;
+                width: 100%;
+                height: 44px;
+                padding: 0 16px;
+                font-family: 'Inter', sans-serif;
+                font-size: 15px;
+                font-weight: 400;
+                border: 1px solid var(--lightborder);
+                border-radius: 12px;
+                background-color: var(--background);
+                color: var(--text);
+                transition: border-color 0.2s;
+
+                &-body{
+                    height: 200px;
+                    padding: 15px 16px;
+                }
+    
+                &::placeholder {
+                    color: var(--lighter-text);
+                }
+    
+                &:focus {
+                    outline: none;
+                    // border-color: var(--red);
+                    box-shadow: 0 0 0 2px rgba(212, 91, 83, 0.15);
+                }
+            }
+        }
+
+    }
+
+    .count{
+        display: flex;
+        flex-direction: row;
+        gap: 5px;
+        background: rgba(255, 0, 0, 0.050);
+        padding: 10px;
+        border: 1px solid var(--lightborder);
+        border-color: rgba(255, 0, 0, 0.085);
+        border-radius: 8px;
+        margin-top: 10px;
+
+        p.Estimated{
+            font-weight: 600;
+        }
+
+        p.live-count{
+            font-weight: 400;
+        }
+    }
+
+    p.delivery{
+        font-size: 14px;
+        font-weight: 400;
+        color: #414141d0;
+    }
+
+    .send{
+        display: flex;
+        flex-direction: row;
+        gap: 20px;
+        .btn{
+            height: 44px;
+                padding: 0 18px;
+                font-family: 'Inter', sans-serif;
+                font-size: 13px;
+                font-weight: 500;
+                border: 1px solid var(--lightborder);
+                border-radius: 12px;
+
+            &-send{
+                background: var(--red);
+                color: white;
+            }
+
+            &-draft{
+                background: white;
+                color: rgb(0, 0, 0);
+            }
+        }
+    }
+}
