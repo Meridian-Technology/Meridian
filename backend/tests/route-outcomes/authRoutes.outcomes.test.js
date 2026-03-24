@@ -40,6 +40,26 @@ jest.mock('../../services/autoClaimEventRegistrationsService', () => ({
   runAutoClaimAsync: jest.fn(),
 }));
 
+jest.mock('../../services/adminMfaService', () => ({
+  isAdminLevelAccount: jest.fn(() => false),
+  getMfaStatus: jest.fn(() => ({ configured: false, totpEnabled: false, passkeysCount: 0 })),
+  buildTokenMfaClaims: jest.fn(() => ({})),
+  createPendingMfaToken: jest.fn(),
+  verifyPendingMfaToken: jest.fn(),
+  getMfaPendingCookieOptions: jest.fn(() => ({ httpOnly: true, sameSite: 'lax', secure: false })),
+  getPendingMfaTokenFromRequest: jest.fn(),
+  createTotpEnrollment: jest.fn(),
+  enableTotpEnrollment: jest.fn(),
+  verifyTotpForLogin: jest.fn(),
+  disableTotp: jest.fn(),
+  getPasskeySummary: jest.fn(() => []),
+  generatePasskeyRegistration: jest.fn(),
+  verifyPasskeyRegistration: jest.fn(),
+  generatePasskeyAuthentication: jest.fn(),
+  verifyPasskeyAuthentication: jest.fn(),
+  removePasskey: jest.fn(),
+}));
+
 jest.mock('../../services/getModelService.js', () => {
   return (req, ...names) => {
     const models = {
