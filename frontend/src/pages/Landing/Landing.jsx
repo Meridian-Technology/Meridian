@@ -8,6 +8,7 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import WorkflowGraph from './WorkflowGraph';
 import RPI from "../../assets/Schools/RPI.svg";
 import useAuth from "../../hooks/useAuth";
+import { isWww } from "../../config/tenantRedirect";
 
 function Landing() {
     const navigate = useNavigate();
@@ -27,12 +28,13 @@ function Landing() {
         setBannerDismissed(true);
     };
 
-    // Redirect logged-in users from / to events-dashboard; /landing stays accessible
+    // Redirect logged-in users from / to events-dashboard on tenant subdomains only.
+    // Keep www landing accessible for marketing/navigation even when authenticated.
     useEffect(() => {
         if (isAuthenticating) {
             return;
         }
-        if (isAuthenticated && location.pathname === '/') {
+        if (isAuthenticated && location.pathname === '/' && !isWww()) {
             navigate('/events-dashboard');
         }
     }, [isAuthenticating, isAuthenticated, location.pathname]);
