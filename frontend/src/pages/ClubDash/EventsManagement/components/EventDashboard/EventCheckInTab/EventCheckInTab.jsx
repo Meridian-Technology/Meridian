@@ -15,6 +15,31 @@ import KpiCard from '../../../../../../components/Analytics/Dashboard/KpiCard';
 import { useEventRoom } from '../../../../../../WebSocketContext';
 import './EventCheckInTab.scss';
 
+function withCurrentTenantSubdomain(rawUrl) {
+    if (!rawUrl || typeof window === 'undefined') return rawUrl;
+    try {
+        const parsed = new URL(rawUrl, window.location.origin);
+        const host = window.location.hostname || '';
+        if (!host) return parsed.toString();
+        if (host === 'localhost') {
+            parsed.protocol = window.location.protocol;
+            parsed.host = window.location.host;
+            return parsed.toString();
+        }
+        const hostParts = host.split('.');
+        const currentSubdomain = hostParts[0]?.toLowerCase();
+        if (!currentSubdomain || currentSubdomain === 'www' || hostParts.length < 3) {
+            return parsed.toString();
+        }
+        const baseDomain = hostParts.slice(1).join('.');
+        parsed.protocol = window.location.protocol;
+        parsed.host = `${currentSubdomain}.${baseDomain}`;
+        return parsed.toString();
+    } catch (_) {
+        return rawUrl;
+    }
+}
+
 function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }) {
     const { addNotification } = useNotification();
     const [refreshing, setRefreshing] = useState(false);
@@ -61,12 +86,15 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
     useEffect(() => {
         if (qrResponse?.success) {
             setQrCodeData(qrResponse.qrCode);
+            if (qrResponse.checkInUrl) {
+                setCheckInLink((prev) => prev || withCurrentTenantSubdomain(qrResponse.checkInUrl));
+            }
         }
     }, [qrResponse]);
 
     useEffect(() => {
         if (linkResponse?.success) {
-            setCheckInLink(linkResponse.checkInUrl);
+            setCheckInLink(withCurrentTenantSubdomain(linkResponse.checkInUrl));
         }
     }, [linkResponse]);
 
@@ -337,8 +365,8 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                     >
                         <div className="checkin-section-content">
                             {showQR ? (
-                                qrCodeData ? (
-                                    <QRCodeDisplay qrCode={qrCodeData} eventName={event.name} />
+                                (checkInLink || qrCodeData) ? (
+                                    <QRCodeDisplay qrCode={qrCodeData} checkInUrl={checkInLink} eventName={event.name} />
                                 ) : (
                                     <div className="loading-placeholder">Loading QR code...</div>
                                 )
