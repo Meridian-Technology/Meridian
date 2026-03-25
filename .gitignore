@@ -11,6 +11,7 @@ classes1.json
 
 # testing
 /coverage
+/frontend/coverage/
 
 # production
 /build
