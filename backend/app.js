@@ -127,7 +127,8 @@ function createApp() {
   ];
   app.use((req, res, next) => {
     if (req.school !== 'www') return next();
-    const path = (req.path || req.url || '').split('?')[0];
+    const rawPath = (req.path || req.url || '').split('?')[0];
+    const path = rawPath && rawPath.trim() !== '' ? rawPath : '/';
     const allowed = wwwAllowedPathPrefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'));
     if (allowed) return next();
     const acceptHeader = (req.headers.accept || '').toLowerCase();
