@@ -4,7 +4,7 @@ import { useNotification } from './NotificationContext';
 import apiRequest from './utils/postRequest';
 import { analytics } from './services/analytics/analytics';
 import { getAllAnonymousRegistrations, removeAnonymousRegistration } from './utils/anonymousRegistrationStorage';
-import { isWww, isPathAllowedOnWww, getTenantRedirectUrl, getLastTenant, hasDevTenantOverride } from './config/tenantRedirect';
+import { isWww, isPathAllowedOnWww, getTenantRedirectUrl, getLastTenant, hasDevTenantOverride, setLastTenant } from './config/tenantRedirect';
 
 /** 
 documentation:
@@ -59,11 +59,20 @@ export const AuthProvider = ({ children }) => {
             // console.log('Token validation response:', response.data);
             // Handle response...
             if (response.success) {
+                const communities = response.data.communities || [];
+                // Keep a tenant hint on www so landing -> events-dashboard can resolve to a tenant
+                // even in fresh/incognito sessions with empty localStorage.
+                if (isWww() && communities.length > 0) {
+                    const last = getLastTenant();
+                    const preferredTenant = communities.length === 1
+                        ? communities[0]
+                        : (last && communities.includes(last) ? last : communities[0]);
+                    if (preferredTenant) setLastTenant(preferredTenant);
+                }
                 // On www, if this path requires a tenant, redirect to tenant or school picker.
                 // In dev with devTenantOverride, we're already on the tenant (same origin + X-Tenant);
                 // skip redirect to avoid reload loop (getTenantRedirectUrl returns same origin in dev).
                 if (isWww() && !hasDevTenantOverride() && !isPathAllowedOnWww(window.location.pathname)) {
-                    const communities = response.data.communities || [];
                     const last = getLastTenant();
                     const tenant = communities.length === 1
                         ? communities[0]
