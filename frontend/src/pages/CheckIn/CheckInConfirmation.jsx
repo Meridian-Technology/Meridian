@@ -34,6 +34,23 @@ function HighlightMatch({ text, query }) {
 
 const APP_STORE_URL = 'https://apps.apple.com/us/app/meridian-go/id6755217537';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.meridian.mobile';
+const ANON_CHECKIN_BROWSER_KEY = 'meridian_anon_checkin_browser_id';
+const ANON_EVENT_CHECKIN_KEY_PREFIX = 'meridian_anon_event_checked_in_';
+
+function getAnonymousBrowserId() {
+    if (typeof window === 'undefined') return null;
+    const existing = localStorage.getItem(ANON_CHECKIN_BROWSER_KEY);
+    if (existing) return existing;
+    const generated = `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(ANON_CHECKIN_BROWSER_KEY, generated);
+    return generated;
+}
+
+function markAnonymousEventCheckedIn(eventId) {
+    if (!eventId || typeof window === 'undefined') return;
+    const host = window.location.hostname || 'unknown-host';
+    localStorage.setItem(`${ANON_EVENT_CHECKIN_KEY_PREFIX}${host}_${eventId}`, '1');
+}
 
 function useDeviceDetection() {
     return useMemo(() => {
@@ -64,8 +81,9 @@ function CheckInConfirmation() {
 
     const event = eventResponse?.event;
     const useSelfCheckIn = !token && user;
+    const useFullyAnonymousCheckIn = Boolean(token && !user && event?.checkInSettings?.fullyAnonymousCheckIn);
     // When token is present, use pick flow for everyone (avoids "must register" for anonymous registrants who later logged in)
-    const useAnonymousPick = !!token;
+    const useAnonymousPick = !!token && !useFullyAnonymousCheckIn;
 
     // Registrations for anonymous pick (token flow, no login)
     const { data: registrationsResponse, loading: loadingRegistrations, refetch: refetchRegistrations } = useFetch(
@@ -117,10 +135,19 @@ function CheckInConfirmation() {
             try {
                 const response = useSelfCheckIn
                     ? await apiRequest(`/events/${eventId}/check-in/self`, {}, { method: 'POST' })
+                    : useFullyAnonymousCheckIn
+                        ? await apiRequest(
+                            `/events/${eventId}/check-in/anonymous`,
+                            { token, anonymousBrowserId: getAnonymousBrowserId() },
+                            { method: 'POST' }
+                        )
                     : await apiRequest(`/events/${eventId}/check-in`, { token }, { method: 'POST' });
                 if (cancelled) return;
                 if (response.success) {
                     setCheckedIn(true);
+                    if (!user) {
+                        markAnonymousEventCheckedIn(eventId);
+                    }
                     addNotification({
                         title: 'Success',
                         message: 'You have successfully checked in!',
@@ -183,10 +210,19 @@ function CheckInConfirmation() {
         try {
             const response = useSelfCheckIn
                 ? await apiRequest(`/events/${eventId}/check-in/self`, {}, { method: 'POST' })
+                : useFullyAnonymousCheckIn
+                    ? await apiRequest(
+                        `/events/${eventId}/check-in/anonymous`,
+                        { token, anonymousBrowserId: getAnonymousBrowserId() },
+                        { method: 'POST' }
+                    )
                 : await apiRequest(`/events/${eventId}/check-in`, { token }, { method: 'POST' });
 
             if (response.success) {
                 setCheckedIn(true);
+                if (!user) {
+                    markAnonymousEventCheckedIn(eventId);
+                }
                 addNotification({
                     title: 'Success',
                     message: 'You have successfully checked in!',
@@ -220,6 +256,9 @@ function CheckInConfirmation() {
             const response = await apiRequest(`/events/${eventId}/check-in/anonymous`, body, { method: 'POST' });
             if (response.success) {
                 setCheckedIn(true);
+                if (!user) {
+                    markAnonymousEventCheckedIn(eventId);
+                }
                 addNotification({
                     title: 'Success',
                     message: 'You have successfully checked in!',
@@ -593,6 +632,11 @@ function CheckInConfirmation() {
                         )}
                     </div>
                     <div className="checkin-card__actions">
+                        {useFullyAnonymousCheckIn && (
+                            <p className="checkin-card__anonymous-note">
+                                Anonymous check-in is enabled for this event. This anonymous user can check in once without sharing personal details.
+                            </p>
+                        )}
                         <button
                             className="checkin-card__btn checkin-card__btn--primary"
                             onClick={handleCheckIn}

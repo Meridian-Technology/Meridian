@@ -4,7 +4,7 @@ import axios from 'axios';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
-import { isWww } from './config/tenantRedirect';
+import { isWww, isPathAllowedOnWww } from './config/tenantRedirect';
 
 if (process.env.NODE_ENV !== 'production') {
   axios.interceptors.request.use((config) => {
@@ -23,7 +23,12 @@ axios.interceptors.response.use(
         window.location.assign('/tenant-status');
       }
     }
-    if (code === 'USE_TENANT_SUBDOMAIN' && typeof window !== 'undefined' && isWww()) {
+    if (
+      code === 'USE_TENANT_SUBDOMAIN' &&
+      typeof window !== 'undefined' &&
+      isWww() &&
+      !isPathAllowedOnWww(window.location.pathname)
+    ) {
       const nextPath = `${window.location.pathname}${window.location.search || ''}`;
       const pickerUrl = `/select-school?next=${encodeURIComponent(nextPath)}`;
       if (window.location.pathname !== '/select-school') {
