@@ -8,7 +8,7 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import WorkflowGraph from './WorkflowGraph';
 import RPI from "../../assets/Schools/RPI.svg";
 import useAuth from "../../hooks/useAuth";
-import { getLastTenant, getTenantRedirectUrl, isWww } from "../../config/tenantRedirect";
+import { getLastTenant, getTenantKeys, getTenantRedirectUrl, isWww } from "../../config/tenantRedirect";
 
 function Landing() {
     const navigate = useNavigate();
@@ -28,24 +28,33 @@ function Landing() {
         setBannerDismissed(true);
     };
 
-    // Redirect logged-in users from /:
-    // - tenant subdomain -> /events-dashboard
-    // - www -> last resolved tenant dashboard (fallback to picker)
+    // Redirect behavior from /:
+    // - tenant subdomain + logged in -> /events-dashboard
+    // - www + known lastTenant -> tenant domain (even when logged out)
+    // - www + logged in with no lastTenant -> picker
     useEffect(() => {
         if (isAuthenticating) {
             return;
         }
-        if (isAuthenticated && location.pathname === '/') {
-            if (!isWww()) {
-                navigate('/events-dashboard');
-                return;
-            }
+        if (location.pathname !== '/') {
+            return;
+        }
 
-            const tenant = getLastTenant();
-            if (tenant) {
-                window.location.href = getTenantRedirectUrl(tenant, '/events-dashboard', '');
-                return;
+        if (!isWww()) {
+            if (isAuthenticated) {
+                navigate('/events-dashboard');
             }
+            return;
+        }
+
+        const tenant = getLastTenant();
+        const validTenants = getTenantKeys({ includeHidden: true });
+        if (tenant && validTenants.includes(tenant)) {
+            window.location.href = getTenantRedirectUrl(tenant, isAuthenticated ? '/events-dashboard' : '/', '');
+            return;
+        }
+
+        if (isAuthenticated) {
             navigate('/select-school?next=%2Fevents-dashboard', { replace: true });
         }
     }, [isAuthenticating, isAuthenticated, location.pathname, navigate]);
