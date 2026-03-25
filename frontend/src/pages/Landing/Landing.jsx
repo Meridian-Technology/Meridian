@@ -8,7 +8,7 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import WorkflowGraph from './WorkflowGraph';
 import RPI from "../../assets/Schools/RPI.svg";
 import useAuth from "../../hooks/useAuth";
-import { isWww } from "../../config/tenantRedirect";
+import { getLastTenant, getTenantRedirectUrl, isWww } from "../../config/tenantRedirect";
 
 function Landing() {
     const navigate = useNavigate();
@@ -28,16 +28,27 @@ function Landing() {
         setBannerDismissed(true);
     };
 
-    // Redirect logged-in users from / to events-dashboard on tenant subdomains only.
-    // Keep www landing accessible for marketing/navigation even when authenticated.
+    // Redirect logged-in users from /:
+    // - tenant subdomain -> /events-dashboard
+    // - www -> last resolved tenant dashboard (fallback to picker)
     useEffect(() => {
         if (isAuthenticating) {
             return;
         }
-        if (isAuthenticated && location.pathname === '/' && !isWww()) {
-            navigate('/events-dashboard');
+        if (isAuthenticated && location.pathname === '/') {
+            if (!isWww()) {
+                navigate('/events-dashboard');
+                return;
+            }
+
+            const tenant = getLastTenant();
+            if (tenant) {
+                window.location.href = getTenantRedirectUrl(tenant, '/events-dashboard', '');
+                return;
+            }
+            navigate('/select-school?next=%2Fevents-dashboard', { replace: true });
         }
-    }, [isAuthenticating, isAuthenticated, location.pathname]);
+    }, [isAuthenticating, isAuthenticated, location.pathname, navigate]);
 
     useEffect(() => {
         window.addEventListener('resize', () => {
