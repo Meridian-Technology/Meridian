@@ -736,18 +736,6 @@
         color: #dc2626;
     }
 
-    // Dark mode support (if needed)
-    @media (prefers-color-scheme: dark) {
-        background: #111827;
-        --visitors-bg: #1f2937;
-        --visitors-bg-secondary: #111827;
-        --visitors-border: #374151;
-        --visitors-border-light: #374151;
-        --visitors-text-primary: #f9fafb;
-        --visitors-text-secondary: #d1d5db;
-        --visitors-text-tertiary: #9ca3af;
-    }
-
     @media (max-width: 768px) {
         .header {
             flex-direction: column;

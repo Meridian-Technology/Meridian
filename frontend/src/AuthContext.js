@@ -25,11 +25,37 @@ export const AuthProvider = ({ children }) => {
 
     const { addNotification } = useNotification();
 
+    const shouldForceLogout = (response) => {
+        const code = response?.code;
+        const error = response?.error;
+        if (
+            code === 'REFRESH_TOKEN_EXPIRED' ||
+            code === 'INVALID_REFRESH_TOKEN' ||
+            code === 'REFRESH_FAILED'
+        ) {
+            return true;
+        }
+        // apiRequest returns "Authentication required" when refresh token is truly invalid/expired.
+        if (error === 'Authentication required') return true;
+        return false;
+    };
+
     const validateToken = async () => {
         try {
             // Make the GET request to the validate-token endpoint with cookies
             const response = await apiRequest('/validate-token', null, { method: 'GET' });
             console.log('Token validation response:', response);
+            if (response?.error) {
+                if (shouldForceLogout(response)) {
+                    setIsAuthenticated(false);
+                    setPendingOrgInvites([]);
+                    setIsAuthenticating(false);
+                    return response;
+                }
+                // Preserve existing auth state on transient errors (network/5xx/temporary refresh issues).
+                setIsAuthenticating(false);
+                return response;
+            }
             // console.log('Token validation response:', response.data);
             // Handle response...
             if (response.success) {
@@ -105,15 +131,16 @@ export const AuthProvider = ({ children }) => {
                 }
                 setIsAuthenticating(false);
             } else {
-                setIsAuthenticated(false);
+                if (shouldForceLogout(response)) {
+                    setIsAuthenticated(false);
+                    setPendingOrgInvites([]);
+                }
                 setIsAuthenticating(false);
-                setPendingOrgInvites([]);
             }
         } catch (error) {
             console.log('Token expired or invalid');
-            setIsAuthenticated(false);
+            // Keep prior auth state on unexpected exceptions to avoid accidental logout.
             setIsAuthenticating(false);
-            setPendingOrgInvites([]);
             return error;
         }
     };
@@ -130,42 +157,52 @@ export const AuthProvider = ({ children }) => {
         validateToken();
     }, []);
 
+    const handleSuccessfulAuthResponse = async (responseData, authMethodName, successMessage = null) => {
+        setIsAuthenticated(true);
+        setUser(responseData.user);
+        setAuthMethod(authMethodName);
+
+        if (responseData.user && responseData.user._id) {
+            analytics.identify(responseData.user._id);
+            analytics.setUserRoles(responseData.user.roles);
+        }
+
+        if (responseData.friendRequests) {
+            setFriendRequests({
+                received: responseData.friendRequests.received || [],
+                sent: responseData.friendRequests.sent || []
+            });
+        }
+
+        if (successMessage) {
+            addNotification({ title: successMessage, type: 'success' });
+        }
+
+        await validateToken();
+        return responseData;
+    };
+
     const login = async (credentials) => {
         try {
             const response = await axios.post('/login', credentials, {
                 withCredentials: true
             });
             if (response.status === 200) {
-                setIsAuthenticated(true);
-                setUser(response.data.data.user);
-                setAuthMethod('email');
-                // Identify user in analytics and set roles (for admin exclusion from tracking)
-                if (response.data.data.user._id) {
-                    analytics.identify(response.data.data.user._id);
-                    analytics.setUserRoles(response.data.data.user.roles);
+                const payload = response.data?.data || {};
+                if (payload.requiresMfa) {
+                    return payload;
                 }
-                // Set friend requests if provided (may not be included in login response)
-                if (response.data.data.friendRequests) {
-                    setFriendRequests({
-                        received: response.data.data.friendRequests.received || [],
-                        sent: response.data.data.friendRequests.sent || []
-                    });
-                }
-                console.log(response.data);
-                addNotification({ title:'Logged in successfully',type: 'success'});
-                
-                // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
-                await validateToken();
-                
-                // On www, redirect to the tenant they logged in for (no extra step for single-tenant)
+
+                await handleSuccessfulAuthResponse(payload, 'email', 'Logged in successfully');
+
                 if (isWww() && credentials.school) {
                     window.location.href = getTenantRedirectUrl(credentials.school);
-                    return;
+                    return payload;
                 }
-                // Redirect admin users to admin dashboard
-                if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
+                if (payload.user?.roles && payload.user.roles.includes('admin')) {
                     window.location.href = '/admin';
                 }
+                return payload;
             }
         } catch (error) {
             // console.error('Login failed:', error);
@@ -182,30 +219,22 @@ export const AuthProvider = ({ children }) => {
             const response = await axios.post('/google-login', body, {
                 withCredentials: true
             });
-            // Handle response from the backend (e.g., storing the token, redirecting the user)
-            console.log('Backend response:', response.data);
-            console.log('User object from Google login:', response.data.data.user);
-            setIsAuthenticated(true);
-            setUser(response.data.data.user);
-            setAuthMethod('google');
-            // Identify user in analytics and set roles (for admin exclusion from tracking)
-            if (response.data.data.user._id) {
-                analytics.identify(response.data.data.user._id);
-                analytics.setUserRoles(response.data.data.user.roles);
+            const payload = response.data?.data || {};
+            if (payload.requiresMfa) {
+                return payload;
             }
-            // addNotification({title: 'Logged in successfully',type: 'success'});
-            
-            // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
-            await validateToken();
+
+            await handleSuccessfulAuthResponse(payload, 'google');
             
             if (isWww() && options.school) {
                 window.location.href = getTenantRedirectUrl(options.school);
-                return;
+                return payload;
             }
             // Redirect admin users to admin dashboard
-            if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
+            if (payload.user?.roles && payload.user.roles.includes('admin')) {
                 window.location.href = '/admin';
             }
+            return payload;
         } catch (error) {
             console.error('Error sending code to backend:', error);
             // Handle error
@@ -220,35 +249,48 @@ export const AuthProvider = ({ children }) => {
             const response = await axios.post('/apple-login', body, {
                 withCredentials: true
             });
-            // Handle response from the backend
-            console.log('Backend response:', response.data);
-            console.log('User object from Apple login:', response.data.data.user);
-            setIsAuthenticated(true);
-            setUser(response.data.data.user);
-            setAuthMethod('apple');
-            // Identify user in analytics and set roles (for admin exclusion from tracking)
-            if (response.data.data.user._id) {
-                analytics.identify(response.data.data.user._id);
-                analytics.setUserRoles(response.data.data.user.roles);
+            const payload = response.data?.data || {};
+            if (payload.requiresMfa) {
+                return payload;
             }
-            addNotification({ title: 'Logged in successfully', type: 'success' });
-            
-            // Refresh pending invites so OrgInviteModal and invite flows have up-to-date data
-            await validateToken();
+
+            await handleSuccessfulAuthResponse(payload, 'apple', 'Logged in successfully');
             
             if (isWww() && options.school) {
                 window.location.href = getTenantRedirectUrl(options.school);
-                return;
+                return payload;
             }
             // Redirect admin users to admin dashboard
-            if (response.data.data.user.roles && response.data.data.user.roles.includes('admin')) {
+            if (payload.user?.roles && payload.user.roles.includes('admin')) {
                 window.location.href = '/admin';
             }
+            return payload;
         } catch (error) {
             console.error('Error sending Apple ID token to backend:', error);
             // Handle error
             throw error;
         }
+    };
+
+    const verifyAdminMfaTotp = async (code, mfaToken = null) => {
+        const body = { code };
+        if (mfaToken) body.mfaToken = mfaToken;
+        const response = await axios.post('/mfa/verify-totp', body, { withCredentials: true });
+        return handleSuccessfulAuthResponse(response.data.data, 'email', 'Logged in successfully');
+    };
+
+    const getAdminMfaPasskeyOptions = async (mfaToken = null) => {
+        const body = {};
+        if (mfaToken) body.mfaToken = mfaToken;
+        const response = await axios.post('/mfa/passkey/authentication-options', body, { withCredentials: true });
+        return response.data.data.options;
+    };
+
+    const verifyAdminMfaPasskey = async (credential, mfaToken = null) => {
+        const body = { credential };
+        if (mfaToken) body.mfaToken = mfaToken;
+        const response = await axios.post('/mfa/verify-passkey', body, { withCredentials: true });
+        return handleSuccessfulAuthResponse(response.data.data, 'email', 'Logged in successfully');
     };
 
     const samlLogin = async (relayState = null) => {
@@ -361,7 +403,10 @@ export const AuthProvider = ({ children }) => {
             clearPendingOrgInvite,
             showOrgInviteModal,
             dismissOrgInviteModal,
-            setPendingOrgInvites
+            setPendingOrgInvites,
+            verifyAdminMfaTotp,
+            getAdminMfaPasskeyOptions,
+            verifyAdminMfaPasskey
         }}>
             {children}
         </AuthContext.Provider>

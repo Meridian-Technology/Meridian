@@ -1,10 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import Header from '../../components/Header/Header';
 import useAuth from '../../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import BlueGrad1 from '../../assets/BlueGrad1.png';
-import BlueGrad2 from '../../assets/BlueGrad2.png';
-
 import Dashboard from '../../components/Dashboard/Dashboard';
 import General from './General/General';
 import WebSocketConnectionsPage from './WebSocketConnectionsPage/WebSocketConnectionsPage';
@@ -12,7 +9,10 @@ import PlatformAdminsPage from './PlatformAdminsPage/PlatformAdminsPage';
 import BadgeManager from './BadgeManager/BadgeManager';
 import ManageUsers from './ManageUsers/ManageUsers';
 import QRManager from './QRManager/QRManager';
-import EventsAnalytics from '../../components/EventsAnalytics/EventsAnalytics';
+import AnalyticsDashboard from '../FeatureAdmin/AnalyticsDashboard/AnalyticsDashboard';
+import MobileAnalyticsDashboard from '../FeatureAdmin/MobileAnalyticsDashboard/MobileAnalyticsDashboard';
+import UserJourneyAnalytics from '../FeatureAdmin/UserJourneyAnalytics/UserJourneyAnalytics';
+import IndividualUserJourney from '../FeatureAdmin/IndividualUserJourney/IndividualUserJourney';
 
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 
@@ -22,16 +22,6 @@ import './Admin.scss';
 function Admin(){
     const { user } = useAuth();
     const navigate = useNavigate();
-
-    const [showPage, setShowPage] = useState("analytics");
-
-    const toggleAnalytics = (page) => {
-        if(showPage === page){
-            setShowPage("");
-            return;
-        }
-        setShowPage(page);
-    }
 
     if(!user){
         return(
@@ -52,9 +42,24 @@ function Admin(){
             icon: 'bx:stats',
             subItems: [
                 {
-                    label: 'Events Analytics',
-                    icon: 'material-symbols:event',
-                    element: <EventsAnalytics/>
+                    label: 'Web Analytics',
+                    icon: 'mdi:chart-line',
+                    element: <AnalyticsDashboard/>
+                },
+                {
+                    label: 'Mobile Analytics',
+                    icon: 'mdi:cellphone',
+                    element: <MobileAnalyticsDashboard/>
+                },
+                {
+                    label: 'User Journey Analytics',
+                    icon: 'mdi:graph',
+                    element: <UserJourneyAnalytics/>
+                },
+                {
+                    label: 'Individual Journey',
+                    icon: 'mdi:map-marker-path',
+                    element: <IndividualUserJourney/>
                 },
                 {
                     label: 'QR Codes',

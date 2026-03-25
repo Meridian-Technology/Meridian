@@ -31,14 +31,17 @@ export const authenticatedRequest = async (url, options = {}) => {
         const retryResponse = await axios(reqConfig);
         return { data: retryResponse.data };
       } catch (refreshError) {
-        if (
-          refreshError.response?.data?.code === "REFRESH_TOKEN_EXPIRED" ||
-          refreshError.response?.data?.code === "INVALID_REFRESH_TOKEN" ||
-          refreshError.response?.data?.code === "REFRESH_FAILED"
-        ) {
+        const refreshCode = refreshError.response?.data?.code;
+        const shouldForceLogin =
+          refreshCode === "REFRESH_TOKEN_EXPIRED" ||
+          refreshCode === "INVALID_REFRESH_TOKEN" ||
+          refreshCode === "REFRESH_FAILED";
+        if (shouldForceLogin) {
           window.location.href = "/login";
+          return { error: "Authentication required", code: refreshCode };
         }
-        return { error: "Authentication required" };
+        // Preserve current session on transient refresh issues (network/5xx)
+        return { error: "Session refresh temporarily unavailable", code: "REFRESH_TEMPORARY_FAILURE" };
       }
     }
     const message = err.response?.data?.message || err.response?.data?.error || err.message;
@@ -96,17 +99,19 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
           });
           setData(retryResponse.data);
         } catch (refreshError) {
-          // Check if refresh token expired or is invalid
-          if (refreshError.response?.data?.code === 'REFRESH_TOKEN_EXPIRED' || 
-              refreshError.response?.data?.code === 'INVALID_REFRESH_TOKEN' ||
-              refreshError.response?.data?.code === 'REFRESH_FAILED') {
+          const refreshCode = refreshError.response?.data?.code;
+          const shouldForceLogin =
+            refreshCode === 'REFRESH_TOKEN_EXPIRED' ||
+            refreshCode === 'INVALID_REFRESH_TOKEN' ||
+            refreshCode === 'REFRESH_FAILED';
+          if (shouldForceLogin) {
             console.log('🚫 Refresh token expired or invalid, redirecting to login');
             window.location.href = '/login';
             setError('Authentication required');
           } else {
-            console.log('🚫 Refresh failed, redirecting to login');
-            window.location.href = '/login';
-            setError('Authentication required');
+            // Do not hard logout on transient refresh failures.
+            console.log('⚠️ Refresh temporarily unavailable, preserving current auth state');
+            setError('Session refresh temporarily unavailable');
           }
         }
       } else {

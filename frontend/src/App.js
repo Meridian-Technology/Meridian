@@ -5,7 +5,7 @@ import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
-import { isWww, setLastTenant } from './config/tenantRedirect';
+import { isWww, setLastTenant, setTenantConfigCache } from './config/tenantRedirect';
 
 import Room from './pages/Room/Room';
 import Room1 from './pages/Room/Room1';
@@ -67,6 +67,7 @@ import Atlas from './pages/FeatureAdmin/Atlas/Atlas';
 import AnalyticsDashboard from './pages/FeatureAdmin/AnalyticsDashboard/AnalyticsDashboard';
 import MobileAnalyticsDashboard from './pages/FeatureAdmin/MobileAnalyticsDashboard/MobileAnalyticsDashboard';
 import UserJourneyAnalytics from './pages/FeatureAdmin/UserJourneyAnalytics/UserJourneyAnalytics';
+import IndividualUserJourney from './pages/FeatureAdmin/IndividualUserJourney/IndividualUserJourney';
 import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
@@ -80,6 +81,7 @@ import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
 import PostMortemPdfPreview from './pages/ClubDash/EventsManagement/components/EventPostMortem/PostMortemPdfPreview';
+import TenantStatus from './pages/TenantStatus/TenantStatus';
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -163,6 +165,25 @@ function App() {
 
         
     }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadTenantConfig = async () => {
+            try {
+                const response = await fetch('/api/tenant-config', { credentials: 'include' });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (cancelled) return;
+                if (payload?.success && Array.isArray(payload?.data?.tenants)) {
+                    setTenantConfigCache(payload.data.tenants);
+                }
+            } catch (_) {}
+        };
+        loadTenantConfig();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     // document.documentElement.classList.add('dark-mode');
     return (
         <GoogleOAuthProvider clientId="639818062398-k4qnm9l320phu967ctc2l1jt1sp9ib7p.apps.googleusercontent.com">
@@ -200,6 +221,7 @@ function App() {
                                             <Route path="/child-safety-standards" element={<AnimatedPageWrapper><ChildSafetyStandards /></AnimatedPageWrapper>}/>
                                             <Route path="/forgot-password" element={<AnimatedPageWrapper><ForgotPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/reset-password" element={<AnimatedPageWrapper><ResetPassword /></AnimatedPageWrapper>}/>
+                                            <Route path="/tenant-status" element={<AnimatedPageWrapper><TenantStatus /></AnimatedPageWrapper>}/>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>
                                             <Route path="*" element={<Error />}/>
                                             <Route path="/error/:errorCode" element={<Error />}/>
@@ -227,6 +249,8 @@ function App() {
                                                 <Route path="/admin" element={<AnimatedPageWrapper><Admin/></AnimatedPageWrapper>}/>
                                                 <Route path="/analytics-dashboard" element={<AnimatedPageWrapper><AnalyticsDashboard/></AnimatedPageWrapper>}/>
                                                 <Route path="/user-journey-analytics" element={<AnimatedPageWrapper><UserJourneyAnalytics/></AnimatedPageWrapper>}/>
+                                                <Route path="/user-journey" element={<AnimatedPageWrapper><IndividualUserJourney/></AnimatedPageWrapper>}/>
+                                                <Route path="/user-journey/:type/:identifier" element={<AnimatedPageWrapper><IndividualUserJourney/></AnimatedPageWrapper>}/>
                                                 <Route path="/mobile-analytics-dashboard" element={<AnimatedPageWrapper><MobileAnalyticsDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
 

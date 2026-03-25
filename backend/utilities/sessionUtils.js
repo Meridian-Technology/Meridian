@@ -57,17 +57,24 @@ async function createSession(userId, refreshToken, req) {
 
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS);
 
-    const session = new Session({
-        userId,
-        refreshToken,
-        deviceInfo: deviceInfo.deviceInfo,
-        userAgent: deviceInfo.userAgent,
-        ipAddress: deviceInfo.ipAddress,
-        clientType: deviceInfo.clientType,
-        expiresAt
-    });
-
-    await session.save();
+    const session = await Session.findOneAndUpdate(
+        { refreshToken },
+        {
+            $set: {
+                userId,
+                deviceInfo: deviceInfo.deviceInfo,
+                userAgent: deviceInfo.userAgent,
+                ipAddress: deviceInfo.ipAddress,
+                clientType: deviceInfo.clientType,
+                expiresAt,
+                lastUsed: new Date(),
+            },
+            $setOnInsert: {
+                createdAt: new Date(),
+            },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
     return session;
 }
 
@@ -78,16 +85,24 @@ async function createGlobalSession(globalUserId, refreshToken, req) {
     const { Session } = getGlobalModels(req, 'Session');
     const deviceInfo = getDeviceInfo(req);
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS);
-    const session = new Session({
-        globalUserId,
-        refreshToken,
-        deviceInfo: deviceInfo.deviceInfo,
-        userAgent: deviceInfo.userAgent,
-        ipAddress: deviceInfo.ipAddress,
-        clientType: deviceInfo.clientType,
-        expiresAt,
-    });
-    await session.save();
+    const session = await Session.findOneAndUpdate(
+        { refreshToken },
+        {
+            $set: {
+                globalUserId,
+                deviceInfo: deviceInfo.deviceInfo,
+                userAgent: deviceInfo.userAgent,
+                ipAddress: deviceInfo.ipAddress,
+                clientType: deviceInfo.clientType,
+                expiresAt,
+                lastUsed: new Date(),
+            },
+            $setOnInsert: {
+                createdAt: new Date(),
+            },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
     return session;
 }
 
@@ -130,7 +145,7 @@ async function validateSession(refreshToken, req) {
         session.lastUsed = new Date();
         await session.save();
 
-        return { valid: true, session, user };
+        return { valid: true, session, user, decoded };
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
             await Session.deleteOne({ refreshToken }).catch(() => {});
@@ -171,7 +186,7 @@ async function validateGlobalSession(refreshToken, req) {
         session.lastUsed = new Date();
         await session.save();
         const { tenantUser } = await authGlobalService.resolveTenantUserForRequest(req, globalUser._id);
-        return { valid: true, session, globalUser, user: tenantUser };
+        return { valid: true, session, globalUser, user: tenantUser, decoded };
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
             return { valid: false, error: 'Token expired' };

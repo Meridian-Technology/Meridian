@@ -1,0 +1,72 @@
+.TenantStatus {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  box-sizing: border-box;
+
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.1) 0%,
+      rgba(0, 0, 0, 0.2) 50%,
+      rgba(0, 0, 0, 0.3) 100%
+    );
+    pointer-events: none;
+  }
+
+  &__content {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 520px;
+    padding: 2rem 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 18px;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+
+  &__header {
+    text-align: center;
+  }
+
+  &__logo {
+    margin-bottom: 1.25rem;
+
+    img {
+      height: 48px;
+      width: auto;
+      filter: brightness(0) invert(1);
+    }
+  }
+
+  &__title {
+    font-size: 2rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 0.65rem;
+    font-family: 'Montserrat', system-ui, sans-serif;
+  }
+
+  &__subtitle {
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.88);
+    margin: 0 0 0.4rem;
+    font-weight: 400;
+  }
+
+  &__helper {
+    margin: 0;
+    font-size: 0.92rem;
+    color: rgba(255, 255, 255, 0.72);
+  }
+}

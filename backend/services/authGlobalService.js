@@ -3,6 +3,7 @@
  * Used by auth routes and SAML.
  */
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
 const getModels = require('./getModelService');
 const getGlobalModels = require('./getGlobalModelService');
 const { createGlobalSession } = require('../utilities/sessionUtils');
@@ -136,12 +137,14 @@ async function resolveTenantUserForRequest(req, globalUserId) {
  * Issue access + refresh tokens and set cookies.
  * Uses global Session and JWT payload: globalUserId, tenantUserId?, platformRoles?, roles?.
  */
-async function issueTokens(req, res, globalUser, tenantUser, platformRoles = []) {
+async function issueTokens(req, res, globalUser, tenantUser, platformRoles = [], options = {}) {
     const roles = tenantUser && tenantUser.roles ? tenantUser.roles : ['user'];
     const tenantUserId = tenantUser ? tenantUser._id : null;
+    const mfaConfigured = Boolean(options.mfaConfigured);
+    const mfaVerified = Boolean(options.mfaVerified);
 
     const refreshToken = jwt.sign(
-        { globalUserId: globalUser._id, type: 'refresh' },
+        { globalUserId: globalUser._id, type: 'refresh', mfaConfigured, mfaVerified, jti: randomUUID() },
         process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
         { expiresIn: REFRESH_TOKEN_EXPIRY }
     );
@@ -154,6 +157,8 @@ async function issueTokens(req, res, globalUser, tenantUser, platformRoles = [])
             tenantUserId,
             platformRoles: platformRoles.length ? platformRoles : undefined,
             roles,
+            mfaConfigured,
+            mfaVerified,
         },
         process.env.JWT_SECRET,
         { expiresIn: ACCESS_TOKEN_EXPIRY }

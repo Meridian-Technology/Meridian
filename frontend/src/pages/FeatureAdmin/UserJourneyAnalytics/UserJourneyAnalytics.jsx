@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
 import FunnelChart from '../../ClubDash/EventsManagement/components/EventDashboard/FunnelChart';
@@ -11,20 +10,28 @@ const REPORT_TABS = [
     { id: 'funnel', label: 'Funnel Analysis', icon: 'mdi:filter-variant' }
 ];
 
+const DEFAULT_FUNNEL_STEPS = ['Events Dashboard', 'Explore', 'Event Page', 'event_registration'];
+const FUNNEL_PRESETS = [
+    { id: 'registration', label: 'Registration Flow', steps: ['Events Dashboard', 'Explore', 'Event Page', 'event_registration'] },
+    { id: 'engagement', label: 'Engagement Flow', steps: ['Explore', 'Event Page', 'event_view', 'event_agenda_view'] },
+    { id: 'mobile-landing', label: 'Mobile Landing Flow', steps: ['Mobile Landing', 'mobile_landing_qr_expanded', 'mobile_landing_app_store_click'] }
+];
+
 function UserJourneyAnalytics() {
     const [timeRange, setTimeRange] = useState('30d');
     const [activeTab, setActiveTab] = useState('overview');
     const [platform, setPlatform] = useState('web');
     const [startingPoint, setStartingPoint] = useState('');
-    const defaultFunnelSteps = ['Events Dashboard', 'Explore', 'Event Page', 'event_registration'];
-    const [funnelSteps, setFunnelSteps] = useState([...defaultFunnelSteps]);
+    const [funnelStepsState, setFunnelStepsState] = useState(DEFAULT_FUNNEL_STEPS);
+    const [newFunnelStep, setNewFunnelStep] = useState('');
 
     const overviewUrl = `/dashboard/all?timeRange=${timeRange}&platform=${platform}`;
     const pathUrl = startingPoint
         ? `/dashboard/user-journey?timeRange=${timeRange}&platform=${platform}&startingPoint=${encodeURIComponent(startingPoint)}`
         : `/dashboard/user-journey?timeRange=${timeRange}&platform=${platform}`;
-    const appliedFunnelSteps = funnelSteps.filter(Boolean);
-    const funnelUrl = `/dashboard/funnel?timeRange=${timeRange}&platform=${platform}&steps=${encodeURIComponent((appliedFunnelSteps.length ? appliedFunnelSteps : defaultFunnelSteps).join(','))}`;
+    const cleanedFunnelSteps = funnelStepsState.map((s) => s.trim()).filter(Boolean);
+    const funnelSteps = cleanedFunnelSteps.length >= 2 ? cleanedFunnelSteps : DEFAULT_FUNNEL_STEPS;
+    const funnelUrl = `/dashboard/funnel?timeRange=${timeRange}&platform=${platform}&steps=${encodeURIComponent(funnelSteps.join(','))}`;
     const startingPointsUrl = `/dashboard/path-starting-points?timeRange=${timeRange}&platform=${platform}`;
 
     const { data: overviewData, loading: overviewLoading, error: overviewError, refetch: refetchOverview } = useFetch(activeTab === 'overview' ? overviewUrl : null);
@@ -56,33 +63,54 @@ function UserJourneyAnalytics() {
     const funnelResult = funnelData?.data;
     const startingPoints = startingPointsData?.data;
     const allScreens = [...(startingPoints?.screens || []).map(s => ({ ...s, type: 'screen' })), ...(startingPoints?.events || []).map(e => ({ ...e, type: 'event' }))];
-    const funnelOptions = [...new Set([...defaultFunnelSteps, ...(allScreens?.map(s => s.label) || [])])];
+    const funnelChartData = (funnelResult?.steps || []).map((step, idx) => ({
+        label: `Step ${idx + 1}`,
+        value: step.count || 0
+    }));
+    const suggestedFunnelSteps = allScreens
+        .map((item) => item.label)
+        .filter(Boolean)
+        .filter((value, index, arr) => arr.indexOf(value) === index)
+        .sort((a, b) => a.localeCompare(b));
+
+    const applyPreset = (steps) => {
+        setFunnelStepsState(steps);
+    };
 
     const updateFunnelStep = (index, value) => {
-        setFunnelSteps(prev => {
+        setFunnelStepsState((prev) => prev.map((step, i) => (i === index ? value : step)));
+    };
+
+    const removeFunnelStep = (index) => {
+        setFunnelStepsState((prev) => prev.filter((_, i) => i !== index));
+    };
+
+    const moveFunnelStep = (index, direction) => {
+        setFunnelStepsState((prev) => {
+            const nextIndex = direction === 'up' ? index - 1 : index + 1;
+            if (nextIndex < 0 || nextIndex >= prev.length) return prev;
             const next = [...prev];
-            next[index] = value;
+            [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
             return next;
         });
     };
 
     const addFunnelStep = () => {
-        setFunnelSteps(prev => [...prev, '']);
+        const value = newFunnelStep.trim();
+        if (!value) return;
+        setFunnelStepsState((prev) => [...prev, value]);
+        setNewFunnelStep('');
     };
 
-    const removeFunnelStep = (index) => {
-        setFunnelSteps(prev => prev.filter((_, i) => i !== index));
+    const resetFunnelSteps = () => {
+        setFunnelStepsState(DEFAULT_FUNNEL_STEPS);
+        setNewFunnelStep('');
     };
 
     return (
         <div className="user-journey-analytics">
             <header className="uj-header">
                 <div className="uj-header-content">
-                    <div className="uj-breadcrumb">
-                        <Link to="/analytics-dashboard" className="uj-breadcrumb-link">
-                            <Icon icon="mdi:arrow-left" /> Web Analytics
-                        </Link>
-                    </div>
                     <h1>User Journey & Explorations</h1>
                     <p>Path exploration and funnel analysis</p>
                     <div className="uj-tabs">
@@ -228,46 +256,90 @@ function UserJourneyAnalytics() {
                             <Icon icon="mdi:filter-variant" />
                             Funnel Analysis
                         </h2>
-                        <p className="uj-section-desc">Conversion funnel — users must complete steps in sequence. Similar to GA4 Funnel Exploration.</p>
+                        <p className="uj-section-desc">Build funnel steps in order, then review conversion and drop-off at each stage.</p>
 
                         <div className="uj-funnel-controls">
                             <div className="uj-funnel-steps-input">
-                                <label>Funnel steps:</label>
-                                <div className="uj-funnel-steps-list">
-                                    {funnelSteps.map((step, index) => (
-                                        <div key={index} className="uj-funnel-step-row">
-                                            <span className="uj-funnel-step-number">Step {index + 1}</span>
-                                            <select
-                                                value={step}
-                                                onChange={(e) => updateFunnelStep(index, e.target.value)}
-                                                className="uj-funnel-step-select"
-                                            >
-                                                <option value="">Select page or event...</option>
-                                                {funnelOptions.map((opt) => (
-                                                    <option key={opt} value={opt}>{opt}</option>
-                                                ))}
-                                            </select>
-                                            {funnelSteps.length > 1 && (
-                                                <button
-                                                    type="button"
-                                                    className="uj-funnel-step-remove"
-                                                    onClick={() => removeFunnelStep(index)}
-                                                    aria-label={`Remove step ${index + 1}`}
-                                                >
-                                                    <Icon icon="mdi:close" />
-                                                </button>
-                                            )}
-                                        </div>
+                                <label>Step Builder (ordered):</label>
+                                <div className="uj-funnel-preset-row">
+                                    {FUNNEL_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            type="button"
+                                            className="uj-funnel-preset-btn"
+                                            onClick={() => applyPreset(preset.steps)}
+                                        >
+                                            {preset.label}
+                                        </button>
                                     ))}
-                                    <button
-                                        type="button"
-                                        className="uj-funnel-add-step"
-                                        onClick={addFunnelStep}
-                                    >
-                                        <Icon icon="mdi:plus" />
-                                        Add step
+                                    <button type="button" className="uj-funnel-reset-btn" onClick={resetFunnelSteps}>
+                                        Reset
                                     </button>
                                 </div>
+                                <div className="uj-funnel-steps-list">
+                                    {funnelStepsState.map((step, index) => (
+                                        <div key={`${index}-${step}`} className="uj-funnel-step-row">
+                                            <span className="uj-funnel-step-number">Step {index + 1}</span>
+                                            <input
+                                                type="text"
+                                                className="uj-funnel-step-select"
+                                                list="funnel-step-suggestions"
+                                                value={step}
+                                                onChange={(e) => updateFunnelStep(index, e.target.value)}
+                                                placeholder="Select or type an event/screen"
+                                            />
+                                            <button
+                                                type="button"
+                                                className="uj-funnel-step-move"
+                                                onClick={() => moveFunnelStep(index, 'up')}
+                                                disabled={index === 0}
+                                                aria-label={`Move step ${index + 1} up`}
+                                            >
+                                                <Icon icon="mdi:arrow-up" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="uj-funnel-step-move"
+                                                onClick={() => moveFunnelStep(index, 'down')}
+                                                disabled={index === funnelStepsState.length - 1}
+                                                aria-label={`Move step ${index + 1} down`}
+                                            >
+                                                <Icon icon="mdi:arrow-down" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="uj-funnel-step-remove"
+                                                onClick={() => removeFunnelStep(index)}
+                                                aria-label={`Remove step ${index + 1}`}
+                                            >
+                                                <Icon icon="mdi:close" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <datalist id="funnel-step-suggestions">
+                                    {suggestedFunnelSteps.map((suggestion) => (
+                                        <option key={suggestion} value={suggestion} />
+                                    ))}
+                                </datalist>
+                                <div className="uj-funnel-add-row">
+                                    <input
+                                        type="text"
+                                        list="funnel-step-suggestions"
+                                        value={newFunnelStep}
+                                        onChange={(e) => setNewFunnelStep(e.target.value)}
+                                        placeholder="Add another step"
+                                    />
+                                    <button type="button" className="uj-funnel-add-step" onClick={addFunnelStep}>
+                                        <Icon icon="mdi:plus" />
+                                        Add Step
+                                    </button>
+                                </div>
+                                {funnelStepsState.length < 2 && (
+                                    <div className="uj-funnel-validation">
+                                        Add at least 2 steps to run a funnel. Showing default steps for now.
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -280,17 +352,36 @@ function UserJourneyAnalytics() {
                                 <span className="label">Converted</span>
                                 <span className="value">{formatNumber(funnelResult.totalConverted)}</span>
                             </div>
-                           
+                            <div className="uj-funnel-summary-item highlight">
+                                <span className="label">Overall conversion</span>
+                                <span className="value">{funnelResult.overallConversionRate?.toFixed(1) || '0'}%</span>
+                            </div>
                         </div>
 
-                        <div className="event-analytics-detail">
-                            <div className="funnel-section">
-                                <div className="funnel-chart-container">
-                                    <div className="funnel-chart-wrapper">
-                                        <FunnelChart data={funnelResult.steps?.map(s => ({ label: s.step, value: s.count })) || []} />
-                                    </div>
+                        <div className="uj-funnel-visualization">
+                            <div className="uj-funnel-chart-container">
+                                <div className="uj-funnel-chart-wrapper">
+                                    <FunnelChart data={funnelChartData} />
                                 </div>
                             </div>
+                            {funnelResult.steps?.map((step, idx) => (
+                                <div key={idx} className="uj-funnel-step">
+                                    <div className="uj-funnel-step-header">
+                                        <span className="uj-funnel-step-number">Step {idx + 1}</span>
+                                        <span className="uj-funnel-step-name">{step.step}</span>
+                                    </div>
+                                    <div className="uj-funnel-step-metrics">
+                                        <span className="uj-funnel-step-value">{formatNumber(step.count)} users</span>
+                                        <span className="uj-funnel-step-conversion">{step.conversionRate?.toFixed(1)}% reached</span>
+                                    </div>
+                                    {step.dropOff > 0 && (
+                                        <div className="uj-funnel-dropoff">
+                                            <Icon icon="mdi:arrow-down" />
+                                            {formatNumber(step.dropOff)} dropped off
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
                         </div>
                     </section>
                 )}
