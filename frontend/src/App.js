@@ -5,7 +5,7 @@ import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
-import { isWww, setLastTenant } from './config/tenantRedirect';
+import { isWww, setLastTenant, setTenantConfigCache } from './config/tenantRedirect';
 
 import Room from './pages/Room/Room';
 import Room1 from './pages/Room/Room1';
@@ -81,6 +81,7 @@ import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
 import PostMortemPdfPreview from './pages/ClubDash/EventsManagement/components/EventPostMortem/PostMortemPdfPreview';
+import TenantStatus from './pages/TenantStatus/TenantStatus';
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -164,6 +165,25 @@ function App() {
 
         
     }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadTenantConfig = async () => {
+            try {
+                const response = await fetch('/api/tenant-config', { credentials: 'include' });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (cancelled) return;
+                if (payload?.success && Array.isArray(payload?.data?.tenants)) {
+                    setTenantConfigCache(payload.data.tenants);
+                }
+            } catch (_) {}
+        };
+        loadTenantConfig();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     // document.documentElement.classList.add('dark-mode');
     return (
         <GoogleOAuthProvider clientId="639818062398-k4qnm9l320phu967ctc2l1jt1sp9ib7p.apps.googleusercontent.com">
@@ -201,6 +221,7 @@ function App() {
                                             <Route path="/child-safety-standards" element={<AnimatedPageWrapper><ChildSafetyStandards /></AnimatedPageWrapper>}/>
                                             <Route path="/forgot-password" element={<AnimatedPageWrapper><ForgotPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/reset-password" element={<AnimatedPageWrapper><ResetPassword /></AnimatedPageWrapper>}/>
+                                            <Route path="/tenant-status" element={<AnimatedPageWrapper><TenantStatus /></AnimatedPageWrapper>}/>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>
                                             <Route path="*" element={<Error />}/>
                                             <Route path="/error/:errorCode" element={<Error />}/>

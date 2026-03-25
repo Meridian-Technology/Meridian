@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
 const router = express.Router();
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
 const { requireAdmin } = require('../middlewares/requireAdmin');
@@ -13,6 +14,53 @@ const ACCESS_TOKEN_EXPIRY = '1m';
 const REFRESH_TOKEN_EXPIRY = '30d';
 const ACCESS_TOKEN_EXPIRY_MS = 60 * 1000;
 const REFRESH_TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
+const TENANT_STATUSES = new Set(['active', 'coming_soon', 'maintenance', 'hidden']);
+const DEFAULT_TENANTS = [
+  {
+    tenantKey: 'rpi',
+    name: 'Rensselaer Polytechnic Institute',
+    subdomain: 'rpi',
+    location: 'Troy, NY',
+    status: 'active',
+    statusMessage: '',
+  },
+  {
+    tenantKey: 'tvcog',
+    name: 'Center of Gravity',
+    subdomain: 'tvcog',
+    location: 'Troy, NY',
+    status: 'active',
+    statusMessage: '',
+  },
+];
+
+function normalizeTenantRows(rows = []) {
+  return rows
+    .map((row) => {
+      const tenantKey = String(row?.tenantKey || '').trim().toLowerCase();
+      if (!tenantKey) return null;
+      const status = TENANT_STATUSES.has(row?.status) ? row.status : 'active';
+      return {
+        tenantKey,
+        name: String(row?.name || tenantKey).trim(),
+        subdomain: String(row?.subdomain || tenantKey).trim().toLowerCase(),
+        location: String(row?.location || '').trim(),
+        status,
+        statusMessage: String(row?.statusMessage || '').trim().slice(0, 240),
+      };
+    })
+    .filter(Boolean);
+}
+
+function mergeTenantRows(baseRows = [], overrideRows = []) {
+  const merged = new Map();
+  normalizeTenantRows(baseRows).forEach((row) => merged.set(row.tenantKey, row));
+  normalizeTenantRows(overrideRows).forEach((row) => {
+    const base = merged.get(row.tenantKey) || {};
+    merged.set(row.tenantKey, { ...base, ...row });
+  });
+  return Array.from(merged.values());
+}
 
 router.get('/health', async (req, res) => {
   try {
@@ -45,6 +93,24 @@ router.get('/health', async (req, res) => {
   } catch (err) {
     console.log(err.message);
     res.status(500).json({ error: 'Site health check failed', details: err.message });
+  }
+});
+
+router.get('/api/tenant-config', async (req, res) => {
+  try {
+    const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
+    const doc = await TenantConfig.findOne({ configKey: 'default' }).lean();
+    const tenants = mergeTenantRows(DEFAULT_TENANTS, doc?.tenants || []);
+    res.json({
+      success: true,
+      data: {
+        tenants,
+        updatedAt: doc?.updatedAt || null,
+      },
+    });
+  } catch (err) {
+    console.error('GET /api/tenant-config failed:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -146,7 +212,7 @@ router.post('/admin/impersonate', verifyToken, requireAdmin, async (req, res) =>
     );
 
     const refreshToken = jwt.sign(
-      { userId: targetUser._id, type: 'refresh' },
+      { userId: targetUser._id, type: 'refresh', jti: randomUUID() },
       process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
       { expiresIn: REFRESH_TOKEN_EXPIRY }
     );
@@ -369,6 +435,79 @@ router.post('/admin/migrate-users-to-global-identity', verifyToken, requireAdmin
     res.json({ success: true, data: summary });
   } catch (err) {
     console.error('POST /admin/migrate-users-to-global-identity failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/admin/tenant-config', verifyToken, requireAdmin, async (req, res) => {
+  if (!req.user.platformRoles?.includes('platform_admin')) {
+    return res.status(403).json({ success: false, message: 'Platform admin required.' });
+  }
+  try {
+    const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
+    const doc = await TenantConfig.findOne({ configKey: 'default' }).lean();
+    const tenants = mergeTenantRows(DEFAULT_TENANTS, doc?.tenants || []);
+    res.json({
+      success: true,
+      data: {
+        tenants,
+        updatedAt: doc?.updatedAt || null,
+      },
+    });
+  } catch (err) {
+    console.error('GET /admin/tenant-config failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/admin/tenant-config', verifyToken, requireAdmin, async (req, res) => {
+  if (!req.user.platformRoles?.includes('platform_admin')) {
+    return res.status(403).json({ success: false, message: 'Platform admin required.' });
+  }
+  try {
+    if (!Array.isArray(req.body?.tenants)) {
+      return res.status(400).json({ success: false, message: 'tenants array is required.' });
+    }
+    const incoming = normalizeTenantRows(req.body.tenants);
+    const incomingByKey = new Map(incoming.map((row) => [row.tenantKey, row]));
+    const nextTenants = mergeTenantRows(
+      DEFAULT_TENANTS,
+      DEFAULT_TENANTS.map((row) => {
+        const update = incomingByKey.get(row.tenantKey);
+        if (!update) return row;
+        return {
+          ...row,
+          status: update.status || row.status,
+          statusMessage: update.statusMessage || '',
+        };
+      })
+    );
+    const activeCount = nextTenants.filter((tenant) => tenant.status === 'active').length;
+    if (activeCount < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one tenant must remain active.',
+        code: 'AT_LEAST_ONE_ACTIVE_TENANT_REQUIRED',
+      });
+    }
+
+    const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
+    const updatedBy = req.user.globalUserId || req.user.userId || null;
+    const doc = await TenantConfig.findOneAndUpdate(
+      { configKey: 'default' },
+      { $set: { tenants: nextTenants, updatedBy } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    res.json({
+      success: true,
+      data: {
+        tenants: mergeTenantRows(DEFAULT_TENANTS, doc?.tenants || []),
+        updatedAt: doc?.updatedAt || null,
+      },
+    });
+  } catch (err) {
+    console.error('PUT /admin/tenant-config failed:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

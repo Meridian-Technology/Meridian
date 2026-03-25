@@ -91,6 +91,17 @@
     }
   }
 
+  &__card--disabled {
+    cursor: not-allowed;
+    opacity: 0.85;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: none;
+      box-shadow: none;
+    }
+  }
+
   &__card-icon {
     width: 48px;
     height: 48px;
@@ -119,6 +130,22 @@
     font-size: 1rem;
     font-weight: 600;
     color: #fff;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  &__status-tag {
+    font-size: 0.68rem;
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 0.28rem 0.45rem;
+    border-radius: 999px;
+    color: #fff;
+    background: rgba(245, 158, 11, 0.45);
+    border: 1px solid rgba(245, 158, 11, 0.8);
   }
 
   &__card-domain {
@@ -129,6 +156,11 @@
   &__card-location {
     font-size: 0.75rem;
     color: rgba(255, 255, 255, 0.6);
+  }
+
+  &__card-status-message {
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.78);
   }
 
   &__card-chevron {
@@ -142,5 +174,14 @@
     font-size: 0.9rem;
     color: rgba(255, 255, 255, 0.8);
     margin: 0;
+  }
+
+  &__empty {
+    padding: 1rem 1.25rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    text-align: center;
   }
 }

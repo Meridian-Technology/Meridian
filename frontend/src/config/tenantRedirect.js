@@ -4,7 +4,93 @@
  */
 
 const ROOT_HOSTS = ['www.meridian.study', 'meridian.study'];
-const TENANT_KEYS = ['rpi', 'tvcog']; // keep in sync with backend connectionsManager
+const TENANT_CONFIG_CACHE_KEY = 'tenantConfigCache';
+const DEFAULT_TENANTS = [
+  {
+    tenantKey: 'rpi',
+    name: 'Rensselaer Polytechnic Institute',
+    subdomain: 'rpi',
+    location: 'Troy, NY',
+    status: 'active',
+    statusMessage: '',
+  },
+  {
+    tenantKey: 'tvcog',
+    name: 'Center of Gravity',
+    subdomain: 'tvcog',
+    location: 'Troy, NY',
+    status: 'active',
+    statusMessage: '',
+  },
+];
+const VISIBLE_STATUSES = new Set(['active', 'coming_soon', 'maintenance']);
+const TENANT_DISPLAY_NAMES = DEFAULT_TENANTS.reduce((acc, tenant) => {
+  acc[tenant.tenantKey] = tenant.name;
+  return acc;
+}, {});
+
+function normalizeTenantRows(rows = []) {
+  return rows
+    .map((row) => {
+      const tenantKey = String(row?.tenantKey || '').trim().toLowerCase();
+      if (!tenantKey) return null;
+      const status = String(row?.status || 'active').trim();
+      return {
+        tenantKey,
+        name: String(row?.name || tenantKey).trim(),
+        subdomain: String(row?.subdomain || tenantKey).trim().toLowerCase(),
+        location: String(row?.location || '').trim(),
+        status: ['active', 'coming_soon', 'maintenance', 'hidden'].includes(status) ? status : 'active',
+        statusMessage: String(row?.statusMessage || '').trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
+function mergeTenantRows(baseRows = [], overrideRows = []) {
+  const byKey = new Map();
+  normalizeTenantRows(baseRows).forEach((row) => byKey.set(row.tenantKey, row));
+  normalizeTenantRows(overrideRows).forEach((row) => {
+    const base = byKey.get(row.tenantKey) || {};
+    byKey.set(row.tenantKey, { ...base, ...row });
+  });
+  return Array.from(byKey.values());
+}
+
+function getCachedTenantConfig() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(TENANT_CONFIG_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.tenants)) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+export function setTenantConfigCache(tenants = []) {
+  if (typeof window === 'undefined') return;
+  try {
+    const merged = mergeTenantRows(DEFAULT_TENANTS, tenants);
+    localStorage.setItem(
+      TENANT_CONFIG_CACHE_KEY,
+      JSON.stringify({
+        tenants: merged,
+        updatedAt: new Date().toISOString(),
+      })
+    );
+  } catch (_) {}
+}
+
+export function getTenantDefinitions(options = {}) {
+  const includeHidden = !!options.includeHidden;
+  const cached = getCachedTenantConfig();
+  const merged = mergeTenantRows(DEFAULT_TENANTS, cached?.tenants || []);
+  if (includeHidden) return merged;
+  return merged.filter((tenant) => VISIBLE_STATUSES.has(tenant.status));
+}
 
 export function isWww() {
   if (typeof window === 'undefined') return false;
@@ -29,6 +115,7 @@ const WWW_ALLOWED_PATHS = [
   '/documentation',
   '/error',
   '/select-school',
+  '/tenant-status',
 ];
 
 export function isPathAllowedOnWww(pathname) {
@@ -70,8 +157,8 @@ export function getTenantRedirectUrl(tenantKey, pathname = window.location.pathn
   return `${protocol}//${tenantKey}.${base}${pathname}${search}`;
 }
 
-export function getTenantKeys() {
-  return TENANT_KEYS;
+export function getTenantKeys(options = {}) {
+  return getTenantDefinitions(options).map((tenant) => tenant.tenantKey);
 }
 
 export function setLastTenant(tenantKey) {
@@ -98,12 +185,6 @@ export function hasDevTenantOverride() {
   }
 }
 
-/** Display names for tenants (keep in sync with SelectSchool DOMAIN_META). */
-const TENANT_DISPLAY_NAMES = {
-  rpi: 'Rensselaer Polytechnic Institute',
-  tvcog: 'Center of Gravity',
-};
-
 /** Get current tenant key from hostname (production) or devTenantOverride (dev). */
 export function getCurrentTenantKey() {
   if (typeof window === 'undefined') return null;
@@ -125,5 +206,9 @@ export function getCurrentTenantKey() {
 /** Get display name for current tenant. */
 export function getCurrentTenantDisplayName() {
   const key = getCurrentTenantKey();
-  return (key && TENANT_DISPLAY_NAMES[key]) || key || 'Institution';
+  const tenantMap = getTenantDefinitions({ includeHidden: true }).reduce((acc, tenant) => {
+    acc[tenant.tenantKey] = tenant.name;
+    return acc;
+  }, {});
+  return (key && tenantMap[key]) || (key && TENANT_DISPLAY_NAMES[key]) || key || 'Institution';
 }

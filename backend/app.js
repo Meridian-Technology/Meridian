@@ -10,12 +10,15 @@ const { createServer } = require('http');
 const enforce = require('express-sslify');
 const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
+const getGlobalModels = require('./services/getGlobalModelService');
 
 const s3 = require('./aws-config');
 
 function createApp() {
   const app = express();
   const server = createServer(app);
+  let tenantConfigCache = null;
+  let tenantConfigLastFetchedAt = 0;
 
   const corsOrigin = process.env.NODE_ENV === 'production'
     ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
@@ -111,6 +114,7 @@ function createApp() {
     '/documentation',
     '/error',
     '/select-school',
+    '/tenant-status',
     '/static',
     '/health',
     '/validate-token',
@@ -119,17 +123,84 @@ function createApp() {
     '/v1/events',
     '/api/event-system-config/analytics-config',
     '/api/android-tester',
+    '/api/tenant-config',
   ];
   app.use((req, res, next) => {
     if (req.school !== 'www') return next();
     const path = (req.path || req.url || '').split('?')[0];
     const allowed = wwwAllowedPathPrefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'));
     if (allowed) return next();
+    const acceptHeader = (req.headers.accept || '').toLowerCase();
+    const secFetchDest = (req.headers['sec-fetch-dest'] || '').toLowerCase();
+    const secFetchMode = (req.headers['sec-fetch-mode'] || '').toLowerCase();
+    const isDocumentRequest = req.method === 'GET' && (
+      secFetchDest === 'document' ||
+      secFetchMode === 'navigate' ||
+      acceptHeader.includes('text/html')
+    );
+    if (isDocumentRequest) {
+      const nextPath = req.originalUrl || '/';
+      return res.redirect(302, `/select-school?next=${encodeURIComponent(nextPath)}`);
+    }
     res.status(403).json({
       success: false,
       message: 'Use your school’s site (e.g. rpi.meridian.study) for this page.',
       code: 'USE_TENANT_SUBDOMAIN'
     });
+  });
+
+  async function getTenantStatus(tenantKey, globalReq) {
+    if (!tenantKey || tenantKey === 'www') return 'active';
+    const now = Date.now();
+    if (!tenantConfigCache || now - tenantConfigLastFetchedAt > 30000) {
+      const { TenantConfig } = getGlobalModels(globalReq, 'TenantConfig');
+      const doc = await TenantConfig.findOne({ configKey: 'default' }).lean();
+      tenantConfigCache = Array.isArray(doc?.tenants) ? doc.tenants : [];
+      tenantConfigLastFetchedAt = now;
+    }
+    const row = tenantConfigCache.find((item) => item.tenantKey === tenantKey);
+    return row?.status || 'active';
+  }
+
+  app.use(async (req, res, next) => {
+    try {
+      if (req.school === 'www') return next();
+      const status = await getTenantStatus(req.school, req);
+      if (status === 'active' || status === 'hidden') return next();
+
+      const path = (req.path || req.url || '').split('?')[0];
+      const allowStatusPage = path === '/tenant-status' || path.startsWith('/tenant-status/');
+      const allowSharedAssets =
+        path.startsWith('/static') ||
+        path.startsWith('/assets') ||
+        path.startsWith('/favicon') ||
+        path === '/manifest.json' ||
+        path === '/health' ||
+        path === '/api/tenant-config';
+      if (allowStatusPage || allowSharedAssets) return next();
+
+      const acceptHeader = (req.headers.accept || '').toLowerCase();
+      const secFetchDest = (req.headers['sec-fetch-dest'] || '').toLowerCase();
+      const secFetchMode = (req.headers['sec-fetch-mode'] || '').toLowerCase();
+      const isDocumentRequest = req.method === 'GET' && (
+        secFetchDest === 'document' ||
+        secFetchMode === 'navigate' ||
+        acceptHeader.includes('text/html')
+      );
+
+      if (isDocumentRequest) {
+        return res.redirect(302, '/tenant-status');
+      }
+      return res.status(503).json({
+        success: false,
+        message: `Tenant ${req.school} is currently unavailable.`,
+        code: 'TENANT_UNAVAILABLE',
+        data: { status, tenant: req.school },
+      });
+    } catch (error) {
+      console.error('Error enforcing tenant availability:', error);
+      return res.status(500).json({ success: false, message: 'Tenant status enforcement failed' });
+    }
   });
 
   const upload = multer({

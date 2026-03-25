@@ -25,11 +25,37 @@ export const AuthProvider = ({ children }) => {
 
     const { addNotification } = useNotification();
 
+    const shouldForceLogout = (response) => {
+        const code = response?.code;
+        const error = response?.error;
+        if (
+            code === 'REFRESH_TOKEN_EXPIRED' ||
+            code === 'INVALID_REFRESH_TOKEN' ||
+            code === 'REFRESH_FAILED'
+        ) {
+            return true;
+        }
+        // apiRequest returns "Authentication required" when refresh token is truly invalid/expired.
+        if (error === 'Authentication required') return true;
+        return false;
+    };
+
     const validateToken = async () => {
         try {
             // Make the GET request to the validate-token endpoint with cookies
             const response = await apiRequest('/validate-token', null, { method: 'GET' });
             console.log('Token validation response:', response);
+            if (response?.error) {
+                if (shouldForceLogout(response)) {
+                    setIsAuthenticated(false);
+                    setPendingOrgInvites([]);
+                    setIsAuthenticating(false);
+                    return response;
+                }
+                // Preserve existing auth state on transient errors (network/5xx/temporary refresh issues).
+                setIsAuthenticating(false);
+                return response;
+            }
             // console.log('Token validation response:', response.data);
             // Handle response...
             if (response.success) {
@@ -105,15 +131,16 @@ export const AuthProvider = ({ children }) => {
                 }
                 setIsAuthenticating(false);
             } else {
-                setIsAuthenticated(false);
+                if (shouldForceLogout(response)) {
+                    setIsAuthenticated(false);
+                    setPendingOrgInvites([]);
+                }
                 setIsAuthenticating(false);
-                setPendingOrgInvites([]);
             }
         } catch (error) {
             console.log('Token expired or invalid');
-            setIsAuthenticated(false);
+            // Keep prior auth state on unexpected exceptions to avoid accidental logout.
             setIsAuthenticating(false);
-            setPendingOrgInvites([]);
             return error;
         }
     };

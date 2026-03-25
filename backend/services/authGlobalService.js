@@ -3,6 +3,7 @@
  * Used by auth routes and SAML.
  */
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
 const getModels = require('./getModelService');
 const getGlobalModels = require('./getGlobalModelService');
 const { createGlobalSession } = require('../utilities/sessionUtils');
@@ -143,7 +144,7 @@ async function issueTokens(req, res, globalUser, tenantUser, platformRoles = [],
     const mfaVerified = Boolean(options.mfaVerified);
 
     const refreshToken = jwt.sign(
-        { globalUserId: globalUser._id, type: 'refresh', mfaConfigured, mfaVerified },
+        { globalUserId: globalUser._id, type: 'refresh', mfaConfigured, mfaVerified, jti: randomUUID() },
         process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
         { expiresIn: REFRESH_TOKEN_EXPIRY }
     );

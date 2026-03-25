@@ -250,6 +250,8 @@
         padding-top:10px;
         position: relative;
         z-index: 2;
+        width: 100%;
+        box-sizing: border-box;
 
         .back {
             margin-bottom: 2rem;
@@ -259,6 +261,7 @@
             display: flex;
             gap: 2rem;
             align-items: flex-start;
+            min-width: 0;
         }
 
         .event-sidebar {
@@ -266,6 +269,7 @@
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
+            min-width: 0;
 
             .image-container {
                 width: 100%;
@@ -434,6 +438,8 @@
             backdrop-filter: blur(10px);
             border-radius: 16px;
             padding: 2rem;
+            min-width: 0;
+            box-sizing: border-box;
 
             .rsvp-section{
                 .rsvp-header{
@@ -468,6 +474,8 @@
                 line-height: 1.2;
                 font-family: 'OpenSauce';
                 font-weight: 900;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
 
             .hosting-mobile {
@@ -529,6 +537,9 @@
                         line-height: 1.6;
                         margin: 0;
                         width: 100%;
+                        min-width: 0;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
 
                         p {
                             margin: 0 0 0.5em 0;
@@ -551,6 +562,31 @@
                             padding-left: 1.5em;
                         }
 
+                        a {
+                            overflow-wrap: anywhere;
+                            word-break: break-word;
+                        }
+
+                        img,
+                        video,
+                        iframe {
+                            max-width: 100%;
+                            height: auto;
+                        }
+
+                        pre {
+                            max-width: 100%;
+                            overflow-x: auto;
+                            white-space: pre-wrap;
+                            word-break: break-word;
+                        }
+
+                        table {
+                            display: block;
+                            max-width: 100%;
+                            overflow-x: auto;
+                        }
+
                         li {
                             margin: 0.25em 0;
                         }
@@ -559,6 +595,7 @@
                             display: -webkit-box;
                             -webkit-box-orient: vertical;
                             -webkit-line-clamp: 10;
+                            line-clamp: 10;
                             overflow: hidden;
                         }
                     }
@@ -591,6 +628,10 @@
                         font-weight: 600;
                         transition: all 0.3s ease;
                         font-size: 1.1rem;
+                        min-width: 0;
+                        max-width: 100%;
+                        overflow-wrap: anywhere;
+                        word-break: break-word;
 
                         &:hover {
                             transform: translateY(-2px);
@@ -598,6 +639,8 @@
 
                         p {
                             margin: 0;
+                            overflow-wrap: anywhere;
+                            word-break: break-word;
                         }
                     }
                 }
@@ -657,6 +700,7 @@
         .event-content {
             padding: 1rem;
             padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px) + 120px);
+            overflow-x: hidden;
 
             .event-layout {
                 flex-direction: column;
@@ -790,6 +834,24 @@
                         }
                     }
                 }
+            }
+        }
+
+        .event-page-header {
+            flex-wrap: wrap;
+            align-items: flex-start;
+        }
+
+        .event-management-panel-btn {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .back {
+            min-width: 0;
+            p {
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
         }
     }

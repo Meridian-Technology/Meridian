@@ -108,13 +108,12 @@ const apiRequest = async (url, body = null, options = {}) => {
             refreshError.response?.data?.code === 'REFRESH_FAILED') {
           console.log('🚫 Refresh token expired or invalid, redirecting to login');
         //   window.location.href = '/login';
-          return { error: 'Authentication required' };
+          return { error: 'Authentication required', code: refreshError.response?.data?.code };
         }
         
-        // For other refresh errors, also redirect to login
-        console.log('🚫 Refresh failed, redirecting to login');
-        // window.location.href = '/login';
-        return { error: 'Authentication required' };
+        // For transient refresh failures, avoid forcing logout.
+        console.log('⚠️ Refresh failed temporarily; preserving current auth state');
+        return { error: 'Session refresh temporarily unavailable', code: 'REFRESH_TEMPORARY_FAILURE' };
       }
     }
 

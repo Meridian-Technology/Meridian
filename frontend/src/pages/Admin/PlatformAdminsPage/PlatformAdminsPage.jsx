@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
+import { setTenantConfigCache } from '../../../config/tenantRedirect';
 import GradientHeader from '../../../assets/Gradients/ApprovalGrad.png';
 import '../General/General.scss';
 import './PlatformAdminsPage.scss';
@@ -10,9 +11,29 @@ function PlatformAdminsPage() {
   const [migrating, setMigrating] = useState(false);
   const [migrationResult, setMigrationResult] = useState(null);
   const [mutationError, setMutationError] = useState(null);
+  const [tenantDrafts, setTenantDrafts] = useState({});
+  const [savingTenants, setSavingTenants] = useState(false);
 
   const { data: listResponse, loading, error: fetchError, refetch } = useFetch('/admin/platform-admins');
   const list = listResponse?.success ? (listResponse.data || []) : [];
+  const {
+    data: tenantConfigResponse,
+    loading: tenantConfigLoading,
+    error: tenantConfigFetchError,
+    refetch: refetchTenantConfig,
+  } = useFetch('/admin/tenant-config');
+  const tenantRows = tenantConfigResponse?.success ? (tenantConfigResponse.data?.tenants || []) : [];
+
+  useEffect(() => {
+    const nextDrafts = {};
+    tenantRows.forEach((tenant) => {
+      nextDrafts[tenant.tenantKey] = {
+        status: tenant.status || 'active',
+        statusMessage: tenant.statusMessage || '',
+      };
+    });
+    setTenantDrafts(nextDrafts);
+  }, [tenantConfigResponse]);
 
   const handleAdd = useCallback(async (e) => {
     e.preventDefault();
@@ -72,7 +93,44 @@ function PlatformAdminsPage() {
     else setMutationError(data?.message || 'Failed to remove');
   }, [refetch]);
 
-  const error = fetchError || mutationError;
+  const handleTenantDraftChange = useCallback((tenantKey, patch) => {
+    setTenantDrafts((prev) => ({
+      ...prev,
+      [tenantKey]: {
+        ...(prev[tenantKey] || {}),
+        ...patch,
+      },
+    }));
+  }, []);
+
+  const handleTenantConfigSave = useCallback(async () => {
+    if (tenantRows.length === 0) return;
+    setSavingTenants(true);
+    setMutationError(null);
+    const tenants = tenantRows.map((tenant) => ({
+      tenantKey: tenant.tenantKey,
+      status: tenantDrafts[tenant.tenantKey]?.status || tenant.status || 'active',
+      statusMessage: tenantDrafts[tenant.tenantKey]?.statusMessage || '',
+    }));
+    const { data, error } = await authenticatedRequest('/admin/tenant-config', {
+      method: 'PUT',
+      data: { tenants },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    setSavingTenants(false);
+    if (error) {
+      setMutationError(data?.message || error);
+      return;
+    }
+    if (data?.success) {
+      setTenantConfigCache(data?.data?.tenants || []);
+      refetchTenantConfig();
+    } else {
+      setMutationError(data?.message || 'Failed to save tenant settings');
+    }
+  }, [refetchTenantConfig, tenantDrafts, tenantRows]);
+
+  const error = fetchError || tenantConfigFetchError || mutationError;
 
   return (
     <div className="platform-admins-page general">
@@ -100,6 +158,50 @@ function PlatformAdminsPage() {
           </button>
           {migrationResult && (
             <pre className="platform-admins-migrate-result">{JSON.stringify(migrationResult, null, 2)}</pre>
+          )}
+        </div>
+        <div className="platform-admins-tenants">
+          <div className="platform-admins-tenants-header">
+            <h2>Tenant visibility</h2>
+            <p>
+              Control how tenants appear on the school picker:
+              <strong> active</strong>, <strong>coming soon</strong>, <strong>under maintenance</strong>, or <strong>hidden</strong>.
+            </p>
+          </div>
+          {tenantConfigLoading ? (
+            <p>Loading tenant settings…</p>
+          ) : (
+            <>
+              <div className="platform-admins-tenants-list">
+                {tenantRows.map((tenant) => (
+                  <div key={tenant.tenantKey} className="platform-admins-tenant-row">
+                    <div className="platform-admins-tenant-meta">
+                      <p className="name">{tenant.name}</p>
+                      <p className="domain">{tenant.subdomain}.meridian.study</p>
+                    </div>
+                    <select
+                      value={tenantDrafts[tenant.tenantKey]?.status || tenant.status || 'active'}
+                      onChange={(e) => handleTenantDraftChange(tenant.tenantKey, { status: e.target.value })}
+                    >
+                      <option value="active">Active</option>
+                      <option value="coming_soon">Coming soon</option>
+                      <option value="maintenance">Under maintenance</option>
+                      <option value="hidden">Hidden</option>
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Optional status message"
+                      value={tenantDrafts[tenant.tenantKey]?.statusMessage || ''}
+                      onChange={(e) => handleTenantDraftChange(tenant.tenantKey, { statusMessage: e.target.value })}
+                      maxLength={240}
+                    />
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={handleTenantConfigSave} disabled={savingTenants}>
+                {savingTenants ? 'Saving…' : 'Save tenant settings'}
+              </button>
+            </>
           )}
         </div>
         {loading ? (
