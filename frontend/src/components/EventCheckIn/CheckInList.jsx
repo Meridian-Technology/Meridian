@@ -4,6 +4,9 @@ import { formatDistanceToNow } from 'date-fns';
 import './EventCheckIn.scss';
 
 function getAttendeeDisplayName(attendee) {
+    if (attendee.anonymousBrowserCheckIn) {
+        return attendee.guestName || 'Anonymous user';
+    }
     if (attendee.formResponseId && (attendee.guestName || attendee.guestEmail)) {
         return attendee.guestName && String(attendee.guestName).trim()
             ? String(attendee.guestName).trim()
@@ -49,12 +52,14 @@ function CheckInList({ attendees, onManualCheckIn, onRemoveCheckIn, onOpenManual
     };
 
     const getUserPicture = (attendee) => {
+        if (attendee.anonymousBrowserCheckIn) return null;
         if (attendee.formResponseId) return null;
         const user = attendee.userId;
         return user?.picture || null;
     };
 
     const getAttendeeRemoveId = (attendee) => {
+        if (attendee.anonymousBrowserCheckIn) return null;
         if (attendee.formResponseId) return { formResponseId: attendee.formResponseId };
         const uid = attendee.userId && (attendee.userId._id || attendee.userId.id || attendee.userId);
         return uid ? { userId: uid } : null;
@@ -117,9 +122,10 @@ function CheckInList({ attendees, onManualCheckIn, onRemoveCheckIn, onOpenManual
                         const user = attendee.userId;
                         const checkedInBy = attendee.checkedInBy;
                         const isManual = !!checkedInBy;
+                        const isAnonymousBrowser = !!attendee.anonymousBrowserCheckIn;
                         const removeId = getAttendeeRemoveId(attendee);
                         return (
-                            <div key={attendee.formResponseId ? `anon-${attendee.formResponseId}` : (user?._id || user?.id || index)} className="attendee-item">
+                            <div key={attendee.formResponseId ? `anon-${attendee.formResponseId}` : (isAnonymousBrowser ? `browser-${attendee.browserIndex || index}` : (user?._id || user?.id || index))} className="attendee-item">
                                 <div className="attendee-info">
                                     <div className="attendee-avatar">
                                         {getUserPicture(attendee) ? (
@@ -140,9 +146,9 @@ function CheckInList({ attendees, onManualCheckIn, onRemoveCheckIn, onOpenManual
                                                 <Icon icon="mdi:clock-outline" />
                                                 {formatCheckInTime(attendee.checkedInAt)}
                                             </span>
-                                            <span className={`checkin-method ${isManual ? 'manual' : 'self'}`}>
-                                                <Icon icon={isManual ? 'mdi:account-check' : 'mdi:qrcode-scan'} />
-                                                {isManual ? 'Manual' : 'Self Check-In'}
+                                            <span className={`checkin-method ${isAnonymousBrowser ? 'self' : (isManual ? 'manual' : 'self')}`}>
+                                                <Icon icon={isAnonymousBrowser ? 'mdi:incognito' : (isManual ? 'mdi:account-check' : 'mdi:qrcode-scan')} />
+                                                {isAnonymousBrowser ? 'Anonymous User' : (isManual ? 'Manual' : 'Self Check-In')}
                                             </span>
                                         </div>
                                     </div>

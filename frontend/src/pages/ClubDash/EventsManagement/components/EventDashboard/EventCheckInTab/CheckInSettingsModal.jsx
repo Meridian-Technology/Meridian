@@ -16,6 +16,7 @@ function CheckInSettingsModal({ isOpen, onClose, event, orgId, onSaved, color })
         autoCheckIn: false,
         allowEarlyCheckIn: false,
         allowAnonymousCheckIn: false,
+        fullyAnonymousCheckIn: false,
         notificationEmailQuestionId: null
     });
     const [saving, setSaving] = useState(false);
@@ -32,10 +33,11 @@ function CheckInSettingsModal({ isOpen, onClose, event, orgId, onSaved, color })
                 autoCheckIn: event.checkInSettings?.autoCheckIn || false,
                 allowEarlyCheckIn: event.checkInSettings?.allowEarlyCheckIn || false,
                 allowAnonymousCheckIn: event.checkInSettings?.allowAnonymousCheckIn || false,
+                fullyAnonymousCheckIn: event.checkInSettings?.fullyAnonymousCheckIn || false,
                 notificationEmailQuestionId: event.notificationEmailQuestionId ?? null
             });
         }
-    }, [isOpen, event?.checkInSettings?.method, event?.checkInSettings?.allowOnPageCheckIn, event?.checkInSettings?.requireRegistration, event?.checkInSettings?.autoCheckIn, event?.checkInSettings?.allowEarlyCheckIn, event?.checkInSettings?.allowAnonymousCheckIn, event?.notificationEmailQuestionId]);
+    }, [isOpen, event?.checkInSettings?.method, event?.checkInSettings?.allowOnPageCheckIn, event?.checkInSettings?.requireRegistration, event?.checkInSettings?.autoCheckIn, event?.checkInSettings?.allowEarlyCheckIn, event?.checkInSettings?.allowAnonymousCheckIn, event?.checkInSettings?.fullyAnonymousCheckIn, event?.notificationEmailQuestionId]);
 
     const handleSave = async () => {
         if (!orgId || !event?._id) return;
@@ -50,7 +52,8 @@ function CheckInSettingsModal({ isOpen, onClose, event, orgId, onSaved, color })
                         requireRegistration: form.requireRegistration,
                         autoCheckIn: form.autoCheckIn,
                         allowEarlyCheckIn: form.allowEarlyCheckIn,
-                        allowAnonymousCheckIn: form.allowAnonymousCheckIn
+                        allowAnonymousCheckIn: form.allowAnonymousCheckIn,
+                        fullyAnonymousCheckIn: form.fullyAnonymousCheckIn
                     },
                     notificationEmailQuestionId: form.notificationEmailQuestionId || null
                 },
@@ -132,6 +135,17 @@ function CheckInSettingsModal({ isOpen, onClose, event, orgId, onSaved, color })
                     type="checkbox"
                     checked={form.allowEarlyCheckIn}
                     onChange={(e) => setForm(s => ({ ...s, allowEarlyCheckIn: e.target.checked }))}
+                />
+            )
+        },
+        {
+            title: 'Fully anonymous check-in',
+            subtitle: 'Allow any anonymous user to check in once with no personal details collected (count only).',
+            action: (
+                <input
+                    type="checkbox"
+                    checked={form.fullyAnonymousCheckIn}
+                    onChange={(e) => setForm(s => ({ ...s, fullyAnonymousCheckIn: e.target.checked }))}
                 />
             )
         },
