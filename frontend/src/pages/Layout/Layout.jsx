@@ -34,7 +34,7 @@ function Layout() {
   };
 
   // On www: if user has a saved tenant from a previous domain selection, auto-redirect there
-  if (isWww() && !hasDevTenantOverride()) {
+  if (isWww() && !hasDevTenantOverride() && !isPathAllowedOnWww(location.pathname)) {
     const lastTenant = getLastTenant();
     const validTenants = getTenantKeys();
     if (lastTenant && validTenants.includes(lastTenant)) {
