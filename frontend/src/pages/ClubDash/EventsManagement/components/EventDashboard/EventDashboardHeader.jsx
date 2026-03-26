@@ -250,39 +250,33 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
                                 )}
                             </div>
                         </div>
-                        {event?.hostingType === 'Org' && (
+                        {event?.hostingType === 'Org' && collaborationOrgs.length > 0 && (
                             <div className="header-collaboration-inline">
-                                {collaborationOrgs.length === 0 ? (
-                                    <span className="header-collaboration-inline__empty">with no other organizations yet</span>
-                                ) : (
-                                    <>
-                                        <span className="header-collaboration-inline__label">with</span>
-                                        <ul className="header-collaboration-inline__list">
-                                            {collaborationOrgs.map((org, index) => {
-                                                const lastIndex = collaborationOrgs.length - 1;
-                                                const isLast = index === lastIndex;
-                                                const needsAnd = collaborationOrgs.length > 1 && isLast;
-                                                const needsComma = index > 0 && !isLast;
-                                                return (
-                                                    <li key={org.id} className="header-collaboration-inline__item">
-                                                        {needsComma && (
-                                                            <span className="header-collaboration-inline__separator">,</span>
-                                                        )}
-                                                        {needsAnd && (
-                                                            <span className="header-collaboration-inline__separator">and</span>
-                                                        )}
-                                                        <img
-                                                            src={org.image || defaultAvatar}
-                                                            alt={org.name ? `${org.name} avatar` : 'Organization avatar'}
-                                                            className="header-collaboration-inline__avatar"
-                                                        />
-                                                        <span className="header-collaboration-inline__name">{org.name}</span>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    </>
-                                )}
+                                <span className="header-collaboration-inline__label">with</span>
+                                <ul className="header-collaboration-inline__list">
+                                    {collaborationOrgs.map((org, index) => {
+                                        const lastIndex = collaborationOrgs.length - 1;
+                                        const isLast = index === lastIndex;
+                                        const needsAnd = collaborationOrgs.length > 1 && isLast;
+                                        const needsComma = index > 0 && !isLast;
+                                        return (
+                                            <li key={org.id} className="header-collaboration-inline__item">
+                                                {needsComma && (
+                                                    <span className="header-collaboration-inline__separator">,</span>
+                                                )}
+                                                {needsAnd && (
+                                                    <span className="header-collaboration-inline__separator">and</span>
+                                                )}
+                                                <img
+                                                    src={org.image || defaultAvatar}
+                                                    alt={org.name ? `${org.name} avatar` : 'Organization avatar'}
+                                                    className="header-collaboration-inline__avatar"
+                                                />
+                                                <span className="header-collaboration-inline__name">{org.name}</span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
                             </div>
                         )}
                     </div>
