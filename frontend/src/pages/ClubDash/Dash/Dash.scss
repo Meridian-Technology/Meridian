@@ -60,6 +60,11 @@
             font-size:30px;
             font-weight: 700;
             margin:0;
+            display: block;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         p{
             font-size: 15px;
