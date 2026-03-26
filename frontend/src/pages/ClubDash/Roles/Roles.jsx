@@ -56,8 +56,9 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
                 return;
             }
 
-            // Check if user is the owner
-            const isOwner = String(org.owner) === String(user._id);
+            // Check if user is the org owner (handle populated owner or raw ObjectId)
+            const ownerId = org.owner?._id ?? org.owner;
+            const isOwner = ownerId != null && String(ownerId) === String(user._id);
             
             if (isOwner) {
                 setUserRole('owner');

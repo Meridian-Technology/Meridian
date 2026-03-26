@@ -11,18 +11,23 @@ const {
 const router = express.Router();
 
 /**
- * Check if user can edit/delete a role. Users cannot edit their own role or any role above them.
- * Only org owners can edit all roles. Lower order = higher privilege.
+ * Check if user can edit/delete a role. Users cannot edit roles more privileged than their own.
+ * Organization owners (record owner or membership role "owner") may edit/delete any non-system role.
+ * Lower order = higher privilege. Same order may be deleted (e.g. owner removing a top custom role they use).
  * @returns {boolean}
  */
 function canEditRole(userId, org, orgMember, roleName) {
-    if (org.owner && org.owner.toString() === userId) {
+    const ownerId = org.owner != null ? (org.owner._id ?? org.owner) : null;
+    if (ownerId != null && String(ownerId) === String(userId)) {
+        return true;
+    }
+    if (orgMember?.role === 'owner') {
         return true;
     }
     const userRole = org.positions.find((p) => p.name === orgMember?.role);
     const targetRole = org.positions.find((p) => p.name === roleName);
     if (!userRole || !targetRole) return false;
-    return targetRole.order > userRole.order;
+    return targetRole.order >= userRole.order;
 }
 
 // Check if current user can manage roles (for frontend permission display)
@@ -103,7 +108,9 @@ router.post('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, r
 
         const newOrder = order !== undefined ? order : org.positions.length;
         const userRole = org.positions.find((p) => p.name === req.orgMember?.role);
-        if (userRole && org.owner && org.owner.toString() !== req.user.userId && newOrder <= userRole.order) {
+        const ownerId = org.owner != null ? (org.owner._id ?? org.owner) : null;
+        const isRecordOwner = ownerId != null && String(ownerId) === String(req.user.userId);
+        if (userRole && !isRecordOwner && req.orgMember?.role !== 'owner' && newOrder <= userRole.order) {
             return res.status(403).json({
                 success: false,
                 message: 'You cannot create roles at or above your own level'
