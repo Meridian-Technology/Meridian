@@ -359,6 +359,34 @@
                         color: white;
                     }
                 }
+
+                &.org-participants {
+                    cursor: default;
+
+                    &:hover {
+                        transform: none;
+                        box-shadow: none;
+                    }
+
+                    .org-participants-list {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 0.65rem;
+                        width: 100%;
+                    }
+
+                    .org-participant-row {
+                        cursor: pointer;
+                        border-radius: 8px;
+                        padding: 0.35rem 0.25rem;
+                        margin: 0 -0.25rem;
+                        transition: background 0.2s ease;
+
+                        &:hover {
+                            background: rgba(0, 0, 0, 0.04);
+                        }
+                    }
+                }
             }
 
             .event-tags {
@@ -801,6 +829,34 @@
                             &.developer {
                                 background-color: var(--developerBlue);
                                 color: white;
+                            }
+                        }
+
+                        &.org-participants {
+                            cursor: default;
+
+                            &:hover {
+                                transform: none;
+                                box-shadow: none;
+                            }
+
+                            .org-participants-list {
+                                display: flex;
+                                flex-direction: column;
+                                gap: 0.65rem;
+                                width: 100%;
+                            }
+
+                            .org-participant-row {
+                                cursor: pointer;
+                                border-radius: 8px;
+                                padding: 0.35rem 0.25rem;
+                                margin: 0 -0.25rem;
+                                transition: background 0.2s ease;
+
+                                &:hover {
+                                    background: rgba(0, 0, 0, 0.04);
+                                }
                             }
                         }
                     }

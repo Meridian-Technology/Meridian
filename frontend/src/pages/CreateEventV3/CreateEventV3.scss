@@ -111,6 +111,63 @@
             }
         }
 
+        .collaboration-section {
+            .collaboration-help {
+                margin: 0 0 0.75rem 0;
+                color: var(--light-text);
+                font-size: 0.875rem;
+            }
+
+            .collaboration-warning {
+                display: flex;
+                gap: 0.5rem;
+                align-items: flex-start;
+                padding: 0.75rem;
+                border-radius: 8px;
+                border: 1px solid var(--yellow);
+                background: color-mix(in srgb, var(--yellow) 10%, transparent);
+                font-size: 0.875rem;
+                color: var(--text);
+                margin-bottom: 0.75rem;
+
+                iconify-icon {
+                    margin-top: 2px;
+                }
+            }
+
+            .collaboration-empty {
+                margin: 0;
+                color: var(--light-text);
+                font-size: 0.875rem;
+            }
+
+            .collaboration-org-list {
+                max-height: 220px;
+                overflow: auto;
+                border: 1px solid var(--lighterborder);
+                border-radius: 8px;
+                background: var(--background);
+            }
+
+            .collaboration-org-item {
+                display: flex;
+                gap: 0.6rem;
+                align-items: center;
+                padding: 0.6rem 0.75rem;
+                border-bottom: 1px solid var(--lighterborder);
+                font-size: 0.9rem;
+                cursor: pointer;
+
+                &:last-child {
+                    border-bottom: none;
+                }
+
+                &.selected {
+                    background: color-mix(in srgb, var(--dark-blue) 10%, transparent);
+                }
+            }
+        }
+
         .create-event-v3-actions {
             margin-top: 2rem;
             padding-top: 1.5rem;

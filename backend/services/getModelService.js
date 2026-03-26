@@ -9,6 +9,7 @@ const orgSchema = require('../schemas/org');
 const orgFollowerSchema = require('../schemas/orgFollower');
 const orgMemberSchema = require('../schemas/orgMember');
 const orgInviteSchema = require('../schemas/orgInvite');
+const eventCollaborationInviteSchema = require('../schemas/eventCollaborationInvite');
 const qrSchema = require('../schemas/qr');
 const ratingSchema = require('../schemas/rating');
 const repeatedVisitSchema = require('../schemas/repeatedVisit');
@@ -75,6 +76,7 @@ const getModels = (req, ...names) => {
         OrgFollower: req.db.model('OrgFollower', orgFollowerSchema, 'followers'),
         OrgMember: req.db.model('OrgMember', orgMemberSchema, 'members'),
         OrgInvite: req.db.model('OrgInvite', orgInviteSchema, 'orgInvites'),
+        EventCollaborationInvite: req.db.model('EventCollaborationInvite', eventCollaborationInviteSchema, 'eventCollaborationInvites'),
         QR: req.db.model('QR', qrSchema, 'QR'),
         Rating: req.db.model('Rating', ratingSchema, 'ratings'),
         RepeatedVisit: req.db.model('RepeatedVisit', repeatedVisitSchema, 'repeatedVisits'),

@@ -80,6 +80,56 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
             hostingName = event.hostingId?.org_name || 'Unknown Organization';
             level = 'Organization';
         }
+        if (event.hostingType === 'Org') {
+            const host = event.hostingId;
+            const rows = [];
+            if (host) {
+                const hn = host.org_name || 'Unknown Organization';
+                rows.push({
+                    key: `host-${String(host._id || hn)}`,
+                    image: host.org_profile_image || defaultAvatar,
+                    name: hn
+                });
+            }
+            (event.collaboratorOrgs || [])
+                .filter((entry) => entry?.status === 'active' && entry.orgId)
+                .forEach((entry) => {
+                    const oid = entry.orgId?._id || entry.orgId;
+                    rows.push({
+                        key: `collab-${String(oid)}`,
+                        image: entry.orgId?.org_profile_image || defaultAvatar,
+                        name: entry.orgId?.org_name || 'Organization'
+                    });
+                });
+            return (
+                <div className="row hosting organization org-participants">
+                    <p>Organizations</p>
+                    <div className="org-participants-list">
+                        {rows.map((row) => (
+                            <div
+                                key={row.key}
+                                className="host-info org-participant-row"
+                                onClick={() => {
+                                    if (!previewMode) navigate(`/org/${row.name}`);
+                                }}
+                                role={previewMode ? undefined : 'button'}
+                                tabIndex={previewMode ? undefined : 0}
+                                onKeyDown={(e) => {
+                                    if (previewMode) return;
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        navigate(`/org/${row.name}`);
+                                    }
+                                }}
+                            >
+                                <img src={row.image} alt="" />
+                                <p className="user-name">{row.name}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
         const handleHostingClick = () => {
             if (!previewMode && level === 'Organization') navigate(`/org/${hostingName}`);
         };
@@ -122,8 +172,8 @@ function EventPageContent({ event, onRefetch, previewMode = false, showAnalytics
                             type="button"
                             className="event-management-panel-btn"
                             onClick={() => {
-                                const orgId = event.hostingId?._id || event.hostingId;
-                                const orgName = event.hostingId?.org_name;
+                                const orgId = event.manageableOrgId || event.hostingId?._id || event.hostingId;
+                                const orgName = event.manageableOrgName || event.hostingId?.org_name;
                                 if (orgId && orgName) {
                                     navigate(`/club-dashboard/${encodeURIComponent(orgName)}?page=1&overlay=event-dashboard&eventId=${event._id}&orgId=${orgId}`);
                                 }

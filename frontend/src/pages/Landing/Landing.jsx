@@ -50,8 +50,16 @@ function Landing() {
         const tenant = getLastTenant();
         const validTenants = getTenantKeys({ includeHidden: true });
         if (tenant && validTenants.includes(tenant)) {
-            window.location.href = getTenantRedirectUrl(tenant, isAuthenticated ? '/events-dashboard' : '/', '');
-            return;
+            const redirectPath = isAuthenticated ? '/events-dashboard' : '/';
+            const targetUrl = getTenantRedirectUrl(tenant, redirectPath, '');
+            const currentUrl = `${window.location.origin}${window.location.pathname}${window.location.search || ''}`;
+
+            // In local dev, tenant redirect URL can equal current URL (same origin), which
+            // would cause a hard-reload loop. Only redirect when target differs.
+            if (targetUrl !== currentUrl) {
+                window.location.href = targetUrl;
+                return;
+            }
         }
 
         if (isAuthenticated) {

@@ -733,6 +733,40 @@ class NotificationService {
                     }
                 ]
             },
+            'event_collaboration_invite': {
+                title: 'Event Collaboration Invite',
+                message: '<strong>{{hostOrgName}}</strong> invited your organization to collaborate on <strong>{{eventName}}</strong>.',
+                version: '1.0',
+                priority: 'high',
+                channels: ['in_app', 'email'],
+                actions: [
+                    {
+                        id: 'accept_event_collaboration_invite',
+                        label: 'Accept',
+                        type: 'api_call',
+                        url: '/event-collaboration-invites/{{inviteId}}/accept',
+                        method: 'POST',
+                        payload: { inviteId: '{{inviteId}}' },
+                        style: 'success'
+                    },
+                    {
+                        id: 'decline_event_collaboration_invite',
+                        label: 'Decline',
+                        type: 'api_call',
+                        url: '/event-collaboration-invites/{{inviteId}}/decline',
+                        method: 'POST',
+                        payload: { inviteId: '{{inviteId}}' },
+                        style: 'secondary'
+                    }
+                ]
+            },
+            'event_collaboration_accepted_host': {
+                title: 'Collaboration accepted',
+                message: '<strong>{{collaboratorOrgName}}</strong> accepted your invite to collaborate on <strong>{{eventName}}</strong>. Open the event workspace Details tab to manage collaborating organizations.',
+                version: '1.0',
+                priority: 'normal',
+                channels: ['in_app']
+            },
             'friend_request': {
                 title: 'New Friend Request',
                 message: '<strong>{{senderName|capitalize}}</strong> has sent you a friend request.',

@@ -352,6 +352,7 @@ OrgSchema.methods.removeRole = function(roleName) {
 };
 
 OrgSchema.methods.getRoleByName = function(roleName) {
+    if (!Array.isArray(this.positions)) return null;
     return this.positions.find(pos => pos.name === roleName);
 };
 

@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useGradient } from '../../../../../hooks/useGradient';
 import { useNotification } from '../../../../../NotificationContext';
 import apiRequest from '../../../../../utils/postRequest';
+import defaultAvatar from '../../../../../assets/defaultAvatar.svg';
 import './EventDashboard.scss';
 
 function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendAnnouncement, onPostMortem, showPostMortem }) {
@@ -134,6 +135,39 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
     };
 
     const eventStatus = getEventStatus();
+    const collaborationOrgs = useMemo(() => {
+        if (event?.hostingType !== 'Org') return [];
+
+        const currentOrgId = orgId ? String(orgId) : '';
+        const map = new Map();
+        const hostIdRaw = event.hostingId?._id || event.hostingId;
+        const hostId = hostIdRaw ? String(hostIdRaw) : '';
+
+        if (hostId && hostId !== currentOrgId) {
+            map.set(hostId, {
+                id: hostId,
+                name: event.hostingId?.org_name || 'Host organization',
+                image: event.hostingId?.org_profile_image || defaultAvatar,
+                role: 'host',
+                status: 'active'
+            });
+        }
+
+        (event.collaboratorOrgs || []).forEach((entry) => {
+            const collaboratorIdRaw = entry?.orgId?._id || entry?.orgId;
+            const collaboratorId = collaboratorIdRaw ? String(collaboratorIdRaw) : '';
+            if (!collaboratorId || collaboratorId === currentOrgId || map.has(collaboratorId)) return;
+            map.set(collaboratorId, {
+                id: collaboratorId,
+                name: entry?.orgId?.org_name || 'Organization',
+                image: entry?.orgId?.org_profile_image || defaultAvatar,
+                role: 'collaborator',
+                status: entry?.status === 'active' ? 'active' : 'pending'
+            });
+        });
+
+        return Array.from(map.values());
+    }, [event, orgId]);
 
     return (
         <div className="event-dashboard-header">
@@ -201,19 +235,56 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
                 </div>
                 <div className="header-main">
                     <div className="event-title-section">
-                        <h1>{event?.name || 'Event'}</h1>
-                        <div className="event-meta">
-                            {event?.status === 'draft' && (
-                                <span className="event-status-bubble draft">Draft</span>
-                            )}
-                            {eventStatus && event?.status !== 'draft' && (
-                                <span className={`event-status-bubble ${eventStatus}`}>
-                                    {eventStatus === 'upcoming' && 'Upcoming'}
-                                    {eventStatus === 'live' && 'Live'}
-                                    {eventStatus === 'passed' && 'Passed'}
-                                </span>
-                            )}
+                        <div className="event-title-row">
+                            <h1>{event?.name || 'Event'}</h1>
+                            <div className="event-meta">
+                                {event?.status === 'draft' && (
+                                    <span className="event-status-bubble draft">Draft</span>
+                                )}
+                                {eventStatus && event?.status !== 'draft' && (
+                                    <span className={`event-status-bubble ${eventStatus}`}>
+                                        {eventStatus === 'upcoming' && 'Upcoming'}
+                                        {eventStatus === 'live' && 'Live'}
+                                        {eventStatus === 'passed' && 'Passed'}
+                                    </span>
+                                )}
+                            </div>
                         </div>
+                        {event?.hostingType === 'Org' && (
+                            <div className="header-collaboration-inline">
+                                {collaborationOrgs.length === 0 ? (
+                                    <span className="header-collaboration-inline__empty">with no other organizations yet</span>
+                                ) : (
+                                    <>
+                                        <span className="header-collaboration-inline__label">with</span>
+                                        <ul className="header-collaboration-inline__list">
+                                            {collaborationOrgs.map((org, index) => {
+                                                const lastIndex = collaborationOrgs.length - 1;
+                                                const isLast = index === lastIndex;
+                                                const needsAnd = collaborationOrgs.length > 1 && isLast;
+                                                const needsComma = index > 0 && !isLast;
+                                                return (
+                                                    <li key={org.id} className="header-collaboration-inline__item">
+                                                        {needsComma && (
+                                                            <span className="header-collaboration-inline__separator">,</span>
+                                                        )}
+                                                        {needsAnd && (
+                                                            <span className="header-collaboration-inline__separator">and</span>
+                                                        )}
+                                                        <img
+                                                            src={org.image || defaultAvatar}
+                                                            alt={org.name ? `${org.name} avatar` : 'Organization avatar'}
+                                                            className="header-collaboration-inline__avatar"
+                                                        />
+                                                        <span className="header-collaboration-inline__name">{org.name}</span>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </div>
                     <div className="quick-stats">
                         <div className="stat-item">

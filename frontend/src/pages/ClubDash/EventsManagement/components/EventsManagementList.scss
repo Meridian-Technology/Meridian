@@ -400,6 +400,17 @@
                                 color: white;
                                 white-space: nowrap;
                             }
+
+                            .collaboration-role-badge {
+                                padding: 0.25rem 0.625rem;
+                                border-radius: 12px;
+                                font-size: 0.6875rem;
+                                font-weight: 600;
+                                text-transform: capitalize;
+                                color: var(--text);
+                                background: color-mix(in srgb, var(--dark-blue) 15%, transparent);
+                                white-space: nowrap;
+                            }
                         }
                     }
 

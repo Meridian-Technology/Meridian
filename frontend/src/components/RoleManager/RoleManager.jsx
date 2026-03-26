@@ -409,11 +409,12 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
         return permission ? permission.label : permissionKey;
     };
 
-    // Users cannot edit their own role or roles above them (unless owner). Lower order = higher privilege.
+    // Unless owner: cannot edit roles more privileged than yours. Same privilege level is allowed
+    // (e.g. deleting a top custom role you assigned yourself). Lower order = higher privilege.
     const canEditRole = (role) => {
         if (isOwner || !userRoleData) return true;
         const targetOrder = role?.order ?? 999;
-        return targetOrder > (userRoleData?.order ?? -1);
+        return targetOrder >= (userRoleData?.order ?? -1);
     };
 
     // Get all roles except owner, sorted by order (member always last)

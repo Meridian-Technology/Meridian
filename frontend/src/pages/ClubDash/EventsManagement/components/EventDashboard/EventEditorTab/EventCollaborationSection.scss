@@ -1,0 +1,221 @@
+.event-collaboration-section {
+    margin-top: 2.5rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--lighterborder);
+
+    .editor-header {
+        margin-bottom: 0.75rem;
+        padding-bottom: 0;
+        border-bottom: none;
+
+        h2 {
+            font-size: 1.25rem;
+        }
+    }
+
+    &__hint {
+        margin: 0 0 1.25rem;
+        font-size: 0.9rem;
+        color: var(--text);
+        opacity: 0.75;
+        line-height: 1.45;
+    }
+
+    &__list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    &__empty {
+        padding: 0.75rem 1rem;
+        background: var(--lightbackground);
+        border-radius: 8px;
+        font-size: 0.9rem;
+        color: var(--text);
+        opacity: 0.8;
+    }
+
+    &__row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.65rem 0.85rem;
+        background: var(--lightbackground);
+        border: 1px solid var(--lighterborder);
+        border-radius: 10px;
+    }
+
+    &__avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+    }
+
+    &__meta {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+    }
+
+    &__name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &__status {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        opacity: 0.85;
+
+        &--active {
+            color: #1a7f37;
+        }
+
+        &--pending {
+            color: #9a6700;
+        }
+
+        &--declined {
+            color: #8c959f;
+        }
+    }
+
+    &__remove {
+        appearance: none;
+        border: none;
+        background: transparent;
+        padding: 6px;
+        cursor: pointer;
+        color: var(--text);
+        opacity: 0.55;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        &:hover:not(:disabled) {
+            opacity: 1;
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.35;
+        }
+
+        iconify-icon {
+            font-size: 20px;
+        }
+    }
+
+    &__add {
+        margin-top: 1.25rem;
+
+        .section-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+    }
+
+    &__add-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: stretch;
+
+        select {
+            flex: 1;
+            min-width: 200px;
+            padding: 0.6rem 0.75rem;
+            border-radius: 8px;
+            border: 1px solid var(--lighterborder);
+            background: var(--background);
+            color: var(--text);
+            font-size: 0.9rem;
+        }
+    }
+
+    &__add-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.6rem 1rem;
+        border-radius: 8px;
+        border: none;
+        background: var(--primary-color);
+        color: #fff;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: filter 0.2s ease;
+
+        &:hover:not(:disabled) {
+            filter: brightness(0.95);
+        }
+
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        iconify-icon {
+            font-size: 1.1rem;
+        }
+    }
+
+    &--collaborator {
+        .event-collaboration-section__hint {
+            margin-bottom: 1rem;
+        }
+    }
+
+    &__leave-row {
+        display: flex;
+        justify-content: flex-start;
+    }
+
+    &__leave-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.55rem 1rem;
+        border-radius: 8px;
+        border: 1px solid rgba(180, 80, 80, 0.45);
+        background: rgba(180, 80, 80, 0.08);
+        color: #a33030;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: background 0.2s ease, border-color 0.2s ease;
+
+        &:hover:not(:disabled) {
+            background: rgba(180, 80, 80, 0.14);
+            border-color: rgba(180, 80, 80, 0.65);
+        }
+
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        iconify-icon {
+            font-size: 1.15rem;
+        }
+    }
+}
