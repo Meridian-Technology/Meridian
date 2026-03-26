@@ -44,7 +44,14 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, on
                     : await getOrgEvents(orgId);
                 
                 if (response?.success && response?.data?.events) {
-                    setAllEvents(response.data.events);
+                    const raw = response.data.events;
+                    const byId = new Map();
+                    for (const ev of raw) {
+                        const id = ev?._id != null ? String(ev._id) : '';
+                        if (!id || byId.has(id)) continue;
+                        byId.set(id, ev);
+                    }
+                    setAllEvents(Array.from(byId.values()));
                 } else {
                     setError('Failed to load events');
                     setAllEvents([]);
@@ -478,6 +485,11 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, on
                                             >
                                                 {event.type}
                                             </span>
+                                            {event.collaborationRole === 'collaborating' && (
+                                                <span className="collaboration-role-badge">
+                                                    Collaborating
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                     {event.description && (
