@@ -9,6 +9,7 @@ import OrgList from './OrgList/OrgList';
 import Configuration from './Configuration/Configuration';
 import Analytics from './Analytics/Analytics';
 import Migrations from './Migrations/Migrations';
+import ParitySummary from './Parity/ParitySummary';
 import AtlasLogo from '../../../assets/Brand Image/SolutionLogos/Atlas.svg';
 import { useNavigate } from 'react-router-dom';
 function Atlas() {
@@ -77,6 +78,11 @@ function Atlas() {
                     label: 'Migrations',
                     icon: 'mdi:database-sync-outline',
                     element: <Migrations />
+                },
+                {
+                    label: 'CMS Parity',
+                    icon: 'mdi:compare',
+                    element: <ParitySummary />
                 }
             ]
         }

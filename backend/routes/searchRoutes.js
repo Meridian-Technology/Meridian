@@ -398,7 +398,16 @@ router.get('/all-purpose-search', verifyTokenOptional, async (req, res) => {
 
 // Unified search endpoint - searches across events, rooms, organizations, and users
 router.get('/unified-search', verifyTokenOptional, async (req, res) => {
-    const { Classroom, Event, Org, User, Schedule } = getModels(req, 'Classroom', 'Event', 'Org', 'User', 'Schedule');
+    const { Classroom, Event, Org, User, Schedule, OrgBudget, OrgInventory } = getModels(
+        req,
+        'Classroom',
+        'Event',
+        'Org',
+        'User',
+        'Schedule',
+        'OrgBudget',
+        'OrgInventory'
+    );
     const { query, nameOnly = 'false', limit = 20 } = req.query;
     const userId = req.user ? req.user.userId : null;
     const searchNameOnly = nameOnly === 'true';
@@ -460,7 +469,7 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
         }
 
         // Execute searches in parallel
-        const [events, rooms, orgs, users] = await Promise.all([
+        const [events, rooms, orgs, users, budgets, inventories] = await Promise.all([
             // Events - only future events
             Event.find({
                 ...eventQuery,
@@ -485,7 +494,9 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
             userId ? User.find(userQuery)
                 .select('_id username name email picture partners')
                 .limit(parseInt(limit))
-                .lean() : Promise.resolve([])
+                .lean() : Promise.resolve([]),
+            OrgBudget ? OrgBudget.find({ name: regex }).limit(parseInt(limit)).lean() : Promise.resolve([]),
+            OrgInventory ? OrgInventory.find({ name: regex }).limit(parseInt(limit)).lean() : Promise.resolve([])
         ]);
 
         // Transform rooms to include schedule if needed
@@ -552,7 +563,9 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
             events: events,
             rooms: roomsWithSchedule,
             organizations: transformedOrgs,
-            users: users
+            users: users,
+            budgets: budgets,
+            inventories: inventories
         });
     } catch (error) {
         console.error('GET: /unified-search failed', error);

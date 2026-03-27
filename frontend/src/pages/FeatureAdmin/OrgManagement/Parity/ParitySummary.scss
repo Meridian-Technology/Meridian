@@ -1,0 +1,47 @@
+.atlas-parity-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+
+    &__header {
+        h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+
+        p {
+            margin: 0.25rem 0 0;
+            color: #475467;
+        }
+    }
+
+    &__grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 0.75rem;
+    }
+
+    &__card {
+        background: #ffffff;
+        border: 1px solid #eaecf0;
+        border-radius: 10px;
+        padding: 0.75rem;
+
+        h3 {
+            margin: 0 0 0.375rem;
+            font-size: 0.875rem;
+            color: #344054;
+            text-transform: capitalize;
+        }
+
+        strong {
+            font-size: 1.25rem;
+            color: #101828;
+        }
+    }
+
+    &__state {
+        margin: 0;
+        color: #667085;
+    }
+}

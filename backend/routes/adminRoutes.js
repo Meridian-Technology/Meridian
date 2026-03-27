@@ -533,4 +533,39 @@ router.delete('/admin/platform-admins/:globalUserId', verifyToken, requireAdmin,
   }
 });
 
+router.get('/admin/cms-parity/summary', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const getModels = require('../services/getModelService');
+    const {
+      Org,
+      OrgMember,
+      OrgBudget,
+      OrgInventory,
+      OrgGovernanceDocument
+    } = getModels(req, 'Org', 'OrgMember', 'OrgBudget', 'OrgInventory', 'OrgGovernanceDocument');
+
+    const [orgs, members, budgets, inventories, governanceDocs] = await Promise.all([
+      Org ? Org.countDocuments() : 0,
+      OrgMember ? OrgMember.countDocuments({ status: 'active' }) : 0,
+      OrgBudget ? OrgBudget.countDocuments() : 0,
+      OrgInventory ? OrgInventory.countDocuments() : 0,
+      OrgGovernanceDocument ? OrgGovernanceDocument.countDocuments() : 0
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        organizations: orgs,
+        activeMemberships: members,
+        budgets,
+        inventories,
+        governanceDocuments: governanceDocs
+      }
+    });
+  } catch (err) {
+    console.error('GET /admin/cms-parity/summary failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

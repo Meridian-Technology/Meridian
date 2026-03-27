@@ -39,6 +39,8 @@ import AdminViewBanner from '../../components/AdminViewBanner/AdminViewBanner';
 import { useOrgApprovalRoom } from '../../WebSocketContext';
 import Popup from '../../components/Popup/Popup';
 import ClubDashOnboarding from './ClubDashOnboarding/ClubDashOnboarding';
+import ClubBudgets from './Budgets/ClubBudgets';
+import ClubInventory from './Inventory/ClubInventory';
 
 /** Set to true to always show the onboarding popup (ignores localStorage) */
 const FORCE_CLUB_DASH_ONBOARDING = false;
@@ -58,7 +60,9 @@ function ClubDash(){
         canManageRoles: false,
         canManageMembers: false,
         canViewAnalytics: false,
-        canManageEvents: false
+        canManageEvents: false,
+        canManageBudgets: false,
+        canManageInventory: false
     });
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [showJustApprovedBanner, setShowJustApprovedBanner] = useState(false);
@@ -68,6 +72,7 @@ function ClubDash(){
     const orgData = useFetch(`/get-org-by-name/${clubId}?exhaustive=true`);
     const meetings = useFetch(`/get-meetings/${clubId}`);
     const { data: configData } = useFetch('/org-management/config');
+    const { data: parityConfigData } = useFetch('/org-management/cms-parity-config');
     const [searchParams] = useSearchParams();
     const isAdminView = searchParams.get('adminView') === 'true';
     const isSiteAdmin = user?.roles?.includes('admin') || user?.roles?.includes('root');
@@ -124,7 +129,9 @@ function ClubDash(){
                 canManageRoles: true,
                 canManageMembers: true,
                 canViewAnalytics: true,
-                canManageEvents: true
+                canManageEvents: true,
+                canManageBudgets: true,
+                canManageInventory: true
             });
             setPermissionsChecked(true);
             return;
@@ -141,7 +148,9 @@ function ClubDash(){
                     canManageRoles: true,
                     canManageMembers: true,
                     canViewAnalytics: true,
-                    canManageEvents: true
+                    canManageEvents: true,
+                    canManageBudgets: true,
+                    canManageInventory: true
                 });
                 setPermissionsChecked(true);
                 return;
@@ -165,7 +174,9 @@ function ClubDash(){
                             canManageRoles: userRoleData.canManageRoles || userRoleData.permissions.includes('manage_roles') || userRoleData.permissions.includes('all'),
                             canManageMembers: userRoleData.canManageMembers || userRoleData.permissions.includes('manage_members') || userRoleData.permissions.includes('all'),
                             canViewAnalytics: userRoleData.canViewAnalytics || userRoleData.permissions.includes('view_analytics') || userRoleData.permissions.includes('all'),
-                            canManageEvents: userRoleData.canManageEvents || userRoleData.permissions.includes('manage_events') || userRoleData.permissions.includes('all')
+                            canManageEvents: userRoleData.canManageEvents || userRoleData.permissions.includes('manage_events') || userRoleData.permissions.includes('all'),
+                            canManageBudgets: userRoleData.permissions.includes('manage_budgets') || userRoleData.permissions.includes('review_budgets') || userRoleData.permissions.includes('all'),
+                            canManageInventory: userRoleData.permissions.includes('manage_inventory') || userRoleData.permissions.includes('all')
                         });
                     }
                 }
@@ -237,6 +248,8 @@ function ClubDash(){
         navigate(newPath);
     }
 
+    const parityModules = parityConfigData?.data?.modules || {};
+
     const baseMenuItems = [
         { 
             label: 'Dashboard', 
@@ -256,6 +269,20 @@ function ClubDash(){
             key: 'announcements',
             element: <ClubAnnouncements orgData={orgData} expandedClass={expandedClass}/>
         },
+        ...(parityModules.finance ? [{
+            label: 'Budgets',
+            icon: 'mdi:currency-usd',
+            key: 'budgets',
+            requiresPermission: 'canManageBudgets',
+            element: <ClubBudgets orgId={orgData.data?.org?.overview?._id} />
+        }] : []),
+        ...(parityModules.inventory ? [{
+            label: 'Inventory',
+            icon: 'mdi:clipboard-list',
+            key: 'inventory',
+            requiresPermission: 'canManageInventory',
+            element: <ClubInventory orgId={orgData.data?.org?.overview?._id} />
+        }] : []),
         { 
             label: 'Members', 
             icon: 'mdi:account-group', 
