@@ -27,6 +27,29 @@
         gap: 0.875rem;
     }
 
+    &__review-queue {
+        background: #f8fafc;
+        border: 1px solid #e4e7ec;
+        border-radius: 12px;
+        padding: 0.75rem 0.875rem;
+
+        h3,
+        p {
+            margin: 0;
+        }
+
+        h3 {
+            font-size: 1rem;
+            color: #101828;
+            margin-bottom: 0.25rem;
+        }
+
+        p {
+            color: #475467;
+            font-size: 0.9rem;
+        }
+    }
+
     &__card {
         background: #ffffff;
         border: 1px solid #e4e7ec;
@@ -35,6 +58,18 @@
         display: flex;
         flex-direction: column;
         gap: 0.75rem;
+        cursor: pointer;
+        transition: border-color 140ms ease, box-shadow 140ms ease;
+
+        &:hover {
+            border-color: #a4bcfd;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+    }
+
+    &__card--selected {
+        border-color: #4daa57;
+        box-shadow: 0 0 0 2px rgba(77, 170, 87, 0.18);
     }
 
     &__card-title {
@@ -79,5 +114,79 @@
     &__loading {
         color: #667085;
         font-size: 0.95rem;
+    }
+
+    &__detail {
+        background: #fff;
+        border: 1px solid #e4e7ec;
+        border-radius: 12px;
+        padding: 0.875rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+
+        h3,
+        h4 {
+            margin: 0;
+        }
+    }
+
+    &__transition {
+        display: flex;
+        gap: 0.5rem;
+
+        select,
+        button {
+            border-radius: 8px;
+            padding: 0.5rem 0.625rem;
+            font: inherit;
+        }
+
+        select {
+            border: 1px solid #d0d5dd;
+            background: #fff;
+        }
+
+        button {
+            border: 0;
+            background: #4daa57;
+            color: #fff;
+            cursor: pointer;
+        }
+    }
+
+    &__history-columns {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 0.75rem;
+
+        ul {
+            margin: 0.5rem 0 0;
+            list-style: none;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        li {
+            border: 1px solid #f2f4f7;
+            border-radius: 8px;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        small {
+            color: #667085;
+            font-size: 0.78rem;
+        }
+    }
+
+    &__message {
+        margin: 0;
+        color: #027a48;
+        font-size: 0.9rem;
     }
 }
