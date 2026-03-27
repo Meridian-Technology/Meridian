@@ -1,0 +1,114 @@
+.individual-bug-report {
+    h1 { //Bug Report
+        margin: 0;
+        color: var(--text);
+        font-weight: 600;
+        font-size: 16px;
+        margin-bottom: 10px;
+    }
+    .report_details {
+        padding: 25px 30px;
+        
+        h1 { //title
+            margin: 0;
+            color: var(--text);
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        .report-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 25px 30px;
+            margin-bottom: 1.5rem;
+        }
+
+        .bug-number-priority-status {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+
+            h3 { //bugNumber
+                margin: 0;
+                color: var(--text);
+                font-size: 14px;
+                font-weight: 600;
+                font-family: 'Inter';
+            }
+            .priority-pill { //priority
+                margin: 0;
+                color: var(--primary-color);
+                font-size: 10px;
+                font-weight:700;
+                font-family: 'Inter';
+                margin-bottom: 2px;
+                padding: 0.25rem 0.5rem;
+                background: #f5f5f5;
+                border-radius: 8px;
+
+                &.critical{
+                    color: var(--primary-color);
+                    background-color: var(--red-transparent);
+                }
+                &.high{
+                    color: #EA8F35;
+                    background-color: rgba(243,143,53, 0.22);
+                }
+                &.medium {
+                    color: #EAD535;
+                    background-color: rgba(234,213,53,0.22);
+                }
+                &.low {
+                    color: #3589EA;
+                    background-color: rgba(53,137,234,0.22);
+                }
+            }
+            .status-pill { //status
+                margin: 0;
+                color: var(--lighter-text);
+                font-size: 10px;
+                font-weight:700;
+                font-family: 'Inter';
+                margin-bottom: 2px;
+                padding: 0.25rem 0.5rem;
+                background: #f5f5f5;
+                border-radius: 8px;
+            }
+        }
+
+        .bug-meta-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .tag-pill,
+        .assignee-pill {
+            margin: 0;
+            font-size: 10px;
+            font-weight: 600;
+            font-family: 'Inter';
+            padding: 0.25rem 0.5rem;
+            border-radius: 8px;
+        }
+
+        .tag-pill--placeholder,
+        .assignee-pill--placeholder {
+            color: var(--lighter-text);
+            background: transparent;
+            border: 1px dashed var(--lightborder);
+        }
+
+        .report-description {
+            margin: 0;
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 500;
+            font-family: 'Inter';
+            line-height: 1.5;
+        }
+    }
+}
