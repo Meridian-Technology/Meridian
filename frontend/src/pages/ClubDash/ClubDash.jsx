@@ -41,6 +41,7 @@ import Popup from '../../components/Popup/Popup';
 import ClubDashOnboarding from './ClubDashOnboarding/ClubDashOnboarding';
 import ClubBudgets from './Budgets/ClubBudgets';
 import ClubInventory from './Inventory/ClubInventory';
+import GovernancePanel from './Governance/GovernancePanel';
 
 /** Set to true to always show the onboarding popup (ignores localStorage) */
 const FORCE_CLUB_DASH_ONBOARDING = false;
@@ -341,6 +342,11 @@ function ClubDash(){
                 //     icon: 'mdi:shield-check',
                 //     element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
                 // },
+                {
+                    label: 'Governance',
+                    icon: 'mdi:scale-balance',
+                    element: <GovernancePanel org={orgData.data?.org?.overview} />
+                },
                 {
                     label: 'Danger Zone',
                     icon: 'mdi:alert-circle',
