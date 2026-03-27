@@ -15,6 +15,22 @@
         }
     }
 
+    &__actions {
+        margin-top: 0.75rem;
+        display: flex;
+        gap: 0.5rem;
+
+        button {
+            border: 1px solid #d0d5dd;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #344054;
+            font-size: 0.85rem;
+            padding: 0.4rem 0.65rem;
+            cursor: pointer;
+        }
+    }
+
     &__grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -43,5 +59,37 @@
     &__state {
         margin: 0;
         color: #667085;
+    }
+
+    &__exceptions {
+        background: #fff;
+        border: 1px solid #eaecf0;
+        border-radius: 10px;
+        padding: 0.75rem;
+
+        h3 {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #101828;
+        }
+
+        ul {
+            margin: 0.5rem 0 0;
+            padding: 0;
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        li {
+            display: flex;
+            justify-content: space-between;
+            border: 1px solid #f2f4f7;
+            border-radius: 8px;
+            padding: 0.45rem 0.5rem;
+            font-size: 0.85rem;
+            color: #475467;
+        }
     }
 }

@@ -541,15 +541,19 @@ router.get('/admin/cms-parity/summary', verifyToken, requireAdmin, async (req, r
       OrgMember,
       OrgBudget,
       OrgInventory,
-      OrgGovernanceDocument
-    } = getModels(req, 'Org', 'OrgMember', 'OrgBudget', 'OrgInventory', 'OrgGovernanceDocument');
+      OrgGovernanceDocument,
+      OrgInventoryItem
+    } = getModels(req, 'Org', 'OrgMember', 'OrgBudget', 'OrgInventory', 'OrgGovernanceDocument', 'OrgInventoryItem');
 
-    const [orgs, members, budgets, inventories, governanceDocs] = await Promise.all([
+    const [orgs, members, budgets, inventories, governanceDocs, archivedOrgs, pendingBudgets, maintenanceItems] = await Promise.all([
       Org ? Org.countDocuments() : 0,
       OrgMember ? OrgMember.countDocuments({ status: 'active' }) : 0,
       OrgBudget ? OrgBudget.countDocuments() : 0,
       OrgInventory ? OrgInventory.countDocuments() : 0,
-      OrgGovernanceDocument ? OrgGovernanceDocument.countDocuments() : 0
+      OrgGovernanceDocument ? OrgGovernanceDocument.countDocuments() : 0,
+      Org ? Org.countDocuments({ lifecycleStatus: 'archived' }) : 0,
+      OrgBudget ? OrgBudget.countDocuments({ state: { $in: ['changes_requested', 'appealed'] } }) : 0,
+      OrgInventoryItem ? OrgInventoryItem.countDocuments({ lifecycleStatus: 'maintenance' }) : 0
     ]);
 
     res.status(200).json({
@@ -559,12 +563,58 @@ router.get('/admin/cms-parity/summary', verifyToken, requireAdmin, async (req, r
         activeMemberships: members,
         budgets,
         inventories,
-        governanceDocuments: governanceDocs
+        governanceDocuments: governanceDocs,
+        exceptions: {
+          archivedOrganizations: archivedOrgs,
+          budgetsNeedingAttention: pendingBudgets,
+          maintenanceInventoryItems: maintenanceItems
+        }
       }
     });
   } catch (err) {
     console.error('GET /admin/cms-parity/summary failed:', err);
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/admin/cms-parity/export', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const format = String(req.query.format || 'json').toLowerCase();
+    const getModels = require('../services/getModelService');
+    const { Org, OrgMember, OrgBudget, OrgInventory, OrgGovernanceDocument, OrgInventoryItem } = getModels(
+      req,
+      'Org',
+      'OrgMember',
+      'OrgBudget',
+      'OrgInventory',
+      'OrgGovernanceDocument',
+      'OrgInventoryItem'
+    );
+
+    const summary = {
+      organizations: Org ? await Org.countDocuments() : 0,
+      activeMemberships: OrgMember ? await OrgMember.countDocuments({ status: 'active' }) : 0,
+      budgets: OrgBudget ? await OrgBudget.countDocuments() : 0,
+      inventories: OrgInventory ? await OrgInventory.countDocuments() : 0,
+      governanceDocuments: OrgGovernanceDocument ? await OrgGovernanceDocument.countDocuments() : 0,
+      maintenanceInventoryItems: OrgInventoryItem ? await OrgInventoryItem.countDocuments({ lifecycleStatus: 'maintenance' }) : 0
+    };
+
+    if (format === 'csv') {
+      const rows = [
+        ['metric', 'value'],
+        ...Object.entries(summary).map(([metric, value]) => [metric, String(value)])
+      ];
+      const csv = rows.map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(',')).join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="cms-parity-summary.csv"');
+      return res.status(200).send(csv);
+    }
+
+    return res.status(200).json({ success: true, data: summary });
+  } catch (err) {
+    console.error('GET /admin/cms-parity/export failed:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 

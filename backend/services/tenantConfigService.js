@@ -26,10 +26,24 @@ function assertObject(value, field) {
   }
 }
 
+function assertArray(value, field) {
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid config: ${field} must be an array`);
+  }
+}
+
+function assertString(value, field) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Invalid config: ${field} must be a non-empty string`);
+  }
+}
+
 function validateParityConfig(config) {
   assertObject(config, 'root');
+  assertString(config.profile, 'profile');
   assertObject(config.modules, 'modules');
   assertObject(config.orgLifecycle, 'orgLifecycle');
+  assertObject(config.governance, 'governance');
   assertObject(config.finance, 'finance');
   assertObject(config.inventory, 'inventory');
   assertObject(config.reporting, 'reporting');
@@ -42,6 +56,21 @@ function validateParityConfig(config) {
   if (!Array.isArray(config.orgLifecycle.allowedStatuses) || config.orgLifecycle.allowedStatuses.length === 0) {
     throw new Error('Invalid config: orgLifecycle.allowedStatuses must be a non-empty array');
   }
+  if (config.orgLifecycle.transitions !== undefined) {
+    assertObject(config.orgLifecycle.transitions, 'orgLifecycle.transitions');
+    Object.entries(config.orgLifecycle.transitions).forEach(([status, allowedTransitions]) => {
+      assertArray(allowedTransitions, `orgLifecycle.transitions.${status}`);
+    });
+  }
+  assertString(config.orgLifecycle.defaultStatus, 'orgLifecycle.defaultStatus');
+
+  assertString(config.governance.documentLabel, 'governance.documentLabel');
+  assertBoolean(config.governance.allowVersioning, 'governance.allowVersioning');
+  assertBoolean(config.governance.requireApprovalForDocumentPublish, 'governance.requireApprovalForDocumentPublish');
+  assertBoolean(config.governance.officerTermsEnabled, 'governance.officerTermsEnabled');
+  if (config.governance.documentStatuses !== undefined) {
+    assertArray(config.governance.documentStatuses, 'governance.documentStatuses');
+  }
 
   if (!Array.isArray(config.finance.accountingDimensions)) {
     throw new Error('Invalid config: finance.accountingDimensions must be an array');
@@ -50,9 +79,40 @@ function validateParityConfig(config) {
   if (!Array.isArray(config.finance.workflowStates) || config.finance.workflowStates.length === 0) {
     throw new Error('Invalid config: finance.workflowStates must be a non-empty array');
   }
+  if (config.finance.transitions !== undefined) {
+    assertObject(config.finance.transitions, 'finance.transitions');
+    Object.entries(config.finance.transitions).forEach(([state, allowedTransitions]) => {
+      assertArray(allowedTransitions, `finance.transitions.${state}`);
+    });
+  }
+  if (config.finance.reviewActions !== undefined) {
+    assertArray(config.finance.reviewActions, 'finance.reviewActions');
+  }
+  config.finance.accountingDimensions.forEach((dimension, index) => {
+    assertObject(dimension, `finance.accountingDimensions[${index}]`);
+    assertString(dimension.key, `finance.accountingDimensions[${index}].key`);
+    assertString(dimension.label, `finance.accountingDimensions[${index}].label`);
+    assertBoolean(dimension.required, `finance.accountingDimensions[${index}].required`);
+  });
+
+  assertBoolean(config.inventory.enabled, 'inventory.enabled');
+  assertBoolean(config.inventory.allowCheckout, 'inventory.allowCheckout');
+  assertBoolean(config.inventory.requireConditionOnReturn, 'inventory.requireConditionOnReturn');
+  if (config.inventory.lifecycleStatuses !== undefined) {
+    assertArray(config.inventory.lifecycleStatuses, 'inventory.lifecycleStatuses');
+  }
+  if (config.inventory.conditions !== undefined) {
+    assertArray(config.inventory.conditions, 'inventory.conditions');
+  }
 
   if (!Array.isArray(config.reporting.defaultExports)) {
     throw new Error('Invalid config: reporting.defaultExports must be an array');
+  }
+  if (config.reporting.searchEntities !== undefined) {
+    assertArray(config.reporting.searchEntities, 'reporting.searchEntities');
+  }
+  if (config.reporting.adminSummaryCards !== undefined) {
+    assertArray(config.reporting.adminSummaryCards, 'reporting.adminSummaryCards');
   }
 
   return config;

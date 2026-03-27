@@ -7,6 +7,7 @@ const s3 = require('../aws-config');
 const mongoose = require('mongoose');
 const { clean } = require('../services/profanityFilterService');
 const getModels = require('../services/getModelService');
+const { getTenantParityConfig } = require('../services/tenantConfigService');
 const router = express.Router();
 
 router.get('/search', verifyTokenOptional, async (req, res) => {
@@ -398,7 +399,7 @@ router.get('/all-purpose-search', verifyTokenOptional, async (req, res) => {
 
 // Unified search endpoint - searches across events, rooms, organizations, and users
 router.get('/unified-search', verifyTokenOptional, async (req, res) => {
-    const { Classroom, Event, Org, User, Schedule, OrgBudget, OrgInventory } = getModels(
+    const { Classroom, Event, Org, User, Schedule, OrgBudget, OrgInventory, OrgGovernanceDocument } = getModels(
         req,
         'Classroom',
         'Event',
@@ -406,9 +407,10 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
         'User',
         'Schedule',
         'OrgBudget',
-        'OrgInventory'
+        'OrgInventory',
+        'OrgGovernanceDocument'
     );
-    const { query, nameOnly = 'false', limit = 20 } = req.query;
+    const { query, nameOnly = 'false', limit = 20, entities = '' } = req.query;
     const userId = req.user ? req.user.userId : null;
     const searchNameOnly = nameOnly === 'true';
 
@@ -420,6 +422,20 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
     }
 
     try {
+        const parityConfig = getTenantParityConfig(req);
+        const configuredEntities = parityConfig?.reporting?.searchEntities || [
+            'events',
+            'rooms',
+            'orgs',
+            'users',
+            'budgets',
+            'inventory',
+            'governance'
+        ];
+        const requestedEntities = typeof entities === 'string' && entities.trim().length > 0
+            ? entities.split(',').map((entity) => entity.trim().toLowerCase()).filter(Boolean)
+            : configuredEntities;
+        const isEnabled = (entityKey) => requestedEntities.includes(entityKey) && configuredEntities.includes(entityKey);
         const searchTerm = query.trim();
         // Escape regex special characters
         const escapedQuery = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -469,34 +485,44 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
         }
 
         // Execute searches in parallel
-        const [events, rooms, orgs, users, budgets, inventories] = await Promise.all([
+        const [events, rooms, orgs, users, budgets, inventories, governanceDocs] = await Promise.all([
             // Events - only future events
-            Event.find({
+            isEnabled('events') ? Event.find({
                 ...eventQuery,
                 start_time: { $gte: new Date() }
             })
                 .populate('hostingId', 'name username org_name org_profile_image')
                 .populate('classroom_id', 'name')
                 .limit(parseInt(limit))
-                .lean(),
+                .lean() : Promise.resolve([]),
 
             // Rooms
-            Classroom.find(roomQuery)
+            isEnabled('rooms') ? Classroom.find(roomQuery)
                 .limit(parseInt(limit))
-                .lean(),
+                .lean() : Promise.resolve([]),
 
             // Organizations
-            Org.find(orgQuery)
+            isEnabled('orgs') ? Org.find(orgQuery)
                 .limit(parseInt(limit))
-                .lean(),
+                .lean() : Promise.resolve([]),
 
             // Users (only if authenticated)
-            userId ? User.find(userQuery)
+            userId && isEnabled('users') ? User.find(userQuery)
                 .select('_id username name email picture partners')
                 .limit(parseInt(limit))
                 .lean() : Promise.resolve([]),
-            OrgBudget ? OrgBudget.find({ name: regex }).limit(parseInt(limit)).lean() : Promise.resolve([]),
-            OrgInventory ? OrgInventory.find({ name: regex }).limit(parseInt(limit)).lean() : Promise.resolve([])
+            OrgBudget && isEnabled('budgets') ? OrgBudget.find({ name: regex }).limit(parseInt(limit)).lean() : Promise.resolve([]),
+            OrgInventory && isEnabled('inventory') ? OrgInventory.find({ name: regex }).limit(parseInt(limit)).lean() : Promise.resolve([]),
+            OrgGovernanceDocument && isEnabled('governance')
+                ? OrgGovernanceDocument.find({
+                    $or: [
+                        { title: regex },
+                        { body: regex }
+                    ]
+                })
+                    .limit(parseInt(limit))
+                    .lean()
+                : Promise.resolve([])
         ]);
 
         // Transform rooms to include schedule if needed
@@ -565,7 +591,8 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
             organizations: transformedOrgs,
             users: users,
             budgets: budgets,
-            inventories: inventories
+            inventories: inventories,
+            governanceDocuments: governanceDocs
         });
     } catch (error) {
         console.error('GET: /unified-search failed', error);

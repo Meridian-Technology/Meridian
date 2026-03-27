@@ -15,7 +15,14 @@
   "orgLifecycle": {
     "allowedStatuses": ["pending", "approved", "active", "sunset", "archived"],
     "defaultStatus": "approved",
-    "requireApprovalForCreation": false
+    "requireApprovalForCreation": false,
+    "transitions": {
+      "pending": ["approved", "archived"],
+      "approved": ["active", "archived"],
+      "active": ["sunset", "archived"],
+      "sunset": ["active", "archived"],
+      "archived": []
+    }
   },
 
   // Governance document and officer term policies.
@@ -23,7 +30,8 @@
     "documentLabel": "Constitution",
     "allowVersioning": true,
     "requireApprovalForDocumentPublish": false,
-    "officerTermsEnabled": true
+    "officerTermsEnabled": true,
+    "documentStatuses": ["draft", "pending_review", "published", "archived"]
   },
 
   // Finance policy that can map to campus accounting systems.
@@ -32,12 +40,26 @@
     "workflowStates": [
       "draft",
       "submitted",
-      "in_review",
+      "preliminary_review",
+      "final_review",
       "changes_requested",
       "approved",
+      "appealed",
       "rejected",
       "finalized"
     ],
+    "transitions": {
+      "draft": ["submitted"],
+      "submitted": ["preliminary_review", "changes_requested"],
+      "preliminary_review": ["final_review", "changes_requested", "rejected"],
+      "final_review": ["approved", "changes_requested", "rejected", "appealed"],
+      "changes_requested": ["submitted"],
+      "approved": ["finalized", "appealed"],
+      "appealed": ["final_review", "approved", "rejected"],
+      "rejected": [],
+      "finalized": []
+    },
+    "reviewActions": ["comment", "request_changes", "approve", "reject"],
     "accountingDimensions": [
       {
         "key": "fund",
@@ -62,13 +84,17 @@
   "inventory": {
     "enabled": true,
     "allowCheckout": true,
-    "requireConditionOnReturn": true
+    "requireConditionOnReturn": true,
+    "lifecycleStatuses": ["active", "maintenance", "archived"],
+    "conditions": ["new", "good", "fair", "poor", "broken"]
   },
 
   // Reporting defaults and export types.
   "reporting": {
     "enabled": true,
     "defaultExports": ["csv", "json"],
-    "scheduledReportsEnabled": true
+    "scheduledReportsEnabled": true,
+    "searchEntities": ["orgs", "members", "budgets", "inventory", "governance"],
+    "adminSummaryCards": ["orgs", "governance", "budgets", "inventory", "exceptions"]
   }
 }
