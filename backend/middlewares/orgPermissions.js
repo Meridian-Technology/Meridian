@@ -250,6 +250,26 @@ function requireAnalyticsAccess(orgParam = 'orgId') {
     return requireOrgPermission('view_analytics', orgParam);
 }
 
+function requireBudgetView(orgParam = 'orgId') {
+    return requireAnyOrgPermission(['view_budgets', 'manage_budgets', 'review_budgets'], orgParam);
+}
+
+function requireBudgetManagement(orgParam = 'orgId') {
+    return requireOrgPermission('manage_budgets', orgParam);
+}
+
+function requireBudgetReview(orgParam = 'orgId') {
+    return requireOrgPermission('review_budgets', orgParam);
+}
+
+function requireInventoryView(orgParam = 'orgId') {
+    return requireAnyOrgPermission(['view_inventory', 'manage_inventory'], orgParam);
+}
+
+function requireInventoryManagement(orgParam = 'orgId') {
+    return requireOrgPermission('manage_inventory', orgParam);
+}
+
 module.exports = {
     requireOrgPermission,
     requireAnyOrgPermission,
@@ -258,6 +278,11 @@ module.exports = {
     requireMemberManagement,
     requireEventManagement,
     requireAnalyticsAccess,
+    requireBudgetView,
+    requireBudgetManagement,
+    requireBudgetReview,
+    requireInventoryView,
+    requireInventoryManagement,
     requireEquipmentManagement: (orgParam = 'orgId') => requireOrgPermission('manage_equipment', orgParam),
     requireEquipmentModification: (orgParam = 'orgId') => requireOrgPermission('modify_equipment', orgParam)
 }; 

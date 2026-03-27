@@ -25,7 +25,15 @@ const ORG_PERMISSIONS = {
     
     // Advanced features
     MANAGE_INTEGRATIONS: 'manage_integrations', // Can manage third-party integrations
-    ACCESS_ADVANCED_FEATURES: 'access_advanced_features' // Can access beta/advanced features
+    ACCESS_ADVANCED_FEATURES: 'access_advanced_features', // Can access beta/advanced features
+
+    // CMS parity modules
+    VIEW_BUDGETS: 'view_budgets',
+    MANAGE_BUDGETS: 'manage_budgets',
+    REVIEW_BUDGETS: 'review_budgets',
+    MANAGE_ACCOUNTING: 'manage_accounting',
+    VIEW_INVENTORY: 'view_inventory',
+    MANAGE_INVENTORY: 'manage_inventory'
 };
 
 // Event-specific permissions
@@ -107,6 +115,12 @@ const PERMISSION_DESCRIPTIONS = {
     [ORG_PERMISSIONS.MANAGE_FINANCES]: 'Can manage financial transactions',
     [ORG_PERMISSIONS.MANAGE_INTEGRATIONS]: 'Can manage third-party integrations',
     [ORG_PERMISSIONS.ACCESS_ADVANCED_FEATURES]: 'Can access beta and advanced features',
+    [ORG_PERMISSIONS.VIEW_BUDGETS]: 'Can view organization budgets',
+    [ORG_PERMISSIONS.MANAGE_BUDGETS]: 'Can create and edit organization budgets',
+    [ORG_PERMISSIONS.REVIEW_BUDGETS]: 'Can review and approve budgets',
+    [ORG_PERMISSIONS.MANAGE_ACCOUNTING]: 'Can manage accounting dimensions and exports',
+    [ORG_PERMISSIONS.VIEW_INVENTORY]: 'Can view inventory records',
+    [ORG_PERMISSIONS.MANAGE_INVENTORY]: 'Can manage inventory records and checkout state',
     
     [EVENT_PERMISSIONS.CREATE_EVENTS]: 'Can create new events',
     [EVENT_PERMISSIONS.EDIT_EVENTS]: 'Can edit existing events',

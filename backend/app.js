@@ -11,6 +11,7 @@ const enforce = require('express-sslify');
 const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
+const { loadTenantParityConfig } = require('./services/tenantConfigService');
 
 const s3 = require('./aws-config');
 
@@ -24,6 +25,13 @@ function createApp() {
     ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
     : 'http://localhost:3000';
   initSocket(server, { origin: corsOrigin });
+
+  try {
+    // Warm the config cache at boot so config errors surface early.
+    loadTenantParityConfig('default');
+  } catch (error) {
+    console.warn('CMS parity config warmup skipped:', error.message);
+  }
 
   const corsOptions = {
     origin: process.env.NODE_ENV === 'production'
@@ -225,6 +233,9 @@ function createApp() {
   const orgManagementRoutes = require('./routes/orgManagementRoutes.js');
   const orgInviteRoutes = require('./routes/orgInviteRoutes.js');
   const orgMessageRoutes = require('./routes/orgMessageRoutes.js');
+  const orgGovernanceRoutes = require('./routes/orgGovernanceRoutes.js');
+  const orgBudgetRoutes = require('./routes/orgBudgetRoutes.js');
+  const orgInventoryRoutes = require('./routes/orgInventoryRoutes.js');
   const roomRoutes = require('./routes/roomRoutes.js');
   const adminRoutes = require('./routes/adminRoutes.js');
   const eventsRoutes = require('./events/index.js');
@@ -260,6 +271,9 @@ function createApp() {
   app.use('/org-management', orgManagementRoutes);
   app.use('/org-invites', orgInviteRoutes);
   app.use('/org-messages', orgMessageRoutes);
+  app.use(orgGovernanceRoutes);
+  app.use(orgBudgetRoutes);
+  app.use(orgInventoryRoutes);
   app.use('/org-event-management', orgEventManagementRoutes);
   app.use('/admin', roomRoutes);
   app.use(adminRoutes);

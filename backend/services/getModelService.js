@@ -29,6 +29,14 @@ const androidTesterSignupSchema = require('../schemas/androidTesterSignup');
 const resourcesConfigSchema = require('../schemas/resources');
 const shuttleConfigSchema = require('../schemas/shuttleConfig');
 const noticeConfigSchema = require('../schemas/noticeConfig');
+const orgGovernanceDocumentSchema = require('../schemas/orgGovernanceDocument');
+const orgBudgetTemplateSchema = require('../schemas/orgBudgetTemplate');
+const orgBudgetSchema = require('../schemas/orgBudget');
+const orgBudgetReviewSchema = require('../schemas/orgBudgetReview');
+const orgBudgetWorkflowEventSchema = require('../schemas/orgBudgetWorkflowEvent');
+const orgAccountingDimensionSchema = require('../schemas/orgAccountingDimension');
+const orgInventorySchema = require('../schemas/orgInventory');
+const orgInventoryItemSchema = require('../schemas/orgInventoryItem');
 // Study Sessions
 const studySessionSchema = require('../schemas/studySession');
 const availabilityPollSchema = require('../schemas/availabilityPoll');
@@ -127,6 +135,14 @@ const getModels = (req, ...names) => {
         ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
         ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
         NoticeConfig: req.db.model('NoticeConfig', noticeConfigSchema, 'noticeConfigs'),
+        OrgGovernanceDocument: req.db.model('OrgGovernanceDocument', orgGovernanceDocumentSchema, 'orgGovernanceDocuments'),
+        OrgBudgetTemplate: req.db.model('OrgBudgetTemplate', orgBudgetTemplateSchema, 'orgBudgetTemplates'),
+        OrgBudget: req.db.model('OrgBudget', orgBudgetSchema, 'orgBudgets'),
+        OrgBudgetReview: req.db.model('OrgBudgetReview', orgBudgetReviewSchema, 'orgBudgetReviews'),
+        OrgBudgetWorkflowEvent: req.db.model('OrgBudgetWorkflowEvent', orgBudgetWorkflowEventSchema, 'orgBudgetWorkflowEvents'),
+        OrgAccountingDimension: req.db.model('OrgAccountingDimension', orgAccountingDimensionSchema, 'orgAccountingDimensions'),
+        OrgInventory: req.db.model('OrgInventory', orgInventorySchema, 'orgInventories'),
+        OrgInventoryItem: req.db.model('OrgInventoryItem', orgInventoryItemSchema, 'orgInventoryItems'),
     };
 
     return names.reduce((acc, name) => {

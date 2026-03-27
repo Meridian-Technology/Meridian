@@ -35,6 +35,33 @@ const memberSchema = new Schema({
         type: Date,
         default: Date.now
     },
+    termStart: {
+        type: Date,
+        default: null
+    },
+    termEnd: {
+        type: Date,
+        default: null
+    },
+    membershipAuditTrail: [{
+        action: {
+            type: String,
+            enum: ['joined', 'role_changed', 'status_changed', 'term_updated'],
+            required: true
+        },
+        details: {
+            type: String,
+            default: ''
+        },
+        changedBy: {
+            type: Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        changedAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
     // For tracking role changes
     roleHistory: [{
         role: String,
@@ -131,7 +158,23 @@ memberSchema.methods.changeRole = async function(newRole, assignedBy, reason = '
     this.role = newRole;
     this.assignedBy = assignedBy;
     this.assignedAt = new Date();
+    this.membershipAuditTrail.push({
+        action: 'role_changed',
+        details: reason || `Role changed to ${newRole}`,
+        changedBy: assignedBy
+    });
     
+    return this.save();
+};
+
+memberSchema.methods.updateOfficerTerm = async function(termStart, termEnd, changedBy) {
+    this.termStart = termStart || null;
+    this.termEnd = termEnd || null;
+    this.membershipAuditTrail.push({
+        action: 'term_updated',
+        details: `Officer term updated (${termStart || 'n/a'} to ${termEnd || 'n/a'})`,
+        changedBy
+    });
     return this.save();
 };
 

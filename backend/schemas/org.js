@@ -160,6 +160,21 @@ const OrgSchema= new Schema({
         type: Schema.Types.ObjectId,
         ref: 'User'
     },
+    // CMS parity lifecycle state (tenant policy controls allowed transitions)
+    lifecycleStatus: {
+        type: String,
+        enum: ['pending', 'approved', 'active', 'sunset', 'archived'],
+        default: 'active'
+    },
+    lifecycleUpdatedAt: {
+        type: Date,
+        default: Date.now
+    },
+    lifecycleUpdatedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
     // Add metadata for role management
     roleManagement: {
         allowCustomRoles: {
