@@ -1,0 +1,95 @@
+{
+  // RPI CMS parity profile.
+  // This mirrors the legacy CMS intent while still fitting Atlas architecture.
+  "profile": "cmsParity",
+  "version": 1,
+
+  // Major module toggles.
+  "modules": {
+    "governance": true,
+    "finance": true,
+    "inventory": true,
+    "reporting": true
+  },
+
+  // Organization lifecycle behavior.
+  "orgLifecycle": {
+    // Pending is used for Atlas-style approval flow.
+    "allowedStatuses": ["pending", "approved", "active", "sunset", "archived"],
+    "defaultStatus": "approved",
+    "requireApprovalForCreation": true
+  },
+
+  // Governance and constitution-style document controls.
+  "governance": {
+    "documentLabel": "Constitution",
+    "allowVersioning": true,
+    "requireApprovalForDocumentPublish": true,
+    "officerTermsEnabled": true
+  },
+
+  // Finance settings are designed to match CMS budget intent.
+  "finance": {
+    "enabled": true,
+    "workflowStates": [
+      "draft",
+      "submitted",
+      "preliminary_review",
+      "final_review",
+      "changes_requested",
+      "approved",
+      "appealed",
+      "finalized"
+    ],
+
+    // Generalized FOAPAL-like dimensions.
+    // Campuses can rename these labels without changing backend behavior.
+    "accountingDimensions": [
+      {
+        "key": "fund",
+        "label": "Fund",
+        "required": true
+      },
+      {
+        "key": "org",
+        "label": "Org",
+        "required": true
+      },
+      {
+        "key": "account",
+        "label": "Account",
+        "required": true
+      },
+      {
+        "key": "program",
+        "label": "Program",
+        "required": false
+      },
+      {
+        "key": "activity",
+        "label": "Activity",
+        "required": false
+      },
+      {
+        "key": "class_kga",
+        "label": "Class/KGA",
+        "required": false
+      }
+    ],
+    "allowAppeals": true
+  },
+
+  // Inventory settings equivalent to CMS inventory expectations.
+  "inventory": {
+    "enabled": true,
+    "allowCheckout": true,
+    "requireConditionOnReturn": true
+  },
+
+  // Reporting defaults used by admin/report endpoints.
+  "reporting": {
+    "enabled": true,
+    "defaultExports": ["csv", "json"],
+    "scheduledReportsEnabled": true
+  }
+}

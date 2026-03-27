@@ -1,0 +1,74 @@
+{
+  // Configuration profile metadata.
+  "profile": "cmsParity",
+  "version": 1,
+
+  // Module switches used by Atlas navigation and backend route guards.
+  "modules": {
+    "governance": true,
+    "finance": true,
+    "inventory": true,
+    "reporting": true
+  },
+
+  // Organization lifecycle policy.
+  "orgLifecycle": {
+    "allowedStatuses": ["pending", "approved", "active", "sunset", "archived"],
+    "defaultStatus": "approved",
+    "requireApprovalForCreation": false
+  },
+
+  // Governance document and officer term policies.
+  "governance": {
+    "documentLabel": "Constitution",
+    "allowVersioning": true,
+    "requireApprovalForDocumentPublish": false,
+    "officerTermsEnabled": true
+  },
+
+  // Finance policy that can map to campus accounting systems.
+  "finance": {
+    "enabled": true,
+    "workflowStates": [
+      "draft",
+      "submitted",
+      "in_review",
+      "changes_requested",
+      "approved",
+      "rejected",
+      "finalized"
+    ],
+    "accountingDimensions": [
+      {
+        "key": "fund",
+        "label": "Fund",
+        "required": true
+      },
+      {
+        "key": "org",
+        "label": "Org",
+        "required": true
+      },
+      {
+        "key": "account",
+        "label": "Account",
+        "required": true
+      }
+    ],
+    "allowAppeals": true
+  },
+
+  // Inventory and assets policy.
+  "inventory": {
+    "enabled": true,
+    "allowCheckout": true,
+    "requireConditionOnReturn": true
+  },
+
+  // Reporting defaults and export types.
+  "reporting": {
+    "enabled": true,
+    "defaultExports": ["csv", "json"],
+    "scheduledReportsEnabled": true
+  }
+}

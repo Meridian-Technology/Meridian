@@ -7,6 +7,7 @@ const { requireAdmin } = require('../middlewares/requireAdmin');
 const { uploadImageToS3, upload } = require('../services/imageUploadService');
 const { emitToOrgApprovalRoom } = require('../socket');
 const { clean, isProfane } = require('../services/profanityFilterService');
+const { getTenantParityConfig } = require('../services/tenantConfigService');
 
 const router = express.Router();
 
@@ -290,6 +291,22 @@ router.get('/pending-approvals', verifyToken, requireAdmin, async (req, res) => 
 });
 
 // ==================== CONFIGURATION MANAGEMENT ====================
+
+router.get('/cms-parity-config', verifyToken, async (req, res) => {
+    try {
+        const config = getTenantParityConfig(req);
+        res.status(200).json({
+            success: true,
+            data: config
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error loading CMS parity configuration',
+            code: 'PARITY_CONFIG_LOAD_FAILED'
+        });
+    }
+});
 
 // Messaging defaults from orgManagementConfig schema (so clients always get min/max limits)
 const MESSAGING_SCHEMA_DEFAULTS = {
