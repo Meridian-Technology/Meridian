@@ -30,6 +30,8 @@ async function migrateOrganizationsAndMembers({ sourcePath, tenant, dryRun }) {
     const organizations = Array.isArray(payload.organizations) ? payload.organizations : [];
     const memberships = Array.isArray(payload.memberships) ? payload.memberships : [];
     const budgets = Array.isArray(payload.budgets) ? payload.budgets : [];
+    const budgetReviews = Array.isArray(payload.budgetReviews) ? payload.budgetReviews : [];
+    const budgetWorkflowEvents = Array.isArray(payload.budgetWorkflowEvents) ? payload.budgetWorkflowEvents : [];
     const inventories = Array.isArray(payload.inventories) ? payload.inventories : [];
     const governanceDocuments = Array.isArray(payload.governanceDocuments) ? payload.governanceDocuments : [];
     const inventoryItems = Array.isArray(payload.inventoryItems) ? payload.inventoryItems : [];
@@ -42,7 +44,9 @@ async function migrateOrganizationsAndMembers({ sourcePath, tenant, dryRun }) {
         budgets: {},
         inventories: {},
         inventoryItems: {},
-        governanceDocuments: {}
+        governanceDocuments: {},
+        budgetReviews: {},
+        budgetWorkflowEvents: {}
     };
 
     if (dryRun) {
@@ -61,6 +65,8 @@ async function migrateOrganizationsAndMembers({ sourcePath, tenant, dryRun }) {
         const OrgInventory = db.model('OrgInventory', require('../../../schemas/orgInventory'));
         const OrgInventoryItem = db.model('OrgInventoryItem', require('../../../schemas/orgInventoryItem'));
         const OrgGovernanceDocument = db.model('OrgGovernanceDocument', require('../../../schemas/orgGovernanceDocument'));
+        const OrgBudgetReview = db.model('OrgBudgetReview', require('../../../schemas/orgBudgetReview'));
+        const OrgBudgetWorkflowEvent = db.model('OrgBudgetWorkflowEvent', require('../../../schemas/orgBudgetWorkflowEvent'));
 
         for (const organization of organizations) {
             const sourceOrgKey = String(organization.id || organization._id || organization.org_name);
@@ -133,6 +139,68 @@ async function migrateOrganizationsAndMembers({ sourcePath, tenant, dryRun }) {
                         totalApproved: Number(budget.totalApproved || 0),
                         createdBy: budget.createdBy ? toObjectId(budget.createdBy, 'user') : toObjectId('system', 'user'),
                         updatedBy: budget.updatedBy ? toObjectId(budget.updatedBy, 'user') : null
+                    }
+                },
+                { upsert: true }
+            );
+        }
+
+        for (const review of budgetReviews) {
+            const sourceReviewKey = String(review.id || review._id || `${review.budgetId || review.budget_id}:${review.action}:${review.reviewerId || review.reviewer_id}`);
+            const sourceBudgetKey = String(review.budgetId || review.budget_id);
+            const sourceOrgKey = String(review.orgId || review.org_id);
+            const reviewId = toObjectId(sourceReviewKey, 'budgetReview');
+            const budgetId = mapping.budgets[sourceBudgetKey]
+                ? new mongoose.Types.ObjectId(mapping.budgets[sourceBudgetKey])
+                : toObjectId(sourceBudgetKey, 'budget');
+            const orgId = mapping.organizations[sourceOrgKey]
+                ? new mongoose.Types.ObjectId(mapping.organizations[sourceOrgKey])
+                : toObjectId(sourceOrgKey, 'org');
+            mapping.budgetReviews[sourceReviewKey] = String(reviewId);
+
+            await OrgBudgetReview.updateOne(
+                { _id: reviewId },
+                {
+                    $set: {
+                        budget_id: budgetId,
+                        org_id: orgId,
+                        reviewerId: review.reviewerId ? toObjectId(review.reviewerId, 'user') : toObjectId('system', 'user'),
+                        action: review.action || 'comment',
+                        comment: review.comment || '',
+                        metadata: review.metadata || {},
+                        parentReviewId: review.parentReviewId ? toObjectId(review.parentReviewId, 'budgetReview') : null,
+                        visibility: review.visibility || 'submitter_visible'
+                    }
+                },
+                { upsert: true }
+            );
+        }
+
+        for (const event of budgetWorkflowEvents) {
+            const sourceEventKey = String(event.id || event._id || `${event.budgetId || event.budget_id}:${event.toState}:${event.createdAt || ''}`);
+            const sourceBudgetKey = String(event.budgetId || event.budget_id);
+            const sourceOrgKey = String(event.orgId || event.org_id);
+            const eventId = toObjectId(sourceEventKey, 'budgetWorkflowEvent');
+            const budgetId = mapping.budgets[sourceBudgetKey]
+                ? new mongoose.Types.ObjectId(mapping.budgets[sourceBudgetKey])
+                : toObjectId(sourceBudgetKey, 'budget');
+            const orgId = mapping.organizations[sourceOrgKey]
+                ? new mongoose.Types.ObjectId(mapping.organizations[sourceOrgKey])
+                : toObjectId(sourceOrgKey, 'org');
+            mapping.budgetWorkflowEvents[sourceEventKey] = String(eventId);
+
+            await OrgBudgetWorkflowEvent.updateOne(
+                { _id: eventId },
+                {
+                    $set: {
+                        budget_id: budgetId,
+                        org_id: orgId,
+                        fromState: event.fromState || null,
+                        toState: event.toState || 'draft',
+                        eventType: event.eventType || 'state_transition',
+                        reason: event.reason || '',
+                        actorId: event.actorId ? toObjectId(event.actorId, 'user') : toObjectId('system', 'user'),
+                        metadata: event.metadata || {}
                     }
                 },
                 { upsert: true }
@@ -233,6 +301,8 @@ async function migrateOrganizationsAndMembers({ sourcePath, tenant, dryRun }) {
         organizationsProcessed: organizations.length,
         membershipsProcessed: memberships.length,
         budgetsProcessed: budgets.length,
+        budgetReviewsProcessed: budgetReviews.length,
+        budgetWorkflowEventsProcessed: budgetWorkflowEvents.length,
         inventoriesProcessed: inventories.length,
         inventoryItemsProcessed: inventoryItems.length,
         governanceDocumentsProcessed: governanceDocuments.length,

@@ -49,6 +49,10 @@ describe('validateParityConfig', () => {
       defaultExports: ['csv', 'json'],
       searchEntities: ['orgs', 'budgets'],
       adminSummaryCards: ['orgs', 'budgets']
+    },
+    adminRoles: {
+      permissionCatalog: ['review_budget', 'approve_budget', 'release_budget'],
+      rootOverridesAll: true
     }
   };
 
@@ -60,5 +64,11 @@ describe('validateParityConfig', () => {
     const invalid = JSON.parse(JSON.stringify(baseConfig));
     delete invalid.finance.accountingDimensions[0].required;
     expect(() => validateParityConfig(invalid)).toThrow(/required/);
+  });
+
+  test('rejects invalid admin role flags', () => {
+    const invalid = JSON.parse(JSON.stringify(baseConfig));
+    invalid.adminRoles.rootOverridesAll = 'yes';
+    expect(() => validateParityConfig(invalid)).toThrow(/adminRoles.rootOverridesAll/);
   });
 });

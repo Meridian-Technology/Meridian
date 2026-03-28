@@ -262,6 +262,14 @@ function requireBudgetReview(orgParam = 'orgId') {
     return requireOrgPermission('review_budgets', orgParam);
 }
 
+function requireBudgetApproval(orgParam = 'orgId') {
+    return requireAnyOrgPermission(['approve_budget', 'review_budgets', 'all'], orgParam);
+}
+
+function requireBudgetRelease(orgParam = 'orgId') {
+    return requireAnyOrgPermission(['release_budget', 'approve_budget', 'all'], orgParam);
+}
+
 function requireInventoryView(orgParam = 'orgId') {
     return requireAnyOrgPermission(['view_inventory', 'manage_inventory'], orgParam);
 }
@@ -281,6 +289,8 @@ module.exports = {
     requireBudgetView,
     requireBudgetManagement,
     requireBudgetReview,
+    requireBudgetApproval,
+    requireBudgetRelease,
     requireInventoryView,
     requireInventoryManagement,
     requireEquipmentManagement: (orgParam = 'orgId') => requireOrgPermission('manage_equipment', orgParam),

@@ -9,6 +9,17 @@ function aggregateSourceData(payload) {
     const inventories = Array.isArray(payload.inventories) ? payload.inventories : [];
     const inventoryItems = Array.isArray(payload.inventoryItems) ? payload.inventoryItems : [];
     const governanceDocuments = Array.isArray(payload.governanceDocuments) ? payload.governanceDocuments : [];
+    const budgetStateByOrgAndYear = budgets.reduce((acc, budget) => {
+        const orgKey = String(budget.orgId || budget.org_id || 'unknown');
+        const fiscalYear = String(budget.fiscalYear || 'unknown');
+        const key = `${orgKey}:${fiscalYear}`;
+        if (!acc[key]) {
+            acc[key] = {};
+        }
+        const state = String(budget.state || 'unknown');
+        acc[key][state] = (acc[key][state] || 0) + 1;
+        return acc;
+    }, {});
 
     const budgetTotalsByFiscalYear = budgets.reduce((acc, budget) => {
         const key = String(budget.fiscalYear || 'unknown');
@@ -29,7 +40,8 @@ function aggregateSourceData(payload) {
         inventories: inventories.length,
         inventoryItems: inventoryItems.length,
         governanceDocuments: governanceDocuments.length,
-        budgetTotalsByFiscalYear
+        budgetTotalsByFiscalYear,
+        budgetStateByOrgAndYear
     };
 }
 
@@ -58,6 +70,20 @@ function collectMismatches(sourceSummary, targetSummary) {
         }
     });
 
+    Object.entries(sourceSummary.budgetStateByOrgAndYear || {}).forEach(([key, sourceStateCounts]) => {
+        const targetStateCounts = (targetSummary.budgetStateByOrgAndYear || {})[key] || {};
+        const states = Array.from(new Set([...Object.keys(sourceStateCounts), ...Object.keys(targetStateCounts)]));
+        const hasDifference = states.some((state) => Number(sourceStateCounts[state] || 0) !== Number(targetStateCounts[state] || 0));
+        if (hasDifference) {
+            mismatches.push({
+                type: 'budget_state_mismatch',
+                key,
+                source: sourceStateCounts,
+                target: targetStateCounts
+            });
+        }
+    });
+
     return mismatches;
 }
 
@@ -77,7 +103,8 @@ async function reconcileCmsParity({ sourcePath, tenant, dryRun }) {
         inventories: 0,
         inventoryItems: 0,
         governanceDocuments: 0,
-        budgetTotalsByFiscalYear: {}
+        budgetTotalsByFiscalYear: {},
+        budgetStateByOrgAndYear: {}
     };
 
     if (!dryRun) {
@@ -89,7 +116,7 @@ async function reconcileCmsParity({ sourcePath, tenant, dryRun }) {
         const OrgInventoryItem = db.model('OrgInventoryItem', require('../../../schemas/orgInventoryItem'));
         const OrgGovernanceDocument = db.model('OrgGovernanceDocument', require('../../../schemas/orgGovernanceDocument'));
 
-        const [organizations, memberships, budgets, inventories, inventoryItems, governanceDocuments, budgetRows] = await Promise.all([
+        const [organizations, memberships, budgets, inventories, inventoryItems, governanceDocuments, budgetRows, budgetStateRows] = await Promise.all([
             Org.countDocuments(),
             OrgMember.countDocuments(),
             OrgBudget.countDocuments(),
@@ -104,6 +131,18 @@ async function reconcileCmsParity({ sourcePath, tenant, dryRun }) {
                         approved: { $sum: '$totalApproved' }
                     }
                 }
+            ]),
+            OrgBudget.aggregate([
+                {
+                    $group: {
+                        _id: {
+                            org_id: '$org_id',
+                            fiscalYear: '$fiscalYear',
+                            state: '$state'
+                        },
+                        count: { $sum: 1 }
+                    }
+                }
             ])
         ]);
 
@@ -115,6 +154,18 @@ async function reconcileCmsParity({ sourcePath, tenant, dryRun }) {
             return acc;
         }, {});
 
+        const budgetStateByOrgAndYear = budgetStateRows.reduce((acc, row) => {
+            const orgId = String(row._id?.org_id || 'unknown');
+            const fiscalYear = String(row._id?.fiscalYear || 'unknown');
+            const state = String(row._id?.state || 'unknown');
+            const key = `${orgId}:${fiscalYear}`;
+            if (!acc[key]) {
+                acc[key] = {};
+            }
+            acc[key][state] = Number(row.count || 0);
+            return acc;
+        }, {});
+
         targetSummary = {
             organizations,
             memberships,
@@ -122,7 +173,8 @@ async function reconcileCmsParity({ sourcePath, tenant, dryRun }) {
             inventories,
             inventoryItems,
             governanceDocuments,
-            budgetTotalsByFiscalYear
+            budgetTotalsByFiscalYear,
+            budgetStateByOrgAndYear
         };
     }
 
@@ -131,7 +183,7 @@ async function reconcileCmsParity({ sourcePath, tenant, dryRun }) {
         tenant,
         sourcePath,
         dryRun,
-        checksRun: 7,
+        checksRun: 8,
         sourceSummary,
         targetSummary,
         mismatches

@@ -35,6 +35,7 @@ export default function ParitySummary() {
                 <div className="atlas-parity-summary__actions">
                     <button type="button" onClick={() => exportSummary('json')}>Export JSON</button>
                     <button type="button" onClick={() => exportSummary('csv')}>Export CSV</button>
+                    <button type="button" onClick={() => exportSummary('budget_csv')}>Export Budget CSV</button>
                 </div>
             </header>
             <div className="atlas-parity-summary__grid">

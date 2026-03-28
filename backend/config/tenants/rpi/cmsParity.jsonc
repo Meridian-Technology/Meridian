@@ -62,6 +62,12 @@
       "finalized": []
     },
     "reviewActions": ["comment", "request_changes", "approve", "reject"],
+    "editableStates": ["draft", "changes_requested"],
+    "reviewableStates": ["submitted", "preliminary_review", "final_review", "appealed"],
+    "reviewerPolicy": {
+      "adminOnly": true,
+      "noSelfApproval": true
+    },
 
     // Generalized FOAPAL-like dimensions.
     // Campuses can rename these labels without changing backend behavior.
@@ -69,32 +75,38 @@
       {
         "key": "fund",
         "label": "Fund",
-        "required": true
+        "required": true,
+        "values": []
       },
       {
         "key": "org",
         "label": "Org",
-        "required": true
+        "required": true,
+        "values": []
       },
       {
         "key": "account",
         "label": "Account",
-        "required": true
+        "required": true,
+        "values": []
       },
       {
         "key": "program",
         "label": "Program",
-        "required": false
+        "required": false,
+        "values": []
       },
       {
         "key": "activity",
         "label": "Activity",
-        "required": false
+        "required": false,
+        "values": []
       },
       {
         "key": "class_kga",
         "label": "Class/KGA",
-        "required": false
+        "required": false,
+        "values": []
       }
     ],
     "allowAppeals": true
@@ -116,5 +128,11 @@
     "scheduledReportsEnabled": true,
     "searchEntities": ["orgs", "members", "budgets", "inventory", "governance"],
     "adminSummaryCards": ["orgs", "governance", "budgets", "inventory", "exceptions"]
+  },
+
+  // Foundation for configurable admin/root permission mapping.
+  "adminRoles": {
+    "permissionCatalog": ["review_budget", "approve_budget", "release_budget", "manage_budget_reviewer_assignments"],
+    "rootOverridesAll": true
   }
 }

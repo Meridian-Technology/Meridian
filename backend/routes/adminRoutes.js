@@ -33,6 +33,12 @@ const DEFAULT_TENANTS = [
     statusMessage: '',
   },
 ];
+const ADMIN_PERMISSION_CATALOG = [
+  'review_budget',
+  'approve_budget',
+  'release_budget',
+  'manage_budget_reviewer_assignments'
+];
 
 function normalizeTenantRows(rows = []) {
   return rows
@@ -298,11 +304,104 @@ router.get('/admin/platform-admins', verifyToken, requireAdmin, async (req, res)
       email: byId[r.globalUserId.toString()]?.email,
       name: byId[r.globalUserId.toString()]?.name,
       picture: byId[r.globalUserId.toString()]?.picture,
+      tenantPermissions: r.tenantPermissions || []
     }));
     res.json({ success: true, data: list });
   } catch (err) {
     console.error('GET /admin/platform-admins failed:', err);
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/admin/permission-catalog', verifyToken, requireAdmin, (req, res) => {
+  return res.status(200).json({
+    success: true,
+    data: {
+      permissions: ADMIN_PERMISSION_CATALOG
+    }
+  });
+});
+
+router.get('/admin/platform-admins/:globalUserId/permissions', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const { PlatformRole } = getGlobalModels(req, 'PlatformRole');
+    const platformRole = await PlatformRole.findOne({ globalUserId: req.params.globalUserId }).lean();
+    if (!platformRole) {
+      return res.status(404).json({ success: false, message: 'Platform role not found' });
+    }
+    const tenantKey = String(req.query.tenantKey || req.school || '').toLowerCase();
+    const tenantPermissions = (platformRole.tenantPermissions || []).find((row) => row.tenantKey === tenantKey);
+    return res.status(200).json({
+      success: true,
+      data: {
+        globalUserId: req.params.globalUserId,
+        tenantKey,
+        roles: platformRole.roles || [],
+        permissions: tenantPermissions?.permissions || []
+      }
+    });
+  } catch (err) {
+    console.error('GET /admin/platform-admins/:globalUserId/permissions failed:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/admin/platform-admins/:globalUserId/permissions', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const { PlatformRole } = getGlobalModels(req, 'PlatformRole');
+    const tenantKey = String(req.body?.tenantKey || req.school || '').toLowerCase();
+    const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : null;
+    if (!tenantKey || !permissions) {
+      return res.status(400).json({
+        success: false,
+        message: 'tenantKey and permissions array are required'
+      });
+    }
+    const invalid = permissions.filter((permission) => !ADMIN_PERMISSION_CATALOG.includes(permission));
+    if (invalid.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid permission(s): ${invalid.join(', ')}`,
+        code: 'INVALID_ADMIN_PERMISSION'
+      });
+    }
+
+    let platformRole = await PlatformRole.findOne({ globalUserId: req.params.globalUserId });
+    if (!platformRole) {
+      platformRole = new PlatformRole({
+        globalUserId: req.params.globalUserId,
+        roles: [],
+        tenantPermissions: []
+      });
+    }
+
+    const nextPermissions = platformRole.tenantPermissions || [];
+    const existingIndex = nextPermissions.findIndex((row) => row.tenantKey === tenantKey);
+    const updatedBy = req.user.globalUserId || null;
+    const payload = {
+      tenantKey,
+      permissions: Array.from(new Set(permissions)),
+      updatedBy,
+      updatedAt: new Date()
+    };
+    if (existingIndex >= 0) {
+      nextPermissions[existingIndex] = payload;
+    } else {
+      nextPermissions.push(payload);
+    }
+    platformRole.tenantPermissions = nextPermissions;
+    await platformRole.save();
+    return res.status(200).json({
+      success: true,
+      data: {
+        globalUserId: req.params.globalUserId,
+        tenantKey,
+        permissions: payload.permissions
+      }
+    });
+  } catch (err) {
+    console.error('PUT /admin/platform-admins/:globalUserId/permissions failed:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -542,10 +641,11 @@ router.get('/admin/cms-parity/summary', verifyToken, requireAdmin, async (req, r
       OrgBudget,
       OrgInventory,
       OrgGovernanceDocument,
-      OrgInventoryItem
-    } = getModels(req, 'Org', 'OrgMember', 'OrgBudget', 'OrgInventory', 'OrgGovernanceDocument', 'OrgInventoryItem');
+      OrgInventoryItem,
+      OrgBudgetWorkflowEvent
+    } = getModels(req, 'Org', 'OrgMember', 'OrgBudget', 'OrgInventory', 'OrgGovernanceDocument', 'OrgInventoryItem', 'OrgBudgetWorkflowEvent');
 
-    const [orgs, members, budgets, inventories, governanceDocs, archivedOrgs, pendingBudgets, maintenanceItems] = await Promise.all([
+    const [orgs, members, budgets, inventories, governanceDocs, archivedOrgs, pendingBudgets, maintenanceItems, stalledBudgets] = await Promise.all([
       Org ? Org.countDocuments() : 0,
       OrgMember ? OrgMember.countDocuments({ status: 'active' }) : 0,
       OrgBudget ? OrgBudget.countDocuments() : 0,
@@ -553,7 +653,13 @@ router.get('/admin/cms-parity/summary', verifyToken, requireAdmin, async (req, r
       OrgGovernanceDocument ? OrgGovernanceDocument.countDocuments() : 0,
       Org ? Org.countDocuments({ lifecycleStatus: 'archived' }) : 0,
       OrgBudget ? OrgBudget.countDocuments({ state: { $in: ['changes_requested', 'appealed'] } }) : 0,
-      OrgInventoryItem ? OrgInventoryItem.countDocuments({ lifecycleStatus: 'maintenance' }) : 0
+      OrgInventoryItem ? OrgInventoryItem.countDocuments({ lifecycleStatus: 'maintenance' }) : 0,
+      OrgBudgetWorkflowEvent
+        ? OrgBudgetWorkflowEvent.countDocuments({
+          createdAt: { $lte: new Date(Date.now() - (1000 * 60 * 60 * 24 * 14)) },
+          toState: { $in: ['submitted', 'preliminary_review', 'final_review'] }
+        })
+        : 0
     ]);
 
     res.status(200).json({
@@ -567,7 +673,8 @@ router.get('/admin/cms-parity/summary', verifyToken, requireAdmin, async (req, r
         exceptions: {
           archivedOrganizations: archivedOrgs,
           budgetsNeedingAttention: pendingBudgets,
-          maintenanceInventoryItems: maintenanceItems
+          maintenanceInventoryItems: maintenanceItems,
+          stalledBudgets
         }
       }
     });
@@ -608,6 +715,28 @@ router.get('/admin/cms-parity/export', verifyToken, requireAdmin, async (req, re
       const csv = rows.map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(',')).join('\n');
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="cms-parity-summary.csv"');
+      return res.status(200).send(csv);
+    }
+
+    if (format === 'budget_csv') {
+      const budgets = OrgBudget
+        ? await OrgBudget.find({}, 'org_id fiscalYear name state totalRequested totalApproved updatedAt').lean()
+        : [];
+      const rows = [
+        ['orgId', 'fiscalYear', 'name', 'state', 'totalRequested', 'totalApproved', 'updatedAt'],
+        ...budgets.map((budget) => [
+          String(budget.org_id || ''),
+          String(budget.fiscalYear || ''),
+          String(budget.name || ''),
+          String(budget.state || ''),
+          String(Number(budget.totalRequested || 0)),
+          String(Number(budget.totalApproved || 0)),
+          String(budget.updatedAt ? new Date(budget.updatedAt).toISOString() : '')
+        ])
+      ];
+      const csv = rows.map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(',')).join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=\"budget-parity-export.csv\"');
       return res.status(200).send(csv);
     }
 

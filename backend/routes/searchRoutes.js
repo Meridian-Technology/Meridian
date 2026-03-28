@@ -9,6 +9,14 @@ const { clean } = require('../services/profanityFilterService');
 const getModels = require('../services/getModelService');
 const { getTenantParityConfig } = require('../services/tenantConfigService');
 const router = express.Router();
+const BUDGET_VIEW_PERMISSIONS = new Set([
+    'view_budgets',
+    'manage_budgets',
+    'review_budgets',
+    'approve_budget',
+    'release_budget',
+    'all'
+]);
 
 router.get('/search', verifyTokenOptional, async (req, res) => {
     const { Classroom, User, Schedule } = getModels(req, 'Classroom', 'User', 'Schedule');
@@ -484,6 +492,41 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
             };
         }
 
+        const isTenantAdmin = (req.user?.roles || []).includes('admin') || (req.user?.roles || []).includes('root');
+        let budgetOrgScope = null;
+        if (isEnabled('budgets') && userId && !isTenantAdmin) {
+            const { OrgMember } = getModels(req, 'OrgMember');
+            const memberships = await OrgMember.find({
+                user_id: userId,
+                status: 'active'
+            })
+                .select('org_id role')
+                .lean();
+            const memberOrgIds = memberships.map((membership) => membership.org_id);
+            if (memberOrgIds.length > 0) {
+                const scopedOrgs = await Org.find({ _id: { $in: memberOrgIds } })
+                    .select('_id positions')
+                    .lean();
+                const roleByOrgId = new Map(memberships.map((membership) => [membership.org_id.toString(), membership.role]));
+                budgetOrgScope = scopedOrgs
+                    .filter((org) => {
+                        const roleName = roleByOrgId.get(org._id.toString());
+                        if (!roleName) {
+                            return false;
+                        }
+                        const role = (org.positions || []).find((position) => position.name === roleName);
+                        if (!role) {
+                            return false;
+                        }
+                        const permissions = Array.isArray(role.permissions) ? role.permissions : [];
+                        return permissions.some((permission) => BUDGET_VIEW_PERMISSIONS.has(permission));
+                    })
+                    .map((org) => org._id);
+            } else {
+                budgetOrgScope = [];
+            }
+        }
+
         // Execute searches in parallel
         const [events, rooms, orgs, users, budgets, inventories, governanceDocs] = await Promise.all([
             // Events - only future events
@@ -511,7 +554,14 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
                 .select('_id username name email picture partners')
                 .limit(parseInt(limit))
                 .lean() : Promise.resolve([]),
-            OrgBudget && isEnabled('budgets') ? OrgBudget.find({ name: regex }).limit(parseInt(limit)).lean() : Promise.resolve([]),
+            OrgBudget && isEnabled('budgets')
+                ? OrgBudget.find({
+                    name: regex,
+                    ...(isTenantAdmin ? {} : (userId ? { org_id: { $in: (budgetOrgScope || []) } } : { _id: null }))
+                })
+                    .limit(parseInt(limit))
+                    .lean()
+                : Promise.resolve([]),
             OrgInventory && isEnabled('inventory') ? OrgInventory.find({ name: regex }).limit(parseInt(limit)).lean() : Promise.resolve([]),
             OrgGovernanceDocument && isEnabled('governance')
                 ? OrgGovernanceDocument.find({

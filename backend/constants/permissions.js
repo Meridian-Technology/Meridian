@@ -31,6 +31,8 @@ const ORG_PERMISSIONS = {
     VIEW_BUDGETS: 'view_budgets',
     MANAGE_BUDGETS: 'manage_budgets',
     REVIEW_BUDGETS: 'review_budgets',
+    APPROVE_BUDGET: 'approve_budget',
+    RELEASE_BUDGET: 'release_budget',
     MANAGE_ACCOUNTING: 'manage_accounting',
     VIEW_INVENTORY: 'view_inventory',
     MANAGE_INVENTORY: 'manage_inventory'

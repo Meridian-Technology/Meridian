@@ -12,9 +12,14 @@ const orgBudgetReviewSchema = new Schema(
             required: true
         },
         comment: { type: String, default: '' },
+        parentReviewId: { type: Schema.Types.ObjectId, ref: 'OrgBudgetReview', default: null },
+        visibility: {
+            type: String,
+            enum: ['internal', 'submitter_visible'],
+            default: 'submitter_visible'
+        },
         metadata: {
-            type: Map,
-            of: String,
+            type: Schema.Types.Mixed,
             default: {}
         }
     },

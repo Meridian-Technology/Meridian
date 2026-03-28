@@ -12,6 +12,30 @@ const platformRoleSchema = new mongoose.Schema({
         default: [],
         enum: ['platform_admin', 'root'],
     },
+    tenantPermissions: {
+        type: [{
+            tenantKey: {
+                type: String,
+                required: true,
+                trim: true,
+                lowercase: true
+            },
+            permissions: {
+                type: [String],
+                default: []
+            },
+            updatedBy: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'GlobalUser',
+                default: null
+            },
+            updatedAt: {
+                type: Date,
+                default: Date.now
+            }
+        }],
+        default: []
+    }
 }, {
     timestamps: true,
 });

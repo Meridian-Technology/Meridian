@@ -10,6 +10,7 @@ import Configuration from './Configuration/Configuration';
 import Analytics from './Analytics/Analytics';
 import Migrations from './Migrations/Migrations';
 import ParitySummary from './Parity/ParitySummary';
+import AdminBudgetPermissions from './Permissions/AdminBudgetPermissions';
 import AtlasLogo from '../../../assets/Brand Image/SolutionLogos/Atlas.svg';
 import { useNavigate } from 'react-router-dom';
 function Atlas() {
@@ -83,6 +84,11 @@ function Atlas() {
                     label: 'CMS Parity',
                     icon: 'mdi:compare',
                     element: <ParitySummary />
+                },
+                {
+                    label: 'Budget Admin Permissions',
+                    icon: 'mdi:shield-account-variant',
+                    element: <AdminBudgetPermissions />
                 }
             ]
         }

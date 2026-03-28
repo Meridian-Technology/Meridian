@@ -52,4 +52,59 @@ async function requireAdmin(req, res, next) {
     return next();
 }
 
-module.exports = { requireAdmin };
+async function hasAdminPermission(req, permission) {
+    if (!req.user) {
+        return false;
+    }
+
+    const platformRoles = req.user.platformRoles || [];
+    if (platformRoles.includes('root') || platformRoles.includes('platform_admin')) {
+        return true;
+    }
+
+    if (req.user.globalUserId) {
+        const { PlatformRole } = getGlobalModels(req, 'PlatformRole');
+        const pr = await PlatformRole.findOne({ globalUserId: req.user.globalUserId }).lean();
+        if (!pr) {
+            return false;
+        }
+        if ((pr.roles || []).includes('root') || (pr.roles || []).includes('platform_admin')) {
+            return true;
+        }
+        const tenantKey = String(req.school || '').toLowerCase();
+        const tenantPermissions = Array.isArray(pr.tenantPermissions) ? pr.tenantPermissions : [];
+        const permissionsForTenant = tenantPermissions.find((row) => row.tenantKey === tenantKey);
+        return Array.isArray(permissionsForTenant?.permissions) && permissionsForTenant.permissions.includes(permission);
+    }
+
+    const { User } = getModels(req, 'User');
+    const tenantUser = req.user.userId ? await User.findById(req.user.userId).lean() : null;
+    if (!tenantUser) {
+        return false;
+    }
+    const roles = tenantUser.roles || [];
+    return roles.includes('admin') || roles.includes('root');
+}
+
+function requireAdminPermission(permission) {
+    return async (req, res, next) => {
+        try {
+            const isAllowed = await hasAdminPermission(req, permission);
+            if (!isAllowed) {
+                return res.status(403).json({
+                    success: false,
+                    message: `Missing required admin permission: ${permission}`,
+                    code: 'ADMIN_PERMISSION_REQUIRED'
+                });
+            }
+            return next();
+        } catch (error) {
+            return res.status(500).json({
+                success: false,
+                message: 'Error validating admin permission'
+            });
+        }
+    };
+}
+
+module.exports = { requireAdmin, hasAdminPermission, requireAdminPermission };

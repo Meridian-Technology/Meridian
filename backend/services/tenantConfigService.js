@@ -88,6 +88,21 @@ function validateParityConfig(config) {
   if (config.finance.reviewActions !== undefined) {
     assertArray(config.finance.reviewActions, 'finance.reviewActions');
   }
+  if (config.finance.editableStates !== undefined) {
+    assertArray(config.finance.editableStates, 'finance.editableStates');
+  }
+  if (config.finance.reviewableStates !== undefined) {
+    assertArray(config.finance.reviewableStates, 'finance.reviewableStates');
+  }
+  if (config.finance.reviewerPolicy !== undefined) {
+    assertObject(config.finance.reviewerPolicy, 'finance.reviewerPolicy');
+    if (config.finance.reviewerPolicy.adminOnly !== undefined) {
+      assertBoolean(config.finance.reviewerPolicy.adminOnly, 'finance.reviewerPolicy.adminOnly');
+    }
+    if (config.finance.reviewerPolicy.noSelfApproval !== undefined) {
+      assertBoolean(config.finance.reviewerPolicy.noSelfApproval, 'finance.reviewerPolicy.noSelfApproval');
+    }
+  }
   config.finance.accountingDimensions.forEach((dimension, index) => {
     assertObject(dimension, `finance.accountingDimensions[${index}]`);
     assertString(dimension.key, `finance.accountingDimensions[${index}].key`);
@@ -113,6 +128,15 @@ function validateParityConfig(config) {
   }
   if (config.reporting.adminSummaryCards !== undefined) {
     assertArray(config.reporting.adminSummaryCards, 'reporting.adminSummaryCards');
+  }
+  if (config.adminRoles !== undefined) {
+    assertObject(config.adminRoles, 'adminRoles');
+    if (config.adminRoles.permissionCatalog !== undefined) {
+      assertArray(config.adminRoles.permissionCatalog, 'adminRoles.permissionCatalog');
+    }
+    if (config.adminRoles.rootOverridesAll !== undefined) {
+      assertBoolean(config.adminRoles.rootOverridesAll, 'adminRoles.rootOverridesAll');
+    }
   }
 
   return config;

@@ -60,6 +60,12 @@
       "finalized": []
     },
     "reviewActions": ["comment", "request_changes", "approve", "reject"],
+    "editableStates": ["draft", "changes_requested"],
+    "reviewableStates": ["submitted", "preliminary_review", "final_review", "appealed"],
+    "reviewerPolicy": {
+      "adminOnly": true,
+      "noSelfApproval": true
+    },
     "accountingDimensions": [
       {
         "key": "fund",
@@ -74,7 +80,8 @@
       {
         "key": "account",
         "label": "Account",
-        "required": true
+        "required": true,
+        "values": []
       }
     ],
     "allowAppeals": true
@@ -96,5 +103,11 @@
     "scheduledReportsEnabled": true,
     "searchEntities": ["orgs", "members", "budgets", "inventory", "governance"],
     "adminSummaryCards": ["orgs", "governance", "budgets", "inventory", "exceptions"]
+  },
+
+  // Foundation for configurable admin/root permission mapping.
+  "adminRoles": {
+    "permissionCatalog": ["review_budget", "approve_budget", "release_budget", "manage_budget_reviewer_assignments"],
+    "rootOverridesAll": true
   }
 }
