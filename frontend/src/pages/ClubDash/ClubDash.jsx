@@ -7,7 +7,6 @@ import logo from '../../assets/red_logo.svg';
 import { getAllEvents } from '../../components/EventsViewer/EventHelpers';
 import { useNotification } from '../../NotificationContext';
 import {Icon} from '@iconify-icon/react';  
-import Dash from './Dash/Dash';
 import Members from './Members/Members';
 import Roles from './Roles/Roles';
 import Testing from './Testing/Testing';
@@ -44,6 +43,7 @@ import ClubDashOnboarding from './ClubDashOnboarding/ClubDashOnboarding';
 const FORCE_CLUB_DASH_ONBOARDING = false;
 
 const TasksHub = lazy(() => import('./TasksHub/TasksHub'));
+const Dash = lazy(() => import('./Dash/Dash'));
 
 function ClubDash(){
     const [clubId, setClubId] = useState(useParams().id);
@@ -252,7 +252,11 @@ function ClubDash(){
                 label: 'Dashboard',
                 icon: 'ic:round-dashboard',
                 key: 'dash',
-                element: <Dash expandedClass={expandedClass} openMembers={openMembers} clubName={clubId} meetings={meetings.data} org={orgData.data} canManageEvents={userPermissions.canManageEvents}/>
+                element: (
+                    <Suspense fallback={<div className="club-dash-tab-fallback">Loading dashboard…</div>}>
+                        <Dash expandedClass={expandedClass} openMembers={openMembers} clubName={clubId} meetings={meetings.data} org={orgData.data} canManageEvents={userPermissions.canManageEvents}/>
+                    </Suspense>
+                )
             },
             {
                 label: 'Events',

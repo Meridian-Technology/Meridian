@@ -3,7 +3,7 @@ import './App.scss';
 import './assets/fonts.css';
 import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
-import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
+import AnimatedPageWrapper, { StaticFullBleedPage } from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
 import { isWww, setLastTenant, setTenantConfigCache } from './config/tenantRedirect';
 
@@ -254,8 +254,8 @@ function App() {
                                                 <Route path="/mobile-analytics-dashboard" element={<AnimatedPageWrapper><MobileAnalyticsDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
 
-                                                <Route path="/club-dashboard/:id/pending-approval" element={<AnimatedPageWrapper><PendingApprovalScreen/></AnimatedPageWrapper>}/>
-                                                <Route path="/club-dashboard/:id" element={<AnimatedPageWrapper><ClubDash/></AnimatedPageWrapper>}/>
+                                                <Route path="/club-dashboard/:id/pending-approval" element={<StaticFullBleedPage><PendingApprovalScreen/></StaticFullBleedPage>}/>
+                                                <Route path="/club-dashboard/:id" element={<StaticFullBleedPage><ClubDash/></StaticFullBleedPage>}/>
                                             {/* features under development */}
                                             <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'beta']}/> }>
                                                 {/* <Route path="/events" element={<AnimatedPageWrapper><Events/></AnimatedPageWrapper>}/> */}
