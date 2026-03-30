@@ -48,7 +48,7 @@ function PendingApprovalOverlay({ org, orgName, config, memberCount = 0 }) {
                     <div className="pending-approval-overlay__actions">
                         <button
                             className="pending-approval-overlay__btn primary"
-                            onClick={() => navigate(`/club-dashboard/${orgName}?page=3`)}
+                            onClick={() => navigate(`/club-dashboard/${orgName}?page=4`)}
                         >
                             <Icon icon="mdi:account-plus" />
                             Add members

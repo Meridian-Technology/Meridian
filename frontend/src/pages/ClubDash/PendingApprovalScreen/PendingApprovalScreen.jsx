@@ -92,7 +92,7 @@ function PendingApprovalScreen() {
                 <div className="pending-approval-screen__actions">
                     <button
                         className="pending-approval-screen__btn primary"
-                        onClick={() => navigate(`/club-dashboard/${orgName}?page=3`)}
+                        onClick={() => navigate(`/club-dashboard/${orgName}?page=4`)}
                     >
                         <Icon icon="mdi:account-plus" />
                         Add members

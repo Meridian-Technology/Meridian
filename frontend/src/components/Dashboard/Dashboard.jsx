@@ -74,7 +74,7 @@ function Dashboard({
     // Check if menuItems have elements or if we're using the old children pattern
     const hasElementsInMenuItems = menuItems && menuItems.length > 0 && menuItems[0].element;
 
-
+    const menuStructureKey = menuItems?.map((item) => item.key ?? item.label).join('|') ?? '';
 
     // Close mobile menu when clicking outside
     useEffect(() => {
@@ -190,7 +190,7 @@ function Dashboard({
             setIsInitialized(true);
             console.log('Dashboard initialized with currentDisplay:', currentDisplay);
         }
-    }, [searchParams, menuItems, defaultPage]);
+    }, [searchParams, menuItems.length, menuStructureKey, defaultPage]);
 
     // Set initial URL if no page parameter is present
     useEffect(() => {

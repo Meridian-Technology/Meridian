@@ -1,5 +1,4 @@
 const express = require('express');
-const fs = require('fs');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken');
 const { requireEventManagement } = require('../middlewares/orgPermissions');
@@ -12,14 +11,6 @@ const {
     recomputeDueDatesForEvent,
     sortHubTasks
 } = require('../services/taskService');
-
-function appendDebugLog(payload) {
-    try {
-        fs.appendFileSync('/opt/cursor/logs/debug.log', `${JSON.stringify({ ...payload, timestamp: Date.now() })}\n`);
-    } catch (_error) {
-        // Intentionally ignore debug logger failures.
-    }
-}
 
 function toBoolean(value, defaultValue = false) {
     if (value === undefined || value === null || value === '') return defaultValue;
@@ -94,9 +85,6 @@ router.get('/:orgId/events/:eventId/tasks', verifyToken, requireEventManagement(
     const models = getModels(req, 'Task', 'Event');
 
     try {
-        // #region agent log
-        appendDebugLog({ hypothesisId: 'C', location: 'backend/routes/taskManagementRoutes.js:95', message: 'event tasks request', data: { orgId, eventId, status, ownerUserId: ownerUserId || 'all', priority, searchLength: String(search || '').length, sortBy } });
-        // #endregion
         const event = await ensureOrgEventAccess(models, orgId, eventId);
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
@@ -110,10 +98,6 @@ router.get('/:orgId/events/:eventId/tasks', verifyToken, requireEventManagement(
             search,
             sortBy
         });
-        const tasksPayloadBytes = Buffer.byteLength(JSON.stringify(tasks));
-        // #region agent log
-        appendDebugLog({ hypothesisId: 'B', location: 'backend/routes/taskManagementRoutes.js:111', message: 'event tasks response size', data: { orgId, eventId, taskCount: tasks.length, payloadKb: Math.round((tasksPayloadBytes / 1024) * 100) / 100 } });
-        // #endregion
 
         return res.status(200).json({
             success: true,
@@ -301,9 +285,6 @@ router.get('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), as
     const models = getModels(req, 'Task', 'Event');
 
     try {
-        // #region agent log
-        appendDebugLog({ hypothesisId: 'C', location: 'backend/routes/taskManagementRoutes.js:309', message: 'task hub request', data: { orgId, status, ownerUserId: ownerUserId || 'all', priority, eventId, searchLength: String(search || '').length, onlyBlocked: toBoolean(onlyBlocked, false), onlyOverdue: toBoolean(onlyOverdue, false), sortBy } });
-        // #endregion
         const tasks = await listTasks(models, orgId, {
             eventId: eventId === 'all' ? undefined : eventId,
             status,
@@ -321,10 +302,6 @@ router.get('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), as
             blocked: sorted.filter((task) => task.effectiveStatus === 'blocked').length,
             highPriority: sorted.filter((task) => ['high', 'critical'].includes(task.priority)).length
         };
-        const sortedPayloadBytes = Buffer.byteLength(JSON.stringify(sorted));
-        // #region agent log
-        appendDebugLog({ hypothesisId: 'B', location: 'backend/routes/taskManagementRoutes.js:327', message: 'task hub response size', data: { orgId, taskCount: sorted.length, overdue: summary.overdue, blocked: summary.blocked, payloadKb: Math.round((sortedPayloadBytes / 1024) * 100) / 100 } });
-        // #endregion
 
         return res.status(200).json({
             success: true,
