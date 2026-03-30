@@ -338,8 +338,8 @@ function Explore({ scrollContainerRef, coverSentinelRef, onScrollReport, onHasCo
             <aside className="sidebar mobile-sidebar" role="complementary" aria-label="Event filters and view options">
                 <div className="sidebar-header">
                     <div className="logo">
-                        <h2>Events at</h2>
-                        <img src={RPIlogo} alt="RPI Logo" />
+                        {/* <h2>Events at</h2>
+                        <img src={RPIlogo} alt="RPI Logo" /> */}
                     </div>
                     <Switch
                         options={['list', 'calendar']}
