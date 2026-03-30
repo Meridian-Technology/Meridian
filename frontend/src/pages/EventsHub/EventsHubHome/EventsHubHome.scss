@@ -486,8 +486,11 @@
   &__section {
         padding: 0 20px 28px;
 
+    &.upcoming-events {
+        margin-top:20px;
+    }
+
     &--suggested {
-        margin-bottom:20px;
         cursor: pointer;
         display: flex;
         justify-content: center;

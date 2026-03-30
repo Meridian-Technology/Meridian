@@ -217,9 +217,9 @@ function EventsHubHome({ onRoomNavigation, onTabChangeByKey }) {
         <div className="events-hub-home__header-content">
           <h1 className="events-hub-home__greeting events-hub-home__greeting--animated">
             <img src={GlobeIcon} alt="" className="events-hub-home__globe" />
-            {welcomeText}, <span className="events-hub-home__name">{user?.username || 'there'}</span>
+            {welcomeText}{user?.username ? `,` : ''} <span className="events-hub-home__name">{user?.username || ''}</span>
           </h1>
-          <p className="events-hub-home__subline events-hub-home__subline--animated">Here&apos;s what&apos;s happening for you today</p>
+          <p className="events-hub-home__subline events-hub-home__subline--animated">Here&apos;s what&apos;s happening {user?.username ? 'for you' : ''} today</p>
           <div className="events-hub-home__quick-actions events-hub-home__quick-actions--animated">
             {QUICK_ACTIONS.map((action) => (
               <button
@@ -365,7 +365,7 @@ function EventsHubHome({ onRoomNavigation, onTabChangeByKey }) {
       })()}
 
       {/* Scrollable content: Events, Organizations, Saved spaces */}
-      <section className="events-hub-home__section">
+      <section className="events-hub-home__section upcoming-events">
         <div className="events-hub-home__section-header">
           <h2>{upcomingEvents.length > 0 ? 'Upcoming events' : 'Suggested for you'}</h2>
           <button type="button" className="events-hub-home__see-all" onClick={() => goTo('explore')}>
