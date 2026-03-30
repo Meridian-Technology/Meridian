@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
 const passport = require('passport');
@@ -13,6 +14,16 @@ const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
 
 const s3 = require('./aws-config');
+
+function appendDebugLog(payload) {
+  try {
+    fs.appendFileSync('/opt/cursor/logs/debug.log', `${JSON.stringify({ ...payload, timestamp: Date.now() })}\n`);
+  } catch (_error) {
+    // Intentionally ignore debug logger failures.
+  }
+}
+
+let validateTokenHitCount = 0;
 
 function createApp() {
   const app = express();
@@ -92,6 +103,18 @@ function createApp() {
         req.db = await connectToDatabase(subdomain);
         req.school = subdomain;
         req.globalDb = await connectToGlobalDatabase();
+        if (req.path === '/validate-token') {
+          validateTokenHitCount += 1;
+          // #region agent log
+          appendDebugLog({ hypothesisId: 'A', location: 'backend/app.js:97', message: 'validate-token request', data: { count: validateTokenHitCount, method: req.method, school: req.school, userAgent: (req.get('user-agent') || '').slice(0, 80) } });
+          // #endregion
+          if (validateTokenHitCount % 25 === 0) {
+            const memory = process.memoryUsage();
+            // #region agent log
+            appendDebugLog({ hypothesisId: 'A', location: 'backend/app.js:101', message: 'validate-token memory snapshot', data: { count: validateTokenHitCount, rssMb: Math.round((memory.rss / (1024 * 1024)) * 100) / 100, heapUsedMb: Math.round((memory.heapUsed / (1024 * 1024)) * 100) / 100 } });
+            // #endregion
+          }
+        }
         next();
     } catch (error) {
         console.error('Error establishing database connection:', error);
