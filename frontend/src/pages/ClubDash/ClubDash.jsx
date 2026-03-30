@@ -20,6 +20,7 @@ import apiRequest from '../../utils/postRequest';
 import { useLocation } from 'react-router-dom';
 import EventsPanel from './EventsPanel/EventsPanel';
 import EventsManagement from './EventsManagement/EventsManagement';
+import TasksHub from './TasksHub/TasksHub';
 import ClubForms from './ClubForms/ClubForms';
 import ClubAnnouncements from './ClubAnnouncements/ClubAnnouncements';
 import OrgMessageFeed from '../../components/OrgMessages/OrgMessageFeed';
@@ -249,6 +250,12 @@ function ClubDash(){
             icon: 'mingcute:calendar-fill', 
             key: 'events',
             element: <EventsManagement expandedClass={expandedClass} orgId={clubId} orgData={orgData.data} adminBypass={adminBypass}/>
+        },
+        {
+            label: 'Tasks',
+            icon: 'mdi:check-all',
+            key: 'tasks',
+            element: <TasksHub expandedClass={expandedClass} org={orgData.data?.org?.overview} />
         },
         { 
             label: 'Announcements', 

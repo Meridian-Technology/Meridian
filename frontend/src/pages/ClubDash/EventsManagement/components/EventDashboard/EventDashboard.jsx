@@ -21,6 +21,7 @@ import EventQRTab from './EventQRTab/EventQRTab';
 import RegistrationsTab from './RegistrationsTab/RegistrationsTab';
 import CommunicationsTab from './CommunicationsTab/CommunicationsTab';
 import ComingSoon from './ComingSoon';
+import EventTasksTab from './EventTasksTab';
 // Temporarily disabled - EquipmentManager functionality commented out
 // import EquipmentManager from './EventEquipment/EquipmentManager';
 import './EventDashboard.scss';
@@ -257,6 +258,17 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             icon: 'mdi:briefcase',
             description: 'Manage event jobs and assignments',
             content: <JobsManager
+                        event={dashboardData.event}
+                        orgId={orgId}
+                        onRefresh={handleRefresh}
+                    />
+        },
+        {
+            id: 'tasks',
+            label: 'Tasks',
+            icon: 'mdi:check-circle-outline',
+            description: 'Plan and execute event tasks',
+            content: <EventTasksTab
                         event={dashboardData.event}
                         orgId={orgId}
                         onRefresh={handleRefresh}
