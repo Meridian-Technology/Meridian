@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../hooks/useFetch';
 import apiRequest from '../../../utils/postRequest';
@@ -61,6 +61,7 @@ function TasksHub({ orgId, expandedClass }) {
     const [viewMode, setViewMode] = useState('list');
     const [draggingTaskId, setDraggingTaskId] = useState(null);
     const [dropTargetStatus, setDropTargetStatus] = useState(null);
+    const [optimisticStatusByTaskId, setOptimisticStatusByTaskId] = useState({});
 
     const query = useMemo(() => {
         const params = new URLSearchParams();
@@ -107,17 +108,45 @@ function TasksHub({ orgId, expandedClass }) {
         return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
     }, [tasks]);
 
+    const getTaskStatus = useCallback((task) => {
+        if (!task?._id) return task?.effectiveStatus || task?.status || 'todo';
+        return optimisticStatusByTaskId[String(task._id)] || task.effectiveStatus || task.status || 'todo';
+    }, [optimisticStatusByTaskId]);
+
     const groupedByStatus = useMemo(() => {
         const groups = KANBAN_STATUSES.reduce((acc, status) => {
             acc[status] = [];
             return acc;
         }, {});
         tasks.forEach((task) => {
-            const key = task.effectiveStatus || task.status || 'todo';
+            const key = getTaskStatus(task);
             if (!groups[key]) groups[key] = [];
             groups[key].push(task);
         });
         return groups;
+    }, [tasks, getTaskStatus]);
+
+    useEffect(() => {
+        setOptimisticStatusByTaskId((previous) => {
+            if (!Object.keys(previous).length) return previous;
+            const next = { ...previous };
+            let changed = false;
+            const taskMap = new Map(tasks.map((task) => [String(task._id), task]));
+            Object.entries(previous).forEach(([taskId, optimisticStatus]) => {
+                const task = taskMap.get(taskId);
+                if (!task) {
+                    delete next[taskId];
+                    changed = true;
+                    return;
+                }
+                const actualStatus = task.effectiveStatus || task.status || 'todo';
+                if (actualStatus === optimisticStatus) {
+                    delete next[taskId];
+                    changed = true;
+                }
+            });
+            return changed ? next : previous;
+        });
     }, [tasks]);
 
     const closeCreateModal = () => {
@@ -171,10 +200,13 @@ function TasksHub({ orgId, expandedClass }) {
 
     const onTaskStatusChange = async (task, nextStatus) => {
         if (!orgId || !task?._id) return;
-        if (task.status === nextStatus) return;
+        const taskId = String(task._id);
+        const currentStatus = getTaskStatus(task);
+        if (currentStatus === nextStatus) return;
+        setOptimisticStatusByTaskId((prev) => ({ ...prev, [taskId]: nextStatus }));
         try {
             const response = await apiRequest(
-                `/org-event-management/${orgId}/tasks/hub/${task._id}`,
+                `/org-event-management/${orgId}/tasks/hub/${taskId}`,
                 { status: nextStatus },
                 { method: 'PUT' }
             );
@@ -183,6 +215,15 @@ function TasksHub({ orgId, expandedClass }) {
             }
             refetch();
         } catch (updateError) {
+            setOptimisticStatusByTaskId((prev) => {
+                const next = { ...prev };
+                if (currentStatus) {
+                    next[taskId] = currentStatus;
+                } else {
+                    delete next[taskId];
+                }
+                return next;
+            });
             addNotification({
                 title: 'Task update failed',
                 message: updateError.message || 'Unable to update task status.',
@@ -217,7 +258,7 @@ function TasksHub({ orgId, expandedClass }) {
         setDraggingTaskId(null);
         if (!taskId) return;
         const task = tasks.find((item) => String(item._id) === String(taskId));
-        if (!task || task.status === status) return;
+        if (!task || getTaskStatus(task) === status) return;
         await onTaskStatusChange(task, status);
     };
 
@@ -447,7 +488,7 @@ function TasksHub({ orgId, expandedClass }) {
                     {!loading && !error && tasks.length > 0 && viewMode === 'list' && (
                         <ul className="tasks-hub__task-list">
                             {tasks.map((task) => (
-                                <li key={task._id} className={`tasks-hub__task-item tasks-hub__task-item--${task.effectiveStatus || task.status}`}>
+                                <li key={task._id} className={`tasks-hub__task-item tasks-hub__task-item--${getTaskStatus(task)}`}>
                                     <div className="tasks-hub__task-main">
                                         <div className="tasks-hub__task-title-row">
                                             <h3>{task.title}</h3>
@@ -460,7 +501,7 @@ function TasksHub({ orgId, expandedClass }) {
                                         </div>
                                         <p>{task.description || 'No description provided.'}</p>
                                         <div className="tasks-hub__meta">
-                                            <span>{formatStatusLabel(task.effectiveStatus || task.status)}</span>
+                                            <span>{formatStatusLabel(getTaskStatus(task))}</span>
                                             <span>Due: {formatDate(task.dueAt)}</span>
                                             <span>
                                                 Event: {task.eventId?.name || 'Org operations'}
@@ -477,21 +518,21 @@ function TasksHub({ orgId, expandedClass }) {
                                         <button
                                             type="button"
                                             onClick={() => onTaskStatusChange(task, 'in_progress')}
-                                            disabled={(task.status === 'in_progress')}
+                                            disabled={(getTaskStatus(task) === 'in_progress')}
                                         >
                                             In progress
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => onTaskStatusChange(task, 'done')}
-                                            disabled={task.status === 'done'}
+                                            disabled={getTaskStatus(task) === 'done'}
                                         >
                                             Done
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => onTaskStatusChange(task, 'blocked')}
-                                            disabled={task.status === 'blocked'}
+                                            disabled={getTaskStatus(task) === 'blocked'}
                                         >
                                             Block
                                         </button>
@@ -543,21 +584,21 @@ function TasksHub({ orgId, expandedClass }) {
                                                     <button
                                                         type="button"
                                                         onClick={() => onTaskStatusChange(task, 'in_progress')}
-                                                        disabled={task.status === 'in_progress'}
+                                                        disabled={getTaskStatus(task) === 'in_progress'}
                                                     >
                                                         In progress
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => onTaskStatusChange(task, 'done')}
-                                                        disabled={task.status === 'done'}
+                                                        disabled={getTaskStatus(task) === 'done'}
                                                     >
                                                         Done
                                                     </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => onTaskStatusChange(task, 'blocked')}
-                                                        disabled={task.status === 'blocked'}
+                                                        disabled={getTaskStatus(task) === 'blocked'}
                                                     >
                                                         Block
                                                     </button>

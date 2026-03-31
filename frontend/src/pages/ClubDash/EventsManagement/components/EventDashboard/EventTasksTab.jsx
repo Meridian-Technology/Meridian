@@ -6,6 +6,8 @@ import { useNotification } from '../../../../../NotificationContext';
 import Popup from '../../../../../components/Popup/Popup';
 import './EventTasksTab.scss';
 
+const KANBAN_STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+
 const createDefaultTaskForm = () => ({
     title: '',
     description: '',
@@ -42,6 +44,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
     const [search, setSearch] = useState('');
     const [dragTaskId, setDragTaskId] = useState(null);
     const [dragOverStatus, setDragOverStatus] = useState(null);
+    const [optimisticStatusByTaskId, setOptimisticStatusByTaskId] = useState({});
 
     const query = useMemo(() => {
         const params = new URLSearchParams();
@@ -64,19 +67,17 @@ function EventTasksTab({ event, orgId, onRefresh }) {
     const readiness = readinessRequest.data?.data || null;
 
     const groupedByStatus = useMemo(() => {
-        const groups = {
-            todo: [],
-            in_progress: [],
-            blocked: [],
-            done: []
-        };
+        const groups = KANBAN_STATUSES.reduce((acc, status) => {
+            acc[status] = [];
+            return acc;
+        }, {});
         tasks.forEach((task) => {
-            const key = task.effectiveStatus || task.status || 'todo';
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(task);
+            const effectiveStatus = optimisticStatusByTaskId[String(task._id)] || task.effectiveStatus || task.status || 'todo';
+            if (!groups[effectiveStatus]) groups[effectiveStatus] = [];
+            groups[effectiveStatus].push(task);
         });
         return groups;
-    }, [tasks]);
+    }, [tasks, optimisticStatusByTaskId]);
 
     const metrics = useMemo(() => {
         const total = tasks.length;
@@ -179,6 +180,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                 message: updateError.message || 'Please try again.',
                 type: 'error'
             });
+            throw updateError;
         } finally {
             setActioningTaskId(null);
         }
@@ -239,9 +241,25 @@ function EventTasksTab({ event, orgId, onRefresh }) {
 
     const handleTaskDropToStatus = async (task, nextStatus) => {
         if (!task?._id || !nextStatus) return;
-        const currentStatus = task.effectiveStatus || task.status;
+        const taskKey = String(task._id);
+        const currentStatus = optimisticStatusByTaskId[taskKey] || task.effectiveStatus || task.status;
         if (currentStatus === nextStatus) return;
-        await handleQuickStatusChange(task._id, nextStatus);
+        setOptimisticStatusByTaskId((prev) => ({ ...prev, [taskKey]: nextStatus }));
+        try {
+            await handleQuickStatusChange(task._id, nextStatus);
+        } catch (_error) {
+            setOptimisticStatusByTaskId((prev) => {
+                const next = { ...prev };
+                delete next[taskKey];
+                return next;
+            });
+            return;
+        }
+        setOptimisticStatusByTaskId((prev) => {
+            const next = { ...prev };
+            delete next[taskKey];
+            return next;
+        });
     };
 
     return (
@@ -560,7 +578,9 @@ function EventTasksTab({ event, orgId, onRefresh }) {
 
             {!loading && !error && viewMode === 'kanban' && (
                 <div className="event-tasks-tab__kanban">
-                    {Object.entries(groupedByStatus).map(([status, statusTasks]) => (
+                    {KANBAN_STATUSES.map((status) => {
+                        const statusTasks = groupedByStatus[status] || [];
+                        return (
                         <section
                             key={status}
                             className={`kanban-column ${dragOverStatus === status ? 'drop-target' : ''}`}
@@ -578,7 +598,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                             }}
                             onDrop={async (event) => {
                                 event.preventDefault();
-                                const taskId = event.dataTransfer.getData('text/plain');
+                                const taskId = event.dataTransfer.getData('text/plain') || String(dragTaskId || '');
                                 const droppedTask = tasks.find((item) => String(item._id) === taskId);
                                 await handleTaskDropToStatus(droppedTask, status);
                                 setDragTaskId(null);
@@ -616,7 +636,8 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                                 ))}
                             </div>
                         </section>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
