@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../hooks/useFetch';
 import apiRequest from '../../../utils/postRequest';
 import { useNotification } from '../../../NotificationContext';
+import Popup from '../../../components/Popup/Popup';
 import './TasksHub.scss';
 
 const DEFAULT_FORM = {
@@ -54,6 +55,8 @@ function TasksHub({ orgId, expandedClass }) {
     });
     const [form, setForm] = useState(DEFAULT_FORM);
     const [saving, setSaving] = useState(false);
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [viewMode, setViewMode] = useState('list');
 
     const query = useMemo(() => {
         const params = new URLSearchParams();
@@ -100,6 +103,26 @@ function TasksHub({ orgId, expandedClass }) {
         return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
     }, [tasks]);
 
+    const groupedByStatus = useMemo(() => {
+        const groups = {
+            todo: [],
+            in_progress: [],
+            blocked: [],
+            done: []
+        };
+        tasks.forEach((task) => {
+            const key = task.effectiveStatus || task.status || 'todo';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(task);
+        });
+        return groups;
+    }, [tasks]);
+
+    const closeCreateModal = () => {
+        setShowCreateModal(false);
+        setForm(DEFAULT_FORM);
+    };
+
     const onCreateTask = async (event) => {
         event.preventDefault();
         if (!orgId) return;
@@ -131,7 +154,7 @@ function TasksHub({ orgId, expandedClass }) {
                 message: 'Operational task added to your organization task hub.',
                 type: 'success'
             });
-            setForm(DEFAULT_FORM);
+            closeCreateModal();
             refetch();
         } catch (createError) {
             addNotification({
@@ -172,34 +195,46 @@ function TasksHub({ orgId, expandedClass }) {
                     <h1>Task Hub</h1>
                     <p>Cross-event coordination for your organization.</p>
                 </div>
-                <button type="button" className="tasks-hub__refresh" onClick={() => refetch()}>
-                    <Icon icon="mdi:refresh" />
-                    Refresh
-                </button>
+                <div className="tasks-hub__header-actions">
+                    <button type="button" className="tasks-hub__refresh" onClick={() => refetch()}>
+                        <Icon icon="mdi:refresh" />
+                        Refresh
+                    </button>
+                    <button
+                        type="button"
+                        className="tasks-hub__create-trigger"
+                        onClick={() => setShowCreateModal(true)}
+                    >
+                        <Icon icon="mdi:plus" />
+                        Create
+                    </button>
+                    <div className="tasks-hub__view-toggle">
+                        <button
+                            type="button"
+                            className={viewMode === 'list' ? 'active' : ''}
+                            onClick={() => setViewMode('list')}
+                        >
+                            List
+                        </button>
+                        <button
+                            type="button"
+                            className={viewMode === 'kanban' ? 'active' : ''}
+                            onClick={() => setViewMode('kanban')}
+                        >
+                            Kanban
+                        </button>
+                    </div>
+                </div>
             </header>
 
-            <section className="tasks-hub__summary">
-                <article className="tasks-hub__summary-card">
-                    <span>Total tasks</span>
-                    <strong>{summary.total || 0}</strong>
-                </article>
-                <article className="tasks-hub__summary-card tasks-hub__summary-card--alert">
-                    <span>Overdue</span>
-                    <strong>{summary.overdue || 0}</strong>
-                </article>
-                <article className="tasks-hub__summary-card">
-                    <span>Blocked</span>
-                    <strong>{summary.blocked || 0}</strong>
-                </article>
-                <article className="tasks-hub__summary-card">
-                    <span>High priority</span>
-                    <strong>{summary.highPriority || 0}</strong>
-                </article>
-            </section>
-
-            <section className="tasks-hub__panels">
-                <article className="tasks-hub__panel tasks-hub__panel--create">
+            <Popup
+                isOpen={showCreateModal}
+                onClose={closeCreateModal}
+                customClassName="tasks-hub__create-popup narrow-content"
+            >
+                <article className="tasks-hub__create-modal">
                     <h2>Create org task</h2>
+                    <p>Add an operational task to your organization hub.</p>
                     <form onSubmit={onCreateTask} className="tasks-hub__form">
                         <input
                             value={form.title}
@@ -261,13 +296,43 @@ function TasksHub({ orgId, expandedClass }) {
                             />
                             Mark as critical
                         </label>
-                        <button type="submit" disabled={saving}>
-                            <Icon icon={saving ? 'mdi:loading' : 'mdi:plus'} />
-                            {saving ? 'Creating...' : 'Create task'}
-                        </button>
+                        <div className="tasks-hub__modal-actions">
+                            <button
+                                type="button"
+                                className="tasks-hub__modal-cancel"
+                                onClick={closeCreateModal}
+                            >
+                                Cancel
+                            </button>
+                            <button type="submit" disabled={saving}>
+                                <Icon icon={saving ? 'mdi:loading' : 'mdi:plus'} />
+                                {saving ? 'Creating...' : 'Create task'}
+                            </button>
+                        </div>
                     </form>
                 </article>
+            </Popup>
 
+            <section className="tasks-hub__summary">
+                <article className="tasks-hub__summary-card">
+                    <span>Total tasks</span>
+                    <strong>{summary.total || 0}</strong>
+                </article>
+                <article className="tasks-hub__summary-card tasks-hub__summary-card--alert">
+                    <span>Overdue</span>
+                    <strong>{summary.overdue || 0}</strong>
+                </article>
+                <article className="tasks-hub__summary-card">
+                    <span>Blocked</span>
+                    <strong>{summary.blocked || 0}</strong>
+                </article>
+                <article className="tasks-hub__summary-card">
+                    <span>High priority</span>
+                    <strong>{summary.highPriority || 0}</strong>
+                </article>
+            </section>
+
+            <section className="tasks-hub__panels">
                 <article className="tasks-hub__panel tasks-hub__panel--list">
                     <div className="tasks-hub__toolbar">
                         <input
@@ -345,7 +410,8 @@ function TasksHub({ orgId, expandedClass }) {
                     {!loading && !error && tasks.length === 0 && (
                         <p className="tasks-hub__state">No tasks match current filters.</p>
                     )}
-                    {!loading && !error && tasks.length > 0 && (
+
+                    {!loading && !error && tasks.length > 0 && viewMode === 'list' && (
                         <ul className="tasks-hub__task-list">
                             {tasks.map((task) => (
                                 <li key={task._id} className={`tasks-hub__task-item tasks-hub__task-item--${task.effectiveStatus || task.status}`}>
@@ -400,6 +466,61 @@ function TasksHub({ orgId, expandedClass }) {
                                 </li>
                             ))}
                         </ul>
+                    )}
+
+                    {!loading && !error && tasks.length > 0 && viewMode === 'kanban' && (
+                        <div className="tasks-hub__kanban">
+                            {Object.entries(groupedByStatus).map(([status, statusTasks]) => (
+                                <section key={status} className="tasks-hub__kanban-column">
+                                    <header>
+                                        <h4>{formatStatusLabel(status)}</h4>
+                                        <span>{statusTasks.length}</span>
+                                    </header>
+                                    <div className="tasks-hub__kanban-cards">
+                                        {statusTasks.length === 0 && <p className="tasks-hub__kanban-empty">No tasks</p>}
+                                        {statusTasks.map((task) => (
+                                            <article key={task._id} className="tasks-hub__kanban-card">
+                                                <h3>{task.title}</h3>
+                                                <div className="tasks-hub__task-title-row">
+                                                    <span className={`tasks-hub__priority tasks-hub__priority--${task.priority}`}>
+                                                        {task.priority}
+                                                    </span>
+                                                    {task.isCritical && <span className="tasks-hub__critical">critical</span>}
+                                                </div>
+                                                {task.description && <p>{task.description}</p>}
+                                                <div className="tasks-hub__meta">
+                                                    <span>Due: {formatDate(task.dueAt)}</span>
+                                                    <span>Owner: {ownerLabel(task)}</span>
+                                                </div>
+                                                <div className="tasks-hub__actions">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onTaskStatusChange(task, 'in_progress')}
+                                                        disabled={task.status === 'in_progress'}
+                                                    >
+                                                        In progress
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onTaskStatusChange(task, 'done')}
+                                                        disabled={task.status === 'done'}
+                                                    >
+                                                        Done
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onTaskStatusChange(task, 'blocked')}
+                                                        disabled={task.status === 'blocked'}
+                                                    >
+                                                        Block
+                                                    </button>
+                                                </div>
+                                            </article>
+                                        ))}
+                                    </div>
+                                </section>
+                            ))}
+                        </div>
                     )}
                 </article>
             </section>

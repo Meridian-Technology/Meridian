@@ -3,9 +3,10 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import apiRequest from '../../../../../utils/postRequest';
 import { useNotification } from '../../../../../NotificationContext';
+import Popup from '../../../../../components/Popup/Popup';
 import './EventTasksTab.scss';
 
-const DEFAULT_TASK_FORM = {
+const createDefaultTaskForm = () => ({
     title: '',
     description: '',
     priority: 'medium',
@@ -19,7 +20,7 @@ const DEFAULT_TASK_FORM = {
         offsetUnit: 'days',
         direction: 'before'
     }
-};
+});
 
 function StatusPill({ status }) {
     return <span className={`event-task-status-pill ${status}`}>{status.replace('_', ' ')}</span>;
@@ -31,10 +32,11 @@ function PriorityPill({ priority }) {
 
 function EventTasksTab({ event, orgId, onRefresh }) {
     const { addNotification } = useNotification();
-    const [newTask, setNewTask] = useState(DEFAULT_TASK_FORM);
+    const [newTask, setNewTask] = useState(createDefaultTaskForm);
     const [submitting, setSubmitting] = useState(false);
     const [actioningTaskId, setActioningTaskId] = useState(null);
     const [viewMode, setViewMode] = useState('list');
+    const [showCreateModal, setShowCreateModal] = useState(false);
     const [statusFilter, setStatusFilter] = useState('all');
     const [priorityFilter, setPriorityFilter] = useState('all');
     const [search, setSearch] = useState('');
@@ -88,6 +90,11 @@ function EventTasksTab({ event, orgId, onRefresh }) {
         };
     }, [tasks]);
 
+    const closeCreateModal = () => {
+        setShowCreateModal(false);
+        setNewTask(createDefaultTaskForm());
+    };
+
     const handleCreateTask = async (e) => {
         e.preventDefault();
         if (!newTask.title.trim()) {
@@ -136,7 +143,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                 message: 'Task added to this event execution plan.',
                 type: 'success'
             });
-            setNewTask(DEFAULT_TASK_FORM);
+            closeCreateModal();
             refetch();
             onRefresh?.();
             readinessRequest.refetch();
@@ -238,7 +245,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                     </h3>
                     <p>Plan and execute this event with guided, user-controlled tasks.</p>
                 </div>
-                <div className="event-tasks-tab__view-toggle">
+                <div className="event-tasks-tab__header-actions">
                     <button
                         type="button"
                         onClick={handleRecomputeDueDates}
@@ -248,20 +255,159 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                     </button>
                     <button
                         type="button"
-                        className={viewMode === 'list' ? 'active' : ''}
-                        onClick={() => setViewMode('list')}
+                        className="event-tasks-tab__create-trigger"
+                        onClick={() => setShowCreateModal(true)}
                     >
-                        List
+                        <Icon icon="mdi:plus" />
+                        Create
                     </button>
-                    <button
-                        type="button"
-                        className={viewMode === 'kanban' ? 'active' : ''}
-                        onClick={() => setViewMode('kanban')}
-                    >
-                        Kanban
-                    </button>
+                    <div className="event-tasks-tab__view-toggle">
+                        <button
+                            type="button"
+                            className={viewMode === 'list' ? 'active' : ''}
+                            onClick={() => setViewMode('list')}
+                        >
+                            List
+                        </button>
+                        <button
+                            type="button"
+                            className={viewMode === 'kanban' ? 'active' : ''}
+                            onClick={() => setViewMode('kanban')}
+                        >
+                            Kanban
+                        </button>
+                    </div>
                 </div>
             </div>
+
+            <Popup
+                isOpen={showCreateModal}
+                onClose={closeCreateModal}
+                customClassName="event-tasks-tab__create-popup narrow-content"
+            >
+                <div className="event-tasks-tab__modal">
+                    <div className="event-tasks-tab__modal-header">
+                        <h4>Create task</h4>
+                        <p>Add a new execution task for this event.</p>
+                    </div>
+                    <form className="event-tasks-tab__modal-form" onSubmit={handleCreateTask}>
+                        <div className="event-tasks-tab__modal-grid">
+                            <input
+                                type="text"
+                                placeholder="Task title"
+                                value={newTask.title}
+                                onChange={(e) => setNewTask((prev) => ({ ...prev, title: e.target.value }))}
+                                maxLength={180}
+                            />
+                            <select
+                                value={newTask.priority}
+                                onChange={(e) => setNewTask((prev) => ({ ...prev, priority: e.target.value }))}
+                            >
+                                <option value="low">Low priority</option>
+                                <option value="medium">Medium priority</option>
+                                <option value="high">High priority</option>
+                                <option value="critical">Critical priority</option>
+                            </select>
+                            <select
+                                value={newTask.status}
+                                onChange={(e) => setNewTask((prev) => ({ ...prev, status: e.target.value }))}
+                            >
+                                <option value="todo">To do</option>
+                                <option value="in_progress">In progress</option>
+                                <option value="blocked">Blocked</option>
+                                <option value="done">Done</option>
+                            </select>
+                            <label className="event-tasks-tab__critical-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={newTask.isCritical}
+                                    onChange={(e) => setNewTask((prev) => ({ ...prev, isCritical: e.target.checked }))}
+                                />
+                                Critical
+                            </label>
+                        </div>
+                        <textarea
+                            placeholder="Optional context for collaborators"
+                            value={newTask.description}
+                            onChange={(e) => setNewTask((prev) => ({ ...prev, description: e.target.value }))}
+                            rows={3}
+                        />
+                        <div className="event-tasks-tab__modal-grid event-tasks-tab__modal-grid--deadline">
+                            <select
+                                value={newTask.dueMode}
+                                onChange={(e) => setNewTask((prev) => ({ ...prev, dueMode: e.target.value }))}
+                            >
+                                <option value="none">No deadline</option>
+                                <option value="absolute">Fixed date/time</option>
+                                <option value="relative">Relative to event</option>
+                            </select>
+                            {newTask.dueMode === 'absolute' && (
+                                <input
+                                    type="datetime-local"
+                                    value={newTask.dueAt}
+                                    onChange={(e) => setNewTask((prev) => ({ ...prev, dueAt: e.target.value }))}
+                                />
+                            )}
+                            {newTask.dueMode === 'relative' && (
+                                <>
+                                    <select
+                                        value={newTask.dueRule.anchorType}
+                                        onChange={(e) => setNewTask((prev) => ({
+                                            ...prev,
+                                            dueRule: { ...prev.dueRule, anchorType: e.target.value }
+                                        }))}
+                                    >
+                                        <option value="event_start">Event start</option>
+                                        <option value="event_end">Event end</option>
+                                    </select>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={newTask.dueRule.offsetValue}
+                                        onChange={(e) => setNewTask((prev) => ({
+                                            ...prev,
+                                            dueRule: { ...prev.dueRule, offsetValue: e.target.value }
+                                        }))}
+                                    />
+                                    <select
+                                        value={newTask.dueRule.offsetUnit}
+                                        onChange={(e) => setNewTask((prev) => ({
+                                            ...prev,
+                                            dueRule: { ...prev.dueRule, offsetUnit: e.target.value }
+                                        }))}
+                                    >
+                                        <option value="days">days</option>
+                                        <option value="weeks">weeks</option>
+                                        <option value="hours">hours</option>
+                                    </select>
+                                    <select
+                                        value={newTask.dueRule.direction}
+                                        onChange={(e) => setNewTask((prev) => ({
+                                            ...prev,
+                                            dueRule: { ...prev.dueRule, direction: e.target.value }
+                                        }))}
+                                    >
+                                        <option value="before">before</option>
+                                        <option value="after">after</option>
+                                    </select>
+                                </>
+                            )}
+                        </div>
+                        <div className="event-tasks-tab__modal-actions">
+                            <button
+                                type="button"
+                                className="event-tasks-tab__modal-cancel"
+                                onClick={closeCreateModal}
+                            >
+                                Cancel
+                            </button>
+                            <button type="submit" disabled={submitting}>
+                                {submitting ? 'Creating…' : 'Create task'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </Popup>
 
             <div className="event-tasks-tab__metrics">
                 <div className="metric-card">
@@ -281,6 +427,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                     <strong>{metrics.overdue}</strong>
                 </div>
             </div>
+
             {readiness && (
                 <div className="event-tasks-tab__readiness">
                     <div className="event-tasks-tab__readiness-top">
@@ -305,115 +452,6 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                     )}
                 </div>
             )}
-
-            <form className="event-tasks-tab__create-form" onSubmit={handleCreateTask}>
-                <h4>Add Task</h4>
-                <div className="create-form-grid">
-                    <input
-                        type="text"
-                        placeholder="Task title"
-                        value={newTask.title}
-                        onChange={(e) => setNewTask((prev) => ({ ...prev, title: e.target.value }))}
-                        maxLength={180}
-                    />
-                    <select
-                        value={newTask.priority}
-                        onChange={(e) => setNewTask((prev) => ({ ...prev, priority: e.target.value }))}
-                    >
-                        <option value="low">Low priority</option>
-                        <option value="medium">Medium priority</option>
-                        <option value="high">High priority</option>
-                        <option value="critical">Critical priority</option>
-                    </select>
-                    <select
-                        value={newTask.status}
-                        onChange={(e) => setNewTask((prev) => ({ ...prev, status: e.target.value }))}
-                    >
-                        <option value="todo">To do</option>
-                        <option value="in_progress">In progress</option>
-                        <option value="blocked">Blocked</option>
-                        <option value="done">Done</option>
-                    </select>
-                    <label className="critical-toggle">
-                        <input
-                            type="checkbox"
-                            checked={newTask.isCritical}
-                            onChange={(e) => setNewTask((prev) => ({ ...prev, isCritical: e.target.checked }))}
-                        />
-                        Critical
-                    </label>
-                </div>
-                <textarea
-                    placeholder="Optional context for collaborators"
-                    value={newTask.description}
-                    onChange={(e) => setNewTask((prev) => ({ ...prev, description: e.target.value }))}
-                    rows={2}
-                />
-                <div className="create-form-grid create-form-grid--deadline">
-                    <select
-                        value={newTask.dueMode}
-                        onChange={(e) => setNewTask((prev) => ({ ...prev, dueMode: e.target.value }))}
-                    >
-                        <option value="none">No deadline</option>
-                        <option value="absolute">Fixed date/time</option>
-                        <option value="relative">Relative to event</option>
-                    </select>
-                    {newTask.dueMode === 'absolute' && (
-                        <input
-                            type="datetime-local"
-                            value={newTask.dueAt}
-                            onChange={(e) => setNewTask((prev) => ({ ...prev, dueAt: e.target.value }))}
-                        />
-                    )}
-                    {newTask.dueMode === 'relative' && (
-                        <>
-                            <select
-                                value={newTask.dueRule.anchorType}
-                                onChange={(e) => setNewTask((prev) => ({
-                                    ...prev,
-                                    dueRule: { ...prev.dueRule, anchorType: e.target.value }
-                                }))}
-                            >
-                                <option value="event_start">Event start</option>
-                                <option value="event_end">Event end</option>
-                            </select>
-                            <input
-                                type="number"
-                                min="0"
-                                value={newTask.dueRule.offsetValue}
-                                onChange={(e) => setNewTask((prev) => ({
-                                    ...prev,
-                                    dueRule: { ...prev.dueRule, offsetValue: e.target.value }
-                                }))}
-                            />
-                            <select
-                                value={newTask.dueRule.offsetUnit}
-                                onChange={(e) => setNewTask((prev) => ({
-                                    ...prev,
-                                    dueRule: { ...prev.dueRule, offsetUnit: e.target.value }
-                                }))}
-                            >
-                                <option value="days">days</option>
-                                <option value="weeks">weeks</option>
-                                <option value="hours">hours</option>
-                            </select>
-                            <select
-                                value={newTask.dueRule.direction}
-                                onChange={(e) => setNewTask((prev) => ({
-                                    ...prev,
-                                    dueRule: { ...prev.dueRule, direction: e.target.value }
-                                }))}
-                            >
-                                <option value="before">before</option>
-                                <option value="after">after</option>
-                            </select>
-                        </>
-                    )}
-                </div>
-                <button type="submit" disabled={submitting}>
-                    {submitting ? 'Adding…' : 'Add Task'}
-                </button>
-            </form>
 
             <div className="event-tasks-tab__filters">
                 <input

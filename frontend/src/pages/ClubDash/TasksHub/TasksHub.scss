@@ -59,6 +59,53 @@
         }
     }
 
+    .tasks-hub__header-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+    }
+
+    .tasks-hub__create-trigger {
+        border: 1px solid rgba(77, 170, 87, 0.36);
+        background: rgba(77, 170, 87, 0.12);
+        color: #2f7d3b;
+        border-radius: 8px;
+        padding: 0.4rem 0.66rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.32rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .tasks-hub__view-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.34rem;
+        padding: 0.22rem;
+        border: 1px solid var(--hub-border);
+        border-radius: 10px;
+        background: var(--hub-surface);
+
+        button {
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--hub-muted);
+            border-radius: 7px;
+            padding: 0.35rem 0.62rem;
+            font-size: 0.77rem;
+            cursor: pointer;
+
+            &.active {
+                border-color: var(--hub-border);
+                background: var(--background);
+                color: var(--text);
+            }
+        }
+    }
+
     .tasks-hub__summary {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -98,9 +145,7 @@
     }
 
     .tasks-hub__panels {
-        display: grid;
-        grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-        gap: 0.8rem;
+        display: block;
     }
 
     .tasks-hub__panel {
@@ -112,12 +157,17 @@
 
     .tasks-hub__panel--create {
         h2 {
-            margin: 0 0 0.58rem;
-            font-size: 0.82rem;
-            color: var(--hub-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
+            margin: 0;
+            font-size: 1rem;
             font-weight: 600;
+            color: var(--text);
+            letter-spacing: -0.01em;
+        }
+
+        p {
+            margin: 0.25rem 0 0.75rem;
+            color: var(--hub-muted);
+            font-size: 0.8rem;
         }
     }
 
@@ -185,6 +235,19 @@
         }
     }
 
+    .tasks-hub__modal-actions {
+        margin-top: 0.12rem;
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.42rem;
+    }
+
+    .tasks-hub__modal-cancel {
+        border: 1px solid var(--hub-border) !important;
+        background: var(--hub-surface) !important;
+        color: var(--hub-muted) !important;
+    }
+
     .tasks-hub__form-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -235,6 +298,85 @@
             padding: 0.36rem 0.48rem;
             background: var(--background);
         }
+    }
+
+    .tasks-hub__kanban {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .tasks-hub__kanban-column {
+        border: 1px solid var(--hub-border);
+        border-radius: 10px;
+        background: var(--hub-surface);
+        padding: 0.52rem;
+        min-height: 230px;
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.45rem;
+
+            h4 {
+                margin: 0;
+                font-size: 0.75rem;
+                color: var(--hub-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+            }
+
+            span {
+                border: 1px solid var(--hub-border);
+                border-radius: 999px;
+                padding: 0.08rem 0.4rem;
+                font-size: 0.7rem;
+                color: var(--hub-muted);
+                background: var(--background);
+            }
+        }
+    }
+
+    .tasks-hub__kanban-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 0.42rem;
+    }
+
+    .tasks-hub__kanban-card {
+        border: 1px solid var(--hub-border);
+        border-radius: 8px;
+        background: var(--background);
+        padding: 0.48rem 0.55rem;
+
+        h3 {
+            margin: 0;
+            font-size: 0.8rem;
+            line-height: 1.25;
+            font-weight: 600;
+        }
+
+        p {
+            margin: 0.32rem 0 0;
+            font-size: 0.75rem;
+            color: var(--hub-muted);
+            line-height: 1.35;
+        }
+
+        .tasks-hub__task-title-row {
+            margin-top: 0.28rem;
+        }
+    }
+
+    .tasks-hub__kanban-empty {
+        margin: 0;
+        border: 1px dashed var(--hub-border);
+        border-radius: 8px;
+        color: var(--hub-muted);
+        padding: 0.45rem 0.4rem;
+        text-align: center;
+        font-size: 0.74rem;
     }
 
     .tasks-hub__state {
@@ -417,12 +559,12 @@
 
 @media (max-width: 1200px) {
     .tasks-hub {
-        .tasks-hub__panels {
-            grid-template-columns: 1fr;
-        }
-
         .tasks-hub__toolbar {
             grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+        }
+
+        .tasks-hub__kanban {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
     }
 }
@@ -442,6 +584,10 @@
             grid-template-columns: 1fr;
         }
 
+        .tasks-hub__kanban {
+            grid-template-columns: 1fr;
+        }
+
         .tasks-hub__actions {
             justify-content: flex-start;
         }
@@ -458,4 +604,28 @@
             grid-template-columns: 1fr;
         }
     }
+}
+
+.popup-overlay .popup-content.tasks-hub__create-popup {
+    width: min(560px, 94vw);
+}
+
+.popup-overlay .popup-content.tasks-hub__create-popup .tasks-hub__create-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 0.72rem;
+}
+
+.popup-overlay .popup-content.tasks-hub__create-popup .tasks-hub__create-modal h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+}
+
+.popup-overlay .popup-content.tasks-hub__create-popup .tasks-hub__create-modal p {
+    margin: 0.25rem 0 0;
+    color: var(--hub-muted, var(--light-text));
+    font-size: 0.8rem;
 }
