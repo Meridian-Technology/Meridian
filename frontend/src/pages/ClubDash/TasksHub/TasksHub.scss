@@ -312,6 +312,13 @@
         background: var(--hub-surface);
         padding: 0.52rem;
         min-height: 230px;
+        transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+
+        &.is-drop-target {
+            border-color: rgba(77, 170, 87, 0.5);
+            background: rgba(77, 170, 87, 0.06);
+            box-shadow: inset 0 0 0 1px rgba(77, 170, 87, 0.28);
+        }
 
         header {
             display: flex;
@@ -349,6 +356,12 @@
         border-radius: 8px;
         background: var(--background);
         padding: 0.48rem 0.55rem;
+        cursor: grab;
+        transition: opacity 120ms ease;
+
+        &.is-dragging {
+            opacity: 0.45;
+        }
 
         h3 {
             margin: 0;

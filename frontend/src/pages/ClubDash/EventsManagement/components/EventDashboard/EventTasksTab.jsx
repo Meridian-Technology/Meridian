@@ -40,6 +40,8 @@ function EventTasksTab({ event, orgId, onRefresh }) {
     const [statusFilter, setStatusFilter] = useState('all');
     const [priorityFilter, setPriorityFilter] = useState('all');
     const [search, setSearch] = useState('');
+    const [dragTaskId, setDragTaskId] = useState(null);
+    const [dragOverStatus, setDragOverStatus] = useState(null);
 
     const query = useMemo(() => {
         const params = new URLSearchParams();
@@ -233,6 +235,13 @@ function EventTasksTab({ event, orgId, onRefresh }) {
         } finally {
             setActioningTaskId(null);
         }
+    };
+
+    const handleTaskDropToStatus = async (task, nextStatus) => {
+        if (!task?._id || !nextStatus) return;
+        const currentStatus = task.effectiveStatus || task.status;
+        if (currentStatus === nextStatus) return;
+        await handleQuickStatusChange(task._id, nextStatus);
     };
 
     return (
@@ -552,7 +561,30 @@ function EventTasksTab({ event, orgId, onRefresh }) {
             {!loading && !error && viewMode === 'kanban' && (
                 <div className="event-tasks-tab__kanban">
                     {Object.entries(groupedByStatus).map(([status, statusTasks]) => (
-                        <section key={status} className="kanban-column">
+                        <section
+                            key={status}
+                            className={`kanban-column ${dragOverStatus === status ? 'drop-target' : ''}`}
+                            onDragOver={(event) => {
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = 'move';
+                                if (dragOverStatus !== status) {
+                                    setDragOverStatus(status);
+                                }
+                            }}
+                            onDragLeave={(event) => {
+                                if (!event.currentTarget.contains(event.relatedTarget)) {
+                                    setDragOverStatus((prev) => (prev === status ? null : prev));
+                                }
+                            }}
+                            onDrop={async (event) => {
+                                event.preventDefault();
+                                const taskId = event.dataTransfer.getData('text/plain');
+                                const droppedTask = tasks.find((item) => String(item._id) === taskId);
+                                await handleTaskDropToStatus(droppedTask, status);
+                                setDragTaskId(null);
+                                setDragOverStatus(null);
+                            }}
+                        >
                             <header>
                                 <h4>{status.replace('_', ' ')}</h4>
                                 <span>{statusTasks.length}</span>
@@ -560,7 +592,20 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                             <div className="kanban-column__cards">
                                 {statusTasks.length === 0 && <p className="kanban-empty">No tasks</p>}
                                 {statusTasks.map((task) => (
-                                    <div key={task._id} className="kanban-card">
+                                    <div
+                                        key={task._id}
+                                        className={`kanban-card ${dragTaskId === task._id ? 'dragging' : ''}`}
+                                        draggable
+                                        onDragStart={(event) => {
+                                            event.dataTransfer.setData('text/plain', String(task._id));
+                                            event.dataTransfer.effectAllowed = 'move';
+                                            setDragTaskId(task._id);
+                                        }}
+                                        onDragEnd={() => {
+                                            setDragTaskId(null);
+                                            setDragOverStatus(null);
+                                        }}
+                                    >
                                         <h5>{task.title}</h5>
                                         <div className="task-badges">
                                             <PriorityPill priority={task.priority} />

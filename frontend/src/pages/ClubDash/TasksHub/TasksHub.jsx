@@ -6,6 +6,8 @@ import { useNotification } from '../../../NotificationContext';
 import Popup from '../../../components/Popup/Popup';
 import './TasksHub.scss';
 
+const KANBAN_STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+
 const DEFAULT_FORM = {
     title: '',
     description: '',
@@ -57,6 +59,8 @@ function TasksHub({ orgId, expandedClass }) {
     const [saving, setSaving] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [viewMode, setViewMode] = useState('list');
+    const [draggingTaskId, setDraggingTaskId] = useState(null);
+    const [dropTargetStatus, setDropTargetStatus] = useState(null);
 
     const query = useMemo(() => {
         const params = new URLSearchParams();
@@ -104,12 +108,10 @@ function TasksHub({ orgId, expandedClass }) {
     }, [tasks]);
 
     const groupedByStatus = useMemo(() => {
-        const groups = {
-            todo: [],
-            in_progress: [],
-            blocked: [],
-            done: []
-        };
+        const groups = KANBAN_STATUSES.reduce((acc, status) => {
+            acc[status] = [];
+            return acc;
+        }, {});
         tasks.forEach((task) => {
             const key = task.effectiveStatus || task.status || 'todo';
             if (!groups[key]) groups[key] = [];
@@ -169,6 +171,7 @@ function TasksHub({ orgId, expandedClass }) {
 
     const onTaskStatusChange = async (task, nextStatus) => {
         if (!orgId || !task?._id) return;
+        if (task.status === nextStatus) return;
         try {
             const response = await apiRequest(
                 `/org-event-management/${orgId}/tasks/hub/${task._id}`,
@@ -186,6 +189,36 @@ function TasksHub({ orgId, expandedClass }) {
                 type: 'error'
             });
         }
+    };
+
+    const onKanbanDragStart = (event, task) => {
+        setDraggingTaskId(task._id);
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', String(task._id));
+    };
+
+    const onKanbanDragEnd = () => {
+        setDraggingTaskId(null);
+        setDropTargetStatus(null);
+    };
+
+    const onKanbanDragOverColumn = (event, status) => {
+        event.preventDefault();
+        if (dropTargetStatus !== status) {
+            setDropTargetStatus(status);
+        }
+        event.dataTransfer.dropEffect = 'move';
+    };
+
+    const onKanbanDropToColumn = async (event, status) => {
+        event.preventDefault();
+        const taskId = event.dataTransfer.getData('text/plain') || draggingTaskId;
+        setDropTargetStatus(null);
+        setDraggingTaskId(null);
+        if (!taskId) return;
+        const task = tasks.find((item) => String(item._id) === String(taskId));
+        if (!task || task.status === status) return;
+        await onTaskStatusChange(task, status);
     };
 
     return (
@@ -470,8 +503,16 @@ function TasksHub({ orgId, expandedClass }) {
 
                     {!loading && !error && tasks.length > 0 && viewMode === 'kanban' && (
                         <div className="tasks-hub__kanban">
-                            {Object.entries(groupedByStatus).map(([status, statusTasks]) => (
-                                <section key={status} className="tasks-hub__kanban-column">
+                            {KANBAN_STATUSES.map((status) => {
+                                const statusTasks = groupedByStatus[status] || [];
+                                return (
+                                <section
+                                    key={status}
+                                    className={`tasks-hub__kanban-column ${dropTargetStatus === status ? 'tasks-hub__kanban-column--drop-target' : ''}`}
+                                    onDragOver={(event) => onKanbanDragOverColumn(event, status)}
+                                    onDrop={(event) => onKanbanDropToColumn(event, status)}
+                                    onDragLeave={() => setDropTargetStatus((current) => (current === status ? null : current))}
+                                >
                                     <header>
                                         <h4>{formatStatusLabel(status)}</h4>
                                         <span>{statusTasks.length}</span>
@@ -479,7 +520,13 @@ function TasksHub({ orgId, expandedClass }) {
                                     <div className="tasks-hub__kanban-cards">
                                         {statusTasks.length === 0 && <p className="tasks-hub__kanban-empty">No tasks</p>}
                                         {statusTasks.map((task) => (
-                                            <article key={task._id} className="tasks-hub__kanban-card">
+                                            <article
+                                                key={task._id}
+                                                className={`tasks-hub__kanban-card ${draggingTaskId === task._id ? 'tasks-hub__kanban-card--dragging' : ''}`}
+                                                draggable
+                                                onDragStart={(event) => onKanbanDragStart(event, task)}
+                                                onDragEnd={onKanbanDragEnd}
+                                            >
                                                 <h3>{task.title}</h3>
                                                 <div className="tasks-hub__task-title-row">
                                                     <span className={`tasks-hub__priority tasks-hub__priority--${task.priority}`}>
@@ -519,7 +566,8 @@ function TasksHub({ orgId, expandedClass }) {
                                         ))}
                                     </div>
                                 </section>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </article>
