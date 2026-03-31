@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import apiRequest from '../../../../../utils/postRequest';
@@ -30,6 +30,18 @@ function StatusPill({ status }) {
 
 function PriorityPill({ priority }) {
     return <span className={`event-task-priority-pill ${priority}`}>{priority}</span>;
+}
+
+function appendAgentDebugLog(entry) {
+    if (typeof window === 'undefined') return;
+    fetch('/api/_agent-debug-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            ...entry,
+            timestamp: Date.now()
+        })
+    }).catch(() => {});
 }
 
 function EventTasksTab({ event, orgId, onRefresh }) {
@@ -83,6 +95,34 @@ function EventTasksTab({ event, orgId, onRefresh }) {
         });
         return groups;
     }, [tasks, getTaskStatus]);
+
+    useEffect(() => {
+        const ids = tasks.map((task) => String(task?._id || ''));
+        const missingIdCount = ids.filter((id) => !id).length;
+        const uniqueIds = new Set(ids.filter(Boolean));
+        const duplicateIdCount = ids.filter(Boolean).length - uniqueIds.size;
+        const statusCounts = KANBAN_STATUSES.reduce((acc, status) => {
+            acc[status] = (groupedByStatus[status] || []).length;
+            return acc;
+        }, {});
+        // #region agent log
+        appendAgentDebugLog({
+            hypothesisId: 'D',
+            location: 'EventTasksTab.jsx:data-shape',
+            message: 'Event task kanban data shape snapshot',
+            data: {
+                eventId: String(event?._id || ''),
+                viewMode,
+                taskCount: tasks.length,
+                uniqueTaskCount: uniqueIds.size,
+                duplicateIdCount,
+                missingIdCount,
+                statusCounts,
+                optimisticCount: Object.keys(optimisticStatusByTaskId || {}).length
+            }
+        });
+        // #endregion
+    }, [tasks, groupedByStatus, optimisticStatusByTaskId, viewMode, event?._id]);
 
     const metrics = useMemo(() => {
         const total = tasks.length;
@@ -258,6 +298,14 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                 delete next[taskKey];
                 return next;
             });
+            // #region agent log
+            appendAgentDebugLog({
+                hypothesisId: 'C',
+                location: 'EventTasksTab.jsx:handleTaskDropToStatus',
+                message: 'Task drop status update failed',
+                data: { taskId: taskKey, currentStatus, nextStatus }
+            });
+            // #endregion
             return;
         }
         setOptimisticStatusByTaskId((prev) => {
@@ -605,6 +653,19 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                                 event.preventDefault();
                                 const taskId = event.dataTransfer.getData('text/plain') || String(dragTaskId || '');
                                 const droppedTask = tasks.find((item) => String(item._id) === taskId);
+                                // #region agent log
+                                appendAgentDebugLog({
+                                    hypothesisId: 'B',
+                                    location: 'EventTasksTab.jsx:onDrop',
+                                    message: 'Drop received',
+                                    data: {
+                                        taskId: String(taskId || ''),
+                                        foundTask: Boolean(droppedTask),
+                                        sourceStatus: droppedTask ? getTaskStatus(droppedTask) : null,
+                                        targetStatus: status
+                                    }
+                                });
+                                // #endregion
                                 await handleTaskDropToStatus(droppedTask, status);
                                 setDragTaskId(null);
                                 setDragOverStatus(null);
@@ -625,6 +686,14 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                                             event.dataTransfer.setData('text/plain', String(task._id));
                                             event.dataTransfer.effectAllowed = 'move';
                                             setDragTaskId(task._id);
+                                            // #region agent log
+                                            appendAgentDebugLog({
+                                                hypothesisId: 'B',
+                                                location: 'EventTasksTab.jsx:onDragStart',
+                                                message: 'Drag start',
+                                                data: { taskId: String(task?._id || ''), sourceStatus: getTaskStatus(task) }
+                                            });
+                                            // #endregion
                                         }}
                                         onDragEnd={() => {
                                             setDragTaskId(null);

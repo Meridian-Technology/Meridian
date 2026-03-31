@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
 const passport = require('passport');
@@ -58,6 +59,25 @@ function createApp() {
   app.use(cookieParser());
   app.use(passport.initialize());
   app.use(express.urlencoded({ extended: true }));
+
+  if (process.env.NODE_ENV !== 'production') {
+    app.post('/api/_agent-debug-log', (req, res) => {
+      try {
+        const payload = req.body || {};
+        const line = JSON.stringify({
+          hypothesisId: payload.hypothesisId || 'unknown',
+          location: payload.location || 'unknown',
+          message: payload.message || 'unknown',
+          data: payload.data && typeof payload.data === 'object' ? payload.data : {},
+          timestamp: Number(payload.timestamp) || Date.now()
+        });
+        fs.appendFileSync('/opt/cursor/logs/debug.log', `${line}\n`);
+        return res.status(200).json({ success: true });
+      } catch (error) {
+        return res.status(500).json({ success: false, message: 'debug log write failed' });
+      }
+    });
+  }
 
   app.use(async (req, res, next) => {
     try {

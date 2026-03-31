@@ -43,6 +43,18 @@ function ownerLabel(task) {
     return task.ownerUserId?.name || task.ownerUserId?.username || 'Unassigned';
 }
 
+function appendAgentDebugLog(entry) {
+    if (typeof window === 'undefined') return;
+    fetch('/api/_agent-debug-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            ...entry,
+            timestamp: Date.now()
+        })
+    }).catch(() => {});
+}
+
 function TasksHub({ orgId, expandedClass }) {
     const { addNotification } = useNotification();
     const [filters, setFilters] = useState({
@@ -145,6 +157,33 @@ function TasksHub({ orgId, expandedClass }) {
     }, [tasks, getTaskStatus]);
 
     useEffect(() => {
+        const ids = tasks.map((task) => String(task?._id || ''));
+        const missingIdCount = ids.filter((id) => !id).length;
+        const uniqueIds = new Set(ids.filter(Boolean));
+        const duplicateIdCount = ids.filter(Boolean).length - uniqueIds.size;
+        const statusCounts = KANBAN_STATUSES.reduce((acc, status) => {
+            acc[status] = (groupedByStatus[status] || []).length;
+            return acc;
+        }, {});
+        // #region agent log
+        appendAgentDebugLog({
+            hypothesisId: 'A',
+            location: 'TasksHub.jsx:data-shape',
+            message: 'Kanban data shape snapshot',
+            data: {
+                viewMode,
+                taskCount: tasks.length,
+                uniqueTaskCount: uniqueIds.size,
+                duplicateIdCount,
+                missingIdCount,
+                statusCounts,
+                optimisticCount: Object.keys(optimisticStatusByTaskId || {}).length
+            }
+        });
+        // #endregion
+    }, [tasks, groupedByStatus, optimisticStatusByTaskId, viewMode]);
+
+    useEffect(() => {
         setOptimisticStatusByTaskId((previous) => {
             if (!Object.keys(previous).length) return previous;
             const next = { ...previous };
@@ -242,6 +281,14 @@ function TasksHub({ orgId, expandedClass }) {
                 }
                 return next;
             });
+            // #region agent log
+            appendAgentDebugLog({
+                hypothesisId: 'C',
+                location: 'TasksHub.jsx:onTaskStatusChange',
+                message: 'Status change request failed',
+                data: { taskId, currentStatus, nextStatus, error: updateError?.message || 'unknown' }
+            });
+            // #endregion
             addNotification({
                 title: 'Task update failed',
                 message: updateError.message || 'Unable to update task status.',
@@ -254,6 +301,14 @@ function TasksHub({ orgId, expandedClass }) {
         setDraggingTaskId(task._id);
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', String(task._id));
+        // #region agent log
+        appendAgentDebugLog({
+            hypothesisId: 'B',
+            location: 'TasksHub.jsx:onKanbanDragStart',
+            message: 'Drag start',
+            data: { taskId: String(task?._id || ''), sourceStatus: getTaskStatus(task) }
+        });
+        // #endregion
     };
 
     const onKanbanDragEnd = () => {
@@ -276,6 +331,19 @@ function TasksHub({ orgId, expandedClass }) {
         setDraggingTaskId(null);
         if (!taskId) return;
         const task = tasks.find((item) => String(item._id) === String(taskId));
+        // #region agent log
+        appendAgentDebugLog({
+            hypothesisId: 'B',
+            location: 'TasksHub.jsx:onKanbanDropToColumn',
+            message: 'Drop received',
+            data: {
+                taskId: String(taskId),
+                foundTask: Boolean(task),
+                sourceStatus: task ? getTaskStatus(task) : null,
+                targetStatus: status
+            }
+        });
+        // #endregion
         if (!task || getTaskStatus(task) === status) return;
         await onTaskStatusChange(task, status);
     };
