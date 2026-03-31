@@ -79,7 +79,25 @@ function TasksHub({ orgId, expandedClass }) {
     const hubEndpoint = orgId ? `/org-event-management/${orgId}/tasks/hub?${query}` : null;
     const { data, loading, error, refetch } = useFetch(hubEndpoint);
 
-    const tasks = useMemo(() => data?.data?.tasks || [], [data]);
+    const tasks = useMemo(() => {
+        const rawTasks = data?.data?.tasks || [];
+        const byId = new Map();
+        rawTasks.forEach((task) => {
+            const taskId = String(task?._id || '');
+            if (!taskId) return;
+            const existing = byId.get(taskId);
+            if (!existing) {
+                byId.set(taskId, task);
+                return;
+            }
+            const existingUpdatedAt = new Date(existing.updatedAt || 0).getTime();
+            const nextUpdatedAt = new Date(task.updatedAt || 0).getTime();
+            if (nextUpdatedAt >= existingUpdatedAt) {
+                byId.set(taskId, task);
+            }
+        });
+        return Array.from(byId.values());
+    }, [data]);
     const summary = data?.data?.summary || {
         total: 0,
         overdue: 0,

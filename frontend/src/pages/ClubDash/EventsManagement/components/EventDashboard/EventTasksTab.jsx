@@ -66,18 +66,23 @@ function EventTasksTab({ event, orgId, onRefresh }) {
     const tasks = useMemo(() => data?.data?.tasks || [], [data]);
     const readiness = readinessRequest.data?.data || null;
 
+    const getTaskStatus = (task) => {
+        if (!task?._id) return task?.effectiveStatus || task?.status || 'todo';
+        return optimisticStatusByTaskId[String(task._id)] || task.effectiveStatus || task.status || 'todo';
+    };
+
     const groupedByStatus = useMemo(() => {
         const groups = KANBAN_STATUSES.reduce((acc, status) => {
             acc[status] = [];
             return acc;
         }, {});
         tasks.forEach((task) => {
-            const effectiveStatus = optimisticStatusByTaskId[String(task._id)] || task.effectiveStatus || task.status || 'todo';
+            const effectiveStatus = getTaskStatus(task);
             if (!groups[effectiveStatus]) groups[effectiveStatus] = [];
             groups[effectiveStatus].push(task);
         });
         return groups;
-    }, [tasks, optimisticStatusByTaskId]);
+    }, [tasks, optimisticStatusByTaskId, getTaskStatus]);
 
     const metrics = useMemo(() => {
         const total = tasks.length;
@@ -242,7 +247,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
     const handleTaskDropToStatus = async (task, nextStatus) => {
         if (!task?._id || !nextStatus) return;
         const taskKey = String(task._id);
-        const currentStatus = optimisticStatusByTaskId[taskKey] || task.effectiveStatus || task.status;
+        const currentStatus = getTaskStatus(task);
         if (currentStatus === nextStatus) return;
         setOptimisticStatusByTaskId((prev) => ({ ...prev, [taskKey]: nextStatus }));
         try {
