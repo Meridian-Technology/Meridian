@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import apiRequest from '../../../../../utils/postRequest';
@@ -66,10 +66,10 @@ function EventTasksTab({ event, orgId, onRefresh }) {
     const tasks = useMemo(() => data?.data?.tasks || [], [data]);
     const readiness = readinessRequest.data?.data || null;
 
-    const getTaskStatus = (task) => {
+    const getTaskStatus = useCallback((task) => {
         if (!task?._id) return task?.effectiveStatus || task?.status || 'todo';
         return optimisticStatusByTaskId[String(task._id)] || task.effectiveStatus || task.status || 'todo';
-    };
+    }, [optimisticStatusByTaskId]);
 
     const groupedByStatus = useMemo(() => {
         const groups = KANBAN_STATUSES.reduce((acc, status) => {
@@ -82,7 +82,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
             groups[effectiveStatus].push(task);
         });
         return groups;
-    }, [tasks, optimisticStatusByTaskId, getTaskStatus]);
+    }, [tasks, getTaskStatus]);
 
     const metrics = useMemo(() => {
         const total = tasks.length;
