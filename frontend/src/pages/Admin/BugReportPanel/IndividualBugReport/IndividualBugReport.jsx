@@ -1,8 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import './IndividualBugReport.scss';
 import { useGradient } from '../../../../hooks/useGradient';
-import HeaderContainer from '../../../../components/HeaderContainer/HeaderContainer';
-import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 
 const bugData = {
     "title": 'Dashboard not loading',
@@ -15,6 +13,19 @@ const bugData = {
     "image": 'image'
 }
 
+const activityLogData = [
+    {
+        id: 'a1',
+        text: 'james@meridian.study was assigned this issue',
+        dateLabel: 'Jan 7, 2026',
+    },
+    {
+        id: 'a2',
+        text: 'James Liu assigned to diami5036@gmail.com',
+        dateLabel: 'Jan 8, 2026',
+    },
+];
+
 function IndividualBugReport(title, bugNumber, priority, status, tags, assignee, description, image) { 
     const { AdminGrad } = useGradient();
     return (
@@ -24,7 +35,6 @@ function IndividualBugReport(title, bugNumber, priority, status, tags, assignee,
                 <img src={AdminGrad} alt="Admin Gradient" />
             </header>
             <div className="report_details">
-                <h1>{bugData.title}</h1>
                 <div>
                     <div className="report-meta">
                         <div className="bug-number-priority-status">
@@ -41,27 +51,54 @@ function IndividualBugReport(title, bugNumber, priority, status, tags, assignee,
                             <span className="assignee-pill assignee-pill--placeholder">Assignee: —</span>
                         </div>
                     </div>
-                    <p className="report-description">{bugData.description}</p>
+                    <h1 className="report-title">
+                        <span className="report-field-label">Title:</span>{' '}
+                        {bugData.title}
+                    </h1>
+                    <p className="report-description">
+                        <span className="report-field-label">Description:</span>{' '}
+                        {bugData.description}
+                    </p>
                     <h1>{bugData.image}</h1>
+                </div>
+            </div>
+
+            <section className="report-activity-panel" aria-label="Activity">
+                <h2 className="report-activity-heading">Activity</h2>
+                <ul className="activity-list">
+                    {activityLogData.map((entry) => (
+                        <li key={entry.id} className="activity-item">
+                            <p className="activity-item__text">{entry.text}</p>
+                            <span className="activity-date-pill">{entry.dateLabel}</span>
+                        </li>
+                    ))}
+                </ul>
+                <textarea
+                    id="bug-report-comment"
+                    className="activity-comment-input"
+                    placeholder="Leave a comment…"
+                    rows={4}
+                    aria-label="Comment"
+                />
+                <div className="activity-send-row">
+                    <button type="button" className="activity-send-pill">
+                        Send
+                    </button>
+                </div>
+            </section>
+
+            <div className="report-bottom-actions">
+                <div className="activity-actions">
+                    <button type="button" className="activity-action-pill">
+                        Archive
+                    </button>
+                    <button type="button" className="activity-action-pill activity-action-pill--linear">
+                        Move to Linear
+                    </button>
                 </div>
             </div>
         </div>
     )   
 }
-
-const activityLogData = [
-    {
-        "assignee": "John Doe",
-        "assigned": "James Liu",
-        "date": "Jan 7, 2026",
-        "time": "10:00 AM"
-    },
-    {
-        "activity": "Bug Reported",
-        "date": "Jan 7, 2026",
-        "time": "10:00 AM"
-    }
-]
-
 
 export default IndividualBugReport;
