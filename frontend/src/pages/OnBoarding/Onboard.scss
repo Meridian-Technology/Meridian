@@ -1,326 +1,254 @@
-.onboard{
+.onboard.onboard-v2 {
     position: relative;
-    overflow:hidden;
-    height:100vh;
-    width:100vw;
-    display:flex;
-    align-items: center;
-    justify-content: center ;
-    flex-direction: column;
-    opacity: 0;
-    transition: all 0.5s ease-in-out;
-}
-
-.onboard.visible{
-    opacity:1;
-}
-
-.onboard .content h2{
-    font-family: 'Satoshi';
-    color: var(--text);
-    text-align: center;
-    margin:0;
-}
-
-.onboard .yellow-red{
-    position: absolute;
-    top:0;
-    right:0;
-    pointer-events: none;
-    z-index: -1;
-}
-
-.onboard .purple{
-    position:absolute;
-    bottom:0;
-    left:0;
-    pointer-events: none;
-    z-index: -1;
-}
-
-.onboard .content{
-    position: relative;
-    display:flex;
-    flex-direction: column;
+    min-height: 100vh;
+    width: 100vw;
+    display: flex;
     align-items: center;
     justify-content: center;
-    gap:20px;
-    transition: all 0.5s ease-in-out;
-    max-width: 400px;
-    margin-bottom:10px;
-}
-
-.onboard .content .card-container{
-    position: relative;
-    width:100%;
-}
-
-.onboard .content .card-header::after{
-    transition: all 0.5s;
-    content: '';
-    background-image: radial-gradient( circle farthest-corner at 10% 20%,  #F2374C 17.8%, #F9E298 100.2% );
-    filter: blur(0px);
-    width: 100%;
-    height: 100%;
-    z-index: -1;
-    position: absolute;
-    left: 0;
-    top: 0;
+    background: radial-gradient(circle at top right, #fce7f3, transparent 45%),
+        radial-gradient(circle at bottom left, #dbeafe, transparent 40%),
+        var(--background);
     opacity: 0;
-    filter: blur(20px);
-    opacity: 1;
-}
-
-.onboard .content .text-input{
-    padding:10px 20px;
-    font-family: 'Inter';
-    font-weight:600;
-    color:var(--text);
-    border:none;
-    outline:none;
-    background-color: var(--light);
-    border-radius: 10px;
-    font-size:15px;
-}
-
-.onboard .content .loader{
-    margin-top:10px;
-}
-
-.onboard .content.going{
-    opacity:0;
-}
-
-.onoard .content.gone{
-    position: absolute;
-}
-
-.onboard .content.beforeOnboard{
-    opacity:0;
-}
-
-.onboard .content p{
-    max-width: 400px;
-    margin:0;
-    font-family: 'Inter';
-    font-weight:500;
-    color:var(--text);
-    text-align: center;
-    margin-bottom:10px;
-}
-
-.onboard .content .badge p{
-    margin:0 7px;
-    color:white;    
-    font-family: 'Inter';
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.onboard button{
-    font-family: 'Satoshi';
-    font-size: 15px;
-    outline:none;
-    border-radius: 8px;
-    background-color: var(--red);
-    border:none;
-    padding:5px 20px;
-    margin:10px;
-    color: white;
-    cursor:pointer;
-    transition: all 0.5s;
-}
-
-.onboard .content button:hover{
-    cursor:pointer;
-    filter: brightness(0.9);
-}
-
-.onboard button.deactivated{
-    background-color: var(--lightborder);
-    pointer-events: none;
-}
-
-.onboard .logo{
-    width:50px;
-    height:50px;
-}
-
-.content .slider{
-    background: linear-gradient(to right, #FA756D, #87AFF1);
-    -webkit-appearance: none;
-    appearance: none;
-    height:10px;
-    width:400px;
-    border-radius: 5px;
-    margin:0;
+    transition: opacity 0.35s ease;
+    padding: 1.2rem;
     box-sizing: border-box;
 }
 
-
-.slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    background: transparent;
-    cursor: pointer;
+.onboard.onboard-v2.visible {
+    opacity: 1;
 }
 
-.slider::-moz-range-thumb {
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    background: transparent;
-    cursor: pointer;
-    transition: transform 0.2s ease;
-}
-
-.sliderText{
-    font-size:14px;
-}
-
-.sliderContainer{
-    display:flex;
+.onboard-v2 .onboard-shell {
+    width: 100%;
+    max-width: 720px;
+    background: var(--background);
+    border: 1px solid var(--lightborder);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 1.1rem 1.2rem;
+    display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    /* gap:10px; */
-    width:400px;
+    gap: 0.95rem;
 }
 
-.rangeText{
-    display:flex;
-    justify-content: space-between;
-    width:100%;
+.onboard-v2 .onboard-header .kicker {
+    margin: 0;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--darkborder);
+    font-weight: 700;
 }
 
-.content .rangeText p{
+.onboard-v2 .onboard-header h2 {
+    margin: 0.15rem 0 0 0;
+    color: var(--text);
     font-family: 'Satoshi';
-    font-size: 16px;
-    font-weight: bold;
-    margin:0;
+    font-size: 1.55rem;
 }
 
-.rangeText .routine{
-    color: var(--red) !important;
+.onboard-v2 .onboard-header .description {
+    margin: 0.35rem 0 0 0;
+    color: var(--darkborder);
+    font-size: 0.95rem;
 }
 
-.rangeText .novelty{
-    color: var(--blue) !important;
-
+.onboard-v2 .onboard-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.42rem;
 }
 
-.sliderInput{
-    display:grid;
-    width:100%;
+.onboard-v2 .onboard-progress p {
+    margin: 0;
+    color: var(--darkborder);
+    font-size: 0.86rem;
+    font-weight: 600;
 }
 
-.onboard .thumb{
-    height:15px;
-    width:15px;
-    border-radius:50%;
-    background-color: #D9D9D9;
-    position: absolute;
-    align-self: center;
-    pointer-events: none;
-    transition: left 0.3s ease;
+.onboard-v2 .onboard-progress .bar {
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--light);
+    overflow: hidden;
 }
 
-.onboard .username-input{
-    position: relative;
-    display: grid;
-    margin-bottom:10px;
+.onboard-v2 .onboard-progress .bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #f43f5e, #6366f1);
+    transition: width 0.22s ease;
 }
 
-.onboard .status{
-    position: absolute;
-    bottom: -35px;
-    align-self: center;
-    justify-self: center;
+.onboard-v2 .onboard-input,
+.onboard-v2 .onboard-textarea {
+    width: 100%;
+    border: 1px solid var(--lightborder);
+    background: var(--background);
+    border-radius: 10px;
+    padding: 0.62rem 0.72rem;
+    box-sizing: border-box;
+    color: var(--text);
+    font-size: 0.96rem;
+    font-family: 'Inter';
 }
 
-.onboard .status p{
-    font-size:14px;
-    font-weight: 500;
-    margin-bottom:2px;
+.onboard-v2 .onboard-input:focus,
+.onboard-v2 .onboard-textarea:focus {
+    outline: none;
+    border-color: var(--red);
 }
 
-.onboard .status div{
-    display:flex;
-    gap:8px;
+.onboard-v2 .onboard-textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.onboard-v2 .onboard-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.onboard-v2 .onboard-chip {
+    border: 1px solid var(--lightborder);
+    background: var(--background);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 0.42rem 0.75rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.onboard-v2 .onboard-chip.selected {
+    border-color: var(--red);
+    background: rgba(244, 63, 94, 0.1);
+    color: var(--red);
+}
+
+.onboard-v2 .onboard-template-step {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.onboard-v2 .onboard-search-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    max-height: 260px;
+    overflow-y: auto;
+    padding-right: 0.2rem;
+}
+
+.onboard-v2 .onboard-search-item {
+    border: 1px solid var(--lightborder);
+    background: var(--background);
+    border-radius: 10px;
+    padding: 0.56rem 0.66rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    cursor: pointer;
+    text-align: left;
+}
+
+.onboard-v2 .onboard-search-item .title {
+    font-size: 0.9rem;
+    color: var(--text);
+    font-weight: 700;
+}
+
+.onboard-v2 .onboard-search-item .subtitle {
+    font-size: 0.8rem;
+    color: var(--darkborder);
+}
+
+.onboard-v2 .onboard-search-item.selected {
+    border-color: var(--red);
+    background: rgba(244, 63, 94, 0.08);
+}
+
+.onboard-v2 .onboard-picture-input {
+    border: 1px dashed var(--lightborder);
+    border-radius: 10px;
+    padding: 0.75rem;
+    cursor: pointer;
+    display: block;
+}
+
+.onboard-v2 .onboard-picture-input input {
+    display: none;
+}
+
+.onboard-v2 .onboard-picture-input span {
+    color: var(--text);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.onboard-v2 .helper {
+    margin: 0;
+    font-size: 0.84rem;
+    color: var(--darkborder);
+}
+
+.onboard-v2 .error-text {
+    margin: 0;
+    color: #dc2626;
+    font-size: 0.83rem;
+    font-weight: 600;
+}
+
+.onboard-v2 .onboard-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.62rem;
+}
+
+.onboard-v2 .onboard-actions button {
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 0.52rem 0.95rem;
+    display: inline-flex;
     align-items: center;
+    gap: 0.4rem;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.2s ease, opacity 0.2s ease;
 }
 
-.onboard .status img{
-    width:15px;
-    height:15px;
+.onboard-v2 .onboard-actions button.primary {
+    background: var(--red);
+    color: #fff;
 }
 
-.onboard .checking p{
-    color: var(--yellow) !important;
+.onboard-v2 .onboard-actions button.secondary {
+    border-color: var(--lightborder);
+    background: var(--background);
+    color: var(--text);
 }
 
-.onboard .available p{
-    color: var(--green) !important;
+.onboard-v2 .onboard-actions button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
-.onboard .taken p{
-    color: var(--red) !important;
-
-}
-
-.onboard .invalid p{
-    color: var(--red) !important;
-}
-
-
-@media (max-width: 1000px) {
-    .onboard .yellow-red,
-    .onboard .purple{
-        height:400px;
-    }
-}
-
-@media (max-width: 500px){
-    .onboard .yellow-red,
-    .onboard .purple{
-        height:300px;
+@media (max-width: 700px) {
+    .onboard-v2 .onboard-shell {
+        padding: 0.9rem;
     }
 
-    .onboard{
-        gap:0px;
+    .onboard-v2 .onboard-header h2 {
+        font-size: 1.3rem;
     }
 
-    .onboard button{
-        margin:0;
-    }
-
-    .onboard .content{
-        margin:15px;
-        gap:10px;
-    }
-
-    .sliderContainer{
-        width:100%;
-    }
-
-    .onboard .slider{
-        width:100%;
-        border-radius: 5px;
-    }
-    
-    .onboard .content h2{
-        font-size:20px;
-    }
-
-    .content p{
-        font-size:16px;
-        max-width: 100%;
-    }
-
-    .onboard .card-container{
-        scale:0.9;
+    .onboard-v2 .onboard-actions {
+        flex-direction: column;
     }
 }

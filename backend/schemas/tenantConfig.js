@@ -20,6 +20,7 @@ const tenantConfigSchema = new mongoose.Schema(
   {
     configKey: { type: String, required: true, unique: true, default: 'default' },
     tenants: { type: [tenantEntrySchema], default: [] },
+    onboardingConfig: { type: mongoose.Schema.Types.Mixed, default: null },
     updatedBy: { type: String, default: null },
   },
   { timestamps: true }

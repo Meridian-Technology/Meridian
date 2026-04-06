@@ -1,6 +1,8 @@
 const express = require('express');
 const { verifyToken, verifyTokenOptional, authorizeRoles } = require('../middlewares/verifyToken');
 const { requireAdmin } = require('../middlewares/requireAdmin');
+const getGlobalModels = require('../services/getGlobalModelService');
+const mongoose = require('mongoose');
 const cron = require('node-cron');
 const axios = require('axios');
 const { isProfane } = require('../services/profanityFilterService');
@@ -13,6 +15,13 @@ const { uploadImageToS3, deleteAndUploadImageToS3 } = require('../services/image
 const { sendRoomCheckinEvent } = require('../inngest/events');
 const multer = require('multer');
 const path = require('path');
+const {
+    sanitizeTenantOnboardingConfig,
+    getPlatformOnboardingConfig,
+    detectSignupOption,
+    resolveOnboardingSteps,
+    TENANT_TEMPLATE_LIBRARY,
+} = require('../services/onboardingConfigService');
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -23,6 +32,371 @@ const upload = multer({
 
 
 const router = express.Router();
+
+async function loadResolvedOnboardingConfig(req, user) {
+    const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
+    const { TenantOnboardingConfig } = getModels(req, 'TenantOnboardingConfig');
+    const [platformDoc, tenantDoc] = await Promise.all([
+        TenantConfig.findOne({ configKey: 'default' }).lean(),
+        TenantOnboardingConfig.findOne({ configKey: 'default' }).lean(),
+    ]);
+    const platformConfig = getPlatformOnboardingConfig(platformDoc?.onboardingConfig || null);
+    const tenantConfig = sanitizeTenantOnboardingConfig(tenantDoc || null);
+    const signupOption = detectSignupOption(user);
+    const steps = resolveOnboardingSteps(platformConfig, tenantConfig, signupOption);
+    return {
+        steps,
+        signupOption,
+        tenantConfig,
+        platformConfig,
+    };
+}
+
+async function applyOnboardingTemplateEffects(req, userId, templateSelections = {}) {
+    const normalized = templateSelections && typeof templateSelections === 'object' ? templateSelections : {};
+    const selectedOrgIds = Array.isArray(normalized.follow_orgs) ? normalized.follow_orgs : [];
+    const selectedFriendUserIds = Array.isArray(normalized.add_friends) ? normalized.add_friends : [];
+    const validOrgIds = selectedOrgIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+    const validFriendIdsInput = selectedFriendUserIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+    if (validOrgIds.length > 0) {
+        const { Org, OrgFollower } = getModels(req, 'Org', 'OrgFollower');
+        const existing = await OrgFollower.find({
+            user_id: userId,
+            org_id: { $in: validOrgIds },
+        }).select('org_id').lean();
+        const existingSet = new Set(existing.map((row) => String(row.org_id)));
+        const validOrgDocs = await Org.find({ _id: { $in: validOrgIds } }).select('_id').lean();
+        const followersToCreate = validOrgDocs
+            .map((org) => String(org._id))
+            .filter((orgId) => !existingSet.has(orgId))
+            .map((orgId) => ({
+                user_id: userId,
+                org_id: orgId,
+            }));
+        if (followersToCreate.length > 0) {
+            await OrgFollower.insertMany(followersToCreate, { ordered: false });
+        }
+    }
+
+    if (validFriendIdsInput.length > 0) {
+        const { User, Friendship } = getModels(req, 'User', 'Friendship');
+        const candidateUsers = await User.find({
+            _id: { $in: validFriendIdsInput },
+        }).select('_id').lean();
+        const validFriendIds = candidateUsers
+            .map((u) => String(u._id))
+            .filter((id) => id !== String(userId));
+        if (validFriendIds.length > 0) {
+            const existing = await Friendship.find({
+                $or: [
+                    { requester: userId, recipient: { $in: validFriendIds } },
+                    { requester: { $in: validFriendIds }, recipient: userId },
+                ],
+            }).select('requester recipient').lean();
+            const existingPairs = new Set(
+                existing.map((row) => [String(row.requester), String(row.recipient)].sort().join(':'))
+            );
+            const friendshipDocs = validFriendIds
+                .filter((friendId) => !existingPairs.has([String(userId), friendId].sort().join(':')))
+                .map((friendId) => ({
+                    requester: userId,
+                    recipient: friendId,
+                    status: 'pending',
+                }));
+            if (friendshipDocs.length > 0) {
+                await Friendship.insertMany(friendshipDocs, { ordered: false });
+            }
+        }
+    }
+}
+
+function parseOnboardingResponses(rawResponses) {
+    if (!rawResponses) return {};
+    if (typeof rawResponses === 'object') return rawResponses;
+    try {
+        const parsed = JSON.parse(rawResponses);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_error) {
+        return {};
+    }
+}
+
+function validateStepResponse(step, value) {
+    const isEmpty = value == null || value === '' || (Array.isArray(value) && value.length === 0);
+    if (step.required && isEmpty) {
+        return { valid: false, message: `Step "${step.title}" is required.` };
+    }
+    if (isEmpty) {
+        return { valid: true };
+    }
+
+    if (step.type === 'short_text' || step.type === 'long_text') {
+        if (typeof value !== 'string') {
+            return { valid: false, message: `Step "${step.title}" must be text.` };
+        }
+    }
+
+    if (step.type === 'number') {
+        const n = Number(value);
+        if (!Number.isFinite(n)) {
+            return { valid: false, message: `Step "${step.title}" must be a number.` };
+        }
+    }
+
+    if (step.type === 'single_select') {
+        const validValues = new Set((step.options || []).map((option) => option.value));
+        if (typeof value !== 'string' || !validValues.has(value)) {
+            return { valid: false, message: `Step "${step.title}" has an invalid selection.` };
+        }
+    }
+
+    if (step.type === 'multi_select') {
+        const validValues = new Set((step.options || []).map((option) => option.value));
+        if (!Array.isArray(value) || value.some((entry) => !validValues.has(entry))) {
+            return { valid: false, message: `Step "${step.title}" has invalid selections.` };
+        }
+        if (step.maxSelections && value.length > step.maxSelections) {
+            return { valid: false, message: `Step "${step.title}" exceeds max selections.` };
+        }
+    }
+
+    if (step.type === 'template_follow_orgs' || step.type === 'template_add_friends') {
+        if (!Array.isArray(value)) {
+            return { valid: false, message: `Step "${step.title}" must be a list.` };
+        }
+    }
+
+    return { valid: true };
+}
+
+router.get('/onboarding-config', verifyToken, async (req, res) => {
+    const { User } = getModels(req, 'User');
+    try {
+        const user = await User.findById(req.user.userId).lean();
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        const resolved = await loadResolvedOnboardingConfig(req, user);
+        return res.json({
+            success: true,
+            data: {
+                steps: resolved.steps,
+                signupOption: resolved.signupOption,
+                templateLibrary: TENANT_TEMPLATE_LIBRARY,
+            },
+        });
+    } catch (error) {
+        console.error('GET /onboarding-config failed', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/onboarding-profile', verifyToken, async (req, res) => {
+    const { User, Org, OrgFollower, Friendship } = getModels(req, 'User', 'Org', 'OrgFollower', 'Friendship');
+    const type = String(req.query.type || '').trim().toLowerCase();
+    const query = String(req.query.query || '').trim();
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 12, 1), 30);
+    try {
+        if (type === 'orgs') {
+            const regex = query ? new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
+            const orgQuery = regex ? { org_name: regex } : {};
+            const orgs = await Org.find(orgQuery)
+                .select('_id org_name org_profile_image org_description')
+                .limit(limit)
+                .lean();
+            const followed = await OrgFollower.find({
+                user_id: req.user.userId,
+                org_id: { $in: orgs.map((org) => org._id) },
+            }).select('org_id').lean();
+            const followedSet = new Set(followed.map((row) => String(row.org_id)));
+            return res.json({
+                success: true,
+                data: orgs.map((org) => ({
+                    _id: org._id,
+                    name: org.org_name,
+                    description: org.org_description,
+                    picture: org.org_profile_image,
+                    isFollowing: followedSet.has(String(org._id)),
+                })),
+            });
+        }
+
+        if (type === 'users') {
+            const userQuery = { _id: { $ne: req.user.userId } };
+            if (query) {
+                const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                userQuery.$or = [{ username: regex }, { name: regex }];
+            }
+            const users = await User.find(userQuery)
+                .select('_id username name picture')
+                .limit(limit)
+                .lean();
+            const friendships = await Friendship.find({
+                $or: [
+                    { requester: req.user.userId, recipient: { $in: users.map((u) => u._id) } },
+                    { requester: { $in: users.map((u) => u._id) }, recipient: req.user.userId },
+                ],
+            }).select('requester recipient status').lean();
+            const relationMap = new Map();
+            friendships.forEach((row) => {
+                const other = String(row.requester) === String(req.user.userId) ? String(row.recipient) : String(row.requester);
+                let status = row.status || 'pending';
+                if (status === 'pending' && String(row.requester) !== String(req.user.userId)) {
+                    status = 'pending_inbound';
+                } else if (status === 'pending') {
+                    status = 'pending_outbound';
+                }
+                relationMap.set(other, status);
+            });
+            return res.json({
+                success: true,
+                data: users.map((u) => ({
+                    _id: u._id,
+                    username: u.username,
+                    name: u.name,
+                    picture: u.picture,
+                    friendshipStatus: relationMap.get(String(u._id)) || 'none',
+                })),
+            });
+        }
+
+        return res.status(400).json({ success: false, message: 'type must be "orgs" or "users".' });
+    } catch (error) {
+        console.error('GET /onboarding-profile failed', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/submit-onboarding', verifyToken, upload.single('picture'), async (req, res) => {
+    const { User } = getModels(req, 'User');
+    try {
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        const responses = parseOnboardingResponses(req.body?.responses);
+        const resolved = await loadResolvedOnboardingConfig(req, user);
+        const errors = [];
+        const normalizedResponses = {};
+        const templateSelections = {};
+
+        resolved.steps.forEach((step) => {
+            const value = responses[step.key];
+            const validation = validateStepResponse(step, value);
+            if (!validation.valid) {
+                errors.push(validation.message);
+                return;
+            }
+            if (value == null || value === '' || (Array.isArray(value) && value.length === 0)) {
+                return;
+            }
+            if (step.type === 'number') {
+                normalizedResponses[step.key] = Number(value);
+            } else {
+                normalizedResponses[step.key] = value;
+            }
+            if (step.type === 'template_follow_orgs' || step.type === 'template_add_friends') {
+                templateSelections[step.templateKey] = Array.isArray(value) ? value : [];
+            }
+        });
+
+        if (errors.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Onboarding submission has validation errors.',
+                errors,
+            });
+        }
+
+        const hasNameResponse = Object.prototype.hasOwnProperty.call(normalizedResponses, 'name');
+        if (hasNameResponse && typeof normalizedResponses.name === 'string' && normalizedResponses.name.trim()) {
+            user.name = normalizedResponses.name.trim();
+        }
+
+        const hasUsernameResponse = Object.prototype.hasOwnProperty.call(normalizedResponses, 'username');
+        if (hasUsernameResponse && typeof normalizedResponses.username === 'string' && normalizedResponses.username.trim()) {
+            user.username = normalizedResponses.username.trim();
+        }
+
+        if (req.file) {
+            const fileExtension = path.extname(req.file.originalname || '.png');
+            const timestamp = Date.now();
+            const fileName = `${req.user.userId}-${timestamp}${fileExtension}`;
+            if (user.picture) {
+                user.picture = await deleteAndUploadImageToS3(req.file, 'users', user.picture, fileName);
+            } else {
+                user.picture = await uploadImageToS3(req.file, 'users', fileName);
+            }
+        }
+
+        user.onboardingResponses = normalizedResponses;
+        user.onboarded = true;
+        user.onboardingCompletedAt = new Date();
+
+        await applyOnboardingTemplateEffects(req, req.user.userId, templateSelections);
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: 'Onboarding completed successfully.',
+            data: {
+                onboarded: true,
+                onboardingResponses: normalizedResponses,
+                picture: user.picture || null,
+            },
+        });
+    } catch (error) {
+        console.error('POST /submit-onboarding failed', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/admin/tenant-onboarding-config', verifyToken, requireAdmin, async (req, res) => {
+    try {
+        const { TenantOnboardingConfig } = getModels(req, 'TenantOnboardingConfig');
+        const doc = await TenantOnboardingConfig.findOne({ configKey: 'default' }).lean();
+        const config = sanitizeTenantOnboardingConfig(doc || null);
+        return res.json({
+            success: true,
+            data: {
+                config,
+                templateLibrary: TENANT_TEMPLATE_LIBRARY,
+            },
+        });
+    } catch (error) {
+        console.error('GET /admin/tenant-onboarding-config failed', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/admin/tenant-onboarding-config', verifyToken, requireAdmin, async (req, res) => {
+    try {
+        const incoming = req.body?.config;
+        if (!incoming || typeof incoming !== 'object') {
+            return res.status(400).json({ success: false, message: 'config object is required.' });
+        }
+        const config = sanitizeTenantOnboardingConfig(incoming);
+        const { TenantOnboardingConfig } = getModels(req, 'TenantOnboardingConfig');
+        const updatedBy = req.user.globalUserId || req.user.userId || null;
+        const doc = await TenantOnboardingConfig.findOneAndUpdate(
+            { configKey: 'default' },
+            { $set: { steps: config.steps, updatedBy } },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+        ).lean();
+        return res.json({
+            success: true,
+            data: {
+                config: sanitizeTenantOnboardingConfig(doc || null),
+                updatedAt: doc?.updatedAt || null,
+                templateLibrary: TENANT_TEMPLATE_LIBRARY,
+            },
+        });
+    } catch (error) {
+        console.error('PUT /admin/tenant-onboarding-config failed', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 router.post("/update-user", verifyToken, async (req, res) => {
     const { User } = getModels(req, 'User');

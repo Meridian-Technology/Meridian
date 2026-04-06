@@ -3,6 +3,7 @@ const platformRoleSchema = require('../schemas/platformRole');
 const tenantMembershipSchema = require('../schemas/tenantMembership');
 const globalSessionSchema = require('../schemas/globalSession');
 const tenantConfigSchema = require('../schemas/tenantConfig');
+const tenantOnboardingConfigSchema = require('../schemas/tenantOnboardingConfig');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -10,7 +11,7 @@ const tenantConfigSchema = require('../schemas/tenantConfig');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig'
+ * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig', 'TenantOnboardingConfig'
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -25,6 +26,7 @@ const getGlobalModels = (req, ...names) => {
         TenantMembership: db.model('TenantMembership', tenantMembershipSchema, 'tenant_memberships'),
         Session: db.model('Session', globalSessionSchema, 'sessions'),
         TenantConfig: db.model('TenantConfig', tenantConfigSchema, 'tenant_config'),
+        TenantOnboardingConfig: db.model('TenantOnboardingConfig', tenantOnboardingConfigSchema, 'tenant_onboarding_configs'),
     };
 
     return names.reduce((acc, name) => {

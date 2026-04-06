@@ -282,6 +282,12 @@ router.get('/admin/user/:userId/analytics', verifyToken, requireAdmin, async (re
 });
 
 const getGlobalModels = require('../services/getGlobalModelService');
+const {
+  SIGNUP_OPTIONS,
+  TENANT_TEMPLATE_LIBRARY,
+  sanitizePlatformOnboardingConfig,
+  getPlatformOnboardingConfig,
+} = require('../services/onboardingConfigService');
 
 /**
  * GET /admin/platform-admins – list platform admins (GlobalUsers with platform_admin role)
@@ -508,6 +514,71 @@ router.put('/admin/tenant-config', verifyToken, requireAdmin, async (req, res) =
     });
   } catch (err) {
     console.error('PUT /admin/tenant-config failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/admin/platform-onboarding-config', verifyToken, requireAdmin, async (req, res) => {
+  if (!req.user.platformRoles?.includes('platform_admin')) {
+    return res.status(403).json({ success: false, message: 'Platform admin required.' });
+  }
+  try {
+    const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
+    const doc = await TenantConfig.findOne({ configKey: 'default' }).lean();
+    const config = getPlatformOnboardingConfig(doc?.onboardingConfig || null);
+    res.json({
+      success: true,
+      data: {
+        config,
+        meta: {
+          signupOptions: SIGNUP_OPTIONS,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('GET /admin/platform-onboarding-config failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/admin/platform-onboarding-config', verifyToken, requireAdmin, async (req, res) => {
+  if (!req.user.platformRoles?.includes('platform_admin')) {
+    return res.status(403).json({ success: false, message: 'Platform admin required.' });
+  }
+  try {
+    const incoming = req.body?.config;
+    if (!incoming || typeof incoming !== 'object') {
+      return res.status(400).json({ success: false, message: 'config object is required.' });
+    }
+    const config = sanitizePlatformOnboardingConfig(incoming);
+    const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
+    const updatedBy = req.user.globalUserId || req.user.userId || null;
+    const doc = await TenantConfig.findOneAndUpdate(
+      { configKey: 'default' },
+      { $set: { onboardingConfig: config, updatedBy } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+    res.json({
+      success: true,
+      data: {
+        config: getPlatformOnboardingConfig(doc?.onboardingConfig || null),
+        updatedAt: doc?.updatedAt || null,
+      },
+    });
+  } catch (err) {
+    console.error('PUT /admin/platform-onboarding-config failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/admin/tenant-onboarding-template-library', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: TENANT_TEMPLATE_LIBRARY,
+    });
+  } catch (err) {
+    console.error('GET /admin/tenant-onboarding-template-library failed:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { setTenantConfigCache } from '../../../config/tenantRedirect';
 import GradientHeader from '../../../assets/Gradients/ApprovalGrad.png';
+import OnboardingBuilder from '../../../components/OnboardingBuilder/OnboardingBuilder';
 import '../General/General.scss';
 import './PlatformAdminsPage.scss';
 
@@ -13,6 +14,17 @@ function PlatformAdminsPage() {
   const [mutationError, setMutationError] = useState(null);
   const [tenantDrafts, setTenantDrafts] = useState({});
   const [savingTenants, setSavingTenants] = useState(false);
+  const [savingPlatformOnboarding, setSavingPlatformOnboarding] = useState(false);
+  const [platformOnboardingDraft, setPlatformOnboardingDraft] = useState({
+    defaults: [],
+    bySignupOption: {
+      all: [],
+      email: [],
+      google: [],
+      apple: [],
+      saml: [],
+    },
+  });
 
   const { data: listResponse, loading, error: fetchError, refetch } = useFetch('/admin/platform-admins');
   const list = listResponse?.success ? (listResponse.data || []) : [];
@@ -22,7 +34,14 @@ function PlatformAdminsPage() {
     error: tenantConfigFetchError,
     refetch: refetchTenantConfig,
   } = useFetch('/admin/tenant-config');
+  const {
+    data: platformOnboardingResponse,
+    loading: platformOnboardingLoading,
+    error: platformOnboardingFetchError,
+    refetch: refetchPlatformOnboarding,
+  } = useFetch('/admin/platform-onboarding-config');
   const tenantRows = tenantConfigResponse?.success ? (tenantConfigResponse.data?.tenants || []) : [];
+  const signupOptions = platformOnboardingResponse?.data?.meta?.signupOptions || ['all', 'email', 'google', 'apple', 'saml'];
 
   useEffect(() => {
     const nextDrafts = {};
@@ -34,6 +53,21 @@ function PlatformAdminsPage() {
     });
     setTenantDrafts(nextDrafts);
   }, [tenantConfigResponse]);
+
+  useEffect(() => {
+    const incoming = platformOnboardingResponse?.data?.config;
+    if (!incoming) return;
+    setPlatformOnboardingDraft({
+      defaults: Array.isArray(incoming.defaults) ? incoming.defaults : [],
+      bySignupOption: {
+        all: Array.isArray(incoming?.bySignupOption?.all) ? incoming.bySignupOption.all : [],
+        email: Array.isArray(incoming?.bySignupOption?.email) ? incoming.bySignupOption.email : [],
+        google: Array.isArray(incoming?.bySignupOption?.google) ? incoming.bySignupOption.google : [],
+        apple: Array.isArray(incoming?.bySignupOption?.apple) ? incoming.bySignupOption.apple : [],
+        saml: Array.isArray(incoming?.bySignupOption?.saml) ? incoming.bySignupOption.saml : [],
+      },
+    });
+  }, [platformOnboardingResponse]);
 
   const handleAdd = useCallback(async (e) => {
     e.preventDefault();
@@ -130,7 +164,27 @@ function PlatformAdminsPage() {
     }
   }, [refetchTenantConfig, tenantDrafts, tenantRows]);
 
-  const error = fetchError || tenantConfigFetchError || mutationError;
+  const handlePlatformOnboardingSave = useCallback(async () => {
+    setSavingPlatformOnboarding(true);
+    setMutationError(null);
+    const { data, error } = await authenticatedRequest('/admin/platform-onboarding-config', {
+      method: 'PUT',
+      data: { config: platformOnboardingDraft },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    setSavingPlatformOnboarding(false);
+    if (error) {
+      setMutationError(data?.message || error);
+      return;
+    }
+    if (data?.success) {
+      refetchPlatformOnboarding();
+    } else {
+      setMutationError(data?.message || 'Failed to save platform onboarding config');
+    }
+  }, [platformOnboardingDraft, refetchPlatformOnboarding]);
+
+  const error = fetchError || tenantConfigFetchError || platformOnboardingFetchError || mutationError;
 
   return (
     <div className="platform-admins-page general">
@@ -200,6 +254,56 @@ function PlatformAdminsPage() {
               </div>
               <button type="button" onClick={handleTenantConfigSave} disabled={savingTenants}>
                 {savingTenants ? 'Saving…' : 'Save tenant settings'}
+              </button>
+            </>
+          )}
+        </div>
+        <div className="platform-admins-onboarding">
+          <div className="platform-admins-onboarding-header">
+            <h2>Platform onboarding defaults</h2>
+            <p>
+              Configure global onboarding steps and per-signup-journey variants.
+              Tenant-specific steps are added from the Root Dashboard.
+            </p>
+          </div>
+          {platformOnboardingLoading ? (
+            <p>Loading platform onboarding…</p>
+          ) : (
+            <>
+              <div className="platform-onboarding-block">
+                <h3>Default steps for everyone</h3>
+                <OnboardingBuilder
+                  value={platformOnboardingDraft.defaults}
+                  onChange={(nextSteps) =>
+                    setPlatformOnboardingDraft((prev) => ({ ...prev, defaults: nextSteps }))
+                  }
+                  context="platform"
+                />
+              </div>
+              <div className="platform-onboarding-variants">
+                {signupOptions
+                  .filter((option) => option !== 'all')
+                  .map((option) => (
+                    <div key={option} className="platform-onboarding-block">
+                      <h3>{option.toUpperCase()} signup-specific steps</h3>
+                      <OnboardingBuilder
+                        value={platformOnboardingDraft.bySignupOption?.[option] || []}
+                        onChange={(nextSteps) =>
+                          setPlatformOnboardingDraft((prev) => ({
+                            ...prev,
+                            bySignupOption: {
+                              ...(prev.bySignupOption || {}),
+                              [option]: nextSteps,
+                            },
+                          }))
+                        }
+                        context="platform"
+                      />
+                    </div>
+                  ))}
+              </div>
+              <button type="button" onClick={handlePlatformOnboardingSave} disabled={savingPlatformOnboarding}>
+                {savingPlatformOnboarding ? 'Saving…' : 'Save platform onboarding'}
               </button>
             </>
           )}
