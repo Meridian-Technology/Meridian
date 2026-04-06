@@ -1,276 +1,472 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
+import { useNotification } from '../../NotificationContext';
+import { useError } from '../../ErrorContext';
+import useAuth from '../../hooks/useAuth';
+import {
+    getOnboardingConfig,
+    searchOnboardingProfiles,
+    submitOnboarding,
+} from './OnboardHelpers';
 import './Onboard.scss';
-import PurpleGradient from '../../assets/PurpleGrad.svg';
-import YellowRedGradient from '../../assets/YellowRedGrad.svg';
-import Loader from '../../components/Loader/Loader.jsx';
-import DragList from './DragList/DragList.jsx';
-import useAuth from '../../hooks/useAuth.js';
-import Recommendation from './Recommendation/Recommendation.jsx';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { onboardUser } from './OnboardHelpers.js';
-import { useError } from '../../ErrorContext.js'; 
-import { useNotification } from '../../NotificationContext.js';
-import { checkUsername } from '../../DBInteractions.js';
-import { useCache } from '../../CacheContext.js';
-import { debounce} from '../../Query.js';
-import check from '../../assets/Icons/Check.svg';
-import waiting from '../../assets/Icons/Waiting.svg';
-import error from '../../assets/circle-warning.svg';
-import unavailable from '../../assets/Icons/Circle-X.svg';
-import CardHeader from '../../components/ProfileCard/CardHeader/CardHeader.jsx';
 
-function Onboard(){
+function isValuePresent(value) {
+    if (value == null) return false;
+    if (typeof value === 'string') return value.trim() !== '';
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+}
+
+function Onboard() {
     const [start, setStart] = useState(false);
-    const [current, setCurrent] = useState(0);
-    const [show, setShow] = useState(0);
-    const [currentTransition, setCurrentTransition] = useState(0);
-    const [containerHeight, setContainerHeight] = useState(175);
+    const [loadingConfig, setLoadingConfig] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [currentStepIndex, setCurrentStepIndex] = useState(0);
+    const [steps, setSteps] = useState([]);
+    const [responses, setResponses] = useState({});
+    const [pictureFile, setPictureFile] = useState(null);
+    const [orgSearchQuery, setOrgSearchQuery] = useState('');
+    const [friendSearchQuery, setFriendSearchQuery] = useState('');
+    const [orgResults, setOrgResults] = useState([]);
+    const [friendResults, setFriendResults] = useState([]);
+    const [searchLoading, setSearchLoading] = useState({ orgs: false, users: false });
+    const [searchError, setSearchError] = useState('');
+    const [configError, setConfigError] = useState('');
+
     const { isAuthenticated, isAuthenticating, user, validateToken } = useAuth();
-    // const { debounce } = useCache();
     const { addNotification } = useNotification();
-    const [userInfo, setUserInfo] = useState(null);
-    const [name, setName] = useState("");
-    const [username, setUsername] = useState(null);
-    const [initialUsername, setInitialUsername] = useState(null);
-    const [sliderValue, setSliderValue] = useState(2);
-    const [isGoogle, setIsGoogle] = useState(null);
-    const [onboarded, setOnboarded] = useState(false);
-    const [usernameValid, setUsernameValid] = useState(0);
-
-    const navigate = useNavigate();
     const { newError } = useError();
-
-    const [buttonActive, setButtonActive] = useState(true);
-
-    const containerRef = useRef(null);
-    const contentRefs = useRef([]);
-
+    const navigate = useNavigate();
     const location = useLocation();
-    const from = location.state?.from?.pathname || '/room/none';
+    const from = location.state?.from?.pathname || '/events-dashboard';
 
+    useEffect(() => {
+        const timer = setTimeout(() => setStart(true), 200);
+        return () => clearTimeout(timer);
+    }, []);
 
-    const [items, setItems] = useState(["outlets", "classroom type", "printer", "table type", "windows"]);
-    const details = {
-        "outlets": "having outlet access from a majority of seats",
-        "classroom type": "ex: lecture hall, classroom, auditorium",
-        "printer": "having a printer in the room",
-        "table type": "ex: small desks, large tables,",
-    }
+    const onboardingStepKeys = useMemo(() => new Set(steps.map((step) => step.key)), [steps]);
 
-    useEffect(()=>{
-        if (containerRef.current) {
-            setContainerHeight(contentRefs.current[0].clientHeight+10);
+    useEffect(() => {
+        if (isAuthenticating) return;
+        if (!isAuthenticated) {
+            navigate('/login');
+            return;
+        }
+        if (user?.onboarded) {
+            navigate(from, { replace: true });
+        }
+    }, [from, isAuthenticated, isAuthenticating, navigate, user]);
+
+    useEffect(() => {
+        if (!isAuthenticated || !user || user.onboarded) return;
+        let cancelled = false;
+        async function loadConfig() {
+            setLoadingConfig(true);
+            setConfigError('');
+            try {
+                const payload = await getOnboardingConfig();
+                if (cancelled) return;
+                if (!payload?.success) {
+                    throw new Error(payload?.message || 'Failed to load onboarding config');
+                }
+                const nextSteps = Array.isArray(payload?.data?.steps) ? payload.data.steps : [];
+                setSteps(nextSteps);
+                const seededResponses = {};
+                if (user.name) seededResponses.name = user.name;
+                if (user.username) seededResponses.username = user.username;
+                setResponses((prev) => ({ ...seededResponses, ...prev }));
+            } catch (error) {
+                if (cancelled) return;
+                setConfigError(error.message || 'Failed to load onboarding config');
+            } finally {
+                if (!cancelled) {
+                    setLoadingConfig(false);
+                }
+            }
+        }
+        loadConfig();
+        return () => {
+            cancelled = true;
+        };
+    }, [isAuthenticated, user]);
+
+    const currentStep = steps[currentStepIndex] || null;
+
+    const stepErrors = useMemo(() => {
+        if (!currentStep) return [];
+        const errors = [];
+        const value = responses[currentStep.key];
+        if (currentStep.required && !isValuePresent(value) && currentStep.type !== 'picture_upload') {
+            errors.push('This step is required.');
+        }
+        if (currentStep.type === 'single_select' && isValuePresent(value) && typeof value !== 'string') {
+            errors.push('Select one option.');
+        }
+        if (currentStep.type === 'multi_select' && isValuePresent(value) && !Array.isArray(value)) {
+            errors.push('Choose one or more options.');
+        }
+        if (currentStep.type === 'number' && isValuePresent(value)) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) {
+                errors.push('Enter a valid number.');
+            }
+        }
+        return errors;
+    }, [currentStep, responses]);
+
+    const canContinue = useMemo(() => {
+        if (!currentStep) return false;
+        if (stepErrors.length > 0) return false;
+        if (!currentStep.required) return true;
+        if (currentStep.type === 'picture_upload') {
+            return true;
+        }
+        return isValuePresent(responses[currentStep.key]);
+    }, [currentStep, responses, stepErrors]);
+
+    const completedCount = useMemo(() => {
+        return steps.filter((step) => {
+            if (step.type === 'picture_upload') return Boolean(pictureFile) || Boolean(user?.picture);
+            return isValuePresent(responses[step.key]);
+        }).length;
+    }, [steps, responses, pictureFile, user?.picture]);
+
+    const handleResponseChange = useCallback((key, value) => {
+        setResponses((prev) => ({
+            ...prev,
+            [key]: value,
+        }));
+    }, []);
+
+    const handleOptionToggle = useCallback((key, value) => {
+        setResponses((prev) => {
+            const current = Array.isArray(prev[key]) ? prev[key] : [];
+            const has = current.includes(value);
+            return {
+                ...prev,
+                [key]: has ? current.filter((entry) => entry !== value) : [...current, value],
+            };
+        });
+    }, []);
+
+    const searchEntities = useCallback(async (type, query) => {
+        setSearchError('');
+        setSearchLoading((prev) => ({ ...prev, [type]: true }));
+        try {
+            const result = await searchOnboardingProfiles(type, query);
+            if (result?.success) {
+                if (type === 'orgs') {
+                    setOrgResults(Array.isArray(result.data) ? result.data : []);
+                } else {
+                    setFriendResults(Array.isArray(result.data) ? result.data : []);
+                }
+            } else {
+                setSearchError(result?.message || 'Search failed');
+            }
+        } catch (error) {
+            setSearchError(error.message || 'Search failed');
+        } finally {
+            setSearchLoading((prev) => ({ ...prev, [type]: false }));
         }
     }, []);
 
-    const validUsername = async (username) => {
-        if (username === null || username === "") {
-            return;
-        }
-        if (username === initialUsername) {
-            setUsernameValid(1);
-            return;
-        }
-        setUsernameValid(0);
-        try{
-            const response = await checkUsername(username);
-            if(response){
-                setUsernameValid(1);
-            } else {
-                setUsernameValid(2);
+    useEffect(() => {
+        if (!steps.some((step) => step.type === 'template_follow_orgs')) return;
+        const timer = setTimeout(() => {
+            searchEntities('orgs', orgSearchQuery);
+        }, 250);
+        return () => clearTimeout(timer);
+    }, [orgSearchQuery, searchEntities, steps]);
+
+    useEffect(() => {
+        if (!steps.some((step) => step.type === 'template_add_friends')) return;
+        const timer = setTimeout(() => {
+            searchEntities('users', friendSearchQuery);
+        }, 250);
+        return () => clearTimeout(timer);
+    }, [friendSearchQuery, searchEntities, steps]);
+
+    const handleSubmit = useCallback(async () => {
+        if (submitting) return;
+        setSubmitting(true);
+        try {
+            const filteredResponses = Object.keys(responses).reduce((acc, key) => {
+                if (!onboardingStepKeys.has(key)) return acc;
+                const value = responses[key];
+                if (!isValuePresent(value)) return acc;
+                acc[key] = value;
+                return acc;
+            }, {});
+            const result = await submitOnboarding({ responses: filteredResponses, pictureFile });
+            if (!result?.success) {
+                throw new Error(result?.message || 'Failed to complete onboarding');
             }
-        } catch (error){
-            addNotification({title: 'Error checking username', message: error.message, type: 'error'});
+            await validateToken();
+            addNotification({
+                title: 'Onboarding complete',
+                message: 'Your profile has been personalized.',
+                type: 'success',
+            });
+            navigate(from, { replace: true });
+        } catch (error) {
+            newError(error, navigate);
+        } finally {
+            setSubmitting(false);
         }
+    }, [addNotification, from, navigate, newError, onboardingStepKeys, pictureFile, responses, submitting, validateToken]);
+
+    const renderStepContent = () => {
+        if (!currentStep) return null;
+        const value = responses[currentStep.key];
+        if (currentStep.type === 'short_text') {
+            return (
+                <input
+                    type="text"
+                    className="onboard-input"
+                    placeholder={currentStep.placeholder || 'Type your answer'}
+                    value={typeof value === 'string' ? value : ''}
+                    onChange={(event) => handleResponseChange(currentStep.key, event.target.value)}
+                />
+            );
+        }
+        if (currentStep.type === 'long_text') {
+            return (
+                <textarea
+                    className="onboard-input onboard-textarea"
+                    placeholder={currentStep.placeholder || 'Type your answer'}
+                    value={typeof value === 'string' ? value : ''}
+                    onChange={(event) => handleResponseChange(currentStep.key, event.target.value)}
+                />
+            );
+        }
+        if (currentStep.type === 'number') {
+            return (
+                <input
+                    type="number"
+                    className="onboard-input"
+                    placeholder={currentStep.placeholder || 'Enter a number'}
+                    value={value ?? ''}
+                    onChange={(event) => handleResponseChange(currentStep.key, event.target.value)}
+                />
+            );
+        }
+        if (currentStep.type === 'single_select') {
+            return (
+                <div className="onboard-chip-list">
+                    {(currentStep.options || []).map((option) => (
+                        <button
+                            type="button"
+                            key={option.value}
+                            className={`onboard-chip ${value === option.value ? 'selected' : ''}`}
+                            onClick={() => handleResponseChange(currentStep.key, option.value)}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+            );
+        }
+        if (currentStep.type === 'multi_select') {
+            const selectedValues = Array.isArray(value) ? value : [];
+            return (
+                <div className="onboard-chip-list">
+                    {(currentStep.options || []).map((option) => (
+                        <button
+                            type="button"
+                            key={option.value}
+                            className={`onboard-chip ${selectedValues.includes(option.value) ? 'selected' : ''}`}
+                            onClick={() => handleOptionToggle(currentStep.key, option.value)}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+            );
+        }
+        if (currentStep.type === 'picture_upload') {
+            return (
+                <div className="onboard-picture-upload">
+                    <label className="onboard-picture-input">
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) => {
+                                const file = event.target.files?.[0] || null;
+                                setPictureFile(file);
+                            }}
+                        />
+                        <span>{pictureFile ? pictureFile.name : 'Choose a profile picture'}</span>
+                    </label>
+                    {(pictureFile || user?.picture) && (
+                        <p className="helper">
+                            {pictureFile ? 'New image selected. It will upload on submit.' : 'Current profile image will be kept.'}
+                        </p>
+                    )}
+                </div>
+            );
+        }
+        if (currentStep.type === 'template_follow_orgs') {
+            const selected = Array.isArray(value) ? value : [];
+            return (
+                <div className="onboard-template-step">
+                    <input
+                        type="text"
+                        className="onboard-input"
+                        placeholder="Search organizations"
+                        value={orgSearchQuery}
+                        onChange={(event) => setOrgSearchQuery(event.target.value)}
+                    />
+                    {searchLoading.orgs && <p className="helper">Searching organizations...</p>}
+                    <div className="onboard-search-list">
+                        {orgResults.map((org) => (
+                            <button
+                                type="button"
+                                key={org._id}
+                                className={`onboard-search-item ${selected.includes(org._id) ? 'selected' : ''}`}
+                                onClick={() => {
+                                    const has = selected.includes(org._id);
+                                    const next = has ? selected.filter((id) => id !== org._id) : [...selected, org._id];
+                                    handleResponseChange(currentStep.key, next);
+                                }}
+                            >
+                                <span className="title">{org.name}</span>
+                                {org.description && <span className="subtitle">{org.description}</span>}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+        if (currentStep.type === 'template_add_friends') {
+            const selected = Array.isArray(value) ? value : [];
+            return (
+                <div className="onboard-template-step">
+                    <input
+                        type="text"
+                        className="onboard-input"
+                        placeholder="Search users"
+                        value={friendSearchQuery}
+                        onChange={(event) => setFriendSearchQuery(event.target.value)}
+                    />
+                    {searchLoading.users && <p className="helper">Searching users...</p>}
+                    <div className="onboard-search-list">
+                        {friendResults.map((person) => (
+                            <button
+                                type="button"
+                                key={person._id}
+                                className={`onboard-search-item ${selected.includes(person._id) ? 'selected' : ''}`}
+                                onClick={() => {
+                                    const has = selected.includes(person._id);
+                                    const next = has ? selected.filter((id) => id !== person._id) : [...selected, person._id];
+                                    handleResponseChange(currentStep.key, next);
+                                }}
+                            >
+                                <span className="title">{person.name || person.username}</span>
+                                <span className="subtitle">@{person.username}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+        return null;
     };
 
-    const debounced = useCallback(debounce(validUsername, 500),[]);
-
-    useEffect(() => {
-        setTimeout(() => {
-            setStart(true);
-        }, 500);
-    },[]);
-    
-    useEffect(() => {
-        if(isAuthenticating){
-            return;
-        }
-        if (!isAuthenticated) {
-            navigate('/login');
-        } else {
-            if(user){
-                if(user.onboarded && (!onboarded)){
-                    navigate(from, {replace: true});
-                }
-                setUserInfo(user);
-                setIsGoogle(user.googleId);
-                console.log(user);
-                setUsername(user.googleId ? user.username : null);
-                setInitialUsername(user.googleId ? user.username : null);
-                setName(user.name);
-            }
-        }
-    }, [isAuthenticating, isAuthenticated, user]);
-
-    useEffect(() => {
-        if (username === null || username === "") {
-            setUsernameValid(3);
-            return;
-        }
-        if (username === initialUsername) {
-            setUsernameValid(1);
-            return;
-        }
-        setUsernameValid(0);
-        debounced(username);
-    }, [username]);
-
-    useEffect(()=>{
-        if(current === 0){return;}
-        setTimeout(() => {
-            setCurrentTransition(currentTransition+1);
-        }, 500);
-        if (contentRefs.current[current] && current !== 0) {
-            setTimeout(() => {
-                setContainerHeight(contentRefs.current[current].offsetHeight);
-            }, 500);
-            console.log(contentRefs.current[current].offsetHeight);
-            console.log(current);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [current]);
-
-    async function handleOnboardUser(name, username, items, sliderValue){
-        try{
-            const response = await onboardUser(name, username, items, sliderValue);
-            if(response.success){
-                setOnboarded(true);
-                await validateToken();
-            }
-            
-        } catch (error){
-            newError(error, navigate);
-        }
+    if (isAuthenticating || loadingConfig) {
+        return (
+            <div className={`onboard onboard-v2 ${start ? 'visible' : ''}`}>
+                <div className="onboard-shell">
+                    <p>Loading onboarding...</p>
+                </div>
+            </div>
+        );
     }
 
-    useEffect(()=>{
-        if(show === 0){return;}
-        setTimeout(() => {
-            setCurrent(current+1);
-        }, 500);
-
-        if(current === 3){
-            try{
-                handleOnboardUser(name, username, items, sliderValue);
-            } catch (error){
-                newError(error, navigate);
-            }
-        }
-
-        if(current === 4){
-            navigate(from, {replace: true});
-        }
-
-        setButtonActive(false);
-        setTimeout(() => {
-            setButtonActive(true);
-        }, 1000);
-    }, [show]);
-
-
-    const [viewport, setViewport] = useState("100vh");
-
-    useEffect(() => {
-        setViewport((window.innerHeight) + 'px');
-    },[]);
-
-    if(isAuthenticating || !userInfo){
-        return(
-            <div className="onboard"></div>
-        )
+    if (configError) {
+        return (
+            <div className={`onboard onboard-v2 ${start ? 'visible' : ''}`}>
+                <div className="onboard-shell">
+                    <h2>Unable to load onboarding</h2>
+                    <p>{configError}</p>
+                    <button type="button" onClick={() => navigate('/events-dashboard')}>
+                        Back to dashboard
+                    </button>
+                </div>
+            </div>
+        );
     }
 
-    const handleNameChange = (e) => {
-        setName(e.target.value);
-    }
-
-    const handleUsernameChange = (e) => {
-        setUsername(e.target.value);
+    if (!currentStep) {
+        return (
+            <div className={`onboard onboard-v2 ${start ? 'visible' : ''}`}>
+                <div className="onboard-shell">
+                    <h2>Ready to finish onboarding?</h2>
+                    <p>We’ll personalize your experience with the choices you already made.</p>
+                    <button type="button" onClick={handleSubmit} disabled={submitting}>
+                        {submitting ? 'Finishing...' : 'Finish onboarding'}
+                    </button>
+                </div>
+            </div>
+        );
     }
 
     return (
-        <div className={`onboard ${start ? "visible" : ""}`} style={{height: viewport}}>
-            <img src={YellowRedGradient} alt="" className="yellow-red" />
-            <img src={PurpleGradient} alt="" className="purple" />
+        <div className={`onboard onboard-v2 ${start ? 'visible' : ''}`}>
+            <div className="onboard-shell">
+                <header className="onboard-header">
+                    <p className="kicker">Personalize your account</p>
+                    <h2>{currentStep.title}</h2>
+                    {currentStep.description && <p className="description">{currentStep.description}</p>}
+                </header>
 
-            <div className="content" style={{ height: containerHeight}} ref={containerRef}>
-                <div >
-                    { current === 0 &&
-                        <div className={`content ${show === 1 ? "going": ""}`} ref={el => contentRefs.current[0] = el}>
-                            <Loader/>
-                            <h2>welcome to study compass</h2>
-                            <p>Study Compass is a student-created tool designed to help students find study spaces according to their preferences</p>
-                        </div>
-                    }
-                    { current === 1 &&
-                        <div className={`content ${show === 2 ? "going": ""} ${1 === currentTransition ? "": "beforeOnboard"}`} ref={el => contentRefs.current[1] = el}>
-                            <Loader/>
-                            <h2>what should we call you?</h2>
-                            <p>This is the name you will be visible to other users as (putting you real name here is advised):</p>
-                            <input type="text" value={name} onChange={handleNameChange} className="text-input"/>
-                            { isGoogle && 
-                                <div className="content">
-                                    
-                                    <h2>set your username</h2>
-                                    <p>Since you signed up with Google, we generated a username for you, feel free to change it below:</p>
-                                    <div className="username-input">
-                                        <div className="status">
-                                            { usernameValid === 0 && <div className="checking"><img src={waiting} alt="" /><p>checking username...</p></div>}
-                                            { usernameValid === 1 && <div className="available"><img src={check} alt="" /><p>username is available</p></div>}
-                                            { usernameValid === 2 && <div className="taken"><img src={unavailable} alt="" /><p>username is taken</p></div>}
-                                            { usernameValid === 3 && <div className="invalid"><img src={error} alt="" /><p>invalid username</p></div>}   
-                                        </div>
-                                        <input type="text" value={username} onChange={handleUsernameChange} className="text-input"/>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    }
-                    { current === 2  &&
-                        <div className={`content ${show === 3 ? "going": ""} ${2 === currentTransition ? "": "beforeOnboard"}`} ref={el => contentRefs.current[2] = el}>
-                            <h2>rank your classroom preferences</h2>
-                            <p>What features do you find most important in your study spaces? Rank them from top to bottom.</p>
-                            <div className="preference-list">
-                                <p className="most">most important</p>
-                                <DragList items={items} setItems={setItems} details={details}/>
-                                <p className="least">least important</p>
-                            </div>
-                        </div>
-                    }
-                    { current === 3 &&
-                        <div className={`content ${current === 4 ? "going": ""} ${3 === currentTransition ? "": "beforeOnboard"}`} ref={el => contentRefs.current[3] = el}>
-                            <Recommendation sliderValue={sliderValue} setSliderValue={setSliderValue}/>
-                        </div>
-                    }
-                    { current === 4 &&
-                        <div className={`content ${current === 5 ? "going": ""} ${4 === currentTransition ? "": "beforeOnboard"}`} ref={el => contentRefs.current[4] = el}>
-                            <h2>welcome to study compass, <br></br>{userInfo.name}!</h2>
-                            <p>Here's your study compass id, make sure to hold onto it!</p>
-                            <div className="card-container">
-                                <CardHeader userInfo={userInfo} settings={false}/>
-                            </div>
-                        </div>
-                    }
-                </div>  
+                <div className="onboard-progress">
+                    <p>{completedCount} of {steps.length} steps completed</p>
+                    <div className="bar">
+                        <span style={{ width: `${Math.max((completedCount / Math.max(steps.length, 1)) * 100, 8)}%` }} />
+                    </div>
+                </div>
+
+                {renderStepContent()}
+
+                {searchError && <p className="error-text">{searchError}</p>}
+                {stepErrors.length > 0 && <p className="error-text">{stepErrors[0]}</p>}
+
+                <div className="onboard-actions">
+                    <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setCurrentStepIndex((prev) => Math.max(prev - 1, 0))}
+                        disabled={currentStepIndex === 0}
+                    >
+                        <Icon icon="ep:arrow-left" />
+                        Back
+                    </button>
+                    {currentStepIndex < steps.length - 1 ? (
+                        <button
+                            type="button"
+                            className="primary"
+                            onClick={() => setCurrentStepIndex((prev) => Math.min(prev + 1, steps.length - 1))}
+                            disabled={!canContinue}
+                        >
+                            Next
+                            <Icon icon="ep:arrow-right" />
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            className="primary"
+                            onClick={handleSubmit}
+                            disabled={!canContinue || submitting}
+                        >
+                            {submitting ? 'Saving...' : 'Complete onboarding'}
+                        </button>
+                    )}
+                </div>
             </div>
-            
-                <button className={`${ current !== 1 || (name !== "" && (!isGoogle || usernameValid === 1)) ? buttonActive ? "":"deactivated" : "deactivated"}`} onClick={()=>{setShow(show+1)}}>
-                    {current === 4  ? "finish" : "next"}
-                </button>
-                
         </div>
-    )
+    );
 }
 
 export default Onboard;

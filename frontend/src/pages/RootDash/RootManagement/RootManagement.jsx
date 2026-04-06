@@ -1,10 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import './RootManagement.scss';
 import AdminGradient from '../../../assets/Gradients/AdminGrad.png';
 import useAuth from '../../../hooks/useAuth';
-import HeaderContainer from '../../../components/HeaderContainer/HeaderContainer';
 import SiteHealth from '../../Admin/General/SiteHealth/SiteHealth';
-import SimpleAnalyticsChart from '../../../components/Analytics/VisitsChart/SimpleAnalyticsChart';
 import BeaconLogo from '../../../assets/Brand Image/SolutionLogos/Beacon.svg';
 import CompassLogo from '../../../assets/Brand Image/SolutionLogos/Compass.svg';
 import AtlasLogo from '../../../assets/Brand Image/SolutionLogos/Atlas.svg';
@@ -37,6 +35,13 @@ function RootManagement(){
                             <button onClick={()=>navigate('/feature-admin/compass')}>Manage</button>
                         </div>
                     </div>
+                </div>
+                <div className="onboarding-shortcut">
+                    <h2>Onboarding</h2>
+                    <p>Configure tenant-specific onboarding fields, templates, and ordering.</p>
+                    <button type="button" onClick={() => navigate('/root-dashboard?page=6')}>
+                        Open tenant onboarding builder
+                    </button>
                 </div>
                 <SiteHealth />
             </div>

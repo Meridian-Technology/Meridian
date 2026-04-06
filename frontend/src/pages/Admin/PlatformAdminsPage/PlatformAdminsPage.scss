@@ -122,6 +122,24 @@
       }
     }
   }
+
+  .platform-admins-onboarding {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    .builder-header {
+      margin-bottom: 0.75rem;
+      h2 {
+        margin: 0;
+      }
+      p {
+        margin: 0.35rem 0 0;
+        color: #666;
+      }
+    }
+  }
   .platform-admins-list {
     list-style: none;
     padding: 0;

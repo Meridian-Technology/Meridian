@@ -130,7 +130,7 @@ function Room() {
         if(isAuthenticating){
             return;
         }
-        if(isAuthenticated){
+        if(isAuthenticated && user){
             if(user.onboarded === false){
                 navigate('/onboard');
             }

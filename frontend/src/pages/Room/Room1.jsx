@@ -260,7 +260,8 @@ function Room({hideHeader = false, urlType = 'embedded'}) {
                     // In embedded mode, we can't navigate away, so just return
                     return;
                 } else {
-                    navigate('/events-dashboard');
+                    navigate('/onboard');
+                    return;
                 }
             }
         }

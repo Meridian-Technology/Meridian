@@ -41,6 +41,14 @@ const userSchema = new mongoose.Schema({
         type:String,
         trim:true,
     },
+    onboardingResponses: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {},
+    },
+    onboardingCompletedAt: {
+        type: Date,
+        default: null,
+    },
     onboarded:{
         type: Boolean,
         default:false,

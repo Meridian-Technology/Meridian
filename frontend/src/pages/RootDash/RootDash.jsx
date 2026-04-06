@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import RootManagement from './RootManagement/RootManagement';
 import ManageFlow from './ManageFlow/ManageFlow';
@@ -7,6 +7,7 @@ import RSSManagement from './RSSManagement/RSSManagement';
 import RoomManager from './RoomManager/RoomManager';
 import ResourcesManagement from './ResourcesManagement/ResourcesManagement';
 import NoticeManagement from './NoticeManagement/NoticeManagement';
+import TenantOnboarding from './TenantOnboarding/TenantOnboarding';
 // import BadgeManager from './BadgeManager/BadgeManager';
 import eventsLogo from '../../assets/Brand Image/EventsLogo.svg';
 
@@ -42,6 +43,11 @@ function RootDash(){
             label: 'Notice', 
             icon: 'mdi:bullhorn',
             element: <NoticeManagement/>
+        },
+        {
+            label: 'Onboarding',
+            icon: 'mdi:account-wrench',
+            element: <TenantOnboarding/>
         },
     ];
 

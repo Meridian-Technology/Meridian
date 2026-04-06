@@ -1,19 +1,31 @@
 import apiRequest from '../../utils/postRequest';
 
-const onboardUser = async (name, username, classroom, recommendation) => {
-    try{
-        let classroomPreferences = "";
-        for(let i = 0; i  < classroom.length ; i++){
-            classroomPreferences += classroom[i][0];
-        }
+const getOnboardingConfig = async () => {
+    return apiRequest('/onboarding-config', null, { method: 'GET' });
+};
 
-        const responseBody = await apiRequest('/update-user', {name, username, classroom : classroomPreferences, recommendation, onboarded : true});
-        console.log(responseBody);
-        return responseBody;
+const searchOnboardingProfiles = async (type, query = '', limit = 12) => {
+    return apiRequest('/onboarding-profile', null, {
+        method: 'GET',
+        params: { type, query, limit },
+    });
+};
 
-    } catch (error){
-        throw(error);
+// Backward-compatible alias for earlier imports.
+const searchOnboardingEntities = searchOnboardingProfiles;
+
+const submitOnboarding = async ({ responses, pictureFile }) => {
+    const body = new FormData();
+    body.append('responses', JSON.stringify(responses || {}));
+    if (pictureFile) {
+        body.append('picture', pictureFile);
     }
-}
+    return apiRequest('/submit-onboarding', body, { method: 'POST' });
+};
 
-export { onboardUser }
+export {
+    getOnboardingConfig,
+    searchOnboardingProfiles,
+    searchOnboardingEntities,
+    submitOnboarding,
+};
