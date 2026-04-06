@@ -107,7 +107,8 @@ Delivery preference order: AVIF -> WebP -> JPEG.
 - Max upload size: 10 MB.
 - Max decoded dimensions: 6000 x 6000.
 - Max decoded pixels: 20 MP.
-- Accepted MIME: JPEG/PNG/WebP (GIF only if explicitly kept static-first-frame).
+- Accepted MIME: JPEG/PNG/WebP.
+- GIF uploads are not supported in v2.
 
 ### Normalization
 
@@ -148,6 +149,16 @@ Clients should request a semantic variant (`thumb`, `card`, `full`, `hero`) inst
 
 If the browser supports AVIF/WebP, deliver those. Otherwise JPEG fallback.
 
+### Access control (recommended standard for this platform)
+
+Because these assets are primarily internal to Meridian and not intended for broad external reuse:
+
+- Keep S3 objects private.
+- Serve through CDN with signed URLs/cookies (`private_signed` mode).
+- Use short-lived signatures and immutable object keys.
+
+This is the standard default for multi-tenant SaaS where images are mostly app-internal.
+
 ---
 
 ## Cache and lifecycle policy
@@ -156,10 +167,10 @@ If the browser supports AVIF/WebP, deliver those. Otherwise JPEG fallback.
 - Manifest/API responses: shorter TTL (for example 60 seconds to 5 minutes).
 - Enable lifecycle rules for superseded versions after retention window.
 
-Retention recommendation:
+Retention policy:
 
 - Keep previous version for 30 days after replacement.
-- Delete older superseded versions after 90 days.
+- Delete superseded versions after the 30-day retention window.
 
 ---
 
@@ -204,4 +215,6 @@ High-priority routes:
 3. Update read paths to prefer v2 manifest-derived variant URLs.
 4. Backfill legacy images (see `backend/docs/IMAGE_MIGRATION_PLAN.md`).
 5. Remove legacy writes and clean old objects after validation window.
+
+Event image migration is intentionally staged until Events-Backend alignment is complete.
 

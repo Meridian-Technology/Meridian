@@ -1,9 +1,12 @@
 const {
   IMAGE_ENTITY_TYPES,
   IMAGE_ROLE_PRESETS,
+  SUPPORTED_INPUT_MIME_TYPES,
+  DELIVERY_ACCESS_MODE,
   buildImageObjectPrefix,
   buildVariantObjectKey,
   buildImageUploadPlan,
+  isSupportedInputMimeType,
   normalizeTenantKey,
 } = require('../../services/imagePolicyService');
 
@@ -76,5 +79,12 @@ describe('imagePolicyService', () => {
       assetId: 'asset-3',
       variants: ['invalid_variant'],
     })).toThrow('Unsupported variant');
+  });
+
+  test('supports only approved input mime types and private delivery mode', () => {
+    expect(SUPPORTED_INPUT_MIME_TYPES).toEqual(['image/jpeg', 'image/png', 'image/webp']);
+    expect(isSupportedInputMimeType('image/jpeg')).toBe(true);
+    expect(isSupportedInputMimeType('image/gif')).toBe(false);
+    expect(DELIVERY_ACCESS_MODE.default).toBe('private_signed');
   });
 });

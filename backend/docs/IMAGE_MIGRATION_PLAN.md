@@ -15,18 +15,18 @@ This runbook migrates existing image URLs into the v2 tenant-aware structure wit
 
 ## Scope
 
-### In-scope legacy fields
+### In-scope legacy fields (current wave)
 
 - `User.picture`
 - `Org.org_profile_image`
 - `Org.org_banner_image`
 - `Classroom.image`
-- Event image fields in `backend/events` when module is available
+- Event image fields are deferred to a later wave after Events-Backend alignment
 
 ### Out-of-scope
 
 - Client-side hardcoded static asset paths in frontend build artifacts
-- Third-party URLs not owned by Meridian storage (unless explicitly imported)
+- Third-party/non-bucket URLs (do not import in this migration)
 
 ---
 
@@ -64,13 +64,13 @@ This makes migration restart-safe and observable.
 
 Gate to continue:
 
-- >99% of references are resolvable or intentionally skipped by policy.
+- >99% of bucket-owned references are resolvable or intentionally skipped by policy.
 
 ---
 
 ## Phase 1: Build migration queue
 
-For each resolvable legacy URL create a `pending` job.
+For each bucket-owned resolvable legacy URL create a `pending` job.
 
 Deduplicate by `(tenantKey, entityType, entityId, fieldName, legacyUrl)` to avoid duplicate work.
 
@@ -82,6 +82,7 @@ For each job:
 
 1. Download legacy image bytes.
 2. Decode and validate (size/dimension/pixel limits).
+   - GIF inputs are converted to static first-frame output (animation is not preserved).
 3. Select role from field mapping:
    - `User.picture` -> `user_avatar`
    - `Org.org_profile_image` -> `org_profile`
@@ -147,6 +148,8 @@ After log-confirmed inactivity window:
 2. Keep tombstone log for deletions (object key + timestamp + job id).
 3. Remove legacy URL fields after final validation (optional, can be deferred).
 
+Retention: keep superseded legacy objects for 30 days, then delete.
+
 ---
 
 ## Rollback plan
@@ -171,11 +174,11 @@ Because legacy values are not deleted early, rollback is low-risk.
 
 ---
 
-## Open decisions required before execution
+## Decisions locked for execution
 
-1. Should migration import external non-S3 URLs, or leave them untouched?
-2. What retention window is required for legacy originals after cutover?
-3. Are animated GIFs required, or should we convert to static first frame?
-4. Do we want signed/private delivery for any entity roles (for example internal-only room photos)?
-5. Should event images be migrated in this same wave, or after Events-Backend alignment?
+1. Migrate bucket-owned assets only.
+2. Legacy retention window is 30 days.
+3. No GIF animation support; convert to static first frame when encountered.
+4. Delivery defaults to private signed access.
+5. Event image migration is staged after Events-Backend alignment.
 

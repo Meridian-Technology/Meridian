@@ -9,6 +9,16 @@ const IMAGE_ENTITY_TYPES = Object.freeze({
 
 const IMAGE_FORMATS = Object.freeze(['avif', 'webp', 'jpeg']);
 const DEFAULT_DELIVERY_FORMAT_ORDER = Object.freeze(['avif', 'webp', 'jpeg']);
+const SUPPORTED_INPUT_MIME_TYPES = Object.freeze([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
+
+const DELIVERY_ACCESS_MODE = Object.freeze({
+  default: 'private_signed',
+  description: 'Private S3 objects delivered through signed CDN URLs/cookies',
+});
 
 const POLICY_LIMITS = Object.freeze({
   maxUploadBytes: 10 * 1024 * 1024,
@@ -105,6 +115,10 @@ function assertRolePreset(role) {
 
 function createAssetId() {
   return crypto.randomUUID();
+}
+
+function isSupportedInputMimeType(mimeType) {
+  return SUPPORTED_INPUT_MIME_TYPES.includes(String(mimeType || '').toLowerCase());
 }
 
 function buildImageObjectPrefix({
@@ -239,7 +253,9 @@ function buildImageUploadPlan({
 module.exports = {
   IMAGE_ENTITY_TYPES,
   IMAGE_FORMATS,
+  SUPPORTED_INPUT_MIME_TYPES,
   DEFAULT_DELIVERY_FORMAT_ORDER,
+  DELIVERY_ACCESS_MODE,
   POLICY_LIMITS,
   IMAGE_ROLE_PRESETS,
   normalizeTenantKey,
@@ -247,4 +263,5 @@ module.exports = {
   buildVariantObjectKey,
   buildImageUploadPlan,
   createAssetId,
+  isSupportedInputMimeType,
 };
