@@ -36,6 +36,12 @@ const EventQuickLook = ({ org, canManageEvents = false }) => {
     const { showEventDashboard } = useDashboardOverlay();
     const orgId = org?.org?.overview?._id;
     const upcomingEvents = useFetch(`/get-my-events?orgId=${orgId}&type=${selectedTab === "upcoming" ? "future" : "pending"}&sort=asc&limit=5`);
+    const assigneeSummary = useFetch(
+        orgId && canManageEvents
+            ? `/org-event-management/${orgId}/tasks/event-assignee-summary`
+            : null
+    );
+    const assigneesByEventId = assigneeSummary.data?.data?.assigneesByEventId || {};
 
     const handleOpenEventDashboard = (event) => {
         if (canManageEvents && orgId) {
@@ -68,6 +74,7 @@ const EventQuickLook = ({ org, canManageEvents = false }) => {
                             showHosting={true}
                             showHostingType={false}
                             onOpenDashboard={handleOpenEventDashboard}
+                            taskAssignees={assigneesByEventId[String(event._id)]}
                             extraInfo={
                             <div className="row live-event-info">
                                 <div>

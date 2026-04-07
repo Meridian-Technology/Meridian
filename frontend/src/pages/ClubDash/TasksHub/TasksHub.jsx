@@ -4,9 +4,29 @@ import { useFetch } from '../../../hooks/useFetch';
 import apiRequest from '../../../utils/postRequest';
 import { useNotification } from '../../../NotificationContext';
 import Popup from '../../../components/Popup/Popup';
+import SharedTaskBoard from '../../../components/TaskBoard/SharedTaskBoard';
+import TasksHubTaskListCard from '../../../components/TaskBoard/cards/TasksHubTaskListCard';
+import TasksHubTaskKanbanCard from '../../../components/TaskBoard/cards/TasksHubTaskKanbanCard';
+import TaskAssigneePicker from '../../../components/TaskWorkspace/TaskAssigneePicker';
+import TaskDetailPanel from '../../../components/TaskWorkspace/TaskDetailPanel';
+import TaskDetailSheet, {
+    getTaskDetailSheetPanelWidthPx,
+    TASK_DETAIL_SHEET_PANEL_MAX_PX
+} from '../../../components/TaskWorkspace/TaskDetailSheet';
+import TaskDetailFull from '../../../components/TaskWorkspace/TaskDetailFull';
+import TaskBoardColumnsSettings from '../../../components/TaskWorkspace/TaskBoardColumnsSettings';
+import { buildTaskDraft, ownerUserFromMembers } from '../../../components/TaskWorkspace/taskWorkspaceUtils';
+import {
+    DEFAULT_TASK_BOARD_STATUSES,
+    formatTaskStatusLabel,
+    pickFirstActiveKey,
+    pickFirstDoneKey,
+    pickFirstBacklogKey
+} from '../../../constants/taskBoardDefaults';
+import {useGradient} from '../../../hooks/useGradient';
 import './TasksHub.scss';
 
-const KANBAN_STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+const TASK_BOARD_VIEW_STORAGE_KEY = 'clubdash:task-board:view-mode';
 
 const DEFAULT_FORM = {
     title: '',
@@ -32,30 +52,17 @@ function formatDate(dateLike) {
     return date.toLocaleString();
 }
 
-function formatStatusLabel(status) {
-    return String(status || '')
-        .split('_')
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ');
-}
-
 function ownerLabel(task) {
     return task.ownerUserId?.name || task.ownerUserId?.username || 'Unassigned';
 }
 
-function appendAgentDebugLog(entry) {
-    if (typeof window === 'undefined') return;
-    fetch('/api/_agent-debug-log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            ...entry,
-            timestamp: Date.now()
-        })
-    }).catch(() => {});
+function readStoredViewMode() {
+    if (typeof window === 'undefined') return 'list';
+    const stored = window.localStorage.getItem(TASK_BOARD_VIEW_STORAGE_KEY);
+    return stored === 'kanban' || stored === 'list' ? stored : 'list';
 }
 
-function TasksHub({ orgId, expandedClass }) {
+function TasksHub({ orgId, expandedClass, clubName = '' }) {
     const { addNotification } = useNotification();
     const [filters, setFilters] = useState({
         status: 'all',
@@ -70,10 +77,27 @@ function TasksHub({ orgId, expandedClass }) {
     const [form, setForm] = useState(DEFAULT_FORM);
     const [saving, setSaving] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [viewMode, setViewMode] = useState('list');
-    const [draggingTaskId, setDraggingTaskId] = useState(null);
-    const [dropTargetStatus, setDropTargetStatus] = useState(null);
+    const [viewMode, setViewMode] = useState(() => readStoredViewMode());
     const [optimisticStatusByTaskId, setOptimisticStatusByTaskId] = useState({});
+    const [detailMode, setDetailMode] = useState('closed');
+    const [selectedTaskId, setSelectedTaskId] = useState(null);
+    const [taskDraft, setTaskDraft] = useState(() => buildTaskDraft({ title: '', status: 'todo' }, () => 'todo'));
+    const [detailSaving, setDetailSaving] = useState(false);
+    const [detailError, setDetailError] = useState('');
+    const [assigningTaskId, setAssigningTaskId] = useState(null);
+    const [showBoardSettings, setShowBoardSettings] = useState(false);
+    const [statusOverrideByTaskId, setStatusOverrideByTaskId] = useState({});
+    const [assigneeOverrideByTaskId, setAssigneeOverrideByTaskId] = useState({});
+    const taskSheetOpen = detailMode === 'sheet';
+    const [taskSheetPadPx, setTaskSheetPadPx] = useState(TASK_DETAIL_SHEET_PANEL_MAX_PX);
+
+    useEffect(() => {
+        if (!taskSheetOpen) return undefined;
+        const next = () => setTaskSheetPadPx(getTaskDetailSheetPanelWidthPx());
+        next();
+        window.addEventListener('resize', next);
+        return () => window.removeEventListener('resize', next);
+    }, [taskSheetOpen]);
 
     const query = useMemo(() => {
         const params = new URLSearchParams();
@@ -90,8 +114,42 @@ function TasksHub({ orgId, expandedClass }) {
 
     const hubEndpoint = orgId ? `/org-event-management/${orgId}/tasks/hub?${query}` : null;
     const { data, loading, error, refetch } = useFetch(hubEndpoint);
+    const boardStatusesEndpoint = orgId ? `/org-event-management/${orgId}/task-board-statuses` : null;
+    const { data: boardStatusesData, refetch: refetchBoardStatuses } = useFetch(boardStatusesEndpoint);
+    const membersEndpoint = orgId ? `/org-roles/${orgId}/members` : null;
+    const { data: membersData } = useFetch(membersEndpoint);
+    const members = membersData?.members || [];
 
-    const tasks = useMemo(() => {
+    const boardStatuses = useMemo(() => {
+        const list = boardStatusesData?.data?.statuses;
+        return Array.isArray(list) && list.length ? list : DEFAULT_TASK_BOARD_STATUSES;
+    }, [boardStatusesData]);
+
+    const kanbanColumnKeys = useMemo(() => boardStatuses.map((s) => s.key), [boardStatuses]);
+
+    const formatStatusLabel = useCallback(
+        (status) => formatTaskStatusLabel(status, boardStatuses),
+        [boardStatuses]
+    );
+
+    const activeStatusKey = useMemo(() => pickFirstActiveKey(boardStatuses), [boardStatuses]);
+    const doneStatusKey = useMemo(() => pickFirstDoneKey(boardStatuses), [boardStatuses]);
+    const activeQuickLabel = useMemo(
+        () => boardStatuses.find((s) => s.key === activeStatusKey)?.label || 'Active',
+        [boardStatuses, activeStatusKey]
+    );
+    const doneQuickLabel = useMemo(
+        () => boardStatuses.find((s) => s.key === doneStatusKey)?.label || 'Done',
+        [boardStatuses, doneStatusKey]
+    );
+
+    const detailTaskUrl =
+        orgId && selectedTaskId && detailMode !== 'closed'
+            ? `/org-event-management/${orgId}/tasks/hub/${selectedTaskId}`
+            : null;
+    const { data: detailTaskData, refetch: refetchDetailTask } = useFetch(detailTaskUrl);
+
+    const serverTasks = useMemo(() => {
         const rawTasks = data?.data?.tasks || [];
         const byId = new Map();
         rawTasks.forEach((task) => {
@@ -110,6 +168,18 @@ function TasksHub({ orgId, expandedClass }) {
         });
         return Array.from(byId.values());
     }, [data]);
+
+    const displayTasks = useMemo(
+        () =>
+            serverTasks.map((t) => {
+                const id = String(t._id);
+                if (Object.prototype.hasOwnProperty.call(assigneeOverrideByTaskId, id)) {
+                    return { ...t, ownerUserId: assigneeOverrideByTaskId[id] };
+                }
+                return t;
+            }),
+        [serverTasks, assigneeOverrideByTaskId]
+    );
     const summary = data?.data?.summary || {
         total: 0,
         overdue: 0,
@@ -119,76 +189,97 @@ function TasksHub({ orgId, expandedClass }) {
 
     const eventsById = useMemo(() => {
         const map = new Map();
-        tasks.forEach((task) => {
+        displayTasks.forEach((task) => {
             if (task.eventId?._id) {
                 map.set(String(task.eventId._id), task.eventId.name || 'Untitled event');
             }
         });
         return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-    }, [tasks]);
+    }, [displayTasks]);
 
     const ownersById = useMemo(() => {
         const map = new Map();
-        tasks.forEach((task) => {
+        displayTasks.forEach((task) => {
             if (task.ownerUserId?._id) {
                 const label = ownerLabel(task);
                 map.set(String(task.ownerUserId._id), label);
             }
         });
         return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-    }, [tasks]);
+    }, [displayTasks]);
 
     const getTaskStatus = useCallback((task) => {
         if (!task?._id) return task?.effectiveStatus || task?.status || 'todo';
-        return optimisticStatusByTaskId[String(task._id)] || task.effectiveStatus || task.status || 'todo';
-    }, [optimisticStatusByTaskId]);
+        const id = String(task._id);
+        const optimistic = optimisticStatusByTaskId[id];
+        if (optimistic != null) return optimistic;
+        if (Object.prototype.hasOwnProperty.call(statusOverrideByTaskId, id)) {
+            return statusOverrideByTaskId[id];
+        }
+        return task.effectiveStatus || task.status || 'todo';
+    }, [optimisticStatusByTaskId, statusOverrideByTaskId]);
+
+    const boardSortedTasks = useMemo(() => {
+        const keys = kanbanColumnKeys;
+        const colOf = (t) => {
+            let k = getTaskStatus(t);
+            if (k === 'blocked') k = activeStatusKey || keys[0];
+            return k;
+        };
+        const colIndex = (k) => {
+            const i = keys.indexOf(k);
+            return i >= 0 ? i : keys.length;
+        };
+        return [...displayTasks].sort((a, b) => {
+            const c = colIndex(colOf(a)) - colIndex(colOf(b));
+            if (c !== 0) return c;
+            const ra = Number(a.boardRank);
+            const rb = Number(b.boardRank);
+            const r = (Number.isFinite(ra) ? ra : 0) - (Number.isFinite(rb) ? rb : 0);
+            if (r !== 0) return r;
+            return String(a._id).localeCompare(String(b._id));
+        });
+    }, [displayTasks, getTaskStatus, kanbanColumnKeys, activeStatusKey]);
 
     const groupedByStatus = useMemo(() => {
-        const groups = KANBAN_STATUSES.reduce((acc, status) => {
+        const groups = kanbanColumnKeys.reduce((acc, status) => {
             acc[status] = [];
             return acc;
         }, {});
-        tasks.forEach((task) => {
-            const key = getTaskStatus(task);
+        const activeFallback = activeStatusKey || kanbanColumnKeys[0];
+        boardSortedTasks.forEach((task) => {
+            let key = getTaskStatus(task);
+            if (key === 'blocked') {
+                key = activeFallback;
+            }
             if (!groups[key]) groups[key] = [];
             groups[key].push(task);
         });
         return groups;
-    }, [tasks, getTaskStatus]);
+    }, [boardSortedTasks, getTaskStatus, kanbanColumnKeys, activeStatusKey]);
 
     useEffect(() => {
-        const ids = tasks.map((task) => String(task?._id || ''));
+        const ids = displayTasks.map((task) => String(task?._id || ''));
         const missingIdCount = ids.filter((id) => !id).length;
         const uniqueIds = new Set(ids.filter(Boolean));
         const duplicateIdCount = ids.filter(Boolean).length - uniqueIds.size;
-        const statusCounts = KANBAN_STATUSES.reduce((acc, status) => {
+        const statusCounts = kanbanColumnKeys.reduce((acc, status) => {
             acc[status] = (groupedByStatus[status] || []).length;
             return acc;
         }, {});
-        // #region agent log
-        appendAgentDebugLog({
-            hypothesisId: 'A',
-            location: 'TasksHub.jsx:data-shape',
-            message: 'Kanban data shape snapshot',
-            data: {
-                viewMode,
-                taskCount: tasks.length,
-                uniqueTaskCount: uniqueIds.size,
-                duplicateIdCount,
-                missingIdCount,
-                statusCounts,
-                optimisticCount: Object.keys(optimisticStatusByTaskId || {}).length
-            }
-        });
-        // #endregion
-    }, [tasks, groupedByStatus, optimisticStatusByTaskId, viewMode]);
+    }, [displayTasks, groupedByStatus, optimisticStatusByTaskId, viewMode, kanbanColumnKeys]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        window.localStorage.setItem(TASK_BOARD_VIEW_STORAGE_KEY, viewMode);
+    }, [viewMode]);
 
     useEffect(() => {
         setOptimisticStatusByTaskId((previous) => {
             if (!Object.keys(previous).length) return previous;
             const next = { ...previous };
             let changed = false;
-            const taskMap = new Map(tasks.map((task) => [String(task._id), task]));
+            const taskMap = new Map(serverTasks.map((task) => [String(task._id), task]));
             Object.entries(previous).forEach(([taskId, optimisticStatus]) => {
                 const task = taskMap.get(taskId);
                 if (!task) {
@@ -196,19 +287,71 @@ function TasksHub({ orgId, expandedClass }) {
                     changed = true;
                     return;
                 }
-                const actualStatus = task.effectiveStatus || task.status || 'todo';
-                if (actualStatus === optimisticStatus) {
+                const persisted = task.status || 'todo';
+                if (persisted === optimisticStatus) {
                     delete next[taskId];
                     changed = true;
                 }
             });
             return changed ? next : previous;
         });
-    }, [tasks]);
+    }, [serverTasks]);
+
+    useEffect(() => {
+        setStatusOverrideByTaskId((prev) => {
+            const keys = Object.keys(prev);
+            if (!keys.length) return prev;
+            const next = { ...prev };
+            let changed = false;
+            keys.forEach((taskId) => {
+                const task = serverTasks.find((t) => String(t._id) === taskId);
+                if (!task) {
+                    delete next[taskId];
+                    changed = true;
+                    return;
+                }
+                if ((task.status || 'todo') === prev[taskId]) {
+                    delete next[taskId];
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [serverTasks]);
+
+    useEffect(() => {
+        setAssigneeOverrideByTaskId((prev) => {
+            const keys = Object.keys(prev);
+            if (!keys.length) return prev;
+            const next = { ...prev };
+            let changed = false;
+            keys.forEach((taskId) => {
+                const task = serverTasks.find((t) => String(t._id) === taskId);
+                if (!task) {
+                    delete next[taskId];
+                    changed = true;
+                    return;
+                }
+                const serverId =
+                    task.ownerUserId?._id != null
+                        ? String(task.ownerUserId._id)
+                        : task.ownerUserId
+                          ? String(task.ownerUserId)
+                          : '';
+                const override = prev[taskId];
+                const overrideId = override == null ? '' : String(override._id || '');
+                if (serverId === overrideId) {
+                    delete next[taskId];
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [serverTasks]);
 
     const closeCreateModal = () => {
         setShowCreateModal(false);
-        setForm(DEFAULT_FORM);
+        setForm({ ...DEFAULT_FORM, status: pickFirstBacklogKey(boardStatuses) });
     };
 
     const onCreateTask = async (event) => {
@@ -270,122 +413,208 @@ function TasksHub({ orgId, expandedClass }) {
             if (!response?.success) {
                 throw new Error(response?.message || response?.error || 'Failed to update task');
             }
-            refetch();
+            setOptimisticStatusByTaskId((prev) => {
+                const next = { ...prev };
+                delete next[taskId];
+                return next;
+            });
+            setStatusOverrideByTaskId((prev) => ({ ...prev, [taskId]: nextStatus }));
         } catch (updateError) {
             setOptimisticStatusByTaskId((prev) => {
                 const next = { ...prev };
-                if (currentStatus) {
-                    next[taskId] = currentStatus;
-                } else {
-                    delete next[taskId];
-                }
+                delete next[taskId];
                 return next;
             });
-            // #region agent log
-            appendAgentDebugLog({
-                hypothesisId: 'C',
-                location: 'TasksHub.jsx:onTaskStatusChange',
-                message: 'Status change request failed',
-                data: { taskId, currentStatus, nextStatus, error: updateError?.message || 'unknown' }
-            });
-            // #endregion
+
             addNotification({
                 title: 'Task update failed',
                 message: updateError.message || 'Unable to update task status.',
                 type: 'error'
             });
+            throw updateError;
         }
     };
 
-    const onKanbanDragStart = (event, task) => {
-        setDraggingTaskId(task._id);
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', String(task._id));
-        // #region agent log
-        appendAgentDebugLog({
-            hypothesisId: 'B',
-            location: 'TasksHub.jsx:onKanbanDragStart',
-            message: 'Drag start',
-            data: { taskId: String(task?._id || ''), sourceStatus: getTaskStatus(task) }
-        });
-        // #endregion
-    };
 
-    const onKanbanDragEnd = () => {
-        setDraggingTaskId(null);
-        setDropTargetStatus(null);
-    };
-
-    const onKanbanDragOverColumn = (event, status) => {
-        event.preventDefault();
-        if (dropTargetStatus !== status) {
-            setDropTargetStatus(status);
-        }
-        event.dataTransfer.dropEffect = 'move';
-    };
-
-    const onKanbanDropToColumn = async (event, status) => {
-        event.preventDefault();
-        const taskId = event.dataTransfer.getData('text/plain') || draggingTaskId;
-        setDropTargetStatus(null);
-        setDraggingTaskId(null);
-        if (!taskId) return;
-        const task = tasks.find((item) => String(item._id) === String(taskId));
-        // #region agent log
-        appendAgentDebugLog({
-            hypothesisId: 'B',
-            location: 'TasksHub.jsx:onKanbanDropToColumn',
-            message: 'Drop received',
-            data: {
-                taskId: String(taskId),
-                foundTask: Boolean(task),
-                sourceStatus: task ? getTaskStatus(task) : null,
-                targetStatus: status
-            }
-        });
-        // #endregion
-        if (!task || getTaskStatus(task) === status) return;
+    const onKanbanDropToColumn = async (task, status) => {
+        if (!task?._id) return;
+        if (getTaskStatus(task) === status) return;
         await onTaskStatusChange(task, status);
     };
 
+    const handleCommitColumnOrder = useCallback(
+        async ({ taskIds }) => {
+            if (!orgId || !Array.isArray(taskIds) || !taskIds.length) return;
+            try {
+                const response = await apiRequest(
+                    `/org-event-management/${orgId}/tasks/hub/column-order`,
+                    { taskIds },
+                    { method: 'PUT' }
+                );
+                if (!response?.success) {
+                    throw new Error(response?.message || response?.error || 'Failed to save task order');
+                }
+                void refetch({ silent: true });
+            } catch (err) {
+                addNotification({
+                    title: 'Order not saved',
+                    message: err.message || 'Unable to save task order.',
+                    type: 'error'
+                });
+                throw err;
+            }
+        },
+        [orgId, refetch, addNotification]
+    );
+
+    const handleCardAssigneeChange = useCallback(
+        async (task, userId) => {
+            if (!orgId || !task?._id) return;
+            const taskId = String(task._id);
+            const prev =
+                task.ownerUserId?._id != null
+                    ? String(task.ownerUserId._id)
+                    : task.ownerUserId
+                      ? String(task.ownerUserId)
+                      : '';
+            const next = userId ? String(userId) : '';
+            if (prev === next) return;
+            const nextOwner = next ? ownerUserFromMembers(members, next) : null;
+            setAssigneeOverrideByTaskId((p) => ({ ...p, [taskId]: nextOwner }));
+            setAssigningTaskId(taskId);
+            try {
+                const response = await apiRequest(
+                    `/org-event-management/${orgId}/tasks/hub/${taskId}`,
+                    { ownerUserId: next || null },
+                    { method: 'PUT' }
+                );
+                if (!response?.success) {
+                    throw new Error(response?.message || response?.error || 'Failed to update assignee');
+                }
+                if (String(selectedTaskId) === taskId) {
+                    setTaskDraft((d) => ({ ...d, ownerUserId: next }));
+                }
+            } catch (assignErr) {
+                setAssigneeOverrideByTaskId((p) => {
+                    const n = { ...p };
+                    delete n[taskId];
+                    return n;
+                });
+                addNotification({
+                    title: 'Assignee update failed',
+                    message: assignErr.message || 'Unable to update assignee.',
+                    type: 'error'
+                });
+            } finally {
+                setAssigningTaskId(null);
+            }
+        },
+        [orgId, members, selectedTaskId, addNotification]
+    );
+
+    const taskForDetailPanel = useMemo(() => {
+        if (!selectedTaskId) return null;
+        const id = String(selectedTaskId);
+        const fromFetch = detailTaskData?.data?.task;
+        let base =
+            fromFetch && String(fromFetch._id) === id
+                ? fromFetch
+                : displayTasks.find((t) => String(t._id) === id) || null;
+        if (!base) return null;
+        const merged = { ...base };
+        if (Object.prototype.hasOwnProperty.call(statusOverrideByTaskId, id)) {
+            merged.status = statusOverrideByTaskId[id];
+        }
+        if (Object.prototype.hasOwnProperty.call(assigneeOverrideByTaskId, id)) {
+            merged.ownerUserId = assigneeOverrideByTaskId[id];
+        }
+        return merged;
+    }, [selectedTaskId, detailTaskData, displayTasks, statusOverrideByTaskId, assigneeOverrideByTaskId]);
+
+    const openTaskDetail = useCallback(
+        (task, mode = 'sheet') => {
+            if (!task?._id) return;
+            setSelectedTaskId(String(task._id));
+            setDetailMode(mode);
+            setDetailError('');
+            setTaskDraft(buildTaskDraft(task, getTaskStatus));
+        },
+        [getTaskStatus]
+    );
+
+    const closeTaskDetail = useCallback(() => {
+        setDetailMode('closed');
+        setSelectedTaskId(null);
+        setDetailError('');
+    }, []);
+
+    const handleDetailSave = useCallback(async () => {
+        if (!orgId || !selectedTaskId || !taskDraft.title.trim()) return;
+        setDetailSaving(true);
+        setDetailError('');
+        try {
+            const payload = {
+                title: taskDraft.title.trim(),
+                description: taskDraft.description.trim(),
+                status: taskDraft.status,
+                priority: taskDraft.priority,
+                isCritical: Boolean(taskDraft.isCritical),
+                ownerUserId: taskDraft.ownerUserId || null,
+                dueAt: taskDraft.dueAt ? new Date(taskDraft.dueAt).toISOString() : null
+            };
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/tasks/hub/${selectedTaskId}`,
+                payload,
+                { method: 'PUT' }
+            );
+            if (!response?.success) {
+                throw new Error(response?.message || response?.error || 'Failed to save task');
+            }
+            addNotification({
+                title: 'Task updated',
+                message: 'Your changes were saved.',
+                type: 'success'
+            });
+            const sid = String(selectedTaskId);
+            setStatusOverrideByTaskId((prev) => ({ ...prev, [sid]: taskDraft.status }));
+            setAssigneeOverrideByTaskId((prev) => ({
+                ...prev,
+                [sid]: taskDraft.ownerUserId ? ownerUserFromMembers(members, taskDraft.ownerUserId) : null
+            }));
+            void refetch({ silent: true });
+            void refetchDetailTask({ silent: true });
+        } catch (saveErr) {
+            setDetailError(saveErr.message || 'Unable to save.');
+            addNotification({
+                title: 'Save failed',
+                message: saveErr.message || 'Unable to save task.',
+                type: 'error'
+            });
+        } finally {
+            setDetailSaving(false);
+        }
+    }, [orgId, selectedTaskId, taskDraft, addNotification, members, refetch, refetchDetailTask]);
+
     return (
-        <div className={`tasks-hub ${expandedClass || ''}`}>
-            <header className="tasks-hub__header">
-                <div>
-                    <h1>Task Hub</h1>
-                    <p>Cross-event coordination for your organization.</p>
-                </div>
-                <div className="tasks-hub__header-actions">
-                    <button type="button" className="tasks-hub__refresh" onClick={() => refetch()}>
-                        <Icon icon="mdi:refresh" />
-                        Refresh
-                    </button>
-                    <button
-                        type="button"
-                        className="tasks-hub__create-trigger"
-                        onClick={() => setShowCreateModal(true)}
-                    >
-                        <Icon icon="mdi:plus" />
-                        Create
-                    </button>
-                    <div className="tasks-hub__view-toggle">
-                        <button
-                            type="button"
-                            className={viewMode === 'list' ? 'active' : ''}
-                            onClick={() => setViewMode('list')}
-                        >
-                            List
-                        </button>
-                        <button
-                            type="button"
-                            className={viewMode === 'kanban' ? 'active' : ''}
-                            onClick={() => setViewMode('kanban')}
-                        >
-                            Kanban
-                        </button>
-                    </div>
-                </div>
+        <div
+            className={`dash tasks-hub ${expandedClass || ''}${taskSheetOpen ? ' tasks-hub--task-sheet-open' : ''}`}
+            style={taskSheetOpen ? { '--task-detail-sheet-pad': `${taskSheetPadPx}px` } : undefined}
+        >
+            <img src={useGradient().AtlasMain} alt="" className="grad" />
+            <header className="header">
+                <h1>Task Hub</h1>
+                <p>
+                    {clubName
+                        ? `Cross-event coordination for ${clubName}.`
+                        : 'Cross-event coordination for your organization.'}
+                </p>
             </header>
+            <TaskBoardColumnsSettings
+                orgId={orgId}
+                isOpen={showBoardSettings}
+                onClose={() => setShowBoardSettings(false)}
+                onSaved={() => refetchBoardStatuses()}
+            />
 
             <Popup
                 isOpen={showCreateModal}
@@ -426,9 +655,11 @@ function TasksHub({ orgId, expandedClass }) {
                                     value={form.status}
                                     onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}
                                 >
-                                    <option value="todo">To do</option>
-                                    <option value="in_progress">In progress</option>
-                                    <option value="blocked">Blocked</option>
+                                    {boardStatuses.map((s) => (
+                                        <option key={s.key} value={s.key}>
+                                            {s.label}
+                                        </option>
+                                    ))}
                                 </select>
                             </label>
                             <label>
@@ -440,11 +671,11 @@ function TasksHub({ orgId, expandedClass }) {
                                 />
                             </label>
                             <label>
-                                Owner user id
-                                <input
+                                Assignee
+                                <TaskAssigneePicker
+                                    members={members}
                                     value={form.ownerUserId}
-                                    onChange={(event) => setForm((prev) => ({ ...prev, ownerUserId: event.target.value }))}
-                                    placeholder="Optional ObjectId"
+                                    onChange={(id) => setForm((prev) => ({ ...prev, ownerUserId: id ? String(id) : '' }))}
                                 />
                             </label>
                         </div>
@@ -473,26 +704,66 @@ function TasksHub({ orgId, expandedClass }) {
                 </article>
             </Popup>
 
-            <section className="tasks-hub__summary">
-                <article className="tasks-hub__summary-card">
-                    <span>Total tasks</span>
-                    <strong>{summary.total || 0}</strong>
-                </article>
-                <article className="tasks-hub__summary-card tasks-hub__summary-card--alert">
-                    <span>Overdue</span>
-                    <strong>{summary.overdue || 0}</strong>
-                </article>
-                <article className="tasks-hub__summary-card">
-                    <span>Blocked</span>
-                    <strong>{summary.blocked || 0}</strong>
-                </article>
-                <article className="tasks-hub__summary-card">
-                    <span>High priority</span>
-                    <strong>{summary.highPriority || 0}</strong>
-                </article>
-            </section>
+            <div className="tasks-hub__h-scroll-inner">
+                    <div className="tasks-hub__actions">
+                        <button type="button" className="tasks-hub__refresh" onClick={() => refetch()}>
+                            <Icon icon="mdi:refresh" />
+                            Refresh
+                        </button>
+                        <button
+                            type="button"
+                            className="tasks-hub__board-settings"
+                            onClick={() => setShowBoardSettings(true)}
+                            title="Customize task columns"
+                        >
+                            <Icon icon="mdi:view-column" />
+                            Columns
+                        </button>
+                        <button
+                            type="button"
+                            className="tasks-hub__create-trigger"
+                            onClick={() => {
+                                setForm({ ...DEFAULT_FORM, status: pickFirstBacklogKey(boardStatuses) });
+                                setShowCreateModal(true);
+                            }}
+                        >
+                            <Icon icon="mdi:plus" />
+                            Create
+                        </button>
+                        <div className="tasks-hub__view-toggle">
+                            <button
+                                type="button"
+                                className={viewMode === 'list' ? 'active' : ''}
+                                onClick={() => setViewMode('list')}
+                            >
+                                List
+                            </button>
+                            <button
+                                type="button"
+                                className={viewMode === 'kanban' ? 'active' : ''}
+                                onClick={() => setViewMode('kanban')}
+                            >
+                                Kanban
+                            </button>
+                        </div>
+                    </div>
 
-            <section className="tasks-hub__panels">
+                    <section className="tasks-hub__summary">
+                        <article className="tasks-hub__summary-card">
+                            <span>Total tasks</span>
+                            <strong>{summary.total || 0}</strong>
+                        </article>
+                        <article className="tasks-hub__summary-card tasks-hub__summary-card--alert">
+                            <span>Overdue</span>
+                            <strong>{summary.overdue || 0}</strong>
+                        </article>
+                        <article className="tasks-hub__summary-card">
+                            <span>High priority</span>
+                            <strong>{summary.highPriority || 0}</strong>
+                        </article>
+                    </section>
+
+                    <section className="tasks-hub__panels">
                 <article className="tasks-hub__panel tasks-hub__panel--list">
                     <div className="tasks-hub__toolbar">
                         <input
@@ -505,10 +776,11 @@ function TasksHub({ orgId, expandedClass }) {
                             onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
                         >
                             <option value="all">All statuses</option>
-                            <option value="todo">To do</option>
-                            <option value="in_progress">In progress</option>
-                            <option value="blocked">Blocked</option>
-                            <option value="done">Done</option>
+                            {boardStatuses.map((s) => (
+                                <option key={s.key} value={s.key}>
+                                    {s.label}
+                                </option>
+                            ))}
                         </select>
                         <select
                             value={filters.priority}
@@ -567,138 +839,113 @@ function TasksHub({ orgId, expandedClass }) {
 
                     {loading && <p className="tasks-hub__state">Loading task hub...</p>}
                     {!loading && error && <p className="tasks-hub__state">Error: {error}</p>}
-                    {!loading && !error && tasks.length === 0 && (
+                    {!loading && !error && displayTasks.length === 0 && (
                         <p className="tasks-hub__state">No tasks match current filters.</p>
                     )}
 
-                    {!loading && !error && tasks.length > 0 && viewMode === 'list' && (
-                        <ul className="tasks-hub__task-list">
-                            {tasks.map((task) => (
-                                <li key={task._id} className={`tasks-hub__task-item tasks-hub__task-item--${getTaskStatus(task)}`}>
-                                    <div className="tasks-hub__task-main">
-                                        <div className="tasks-hub__task-title-row">
-                                            <h3>{task.title}</h3>
-                                            <span className={`tasks-hub__priority tasks-hub__priority--${task.priority}`}>
-                                                {task.priority}
-                                            </span>
-                                            {task.isCritical && (
-                                                <span className="tasks-hub__critical">critical</span>
-                                            )}
-                                        </div>
-                                        <p>{task.description || 'No description provided.'}</p>
-                                        <div className="tasks-hub__meta">
-                                            <span>{formatStatusLabel(getTaskStatus(task))}</span>
-                                            <span>Due: {formatDate(task.dueAt)}</span>
-                                            <span>
-                                                Event: {task.eventId?.name || 'Org operations'}
-                                            </span>
-                                            <span>
-                                                Owner: {ownerLabel(task)}
-                                            </span>
-                                            <span>
-                                                Urgency: {Math.round(task.urgencyScore || 0)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="tasks-hub__actions">
-                                        <button
-                                            type="button"
-                                            onClick={() => onTaskStatusChange(task, 'in_progress')}
-                                            disabled={(getTaskStatus(task) === 'in_progress')}
-                                        >
-                                            In progress
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => onTaskStatusChange(task, 'done')}
-                                            disabled={getTaskStatus(task) === 'done'}
-                                        >
-                                            Done
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => onTaskStatusChange(task, 'blocked')}
-                                            disabled={getTaskStatus(task) === 'blocked'}
-                                        >
-                                            Block
-                                        </button>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-
-                    {!loading && !error && tasks.length > 0 && viewMode === 'kanban' && (
-                        <div className="tasks-hub__kanban">
-                            {KANBAN_STATUSES.map((status) => {
-                                const statusTasks = groupedByStatus[status] || [];
-                                return (
-                                <section
-                                    key={status}
-                                    className={`tasks-hub__kanban-column ${dropTargetStatus === status ? 'tasks-hub__kanban-column--drop-target' : ''}`}
-                                    onDragOver={(event) => onKanbanDragOverColumn(event, status)}
-                                    onDrop={(event) => onKanbanDropToColumn(event, status)}
-                                    onDragLeave={() => setDropTargetStatus((current) => (current === status ? null : current))}
-                                >
-                                    <header>
-                                        <h4>{formatStatusLabel(status)}</h4>
-                                        <span>{statusTasks.length}</span>
-                                    </header>
-                                    <div className="tasks-hub__kanban-cards">
-                                        {statusTasks.length === 0 && <p className="tasks-hub__kanban-empty">No tasks</p>}
-                                        {statusTasks.map((task) => (
-                                            <article
-                                                key={task._id}
-                                                className={`tasks-hub__kanban-card ${draggingTaskId === task._id ? 'tasks-hub__kanban-card--dragging' : ''}`}
-                                                draggable
-                                                onDragStart={(event) => onKanbanDragStart(event, task)}
-                                                onDragEnd={onKanbanDragEnd}
-                                            >
-                                                <h3>{task.title}</h3>
-                                                <div className="tasks-hub__task-title-row">
-                                                    <span className={`tasks-hub__priority tasks-hub__priority--${task.priority}`}>
-                                                        {task.priority}
-                                                    </span>
-                                                    {task.isCritical && <span className="tasks-hub__critical">critical</span>}
-                                                </div>
-                                                {task.description && <p>{task.description}</p>}
-                                                <div className="tasks-hub__meta">
-                                                    <span>Due: {formatDate(task.dueAt)}</span>
-                                                    <span>Owner: {ownerLabel(task)}</span>
-                                                </div>
-                                                <div className="tasks-hub__actions">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => onTaskStatusChange(task, 'in_progress')}
-                                                        disabled={getTaskStatus(task) === 'in_progress'}
-                                                    >
-                                                        In progress
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => onTaskStatusChange(task, 'done')}
-                                                        disabled={getTaskStatus(task) === 'done'}
-                                                    >
-                                                        Done
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => onTaskStatusChange(task, 'blocked')}
-                                                        disabled={getTaskStatus(task) === 'blocked'}
-                                                    >
-                                                        Block
-                                                    </button>
-                                                </div>
-                                            </article>
-                                        ))}
-                                    </div>
-                                </section>
-                                );
-                            })}
-                        </div>
+                    {!loading && !error && displayTasks.length > 0 && (
+                        <SharedTaskBoard
+                            viewMode={viewMode}
+                            tasks={boardSortedTasks}
+                            statuses={kanbanColumnKeys}
+                            groupedByStatus={groupedByStatus}
+                            getTaskId={(task) => task._id}
+                            getTaskStatus={getTaskStatus}
+                            getStatusLabel={formatStatusLabel}
+                            onDropToStatus={onKanbanDropToColumn}
+                            onCommitColumnOrder={handleCommitColumnOrder}
+                            listClassName="tasks-hub-task-board__list"
+                            renderListItem={(task, { isDragging, isMoved } = {}) => (
+                                <TasksHubTaskListCard
+                                    key={task._id}
+                                    task={task}
+                                    isDragging={isDragging}
+                                    isMoved={isMoved}
+                                    getTaskStatus={getTaskStatus}
+                                    formatStatusLabel={formatStatusLabel}
+                                    formatDate={formatDate}
+                                    onOpenDetail={(t) => openTaskDetail(t, 'sheet')}
+                                    members={members}
+                                    assigningTaskId={assigningTaskId}
+                                    onAssigneeChange={handleCardAssigneeChange}
+                                    activeStatusKey={activeStatusKey}
+                                    doneStatusKey={doneStatusKey}
+                                    activeQuickLabel={activeQuickLabel}
+                                    doneQuickLabel={doneQuickLabel}
+                                    onTaskStatusChange={onTaskStatusChange}
+                                />
+                            )}
+                            renderKanbanCard={(task, { isDragging, isMoved }) => (
+                                <TasksHubTaskKanbanCard
+                                    task={task}
+                                    isDragging={isDragging}
+                                    isMoved={isMoved}
+                                    formatDate={formatDate}
+                                    onOpenDetail={(t) => openTaskDetail(t, 'sheet')}
+                                    members={members}
+                                    assigningTaskId={assigningTaskId}
+                                    onAssigneeChange={handleCardAssigneeChange}
+                                    activeStatusKey={activeStatusKey}
+                                    doneStatusKey={doneStatusKey}
+                                    activeQuickLabel={activeQuickLabel}
+                                    doneQuickLabel={doneQuickLabel}
+                                    getTaskStatus={getTaskStatus}
+                                    onTaskStatusChange={onTaskStatusChange}
+                                />
+                            )}
+                        />
                     )}
                 </article>
-            </section>
+                    </section>
+            </div>
+
+            <TaskDetailSheet
+                open={detailMode === 'sheet'}
+                onClose={closeTaskDetail}
+                title={taskForDetailPanel?.title || 'Task'}
+                backdrop={false}
+                panelWidthPx={taskSheetPadPx}
+            >
+                {taskForDetailPanel && (
+                    <TaskDetailPanel
+                        task={taskForDetailPanel}
+                        draft={taskDraft}
+                        setDraft={setTaskDraft}
+                        members={members}
+                        orgId={orgId}
+                        taskBoardStatuses={boardStatuses}
+                        variant="sheet"
+                        onClose={closeTaskDetail}
+                        onExpand={() => setDetailMode('full')}
+                        onSave={handleDetailSave}
+                        saving={detailSaving}
+                        saveError={detailError}
+                    />
+                )}
+            </TaskDetailSheet>
+
+            <TaskDetailFull
+                open={detailMode === 'full'}
+                onClose={closeTaskDetail}
+                title={taskForDetailPanel?.title || 'Task'}
+            >
+                {taskForDetailPanel && (
+                    <TaskDetailPanel
+                        task={taskForDetailPanel}
+                        draft={taskDraft}
+                        setDraft={setTaskDraft}
+                        members={members}
+                        orgId={orgId}
+                        taskBoardStatuses={boardStatuses}
+                        variant="full"
+                        onClose={closeTaskDetail}
+                        onCollapse={() => setDetailMode('sheet')}
+                        onSave={handleDetailSave}
+                        saving={detailSaving}
+                        saveError={detailError}
+                    />
+                )}
+            </TaskDetailFull>
         </div>
     );
 }

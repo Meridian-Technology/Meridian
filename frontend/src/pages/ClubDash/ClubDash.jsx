@@ -270,7 +270,7 @@ function ClubDash(){
                 key: 'tasks',
                 element: (
                     <Suspense fallback={<div className="club-dash-tab-fallback">Loading tasks…</div>}>
-                        <TasksHub expandedClass={expandedClass} orgId={orgMongoId} />
+                        <TasksHub expandedClass={expandedClass} orgId={orgMongoId} clubName={clubId} />
                     </Suspense>
                 )
             },

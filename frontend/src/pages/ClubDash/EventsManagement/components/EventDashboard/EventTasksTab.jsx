@@ -4,9 +4,32 @@ import { useFetch } from '../../../../../hooks/useFetch';
 import apiRequest from '../../../../../utils/postRequest';
 import { useNotification } from '../../../../../NotificationContext';
 import Popup from '../../../../../components/Popup/Popup';
+import SharedTaskBoard from '../../../../../components/TaskBoard/SharedTaskBoard';
+import EventTasksTaskListCard from '../../../../../components/TaskBoard/cards/EventTasksTaskListCard';
+import EventTasksTaskKanbanCard from '../../../../../components/TaskBoard/cards/EventTasksTaskKanbanCard';
+import TaskAssigneePicker from '../../../../../components/TaskWorkspace/TaskAssigneePicker';
+import TaskDetailPanel from '../../../../../components/TaskWorkspace/TaskDetailPanel';
+import TaskDetailSheet, {
+    getTaskDetailSheetPanelWidthPx,
+    TASK_DETAIL_SHEET_PANEL_MAX_PX
+} from '../../../../../components/TaskWorkspace/TaskDetailSheet';
+import TaskDetailFull from '../../../../../components/TaskWorkspace/TaskDetailFull';
+import TaskBoardColumnsSettings from '../../../../../components/TaskWorkspace/TaskBoardColumnsSettings';
+import {
+    buildTaskDraft,
+    descriptionToPreviewPlain,
+    ownerUserFromMembers
+} from '../../../../../components/TaskWorkspace/taskWorkspaceUtils';
+import {
+    DEFAULT_TASK_BOARD_STATUSES,
+    formatTaskStatusLabel,
+    pickFirstActiveKey,
+    pickFirstDoneKey,
+    pickFirstBacklogKey
+} from '../../../../../constants/taskBoardDefaults';
 import './EventTasksTab.scss';
 
-const KANBAN_STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+const TASK_BOARD_VIEW_STORAGE_KEY = 'clubdash:task-board:view-mode';
 
 const createDefaultTaskForm = () => ({
     title: '',
@@ -14,6 +37,7 @@ const createDefaultTaskForm = () => ({
     priority: 'medium',
     isCritical: false,
     status: 'todo',
+    ownerUserId: '',
     dueMode: 'none',
     dueAt: '',
     dueRule: {
@@ -24,24 +48,10 @@ const createDefaultTaskForm = () => ({
     }
 });
 
-function StatusPill({ status }) {
-    return <span className={`event-task-status-pill ${status}`}>{status.replace('_', ' ')}</span>;
-}
-
-function PriorityPill({ priority }) {
-    return <span className={`event-task-priority-pill ${priority}`}>{priority}</span>;
-}
-
-function appendAgentDebugLog(entry) {
-    if (typeof window === 'undefined') return;
-    fetch('/api/_agent-debug-log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            ...entry,
-            timestamp: Date.now()
-        })
-    }).catch(() => {});
+function readStoredViewMode() {
+    if (typeof window === 'undefined') return 'list';
+    const stored = window.localStorage.getItem(TASK_BOARD_VIEW_STORAGE_KEY);
+    return stored === 'kanban' || stored === 'list' ? stored : 'list';
 }
 
 function EventTasksTab({ event, orgId, onRefresh }) {
@@ -49,14 +59,39 @@ function EventTasksTab({ event, orgId, onRefresh }) {
     const [newTask, setNewTask] = useState(createDefaultTaskForm);
     const [submitting, setSubmitting] = useState(false);
     const [actioningTaskId, setActioningTaskId] = useState(null);
-    const [viewMode, setViewMode] = useState('list');
+    const [viewMode, setViewMode] = useState(() => readStoredViewMode());
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [statusFilter, setStatusFilter] = useState('all');
     const [priorityFilter, setPriorityFilter] = useState('all');
     const [search, setSearch] = useState('');
-    const [dragTaskId, setDragTaskId] = useState(null);
-    const [dragOverStatus, setDragOverStatus] = useState(null);
     const [optimisticStatusByTaskId, setOptimisticStatusByTaskId] = useState({});
+    const [showSuggestionModal, setShowSuggestionModal] = useState(false);
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const [applyingSuggestions, setApplyingSuggestions] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [detailMode, setDetailMode] = useState('closed');
+    const [selectedTaskId, setSelectedTaskId] = useState(null);
+    const [taskDraft, setTaskDraft] = useState(() => buildTaskDraft({ title: '', status: 'todo' }, () => 'todo'));
+    const [detailSaving, setDetailSaving] = useState(false);
+    const [detailError, setDetailError] = useState('');
+    const [assigningTaskId, setAssigningTaskId] = useState(null);
+    const [showBoardSettings, setShowBoardSettings] = useState(false);
+    const [statusOverrideByTaskId, setStatusOverrideByTaskId] = useState({});
+    const [assigneeOverrideByTaskId, setAssigneeOverrideByTaskId] = useState({});
+    const taskSheetOpen = detailMode === 'sheet';
+    const [taskSheetPadPx, setTaskSheetPadPx] = useState(TASK_DETAIL_SHEET_PANEL_MAX_PX);
+
+    useEffect(() => {
+        if (!taskSheetOpen) return undefined;
+        const next = () => setTaskSheetPadPx(getTaskDetailSheetPanelWidthPx());
+        next();
+        window.addEventListener('resize', next);
+        return () => window.removeEventListener('resize', next);
+    }, [taskSheetOpen]);
+
+    const membersEndpoint = orgId ? `/org-roles/${orgId}/members` : null;
+    const { data: membersData } = useFetch(membersEndpoint);
+    const members = membersData?.members || [];
 
     const query = useMemo(() => {
         const params = new URLSearchParams();
@@ -71,76 +106,212 @@ function EventTasksTab({ event, orgId, onRefresh }) {
             ? `/org-event-management/${orgId}/events/${event._id}/tasks?${query}`
             : null
     );
-    const readinessRequest = useFetch(
+    const detailTaskUrl =
+        event?._id && orgId && selectedTaskId && detailMode !== 'closed'
+            ? `/org-event-management/${orgId}/events/${event._id}/tasks/${selectedTaskId}`
+            : null;
+    const { data: detailTaskData, refetch: refetchDetailTask } = useFetch(detailTaskUrl);
+    const { data: readinessFetchData, refetch: refetchReadiness } = useFetch(
         event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/readiness` : null
     );
+    const boardStatusesEndpoint = orgId ? `/org-event-management/${orgId}/task-board-statuses` : null;
+    const { data: boardStatusesData, refetch: refetchBoardStatuses } = useFetch(boardStatusesEndpoint);
 
-    const tasks = useMemo(() => data?.data?.tasks || [], [data]);
-    const readiness = readinessRequest.data?.data || null;
+    const serverTasks = useMemo(() => data?.data?.tasks || [], [data]);
+
+    const displayTasks = useMemo(
+        () =>
+            serverTasks.map((t) => {
+                const id = String(t._id);
+                if (Object.prototype.hasOwnProperty.call(assigneeOverrideByTaskId, id)) {
+                    return { ...t, ownerUserId: assigneeOverrideByTaskId[id] };
+                }
+                return t;
+            }),
+        [serverTasks, assigneeOverrideByTaskId]
+    );
+
+    const boardStatuses = useMemo(() => {
+        const list = boardStatusesData?.data?.statuses;
+        return Array.isArray(list) && list.length ? list : DEFAULT_TASK_BOARD_STATUSES;
+    }, [boardStatusesData]);
+
+    const kanbanColumnKeys = useMemo(() => boardStatuses.map((s) => s.key), [boardStatuses]);
+
+    const activeStatusKey = useMemo(() => pickFirstActiveKey(boardStatuses), [boardStatuses]);
+    const doneStatusKey = useMemo(() => pickFirstDoneKey(boardStatuses), [boardStatuses]);
+    const activeQuickLabel = useMemo(
+        () => boardStatuses.find((s) => s.key === activeStatusKey)?.label || 'Active',
+        [boardStatuses, activeStatusKey]
+    );
+    const doneQuickLabel = useMemo(
+        () => boardStatuses.find((s) => s.key === doneStatusKey)?.label || 'Done',
+        [boardStatuses, doneStatusKey]
+    );
+    const readiness = readinessFetchData?.data || null;
 
     const getTaskStatus = useCallback((task) => {
         if (!task?._id) return task?.effectiveStatus || task?.status || 'todo';
-        return optimisticStatusByTaskId[String(task._id)] || task.effectiveStatus || task.status || 'todo';
-    }, [optimisticStatusByTaskId]);
+        const id = String(task._id);
+        const optimistic = optimisticStatusByTaskId[id];
+        if (optimistic != null) return optimistic;
+        if (Object.prototype.hasOwnProperty.call(statusOverrideByTaskId, id)) {
+            return statusOverrideByTaskId[id];
+        }
+        return task.effectiveStatus || task.status || 'todo';
+    }, [optimisticStatusByTaskId, statusOverrideByTaskId]);
+
+    const boardSortedTasks = useMemo(() => {
+        const keys = kanbanColumnKeys;
+        const colOf = (t) => {
+            let k = getTaskStatus(t);
+            if (k === 'blocked') k = activeStatusKey || keys[0];
+            return k;
+        };
+        const colIndex = (k) => {
+            const i = keys.indexOf(k);
+            return i >= 0 ? i : keys.length;
+        };
+        return [...displayTasks].sort((a, b) => {
+            const c = colIndex(colOf(a)) - colIndex(colOf(b));
+            if (c !== 0) return c;
+            const ra = Number(a.boardRank);
+            const rb = Number(b.boardRank);
+            const r = (Number.isFinite(ra) ? ra : 0) - (Number.isFinite(rb) ? rb : 0);
+            if (r !== 0) return r;
+            return String(a._id).localeCompare(String(b._id));
+        });
+    }, [displayTasks, getTaskStatus, kanbanColumnKeys, activeStatusKey]);
 
     const groupedByStatus = useMemo(() => {
-        const groups = KANBAN_STATUSES.reduce((acc, status) => {
+        const groups = kanbanColumnKeys.reduce((acc, status) => {
             acc[status] = [];
             return acc;
         }, {});
-        tasks.forEach((task) => {
-            const effectiveStatus = getTaskStatus(task);
-            if (!groups[effectiveStatus]) groups[effectiveStatus] = [];
-            groups[effectiveStatus].push(task);
+        const activeFallback = activeStatusKey || kanbanColumnKeys[0];
+        boardSortedTasks.forEach((task) => {
+            let key = getTaskStatus(task);
+            if (key === 'blocked') {
+                key = activeFallback;
+            }
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(task);
         });
         return groups;
-    }, [tasks, getTaskStatus]);
+    }, [boardSortedTasks, getTaskStatus, kanbanColumnKeys, activeStatusKey]);
 
     useEffect(() => {
-        const ids = tasks.map((task) => String(task?._id || ''));
+        const ids = displayTasks.map((task) => String(task?._id || ''));
         const missingIdCount = ids.filter((id) => !id).length;
         const uniqueIds = new Set(ids.filter(Boolean));
         const duplicateIdCount = ids.filter(Boolean).length - uniqueIds.size;
-        const statusCounts = KANBAN_STATUSES.reduce((acc, status) => {
+        const statusCounts = kanbanColumnKeys.reduce((acc, status) => {
             acc[status] = (groupedByStatus[status] || []).length;
             return acc;
         }, {});
-        // #region agent log
-        appendAgentDebugLog({
-            hypothesisId: 'D',
-            location: 'EventTasksTab.jsx:data-shape',
-            message: 'Event task kanban data shape snapshot',
-            data: {
-                eventId: String(event?._id || ''),
-                viewMode,
-                taskCount: tasks.length,
-                uniqueTaskCount: uniqueIds.size,
-                duplicateIdCount,
-                missingIdCount,
-                statusCounts,
-                optimisticCount: Object.keys(optimisticStatusByTaskId || {}).length
-            }
-        });
+
         // #endregion
-    }, [tasks, groupedByStatus, optimisticStatusByTaskId, viewMode, event?._id]);
+    }, [displayTasks, groupedByStatus, optimisticStatusByTaskId, viewMode, event?._id, kanbanColumnKeys]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        window.localStorage.setItem(TASK_BOARD_VIEW_STORAGE_KEY, viewMode);
+    }, [viewMode]);
+
+    useEffect(() => {
+        setOptimisticStatusByTaskId((previous) => {
+            if (!Object.keys(previous).length) return previous;
+            const next = { ...previous };
+            let changed = false;
+            const taskMap = new Map(serverTasks.map((task) => [String(task._id), task]));
+            Object.entries(previous).forEach(([taskId, optimisticStatus]) => {
+                const task = taskMap.get(taskId);
+                if (!task) {
+                    delete next[taskId];
+                    changed = true;
+                    return;
+                }
+                const persisted = task.status || 'todo';
+                if (persisted === optimisticStatus) {
+                    delete next[taskId];
+                    changed = true;
+                }
+            });
+            return changed ? next : previous;
+        });
+    }, [serverTasks]);
+
+    useEffect(() => {
+        setStatusOverrideByTaskId((prev) => {
+            const keys = Object.keys(prev);
+            if (!keys.length) return prev;
+            const next = { ...prev };
+            let changed = false;
+            keys.forEach((taskId) => {
+                const task = serverTasks.find((t) => String(t._id) === taskId);
+                if (!task) {
+                    delete next[taskId];
+                    changed = true;
+                    return;
+                }
+                if ((task.status || 'todo') === prev[taskId]) {
+                    delete next[taskId];
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [serverTasks]);
+
+    useEffect(() => {
+        setAssigneeOverrideByTaskId((prev) => {
+            const keys = Object.keys(prev);
+            if (!keys.length) return prev;
+            const next = { ...prev };
+            let changed = false;
+            keys.forEach((taskId) => {
+                const task = serverTasks.find((t) => String(t._id) === taskId);
+                if (!task) {
+                    delete next[taskId];
+                    changed = true;
+                    return;
+                }
+                const serverId =
+                    task.ownerUserId?._id != null
+                        ? String(task.ownerUserId._id)
+                        : task.ownerUserId
+                          ? String(task.ownerUserId)
+                          : '';
+                const override = prev[taskId];
+                const overrideId = override == null ? '' : String(override._id || '');
+                if (serverId === overrideId) {
+                    delete next[taskId];
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [serverTasks]);
 
     const metrics = useMemo(() => {
-        const total = tasks.length;
-        const done = tasks.filter((task) => task.status === 'done').length;
-        const blocked = tasks.filter((task) => task.effectiveStatus === 'blocked').length;
-        const overdue = tasks.filter((task) => task.overdue).length;
+        const total = displayTasks.length;
+        const done = displayTasks.filter((task) => {
+            const st = getTaskStatus(task);
+            const row = boardStatuses.find((s) => s.key === st);
+            return row?.category === 'done';
+        }).length;
+        const overdue = displayTasks.filter((task) => task.overdue).length;
         return {
             total,
             done,
-            blocked,
             overdue,
             completion: total > 0 ? Math.round((done / total) * 100) : 0
         };
-    }, [tasks]);
+    }, [displayTasks, getTaskStatus, boardStatuses]);
 
     const closeCreateModal = () => {
         setShowCreateModal(false);
-        setNewTask(createDefaultTaskForm());
+        setNewTask({ ...createDefaultTaskForm(), status: pickFirstBacklogKey(boardStatuses) });
     };
 
     const handleCreateTask = async (e) => {
@@ -175,6 +346,9 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                     direction: newTask.dueRule.direction
                 };
             }
+            if (newTask.ownerUserId) {
+                payload.ownerUserId = newTask.ownerUserId;
+            }
 
             const response = await apiRequest(
                 `/org-event-management/${orgId}/events/${event._id}/tasks`,
@@ -194,7 +368,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
             closeCreateModal();
             refetch();
             onRefresh?.();
-            readinessRequest.refetch();
+            refetchReadiness();
         } catch (createError) {
             addNotification({
                 title: 'Failed to create task',
@@ -206,7 +380,13 @@ function EventTasksTab({ event, orgId, onRefresh }) {
         }
     };
 
-    const handleQuickStatusChange = async (taskId, nextStatus) => {
+    const handleQuickStatusChange = async (task, nextStatus) => {
+        const taskId = task?._id;
+        if (!taskId) return;
+        const taskKey = String(taskId);
+        const currentStatus = getTaskStatus(task);
+        if (currentStatus === nextStatus) return;
+        setOptimisticStatusByTaskId((prev) => ({ ...prev, [taskKey]: nextStatus }));
         setActioningTaskId(taskId);
         try {
             const response = await apiRequest(
@@ -217,9 +397,19 @@ function EventTasksTab({ event, orgId, onRefresh }) {
             if (!response?.success) {
                 throw new Error(response?.message || response?.error || 'Unable to update task');
             }
-            refetch();
-            onRefresh?.();
+            setOptimisticStatusByTaskId((prev) => {
+                const next = { ...prev };
+                delete next[taskKey];
+                return next;
+            });
+            setStatusOverrideByTaskId((prev) => ({ ...prev, [taskKey]: nextStatus }));
+            void refetchReadiness({ silent: true });
         } catch (updateError) {
+            setOptimisticStatusByTaskId((prev) => {
+                const next = { ...prev };
+                delete next[taskKey];
+                return next;
+            });
             addNotification({
                 title: 'Task update failed',
                 message: updateError.message || 'Please try again.',
@@ -248,7 +438,7 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                 type: 'success'
             });
             refetch();
-            readinessRequest.refetch();
+            refetchReadiness();
         } catch (recomputeError) {
             addNotification({
                 title: 'Recompute failed',
@@ -284,81 +474,255 @@ function EventTasksTab({ event, orgId, onRefresh }) {
         }
     };
 
-    const handleTaskDropToStatus = async (task, nextStatus) => {
-        if (!task?._id || !nextStatus) return;
-        const taskKey = String(task._id);
-        const currentStatus = getTaskStatus(task);
-        if (currentStatus === nextStatus) return;
-        setOptimisticStatusByTaskId((prev) => ({ ...prev, [taskKey]: nextStatus }));
+    const handleOpenSuggestions = async () => {
+        setShowSuggestionModal(true);
+        setLoadingSuggestions(true);
         try {
-            await handleQuickStatusChange(task._id, nextStatus);
-        } catch (_error) {
-            setOptimisticStatusByTaskId((prev) => {
-                const next = { ...prev };
-                delete next[taskKey];
-                return next;
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/events/${event._id}/task-suggestions`,
+                null,
+                { method: 'GET' }
+            );
+            if (!response?.success) {
+                throw new Error(response?.message || response?.error || 'Unable to load suggestions');
+            }
+            const nextSuggestions = (response?.data?.suggestions || []).map((task, index) => ({
+                ...task,
+                _selectionId: `${task.key || 'suggestion'}-${index}`,
+                selected: true
+            }));
+            setSuggestions(nextSuggestions);
+        } catch (fetchError) {
+            addNotification({
+                title: 'Suggestion load failed',
+                message: fetchError.message || 'Please try again.',
+                type: 'error'
             });
-            // #region agent log
-            appendAgentDebugLog({
-                hypothesisId: 'C',
-                location: 'EventTasksTab.jsx:handleTaskDropToStatus',
-                message: 'Task drop status update failed',
-                data: { taskId: taskKey, currentStatus, nextStatus }
-            });
-            // #endregion
-            return;
+            setSuggestions([]);
+        } finally {
+            setLoadingSuggestions(false);
         }
-        setOptimisticStatusByTaskId((prev) => {
-            const next = { ...prev };
-            delete next[taskKey];
-            return next;
-        });
     };
 
+    const handleApplySuggestions = async () => {
+        const selectedSuggestions = suggestions.filter((task) => task.selected);
+        if (!selectedSuggestions.length) {
+            addNotification({
+                title: 'No tasks selected',
+                message: 'Select at least one suggested task to apply.',
+                type: 'error'
+            });
+            return;
+        }
+        setApplyingSuggestions(true);
+        try {
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/events/${event._id}/tasks/apply-suggestions`,
+                {
+                    suggestions: selectedSuggestions.map(({ selected, _selectionId, ...task }) => task)
+                },
+                { method: 'POST' }
+            );
+            if (!response?.success) {
+                throw new Error(response?.message || response?.error || 'Unable to apply suggestions');
+            }
+            addNotification({
+                title: 'Tasks applied',
+                message: `Created ${response?.data?.createdCount || selectedSuggestions.length} guided task(s).`,
+                type: 'success'
+            });
+            setShowSuggestionModal(false);
+            setSuggestions([]);
+            refetch();
+            refetchReadiness();
+        } catch (applyError) {
+            addNotification({
+                title: 'Apply failed',
+                message: applyError.message || 'Please try again.',
+                type: 'error'
+            });
+        } finally {
+            setApplyingSuggestions(false);
+        }
+    };
+
+    const handleTaskDropToStatus = async (task, nextStatus) => {
+        if (!task?._id || !nextStatus) return;
+        await handleQuickStatusChange(task, nextStatus);
+    };
+
+    const handleCommitColumnOrder = useCallback(
+        async ({ taskIds }) => {
+            if (!orgId || !event?._id || !Array.isArray(taskIds) || !taskIds.length) return;
+            try {
+                const response = await apiRequest(
+                    `/org-event-management/${orgId}/events/${event._id}/tasks/column-order`,
+                    { taskIds },
+                    { method: 'PUT' }
+                );
+                if (!response?.success) {
+                    throw new Error(response?.message || response?.error || 'Failed to save task order');
+                }
+                void refetch({ silent: true });
+                void refetchReadiness({ silent: true });
+            } catch (err) {
+                addNotification({
+                    title: 'Order not saved',
+                    message: err.message || 'Unable to save task order.',
+                    type: 'error'
+                });
+                throw err;
+            }
+        },
+        [orgId, event?._id, refetch, refetchReadiness, addNotification]
+    );
+
+    const handleCardAssigneeChange = useCallback(
+        async (task, userId) => {
+            if (!orgId || !event?._id || !task?._id) return;
+            const taskId = String(task._id);
+            const prev =
+                task.ownerUserId?._id != null
+                    ? String(task.ownerUserId._id)
+                    : task.ownerUserId
+                      ? String(task.ownerUserId)
+                      : '';
+            const next = userId ? String(userId) : '';
+            if (prev === next) return;
+            const nextOwner = next ? ownerUserFromMembers(members, next) : null;
+            setAssigneeOverrideByTaskId((p) => ({ ...p, [taskId]: nextOwner }));
+            setAssigningTaskId(taskId);
+            try {
+                const response = await apiRequest(
+                    `/org-event-management/${orgId}/events/${event._id}/tasks/${taskId}`,
+                    { ownerUserId: next || null },
+                    { method: 'PUT' }
+                );
+                if (!response?.success) {
+                    throw new Error(response?.message || response?.error || 'Failed to update assignee');
+                }
+                void refetchReadiness({ silent: true });
+                if (String(selectedTaskId) === taskId) {
+                    setTaskDraft((d) => ({ ...d, ownerUserId: next }));
+                }
+            } catch (assignErr) {
+                setAssigneeOverrideByTaskId((p) => {
+                    const n = { ...p };
+                    delete n[taskId];
+                    return n;
+                });
+                addNotification({
+                    title: 'Assignee update failed',
+                    message: assignErr.message || 'Unable to update assignee.',
+                    type: 'error'
+                });
+            } finally {
+                setAssigningTaskId(null);
+            }
+        },
+        [orgId, event?._id, members, selectedTaskId, addNotification, refetchReadiness]
+    );
+
+    const taskForDetailPanel = useMemo(() => {
+        if (!selectedTaskId) return null;
+        const id = String(selectedTaskId);
+        const fromFetch = detailTaskData?.data?.task;
+        let base =
+            fromFetch && String(fromFetch._id) === id
+                ? fromFetch
+                : displayTasks.find((t) => String(t._id) === id) || null;
+        if (!base) return null;
+        const merged = { ...base };
+        if (Object.prototype.hasOwnProperty.call(statusOverrideByTaskId, id)) {
+            merged.status = statusOverrideByTaskId[id];
+        }
+        if (Object.prototype.hasOwnProperty.call(assigneeOverrideByTaskId, id)) {
+            merged.ownerUserId = assigneeOverrideByTaskId[id];
+        }
+        return merged;
+    }, [selectedTaskId, detailTaskData, displayTasks, statusOverrideByTaskId, assigneeOverrideByTaskId]);
+
+    const openTaskDetail = useCallback(
+        (task, mode = 'sheet') => {
+            if (!task?._id) return;
+            setSelectedTaskId(String(task._id));
+            setDetailMode(mode);
+            setDetailError('');
+            setTaskDraft(buildTaskDraft(task, getTaskStatus));
+        },
+        [getTaskStatus]
+    );
+
+    const closeTaskDetail = useCallback(() => {
+        setDetailMode('closed');
+        setSelectedTaskId(null);
+        setDetailError('');
+    }, []);
+
+    const handleDetailSave = useCallback(async () => {
+        if (!orgId || !event?._id || !selectedTaskId || !taskDraft.title.trim()) return;
+        setDetailSaving(true);
+        setDetailError('');
+        try {
+            const payload = {
+                title: taskDraft.title.trim(),
+                description: taskDraft.description.trim(),
+                status: taskDraft.status,
+                priority: taskDraft.priority,
+                isCritical: Boolean(taskDraft.isCritical),
+                ownerUserId: taskDraft.ownerUserId || null,
+                dueAt: taskDraft.dueAt ? new Date(taskDraft.dueAt).toISOString() : null
+            };
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/events/${event._id}/tasks/${selectedTaskId}`,
+                payload,
+                { method: 'PUT' }
+            );
+            if (!response?.success) {
+                throw new Error(response?.message || response?.error || 'Failed to save task');
+            }
+            addNotification({
+                title: 'Task updated',
+                message: 'Your changes were saved.',
+                type: 'success'
+            });
+            const sid = String(selectedTaskId);
+            setStatusOverrideByTaskId((prev) => ({ ...prev, [sid]: taskDraft.status }));
+            setAssigneeOverrideByTaskId((prev) => ({
+                ...prev,
+                [sid]: taskDraft.ownerUserId ? ownerUserFromMembers(members, taskDraft.ownerUserId) : null
+            }));
+            void refetch({ silent: true });
+            void refetchDetailTask({ silent: true });
+            void refetchReadiness({ silent: true });
+        } catch (saveErr) {
+            setDetailError(saveErr.message || 'Unable to save.');
+            addNotification({
+                title: 'Save failed',
+                message: saveErr.message || 'Unable to save task.',
+                type: 'error'
+            });
+        } finally {
+            setDetailSaving(false);
+        }
+    }, [orgId, event?._id, selectedTaskId, taskDraft, addNotification, members, refetch, refetchDetailTask, refetchReadiness]);
+
+    const formatStatusLabel = useCallback(
+        (status) => formatTaskStatusLabel(status, boardStatuses),
+        [boardStatuses]
+    );
+
     return (
-        <div className="event-tasks-tab">
-            <div className="event-tasks-tab__header">
-                <div>
-                    <h3>
-                        <Icon icon="mdi:clipboard-check-multiple-outline" />
-                        Event Tasks
-                    </h3>
-                    <p>Plan and execute this event with guided, user-controlled tasks.</p>
-                </div>
-                <div className="event-tasks-tab__header-actions">
-                    <button
-                        type="button"
-                        onClick={handleRecomputeDueDates}
-                        disabled={actioningTaskId === 'recompute'}
-                    >
-                        {actioningTaskId === 'recompute' ? 'Recomputing…' : 'Recompute due dates'}
-                    </button>
-                    <button
-                        type="button"
-                        className="event-tasks-tab__create-trigger"
-                        onClick={() => setShowCreateModal(true)}
-                    >
-                        <Icon icon="mdi:plus" />
-                        Create
-                    </button>
-                    <div className="event-tasks-tab__view-toggle">
-                        <button
-                            type="button"
-                            className={viewMode === 'list' ? 'active' : ''}
-                            onClick={() => setViewMode('list')}
-                        >
-                            List
-                        </button>
-                        <button
-                            type="button"
-                            className={viewMode === 'kanban' ? 'active' : ''}
-                            onClick={() => setViewMode('kanban')}
-                        >
-                            Kanban
-                        </button>
-                    </div>
-                </div>
-            </div>
+        <div
+            className={`event-tasks-tab${taskSheetOpen ? ' event-tasks-tab--task-sheet-open' : ''}`}
+            style={taskSheetOpen ? { '--task-detail-sheet-pad': `${taskSheetPadPx}px` } : undefined}
+        >
+            <TaskBoardColumnsSettings
+                orgId={orgId}
+                isOpen={showBoardSettings}
+                onClose={() => setShowBoardSettings(false)}
+                onSaved={() => refetchBoardStatuses()}
+            />
 
             <Popup
                 isOpen={showCreateModal}
@@ -392,10 +756,11 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                                 value={newTask.status}
                                 onChange={(e) => setNewTask((prev) => ({ ...prev, status: e.target.value }))}
                             >
-                                <option value="todo">To do</option>
-                                <option value="in_progress">In progress</option>
-                                <option value="blocked">Blocked</option>
-                                <option value="done">Done</option>
+                                {boardStatuses.map((s) => (
+                                    <option key={s.key} value={s.key}>
+                                        {s.label}
+                                    </option>
+                                ))}
                             </select>
                             <label className="event-tasks-tab__critical-toggle">
                                 <input
@@ -412,6 +777,14 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                             onChange={(e) => setNewTask((prev) => ({ ...prev, description: e.target.value }))}
                             rows={3}
                         />
+                        <label className="event-tasks-tab__assignee-field">
+                            <span>Assignee</span>
+                            <TaskAssigneePicker
+                                members={members}
+                                value={newTask.ownerUserId}
+                                onChange={(id) => setNewTask((prev) => ({ ...prev, ownerUserId: id ? String(id) : '' }))}
+                            />
+                        </label>
                         <div className="event-tasks-tab__modal-grid event-tasks-tab__modal-grid--deadline">
                             <select
                                 value={newTask.dueMode}
@@ -489,26 +862,144 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                 </div>
             </Popup>
 
-            <div className="event-tasks-tab__metrics">
-                <div className="metric-card">
-                    <span className="metric-label">Tasks</span>
-                    <strong>{metrics.total}</strong>
+            <Popup
+                isOpen={showSuggestionModal}
+                onClose={() => setShowSuggestionModal(false)}
+                customClassName="event-tasks-tab__create-popup narrow-content"
+            >
+                <div className="event-tasks-tab__modal">
+                    <div className="event-tasks-tab__modal-header">
+                        <h4>Guided task setup</h4>
+                        <p>Select the suggested tasks you want to apply for this event.</p>
+                    </div>
+                    {loadingSuggestions ? (
+                        <div className="event-tasks-tab__state">
+                            <Icon icon="mdi:loading" className="spin" />
+                            <span>Loading suggestions…</span>
+                        </div>
+                    ) : (
+                        <div className="event-tasks-tab__suggestions-list">
+                            {suggestions.map((task) => (
+                                <label key={task._selectionId} className="event-tasks-tab__suggestion-item">
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(task.selected)}
+                                        onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            setSuggestions((prev) => prev.map((item) => (
+                                                item._selectionId === task._selectionId
+                                                    ? { ...item, selected: checked }
+                                                    : item
+                                            )));
+                                        }}
+                                    />
+                                    <div>
+                                        <strong>{task.title}</strong>
+                                        {task.description && (
+                                            <p>{descriptionToPreviewPlain(task.description)}</p>
+                                        )}
+                                    </div>
+                                </label>
+                            ))}
+                            {suggestions.length === 0 && (
+                                <p className="event-tasks-tab__state">No suggestions available right now.</p>
+                            )}
+                        </div>
+                    )}
+                    <div className="event-tasks-tab__modal-actions">
+                        <button
+                            type="button"
+                            className="event-tasks-tab__modal-cancel"
+                            onClick={() => setShowSuggestionModal(false)}
+                        >
+                            Cancel
+                        </button>
+                        <button type="button" onClick={handleApplySuggestions} disabled={applyingSuggestions || loadingSuggestions}>
+                            {applyingSuggestions ? 'Applying…' : 'Apply selected'}
+                        </button>
+                    </div>
                 </div>
-                <div className="metric-card">
-                    <span className="metric-label">Completion</span>
-                    <strong>{metrics.completion}%</strong>
-                </div>
-                <div className="metric-card">
-                    <span className="metric-label">Blocked</span>
-                    <strong>{metrics.blocked}</strong>
-                </div>
-                <div className="metric-card">
-                    <span className="metric-label">Overdue</span>
-                    <strong>{metrics.overdue}</strong>
-                </div>
-            </div>
+            </Popup>
 
-            {readiness && (
+            <div className="event-tasks-tab__h-scroll-inner">
+                    <div className="event-tasks-tab__header">
+                        <div>
+                            <h3>
+                                <Icon icon="mdi:clipboard-check-multiple-outline" />
+                                Event Tasks
+                            </h3>
+                            <p>Plan and execute this event with guided, user-controlled tasks.</p>
+                        </div>
+                        <div className="event-tasks-tab__header-actions">
+                            <button
+                                type="button"
+                                className="event-tasks-tab__columns-btn"
+                                onClick={() => setShowBoardSettings(true)}
+                                title="Customize task columns for this organization"
+                            >
+                                <Icon icon="mdi:view-column" />
+                                Columns
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleRecomputeDueDates}
+                                disabled={actioningTaskId === 'recompute'}
+                            >
+                                {actioningTaskId === 'recompute' ? 'Recomputing…' : 'Recompute due dates'}
+                            </button>
+                            <button
+                                type="button"
+                                className="event-tasks-tab__create-trigger"
+                                onClick={() => {
+                                    setNewTask({ ...createDefaultTaskForm(), status: pickFirstBacklogKey(boardStatuses) });
+                                    setShowCreateModal(true);
+                                }}
+                            >
+                                <Icon icon="mdi:plus" />
+                                Create
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleOpenSuggestions}
+                                disabled={loadingSuggestions}
+                            >
+                                {loadingSuggestions ? 'Loading suggestions…' : 'Suggest tasks'}
+                            </button>
+                            <div className="event-tasks-tab__view-toggle">
+                                <button
+                                    type="button"
+                                    className={viewMode === 'list' ? 'active' : ''}
+                                    onClick={() => setViewMode('list')}
+                                >
+                                    List
+                                </button>
+                                <button
+                                    type="button"
+                                    className={viewMode === 'kanban' ? 'active' : ''}
+                                    onClick={() => setViewMode('kanban')}
+                                >
+                                    Kanban
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="event-tasks-tab__metrics">
+                        <div className="metric-card">
+                            <span className="metric-label">Tasks</span>
+                            <strong>{metrics.total}</strong>
+                        </div>
+                        <div className="metric-card">
+                            <span className="metric-label">Completion</span>
+                            <strong>{metrics.completion}%</strong>
+                        </div>
+                        <div className="metric-card">
+                            <span className="metric-label">Overdue</span>
+                            <strong>{metrics.overdue}</strong>
+                        </div>
+                    </div>
+
+                    {readiness && (
                 <div className="event-tasks-tab__readiness">
                     <div className="event-tasks-tab__readiness-top">
                         <div>
@@ -528,12 +1019,22 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                         <div className="event-tasks-tab__readiness-blockers">
                             <strong>Blockers:</strong>{' '}
                             {readiness.blockers.map((blocker) => blocker.label).join(' • ')}
+                            <button
+                                type="button"
+                                className="event-tasks-tab__readiness-action"
+                                onClick={() => {
+                                    setStatusFilter(activeStatusKey);
+                                    setPriorityFilter('high');
+                                }}
+                            >
+                                Focus blockers
+                            </button>
                         </div>
                     )}
                 </div>
-            )}
+                    )}
 
-            <div className="event-tasks-tab__filters">
+                    <div className="event-tasks-tab__filters">
                 <input
                     type="text"
                     placeholder="Search tasks"
@@ -542,11 +1043,11 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                 />
                 <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                     <option value="all">All statuses</option>
-                    <option value="todo">To do</option>
-                    <option value="in_progress">In progress</option>
-                    <option value="blocked">Blocked</option>
-                    <option value="done">Done</option>
-                    <option value="cancelled">Cancelled</option>
+                    {boardStatuses.map((s) => (
+                        <option key={s.key} value={s.key}>
+                            {s.label}
+                        </option>
+                    ))}
                 </select>
                 <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
                     <option value="all">All priorities</option>
@@ -555,165 +1056,150 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                     <option value="high">High</option>
                     <option value="critical">Critical</option>
                 </select>
-            </div>
+                    </div>
 
-            {loading && (
+                    {loading && (
                 <div className="event-tasks-tab__state">
                     <Icon icon="mdi:loading" className="spin" />
                     <span>Loading tasks…</span>
                 </div>
-            )}
-            {!loading && error && (
+                    )}
+                    {!loading && error && (
                 <div className="event-tasks-tab__state error">
                     <Icon icon="mdi:alert-circle-outline" />
                     <span>Unable to load tasks: {error}</span>
                 </div>
-            )}
+                    )}
 
-            {!loading && !error && viewMode === 'list' && (
-                <div className="event-tasks-tab__list">
-                    {tasks.length === 0 ? (
+                    {!loading && !error && (
+                <SharedTaskBoard
+                    viewMode={viewMode}
+                    tasks={boardSortedTasks}
+                    statuses={kanbanColumnKeys}
+                    groupedByStatus={groupedByStatus}
+                    getTaskId={(task) => task._id}
+                    getTaskStatus={getTaskStatus}
+                    getStatusLabel={formatStatusLabel}
+                    onDropToStatus={handleTaskDropToStatus}
+                    onCommitColumnOrder={handleCommitColumnOrder}
+                    listClassName="event-tasks-tab__list"
+                    // onDragStartTask={(task) => {
+                    //     // #region agent log
+                    //     appendAgentDebugLog({
+                    //         hypothesisId: 'B',
+                    //         location: 'EventTasksTab.jsx:onDragStart',
+                    //         message: 'Drag start',
+                    //         data: { taskId: String(task?._id || ''), sourceStatus: getTaskStatus(task) }
+                    //     });
+                    //     // #endregion
+                    // }}
+                    // onDropTask={({ taskId, task, sourceStatus, targetStatus }) => {
+                    //     // #region agent log
+                    //     appendAgentDebugLog({
+                    //         hypothesisId: 'B',
+                    //         location: 'EventTasksTab.jsx:onDrop',
+                    //         message: 'Drop received',
+                    //         data: {
+                    //             taskId: String(taskId || ''),
+                    //             foundTask: Boolean(task),
+                    //             sourceStatus,
+                    //             targetStatus
+                    //         }
+                    //     });
+                    //     // #endregion
+                    // }}
+                    renderEmptyList={() => (
                         <div className="event-tasks-tab__empty">
                             <Icon icon="mdi:clipboard-text-outline" />
                             <p>No tasks yet. Start with the critical execution steps for this event.</p>
                         </div>
-                    ) : (
-                        tasks.map((task) => (
-                            <article key={task._id} className="event-task-item">
-                                <header>
-                                    <h5>{task.title}</h5>
-                                    <div className="task-badges">
-                                        <StatusPill status={task.effectiveStatus || task.status} />
-                                        <PriorityPill priority={task.priority} />
-                                        {task.isCritical && <span className="critical-badge">critical</span>}
-                                        {task.overdue && <span className="overdue-badge">overdue</span>}
-                                    </div>
-                                </header>
-                                {task.description && <p>{task.description}</p>}
-                                <footer>
-                                    <span>
-                                        Due: {task.dueAt ? new Date(task.dueAt).toLocaleString() : 'No due date'}
-                                    </span>
-                                    <div className="task-actions">
-                                        {task.status !== 'done' && (
-                                            <button
-                                                type="button"
-                                                onClick={() => handleQuickStatusChange(task._id, 'done')}
-                                                disabled={actioningTaskId === task._id}
-                                            >
-                                                Mark done
-                                            </button>
-                                        )}
-                                        {task.status === 'todo' && (
-                                            <button
-                                                type="button"
-                                                onClick={() => handleQuickStatusChange(task._id, 'in_progress')}
-                                                disabled={actioningTaskId === task._id}
-                                            >
-                                                Start
-                                            </button>
-                                        )}
-                                        <button
-                                            type="button"
-                                            className="danger"
-                                            onClick={() => handleDeleteTask(task._id)}
-                                            disabled={actioningTaskId === task._id}
-                                        >
-                                            Delete
-                                        </button>
-                                    </div>
-                                </footer>
-                            </article>
-                        ))
                     )}
-                </div>
-            )}
+                    renderListItem={(task, { isDragging, isMoved } = {}) => (
+                        <EventTasksTaskListCard
+                            key={task._id}
+                            task={task}
+                            isDragging={isDragging}
+                            isMoved={isMoved}
+                            getTaskStatus={getTaskStatus}
+                            formatStatusLabel={formatStatusLabel}
+                            onOpenDetail={(t) => openTaskDetail(t, 'sheet')}
+                            members={members}
+                            assigningTaskId={assigningTaskId}
+                            onAssigneeChange={handleCardAssigneeChange}
+                            boardStatuses={boardStatuses}
+                            doneStatusKey={doneStatusKey}
+                            activeStatusKey={activeStatusKey}
+                            activeQuickLabel={activeQuickLabel}
+                            doneQuickLabel={doneQuickLabel}
+                            onQuickStatusChange={handleQuickStatusChange}
+                            onDeleteTask={handleDeleteTask}
+                            actioningTaskId={actioningTaskId}
+                        />
+                    )}
+                    renderKanbanCard={(task, { isDragging, isMoved }) => (
+                        <EventTasksTaskKanbanCard
+                            task={task}
+                            isDragging={isDragging}
+                            isMoved={isMoved}
+                            onOpenDetail={(t) => openTaskDetail(t, 'sheet')}
+                            members={members}
+                            assigningTaskId={assigningTaskId}
+                            onAssigneeChange={handleCardAssigneeChange}
+                        />
+                    )}
+                />
+                    )}
+            </div>
 
-            {!loading && !error && viewMode === 'kanban' && (
-                <div className="event-tasks-tab__kanban">
-                    {KANBAN_STATUSES.map((status) => {
-                        const statusTasks = groupedByStatus[status] || [];
-                        return (
-                        <section
-                            key={status}
-                            className={`kanban-column ${dragOverStatus === status ? 'drop-target' : ''}`}
-                            onDragOver={(event) => {
-                                event.preventDefault();
-                                event.dataTransfer.dropEffect = 'move';
-                                if (dragOverStatus !== status) {
-                                    setDragOverStatus(status);
-                                }
-                            }}
-                            onDragLeave={(event) => {
-                                if (!event.currentTarget.contains(event.relatedTarget)) {
-                                    setDragOverStatus((prev) => (prev === status ? null : prev));
-                                }
-                            }}
-                            onDrop={async (event) => {
-                                event.preventDefault();
-                                const taskId = event.dataTransfer.getData('text/plain') || String(dragTaskId || '');
-                                const droppedTask = tasks.find((item) => String(item._id) === taskId);
-                                // #region agent log
-                                appendAgentDebugLog({
-                                    hypothesisId: 'B',
-                                    location: 'EventTasksTab.jsx:onDrop',
-                                    message: 'Drop received',
-                                    data: {
-                                        taskId: String(taskId || ''),
-                                        foundTask: Boolean(droppedTask),
-                                        sourceStatus: droppedTask ? getTaskStatus(droppedTask) : null,
-                                        targetStatus: status
-                                    }
-                                });
-                                // #endregion
-                                await handleTaskDropToStatus(droppedTask, status);
-                                setDragTaskId(null);
-                                setDragOverStatus(null);
-                            }}
-                        >
-                            <header>
-                                <h4>{status.replace('_', ' ')}</h4>
-                                <span>{statusTasks.length}</span>
-                            </header>
-                            <div className="kanban-column__cards">
-                                {statusTasks.length === 0 && <p className="kanban-empty">No tasks</p>}
-                                {statusTasks.map((task) => (
-                                    <div
-                                        key={task._id}
-                                        className={`kanban-card ${dragTaskId === task._id ? 'dragging' : ''}`}
-                                        draggable
-                                        onDragStart={(event) => {
-                                            event.dataTransfer.setData('text/plain', String(task._id));
-                                            event.dataTransfer.effectAllowed = 'move';
-                                            setDragTaskId(task._id);
-                                            // #region agent log
-                                            appendAgentDebugLog({
-                                                hypothesisId: 'B',
-                                                location: 'EventTasksTab.jsx:onDragStart',
-                                                message: 'Drag start',
-                                                data: { taskId: String(task?._id || ''), sourceStatus: getTaskStatus(task) }
-                                            });
-                                            // #endregion
-                                        }}
-                                        onDragEnd={() => {
-                                            setDragTaskId(null);
-                                            setDragOverStatus(null);
-                                        }}
-                                    >
-                                        <h5>{task.title}</h5>
-                                        <div className="task-badges">
-                                            <PriorityPill priority={task.priority} />
-                                            {task.isCritical && <span className="critical-badge">critical</span>}
-                                        </div>
-                                        {task.description && <p>{task.description}</p>}
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                        );
-                    })}
-                </div>
-            )}
+            <TaskDetailSheet
+                open={detailMode === 'sheet'}
+                onClose={closeTaskDetail}
+                title={taskForDetailPanel?.title || 'Task'}
+                backdrop={false}
+                panelWidthPx={taskSheetPadPx}
+            >
+                {taskForDetailPanel && (
+                    <TaskDetailPanel
+                        task={taskForDetailPanel}
+                        draft={taskDraft}
+                        setDraft={setTaskDraft}
+                        members={members}
+                        orgId={orgId}
+                        currentEventId={event?._id}
+                        taskBoardStatuses={boardStatuses}
+                        variant="sheet"
+                        onClose={closeTaskDetail}
+                        onExpand={() => setDetailMode('full')}
+                        onSave={handleDetailSave}
+                        saving={detailSaving}
+                        saveError={detailError}
+                    />
+                )}
+            </TaskDetailSheet>
+
+            <TaskDetailFull
+                open={detailMode === 'full'}
+                onClose={closeTaskDetail}
+                title={taskForDetailPanel?.title || 'Task'}
+            >
+                {taskForDetailPanel && (
+                    <TaskDetailPanel
+                        task={taskForDetailPanel}
+                        draft={taskDraft}
+                        setDraft={setTaskDraft}
+                        members={members}
+                        orgId={orgId}
+                        currentEventId={event?._id}
+                        taskBoardStatuses={boardStatuses}
+                        variant="full"
+                        onClose={closeTaskDetail}
+                        onCollapse={() => setDetailMode('sheet')}
+                        onSave={handleDetailSave}
+                        saving={detailSaving}
+                        saveError={detailError}
+                    />
+                )}
+            </TaskDetailFull>
         </div>
     );
 }
