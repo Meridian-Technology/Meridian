@@ -1,6 +1,7 @@
 import React from 'react';
 import './IndividualBugReport.scss';
 import { useGradient } from '../../../../hooks/useGradient';
+import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 
 const bugData = {
     "title": 'Dashboard not loading',
@@ -40,9 +41,9 @@ const analyticData = [
         },
         topBrowsers: [
             { name: 'Chrome', users: 185},
-            { name: 'Ios', users: 52},
+            { name: 'iOS', users: 52},
             { name: 'Firefox', users: 23},
-            { name: 'Andrioid', users: 11}
+            { name: 'Android', users: 11}
         ],
         topOS: {
             label: 'Unknown',
@@ -135,22 +136,40 @@ function IndividualBugReport(title, bugNumber, priority, status, tags, assignee,
                         <div className="report-analytics-panel">
                             <h2 className="report-analytics-heading">Analytics</h2>
                             <p className="report-analytics-meta">
-                                <span className="report-analytics-meta__user">{analytics.user}</span>
-                                <span className="report-analytics-meta__date">{analytics.date}</span>
+                                <span className="report-analytics-meta__row">
+                                    <Icon icon="solar:user-bold" />
+                                    <span className="report-analytics-meta__user">{analytics.user}</span>
+                                </span>
+                                <span className="report-analytics-meta__row">
+                                    <Icon icon="solar:calendar-bold" />
+                                    <span className="report-analytics-meta__date">{analytics.date}</span>
+                                </span>
+                                <span className="report-analytics-meta__row">
+                                    <Icon icon="mdi:devices" />
+                                    <span className="report-analytics-meta__devices">
+                                        Devices &amp; Platform
+                                    </span>
+                                </span>
                             </p>
 
                             <section className="analytics-section">
                                 <h3 className="analytics-section__title">Platform</h3>
-                                <p className="analytics-section__value">
-                                    {analytics.platform.label} · {analytics.platform.userCount} users
-                                </p>
+                                <div className="analytics-pills">
+                                    <span className="analytics-pill">
+                                        <span>{analytics.platform.label}</span>
+                                        <span className="analytics-pill__count">{analytics.platform.userCount} users</span>
+                                    </span>
+                                </div>
                             </section>
 
                             <section className="analytics-section">
                                 <h3 className="analytics-section__title">Device types</h3>
-                                <p className="analytics-section__value">
-                                    {analytics.deviceTypes.label} · {analytics.deviceTypes.userCount} users
-                                </p>
+                                <div className="analytics-pills">
+                                    <span className="analytics-pill">
+                                        <span>{analytics.deviceTypes.label}</span>
+                                        <span className="analytics-pill__count">{analytics.deviceTypes.userCount} users</span>
+                                    </span>
+                                </div>
                             </section>
 
                             <section className="analytics-section">
@@ -158,8 +177,10 @@ function IndividualBugReport(title, bugNumber, priority, status, tags, assignee,
                                 <ul className="analytics-browser-list">
                                     {analytics.topBrowsers.map((row) => (
                                         <li key={row.name} className="analytics-browser-list__row">
-                                            <span>{row.name}</span>
-                                            <span className="analytics-browser-list__count">{row.users} users</span>
+                                            <span className="analytics-pill">
+                                                <span>{row.name}</span>
+                                                <span className="analytics-pill__count">{row.users} users</span>
+                                            </span>
                                         </li>
                                     ))}
                                 </ul>
@@ -167,9 +188,12 @@ function IndividualBugReport(title, bugNumber, priority, status, tags, assignee,
 
                             <section className="analytics-section">
                                 <h3 className="analytics-section__title">Top OS</h3>
-                                <p className="analytics-section__value">
-                                    {analytics.topOS.label} · {analytics.topOS.userCount} users
-                                </p>
+                                <div className="analytics-pills">
+                                    <span className="analytics-pill">
+                                        <span>{analytics.topOS.label}</span>
+                                        <span className="analytics-pill__count">{analytics.topOS.userCount} users</span>
+                                    </span>
+                                </div>
                             </section>
                         </div>
                     ) : null}
