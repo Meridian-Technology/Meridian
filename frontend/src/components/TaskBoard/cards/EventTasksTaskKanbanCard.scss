@@ -1,0 +1,105 @@
+@keyframes eventTasksTaskKanbanCardMovedFlash {
+    0% {
+        background: rgba(77, 170, 87, 0.28);
+        border-color: rgba(77, 170, 87, 0.62);
+        box-shadow: 0 0 0 0 rgba(77, 170, 87, 0.35);
+    }
+
+    100% {
+        background: var(--background);
+        border-color: var(--task-border);
+        box-shadow: 0 0 0 0 rgba(77, 170, 87, 0);
+    }
+}
+
+.event-tasks-task-kanban-card {
+    border: 1px solid var(--task-border);
+    border-radius: 10px;
+    background: var(--background);
+    padding: 0.52rem 0.58rem 0.48rem;
+    cursor: grab;
+    box-shadow: 0 1px 2px rgba(15, 18, 22, 0.04);
+    transition: border-color 220ms ease, opacity 220ms ease, background-color 220ms ease, box-shadow 220ms ease;
+
+    &:hover {
+        border-color: rgba(77, 170, 87, 0.2);
+        box-shadow: 0 1px 3px rgba(77, 170, 87, 0.06);
+    }
+
+    &.event-tasks-task-kanban-card--dragging {
+        opacity: 0.5;
+        border-color: rgba(77, 170, 87, 0.35);
+    }
+
+    &.event-tasks-task-kanban-card--moved {
+        animation: eventTasksTaskKanbanCardMovedFlash 650ms ease;
+    }
+
+    &__title-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.4rem 0.5rem;
+    }
+
+    h5 {
+        margin: 0;
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1.25;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .event-tasks-task-card__badges {
+        flex-shrink: 0;
+    }
+
+    .event-tasks-task-card__description {
+        margin: 0.28rem 0 0;
+        font-size: 0.74rem;
+        line-height: 1.4;
+    }
+
+    &__footer-meta {
+        margin-top: 0.42rem;
+        padding-top: 0.38rem;
+        border-top: 1px solid var(--task-border);
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.2rem 0.35rem;
+        font-size: 0.7rem;
+        color: var(--task-muted);
+
+        .event-tasks-task-kanban-card__meta-text {
+            display: inline-flex;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+        }
+
+        > * + *::before {
+            content: '·';
+            margin-right: 0.42rem;
+            color: var(--task-muted);
+            opacity: 0.45;
+            font-weight: 700;
+            user-select: none;
+        }
+    }
+}
+
+.shared-task-board__drag-shell.dragging-origin .event-tasks-task-kanban-card {
+    border-style: dashed;
+    border-color: rgba(108, 117, 125, 0.28);
+    background: transparent;
+    box-shadow: none;
+    min-height: 88px;
+    cursor: grabbing;
+
+    > * {
+        visibility: hidden;
+    }
+}
