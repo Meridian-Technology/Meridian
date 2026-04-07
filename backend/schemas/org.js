@@ -290,6 +290,33 @@ const OrgSchema= new Schema({
         type: Schema.Types.ObjectId,
         ref: 'User',
         default: null
+    },
+    /** Custom task hub / event task Kanban columns (max 10). Empty/absent = platform defaults. */
+    taskBoardStatuses: {
+        type: [{
+            key: {
+                type: String,
+                required: true,
+                trim: true,
+                lowercase: true
+            },
+            label: {
+                type: String,
+                required: true,
+                trim: true,
+                maxlength: 64
+            },
+            category: {
+                type: String,
+                enum: ['backlog', 'active', 'done', 'cancelled'],
+                required: true
+            },
+            order: {
+                type: Number,
+                default: 0
+            }
+        }],
+        default: undefined
     }
 });
 

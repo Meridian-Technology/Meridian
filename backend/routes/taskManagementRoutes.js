@@ -7,10 +7,21 @@ const {
     asObjectId,
     computeDueAtForTask,
     computeEventReadiness,
+    getSuggestedTasksForEvent,
     listTasks,
+    findOneTaskDto,
+    buildEventTaskAssigneeSummary,
     recomputeDueDatesForEvent,
-    sortHubTasks
+    sortHubTasks,
+    normalizeTaskStatusForOrg,
+    getResolvedTaskBoardStatuses,
+    applyTaskColumnOrder
 } = require('../services/taskService');
+const {
+    validateTaskBoardStatusesPayload,
+    getAllowedStatusKeys,
+    DEFAULT_TASK_BOARD_STATUSES
+} = require('../services/taskBoardStatusUtils');
 
 function toBoolean(value, defaultValue = false) {
     if (value === undefined || value === null || value === '') return defaultValue;
@@ -20,7 +31,8 @@ function toBoolean(value, defaultValue = false) {
     return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
 }
 
-function applyTaskPatch(task, payload = {}) {
+function applyTaskPatch(task, payload = {}, statusConfig) {
+    const cfg = statusConfig || DEFAULT_TASK_BOARD_STATUSES;
     const scalarFields = [
         'title',
         'description',
@@ -39,6 +51,10 @@ function applyTaskPatch(task, payload = {}) {
         if (payload[field] !== undefined) {
             if ((field === 'title' || field === 'description') && typeof payload[field] === 'string') {
                 task[field] = payload[field].trim();
+                return;
+            }
+            if (field === 'status') {
+                task[field] = normalizeTaskStatusForOrg(payload[field], cfg);
                 return;
             }
             task[field] = payload[field];
@@ -62,6 +78,108 @@ function applyTaskPatch(task, payload = {}) {
     if (payload.isCritical !== undefined) {
         task.isCritical = toBoolean(payload.isCritical, false);
     }
+    if (payload.boardRank !== undefined && payload.boardRank !== null) {
+        const n = Number(payload.boardRank);
+        if (Number.isFinite(n)) {
+            task.boardRank = n;
+        }
+    }
+}
+
+// Org task board columns (Kanban / status workflow; max 10)
+router.get('/:orgId/task-board-statuses', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId } = req.params;
+    const models = getModels(req, 'Org');
+    try {
+        const org = await models.Org.findById(asObjectId(orgId)).select('taskBoardStatuses').lean();
+        return res.status(200).json({
+            success: true,
+            data: { statuses: getResolvedTaskBoardStatuses(org) }
+        });
+    } catch (error) {
+        console.error('Error loading task board statuses:', error);
+        return res.status(500).json({ success: false, message: 'Error loading task board statuses', error: error.message });
+    }
+});
+
+router.put('/:orgId/task-board-statuses', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId } = req.params;
+    const models = getModels(req, 'Org', 'Task');
+    const body = req.body || {};
+
+    try {
+        const org = await models.Org.findById(asObjectId(orgId));
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        if (body.reset === true) {
+            org.taskBoardStatuses = undefined;
+            await org.save();
+            return res.status(200).json({
+                success: true,
+                data: { statuses: getResolvedTaskBoardStatuses(null) }
+            });
+        }
+
+        const parsed = validateTaskBoardStatusesPayload(body.statuses);
+        if (parsed.error) {
+            return res.status(400).json({ success: false, message: parsed.error });
+        }
+
+        const prevKeys = getAllowedStatusKeys(getResolvedTaskBoardStatuses(org));
+        const nextKeys = new Set(parsed.value.map((s) => s.key));
+        const removed = [...prevKeys].filter((k) => !nextKeys.has(k));
+        if (removed.length) {
+            const inUse = await models.Task.countDocuments({
+                orgId: asObjectId(orgId),
+                status: { $in: removed }
+            });
+            if (inUse > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Cannot remove column(s) still used by ${inUse} task(s). Move those tasks first.`
+                });
+            }
+        }
+
+        org.taskBoardStatuses = parsed.value;
+        await org.save();
+        return res.status(200).json({
+            success: true,
+            data: { statuses: getResolvedTaskBoardStatuses(org) }
+        });
+    } catch (error) {
+        console.error('Error saving task board statuses:', error);
+        return res.status(500).json({ success: false, message: 'Error saving task board statuses', error: error.message });
+    }
+});
+
+// Distinct task assignees per event (for event list / quick look avatars)
+router.get('/:orgId/tasks/event-assignee-summary', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId } = req.params;
+    const models = getModels(req, 'Task', 'User');
+
+    try {
+        const assigneesByEventId = await buildEventTaskAssigneeSummary(models, orgId);
+        return res.status(200).json({
+            success: true,
+            data: { assigneesByEventId }
+        });
+    } catch (error) {
+        console.error('Error building event task assignee summary:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error loading task assignees',
+            error: error.message
+        });
+    }
+});
+
+async function loadOrgTaskBoardConfig(models, orgId) {
+    if (!models?.Org) return DEFAULT_TASK_BOARD_STATUSES;
+    const org = await models.Org.findById(asObjectId(orgId)).select('taskBoardStatuses').lean();
+    return getResolvedTaskBoardStatuses(org);
 }
 
 async function ensureOrgEventAccess(models, orgId, eventId) {
@@ -82,7 +200,7 @@ async function ensureOrgEventAccess(models, orgId, eventId) {
 router.get('/:orgId/events/:eventId/tasks', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { orgId, eventId } = req.params;
     const { status = 'all', ownerUserId, priority = 'all', search = '', sortBy = 'priority' } = req.query;
-    const models = getModels(req, 'Task', 'Event');
+    const models = getModels(req, 'Task', 'Event', 'Org');
 
     try {
         const event = await ensureOrgEventAccess(models, orgId, eventId);
@@ -117,11 +235,54 @@ router.get('/:orgId/events/:eventId/tasks', verifyToken, requireEventManagement(
     }
 });
 
+// Persist drag order within one status column (event tasks)
+router.put('/:orgId/events/:eventId/tasks/column-order', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId, eventId } = req.params;
+    const { taskIds } = req.body || {};
+    const models = getModels(req, 'Task', 'Event');
+
+    try {
+        const event = await ensureOrgEventAccess(models, orgId, eventId);
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        if (!Array.isArray(taskIds)) {
+            return res.status(400).json({ success: false, message: 'taskIds must be an array' });
+        }
+        await applyTaskColumnOrder(models, orgId, taskIds, eventId);
+        return res.status(200).json({ success: true, message: 'Order updated' });
+    } catch (error) {
+        console.error('Error updating event task column order:', error);
+        return res.status(500).json({ success: false, message: 'Error updating order', error: error.message });
+    }
+});
+
+// Get single event task
+router.get('/:orgId/events/:eventId/tasks/:taskId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId, eventId, taskId } = req.params;
+    const models = getModels(req, 'Task', 'Event', 'Org');
+
+    try {
+        const event = await ensureOrgEventAccess(models, orgId, eventId);
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const task = await findOneTaskDto(models, orgId, taskId, eventId);
+        if (!task) {
+            return res.status(404).json({ success: false, message: 'Task not found' });
+        }
+        return res.status(200).json({ success: true, data: { task } });
+    } catch (error) {
+        console.error('Error loading event task:', error);
+        return res.status(500).json({ success: false, message: 'Error loading task', error: error.message });
+    }
+});
+
 // Create event task
 router.post('/:orgId/events/:eventId/tasks', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { orgId, eventId } = req.params;
     const payload = req.body || {};
-    const models = getModels(req, 'Task', 'Event');
+    const models = getModels(req, 'Task', 'Event', 'Org');
 
     try {
         const event = await ensureOrgEventAccess(models, orgId, eventId);
@@ -132,12 +293,13 @@ router.post('/:orgId/events/:eventId/tasks', verifyToken, requireEventManagement
             return res.status(400).json({ success: false, message: 'Task title is required' });
         }
 
+        const statusConfig = await loadOrgTaskBoardConfig(models, orgId);
         const task = new models.Task({
             orgId: asObjectId(orgId),
             eventId: asObjectId(eventId),
             title: String(payload.title).trim(),
             description: payload.description || '',
-            status: payload.status || 'todo',
+            status: normalizeTaskStatusForOrg(payload.status || 'todo', statusConfig),
             priority: payload.priority || 'medium',
             isCritical: toBoolean(payload.isCritical, false),
             ownerUserId: payload.ownerUserId && asObjectId(payload.ownerUserId) ? asObjectId(payload.ownerUserId) : null,
@@ -167,7 +329,7 @@ router.post('/:orgId/events/:eventId/tasks', verifyToken, requireEventManagement
 router.put('/:orgId/events/:eventId/tasks/:taskId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { orgId, eventId, taskId } = req.params;
     const payload = req.body || {};
-    const models = getModels(req, 'Task', 'Event');
+    const models = getModels(req, 'Task', 'Event', 'Org');
 
     try {
         const event = await ensureOrgEventAccess(models, orgId, eventId);
@@ -183,7 +345,8 @@ router.put('/:orgId/events/:eventId/tasks/:taskId', verifyToken, requireEventMan
             return res.status(404).json({ success: false, message: 'Task not found' });
         }
 
-        applyTaskPatch(task, payload);
+        const statusConfig = await loadOrgTaskBoardConfig(models, orgId);
+        applyTaskPatch(task, payload, statusConfig);
         if (payload.dueRule !== undefined && payload.dueAt === undefined) {
             task.dueAt = computeDueAtForTask(task, event, null);
         }
@@ -250,7 +413,7 @@ router.post('/:orgId/events/:eventId/tasks/recompute-due-dates', verifyToken, re
 // Event readiness snapshot
 router.get('/:orgId/events/:eventId/readiness', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { orgId, eventId } = req.params;
-    const models = getModels(req, 'Task', 'Event', 'ApprovalInstance', 'EventEquipment', 'EventJob');
+    const models = getModels(req, 'Task', 'Event', 'ApprovalInstance', 'EventEquipment', 'EventJob', 'Org');
 
     try {
         const event = await ensureOrgEventAccess(models, orgId, eventId);
@@ -282,7 +445,7 @@ router.get('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), as
         sortBy = 'urgency'
     } = req.query;
     const { orgId } = req.params;
-    const models = getModels(req, 'Task', 'Event');
+    const models = getModels(req, 'Task', 'Event', 'Org');
 
     try {
         const tasks = await listTasks(models, orgId, {
@@ -316,11 +479,28 @@ router.get('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), as
     }
 });
 
+// Get single hub task (org-scoped)
+router.get('/:orgId/tasks/hub/:taskId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId, taskId } = req.params;
+    const models = getModels(req, 'Task', 'Org');
+
+    try {
+        const task = await findOneTaskDto(models, orgId, taskId, null);
+        if (!task) {
+            return res.status(404).json({ success: false, message: 'Task not found' });
+        }
+        return res.status(200).json({ success: true, data: { task } });
+    } catch (error) {
+        console.error('Error loading hub task:', error);
+        return res.status(500).json({ success: false, message: 'Error loading task', error: error.message });
+    }
+});
+
 // Create organization-level operational task (non-event task)
 router.post('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { orgId } = req.params;
     const payload = req.body || {};
-    const models = getModels(req, 'Task');
+    const models = getModels(req, 'Task', 'Org');
 
     try {
         if (!payload.title || !String(payload.title).trim()) {
@@ -329,13 +509,14 @@ router.post('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), a
 
         const ownerObjectId = payload.ownerUserId && asObjectId(payload.ownerUserId);
         const eventObjectId = payload.eventId && asObjectId(payload.eventId);
+        const statusConfig = await loadOrgTaskBoardConfig(models, orgId);
 
         const task = new models.Task({
             orgId: asObjectId(orgId),
             eventId: eventObjectId || null,
             title: String(payload.title).trim(),
             description: payload.description || '',
-            status: payload.status || 'todo',
+            status: normalizeTaskStatusForOrg(payload.status || 'todo', statusConfig),
             priority: payload.priority || 'medium',
             isCritical: toBoolean(payload.isCritical, false),
             ownerUserId: ownerObjectId || null,
@@ -360,11 +541,30 @@ router.post('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), a
     }
 });
 
+// Persist drag order within one status column (org task hub — any eventId per task).
+// MUST be registered before PUT /:orgId/tasks/hub/:taskId or "column-order" is parsed as taskId.
+router.put('/:orgId/tasks/hub/column-order', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId } = req.params;
+    const { taskIds } = req.body || {};
+    const models = getModels(req, 'Task');
+
+    try {
+        if (!Array.isArray(taskIds)) {
+            return res.status(400).json({ success: false, message: 'taskIds must be an array' });
+        }
+        await applyTaskColumnOrder(models, orgId, taskIds, undefined);
+        return res.status(200).json({ success: true, message: 'Order updated' });
+    } catch (error) {
+        console.error('Error updating hub task column order:', error);
+        return res.status(500).json({ success: false, message: 'Error updating order', error: error.message });
+    }
+});
+
 // Update organization-level task by id
 router.put('/:orgId/tasks/hub/:taskId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { orgId, taskId } = req.params;
     const payload = req.body || {};
-    const models = getModels(req, 'Task', 'Event');
+    const models = getModels(req, 'Task', 'Event', 'Org');
 
     try {
         const task = await models.Task.findOne({
@@ -375,7 +575,8 @@ router.put('/:orgId/tasks/hub/:taskId', verifyToken, requireEventManagement('org
             return res.status(404).json({ success: false, message: 'Task not found' });
         }
 
-        applyTaskPatch(task, payload);
+        const statusConfig = await loadOrgTaskBoardConfig(models, orgId);
+        applyTaskPatch(task, payload, statusConfig);
 
         if (payload.dueRule !== undefined && payload.dueAt === undefined && task.eventId) {
             const event = await models.Event.findById(task.eventId).lean();
@@ -391,6 +592,122 @@ router.put('/:orgId/tasks/hub/:taskId', verifyToken, requireEventManagement('org
     } catch (error) {
         console.error('Error updating hub task:', error);
         return res.status(500).json({ success: false, message: 'Error updating task', error: error.message });
+    }
+});
+
+// Delete organization-level task by id
+router.delete('/:orgId/tasks/hub/:taskId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId, taskId } = req.params;
+    const models = getModels(req, 'Task');
+    try {
+        const deleted = await models.Task.findOneAndDelete({
+            _id: asObjectId(taskId),
+            orgId: asObjectId(orgId)
+        });
+        if (!deleted) {
+            return res.status(404).json({ success: false, message: 'Task not found' });
+        }
+        return res.status(200).json({ success: true, message: 'Task deleted' });
+    } catch (error) {
+        console.error('Error deleting hub task:', error);
+        return res.status(500).json({ success: false, message: 'Error deleting task', error: error.message });
+    }
+});
+
+// Suggested event tasks based on template/event type
+router.get('/:orgId/events/:eventId/task-suggestions', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId, eventId } = req.params;
+    const { templateId, eventType } = req.query;
+    const models = getModels(req, 'Task', 'Event', 'EventTemplate', 'Org');
+    try {
+        const event = await ensureOrgEventAccess(models, orgId, eventId);
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const statusConfig = await loadOrgTaskBoardConfig(models, orgId);
+        const librarySuggestions = getSuggestedTasksForEvent(event, { eventType }).map((s) => ({
+            ...s,
+            status: normalizeTaskStatusForOrg(s.status || 'todo', statusConfig)
+        }));
+        const template = templateId
+            ? await models.EventTemplate.findOne({ _id: asObjectId(templateId), orgId: asObjectId(orgId), isActive: true }).lean()
+            : null;
+        const templateTasks = Array.isArray(template?.templateData?.taskBlueprint)
+            ? template.templateData.taskBlueprint.map((task, idx) => ({
+                key: task.templateTaskKey || `template_${idx + 1}`,
+                title: String(task.title || '').trim(),
+                description: task.description || '',
+                priority: task.priority || 'medium',
+                status: normalizeTaskStatusForOrg(task.status || 'todo', statusConfig),
+                isCritical: Boolean(task.isCritical),
+                dueRule: task.dueRule || { anchorType: 'none' },
+                source: 'template_suggestion',
+                userConfirmed: false,
+                templateSource: {
+                    templateId: template?._id || null,
+                    templateTaskKey: task.templateTaskKey || `template_${idx + 1}`
+                }
+            })).filter((task) => task.title)
+            : [];
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                event: { _id: event._id, name: event.name, type: event.type },
+                suggestions: [...librarySuggestions, ...templateTasks]
+            }
+        });
+    } catch (error) {
+        console.error('Error loading task suggestions:', error);
+        return res.status(500).json({ success: false, message: 'Error loading task suggestions', error: error.message });
+    }
+});
+
+// Apply selected suggestions to an event as confirmed tasks
+router.post('/:orgId/events/:eventId/tasks/apply-suggestions', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { orgId, eventId } = req.params;
+    const payload = req.body || {};
+    const models = getModels(req, 'Task', 'Event', 'Org');
+    try {
+        const event = await ensureOrgEventAccess(models, orgId, eventId);
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const statusConfig = await loadOrgTaskBoardConfig(models, orgId);
+        const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+        if (!suggestions.length) {
+            return res.status(400).json({ success: false, message: 'No suggestions provided' });
+        }
+        const approvalAnchorDate = null;
+        const createdTasks = [];
+        for (const suggestion of suggestions) {
+            const title = String(suggestion?.title || '').trim();
+            if (!title) continue;
+            const task = new models.Task({
+                orgId: asObjectId(orgId),
+                eventId: asObjectId(eventId),
+                title,
+                description: suggestion.description || '',
+                status: normalizeTaskStatusForOrg(suggestion.status || 'todo', statusConfig),
+                priority: suggestion.priority || 'medium',
+                isCritical: Boolean(suggestion.isCritical),
+                source: suggestion.source || 'template_applied',
+                userConfirmed: true,
+                dueRule: suggestion.dueRule || { anchorType: 'none' },
+                templateSource: suggestion.templateSource || undefined
+            });
+            task.dueAt = computeDueAtForTask(task, event, approvalAnchorDate);
+            await task.save();
+            createdTasks.push(task);
+        }
+        return res.status(201).json({
+            success: true,
+            message: 'Suggested tasks applied',
+            data: { createdCount: createdTasks.length, tasks: createdTasks }
+        });
+    } catch (error) {
+        console.error('Error applying task suggestions:', error);
+        return res.status(500).json({ success: false, message: 'Error applying task suggestions', error: error.message });
     }
 });
 

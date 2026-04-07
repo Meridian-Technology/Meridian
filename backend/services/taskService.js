@@ -1,4 +1,12 @@
 const mongoose = require('mongoose');
+const {
+    DEFAULT_TASK_BOARD_STATUSES,
+    getResolvedTaskBoardStatuses,
+    resolveStatusCategory,
+    normalizeTaskStatusForOrg,
+    pickFirstDoneKey,
+    pickDefaultActiveKey
+} = require('./taskBoardStatusUtils');
 
 const PRIORITY_WEIGHTS = {
     low: 1,
@@ -13,6 +21,22 @@ const STATUS_SORT = {
     todo: 2,
     done: 3,
     cancelled: 4
+};
+
+const TASK_SUGGESTION_LIBRARY = {
+    default: [
+        { key: 'kickoff', title: 'Run kickoff alignment', description: 'Confirm scope, owners, and timeline.', priority: 'high', status: 'todo', isCritical: true, dueRule: { anchorType: 'event_start', offsetValue: 21, offsetUnit: 'days', direction: 'before' } },
+        { key: 'promotion', title: 'Publish promotion plan', description: 'Announce event channels and cadence.', priority: 'medium', status: 'todo', isCritical: false, dueRule: { anchorType: 'event_start', offsetValue: 14, offsetUnit: 'days', direction: 'before' } },
+        { key: 'staffing', title: 'Confirm staffing coverage', description: 'Assign event-day roles and backups.', priority: 'high', status: 'todo', isCritical: true, dueRule: { anchorType: 'event_start', offsetValue: 7, offsetUnit: 'days', direction: 'before' } },
+        { key: 'runbook', title: 'Finalize day-of runbook', description: 'Prepare timeline, contacts, and contingency notes.', priority: 'high', status: 'todo', isCritical: true, dueRule: { anchorType: 'event_start', offsetValue: 2, offsetUnit: 'days', direction: 'before' } },
+        { key: 'retro', title: 'Post-event debrief', description: 'Capture outcomes and follow-up actions.', priority: 'medium', status: 'todo', isCritical: false, dueRule: { anchorType: 'event_end', offsetValue: 2, offsetUnit: 'days', direction: 'after' } }
+    ],
+    workshop: [
+        { key: 'materials', title: 'Prepare workshop materials', description: 'Slides, handouts, and activity assets.', priority: 'high', status: 'todo', isCritical: true, dueRule: { anchorType: 'event_start', offsetValue: 5, offsetUnit: 'days', direction: 'before' } }
+    ],
+    social: [
+        { key: 'guest-flow', title: 'Plan guest flow and check-in', description: 'Entry process, check-in points, and host assignments.', priority: 'medium', status: 'todo', isCritical: false, dueRule: { anchorType: 'event_start', offsetValue: 3, offsetUnit: 'days', direction: 'before' } }
+    ]
 };
 
 function asObjectId(id) {
@@ -78,24 +102,29 @@ async function resolveApprovalAnchorDate(models, eventId) {
 }
 
 function buildTaskSort(sortBy = 'priority') {
-    if (sortBy === 'dueAt') return { dueAt: 1, priority: -1, createdAt: -1 };
-    if (sortBy === 'createdAt') return { createdAt: -1 };
-    if (sortBy === 'status') return { status: 1, priority: -1, dueAt: 1, createdAt: -1 };
-    return { priority: -1, dueAt: 1, createdAt: -1 };
+    const boardTie = { boardRank: 1 };
+    if (sortBy === 'dueAt') return { dueAt: 1, priority: -1, createdAt: -1, ...boardTie };
+    if (sortBy === 'createdAt') return { createdAt: -1, ...boardTie };
+    if (sortBy === 'status') return { status: 1, priority: -1, dueAt: 1, createdAt: -1, ...boardTie };
+    return { priority: -1, dueAt: 1, createdAt: -1, ...boardTie };
 }
 
-function toTaskDto(task) {
+function toTaskDto(task, statusConfig = DEFAULT_TASK_BOARD_STATUSES) {
     const plain = task.toObject ? task.toObject() : task;
     const blockedByUnresolved = (plain.blockers || []).some((blocker) => !blocker.resolved);
-    const effectiveStatus = blockedByUnresolved && plain.status !== 'done' && plain.status !== 'cancelled'
-        ? 'blocked'
-        : plain.status;
+    const cat = resolveStatusCategory(plain.status, statusConfig);
+    const isDone = cat === 'done';
+    const isCancelled = cat === 'cancelled';
+    const effectiveStatus =
+        blockedByUnresolved && !isDone && !isCancelled ? 'blocked' : plain.status;
 
     return {
         ...plain,
         effectiveStatus,
         priorityWeight: PRIORITY_WEIGHTS[plain.priority] || PRIORITY_WEIGHTS.medium,
-        overdue: Boolean(plain.dueAt && new Date(plain.dueAt) < new Date() && !['done', 'cancelled'].includes(plain.status))
+        overdue: Boolean(
+            plain.dueAt && new Date(plain.dueAt) < new Date() && !isDone && !isCancelled
+        )
     };
 }
 
@@ -132,13 +161,36 @@ function scoreBand(score) {
     return 'not_ready';
 }
 
+/** @deprecated Use normalizeTaskStatusForOrg from taskBoardStatusUtils with org config */
+function normalizeTaskStatus(status) {
+    return normalizeTaskStatusForOrg(status, DEFAULT_TASK_BOARD_STATUSES);
+}
+
+function getSuggestedTasksForEvent(event = {}, options = {}) {
+    const eventType = String(options.eventType || event.type || '').toLowerCase();
+    const defaults = TASK_SUGGESTION_LIBRARY.default || [];
+    const typeSpecific = TASK_SUGGESTION_LIBRARY[eventType] || [];
+    return [...defaults, ...typeSpecific].map((suggestion) => ({
+        ...suggestion,
+        status: normalizeTaskStatus(suggestion.status || 'todo'),
+        source: 'template_suggestion',
+        userConfirmed: false
+    }));
+}
+
 async function computeEventReadiness(models, orgId, eventId) {
     const eventObjectId = asObjectId(eventId);
     if (!eventObjectId) return null;
 
+    const orgObjectId = asObjectId(orgId);
+    const orgDoc = models.Org && orgObjectId
+        ? await models.Org.findById(orgObjectId).select('taskBoardStatuses').lean()
+        : null;
+    const statusConfig = getResolvedTaskBoardStatuses(orgDoc);
+
     const [event, tasks, approvalInstances, equipment, roles] = await Promise.all([
         models.Event.findOne({ _id: eventObjectId, hostingType: 'Org', isDeleted: false }).lean(),
-        models.Task.find({ orgId: asObjectId(orgId), eventId: eventObjectId }).lean(),
+        models.Task.find({ orgId: orgObjectId, eventId: eventObjectId }).lean(),
         models.ApprovalInstance
             ? models.ApprovalInstance.find({ eventId: eventObjectId }).lean()
             : Promise.resolve([]),
@@ -152,15 +204,32 @@ async function computeEventReadiness(models, orgId, eventId) {
 
     if (!event) return null;
 
-    const actionableTasks = tasks.filter((task) => !['cancelled'].includes(task.status));
-    const doneTasks = actionableTasks.filter((task) => task.status === 'done');
-    const taskCompletion = actionableTasks.length > 0
-        ? (doneTasks.length / actionableTasks.length)
-        : 0;
-
-    const criticalIncomplete = actionableTasks.filter(
-        (task) => task.isCritical && !['done', 'cancelled'].includes(task.status)
+    const actionableTasks = tasks.filter(
+        (task) => resolveStatusCategory(task.status, statusConfig) !== 'cancelled'
     );
+    const totalTaskWeight = actionableTasks.reduce((sum, task) => sum + Math.max(0, Number(task?.readinessContribution?.weight ?? 1)), 0);
+    const doneTaskWeight = actionableTasks
+        .filter((task) => resolveStatusCategory(task.status, statusConfig) === 'done')
+        .reduce((sum, task) => sum + Math.max(0, Number(task?.readinessContribution?.weight ?? 1)), 0);
+    const weightedBlockedTasks = actionableTasks.filter((task) =>
+        task?.readinessContribution?.blocked || (task.blockers || []).some((blocker) => !blocker.resolved)
+    );
+    const blockedWeightPenalty = totalTaskWeight > 0
+        ? Math.min(
+            0.35,
+            weightedBlockedTasks.reduce(
+                (sum, task) => sum + Math.max(0, Number(task?.readinessContribution?.weight ?? 1)),
+                0
+            ) / totalTaskWeight
+        )
+        : 0;
+    const taskCompletionRaw = totalTaskWeight > 0 ? (doneTaskWeight / totalTaskWeight) : 0;
+    const taskCompletion = Math.max(0, taskCompletionRaw - blockedWeightPenalty);
+
+    const criticalIncomplete = actionableTasks.filter((task) => {
+        const c = resolveStatusCategory(task.status, statusConfig);
+        return task.isCritical && c !== 'done' && c !== 'cancelled';
+    });
     const blockedCritical = criticalIncomplete.filter((task) =>
         (task.blockers || []).some((blocker) => !blocker.resolved)
     );
@@ -223,6 +292,12 @@ async function computeEventReadiness(models, orgId, eventId) {
             engagementReadiness: Math.round(engagementScore * 100)
         },
         blockers: hardBlockers,
+        explainability: {
+            weightedTaskCoverage: Math.round(taskCompletionRaw * 100),
+            blockedWeightPenalty: Math.round(blockedWeightPenalty * 100),
+            criticalIncompleteCount: criticalIncomplete.length,
+            pendingApprovals: pendingApprovals.length
+        },
         missing: [
             ...criticalIncomplete.map((task) => ({
                 type: 'task',
@@ -264,6 +339,12 @@ async function listTasks(models, orgId, options = {}) {
     const orgObjectId = asObjectId(orgId);
     if (!orgObjectId) return [];
 
+    const orgDoc =
+        models.Org && orgObjectId
+            ? await models.Org.findById(orgObjectId).select('taskBoardStatuses').lean()
+            : null;
+    const statusConfig = getResolvedTaskBoardStatuses(orgDoc);
+
     const query = { orgId: orgObjectId };
     if (options.eventId === null || options.eventId === 'null') {
         query.eventId = null;
@@ -295,7 +376,7 @@ async function listTasks(models, orgId, options = {}) {
         .populate('eventId', 'name start_time end_time')
         .lean();
 
-    const taskDtos = tasks.map(toTaskDto).map((task) => ({
+    const taskDtos = tasks.map((t) => toTaskDto(t, statusConfig)).map((task) => ({
         ...task,
         urgencyScore: computeUrgencyScore(task)
     }));
@@ -309,13 +390,99 @@ async function listTasks(models, orgId, options = {}) {
     return taskDtos;
 }
 
+/**
+ * Unique task owners per event for org (stable order: first task appearance).
+ * Returns plain object: { [eventId]: [{ _id, name, username, picture }, ...] }
+ */
+async function buildEventTaskAssigneeSummary(models, orgId) {
+    const orgObjectId = asObjectId(orgId);
+    if (!orgObjectId || !models?.Task || !models?.User) {
+        return {};
+    }
+
+    const tasks = await models.Task.find({
+        orgId: orgObjectId,
+        eventId: { $ne: null },
+        ownerUserId: { $ne: null }
+    })
+        .select('eventId ownerUserId')
+        .sort({ updatedAt: 1 })
+        .lean();
+
+    const byEvent = new Map();
+    for (const t of tasks) {
+        const eid = t.eventId != null ? String(t.eventId) : '';
+        const uid = t.ownerUserId != null ? String(t.ownerUserId) : '';
+        if (!eid || !uid) continue;
+        if (!byEvent.has(eid)) byEvent.set(eid, []);
+        const arr = byEvent.get(eid);
+        if (!arr.includes(uid)) arr.push(uid);
+    }
+
+    const allIds = [...new Set([].concat(...byEvent.values()))];
+    if (!allIds.length) return {};
+
+    const oids = allIds.map((id) => asObjectId(id)).filter(Boolean);
+    const users = await models.User.find({ _id: { $in: oids } })
+        .select('name username picture')
+        .lean();
+    const userMap = new Map(
+        users.map((u) => [
+            String(u._id),
+            { _id: u._id, name: u.name, username: u.username, picture: u.picture }
+        ])
+    );
+
+    const assigneesByEventId = {};
+    for (const [eid, uids] of byEvent.entries()) {
+        assigneesByEventId[eid] = uids.map((id) => userMap.get(id)).filter(Boolean);
+    }
+    return assigneesByEventId;
+}
+
+async function findOneTaskDto(models, orgId, taskId, eventIdConstraint = null) {
+    const orgObjectId = asObjectId(orgId);
+    const taskObjectId = asObjectId(taskId);
+    if (!orgObjectId || !taskObjectId || !models?.Task) return null;
+
+    const orgDoc =
+        models.Org && orgObjectId
+            ? await models.Org.findById(orgObjectId).select('taskBoardStatuses').lean()
+            : null;
+    const statusConfig = getResolvedTaskBoardStatuses(orgDoc);
+
+    const query = { _id: taskObjectId, orgId: orgObjectId };
+    if (eventIdConstraint) {
+        query.eventId = asObjectId(eventIdConstraint);
+    }
+
+    const task = await models.Task.findOne(query)
+        .populate('ownerUserId', 'name username picture')
+        .populate('eventId', 'name start_time end_time')
+        .lean();
+    if (!task) return null;
+
+    const dto = toTaskDto(task, statusConfig);
+    return {
+        ...dto,
+        urgencyScore: computeUrgencyScore(dto)
+    };
+}
+
 function sortHubTasks(tasks, sortBy = 'urgency') {
+    const byBoardRank = (a, b) => {
+        const d = (Number(a.boardRank) || 0) - (Number(b.boardRank) || 0);
+        if (d !== 0) return d;
+        return (new Date(a.createdAt).getTime()) - (new Date(b.createdAt).getTime());
+    };
     const cloned = [...tasks];
     if (sortBy === 'dueAt') {
         return cloned.sort((a, b) => {
             const aDue = a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
             const bDue = b.dueAt ? new Date(b.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
-            return aDue - bDue;
+            const byDue = aDue - bDue;
+            if (byDue !== 0) return byDue;
+            return byBoardRank(a, b);
         });
     }
     if (sortBy === 'priority') {
@@ -324,18 +491,104 @@ function sortHubTasks(tasks, sortBy = 'urgency') {
             if (byPriority !== 0) return byPriority;
             const byStatus = (STATUS_SORT[a.effectiveStatus] ?? 10) - (STATUS_SORT[b.effectiveStatus] ?? 10);
             if (byStatus !== 0) return byStatus;
-            return (new Date(a.createdAt).getTime()) - (new Date(b.createdAt).getTime());
+            return byBoardRank(a, b);
         });
     }
-    return cloned.sort((a, b) => (b.urgencyScore || 0) - (a.urgencyScore || 0));
+    return cloned.sort((a, b) => {
+        const byU = (b.urgencyScore || 0) - (a.urgencyScore || 0);
+        if (byU !== 0) return byU;
+        return byBoardRank(a, b);
+    });
+}
+
+/**
+ * Persist 0..n-1 boardRank for tasks in one column (org-scoped; optional event scope).
+ * @param {import('mongoose').Model} models
+ * @param {string} orgId
+ * @param {string[]} taskIdsOrdered
+ * @param {string|null|undefined} eventId - if set, only tasks for this event; if null, only hub tasks (eventId null); if undefined, any event under org
+ */
+async function applyTaskColumnOrder(models, orgId, taskIdsOrdered, eventId) {
+    const orgOid = asObjectId(orgId);
+    if (!orgOid || !models?.Task || !Array.isArray(taskIdsOrdered)) {
+        return { updated: 0 };
+    }
+    let updated = 0;
+    for (let i = 0; i < taskIdsOrdered.length; i += 1) {
+        const id = asObjectId(taskIdsOrdered[i]);
+        if (!id) continue;
+        const q = { _id: id, orgId: orgOid };
+        if (eventId !== undefined) {
+            q.eventId = eventId ? asObjectId(eventId) : null;
+        }
+        const res = await models.Task.updateOne(q, { $set: { boardRank: i } });
+        if (res.modifiedCount || res.matchedCount) updated += 1;
+    }
+    return { updated };
 }
 
 module.exports = {
     PRIORITY_WEIGHTS,
     asObjectId,
+    applyTaskColumnOrder,
     computeDueAtForTask,
     computeEventReadiness,
+    getSuggestedTasksForEvent,
+    normalizeTaskStatus,
+    normalizeTaskStatusForOrg,
+    getResolvedTaskBoardStatuses,
+    pickFirstDoneKey,
+    pickDefaultActiveKey,
+    DEFAULT_TASK_BOARD_STATUSES,
+    syncApprovalLinkedTasks: async (models, orgId, eventId, approvalInstanceId, approvalStatus = 'pending') => {
+        const orgObjectId = asObjectId(orgId);
+        const eventObjectId = asObjectId(eventId);
+        if (!orgObjectId || !eventObjectId || !approvalInstanceId || !models?.Task) return 0;
+        const tasks = await models.Task.find({
+            orgId: orgObjectId,
+            eventId: eventObjectId,
+            integrationLinks: {
+                $elemMatch: {
+                    type: 'approval_instance',
+                    referenceId: String(approvalInstanceId)
+                }
+            }
+        });
+        if (!tasks.length) return 0;
+        const shouldResolve = approvalStatus === 'approved';
+        let updates = 0;
+        await Promise.all(tasks.map(async (task) => {
+            let changed = false;
+            task.integrationLinks = (task.integrationLinks || []).map((link) => {
+                if (link.type !== 'approval_instance' || String(link.referenceId) !== String(approvalInstanceId)) {
+                    return link;
+                }
+                if (link.status !== approvalStatus) {
+                    changed = true;
+                    return { ...link, status: approvalStatus };
+                }
+                return link;
+            });
+            task.blockers = (task.blockers || []).map((blocker) => {
+                if (blocker.type !== 'approval' || String(blocker.referenceId) !== String(approvalInstanceId)) {
+                    return blocker;
+                }
+                if (blocker.resolved !== shouldResolve) {
+                    changed = true;
+                    return { ...blocker, resolved: shouldResolve };
+                }
+                return blocker;
+            });
+            if (changed) {
+                await task.save();
+                updates += 1;
+            }
+        }));
+        return updates;
+    },
     recomputeDueDatesForEvent,
     listTasks,
-    sortHubTasks
+    findOneTaskDto,
+    sortHubTasks,
+    buildEventTaskAssigneeSummary
 };

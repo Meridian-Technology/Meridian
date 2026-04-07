@@ -91,9 +91,15 @@ const TaskSchema = new Schema({
     },
     status: {
         type: String,
-        enum: ['todo', 'in_progress', 'blocked', 'done', 'cancelled'],
+        trim: true,
+        maxlength: 48,
         default: 'todo',
         index: true
+    },
+    /** Manual order within the same status column (Task Hub / event task board). */
+    boardRank: {
+        type: Number,
+        default: 0
     },
     priority: {
         type: String,
@@ -186,20 +192,32 @@ TaskSchema.index({ orgId: 1, eventId: 1, status: 1 });
 TaskSchema.index({ orgId: 1, dueAt: 1 });
 TaskSchema.index({ orgId: 1, ownerUserId: 1, status: 1 });
 
-TaskSchema.pre('save', function syncCompletionTimestamps(next) {
-    if (this.status === 'done' && !this.completedAt) {
-        this.completedAt = new Date();
+TaskSchema.pre('save', async function syncCompletionTimestamps() {
+    const { getResolvedTaskBoardStatuses, resolveStatusCategory } = require('../services/taskBoardStatusUtils');
+    try {
+        const Org = this.db.model('Org');
+        const org = await Org.findById(this.orgId).select('taskBoardStatuses').lean();
+        const cfg = getResolvedTaskBoardStatuses(org);
+        const cat = resolveStatusCategory(this.status, cfg);
+        if (cat === 'done' && !this.completedAt) {
+            this.completedAt = new Date();
+        }
+        if (cat !== 'done' && this.completedAt) {
+            this.completedAt = null;
+        }
+        if (cat === 'cancelled' && !this.cancelledAt) {
+            this.cancelledAt = new Date();
+        }
+        if (cat !== 'cancelled' && this.cancelledAt) {
+            this.cancelledAt = null;
+        }
+    } catch (_err) {
+        const st = String(this.status || '');
+        if (st === 'done' && !this.completedAt) this.completedAt = new Date();
+        if (st !== 'done' && this.completedAt) this.completedAt = null;
+        if (st === 'cancelled' && !this.cancelledAt) this.cancelledAt = new Date();
+        if (st !== 'cancelled' && this.cancelledAt) this.cancelledAt = null;
     }
-    if (this.status !== 'done' && this.completedAt) {
-        this.completedAt = null;
-    }
-    if (this.status === 'cancelled' && !this.cancelledAt) {
-        this.cancelledAt = new Date();
-    }
-    if (this.status !== 'cancelled' && this.cancelledAt) {
-        this.cancelledAt = null;
-    }
-    next();
 });
 
 module.exports = TaskSchema;
