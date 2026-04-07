@@ -342,6 +342,14 @@
 
         &.maximized{
             width:100%;
+            max-width: 100%;
+            flex-basis: 100%;
+        }
+
+        &.minimized{
+            width:calc(100% - 200px);
+            max-width:calc(100% - 200px);
+            flex-basis: calc(100% - 200px);
         }
 
         .dashboard-content-overlay {
@@ -412,26 +420,35 @@
             }
         }
 
-        
-        .expand{
+        .dashboard-sidebar-toggle{
             position: absolute;
-            bottom:20px;
-            right:20px;
+            top: 12px;
+            left: 12px;
             background-color: var(--background);
-            border-radius: 50%;
-            padding: 5px;
+            border-radius: 10px;
+            width: 36px;
+            height: 36px;
+            padding: 0;
             box-shadow: var(--shadow);
             display:flex;
+            align-items: center;
+            justify-content: center;
             cursor: pointer;
             box-sizing: border-box;
             border: 1px solid var(--lightborder);
-            font-size:20px;
             color: var(--text);
-            &:hover{
-                font-size:22px;
+            transition: transform 0.2s ease, filter 0.2s ease;
+
+            iconify-icon{
+                font-size:20px;
             }
-            z-index: 1;
-            
+
+            &:hover{
+                transform: translateY(-1px);
+                filter: brightness(0.97);
+            }
+            z-index: 3;
+
         }
 
         .simple-header{
@@ -554,6 +571,12 @@
         .dash-right{
             width:100%;
             max-width:calc(100% - 150px);
+
+            &.minimized{
+                width:calc(100% - 150px);
+                max-width:calc(100% - 150px);
+                flex-basis: calc(100% - 150px);
+            }
         }
     }
 }
@@ -623,6 +646,14 @@
             width:100%;
             z-index: 1;
             max-width:100%;
+
+            &.minimized,
+            &.maximized{
+                width:100%;
+                max-width:100%;
+                flex-basis: 100%;
+            }
+
             .dash{
                 header.header{
                     h1{

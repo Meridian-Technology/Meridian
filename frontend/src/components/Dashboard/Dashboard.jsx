@@ -28,7 +28,6 @@ function Dashboard({
     contentOverlay=null
 } ) {
     const [expanded, setExpanded] = useState(false);
-    const [expandedClass, setExpandedClass] = useState("");
     const [currentDisplay, setCurrentDisplay] = useState(null); // Initialize as null to prevent flash
     const [navigationStack, setNavigationStack] = useState([]);
     const [currentSubItems, setCurrentSubItems] = useState(null);
@@ -266,8 +265,7 @@ function Dashboard({
     }, [pendingNavigation, isTransitioning, navigationStack, menuItems, setSearchParams]);
 
     const onExpand = () => {
-        setExpanded(prev => !prev);
-        setExpandedClass(expanded ? "minimized" : "maximized");
+        setExpanded((prev) => !prev);
     }
 
     const handlePageChange = (index) => {
@@ -670,7 +668,24 @@ function Dashboard({
                     }
                 </div>
             </div>
-            <div className={`dash-right ${expandedClass}`}>
+            <div className={`dash-right ${expanded ? 'maximized' : 'minimized'}`}>
+                {width >= 768 && (
+                    <button
+                        type="button"
+                        className="dashboard-sidebar-toggle"
+                        onClick={onExpand}
+                        aria-label={expanded ? 'Restore sidebar' : 'Collapse sidebar and expand content'}
+                        title={expanded ? 'Restore sidebar' : 'Collapse sidebar'}
+                    >
+                        <Icon
+                            icon={
+                                expanded
+                                    ? 'material-symbols:left-panel-open-rounded'
+                                    : 'material-symbols:left-panel-close-rounded'
+                            }
+                        />
+                    </button>
+                )}
                 <div 
                     className="dash-content"
                     style={{
@@ -679,9 +694,6 @@ function Dashboard({
                     }}
                 >
                     {getCurrentChildren()}
-                </div>
-                <div className={`expand`} onClick={onExpand}>
-                    <Icon icon="material-symbols:expand-content-rounded" />
                 </div>
                 
                 {/* Overlay for full-screen content */}
