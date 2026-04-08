@@ -8,6 +8,7 @@ const OIEConfigSchema = require('../schemas/OIEConfig');
 const orgSchema = require('../schemas/org');
 const orgFollowerSchema = require('../schemas/orgFollower');
 const orgMemberSchema = require('../schemas/orgMember');
+const orgMembershipAuditSchema = require('../schemas/orgMembershipAudit');
 const orgInviteSchema = require('../schemas/orgInvite');
 const eventCollaborationInviteSchema = require('../schemas/eventCollaborationInvite');
 const qrSchema = require('../schemas/qr');
@@ -47,6 +48,8 @@ const formSchema = require('../events/schemas/form');
 const formResponseSchema = require('../events/schemas/formResponse');
 const orgVerificationSchema = require('../schemas/orgVerification');
 const orgManagementConfigSchema = require('../schemas/orgManagementConfig');
+const financeConfigSchema = require('../schemas/financeConfig');
+const orgBudgetSchema = require('../schemas/orgBudget');
 const eventAnalyticsSchema = require('../events/schemas/eventAnalytics');
 const eventSystemConfigSchema = require('../events/schemas/eventSystemConfig');
 const stakeholderRoleSchema = require('../events/schemas/stakeholderRole');
@@ -77,6 +80,7 @@ const getModels = (req, ...names) => {
         Org: req.db.model('Org', orgSchema, 'orgs'),
         OrgFollower: req.db.model('OrgFollower', orgFollowerSchema, 'followers'),
         OrgMember: req.db.model('OrgMember', orgMemberSchema, 'members'),
+        OrgMembershipAudit: req.db.model('OrgMembershipAudit', orgMembershipAuditSchema, 'orgMembershipAudits'),
         OrgInvite: req.db.model('OrgInvite', orgInviteSchema, 'orgInvites'),
         EventCollaborationInvite: req.db.model('EventCollaborationInvite', eventCollaborationInviteSchema, 'eventCollaborationInvites'),
         QR: req.db.model('QR', qrSchema, 'QR'),
@@ -132,6 +136,8 @@ const getModels = (req, ...names) => {
         ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
         ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
         NoticeConfig: req.db.model('NoticeConfig', noticeConfigSchema, 'noticeConfigs'),
+        FinanceConfig: req.db.model('FinanceConfig', financeConfigSchema, 'financeConfigs'),
+        OrgBudget: req.db.model('OrgBudget', orgBudgetSchema, 'orgBudgets'),
     };
 
     return names.reduce((acc, name) => {
