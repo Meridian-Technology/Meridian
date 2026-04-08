@@ -5,6 +5,7 @@ const getModels  = require('../services/getModelService');
 const { requireEventManagement, requireOrgPermission } = require('../middlewares/orgPermissions');
 const StudySessionService = require('../services/studySessionService');
 const { resolveAnonymousEmail, resolveAnonymousName } = require('../services/eventAnnouncementService');
+const { getEffectivePolicy, assertOrgAllowsEventCreation } = require('../services/atlasPolicyService');
 
 const buildOrgEventScope = (orgId) => ([
     { hostingId: orgId },
@@ -1365,6 +1366,17 @@ router.post('/:orgId/events/from-template/:templateId', verifyToken, requireEven
                 success: false,
                 message: 'Event template not found'
             });
+        }
+
+        const { Org } = getModels(req, 'Org');
+        const hostOrg = await Org.findById(orgId);
+        if (!hostOrg) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const atlasPolicy = await getEffectivePolicy(req);
+        const createCheck = assertOrgAllowsEventCreation(atlasPolicy, hostOrg);
+        if (!createCheck.ok) {
+            return res.status(403).json({ success: false, message: createCheck.message });
         }
 
         // Create event from template
