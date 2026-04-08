@@ -53,7 +53,10 @@ function OrgOverview() {
         <div className="org-overview dash">
             <header className="header">
                 <h1>Organization Management Overview</h1>
-                <p>Monitor and manage student organizations</p>
+                <p>
+                    Monitor and manage student organizations. Budgets: open <strong>Budgets</strong> in the sidebar for the
+                    finance queue, or <strong>Settings → Budget templates</strong> to edit templates and workflow presets.
+                </p>
                 <img src={AtlasMain} alt="Org Management Grad" />
             </header>
 

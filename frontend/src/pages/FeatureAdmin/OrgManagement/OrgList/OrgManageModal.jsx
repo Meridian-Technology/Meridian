@@ -37,6 +37,7 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
     const { data: membersData, loading: membersLoading, refetch: refetchMembers } = useFetch(
         orgId ? `/org-management/organizations/${orgId}/members` : null
     );
+    const { data: mgmtConfigRes } = useFetch('/org-management/config');
 
     const org = orgData?.data;
     const members = membersData?.members || [];
@@ -65,6 +66,10 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
     const [batchInviteRoles, setBatchInviteRoles] = useState({});
     const [newOwnerId, setNewOwnerId] = useState('');
     const [assigningOwner, setAssigningOwner] = useState(false);
+    const [lifecycleSaving, setLifecycleSaving] = useState(false);
+    const [adminLifecycleStatus, setAdminLifecycleStatus] = useState('active');
+    const [governanceApproving, setGovernanceApproving] = useState(null);
+    const [viewerFile, setViewerFile] = useState(null);
 
     useEffect(() => {
         if (org) {
@@ -76,6 +81,7 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
             });
             setImagePreview(org.org_profile_image || '');
             setBannerPreview(org.org_banner_image || '');
+            setAdminLifecycleStatus(org.lifecycleStatus || 'active');
         }
     }, [org]);
 
@@ -108,6 +114,71 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
         const reader = new FileReader();
         reader.onload = () => setBannerPreview(reader.result);
         reader.readAsDataURL(file);
+    };
+
+    const atlasStatuses = mgmtConfigRes?.data?.atlasPolicy?.lifecycle?.statuses || [
+        { key: 'active', label: 'Active' },
+        { key: 'sunset', label: 'Sunset' },
+        { key: 'inactive', label: 'Inactive' }
+    ];
+
+    const handleSaveLifecycle = async () => {
+        if (!orgId) return;
+        setLifecycleSaving(true);
+        try {
+            const res = await apiRequest(
+                `/org-management/organizations/${orgId}/lifecycle`,
+                { lifecycleStatus: adminLifecycleStatus },
+                { method: 'PATCH' }
+            );
+            if (res.success) {
+                addNotification({ title: 'Saved', message: 'Lifecycle status updated', type: 'success' });
+                refetchOrg();
+            }
+        } catch (e) {
+            addNotification({ title: 'Error', message: e.message || 'Failed to update lifecycle', type: 'error' });
+        } finally {
+            setLifecycleSaving(false);
+        }
+    };
+
+    const handleApproveGovernanceVersion = async (docKey, version) => {
+        if (!orgId) return;
+        const key = `${docKey}:${version}`;
+        setGovernanceApproving(key);
+        try {
+            const encodedKey = encodeURIComponent(docKey);
+            const res = await apiRequest(
+                `/org-management/organizations/${orgId}/governance/${encodedKey}/versions/${version}/approve`,
+                null,
+                { method: 'PUT' }
+            );
+            if (res.success) {
+                addNotification({
+                    title: 'Approved',
+                    message: `${docKey} v${version} is now the active version.`,
+                    type: 'success'
+                });
+                refetchOrg();
+                onSuccess?.();
+            } else {
+                addNotification({
+                    title: 'Error',
+                    message: res.message || 'Failed to approve',
+                    type: 'error'
+                });
+            }
+        } catch (e) {
+            const msg = e?.response?.data?.message || e?.message || 'Failed to approve';
+            addNotification({ title: 'Error', message: msg, type: 'error' });
+        } finally {
+            setGovernanceApproving(null);
+        }
+    };
+
+    const openPdfViewer = (url, filename) => {
+        if (!url) return;
+        setViewerFile({ url, filename: filename || 'Governance document' });
     };
 
     const handleSaveInfo = async () => {
@@ -327,6 +398,22 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
                     placeholder="Organization description"
                     rows={4}
                 />
+            </div>
+            <div className="form-group">
+                <label>Lifecycle status (Atlas)</label>
+                <div className="lifecycle-admin-row">
+                    <select
+                        value={adminLifecycleStatus}
+                        onChange={(e) => setAdminLifecycleStatus(e.target.value)}
+                    >
+                        {atlasStatuses.map((s) => (
+                            <option key={s.key} value={s.key}>{s.label || s.key}</option>
+                        ))}
+                    </select>
+                    <button type="button" className="save-btn secondary" onClick={handleSaveLifecycle} disabled={lifecycleSaving}>
+                        {lifecycleSaving ? 'Saving...' : 'Apply lifecycle'}
+                    </button>
+                </div>
             </div>
             <div className="form-group">
                 <label>Profile Image</label>
@@ -557,37 +644,125 @@ function OrgManageModal({ orgId, isOpen, onClose, onSuccess }) {
         </div>
     );
 
+    const governanceDocs = org?.governanceDocuments || [];
+    const governanceTabContent = (
+        <div className="org-manage-governance">
+            <p className="governance-hint">
+                Draft uploads from the organization appear here. Approve to make a version active (previous approved
+                versions are marked superseded).
+            </p>
+            {governanceDocs.length === 0 ? (
+                <div className="empty-gov">No governance documents on file.</div>
+            ) : (
+                governanceDocs.map((slot) => (
+                    <div key={slot.key} className="gov-slot">
+                        <h4 className="gov-slot-title">{slot.key}</h4>
+                        <ul className="gov-version-list">
+                            {(slot.versions || [])
+                                .slice()
+                                .sort((a, b) => b.version - a.version)
+                                .map((v) => {
+                                    const approveKey = `${slot.key}:${v.version}`;
+                                    return (
+                                        <li key={v.version} className={`gov-version-row status-${v.status || 'unknown'}`}>
+                                            <span className="gv-ver">v{v.version}</span>
+                                            <span className="gv-status">{v.status}</span>
+                                            {v.originalFilename && (
+                                                <span className="gv-file" title={v.originalFilename}>
+                                                    {v.originalFilename}
+                                                </span>
+                                            )}
+                                            {v.storageUrl && (
+                                                <button
+                                                    type="button"
+                                                    className="gv-link gv-link-button"
+                                                    onClick={() => openPdfViewer(v.storageUrl, v.originalFilename || `${slot.key} v${v.version}`)}
+                                                >
+                                                    View
+                                                </button>
+                                            )}
+                                            {v.status === 'draft' && (
+                                                <button
+                                                    type="button"
+                                                    className="gv-approve"
+                                                    disabled={governanceApproving === approveKey}
+                                                    onClick={() => handleApproveGovernanceVersion(slot.key, v.version)}
+                                                >
+                                                    {governanceApproving === approveKey ? 'Approving…' : 'Approve'}
+                                                </button>
+                                            )}
+                                        </li>
+                                    );
+                                })}
+                        </ul>
+                    </div>
+                ))
+            )}
+        </div>
+    );
+
     const tabs = [
         CommonTabConfigs.basic('info', 'Info', 'mdi:information', infoTabContent),
         CommonTabConfigs.basic('members', 'Members', 'mdi:account-group', membersTabContent),
+        CommonTabConfigs.basic('governance', 'Governance', 'mdi:file-document-check-outline', governanceTabContent),
         CommonTabConfigs.basic('owner', 'Owner', 'mdi:crown', ownerTabContent)
     ];
 
     return (
-        <Popup isOpen={isOpen} onClose={onClose} customClassName="org-manage-modal-popup wide-content">
-            <div className="org-manage-modal">
-                <div className="modal-header">
-                    <h2>
-                        {orgLoading ? 'Loading...' : org?.org_name || 'Manage Organization'}
-                    </h2>
+        <>
+            <Popup isOpen={isOpen} onClose={onClose} customClassName="org-manage-modal-popup wide-content">
+                <div className="org-manage-modal">
+                    <div className="modal-header">
+                        <h2>
+                            {orgLoading ? 'Loading...' : org?.org_name || 'Manage Organization'}
+                        </h2>
+                    </div>
+                    <div className="modal-body">
+                        {orgLoading ? (
+                            <div className="loading-state">Loading organization...</div>
+                        ) : org ? (
+                            <TabbedContainer
+                                tabs={tabs}
+                                defaultTab="info"
+                                activeTab={activeTab}
+                                onTabChange={setActiveTab}
+                                tabStyle="underline"
+                            />
+                        ) : (
+                            <div className="error-state">Organization not found</div>
+                        )}
+                    </div>
                 </div>
-                <div className="modal-body">
-                    {orgLoading ? (
-                        <div className="loading-state">Loading organization...</div>
-                    ) : org ? (
-                        <TabbedContainer
-                            tabs={tabs}
-                            defaultTab="info"
-                            activeTab={activeTab}
-                            onTabChange={setActiveTab}
-                            tabStyle="underline"
+            </Popup>
+            <Popup
+                isOpen={Boolean(viewerFile)}
+                onClose={() => setViewerFile(null)}
+                customClassName="pdf-viewer-popup"
+            >
+                <div className="pdf-viewer">
+                    <div className="pdf-viewer-header">
+                        <h3>{viewerFile?.filename || 'PDF viewer'}</h3>
+                        {viewerFile?.url && (
+                            <a
+                                className="gv-link"
+                                href={viewerFile.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                Open in new tab
+                            </a>
+                        )}
+                    </div>
+                    {viewerFile?.url && (
+                        <iframe
+                            src={viewerFile.url}
+                            title={viewerFile.filename || 'Governance PDF'}
+                            className="pdf-viewer-frame"
                         />
-                    ) : (
-                        <div className="error-state">Organization not found</div>
                     )}
                 </div>
-            </div>
-        </Popup>
+            </Popup>
+        </>
     );
 }
 
