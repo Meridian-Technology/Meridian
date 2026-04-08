@@ -5,6 +5,8 @@ import { analytics } from '../../../services/analytics/analytics';
 import OrgOverview from './OrgOverview/OrgOverview';
 import VerificationRequests from './VerificationRequests/VerificationRequests';
 import ApprovalQueue from './ApprovalQueue/ApprovalQueue';
+import GovernanceApprovals from './GovernanceApprovals/GovernanceApprovals';
+import FinanceBudgetQueue from './FinanceBudgetQueue/FinanceBudgetQueue';
 import OrgList from './OrgList/OrgList';
 import Configuration from './Configuration/Configuration';
 import Analytics from './Analytics/Analytics';
@@ -33,6 +35,16 @@ function Atlas() {
             label: 'Approval Queue',
             icon: 'mdi:clipboard-check-outline',
             element: <ApprovalQueue />
+        },
+        {
+            label: 'Governance documents',
+            icon: 'mdi:file-document-check-outline',
+            element: <GovernanceApprovals />
+        },
+        {
+            label: 'Budgets',
+            icon: 'mdi:cash-multiple',
+            element: <FinanceBudgetQueue />
         },
         {
             label: 'Organizations',
@@ -67,6 +79,16 @@ function Atlas() {
                     label: 'Organization Policies',
                     icon: 'mdi:policy',
                     element: <Configuration section="policies" />
+                },
+                {
+                    label: 'Atlas policy',
+                    icon: 'mdi:map',
+                    element: <Configuration section="atlas-policy" />
+                },
+                {
+                    label: 'Budget templates',
+                    icon: 'mdi:file-table-outline',
+                    element: <Configuration section="finance-templates" />
                 },
                 {
                     label: 'Messaging Configuration',

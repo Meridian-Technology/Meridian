@@ -6,6 +6,7 @@ import { Icon } from '@iconify-icon/react';
 import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
 import useUnsavedChanges from '../../../../hooks/useUnsavedChanges';
 import './Configuration.scss';
+import FinanceTemplatesConfig from './FinanceTemplatesConfig';
 
 function Configuration({ section = 'general' }) {
     const { data: config, loading, error, refetch } = useFetch('/org-management/config');
@@ -89,6 +90,10 @@ function Configuration({ section = 'general' }) {
                 return renderPolicies();
             case 'messaging':
                 return renderMessaging();
+            case 'atlas-policy':
+                return renderAtlasPolicy();
+            case 'finance-templates':
+                return null;
             case 'general':
             default:
                 return renderGeneral();
@@ -742,6 +747,73 @@ function Configuration({ section = 'general' }) {
         </div>
     );
 
+    const renderAtlasPolicy = () => {
+        const ap = localConfig?.atlasPolicy || {};
+        return (
+            <div className="config-sections">
+                <div className="config-section">
+                    <h2>
+                        <Icon icon="mdi:map" />
+                        Atlas policy (lifecycle &amp; governance)
+                    </h2>
+                    <p className="config-help">
+                        Controls org lifecycle transitions, org types, public directory filtering, and whether inactive orgs can create events.
+                        Full policy is stored as structured fields; advanced edits can use the JSON field at the bottom.
+                    </p>
+                    <div className="config-group">
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={!!ap.directory?.hideNonActiveFromPublicList}
+                                    onChange={(e) => updateConfig('atlasPolicy.directory.hideNonActiveFromPublicList', e.target.checked)}
+                                />
+                                Hide non-active orgs from public organization list
+                            </label>
+                        </div>
+                        <div className="config-item">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked={ap.events?.inactiveOrgBlocksEventCreation !== false}
+                                    onChange={(e) => updateConfig('atlasPolicy.events.inactiveOrgBlocksEventCreation', e.target.checked)}
+                                />
+                                Block new org-hosted events when lifecycle is sunset/inactive
+                            </label>
+                        </div>
+                        <div className="config-item">
+                            <label>Default org type key</label>
+                            <input
+                                type="text"
+                                value={ap.defaultOrgTypeKey || ''}
+                                onChange={(e) => updateConfig('atlasPolicy.defaultOrgTypeKey', e.target.value)}
+                                placeholder="default"
+                            />
+                        </div>
+                        <div className="config-item">
+                            <label>Atlas policy JSON (optional override)</label>
+                            <textarea
+                                rows={12}
+                                className="config-json-textarea"
+                                value={JSON.stringify(ap, null, 2)}
+                                onChange={(e) => {
+                                    try {
+                                        const parsed = JSON.parse(e.target.value);
+                                        if (!localConfig) return;
+                                        setLocalConfig({ ...localConfig, atlasPolicy: parsed });
+                                    } catch {
+                                        /* invalid JSON while typing */
+                                    }
+                                }}
+                            />
+                            <p className="config-help">Valid JSON object. Save applies the whole atlasPolicy document.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderPolicies = () => (
         <div className="config-sections">
             {/* Policies */}
@@ -1137,6 +1209,10 @@ function Configuration({ section = 'general' }) {
             </div>
         </div>
     );
+
+    if (section === 'finance-templates') {
+        return <FinanceTemplatesConfig />;
+    }
 
     return (
         <div className="configuration dash">

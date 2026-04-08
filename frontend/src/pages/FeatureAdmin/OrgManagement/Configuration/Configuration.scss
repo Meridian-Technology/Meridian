@@ -550,4 +550,26 @@
             color: var(--light-text);
         }
     }
+
+    .config-help {
+        margin: 0;
+        font-size: 13px;
+        color: var(--light-text);
+        line-height: 1.45;
+    }
+
+    .config-json-textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid var(--lightborder);
+        background: var(--light);
+        color: var(--text);
+        resize: vertical;
+        min-height: 200px;
+    }
 }

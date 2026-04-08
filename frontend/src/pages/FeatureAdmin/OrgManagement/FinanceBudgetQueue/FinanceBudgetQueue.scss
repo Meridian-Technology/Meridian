@@ -1,0 +1,403 @@
+.finance-budget-queue {
+    .loading,
+    .error {
+        padding: 40px;
+        text-align: center;
+        color: var(--light-text);
+    }
+
+    .error {
+        color: var(--error, #c62828);
+    }
+
+    .content {
+        display: flex;
+        flex-direction: column;
+        padding: 0 40px 20px 40px;
+        box-sizing: border-box;
+        gap: 16px;
+    }
+
+    .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+
+        select {
+            margin-left: 8px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--lightborder);
+            background: var(--light);
+            color: var(--text);
+            font-family: inherit;
+        }
+
+        .pagination-hint {
+            font-size: 13px;
+            color: var(--light-text);
+        }
+    }
+
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 48px 24px;
+        text-align: center;
+        background: var(--background);
+        border-radius: 12px;
+        border: 1px solid var(--lightborder);
+        color: var(--light-text);
+
+        .iconify-icon {
+            font-size: 44px;
+            margin-bottom: 12px;
+            opacity: 0.45;
+        }
+
+        h3 {
+            margin: 0 0 8px;
+            color: var(--text);
+        }
+    }
+
+    .fb-table {
+        background: var(--background);
+        border-radius: 12px;
+        border: 1px solid var(--lightborder);
+        overflow: hidden;
+        box-shadow: var(--shadow);
+    }
+
+    .table-header {
+        display: grid;
+        grid-template-columns: minmax(120px, 1.2fr) minmax(100px, 1fr) 100px 110px minmax(140px, 1fr) minmax(200px, auto);
+        gap: 12px;
+        padding: 14px 16px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--light-text);
+        border-bottom: 1px solid var(--lightborder);
+        background: var(--lighter);
+    }
+
+    .table-row {
+        display: grid;
+        grid-template-columns: minmax(120px, 1.2fr) minmax(100px, 1fr) 100px 110px minmax(140px, 1fr) minmax(200px, auto);
+        gap: 12px;
+        padding: 14px 16px;
+        align-items: center;
+        border-bottom: 1px solid var(--lightborder);
+        font-size: 14px;
+
+        &:last-child {
+            border-bottom: none;
+        }
+
+        &:hover {
+            background: var(--lighter);
+        }
+
+        &--clickable {
+            cursor: pointer;
+
+            &:focus-visible {
+                outline: 2px solid var(--primary-color);
+                outline-offset: -2px;
+            }
+        }
+    }
+
+    .col-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        justify-content: flex-end;
+
+        .btn-approve {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 8px;
+            background: var(--primary-color);
+            color: var(--background);
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .btn-secondary {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--lightborder);
+            background: var(--light);
+            color: var(--text);
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .btn-reject {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: none;
+            background: rgba(180, 50, 50, 0.12);
+            color: #b43232;
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .btn-review {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--primary-color);
+            background: transparent;
+            color: var(--primary-color);
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+    }
+}
+
+/* Budget review: uses shared Popup (portal + animations) */
+.popup-overlay .popup-content.fb-review-popup {
+    max-width: min(720px, 94vw);
+    width: 100%;
+    max-height: min(90vh, 900px);
+    background: var(--background);
+    border-radius: 14px;
+    border: 1px solid var(--lightborder);
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding: 0;
+}
+
+.fb-review-popup__inner {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: min(90vh, 900px);
+
+    &--placeholder {
+        min-height: 160px;
+        min-width: min(320px, 90vw);
+    }
+}
+
+.fb-review-modal__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 48px 12px 22px;
+    border-bottom: 1px solid var(--lightborder);
+
+    h2 {
+        margin: 4px 0 6px;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text);
+    }
+}
+
+.fb-review-modal__org {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--light-text);
+}
+
+.fb-review-modal__meta {
+    margin: 0;
+    font-size: 13px;
+    color: var(--light-text);
+}
+
+.fb-review-modal__nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 22px;
+    border-bottom: 1px solid var(--lightborder);
+    background: var(--lighter);
+}
+
+.fb-review-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--lightborder);
+    background: var(--background);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+
+    &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    &:not(:disabled):hover {
+        border-color: var(--primary-color);
+        color: var(--primary-color);
+    }
+}
+
+.fb-review-modal__position {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--light-text);
+}
+
+.fb-review-modal__body {
+    padding: 16px 22px 20px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.fb-review-modal__loading,
+.fb-review-modal__error {
+    margin: 0 0 12px;
+    font-size: 14px;
+}
+
+.fb-review-modal__error {
+    color: var(--error, #b43232);
+}
+
+.fb-review-audit {
+    margin-bottom: 20px;
+    padding-top: 4px;
+}
+
+.fb-review-section {
+    margin-bottom: 20px;
+
+    h3 {
+        margin: 0 0 10px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--light-text);
+    }
+}
+
+.fb-review-muted {
+    margin: 0;
+    font-size: 14px;
+    color: var(--light-text);
+}
+
+.fb-review-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+
+    th,
+    td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--lightborder);
+    }
+
+    th {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--light-text);
+        background: var(--lighter);
+    }
+
+    .fb-review-note {
+        color: var(--light-text);
+        font-size: 13px;
+        max-width: 220px;
+    }
+}
+
+.fb-review-comments {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    li {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--lightborder);
+
+        time {
+            display: block;
+            font-size: 12px;
+            color: var(--light-text);
+            margin-bottom: 4px;
+        }
+
+        p {
+            margin: 0;
+            font-size: 14px;
+            color: var(--text);
+            white-space: pre-wrap;
+        }
+    }
+}
+
+.fb-review-modal__footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 14px 22px 18px;
+    border-top: 1px solid var(--lightborder);
+    background: var(--lighter);
+
+    .btn-approve,
+    .btn-secondary,
+    .btn-reject {
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+        font-family: inherit;
+    }
+
+    .btn-approve {
+        border: none;
+        background: var(--primary-color);
+        color: var(--background);
+    }
+
+    .btn-secondary {
+        border: 1px solid var(--lightborder);
+        background: var(--background);
+        color: var(--text);
+    }
+
+    .btn-reject {
+        border: none;
+        background: rgba(180, 50, 50, 0.12);
+        color: #b43232;
+    }
+}
