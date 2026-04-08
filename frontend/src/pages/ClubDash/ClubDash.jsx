@@ -11,6 +11,7 @@ import Dash from './Dash/Dash';
 import Members from './Members/Members';
 import Roles from './Roles/Roles';
 import Testing from './Testing/Testing';
+import Meetings from './Meetings/Meetings';
 
 import {useFetch} from '../../hooks/useFetch';
 import OrgDropdown from './OrgDropdown/OrgDropdown';
@@ -262,6 +263,12 @@ function ClubDash(){
             key: 'members', 
             requiresPermission: 'canManageMembers',
             element: <Members expandedClass={expandedClass} org={orgData.data?.org?.overview} adminBypass={adminBypass}/>
+        },
+        { 
+            label: 'Meetings', 
+            icon: 'mdi:calendar', 
+            key: 'meetings',
+            element: <Meetings expandedClass={expandedClass} org={orgData.data?.org?.overview} adminBypass={adminBypass}/>
         },
         // { 
         //     label: 'Forms', 

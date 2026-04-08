@@ -239,10 +239,114 @@ const testInngestDashboard = inngest.createFunction(
   }
 );
 
+// Function: Scheduled recurring meeting generation (runs daily at 2 AM, or on manual event)
+const scheduledRecurringMeetingGeneration = inngest.createFunction(
+  { id: 'scheduled-recurring-meeting-generation' },
+  [
+    { cron: '0 2 * * *' },
+    { event: 'meeting/recurring.generate' }
+  ],
+  async ({ event, step }) => {
+    const school = event?.data?.school || 'rpi';
+
+    const result = await step.run('generate-recurring-instances', async () => {
+      const { connectToDatabase } = require('../connectionsManager');
+      const getModels = require('../services/getModelService');
+      const recurringMeetingService = require('../services/recurringMeetingService');
+
+      const db = await connectToDatabase(school);
+      const req = { db, school };
+
+      const { RecurringMeetingRule } = getModels(req, 'RecurringMeetingRule');
+      const rules = await RecurringMeetingRule.find({ isActive: true }).lean();
+
+      let totalCreated = 0;
+      for (const rule of rules) {
+        const created = await recurringMeetingService.generateUpcomingInstances(
+          { ...rule, _id: rule._id },
+          req,
+          { maxOccurrences: 5 }
+        );
+        totalCreated += created.length;
+      }
+
+      return { totalCreated, rulesProcessed: rules.length };
+    });
+
+    return { success: true, ...result };
+  }
+);
+
+// Function: Meeting reminder cron (runs every 30 minutes)
+const meetingReminderCron = inngest.createFunction(
+  { id: 'meeting-reminder-cron' },
+  { cron: '*/30 * * * *' },
+  async ({ step }) => {
+    const school = 'rpi';
+
+    const result = await step.run('send-meeting-reminders', async () => {
+      const { connectToDatabase } = require('../connectionsManager');
+      const getModels = require('../services/getModelService');
+      const NotificationService = require('../services/notificationService');
+
+      const db = await connectToDatabase(school || 'rpi');
+      const req = { db, school };
+
+      const { Event, MeetingConfig, OrgMember } = getModels(req, 'Event', 'MeetingConfig', 'OrgMember');
+      const configs = await MeetingConfig.find({
+        'reminderConfig.enabled': true
+      }).lean();
+
+      const now = new Date();
+      let remindersSent = 0;
+
+      for (const config of configs) {
+        const eventDoc = await Event.findById(config.eventId);
+        if (!eventDoc) continue;
+
+        const leadMs = (config.reminderConfig?.leadTimeMinutes || 60 * 24) * 60 * 1000;
+        const windowStart = new Date(eventDoc.start_time.getTime() - leadMs);
+        const windowEnd = new Date(eventDoc.start_time.getTime());
+
+        if (now >= windowStart && now <= windowEnd) {
+          const orgId = eventDoc.hostingId?.toString();
+          const requiredRoles = config.requiredRoles || ['members'];
+          const members = await OrgMember.find({ org_id: orgId, status: 'active' })
+            .populate('user_id', '_id')
+            .lean();
+
+          const models = { Notification: db.model('Notification', require('../schemas/notification'), 'notifications') };
+          const notificationService = NotificationService.withModels(models);
+          const recipients = members.map((m) => ({ id: m.user_id?._id || m.user_id, model: 'User' }));
+
+          for (const r of recipients) {
+            await notificationService.createNotification({
+              recipient: r.id,
+              recipientModel: 'User',
+              title: 'Meeting Reminder',
+              message: `${eventDoc.name} starts at ${eventDoc.start_time.toLocaleString()}`,
+              type: 'reminder',
+              channels: config.reminderConfig?.channels || ['in_app'],
+              metadata: { eventId: eventDoc._id }
+            });
+          }
+          remindersSent++;
+        }
+      }
+
+      return { remindersSent };
+    });
+
+    return { success: true, ...result };
+  }
+);
+
 // Export all functions
 module.exports = {
   processRoomCheckout,
   autoCheckoutAfterDelay,
   testInngestConnection,
   testInngestDashboard,
+  scheduledRecurringMeetingGeneration,
+  meetingReminderCron,
 };

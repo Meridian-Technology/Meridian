@@ -1,0 +1,109 @@
+.meeting-container {
+    padding: 0 40px 40px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+
+    .actions-header {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 40px;
+
+        button {
+            border-radius: 7px;
+            width: 100px;
+            font-weight: 600;
+            font-family: 'Inter';
+            padding: 3px 13px;
+            color: var(--text);
+            &.plan-meeting-button {
+                background-color: var(--green);
+                color: white;
+                padding-bottom: 5px;
+            }
+        }
+    }
+
+    .next-meeting {
+        padding: 1.25rem;
+        border-radius: 12px;
+        background: rgba(197, 246, 197, 0.16);
+        border: 1px solid rgba(120, 160, 120, 0.45);
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+
+        .meeting-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+
+            .status-dot {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background-color: rgb(30, 110, 44);
+            }
+
+            .status-label {
+                color: rgb(30, 110, 44);
+                font-weight: 600;
+                font-size: 0.9rem;
+            }
+        }
+
+        .meeting-info {
+            background: var(--lightest, #fff);
+            border-radius: 10px;
+            border-left: 4px solid rgb(30, 110, 44);
+            border-top: 1px solid var(--lighterborder, #e0e0e0);
+            border-right: 1px solid var(--lighterborder, #e0e0e0);
+            border-bottom: 1px solid var(--lighterborder, #e0e0e0);
+            padding: 1rem 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+
+            .meeting-info-top {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+
+                .meeting-tag {
+                    background: rgba(197, 246, 197, 0.4);
+                    color: rgb(30, 110, 44);
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    padding: 2px 8px;
+                    border-radius: 6px;
+                }
+
+                .take-attendance {
+                    color: rgb(30, 110, 44);
+                    font-size: 0.85rem;
+                    cursor: pointer;
+                    &:hover { text-decoration: underline; }
+                }
+            }
+
+            .meeting-title {
+                font-weight: 700;
+                font-size: 1rem;
+                color: #1a1a1a;
+            }
+
+            .meeting-location {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                color: #6b7280;
+                font-size: 0.85rem;
+
+                .location-icon {
+                    font-size: 0.75rem;
+                }
+            }
+        }
+    }
+}
