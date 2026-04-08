@@ -14,6 +14,11 @@
     opacity: 0;
   }
 
+  /* Second modal (e.g. revision) above another Popup or high z-index shells */
+  .popup-overlay.popup-overlay--elevated {
+    z-index: 10050;
+  }
+
   .popup-content-overlay{
     background-color: white;
     padding: 20px;

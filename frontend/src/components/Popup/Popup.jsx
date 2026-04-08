@@ -5,7 +5,7 @@ import useOutsideClick from '../../hooks/useClickOutside';
 import X from '../../assets/x.svg';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 
-const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName="", popout=false, waitForLoad=false, hideCloseButton=false, disableOutsideClick=false}) => {
+const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName="", overlayClassName="", popout=false, waitForLoad=false, hideCloseButton=false, disableOutsideClick=false}) => {
     const [render, setRender] = useState(isOpen);
     const [show, setShow] = useState(false);
     const isClosingRef = useRef(false);
@@ -70,7 +70,7 @@ const Popup = ({ children, isOpen, onClose, defaultStyling=true, customClassName
   };    
 
   return ReactDOM.createPortal(
-    <div className={`popup-overlay ${show ? 'fade-in' : 'fade-out'}`}>
+    <div className={`popup-overlay ${overlayClassName} ${show ? 'fade-in' : 'fade-out'}`}>
         {popout && !hideCloseButton && <Icon icon="ep:close-bold" onClick={handleClose} className={`close-popup popout`} style={{left:rightPosition + 10, top:topPosition}}  />}
         
       <div className={`popup-content ${show ? 'slide-in' : 'slide-out'} ${defaultStyling ? "" : "no-styling"} ${customClassName}`} ref={ref}>
