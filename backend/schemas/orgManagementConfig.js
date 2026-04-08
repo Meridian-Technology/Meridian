@@ -409,6 +409,12 @@ const orgManagementConfigSchema = new mongoose.Schema({
                 default: true
             }
         }
+    },
+
+    /** CMS Phase 1: tenant/org-type lifecycle, governance terminology, directory rules (see atlasPolicyService defaults). */
+    atlasPolicy: {
+        type: mongoose.Schema.Types.Mixed,
+        default: undefined
     }
 }, { timestamps: true });
 
