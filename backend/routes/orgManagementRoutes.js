@@ -7,6 +7,12 @@ const { requireAdmin } = require('../middlewares/requireAdmin');
 const { uploadImageToS3, upload } = require('../services/imageUploadService');
 const { emitToOrgApprovalRoom } = require('../socket');
 const { clean, isProfane } = require('../services/profanityFilterService');
+const {
+    getEffectivePolicyFromConfig,
+    assertLifecycleTransition
+} = require('../services/atlasPolicyService');
+const { recordMemberJoined, recordMemberRemoved } = require('../services/orgMembershipService');
+const budgetService = require('../services/budgetService');
 
 const router = express.Router();
 
@@ -318,6 +324,7 @@ router.get('/config', verifyToken, async (req, res) => {
         } else {
             data.messaging = { ...MESSAGING_SCHEMA_DEFAULTS, ...data.messaging };
         }
+        data.atlasPolicy = getEffectivePolicyFromConfig(config);
 
         console.log(`GET: /org-management/config`);
         res.status(200).json({
@@ -545,17 +552,55 @@ router.get('/analytics', verifyToken, requireAdmin, async (req, res) => {
 
 // ==================== ORGANIZATION MANAGEMENT ====================
 
+// Draft governance versions awaiting platform admin approval (must be before /organizations/:orgId)
+router.get('/governance/pending-drafts', verifyToken, requireAdmin, async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    try {
+        const orgs = await Org.find({
+            'governanceDocuments.versions.status': 'draft'
+        })
+            .select('org_name org_profile_image governanceDocuments')
+            .lean();
+
+        const rows = [];
+        for (const org of orgs) {
+            for (const slot of org.governanceDocuments || []) {
+                for (const ver of slot.versions || []) {
+                    if (ver.status === 'draft') {
+                        rows.push({
+                            orgId: org._id.toString(),
+                            orgName: org.org_name,
+                            orgProfileImage: org.org_profile_image || null,
+                            docKey: slot.key,
+                            version: ver.version,
+                            uploadedAt: ver.uploadedAt,
+                            originalFilename: ver.originalFilename || null,
+                            storageUrl: ver.storageUrl || null
+                        });
+                    }
+                }
+            }
+        }
+        rows.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
+        res.status(200).json({ success: true, data: rows });
+    } catch (error) {
+        console.error('Error listing pending governance drafts:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Get all organizations with management data
 router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
-    const { 
-        search, 
-        status, 
-        verified, 
-        page = 1, 
-        limit = 20, 
-        sortBy = 'createdAt', 
-        sortOrder = 'desc' 
+    const {
+        search,
+        status,
+        lifecycleStatus,
+        verified,
+        page = 1,
+        limit = 20,
+        sortBy = 'createdAt',
+        sortOrder = 'desc'
     } = req.query;
 
     try {
@@ -569,6 +614,7 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
         }
         
         if (status) filter.status = status;
+        if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus;
         if (verified !== '') filter.verified = verified === 'true';
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -957,9 +1003,11 @@ router.post('/organizations/:orgId/members', verifyToken, requireAdmin, async (r
             org_id: orgId,
             user_id: userId,
             role,
+            status: 'active',
             assignedBy: req.user.userId
         });
         await member.save();
+        await recordMemberJoined(member, req.user.userId, 'admin_added');
 
         if (!user.clubAssociations || !user.clubAssociations.some(c => c.toString() === orgId)) {
             if (!user.clubAssociations) user.clubAssociations = [];
@@ -1017,6 +1065,12 @@ router.delete('/organizations/:orgId/members/:userId', verifyToken, requireAdmin
             });
         }
 
+        await recordMemberRemoved(req, {
+            org_id: orgId,
+            user_id: userId,
+            actorUserId: req.user.userId,
+            reason: 'admin_removed'
+        });
         await OrgMember.deleteOne({ _id: member._id });
 
         const user = await User.findById(userId);
@@ -1092,7 +1146,10 @@ router.put('/organizations/:orgId/members/:userId/role', verifyToken, requireAdm
             });
         }
 
-        await member.changeRole(role, req.user.userId, 'Role changed by admin');
+        await member.changeRole(role, req.user.userId, 'Role changed by admin', {
+            termStart: req.body.roleTermStart ? new Date(req.body.roleTermStart) : undefined,
+            termEnd: req.body.roleTermEnd ? new Date(req.body.roleTermEnd) : undefined
+        });
 
         if (!user.clubAssociations || !user.clubAssociations.some(c => c.toString() === orgId)) {
             if (!user.clubAssociations) user.clubAssociations = [];
@@ -1165,11 +1222,11 @@ router.put('/organizations/:orgId/approve', verifyToken, requireAdmin, async (re
     }
 });
 
-// Update organization status
+// Update organization (verification flags, admin notes, optional orgTypeKey — not lifecycle; use PATCH lifecycle)
 router.put('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) => {
     const { Org } = getModels(req, 'Org');
     const { orgId } = req.params;
-    const { verified, status, notes } = req.body;
+    const { verified, notes, orgTypeKey } = req.body;
     const adminId = req.user.userId;
 
     try {
@@ -1187,8 +1244,8 @@ router.put('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) 
             org.verifiedBy = verified ? adminId : null;
         }
 
-        if (status) org.status = status;
-        if (notes) org.adminNotes = notes;
+        if (notes !== undefined) org.adminNotes = notes;
+        if (orgTypeKey !== undefined) org.orgTypeKey = orgTypeKey;
 
         await org.save();
 
@@ -1207,6 +1264,212 @@ router.put('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) 
         });
     }
 });
+
+// PATCH lifecycle (platform admin)
+router.patch('/organizations/:orgId/lifecycle', verifyToken, requireAdmin, async (req, res) => {
+    const { Org, OrgManagementConfig } = getModels(req, 'Org', 'OrgManagementConfig');
+    const { orgId } = req.params;
+    const { lifecycleStatus: nextStatus } = req.body;
+    const adminId = req.user.userId;
+
+    try {
+        if (!nextStatus) {
+            return res.status(400).json({ success: false, message: 'lifecycleStatus is required' });
+        }
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const config = await OrgManagementConfig.findOne();
+        const policy = getEffectivePolicyFromConfig(config);
+        assertLifecycleTransition(policy, org, nextStatus, { isPlatformAdmin: true, isOfficer: false });
+        org.lifecycleStatus = nextStatus;
+        org.lifecycleChangedAt = new Date();
+        org.lifecycleChangedBy = adminId;
+        await org.save();
+        res.status(200).json({
+            success: true,
+            message: 'Lifecycle updated',
+            data: org
+        });
+    } catch (error) {
+        const code = error.statusCode || 500;
+        console.error('Error updating lifecycle:', error);
+        res.status(code).json({
+            success: false,
+            message: error.message || 'Error updating lifecycle'
+        });
+    }
+});
+
+// Approve a governance document version (platform admin)
+router.put('/organizations/:orgId/governance/:docKey/versions/:version/approve', verifyToken, requireAdmin, async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId, docKey, version } = req.params;
+    const adminId = req.user.userId;
+    const verNum = parseInt(version, 10);
+
+    try {
+        if (Number.isNaN(verNum)) {
+            return res.status(400).json({ success: false, message: 'Invalid version' });
+        }
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const slot = org.getGovernanceSlot(docKey);
+        if (!slot || !slot.versions?.length) {
+            return res.status(404).json({ success: false, message: 'Governance document not found' });
+        }
+        const v = slot.versions.find((x) => x.version === verNum);
+        if (!v) {
+            return res.status(404).json({ success: false, message: 'Version not found' });
+        }
+        for (const x of slot.versions) {
+            if (x.status === 'approved') {
+                x.status = 'superseded';
+            }
+        }
+        v.status = 'approved';
+        v.approvedBy = adminId;
+        v.approvedAt = new Date();
+        org.markModified('governanceDocuments');
+        await org.save();
+        res.status(200).json({
+            success: true,
+            message: 'Version approved',
+            data: org.governanceDocuments
+        });
+    } catch (error) {
+        console.error('Governance approve error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ==================== FINANCE (CMS Phase 2) ====================
+
+router.get('/finance/config', verifyToken, requireAdmin, async (req, res) => {
+    try {
+        const data = await budgetService.ensureFinanceConfig(req);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('GET finance config:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/finance/config', verifyToken, requireAdmin, async (req, res) => {
+    try {
+        const data = await budgetService.updateFinanceConfig(req, req.body || {});
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('PUT finance config:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/finance/budgets', verifyToken, requireAdmin, async (req, res) => {
+    try {
+        const result = await budgetService.listBudgetsAdmin(req, req.query);
+        res.status(200).json({
+            success: true,
+            data: result.data,
+            pagination: {
+                page: result.page,
+                limit: result.limit,
+                total: result.total,
+                totalPages: Math.ceil(result.total / result.limit)
+            }
+        });
+    } catch (error) {
+        console.error('GET finance budgets:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get(
+    '/organizations/:orgId/budgets/:budgetId',
+    verifyToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const { orgId, budgetId } = req.params;
+            const data = await budgetService.getBudgetById(req, orgId, budgetId);
+            if (!data) {
+                return res.status(404).json({ success: false, message: 'Budget not found' });
+            }
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET admin budget:', error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+router.put(
+    '/organizations/:orgId/budgets/:budgetId/stages/:stageKey/approve',
+    verifyToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const { orgId, budgetId, stageKey } = req.params;
+            const data = await budgetService.approveStagePlatform(req, orgId, budgetId, req.user.userId, stageKey);
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const code = error.statusCode || 500;
+            console.error('Platform budget approve:', error);
+            res.status(code).json({ success: false, message: error.message });
+        }
+    }
+);
+
+router.put(
+    '/organizations/:orgId/budgets/:budgetId/stages/:stageKey/reject',
+    verifyToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const { orgId, budgetId, stageKey } = req.params;
+            const data = await budgetService.rejectBudget(
+                req,
+                orgId,
+                budgetId,
+                req.user.userId,
+                { ...(req.body || {}), stageKey },
+                { platformOnly: true }
+            );
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const code = error.statusCode || 500;
+            console.error('Platform budget reject:', error);
+            res.status(code).json({ success: false, message: error.message });
+        }
+    }
+);
+
+router.put(
+    '/organizations/:orgId/budgets/:budgetId/stages/:stageKey/request-revision',
+    verifyToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const { orgId, budgetId, stageKey } = req.params;
+            const data = await budgetService.requestRevision(
+                req,
+                orgId,
+                budgetId,
+                req.user.userId,
+                { ...(req.body || {}), stageKey },
+                { platformOnly: true }
+            );
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const code = error.statusCode || 500;
+            console.error('Platform budget request-revision:', error);
+            res.status(code).json({ success: false, message: error.message });
+        }
+    }
+);
 
 // ==================== MIGRATIONS ====================
 

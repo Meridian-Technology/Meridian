@@ -123,8 +123,50 @@ const deleteAndUploadImageToS3 = async (file, folderName, existingImageUrl, cust
     }
 };
 
-module.exports = { 
-    uploadImageToS3, 
+const GOVERNANCE_DOC_MIME_TYPES = ['application/pdf'];
+const MAX_GOVERNANCE_DOC_SIZE = 15 * 1024 * 1024;
+
+const governanceDocFileFilter = (req, file, cb) => {
+    if (!GOVERNANCE_DOC_MIME_TYPES.includes(file.mimetype)) {
+        cb(new Error('Only PDF files are allowed for governance documents.'), false);
+        return;
+    }
+    cb(null, true);
+};
+
+const governanceUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_GOVERNANCE_DOC_SIZE },
+    fileFilter: governanceDocFileFilter
+});
+
+const uploadDocumentToS3 = async (file, folderName, customFileName = null) => {
+    if (!file) {
+        throw new Error('No file provided.');
+    }
+    if (!GOVERNANCE_DOC_MIME_TYPES.includes(file.mimetype)) {
+        throw new Error('Invalid file type for document upload.');
+    }
+    if (file.size > MAX_GOVERNANCE_DOC_SIZE) {
+        throw new Error('File size exceeds limit.');
+    }
+    const fileName = customFileName || generateSecureFileName(file.originalname, 'gov-');
+    const s3Params = {
+        Bucket: process.env.AWS_S3_BUCKET_NAME,
+        Key: `${folderName}/${fileName}`,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+        ContentDisposition: 'inline',
+        CacheControl: 'public, max-age=31536000'
+    };
+    const s3Response = await s3.upload(s3Params).promise();
+    return s3Response.Location;
+};
+
+module.exports = {
+    uploadImageToS3,
     deleteAndUploadImageToS3,
-    upload // Export the multer upload middleware
+    upload,
+    uploadDocumentToS3,
+    governanceUpload
 };
