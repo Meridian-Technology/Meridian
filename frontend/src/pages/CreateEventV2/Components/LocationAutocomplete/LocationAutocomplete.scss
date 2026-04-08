@@ -89,6 +89,88 @@
             }
         }
     }
+
+    .location-autocomplete-validation {
+        margin-top: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        background: rgba(220, 53, 69, 0.08);
+        border: 1px solid rgba(220, 53, 69, 0.35);
+        color: #8b1a2b;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 0.85rem;
+
+        &__link {
+            border: none;
+            background: transparent;
+            color: #8b1a2b;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            cursor: pointer;
+            font-weight: 600;
+            padding: 0;
+        }
+    }
+}
+
+.popup-overlay .popup-content.location-autocomplete-schedule-popup {
+    width: min(1050px, 95vw);
+    max-width: 1050px;
+    max-height: 90vh;
+
+    h3 {
+        margin: 0 0 10px 0;
+        font-size: 1rem;
+    }
+
+    .location-autocomplete-schedule-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        gap: 8px;
+
+        button {
+            border: 1px solid var(--lighterborder);
+            background: var(--background);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 6px 10px;
+            cursor: pointer;
+        }
+    }
+
+    .location-autocomplete-scheduled-period {
+        font-size: 0.9rem;
+        color: var(--text);
+        margin-bottom: 10px;
+    }
+
+    .location-autocomplete-schedule-calendar {
+        border: 1px solid var(--lighterborder);
+        border-radius: 8px;
+        overflow: hidden;
+        min-height: 300px;
+
+        /* Hide "today" highlights/line in this popup context */
+        .current-time-line,
+        .current-day-time-line {
+            display: none;
+        }
+
+        .day-header.current-day,
+        .day-column.current-day {
+            border-bottom-color: var(--lighterborder);
+        }
+
+        .day-header.current-day::after,
+        .day-column.current-day::after {
+            content: none;
+        }
+    }
 }
 
 @keyframes spin {

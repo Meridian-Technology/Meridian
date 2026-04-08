@@ -63,4 +63,15 @@
             }
         }
     }
+
+    &.prospective{
+        opacity: 1;
+        pointer-events: none;
+
+        .event-content {
+            .event-name {
+                color: #1e4fb2;
+            }
+        }
+    }
 }

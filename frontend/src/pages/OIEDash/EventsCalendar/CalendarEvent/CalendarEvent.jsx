@@ -13,6 +13,7 @@ function CalendarEvent({event}){
     };
 
     const handleEventClick = () => {
+        if (event.status === 'blocked' || event.status === 'prospective') return;
         setPopupOpen(true);
     };
     const onPopupClose = () => {
@@ -22,6 +23,9 @@ function CalendarEvent({event}){
     const getEventStyle = () => {
         if (event.status === 'blocked') {
             return { backgroundColor: '#E8E8E8', borderLeft: '4px solid #999', '--event-accent': '#999' };
+        }
+        if (event.status === 'prospective') {
+            return { backgroundColor: '#EAF2FF', borderLeft: '4px solid #2B6EF2', '--event-accent': '#2B6EF2' };
         }
         if (event.status === 'pending') {
             return { backgroundColor: '#FBEBBB', borderLeft: '4px solid var(--yellow)', '--event-accent': 'var(--yellow)' };
