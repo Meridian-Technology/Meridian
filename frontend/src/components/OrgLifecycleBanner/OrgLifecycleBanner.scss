@@ -1,0 +1,23 @@
+.org-lifecycle-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1rem;
+    font-size: 0.9rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+
+    &--sunset {
+        background: rgba(234, 179, 8, 0.12);
+        color: #713f12;
+    }
+
+    &--inactive {
+        background: rgba(239, 68, 68, 0.1);
+        color: #7f1d1d;
+    }
+
+    &__icon {
+        flex-shrink: 0;
+        font-size: 1.25rem;
+    }
+}
