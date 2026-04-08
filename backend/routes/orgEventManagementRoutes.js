@@ -4,8 +4,9 @@ const { verifyToken } = require('../middlewares/verifyToken');
 const getModels  = require('../services/getModelService');
 const { requireEventManagement, requireOrgPermission } = require('../middlewares/orgPermissions');
 const StudySessionService = require('../services/studySessionService');
+const ResourceReservationService = require('../services/resourceReservationService');
 const { resolveAnonymousEmail, resolveAnonymousName } = require('../services/eventAnnouncementService');
-const { getEffectivePolicy, assertOrgAllowsEventCreation } = require('../services/atlasPolicyService');
+const { getEffectivePolicy, assertOrgAllowsEventCreation, assertEventReservationReady } = require('../services/atlasPolicyService');
 
 const buildOrgEventScope = (orgId) => ([
     { hostingId: orgId },
@@ -20,6 +21,37 @@ const buildScopedEventQuery = (orgId, eventId) => ({
 });
 
 const getHostOrgIdFromEvent = (event) => String(event?.hostingId?._id || event?.hostingId || '');
+const RESERVATION_PREFLIGHT_ENFORCED = process.env.ENFORCE_RESOURCE_PREFLIGHT !== 'false';
+
+async function runReservationPreflight(req, event, options = {}) {
+    const resourceId = options.resourceId || event?.reservation?.resourceId || event?.classroom_id || null;
+    if (!resourceId) return { ok: true, availability: { isAvailable: true, reason: 'No reservable resource linked' } };
+    const reservationService = new ResourceReservationService(req);
+    const availability = await reservationService.applyAvailabilitySnapshot(event, {
+        startTime: options.startTime || event.start_time,
+        endTime: options.endTime || event.end_time,
+        resourceId,
+        excludeEventId: options.excludeEventId || event._id
+    });
+    if (!availability.isAvailable && RESERVATION_PREFLIGHT_ENFORCED) {
+        console.info('[reservation_preflight]', {
+            route: 'org-event-management',
+            eventId: String(event?._id || ''),
+            resourceId: String(resourceId),
+            outcome: 'blocked',
+            reason: availability.reason || 'unknown'
+        });
+        return { ok: false, code: 'reservation_conflict', availability };
+    }
+    console.info('[reservation_preflight]', {
+        route: 'org-event-management',
+        eventId: String(event?._id || ''),
+        resourceId: String(resourceId),
+        outcome: availability.isAvailable ? 'allowed' : 'advisory_conflict',
+        reason: availability.reason || ''
+    });
+    return { ok: true, availability };
+}
 
 // ==================== ORGANIZATION EVENT ANALYTICS ====================
 
@@ -1391,6 +1423,28 @@ router.post('/:orgId/events/from-template/:templateId', verifyToken, requireEven
         };
 
         const event = new Event(eventData);
+        const reservationService = new ResourceReservationService(req);
+        const resourceId = customizations.resourceId || event.classroom_id || null;
+        event.reservation = reservationService.normalizeEventReservation({
+            classroom_id: resourceId,
+            status: event.status
+        });
+        if (resourceId) {
+            event.classroom_id = resourceId;
+        }
+        const reservationPreflight = await runReservationPreflight(req, event, {
+            resourceId: event.classroom_id,
+            startTime: event.start_time,
+            endTime: event.end_time
+        });
+        if (!reservationPreflight.ok) {
+            return res.status(409).json({
+                success: false,
+                code: reservationPreflight.code,
+                message: reservationPreflight.availability.reason || 'Resource is unavailable for the requested time',
+                conflicts: reservationPreflight.availability.conflicts || []
+            });
+        }
         await event.save();
 
         // Create default EventAgenda for the new event
@@ -1465,6 +1519,41 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
                 event[key] = updateData[key];
             }
         });
+
+        if (updateData.resourceId !== undefined) {
+            event.classroom_id = updateData.resourceId || null;
+        }
+        if (event.classroom_id || event.reservation?.resourceId) {
+            const reservationService = new ResourceReservationService(req);
+            event.reservation = reservationService.normalizeEventReservation(event);
+            if (event.classroom_id && !event.reservation.resourceId) {
+                event.reservation.resourceId = event.classroom_id;
+            }
+            const reservationPreflight = await runReservationPreflight(req, event, {
+                resourceId: event.reservation.resourceId || event.classroom_id,
+                startTime: event.start_time,
+                endTime: event.end_time,
+                excludeEventId: event._id
+            });
+            if (!reservationPreflight.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: reservationPreflight.code,
+                    message: reservationPreflight.availability.reason || 'Resource is unavailable for the requested time',
+                    conflicts: reservationPreflight.availability.conflicts || []
+                });
+            }
+            const reservationReady = assertEventReservationReady(event, {
+                allowedStates: ['requested', 'approved', 'hold']
+            });
+            if (!reservationReady.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: reservationReady.code || 'EVENT_RESERVATION_NOT_READY',
+                    message: reservationReady.message
+                });
+            }
+        }
 
         await event.save();
 
@@ -1921,23 +2010,29 @@ router.post('/:orgId/events/:eventId/agenda/publish', verifyToken, requireEventM
                 });
             }
 
-            // Only check room availability if event has a classroom_id
-            if (event.classroom_id) {
-                const studySessionService = new StudySessionService(req);
-                const availability = await studySessionService.checkRoomAvailabilityByClassroomId(
-                    event.start_time,
-                    new Date(newEndTime),
-                    event.classroom_id,
-                    eventId
-                );
-
-                if (!availability.isAvailable) {
-                    return res.status(409).json({
-                        success: false,
-                        message: availability.reason || 'Room is unavailable for the requested time',
-                        conflicts: availability.conflicts
-                    });
-                }
+            const reservationPreflight = await runReservationPreflight(req, event, {
+                resourceId: event?.reservation?.resourceId || event.classroom_id,
+                startTime: event.start_time,
+                endTime: new Date(newEndTime),
+                excludeEventId: eventId
+            });
+            if (!reservationPreflight.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: reservationPreflight.code,
+                    message: reservationPreflight.availability.reason || 'Resource is unavailable for the requested time',
+                    conflicts: reservationPreflight.availability.conflicts || []
+                });
+            }
+            const reservationReady = assertEventReservationReady(event, {
+                allowedStates: ['requested', 'approved', 'hold']
+            });
+            if (!reservationReady.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: reservationReady.code || 'EVENT_RESERVATION_NOT_READY',
+                    message: reservationReady.message
+                });
             }
 
             // Update event end_time

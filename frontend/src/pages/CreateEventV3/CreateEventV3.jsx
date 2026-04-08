@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { analytics } from '../../services/analytics/analytics';
@@ -14,6 +14,7 @@ import RegistrationSection from '../CreateEventV2/Components/RegistrationSection
 import ApprovalPreview from '../../components/ApprovalPreview/ApprovalPreview';
 import ImageUpload from '../../components/ImageUpload/ImageUpload';
 import Header from '../../components/Header/Header';
+import { extractResourceId, buildResourcePreflightPayload } from '../CreateEvent/shared/resourcePreflight';
 import './CreateEventV3.scss';
 
 const DEFAULT_FIELDS = [
@@ -91,6 +92,9 @@ const CreateEventV3 = () => {
         rsvpDeadline: null,
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [resourcePreflightError, setResourcePreflightError] = useState('');
+    const preflightTimerRef = useRef(null);
+    const lastConflictKeyRef = useRef('');
 
     useEffect(() => {
         document.body.classList.add('create-event-v3-page');
@@ -134,6 +138,51 @@ const CreateEventV3 = () => {
             setFormData(prev => ({ ...prev, ...defaultValues }));
         }
     }, [formConfig]);
+
+    useEffect(() => {
+        const resourceId = extractResourceId(formData);
+        const startTime = formData.start_time;
+        const endTime = formData.end_time;
+        if (preflightTimerRef.current) {
+            clearTimeout(preflightTimerRef.current);
+            preflightTimerRef.current = null;
+        }
+        if (!resourceId || !startTime || !endTime) {
+            setResourcePreflightError('');
+            setFormData((prev) =>
+                prev.resourcePreflightError ? { ...prev, resourcePreflightError: '' } : prev
+            );
+            lastConflictKeyRef.current = '';
+            return;
+        }
+        const key = `${resourceId}|${new Date(startTime).toISOString()}|${new Date(endTime).toISOString()}`;
+        preflightTimerRef.current = setTimeout(async () => {
+            const preflight = await apiRequest('/resource-preflight', buildResourcePreflightPayload({
+                resourceId,
+                startTime,
+                endTime
+            }), { method: 'POST' });
+            if (!preflight.success) {
+                const msg = preflight.message || 'Resource is unavailable for this time';
+                setResourcePreflightError(msg);
+                setFormData((prev) =>
+                    prev.resourcePreflightError === msg ? prev : { ...prev, resourcePreflightError: msg }
+                );
+                if (lastConflictKeyRef.current !== key) {
+                    lastConflictKeyRef.current = key;
+                }
+                return;
+            }
+            setResourcePreflightError('');
+            setFormData((prev) =>
+                prev.resourcePreflightError ? { ...prev, resourcePreflightError: '' } : prev
+            );
+            lastConflictKeyRef.current = '';
+        }, 350);
+        return () => {
+            if (preflightTimerRef.current) clearTimeout(preflightTimerRef.current);
+        };
+    }, [formData.start_time, formData.end_time, formData.classroom_id, formData.classroomId, addNotification]);
 
     const getMissingFields = useCallback((data, config) => {
         const missing = [];
@@ -193,6 +242,7 @@ const CreateEventV3 = () => {
         setIsSubmitting(true);
         try {
             const submitData = new FormData();
+            const resourceId = extractResourceId(formData);
             const data = {
                 name: formData.name,
                 type: formData.type,
@@ -203,7 +253,8 @@ const CreateEventV3 = () => {
                 start_time: formData.start_time,
                 end_time: formData.end_time,
                 description: formData.description,
-                classroom_id: formData.classroom_id || formData.classroomId,
+                classroom_id: resourceId,
+                resourceId,
                 visibility: formData.visibility,
                 expectedAttendance: formData.expectedAttendance,
                 contact: formData.contact,
@@ -216,6 +267,8 @@ const CreateEventV3 = () => {
                 collaboratorOrgIds: selectedCollaboratorOrgIds,
                 asDraft: asDraft ? 'true' : 'false'
             };
+
+            if (resourcePreflightError) throw new Error(resourcePreflightError);
 
             Object.keys(data).forEach(key => {
                 if (data[key] !== null && data[key] !== undefined) {
@@ -378,7 +431,11 @@ const CreateEventV3 = () => {
                         {steps.some(s => s.id === 'location') && (
                             <div className="form-section">
                                 <label className="section-label">Add Event Location</label>
-                                <LocationAutocomplete formData={formData} setFormData={setFormData} />
+                                <LocationAutocomplete
+                                    formData={formData}
+                                    setFormData={setFormData}
+                                    preflightError={resourcePreflightError}
+                                />
                             </div>
                         )}
 

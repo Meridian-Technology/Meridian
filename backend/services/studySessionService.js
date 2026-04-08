@@ -1,11 +1,13 @@
 const getModels = require('./getModelService');
 const FeedbackService = require('./feedbackService');
+const ResourceReservationService = require('./resourceReservationService');
 
 class StudySessionService {
     constructor(req) {
         this.req = req;
         this.models = getModels(req, 'StudySession', 'Event', 'User', 'Classroom', 'Schedule', 'AvailabilityPoll', 'Notification');
         this.feedbackService = new FeedbackService(req);
+        this.resourceReservationService = new ResourceReservationService(req);
     }
     // Get current semester end date
     ß
@@ -43,6 +45,7 @@ class StudySessionService {
             hostingId: userId,
             hostingType: "User",
             location: sessionData.location,
+            classroom_id: sessionData.classroomId || null,
             start_time: new Date(sessionData.startTime),
             end_time: new Date(sessionData.endTime),
             description: sessionData.description || `Study session for ${sessionData.course}`,
@@ -56,6 +59,10 @@ class StudySessionService {
             isStudySession: true, // Flag for filtering
             isDeleted: false
         };
+        eventData.reservation = this.resourceReservationService.normalizeEventReservation({
+            classroom_id: eventData.classroom_id,
+            status: eventData.status
+        });
 
         const event = new Event(eventData);
         await event.save();
@@ -138,6 +145,7 @@ class StudySessionService {
             hostingId: userId,
             hostingType: "User",
             location: session.location,
+            classroom_id: session.classroomId || null,
             start_time: new Date(session.startTime),
             end_time: new Date(session.endTime),
             description: session.description || `Study session for ${session.course}`,
@@ -151,6 +159,10 @@ class StudySessionService {
             isStudySession: true,
             isDeleted: false
         };
+        eventData.reservation = this.resourceReservationService.normalizeEventReservation({
+            classroom_id: eventData.classroom_id,
+            status: eventData.status
+        });
 
         const event = new Event(eventData);
         await event.save();
@@ -257,67 +269,15 @@ class StudySessionService {
 
     // Check room availability for study session
     async checkRoomAvailability(startTime, endTime, roomName, excludeEventId = null) {
-        const { Schedule, Event, Classroom } = this.models;
-        
-        const start = new Date(startTime);
-        const end = new Date(endTime);
-
-        // Check if room exists and is not restricted
+        const { Classroom } = this.models;
         const room = await Classroom.findOne({ name: roomName });
-        if (!room) {
-            return { isAvailable: true, };
-        }
-        
-        // if (room.attributes && room.attributes.includes('restricted')) {
-        //     return { isAvailable: false, reason: 'Room is restricted' };
-        // }
-
-        // Check classroom schedule conflicts
-        const dayOfWeek = ['M', 'T', 'W', 'R', 'F'][start.getDay() - 1]; // Monday = 0
-        if (dayOfWeek) {
-            const schedule = await Schedule.findOne({ classroom_id: room._id });
-            if (schedule && schedule.weekly_schedule[dayOfWeek]) {
-                const startMinutes = start.getHours() * 60 + start.getMinutes();
-                const endMinutes = end.getHours() * 60 + end.getMinutes();
-                
-                const hasClassConflict = schedule.weekly_schedule[dayOfWeek].some(classTime => {
-                    return startMinutes < classTime.end_time && endMinutes > classTime.start_time;
-                });
-                
-                if (hasClassConflict) {
-                    return { isAvailable: false, reason: 'Room has scheduled classes during this time' };
-                }
-            }
-        }
-
-        // Check event conflicts (including other study sessions)
-        const eventQuery = {
-            location: roomName,
-            $or: [
-                { start_time: { $gte: start, $lt: end } },
-                { end_time: { $gt: start, $lte: end } },
-                { start_time: { $lte: start }, end_time: { $gte: end } }
-            ],
-            status: { $in: ['approved', 'not-applicable'] },
-            isDeleted: false
-        };
-
-        // Exclude current event if provided
-        if (excludeEventId) {
-            eventQuery._id = { $ne: excludeEventId };
-        }
-
-        const eventConflicts = await Event.find(eventQuery);
-
-        if (eventConflicts.length > 0) {
-            return { 
-                isAvailable: false, 
-                reason: 'Room has existing event bookings during this time',
-                conflicts: eventConflicts
-            };
-        }
-
-        return { isAvailable: true };
+        if (!room) return { isAvailable: true };
+        return this.resourceReservationService.checkAvailability({
+            startTime,
+            endTime,
+            resourceId: room._id,
+            excludeEventId
+        });
     }
 
     // Check room availability by classroom_id (for events)
@@ -333,7 +293,12 @@ class StudySessionService {
             return { isAvailable: false, reason: 'Room not found' };
         }
 
-        return this.checkRoomAvailability(startTime, endTime, room.name, excludeEventId);
+        return this.resourceReservationService.checkAvailability({
+            startTime,
+            endTime,
+            resourceId: room._id,
+            excludeEventId
+        });
     }
 
     // Get suggested rooms for a time slot

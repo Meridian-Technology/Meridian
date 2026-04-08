@@ -143,6 +143,31 @@ function assertOrgAllowsEventCreation(policy, org) {
     return { ok: true };
 }
 
+function assertEventReservationReady(event, options = {}) {
+    const required = options.required !== false;
+    const resourceId = event?.reservation?.resourceId || event?.classroom_id || null;
+    if (!required || !resourceId) return { ok: true };
+    const state = event?.reservation?.state || 'draft';
+    const allowedStates = options.allowedStates || ['approved', 'requested', 'hold'];
+    if (!allowedStates.includes(state)) {
+        return {
+            ok: false,
+            message: `This event cannot proceed while reservation state is "${state}".`,
+            code: 'EVENT_RESERVATION_NOT_READY',
+            state
+        };
+    }
+    if (event?.reservation?.conflictSummary?.hasConflict) {
+        return {
+            ok: false,
+            message: event.reservation.conflictSummary.reason || 'This event has unresolved reservation conflicts.',
+            code: 'EVENT_RESERVATION_CONFLICT',
+            state
+        };
+    }
+    return { ok: true, state };
+}
+
 function labelForGovernanceKey(policy, key) {
     const t = policy?.terminology || {};
     return t[key] || key;
@@ -157,6 +182,7 @@ module.exports = {
     governanceRequirementsForOrg,
     shouldHideOrgFromPublicList,
     assertOrgAllowsEventCreation,
+    assertEventReservationReady,
     labelForGovernanceKey,
     statusKeys
 };

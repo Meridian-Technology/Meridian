@@ -2,6 +2,7 @@ const {
     assertLifecycleTransition,
     governanceRequirementsForOrg,
     assertOrgAllowsEventCreation,
+    assertEventReservationReady,
     getEffectivePolicyFromConfig,
     DEFAULT_ATLAS_POLICY
 } = require('../../services/atlasPolicyService');
@@ -63,6 +64,29 @@ describe('atlasPolicyService', () => {
     test('assertOrgAllowsEventCreation allows active', () => {
         const policy = getEffectivePolicyFromConfig({});
         const r = assertOrgAllowsEventCreation(policy, org({ lifecycleStatus: 'active' }));
+        expect(r.ok).toBe(true);
+    });
+
+    test('assertEventReservationReady blocks unresolved reservation conflicts', () => {
+        const r = assertEventReservationReady({
+            classroom_id: '507f1f77bcf86cd799439011',
+            reservation: {
+                state: 'requested',
+                conflictSummary: { hasConflict: true, reason: 'Overlapping booking' }
+            }
+        });
+        expect(r.ok).toBe(false);
+        expect(r.code).toBe('EVENT_RESERVATION_CONFLICT');
+    });
+
+    test('assertEventReservationReady allows approved reservation state', () => {
+        const r = assertEventReservationReady({
+            classroom_id: '507f1f77bcf86cd799439011',
+            reservation: {
+                state: 'approved',
+                conflictSummary: { hasConflict: false, reason: '' }
+            }
+        });
         expect(r.ok).toBe(true);
     });
 });

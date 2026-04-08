@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import FlowComponentV2 from '../../components/FlowComponentV2/FlowComponentV2';
 import apiRequest from '../../utils/postRequest';
@@ -10,6 +10,7 @@ import logo from '../../assets/Brand Image/Globe.svg';
 import { useNotification } from '../../NotificationContext';
 import useAuth from '../../hooks/useAuth';
 import HostSelector from './Components/HostSelector/HostSelector';
+import { extractResourceId, buildResourcePreflightPayload } from '../CreateEvent/shared/resourcePreflight';
 
 import defaultAvatar from '../../assets/defaultAvatar.svg';
 
@@ -105,6 +106,9 @@ const CreateEventV2 = () => {
             rsvpDeadline: null,
             maxAttendees: null
     });
+    const [resourcePreflightError, setResourcePreflightError] = useState('');
+    const preflightTimerRef = useRef(null);
+    const lastConflictKeyRef = useRef('');
 
     // Update formData when selectedHost changes
     useEffect(() => {
@@ -207,10 +211,56 @@ const CreateEventV2 = () => {
         }
     }, [formConfigData.data]);
 
+    useEffect(() => {
+        const resourceId = extractResourceId(formData);
+        const startTime = formData.start_time;
+        const endTime = formData.end_time;
+        if (preflightTimerRef.current) {
+            clearTimeout(preflightTimerRef.current);
+            preflightTimerRef.current = null;
+        }
+        if (!resourceId || !startTime || !endTime) {
+            setResourcePreflightError('');
+            setFormData((prev) =>
+                prev.resourcePreflightError ? { ...prev, resourcePreflightError: '' } : prev
+            );
+            lastConflictKeyRef.current = '';
+            return;
+        }
+        const key = `${resourceId}|${new Date(startTime).toISOString()}|${new Date(endTime).toISOString()}`;
+        preflightTimerRef.current = setTimeout(async () => {
+            const preflight = await apiRequest('/resource-preflight', buildResourcePreflightPayload({
+                resourceId,
+                startTime,
+                endTime
+            }), { method: 'POST' });
+            if (!preflight.success) {
+                const msg = preflight.message || 'Resource is unavailable for this time';
+                setResourcePreflightError(msg);
+                setFormData((prev) =>
+                    prev.resourcePreflightError === msg ? prev : { ...prev, resourcePreflightError: msg }
+                );
+                if (lastConflictKeyRef.current !== key) {
+                    lastConflictKeyRef.current = key;
+                }
+                return;
+            }
+            setResourcePreflightError('');
+            setFormData((prev) =>
+                prev.resourcePreflightError ? { ...prev, resourcePreflightError: '' } : prev
+            );
+            lastConflictKeyRef.current = '';
+        }, 350);
+        return () => {
+            if (preflightTimerRef.current) clearTimeout(preflightTimerRef.current);
+        };
+    }, [formData.start_time, formData.end_time, formData.classroom_id, formData.classroomId, addNotification]);
+
     const handleSubmit = async (formData) => {
         try {
             // Handle create mode (existing logic)
             const submitData = new FormData();
+            const resourceId = extractResourceId(formData);
 
             // Prepare data - include all fields from form config
             const data = {
@@ -223,7 +273,8 @@ const CreateEventV2 = () => {
                 start_time: formData.start_time,
                 end_time: formData.end_time,
                 description: formData.description,
-                classroom_id: formData.classroom_id || formData.classroomId,
+                classroom_id: resourceId,
+                resourceId,
                 visibility: formData.visibility,
                 expectedAttendance: formData.expectedAttendance,
                 contact: formData.contact,
@@ -235,6 +286,8 @@ const CreateEventV2 = () => {
                 // Include orgId if creating as organization
                 orgId: selectedHost?.type === 'Org' ? selectedHost.id : null
             };
+
+            if (resourcePreflightError) throw new Error(resourcePreflightError);
 
             // Append all data fields to FormData
             Object.keys(data).forEach(key => {
@@ -284,7 +337,7 @@ const CreateEventV2 = () => {
 
     const handleError = (error) => {
         addNotification({
-            title: 'Create Event Error',
+            title: 'Validation Error',
             message: error.message || 'Something went wrong. Please try again.',
             type: 'error'
         });
@@ -412,10 +465,12 @@ const CreateEventV2 = () => {
             getMissingFields={getMissingFields}
             hostSelector={
                 user && (
-                    <HostSelector 
-                        selectedHost={selectedHost}
-                        onHostChange={handleHostChange}
-                    />
+                    <>
+                        <HostSelector
+                            selectedHost={selectedHost}
+                            onHostChange={handleHostChange}
+                        />
+                    </>
                 )
             }
             logo={logo}
