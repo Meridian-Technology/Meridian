@@ -243,6 +243,7 @@ function createApp() {
   const orgRoutes = require('./routes/orgRoutes.js');
   const orgRoleRoutes = require('./routes/orgRoleRoutes.js');
   const orgManagementRoutes = require('./routes/orgManagementRoutes.js');
+  const orgBudgetRoutes = require('./routes/orgBudgetRoutes.js');
   const orgInviteRoutes = require('./routes/orgInviteRoutes.js');
   const orgMessageRoutes = require('./routes/orgMessageRoutes.js');
   const taskManagementRoutes = require('./routes/taskManagementRoutes.js');
@@ -279,6 +280,7 @@ function createApp() {
   app.use(orgRoutes);
   app.use('/org-roles', orgRoleRoutes);
   app.use('/org-management', orgManagementRoutes);
+  app.use('/org-budgets', orgBudgetRoutes);
   app.use('/org-invites', orgInviteRoutes);
   app.use('/org-messages', orgMessageRoutes);
   app.use('/org-event-management', orgEventManagementRoutes);
