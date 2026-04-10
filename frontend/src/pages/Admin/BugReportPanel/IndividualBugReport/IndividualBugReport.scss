@@ -165,10 +165,11 @@
     }
 
     .report-activity-panel {
-        width: calc(100% - 2 * var(--report-main-inline));
+        --report-activity-inline: calc(var(--report-main-inline) + 3px);
+        width: calc(100% - 2 * var(--report-activity-inline));
         max-width: 100%;
         box-sizing: border-box;
-        margin: 8px var(--report-main-inline) 16px;
+        margin: 8px var(--report-activity-inline) 16px;
         text-align: left;
         border: 1px solid var(--border);
         box-shadow: var(--shadow);
@@ -188,6 +189,8 @@
         position: sticky;
         top: 12px;
         box-sizing: border-box;
+        margin-right: 20px;
+        margin-bottom: 24px;
         border: 1px solid var(--border);
         box-shadow: var(--shadow);
         background-color: var(--background);
