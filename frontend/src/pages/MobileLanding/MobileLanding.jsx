@@ -10,19 +10,10 @@ import { analytics } from "../../services/analytics/analytics";
 import heroImage from "../../assets/Mockups/LandingMockup1.png";
 import mobileLogo from "../../assets/Brand Image/MeridianGO.png";
 import logo from "../../assets/Brand Image/BEACON.svg";
-import RpiLogo from "../../assets/Brand Image/RpiLogo.svg";
-import BerkeleyLogo from "../../assets/Brand Image/BerkeleyLogo.svg";
 
 function getLogo() {
   if (typeof window === "undefined") return logo;
-  const hostname = window.location.hostname;
-  const parts = hostname.split(".");
-  if (parts.length > 2) {
-    let subdomain = parts[0];
-    if (subdomain.toLowerCase() === "www") subdomain = parts[1];
-    if (subdomain.toLowerCase() === "rpi") return RpiLogo;
-    if (subdomain.toLowerCase() === "berkeley") return BerkeleyLogo;
-  }
+
   return logo;
 }
 
