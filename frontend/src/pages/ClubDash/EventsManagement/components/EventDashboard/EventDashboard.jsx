@@ -175,6 +175,31 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     }, []);
 
     const isEventCompleted = dashboardData?.stats?.operationalStatus === 'completed';
+    const approvalStatus = dashboardData?.event?.status || '';
+    const approvalStatusConfig = useMemo(() => {
+        if (approvalStatus === 'pending') {
+            return {
+                tone: 'pending',
+                title: 'Pending review',
+                message: 'This event is currently in an approval or acknowledgement workflow.'
+            };
+        }
+        if (approvalStatus === 'rejected') {
+            return {
+                tone: 'rejected',
+                title: 'Needs changes',
+                message: 'This event was rejected. Update details and re-submit for review.'
+            };
+        }
+        if (approvalStatus === 'approved') {
+            return {
+                tone: 'approved',
+                title: 'Approved for publishing',
+                message: 'This event is clear to publish and appear in public experiences.'
+            };
+        }
+        return null;
+    }, [approvalStatus]);
 
     const collaborationAcceptBanner = useMemo(() => {
         if (!dashboardData?.event || !orgId) return null;
@@ -441,6 +466,24 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         >
                             View post-mortem
                         </button>
+                    </div>
+                )}
+                {approvalStatusConfig && (
+                    <div className={`event-dashboard-approval-banner ${approvalStatusConfig.tone}`}>
+                        <Icon
+                            icon={
+                                approvalStatusConfig.tone === 'approved'
+                                    ? 'mdi:shield-check'
+                                    : approvalStatusConfig.tone === 'rejected'
+                                        ? 'mdi:alert-circle'
+                                        : 'mdi:clock-outline'
+                            }
+                            className="event-dashboard-approval-banner__icon"
+                        />
+                        <div className="event-dashboard-approval-banner__content">
+                            <strong>{approvalStatusConfig.title}</strong>
+                            <span>{approvalStatusConfig.message}</span>
+                        </div>
                     </div>
                 )}
                 <div className="event-dashboard-content">

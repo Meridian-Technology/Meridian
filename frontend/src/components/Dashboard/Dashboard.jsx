@@ -34,6 +34,8 @@ function Dashboard({
     const [isTransitioning, setIsTransitioning] = useState(false);
     const [contentOpacity, setContentOpacity] = useState(1);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isSidebarEdgePeek, setIsSidebarEdgePeek] = useState(false);
+    const edgePeekTimeoutRef = useRef(null);
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const location = useLocation();
@@ -267,6 +269,38 @@ function Dashboard({
     const onExpand = () => {
         setExpanded((prev) => !prev);
     }
+
+    useEffect(() => {
+        if (!expanded || width < 768) {
+            setIsSidebarEdgePeek(false);
+            if (edgePeekTimeoutRef.current) {
+                clearTimeout(edgePeekTimeoutRef.current);
+                edgePeekTimeoutRef.current = null;
+            }
+            return;
+        }
+
+        const handleMouseMove = (event) => {
+            if (event.clientX > 28) return;
+            setIsSidebarEdgePeek(true);
+            if (edgePeekTimeoutRef.current) {
+                clearTimeout(edgePeekTimeoutRef.current);
+            }
+            edgePeekTimeoutRef.current = setTimeout(() => {
+                setIsSidebarEdgePeek(false);
+                edgePeekTimeoutRef.current = null;
+            }, 900);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            if (edgePeekTimeoutRef.current) {
+                clearTimeout(edgePeekTimeoutRef.current);
+                edgePeekTimeoutRef.current = null;
+            }
+        };
+    }, [expanded, width]);
 
     const handlePageChange = (index) => {
         // Start opacity transition
@@ -577,7 +611,28 @@ function Dashboard({
                     </div>
                 )
             }
-            <div className={`dash-left ${expanded ? "hidden" : ""} ${isMobileMenuOpen ? "mobile-open" : ""}`}>
+            <div
+                className={`dash-left ${expanded ? "hidden" : ""} ${isSidebarEdgePeek ? "edge-peek" : ""} ${
+                    isMobileMenuOpen ? "mobile-open" : ""
+                }`}
+            >
+                {width >= 768 && (
+                    <button
+                        type="button"
+                        className="dashboard-sidebar-toggle"
+                        onClick={onExpand}
+                        aria-label={expanded ? 'Restore sidebar' : 'Collapse sidebar and expand content'}
+                        title={expanded ? 'Restore sidebar' : 'Collapse sidebar'}
+                    >
+                        <Icon
+                            icon={
+                                expanded
+                                    ? 'material-symbols:left-panel-open-rounded'
+                                    : 'material-symbols:left-panel-close-rounded'
+                            }
+                        />
+                    </button>
+                )}
                 <div className="top">
                     <div className="logo">
                         <img src={logo} alt="Logo" />
@@ -669,23 +724,6 @@ function Dashboard({
                 </div>
             </div>
             <div className={`dash-right ${expanded ? 'maximized' : 'minimized'}`}>
-                {width >= 768 && (
-                    <button
-                        type="button"
-                        className="dashboard-sidebar-toggle"
-                        onClick={onExpand}
-                        aria-label={expanded ? 'Restore sidebar' : 'Collapse sidebar and expand content'}
-                        title={expanded ? 'Restore sidebar' : 'Collapse sidebar'}
-                    >
-                        <Icon
-                            icon={
-                                expanded
-                                    ? 'material-symbols:left-panel-open-rounded'
-                                    : 'material-symbols:left-panel-close-rounded'
-                            }
-                        />
-                    </button>
-                )}
                 <div 
                     className="dash-content"
                     style={{

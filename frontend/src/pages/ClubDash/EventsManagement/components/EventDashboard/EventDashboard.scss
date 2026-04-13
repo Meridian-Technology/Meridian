@@ -447,6 +447,52 @@
         }
     }
 
+    .event-dashboard-approval-banner {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        padding: 0.75rem 1.5rem;
+        border-bottom: 1px solid transparent;
+
+        &.approved {
+            background: linear-gradient(135deg, rgba(77, 170, 87, 0.1) 0%, rgba(77, 170, 87, 0.05) 100%);
+            border-bottom-color: rgba(77, 170, 87, 0.2);
+        }
+
+        &.pending {
+            background: linear-gradient(135deg, rgba(214, 143, 49, 0.1) 0%, rgba(214, 143, 49, 0.05) 100%);
+            border-bottom-color: rgba(214, 143, 49, 0.22);
+        }
+
+        &.rejected {
+            background: linear-gradient(135deg, rgba(196, 69, 69, 0.1) 0%, rgba(196, 69, 69, 0.05) 100%);
+            border-bottom-color: rgba(196, 69, 69, 0.22);
+        }
+    }
+
+    .event-dashboard-approval-banner__icon {
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+
+    .event-dashboard-approval-banner__content {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+
+        strong {
+            font-size: 0.9rem;
+            line-height: 1.2;
+        }
+
+        span {
+            font-size: 0.84rem;
+            opacity: 0.86;
+        }
+    }
+
     .event-dashboard-content {
         display: flex;
         flex-direction: column;
@@ -1377,6 +1423,8 @@
     background: transparent;
     border: none;
     box-shadow: none;
+    z-index: 9999 !important;
+    pointer-events: none;
 }
 
 .rsvp-chart-tooltip {
