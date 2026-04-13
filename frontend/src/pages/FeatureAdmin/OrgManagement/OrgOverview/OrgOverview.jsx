@@ -1,35 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useFetch } from '../../../../hooks/useFetch';
 import { useGradient } from '../../../../hooks/useGradient';
-import { Icon } from '@iconify-icon/react';
-import MetricCard from '../../../../components/MetricCard';
-import './OrgOverview.scss';
 import KpiCard from '../../../../components/Analytics/Dashboard/KpiCard';
+import OrgOverviewCharts from './OrgOverviewCharts';
+import './OrgOverview.scss';
 
 function OrgOverview() {
-    const { data: analytics, loading, error } = useFetch('/org-management/analytics?timeRange=30d');
-    const { data: config } = useFetch('/org-management/config');
     const [timeRange, setTimeRange] = useState('30d');
+    const { data: analytics, loading, error } = useFetch(`/org-management/analytics/platform-overview?timeRange=${timeRange}`);
+    const { data: config } = useFetch('/org-management/config');
     const { AtlasMain } = useGradient();
+    const data = analytics?.data || {};
+    const sourceData = useMemo(() => {
+        const sources = data?.viewSources || {};
+        return [
+            { source: 'Direct', value: sources.direct || 0 },
+            { source: 'Explore', value: sources.explore || 0 },
+            { source: 'Org page', value: sources.org_page || 0 },
+            { source: 'Email', value: sources.email || 0 },
+            { source: 'QR', value: sources.qr || 0 }
+        ];
+    }, [data?.viewSources]);
 
-    const getStatusColor = (status) => {
-        switch (status) {
-            case 'pending': return '#ff9800';
-            case 'approved': return '#4caf50';
-            case 'rejected': return '#f44336';
-            default: return '#757575';
-        }
-    };
-
-    const getPriorityColor = (priority) => {
-        switch (priority) {
-            case 'urgent': return '#f44336';
-            case 'high': return '#ff9800';
-            case 'medium': return '#2196f3';
-            case 'low': return '#4caf50';
-            default: return '#757575';
-        }
-    };
+    const rangeLabel = timeRange === '7d' ? 'Last 7 days' : timeRange === '90d' ? 'Last 90 days' : timeRange === '1y' ? 'Last year' : 'Last 30 days';
 
     if (loading) {
         return (
@@ -47,27 +40,39 @@ function OrgOverview() {
         );
     }
 
-    const data = analytics?.data;
-
     return (
         <div className="org-overview dash">
             <header className="header">
                 <h1>Organization Management Overview</h1>
                 <p>
-                    Monitor and manage student organizations. Budgets: open <strong>Budgets</strong> in the sidebar for the
-                    finance queue, or <strong>Settings → Budget templates</strong> to edit templates and workflow presets.
+                    Platform health for orgs and event engagement from canonical analytics events.
                 </p>
                 <img src={AtlasMain} alt="Org Management Grad" />
             </header>
 
             <div className="content">
-                {/* Quick Stats */}
+                <div className="overview-toolbar">
+                    <div className="range-tabs">
+                        {['7d', '30d', '90d', '1y'].map((range) => (
+                            <button
+                                key={range}
+                                type="button"
+                                className={timeRange === range ? 'active' : ''}
+                                onClick={() => setTimeRange(range)}
+                            >
+                                {range}
+                            </button>
+                        ))}
+                    </div>
+                    <p>{rangeLabel}</p>
+                </div>
+
                 <div className="analytics-overview">
                     <KpiCard
                         icon="mdi:account-group"
                         title="Total Organizations"
-                        value={data?.overview?.totalOrgs || 0}
-                        subtitle="All registered organizations"
+                        value={data?.overview?.totalOrgs ?? 0}
+                        subtitle="All registered orgs"
                         color="var(--primary-color)"
                         size="small"
                     />
@@ -75,90 +80,60 @@ function OrgOverview() {
                     <KpiCard
                         icon="mdi:shield-check"
                         title="Verified Organizations"
-                        value={data?.overview?.verifiedOrgs || 0}
-                        subtitle="Successfully verified"
+                        value={data?.overview?.verifiedOrgs ?? 0}
+                        subtitle="Verified and active"
                         color="var(--primary-color)"
                         size="small"
                     />
 
                     <KpiCard
-                        icon="mdi:account-multiple"
-                        title="Total Members"
-                        value={data?.overview?.totalMembers || 0}
-                        subtitle="Across all organizations"
+                        icon="mdi:eye-outline"
+                        title="Event Views"
+                        value={data?.engagement?.totalViews ?? 0}
+                        subtitle="From analytics_events"
                         color="var(--primary-color)"
                         size="small"
                     />
 
                     <KpiCard
-                        icon="mdi:calendar"
-                        title="Events This Month"
-                        value={data?.overview?.totalEvents || 0}
-                        label="Organization events"
+                        icon="mdi:account-check-outline"
+                        title="Registrations"
+                        value={data?.engagement?.totalRegistrations ?? 0}
+                        subtitle={`${data?.engagement?.registrationRate ?? 0}% view-to-registration`}
                         color="var(--primary-color)"
                         size="small"
                     />
                 </div>
 
-                {/* Verification Requests Summary */}
-                {data?.verificationRequests.length > 0 &&
+                <div className="section-container">
+                    <div className="section chart-section">
+                        <h2>Engagement trend</h2>
+                        <OrgOverviewCharts variant="trend" data={data?.trends || []} />
+                    </div>
+                    <div className="section chart-section">
+                        <h2>View source mix</h2>
+                        <OrgOverviewCharts variant="sources" data={sourceData} />
+                    </div>
+                </div>
+
+                <div className="section-container">
                     <div className="section">
-                        <h2>Verification Requests</h2>
-                        <div className="requests-summary">
-                            { Object.entries(data.verificationRequests).map(([status, count]) => (
-                                <div key={status} className="request-status" style={{ borderColor: getStatusColor(status) }}>
-                                    <div className="status-indicator" style={{ backgroundColor: getStatusColor(status) }}></div>
-                                    <div className="status-content">
-                                        <h4>{count}</h4>
-                                        <p>{status.charAt(0).toUpperCase() + status.slice(1)}</p>
+                        <h2>Top organizations by engagement</h2>
+                        <div className="top-orgs">
+                            {(data?.topOrganizations || []).map((org, index) => (
+                                <div key={org.orgId} className="org-item">
+                                    <div className="org-rank">#{index + 1}</div>
+                                    <div className="org-info">
+                                        <h4>{org.orgName}</h4>
+                                        <p>{org.views} views · {org.registrations} registrations</p>
                                     </div>
                                 </div>
                             ))}
+                            {!data?.topOrganizations?.length && (
+                                <p className="empty-copy">No event engagement found for this range.</p>
+                            )}
                         </div>
                     </div>
-                }
-
-                <div className="section-container">
-                {/* Top Organizations */}
-                <div className="section">
-                    <h2>Top Organizations by Members</h2>
-                    <div className="top-orgs">
-                        {data?.topOrganizations?.slice(0, 5).map((org, index) => (
-                            <div key={org._id} className="org-item">
-                                <div className="org-rank">#{index + 1}</div>
-                                <div className="org-info">
-                                    <h4>{org.orgName}</h4>
-                                    <p>{org.memberCount} members</p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-                <div className="section-list">
-                    {/* Quick Actions */}
-                    <div className="section">
-                        <h2>Quick Actions</h2>
-                        <div className="quick-actions">
-                            <button className="action-btn primary">
-                                <Icon icon="mdi:shield-check" />
-                                <span>Review Pending Requests</span>
-                            </button>
-                            <button className="action-btn secondary">
-                                <Icon icon="mdi:account-plus" />
-                                <span>Add New Organization</span>
-                            </button>
-                            <button className="action-btn secondary">
-                                <Icon icon="mdi:download" />
-                                <span>Export Data</span>
-                            </button>
-                            <button className="action-btn secondary">
-                                <Icon icon="mdi:cog" />
-                                <span>Manage Settings</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* System Status */}
                     <div className="section">
                         <h2>System Status</h2>
                         <div className="system-status">
@@ -171,22 +146,22 @@ function OrgOverview() {
                                 <div className="status-indicator online"></div>
                                 <span>Auto-Approval</span>
                                 <span className="status-text">
-                                    {config?.data?.autoApproveNewOrgs ? 'Enabled' : 'Disabled'}
+                                    {config?.data?.orgApproval?.mode === 'none' ? 'Disabled' : 'Enabled'}
                                 </span>
                             </div>
                             <div className="status-item">
                                 <div className="status-indicator online"></div>
-                                <span>Notifications</span>
-                                <span className="status-text">Active</span>
+                                <span>Pending verification queue</span>
+                                <span className="status-text">{data?.overview?.pendingVerificationRequests ?? 0}</span>
+                            </div>
+                            <div className="status-item">
+                                <div className="status-indicator online"></div>
+                                <span>New organizations ({rangeLabel})</span>
+                                <span className="status-text">{data?.overview?.newOrgs ?? 0}</span>
                             </div>
                         </div>
                     </div>
-
                 </div>
-
-                </div>
-
-
             </div>
         </div>
     );

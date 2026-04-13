@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../../../../hooks/useFetch';
 import { useGradient } from '../../../../hooks/useGradient';
@@ -6,9 +6,23 @@ import { Icon } from '@iconify-icon/react';
 import OrgManageModal from './OrgManageModal';
 import './OrgList.scss';
 
+const ORG_LIST_PAGE_SIZE = 20;
+
+function buildOrgListQuery(filters) {
+    const p = new URLSearchParams();
+    if (filters.search) p.set('search', filters.search);
+    if (filters.verified === 'true' || filters.verified === 'false') {
+        p.set('verified', filters.verified);
+    }
+    p.set('page', String(filters.page));
+    p.set('limit', String(ORG_LIST_PAGE_SIZE));
+    return p.toString();
+}
+
 function OrgList() {
     const navigate = useNavigate();
     const [manageOrgId, setManageOrgId] = useState(null);
+    const [searchDraft, setSearchDraft] = useState('');
     const [filters, setFilters] = useState({
         search: '',
         verified: '',
@@ -16,9 +30,40 @@ function OrgList() {
     });
     const { AtlasMain } = useGradient();
 
+    useEffect(() => {
+        const id = window.setTimeout(() => {
+            setFilters((prev) =>
+                prev.search === searchDraft
+                    ? prev
+                    : { ...prev, search: searchDraft, page: 1 }
+            );
+        }, 280);
+        return () => window.clearTimeout(id);
+    }, [searchDraft]);
+
+    const listQuery = useMemo(() => buildOrgListQuery(filters), [filters]);
+
     const { data: orgs, loading, error, refetch } = useFetch(
-        `/org-management/organizations?${new URLSearchParams(filters).toString()}`
+        `/org-management/organizations?${listQuery}`
     );
+
+    const isInitialLoad = loading && orgs == null;
+
+    const pagination = orgs?.pagination;
+    const totalItems = pagination?.total ?? 0;
+    const pageSize = pagination?.limit ?? ORG_LIST_PAGE_SIZE;
+    const totalPages = pagination?.totalPages
+        ?? Math.max(1, Math.ceil(totalItems / pageSize));
+    const currentPage = Math.min(Math.max(1, filters.page), totalPages);
+
+    const rangeStart = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const rangeEnd = totalItems === 0 ? 0 : Math.min(currentPage * pageSize, totalItems);
+
+    useEffect(() => {
+        if (pagination?.totalPages == null) return;
+        const tp = pagination.totalPages;
+        setFilters((f) => (f.page > tp ? { ...f, page: tp } : f));
+    }, [pagination?.totalPages]);
 
     const handleExport = async (format = 'json') => {
         try {
@@ -49,15 +94,18 @@ function OrgList() {
         }
     };
 
-    const formatDate = (dateString) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
+    const formatDate = (value) => {
+        if (value == null || value === '') return '—';
+        const d = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(d.getTime())) return '—';
+        return d.toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
         });
     };
 
-    if (loading) {
+    if (isInitialLoad) {
         return (
             <div className="org-list">
                 <div className="loading">Loading organizations...</div>
@@ -65,7 +113,7 @@ function OrgList() {
         );
     }
 
-    if (error) {
+    if (error && orgs == null) {
         return (
             <div className="org-list">
                 <div className="error">Error loading organizations: {error}</div>
@@ -83,21 +131,24 @@ function OrgList() {
 
             <div className="content">
                 {/* Filters and Actions */}
-                <div className="toolbar">
+                <div className={`toolbar${loading ? ' toolbar--refreshing' : ''}`}>
                     <div className="org-filters">
                         <div className="search-box">
                             <Icon icon="mdi:magnify" />
                             <input
-                                type="text"
-                                placeholder="Search organizations..."
-                                value={filters.search}
-                                onChange={(e) => setFilters({...filters, search: e.target.value, page: 1})}
+                                type="search"
+                                placeholder="Search by name or description..."
+                                value={searchDraft}
+                                onChange={(e) => setSearchDraft(e.target.value)}
+                                autoComplete="off"
                             />
                         </div>
 
                         <select
                             value={filters.verified}
-                            onChange={(e) => setFilters({...filters, verified: e.target.value, page: 1})}
+                            onChange={(e) =>
+                                setFilters((f) => ({ ...f, verified: e.target.value, page: 1 }))
+                            }
                         >
                             <option value="">All Organizations</option>
                             <option value="true">Verified Only</option>
@@ -117,8 +168,22 @@ function OrgList() {
                     </div>
                 </div>
 
+                {error && orgs != null && (
+                    <div className="inline-error" role="alert">
+                        Could not refresh the list: {error}
+                    </div>
+                )}
+
+                {pagination && totalItems > 0 && (
+                    <p className="list-meta">
+                        {totalItems} organization
+                        {totalItems === 1 ? '' : 's'}
+                        {filters.search ? ` matching “${filters.search}”` : ''}
+                    </p>
+                )}
+
                 {/* Organizations List */}
-                <div className="orgs-grid">
+                <div className={`orgs-grid${loading ? ' orgs-grid--dimmed' : ''}`}>
                     {orgs?.data?.length === 0 ? (
                         <div className="empty-state">
                             <Icon icon="mdi:account-group" />
@@ -200,25 +265,39 @@ function OrgList() {
                 </div>
 
                 {/* Pagination */}
-                {orgs?.pagination && orgs.pagination.totalPages > 1 && (
+                {pagination && totalItems > 0 && (
                     <div className="pagination">
-                        <button 
-                            className="page-btn"
-                            disabled={filters.page <= 1}
-                            onClick={() => setFilters({...filters, page: filters.page - 1})}
-                        >
-                            Previous
-                        </button>
-                        <span className="page-info">
-                            Page {filters.page} of {orgs.pagination.totalPages}
+                        <span className="page-range">
+                            Showing {rangeStart}–{rangeEnd} of {totalItems}
                         </span>
-                        <button 
-                            className="page-btn"
-                            disabled={filters.page >= orgs.pagination.totalPages}
-                            onClick={() => setFilters({...filters, page: filters.page + 1})}
-                        >
-                            Next
-                        </button>
+                        <div className="pagination-controls">
+                            <button
+                                type="button"
+                                className="page-btn"
+                                disabled={currentPage <= 1 || loading}
+                                onClick={() =>
+                                    setFilters((f) => ({ ...f, page: Math.max(1, currentPage - 1) }))
+                                }
+                            >
+                                Previous
+                            </button>
+                            <span className="page-info">
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <button
+                                type="button"
+                                className="page-btn"
+                                disabled={currentPage >= totalPages || loading}
+                                onClick={() =>
+                                    setFilters((f) => ({
+                                        ...f,
+                                        page: Math.min(totalPages, currentPage + 1)
+                                    }))
+                                }
+                            >
+                                Next
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

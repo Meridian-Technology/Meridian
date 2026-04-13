@@ -29,6 +29,12 @@ const DEFAULT_ATLAS_POLICY = {
         hideNonActiveFromPublicList: false,
         nonActiveStatuses: ['inactive']
     },
+    budgets: {
+        /** template_only: clubs must use preset line-item definitions; template_plus_custom: clubs can append custom rows. */
+        lineItemMode: 'template_only',
+        /** Safety cap for custom rows when lineItemMode=template_plus_custom. */
+        maxCustomLineItems: 20
+    },
     events: {
         inactiveOrgBlocksEventCreation: true,
         /** lifecycleStatus values that block creating new org events when policy enabled */
@@ -47,6 +53,7 @@ function deepMergeAtlasPolicy(stored) {
         defaultOrgTypeKey: stored.defaultOrgTypeKey || base.defaultOrgTypeKey,
         terminology: { ...base.terminology, ...(stored.terminology || {}) },
         directory: { ...base.directory, ...(stored.directory || {}) },
+        budgets: { ...base.budgets, ...(stored.budgets || {}) },
         events: { ...base.events, ...(stored.events || {}) }
     };
 }
@@ -158,14 +165,36 @@ function assertEventReservationReady(event, options = {}) {
         };
     }
     if (event?.reservation?.conflictSummary?.hasConflict) {
+        const detectedAt = event?.reservation?.detectedAt ? new Date(event.reservation.detectedAt) : null;
+        const conflictAgeHours = detectedAt && !Number.isNaN(detectedAt.getTime())
+            ? (Date.now() - detectedAt.getTime()) / (1000 * 60 * 60)
+            : 0;
+        const escalationThresholdHours = Number(options.escalationThresholdHours || process.env.RESERVATION_ESCALATION_THRESHOLD_HOURS || 24);
+        const escalated = conflictAgeHours >= escalationThresholdHours;
         return {
             ok: false,
             message: event.reservation.conflictSummary.reason || 'This event has unresolved reservation conflicts.',
             code: 'EVENT_RESERVATION_CONFLICT',
-            state
+            state,
+            escalated,
+            conflictAgeHours
         };
     }
     return { ok: true, state };
+}
+
+function getReservationEscalation(event, options = {}) {
+    if (!event?.reservation?.conflictSummary?.hasConflict) {
+        return { escalated: false, severity: 'none', ageHours: 0 };
+    }
+    const detectedAt = event?.reservation?.detectedAt ? new Date(event.reservation.detectedAt) : null;
+    const ageHours = detectedAt && !Number.isNaN(detectedAt.getTime())
+        ? (Date.now() - detectedAt.getTime()) / (1000 * 60 * 60)
+        : 0;
+    const threshold = Number(options.escalationThresholdHours || process.env.RESERVATION_ESCALATION_THRESHOLD_HOURS || 24);
+    const escalated = ageHours >= threshold;
+    const severity = escalated ? 'high' : 'medium';
+    return { escalated, severity, ageHours, threshold };
 }
 
 function labelForGovernanceKey(policy, key) {
@@ -183,6 +212,7 @@ module.exports = {
     shouldHideOrgFromPublicList,
     assertOrgAllowsEventCreation,
     assertEventReservationReady,
+    getReservationEscalation,
     labelForGovernanceKey,
     statusKeys
 };

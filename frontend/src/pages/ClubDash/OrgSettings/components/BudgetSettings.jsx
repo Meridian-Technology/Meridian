@@ -53,6 +53,7 @@ export default function BudgetSettings({ org, expandedClass }) {
     const [savingId, setSavingId] = useState(null);
     const [exportingId, setExportingId] = useState(null);
     const [orgMsg, setOrgMsg] = useState(null);
+    const [customLineDrafts, setCustomLineDrafts] = useState({});
 
     const load = useCallback(async () => {
         if (!orgId) return;
@@ -86,6 +87,18 @@ export default function BudgetSettings({ org, expandedClass }) {
     }, [load]);
 
     const templates = meta?.templates || [];
+    const lineItemPolicy = meta?.lineItemPolicy || {};
+    const allowCustomLineItems = lineItemPolicy.allowCustomLineItems === true;
+    const maxCustomLineItems = Number.isFinite(Number(lineItemPolicy.maxCustomLineItems))
+        ? Math.max(0, Number(lineItemPolicy.maxCustomLineItems))
+        : 20;
+    const templateLineItemKeysByTemplate = useMemo(() => {
+        const map = {};
+        for (const template of templates) {
+            map[template.templateKey] = new Set((template.lineItemDefinitions || []).map((def) => def.key));
+        }
+        return map;
+    }, [templates]);
 
     const duplicateBlocked = useMemo(() => {
         const fy = String(newFy || '').trim();
@@ -226,6 +239,89 @@ export default function BudgetSettings({ org, expandedClass }) {
                 });
                 return { ...b, lineItems };
             })
+        );
+    };
+
+    const updateCustomLineDraft = (budgetId, field, value) => {
+        setCustomLineDrafts((prev) => ({
+            ...prev,
+            [budgetId]: {
+                label: '',
+                key: '',
+                kind: 'currency',
+                ...(prev[budgetId] || {}),
+                [field]: value
+            }
+        }));
+    };
+
+    const countCustomLineItems = (budget) => {
+        const templateKeys = templateLineItemKeysByTemplate[budget.templateKey] || new Set();
+        return (budget.lineItems || []).filter((li) => !templateKeys.has(li.key)).length;
+    };
+
+    const addCustomLineItem = (budget) => {
+        if (!allowCustomLineItems) return;
+        const currentCount = countCustomLineItems(budget);
+        if (currentCount >= maxCustomLineItems) {
+            addNotification({
+                title: 'Limit reached',
+                message: `Only ${maxCustomLineItems} custom line items are allowed.`,
+                type: 'error'
+            });
+            return;
+        }
+        const draft = customLineDrafts[budget._id] || {};
+        const rawLabel = String(draft.label || '').trim();
+        const rawKey = String(draft.key || '').trim().toLowerCase();
+        const kind = ['currency', 'number', 'text'].includes(draft.kind) ? draft.kind : 'currency';
+        const derivedKey = (rawKey || rawLabel)
+            .toLowerCase()
+            .replace(/[^a-z0-9_]+/g, '_')
+            .replace(/^_+|_+$/g, '');
+        if (!derivedKey) {
+            addNotification({
+                title: 'Missing key',
+                message: 'Add a label or key for the custom line item.',
+                type: 'error'
+            });
+            return;
+        }
+        if ((budget.lineItems || []).some((li) => li.key === derivedKey)) {
+            addNotification({
+                title: 'Duplicate key',
+                message: `Line item key "${derivedKey}" already exists.`,
+                type: 'error'
+            });
+            return;
+        }
+        const newItem = {
+            key: derivedKey,
+            label: rawLabel || derivedKey,
+            kind,
+            amount: kind === 'currency' ? null : null,
+            numberValue: kind === 'number' ? null : null,
+            textValue: kind === 'text' ? '' : '',
+            note: ''
+        };
+        setBudgets((prev) =>
+            prev.map((b) => (b._id === budget._id ? { ...b, lineItems: [...(b.lineItems || []), newItem] } : b))
+        );
+        setCustomLineDrafts((prev) => ({
+            ...prev,
+            [budget._id]: { label: '', key: '', kind: 'currency' }
+        }));
+    };
+
+    const removeLocalCustomLineItem = (budget, lineItemKey) => {
+        const templateKeys = templateLineItemKeysByTemplate[budget.templateKey] || new Set();
+        if (templateKeys.has(lineItemKey)) return;
+        setBudgets((prev) =>
+            prev.map((b) =>
+                b._id === budget._id
+                    ? { ...b, lineItems: (b.lineItems || []).filter((li) => li.key !== lineItemKey) }
+                    : b
+            )
         );
     };
 
@@ -430,8 +526,62 @@ export default function BudgetSettings({ org, expandedClass }) {
                                                                                     )
                                                                                 }
                                                                             />
+                                                                            {allowCustomLineItems &&
+                                                                                !(templateLineItemKeysByTemplate[b.templateKey] || new Set()).has(li.key) && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        className="budget-linkish budget-line__remove"
+                                                                                        onClick={() => removeLocalCustomLineItem(b, li.key)}
+                                                                                    >
+                                                                                        Remove custom line item
+                                                                                    </button>
+                                                                                )}
                                                                         </div>
                                                                     ))}
+                                                                    {allowCustomLineItems && (
+                                                                        <div className="budget-custom-line-builder">
+                                                                            <strong>Add custom line item</strong>
+                                                                            <p>
+                                                                                Custom rows allowed: {countCustomLineItems(b)} / {maxCustomLineItems}
+                                                                            </p>
+                                                                            <div className="budget-custom-line-builder__row">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    placeholder="Label (e.g. Marketing)"
+                                                                                    value={(customLineDrafts[b._id] || {}).label || ''}
+                                                                                    onChange={(e) =>
+                                                                                        updateCustomLineDraft(b._id, 'label', e.target.value)
+                                                                                    }
+                                                                                />
+                                                                                <input
+                                                                                    type="text"
+                                                                                    placeholder="Key (optional)"
+                                                                                    value={(customLineDrafts[b._id] || {}).key || ''}
+                                                                                    onChange={(e) =>
+                                                                                        updateCustomLineDraft(b._id, 'key', e.target.value)
+                                                                                    }
+                                                                                />
+                                                                                <select
+                                                                                    value={(customLineDrafts[b._id] || {}).kind || 'currency'}
+                                                                                    onChange={(e) =>
+                                                                                        updateCustomLineDraft(b._id, 'kind', e.target.value)
+                                                                                    }
+                                                                                >
+                                                                                    <option value="currency">Currency</option>
+                                                                                    <option value="number">Number</option>
+                                                                                    <option value="text">Text</option>
+                                                                                </select>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="budget-btn"
+                                                                                    disabled={countCustomLineItems(b) >= maxCustomLineItems}
+                                                                                    onClick={() => addCustomLineItem(b)}
+                                                                                >
+                                                                                    Add line
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
                                                                     <div className="budget-card__actions">
                                                                         <button
                                                                             type="button"

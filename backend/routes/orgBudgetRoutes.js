@@ -32,12 +32,14 @@ router.get('/:orgId/budget-templates', verifyToken, requireOrgPermission(ORG_PER
             return res.status(404).json({ success: false, message: 'Organization not found' });
         }
         const config = await budgetService.ensureFinanceConfig(req);
+        const lineItemPolicy = await budgetService.getBudgetLineItemPolicy(req);
         res.status(200).json({
             success: true,
             data: {
                 templates: config.budgetTemplates || [],
                 workflowPresets: config.workflowPresets || [],
-                orgTypeKey: org.orgTypeKey || 'default'
+                orgTypeKey: org.orgTypeKey || 'default',
+                lineItemPolicy
             }
         });
     } catch (e) {

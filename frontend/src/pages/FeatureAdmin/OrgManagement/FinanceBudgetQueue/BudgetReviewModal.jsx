@@ -18,6 +18,13 @@ function formatCurrency(n) {
     }).format(Number(n));
 }
 
+function formatDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString();
+}
+
 /** Popup cloneElement passes handleClose — swallow on a component, not a bare div. */
 function BudgetReviewPlaceholder({ handleClose: _h }) {
     return <div className="fb-review-popup__inner fb-review-popup__inner--placeholder" aria-hidden />;
@@ -54,6 +61,13 @@ function BudgetReviewBody({
     const st = currentStage(row);
     const platformPending = row?.status === 'in_review' && st?.actorType === 'platform_admin';
     const budgetForLines = row;
+    const org = listRow?.org || {};
+    const lineItems = budgetForLines?.lineItems || [];
+    const currencyLineItems = lineItems.filter((li) => li.kind === 'currency');
+    const requestedTotal = currencyLineItems.reduce((sum, li) => {
+        const v = Number(li.amount);
+        return Number.isNaN(v) ? sum : sum + v;
+    }, 0);
 
     return (
         <div
@@ -88,6 +102,43 @@ function BudgetReviewBody({
                 {detailError && !detailLoading && <p className="fb-review-modal__error">{detailError}</p>}
                 {!detailLoading && (
                     <>
+                        <section className="fb-review-section fb-review-context">
+                            <div className="fb-review-org-card">
+                                <div className="fb-review-org-main">
+                                    <img
+                                        src={org?.org_profile_image || '/Logo.svg'}
+                                        alt=""
+                                        className="fb-review-org-avatar"
+                                    />
+                                    <div>
+                                        <p className="fb-review-org-kicker">Organization context</p>
+                                        <h4 className="fb-review-org-name">{org?.org_name || 'Organization'}</h4>
+                                        <p className="fb-review-org-sub">
+                                            {org?.orgTypeKey ? `Type: ${org.orgTypeKey}` : 'No org type on file'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="fb-review-org-stats">
+                                    <div className="fb-review-stat">
+                                        <span className="label">Fiscal year</span>
+                                        <strong>{budgetForLines.fiscalYear || '—'}</strong>
+                                    </div>
+                                    <div className="fb-review-stat">
+                                        <span className="label">Line items</span>
+                                        <strong>{lineItems.length}</strong>
+                                    </div>
+                                    <div className="fb-review-stat">
+                                        <span className="label">Requested total</span>
+                                        <strong>{formatCurrency(requestedTotal)}</strong>
+                                    </div>
+                                    <div className="fb-review-stat">
+                                        <span className="label">Last updated</span>
+                                        <strong>{formatDateTime(budgetForLines.updatedAt)}</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
                         <section className="fb-review-section">
                             <h3>Line items</h3>
                             <div className="fb-review-lines">

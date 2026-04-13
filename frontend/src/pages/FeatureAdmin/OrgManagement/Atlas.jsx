@@ -27,6 +27,11 @@ function Atlas() {
             element: <OrgOverview />
         },
         {
+            label: 'Organizations',
+            icon: 'mdi:account-group',
+            element: <OrgList />
+        },
+        {
             label: 'Verification Requests',
             icon: 'mdi:shield-check',
             element: <VerificationRequests />
@@ -45,11 +50,6 @@ function Atlas() {
             label: 'Budgets',
             icon: 'mdi:cash-multiple',
             element: <FinanceBudgetQueue />
-        },
-        {
-            label: 'Organizations',
-            icon: 'mdi:account-group',
-            element: <OrgList />
         },
         {
             label: 'Analytics',

@@ -1,6 +1,6 @@
 .configuration {
 
-    .content {
+    > .content {
         display: flex;
         flex-direction: column;
         padding: 0 40px 20px 40px;
@@ -572,4 +572,5 @@
         resize: vertical;
         min-height: 200px;
     }
+
 }

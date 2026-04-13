@@ -353,4 +353,52 @@
     &__note {
         max-width: 100% !important;
     }
+
+    &__remove {
+        align-self: flex-start;
+    }
+}
+
+.budget-custom-line-builder {
+    margin-top: 6px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px dashed var(--lightborder);
+    background: var(--lighter);
+
+    strong {
+        display: block;
+        font-size: 13px;
+        color: var(--text);
+        margin-bottom: 4px;
+    }
+
+    p {
+        margin: 0 0 10px 0;
+        color: var(--light-text);
+        font-size: 12px;
+    }
+
+    &__row {
+        display: grid;
+        grid-template-columns: minmax(160px, 1fr) minmax(130px, 1fr) 140px auto;
+        gap: 8px;
+        align-items: center;
+
+        input,
+        select {
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--lightborder);
+            background: var(--background);
+            color: var(--text);
+            font-family: inherit;
+            min-height: 36px;
+            box-sizing: border-box;
+        }
+
+        @media (max-width: 980px) {
+            grid-template-columns: 1fr;
+        }
+    }
 }

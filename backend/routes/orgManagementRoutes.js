@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const mongoose = require('mongoose');
 const path = require('path');
 const getModels = require('../services/getModelService');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
@@ -15,6 +16,23 @@ const { recordMemberJoined, recordMemberRemoved } = require('../services/orgMemb
 const budgetService = require('../services/budgetService');
 
 const router = express.Router();
+
+/** Org schema has no timestamps; derive a stable created time from _id when createdAt is missing. */
+function resolveOrgCreatedAt(plainOrg) {
+    const raw = plainOrg.createdAt || plainOrg.created_at;
+    if (raw != null && raw !== '') {
+        const d = raw instanceof Date ? raw : new Date(raw);
+        if (!Number.isNaN(d.getTime())) return d;
+    }
+    if (plainOrg._id != null && mongoose.Types.ObjectId.isValid(plainOrg._id)) {
+        try {
+            return new mongoose.Types.ObjectId(String(plainOrg._id)).getTimestamp();
+        } catch (e) {
+            return undefined;
+        }
+    }
+    return undefined;
+}
 
 const handleMulterError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
@@ -413,6 +431,272 @@ router.put('/config', verifyToken, requireAdmin, async (req, res) => {
 
 // ==================== ORGANIZATION ANALYTICS ====================
 
+function parseOrgOverviewTimeRange(rawRange) {
+    const now = new Date();
+    const range = ['7d', '30d', '90d', '1y'].includes(rawRange) ? rawRange : '30d';
+    let startDate;
+    switch (range) {
+        case '7d':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+        case '90d':
+            startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+            break;
+        case '1y':
+            startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+            break;
+        case '30d':
+        default:
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+    }
+    return { range, startDate, endDate: now };
+}
+
+// New org overview endpoint backed by analytics_events (platform analytics pipeline)
+router.get('/analytics/platform-overview', verifyToken, requireAdmin, async (req, res) => {
+    const { Org, OrgMember, OrgVerification, AnalyticsEvent, Event } = getModels(
+        req,
+        'Org',
+        'OrgMember',
+        'OrgVerification',
+        'AnalyticsEvent',
+        'Event'
+    );
+    const { timeRange = '30d' } = req.query;
+
+    try {
+        const { range, startDate, endDate } = parseOrgOverviewTimeRange(timeRange);
+        const match = {
+            ts: { $gte: startDate, $lte: endDate },
+            event: { $in: ['event_view', 'event_registration'] }
+        };
+
+        const [totalOrgs, verifiedOrgs, newOrgs, memberStats, verificationStats, totalsByType, trendRows, sourceRows] = await Promise.all([
+            Org.countDocuments(),
+            Org.countDocuments({ verified: true }),
+            Org.countDocuments({ createdAt: { $gte: startDate } }),
+            OrgMember.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalMembers: { $sum: 1 }
+                    }
+                }
+            ]),
+            OrgVerification.aggregate([
+                {
+                    $group: {
+                        _id: '$status',
+                        count: { $sum: 1 }
+                    }
+                }
+            ]),
+            AnalyticsEvent.aggregate([
+                { $match: match },
+                { $group: { _id: '$event', count: { $sum: 1 } } }
+            ]),
+            AnalyticsEvent.aggregate([
+                { $match: match },
+                {
+                    $group: {
+                        _id: {
+                            date: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } },
+                            event: '$event'
+                        },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.date': 1 } }
+            ]),
+            AnalyticsEvent.aggregate([
+                { $match: { ...match, event: 'event_view' } },
+                {
+                    $project: {
+                        source: {
+                            $ifNull: [
+                                '$properties.source',
+                                {
+                                    $switch: {
+                                        branches: [
+                                            { case: { $regexMatch: { input: { $ifNull: ['$context.referrer', ''] }, regex: 'org/|club-dashboard' } }, then: 'org_page' },
+                                            { case: { $regexMatch: { input: { $ifNull: ['$context.referrer', ''] }, regex: 'events-dashboard' } }, then: 'explore' }
+                                        ],
+                                        default: 'direct'
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$source',
+                        count: { $sum: 1 }
+                    }
+                }
+            ])
+        ]);
+
+        const totalsMap = totalsByType.reduce((acc, row) => {
+            acc[row._id] = row;
+            return acc;
+        }, {});
+        const totalViews = totalsMap.event_view?.count || 0;
+        const totalRegistrations = totalsMap.event_registration?.count || 0;
+        const registrationRate = totalViews > 0 ? Number(((totalRegistrations / totalViews) * 100).toFixed(1)) : 0;
+        const [uniqueViewActorCount, uniqueRegistrantActorCount] = await Promise.all([
+            AnalyticsEvent.aggregate([
+                { $match: { ...match, event: 'event_view' } },
+                {
+                    $project: {
+                        actor: {
+                            $ifNull: [
+                                { $concat: ['u:', { $toString: '$user_id' }] },
+                                { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                            ]
+                        }
+                    }
+                },
+                { $match: { actor: { $ne: 'a:' } } },
+                { $group: { _id: '$actor' } },
+                { $count: 'count' }
+            ]),
+            AnalyticsEvent.aggregate([
+                { $match: { ...match, event: 'event_registration' } },
+                {
+                    $project: {
+                        actor: {
+                            $ifNull: [
+                                { $concat: ['u:', { $toString: '$user_id' }] },
+                                { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                            ]
+                        }
+                    }
+                },
+                { $match: { actor: { $ne: 'a:' } } },
+                { $group: { _id: '$actor' } },
+                { $count: 'count' }
+            ])
+        ]);
+        const uniqueViewers = uniqueViewActorCount[0]?.count || 0;
+        const uniqueRegistrants = uniqueRegistrantActorCount[0]?.count || 0;
+
+        const trendMap = {};
+        for (const row of trendRows) {
+            const date = row._id?.date;
+            const event = row._id?.event;
+            if (!date) continue;
+            if (!trendMap[date]) trendMap[date] = { date, views: 0, registrations: 0 };
+            if (event === 'event_view') trendMap[date].views = row.count;
+            if (event === 'event_registration') trendMap[date].registrations = row.count;
+        }
+        const trends = Object.values(trendMap).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+        const viewSources = { direct: 0, explore: 0, org_page: 0, email: 0, qr: 0 };
+        for (const row of sourceRows) {
+            const key = String(row._id || '').toLowerCase();
+            if (Object.prototype.hasOwnProperty.call(viewSources, key)) {
+                viewSources[key] = row.count;
+            } else {
+                viewSources.direct += row.count;
+            }
+        }
+
+        const topEventCounts = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ts: { $gte: startDate, $lte: endDate },
+                    event: { $in: ['event_view', 'event_registration'] },
+                    'properties.event_id': { $exists: true, $ne: null }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        eventId: { $toString: '$properties.event_id' },
+                        event: '$event'
+                    },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const topEventIds = [...new Set(topEventCounts.map((r) => r?._id?.eventId).filter(Boolean))];
+        const topEventObjIds = topEventIds
+            .filter((id) => mongoose.Types.ObjectId.isValid(id))
+            .map((id) => new mongoose.Types.ObjectId(id));
+        const eventRows = topEventObjIds.length
+            ? await Event.find({
+                _id: { $in: topEventObjIds },
+                hostingType: 'Org'
+            }).select('_id hostingId').lean()
+            : [];
+        const eventToOrgMap = new Map(eventRows.map((row) => [String(row._id), String(row.hostingId)]));
+
+        const orgMetricMap = new Map();
+        for (const row of topEventCounts) {
+            const eventId = row?._id?.eventId ? String(row._id.eventId) : '';
+            const orgId = eventToOrgMap.get(eventId) || '';
+            if (!orgId) continue;
+            if (!orgMetricMap.has(orgId)) orgMetricMap.set(orgId, { orgId, views: 0, registrations: 0 });
+            const current = orgMetricMap.get(orgId);
+            if (row?._id?.event === 'event_view') current.views = row.count;
+            if (row?._id?.event === 'event_registration') current.registrations = row.count;
+        }
+
+        const rankedOrgMetrics = [...orgMetricMap.values()]
+            .map((row) => ({ ...row, score: row.views + row.registrations * 4 }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 6);
+
+        const orgDocs = rankedOrgMetrics.length
+            ? await Org.find({ _id: { $in: rankedOrgMetrics.map((r) => r.orgId) } }).select('org_name').lean()
+            : [];
+        const orgNameMap = Object.fromEntries(orgDocs.map((o) => [String(o._id), o.org_name || 'Unknown org']));
+
+        const topOrganizations = rankedOrgMetrics.map((row) => ({
+            orgId: row.orgId,
+            orgName: orgNameMap[row.orgId] || 'Unknown org',
+            views: row.views,
+            registrations: row.registrations,
+            score: row.score
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: {
+                timeRange: range,
+                window: { startDate, endDate },
+                overview: {
+                    totalOrgs,
+                    verifiedOrgs,
+                    newOrgs,
+                    totalMembers: memberStats[0]?.totalMembers || 0,
+                    pendingVerificationRequests: verificationStats.find((s) => s._id === 'pending')?.count || 0
+                },
+                engagement: {
+                    totalViews,
+                    totalRegistrations,
+                    registrationRate,
+                    uniqueViewers,
+                    uniqueRegistrants
+                },
+                trends,
+                viewSources,
+                topOrganizations
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching org platform overview analytics:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching org platform overview analytics',
+            error: error.message
+        });
+    }
+});
+
 // Get organization analytics
 router.get('/analytics', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event, OrgVerification } = getModels(req, 'Org', 'OrgMember', 'Event', 'OrgVerification');
@@ -597,8 +881,8 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
         status,
         lifecycleStatus,
         verified,
-        page = 1,
-        limit = 20,
+        page: pageRaw = 1,
+        limit: limitRaw = 20,
         sortBy = 'createdAt',
         sortOrder = 'desc'
     } = req.query;
@@ -615,9 +899,18 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
         
         if (status) filter.status = status;
         if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus;
-        if (verified !== '') filter.verified = verified === 'true';
+        // Only apply when explicitly requested; missing/undefined verified must not imply false
+        if (verified === 'true' || verified === 'false') {
+            filter.verified = verified === 'true';
+        }
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const pageNum = Math.max(1, parseInt(String(pageRaw), 10) || 1);
+        const limitParsed = parseInt(String(limitRaw), 10);
+        const limitNum = Number.isFinite(limitParsed) && limitParsed > 0
+            ? Math.min(limitParsed, 100)
+            : 20;
+
+        const skip = (pageNum - 1) * limitNum;
         const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
         console.log(filter);
@@ -625,7 +918,7 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
         const orgs = await Org.find(filter)
             .sort(sort)
             .skip(skip)
-            .limit(parseInt(limit));
+            .limit(limitNum);
 
         // Get additional data for each org
         const orgsWithData = await Promise.all(orgs.map(async (org) => {
@@ -636,8 +929,14 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
                 createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
             });
 
+            const plain = org.toObject();
+            const createdAt = resolveOrgCreatedAt(plain);
+            const createdAtOut =
+                createdAt != null && !Number.isNaN(createdAt.getTime()) ? createdAt : null;
+
             return {
-                ...org.toObject(),
+                ...plain,
+                createdAt: createdAtOut,
                 memberCount,
                 recentEventCount: eventCount
             };
@@ -646,14 +945,16 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
         const total = await Org.countDocuments(filter);
 
         console.log(`GET: /org-management/organizations - Retrieved ${orgsWithData.length} organizations`);
+        const totalPages = Math.max(1, Math.ceil(total / limitNum));
+
         res.status(200).json({
             success: true,
             data: orgsWithData,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: pageNum,
+                limit: limitNum,
                 total,
-                totalPages: Math.ceil(total / limit)
+                totalPages
             }
         });
     } catch (error) {
@@ -721,13 +1022,443 @@ router.get('/organizations/export', verifyToken, requireAdmin, async (req, res) 
     }
 });
 
+/** Platform admin: org-hosted events time window for snapshot / list. */
+function parseAdminOrgEventTime(query) {
+    const range = ['7d', '30d', '90d', '1y'].includes(query.range) ? query.range : '30d';
+    const windowMode = query.window === 'upcoming' ? 'upcoming' : 'past';
+    const now = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const rangeMs =
+        range === '7d' ? 7 * dayMs
+            : range === '90d' ? 90 * dayMs
+                : range === '1y' ? 365 * dayMs
+                    : 30 * dayMs;
+    let startDate;
+    let endDate;
+    if (windowMode === 'past') {
+        endDate = now;
+        startDate = new Date(now.getTime() - rangeMs);
+    } else {
+        startDate = now;
+        endDate = new Date(now.getTime() + rangeMs);
+    }
+    return { startDate, endDate, range, windowMode };
+}
+
+function adminOrgEventEngagementScore(ev, an) {
+    const attendeeCount = ev.registrationCount ?? (Array.isArray(ev.attendees) ? ev.attendees.length : 0);
+    const ur = an?.uniqueRegistrations ?? 0;
+    const r = an?.registrations ?? 0;
+    const uv = an?.uniqueViews ?? 0;
+    const v = an?.views ?? 0;
+    return ur * 5 + r * 2 + attendeeCount * 3 + uv * 0.08 + v * 0.02 + (ev.expectedAttendance || 0) * 0.05;
+}
+
+function deriveEventViewSource(raw) {
+    const source = raw?.properties?.source;
+    if (['org_page', 'explore', 'direct', 'email'].includes(source)) return source;
+    const referrer = String(raw?.context?.referrer || '');
+    if (referrer.includes('org/') || referrer.includes('club-dashboard')) return 'org_page';
+    if (referrer.includes('events-dashboard')) return 'explore';
+    return 'direct';
+}
+
+function buildAnalyticsEventIdMatch(eventIds) {
+    const strIds = [...new Set((eventIds || []).map((id) => String(id)).filter(Boolean))];
+    const objIds = strIds
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+    return {
+        strIds,
+        match: {
+            $or: [
+                { 'properties.event_id': { $in: strIds } },
+                { 'properties.event_id': { $in: objIds } }
+            ]
+        }
+    };
+}
+
+function finalizeAnalyticsBuckets(bucketMap) {
+    const out = new Map();
+    for (const [eventId, b] of bucketMap.entries()) {
+        out.set(eventId, {
+            views: b.views,
+            uniqueViews: b.uniqueViewActors.size,
+            anonymousViews: b.anonymousViews,
+            uniqueAnonymousViews: b.uniqueAnonymousActors.size,
+            registrations: b.registrations,
+            uniqueRegistrations: b.uniqueRegistrationActors.size,
+            sources: b.sources
+        });
+    }
+    return out;
+}
+
+async function buildAnalyticsByEventId(AnalyticsEvent, eventIds) {
+    const { strIds, match } = buildAnalyticsEventIdMatch(eventIds);
+    if (!strIds.length) return new Map();
+
+    const rows = await AnalyticsEvent.find({
+        event: { $in: ['event_view', 'event_registration'] },
+        ...match
+    })
+        .select('event user_id anonymous_id session_id properties context ts')
+        .lean();
+
+    const targetIds = new Set(strIds);
+    const buckets = new Map();
+
+    for (const row of rows) {
+        const eventId = row?.properties?.event_id != null ? String(row.properties.event_id) : '';
+        if (!targetIds.has(eventId)) continue;
+        if (!buckets.has(eventId)) {
+            buckets.set(eventId, {
+                views: 0,
+                registrations: 0,
+                anonymousViews: 0,
+                uniqueViewActors: new Set(),
+                uniqueAnonymousActors: new Set(),
+                uniqueRegistrationActors: new Set(),
+                sources: { org_page: 0, explore: 0, direct: 0, email: 0 }
+            });
+        }
+        const b = buckets.get(eventId);
+        const userKey = row.user_id ? `u:${String(row.user_id)}` : '';
+        const anonKey = row.anonymous_id ? `a:${String(row.anonymous_id)}` : '';
+        const sessionKey = row.session_id ? `s:${String(row.session_id)}` : '';
+        const actor = userKey || anonKey || sessionKey || `e:${String(row._id)}`;
+
+        if (row.event === 'event_view') {
+            b.views += 1;
+            b.uniqueViewActors.add(actor);
+            if (!userKey) {
+                b.anonymousViews += 1;
+                b.uniqueAnonymousActors.add(actor);
+            }
+            const source = deriveEventViewSource(row);
+            if (Object.prototype.hasOwnProperty.call(b.sources, source)) b.sources[source] += 1;
+        }
+
+        if (row.event === 'event_registration') {
+            b.registrations += 1;
+            b.uniqueRegistrationActors.add(actor);
+        }
+    }
+
+    return finalizeAnalyticsBuckets(buckets);
+}
+
+// Admin: ranked "best" events in a time window (by engagement heuristics)
+router.get('/organizations/:orgId/events/snapshot', verifyToken, requireAdmin, async (req, res) => {
+    const { Event, AnalyticsEvent } = getModels(req, 'Event', 'AnalyticsEvent');
+    const { orgId } = req.params;
+    const topN = Math.min(Math.max(parseInt(String(req.query.top || '5'), 10) || 5, 1), 25);
+    const { startDate, endDate, range, windowMode } = parseAdminOrgEventTime(req.query);
+
+    try {
+        const filter = {
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false,
+            start_time: { $gte: startDate, $lte: endDate }
+        };
+
+        const events = await Event.find(filter)
+            .select('name type start_time end_time location status registrationCount attendees expectedAttendance image')
+            .lean();
+
+        const ids = events.map((e) => e._id);
+        const analyticsById = await buildAnalyticsByEventId(AnalyticsEvent, ids);
+
+        const enriched = events.map((ev) => {
+            const an = analyticsById.get(String(ev._id));
+            const attendeeCount = ev.registrationCount ?? (Array.isArray(ev.attendees) ? ev.attendees.length : 0);
+            const score = adminOrgEventEngagementScore(ev, an);
+            return {
+                _id: ev._id,
+                name: ev.name,
+                type: ev.type,
+                start_time: ev.start_time,
+                end_time: ev.end_time,
+                location: ev.location,
+                status: ev.status,
+                image: ev.image,
+                expectedAttendance: ev.expectedAttendance,
+                registrationCount: attendeeCount,
+                analytics: {
+                    views: an?.views ?? 0,
+                    uniqueViews: an?.uniqueViews ?? 0,
+                    registrations: an?.registrations ?? 0,
+                    uniqueRegistrations: an?.uniqueRegistrations ?? 0
+                },
+                score
+            };
+        });
+        enriched.sort((a, b) => b.score - a.score);
+        const topEvents = enriched.slice(0, topN);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                range,
+                window: windowMode,
+                startDate,
+                endDate,
+                totalInRange: enriched.length,
+                topEvents
+            }
+        });
+    } catch (error) {
+        console.error('Error building org event snapshot (admin):', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error loading event snapshot',
+            error: error.message
+        });
+    }
+});
+
+// Admin: paginated events in window (optional sort by engagement score)
+router.get('/organizations/:orgId/events', verifyToken, requireAdmin, async (req, res) => {
+    const { Event, AnalyticsEvent } = getModels(req, 'Event', 'AnalyticsEvent');
+    const { orgId } = req.params;
+    const pageNum = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const limitNum = Math.min(Math.max(parseInt(String(req.query.limit || '15'), 10) || 15, 1), 50);
+    const sort = req.query.sort === 'start_time' ? 'start_time' : 'engagement';
+    const { startDate, endDate, range, windowMode } = parseAdminOrgEventTime(req.query);
+
+    try {
+        const filter = {
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false,
+            start_time: { $gte: startDate, $lte: endDate }
+        };
+
+        const events = await Event.find(filter)
+            .select('name type start_time end_time location status registrationCount attendees expectedAttendance image')
+            .lean();
+
+        const ids = events.map((e) => e._id);
+        const analyticsById = await buildAnalyticsByEventId(AnalyticsEvent, ids);
+
+        const enriched = events.map((ev) => {
+            const an = analyticsById.get(String(ev._id));
+            const attendeeCount = ev.registrationCount ?? (Array.isArray(ev.attendees) ? ev.attendees.length : 0);
+            const score = adminOrgEventEngagementScore(ev, an);
+            return {
+                _id: ev._id,
+                name: ev.name,
+                type: ev.type,
+                start_time: ev.start_time,
+                end_time: ev.end_time,
+                location: ev.location,
+                status: ev.status,
+                image: ev.image,
+                expectedAttendance: ev.expectedAttendance,
+                registrationCount: attendeeCount,
+                analytics: {
+                    views: an?.views ?? 0,
+                    uniqueViews: an?.uniqueViews ?? 0,
+                    registrations: an?.registrations ?? 0,
+                    uniqueRegistrations: an?.uniqueRegistrations ?? 0
+                },
+                score
+            };
+        });
+
+        if (sort === 'start_time') {
+            enriched.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+        } else {
+            enriched.sort((a, b) => b.score - a.score);
+        }
+
+        const total = enriched.length;
+        const skip = (pageNum - 1) * limitNum;
+        const pageRows = enriched.slice(skip, skip + limitNum);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                range,
+                window: windowMode,
+                startDate,
+                endDate,
+                events: pageRows,
+                pagination: {
+                    page: pageNum,
+                    limit: limitNum,
+                    total,
+                    totalPages: Math.max(1, Math.ceil(total / limitNum))
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error listing org events (admin):', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error loading events',
+            error: error.message
+        });
+    }
+});
+
+// Admin: deep engagement + ops snapshot for one org-hosted event
+router.get('/organizations/:orgId/events/:eventId/engagement', verifyToken, requireAdmin, async (req, res) => {
+    const { Event, AnalyticsEvent, EventAgenda, EventJob, VolunteerSignup, EventEquipment } = getModels(
+        req,
+        'Event',
+        'AnalyticsEvent',
+        'EventAgenda',
+        'EventJob',
+        'VolunteerSignup',
+        'EventEquipment'
+    );
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        })
+            .populate('hostingId', 'org_name org_profile_image')
+            .populate('collaboratorOrgs.orgId', 'org_name org_profile_image')
+            .lean();
+
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const analyticsByEvent = await buildAnalyticsByEventId(AnalyticsEvent, [eventId]);
+        const analytics = analyticsByEvent.get(String(eventId)) || null;
+        const agenda = await EventAgenda.findOne({ eventId }).lean();
+        const roles = await EventJob.find({ eventId }).lean();
+        const totalVolunteers = roles.reduce((sum, role) => sum + (role.assignments?.length || 0), 0);
+        const confirmedVolunteers = roles.reduce(
+            (sum, role) => sum + (role.assignments?.filter((a) => a.status === 'confirmed')?.length || 0),
+            0
+        );
+        const signups = await VolunteerSignup.find({ eventId }).populate('memberId', 'name email').lean();
+        const equipment = await EventEquipment.findOne({ eventId }).lean();
+
+        const registrationCount = event.registrationCount ?? (event.attendees?.length ?? 0);
+        const checkedInCount = signups.filter((s) => s.checkedIn).length;
+
+        let eventCheckIn = null;
+        if (event.checkInEnabled && event.attendees && Array.isArray(event.attendees)) {
+            const totalCheckedIn = event.attendees.filter((a) => a.checkedIn).length;
+            const totalRegistrations = event.registrationCount ?? event.attendees.length;
+            eventCheckIn = {
+                totalCheckedIn,
+                totalRegistrations,
+                checkInRate: totalRegistrations > 0
+                    ? ((totalCheckedIn / totalRegistrations) * 100).toFixed(1)
+                    : '0'
+            };
+        }
+
+        const now = new Date();
+        let operationalStatus = 'upcoming';
+        if (event.start_time <= now && event.end_time >= now) {
+            operationalStatus = 'active';
+        } else if (event.end_time < now) {
+            operationalStatus = 'completed';
+        }
+
+        const { match } = buildAnalyticsEventIdMatch([eventId]);
+        const historyRows = await AnalyticsEvent.find({
+            event: { $in: ['event_view', 'event_registration'] },
+            ...match
+        })
+            .select('event ts user_id anonymous_id session_id properties context')
+            .sort({ ts: -1 })
+            .limit(400)
+            .lean();
+
+        const viewHistory = historyRows
+            .filter((r) => r.event === 'event_view')
+            .slice(0, 40)
+            .map((r) => ({
+                timestamp: r.ts,
+                isAnonymous: !r.user_id,
+                source: deriveEventViewSource(r)
+            }));
+
+        const registrationHistory = historyRows
+            .filter((r) => r.event === 'event_registration')
+            .slice(0, 40)
+            .map((r) => ({
+                timestamp: r.ts,
+                isAnonymous: !r.user_id
+            }));
+
+        res.status(200).json({
+            success: true,
+            data: {
+                event,
+                analytics: analytics
+                    ? {
+                        views: analytics.views,
+                        uniqueViews: analytics.uniqueViews,
+                        anonymousViews: analytics.anonymousViews,
+                        uniqueAnonymousViews: analytics.uniqueAnonymousViews,
+                        registrations: analytics.registrations,
+                        uniqueRegistrations: analytics.uniqueRegistrations,
+                        sources: analytics.sources || { org_page: 0, explore: 0, direct: 0, email: 0 },
+                        viewHistorySample: viewHistory,
+                        registrationHistorySample: registrationHistory
+                    }
+                    : {
+                        views: 0,
+                        uniqueViews: 0,
+                        anonymousViews: 0,
+                        uniqueAnonymousViews: 0,
+                        registrations: 0,
+                        uniqueRegistrations: 0,
+                        sources: { org_page: 0, explore: 0, direct: 0, email: 0 },
+                        viewHistorySample: [],
+                        registrationHistorySample: []
+                    },
+                agenda: agenda || { items: [] },
+                roles: {
+                    total: roles.length,
+                    assignments: totalVolunteers,
+                    confirmed: confirmedVolunteers,
+                    signups: signups.length
+                },
+                equipment: equipment || { items: [] },
+                stats: {
+                    registrationCount,
+                    volunteers: {
+                        total: totalVolunteers,
+                        confirmed: confirmedVolunteers,
+                        checkedIn: checkedInCount
+                    },
+                    operationalStatus,
+                    checkIn: eventCheckIn
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error loading org event engagement (admin):', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error loading event engagement',
+            error: error.message
+        });
+    }
+});
+
 // Get single organization by ID (admin only)
 router.get('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
     const { orgId } = req.params;
 
     try {
-        const org = await Org.findById(orgId).populate('owner', 'username name email');
+        const org = await Org.findById(orgId).populate('owner', 'username name email picture');
         if (!org) {
             return res.status(404).json({
                 success: false,
@@ -736,16 +1467,30 @@ router.get('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) 
         }
 
         const memberCount = await OrgMember.countDocuments({ org_id: orgId });
-        const eventCount = await Event.countDocuments({
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const recentEventCount = await Event.countDocuments({
             hostingId: orgId,
             hostingType: 'Org',
-            createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+            createdAt: { $gte: thirtyDaysAgo }
+        });
+        const totalEventCount = await Event.countDocuments({
+            hostingId: orgId,
+            hostingType: 'Org'
         });
 
+        const plain = org.toObject();
+        const createdResolved = resolveOrgCreatedAt(plain);
+        const createdAtOut =
+            createdResolved != null && !Number.isNaN(createdResolved.getTime())
+                ? createdResolved
+                : null;
+
         const orgWithData = {
-            ...org.toObject(),
+            ...plain,
+            createdAt: createdAtOut,
             memberCount,
-            recentEventCount: eventCount
+            recentEventCount,
+            totalEventCount
         };
 
         console.log(`GET: /org-management/organizations/${orgId} - Retrieved org`);
@@ -1478,7 +2223,6 @@ router.put(
  * Run once per tenant. Protected: admin or root only.
  */
 router.post('/migrate/org-positions-ids', verifyToken, requireAdmin, async (req, res) => {
-    const mongoose = require('mongoose');
     const { Org } = getModels(req, 'Org');
 
     try {

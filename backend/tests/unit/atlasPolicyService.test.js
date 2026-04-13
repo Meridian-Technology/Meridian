@@ -3,6 +3,7 @@ const {
     governanceRequirementsForOrg,
     assertOrgAllowsEventCreation,
     assertEventReservationReady,
+    getReservationEscalation,
     getEffectivePolicyFromConfig,
     DEFAULT_ATLAS_POLICY
 } = require('../../services/atlasPolicyService');
@@ -77,6 +78,18 @@ describe('atlasPolicyService', () => {
         });
         expect(r.ok).toBe(false);
         expect(r.code).toBe('EVENT_RESERVATION_CONFLICT');
+    });
+
+    test('getReservationEscalation flags old conflicts as high severity', () => {
+        const old = new Date(Date.now() - 30 * 60 * 60 * 1000);
+        const out = getReservationEscalation({
+            reservation: {
+                conflictSummary: { hasConflict: true, reason: 'Overlapping booking' },
+                detectedAt: old
+            }
+        }, { escalationThresholdHours: 24 });
+        expect(out.escalated).toBe(true);
+        expect(out.severity).toBe('high');
     });
 
     test('assertEventReservationReady allows approved reservation state', () => {

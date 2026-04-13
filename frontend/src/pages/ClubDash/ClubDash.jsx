@@ -403,11 +403,11 @@ function ClubDash(){
                         requiresFinances: true,
                         element: <BudgetSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
                     },
-                    // {
-                    //     label: 'Verification Requests',
-                    //     icon: 'mdi:shield-check',
-                    //     element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
-                    // },
+                    {
+                        label: 'Verification Requests',
+                        icon: 'mdi:shield-check',
+                        element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                    },
                     {
                         label: 'Danger Zone',
                         icon: 'mdi:alert-circle',

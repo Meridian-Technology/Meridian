@@ -19,6 +19,12 @@
         border-radius: 15px;
         box-shadow: var(--shadow);
         border: 1px solid var(--lightborder);
+        position: relative;
+        transition: opacity 0.2s ease;
+
+        &--refreshing {
+            opacity: 0.92;
+        }
 
         .org-filters {
             display: flex;
@@ -96,10 +102,30 @@
         }
     }
 
+    .inline-error {
+        padding: 12px 16px;
+        border-radius: 10px;
+        background: rgba(220, 38, 38, 0.08);
+        color: #b91c1c;
+        font-size: 14px;
+        border: 1px solid rgba(220, 38, 38, 0.2);
+    }
+
+    .list-meta {
+        margin: 0;
+        font-size: 14px;
+        color: var(--light-text);
+    }
+
     .orgs-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
         gap: 20px;
+        transition: opacity 0.2s ease;
+
+        &--dimmed {
+            opacity: 0.7;
+        }
     }
 
     .org-card {
@@ -276,10 +302,28 @@
 
     .pagination {
         display: flex;
+        flex-wrap: wrap;
         justify-content: center;
         align-items: center;
-        gap: 16px;
+        gap: 16px 24px;
         margin-top: 24px;
+        padding: 16px 20px;
+        background: var(--background);
+        border-radius: 12px;
+        border: 1px solid var(--lightborder);
+        box-shadow: var(--shadow);
+
+        .page-range {
+            font-size: 14px;
+            color: var(--light-text);
+            text-align: center;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
 
         .page-btn {
             padding: 8px 16px;

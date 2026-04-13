@@ -1,5 +1,6 @@
 const getModels = require('./getModelService');
 const { ORG_PERMISSIONS } = require('../constants/permissions');
+const { getEffectivePolicy } = require('./atlasPolicyService');
 
 function defaultFinancePayload() {
     return {
@@ -104,13 +105,24 @@ function pickTemplateForOrg(config, org) {
     return match || templates[0];
 }
 
-function materializeLineItems(template, incoming) {
+function normalizeCustomLineItemKey(raw, fallback) {
+    const base = String(raw || fallback || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return base || '';
+}
+
+function materializeLineItems(template, incoming, options = {}) {
+    const allowCustomLineItems = options.allowCustomLineItems === true;
+    const maxCustomLineItems = Math.min(100, Math.max(0, Number(options.maxCustomLineItems) || 20));
     const defs = template?.lineItemDefinitions || [];
     const byKey = {};
     (incoming || []).forEach((row) => {
         if (row && row.key) byKey[row.key] = row;
     });
-    return defs.map((def) => {
+    const baseItems = defs.map((def) => {
         const row = byKey[def.key] || {};
         const base = {
             key: def.key,
@@ -130,6 +142,46 @@ function materializeLineItems(template, incoming) {
         }
         return base;
     });
+
+    if (!allowCustomLineItems) return baseItems;
+
+    const templateKeys = new Set(defs.map((d) => String(d.key)));
+    const usedKeys = new Set(baseItems.map((li) => String(li.key)));
+    const customItems = [];
+
+    for (const row of incoming || []) {
+        if (!row || row.key == null) continue;
+        const originalKey = String(row.key);
+        if (!originalKey || templateKeys.has(originalKey)) continue;
+
+        const normalizedKey = normalizeCustomLineItemKey(originalKey, row.label || 'custom');
+        if (!normalizedKey || usedKeys.has(normalizedKey)) continue;
+        usedKeys.add(normalizedKey);
+
+        const kind = ['currency', 'number', 'text'].includes(row.kind) ? row.kind : 'currency';
+        const item = {
+            key: normalizedKey,
+            label: row.label != null && String(row.label).trim() ? String(row.label).trim() : originalKey,
+            kind,
+            amount: null,
+            numberValue: null,
+            textValue: '',
+            note: row.note != null ? String(row.note) : ''
+        };
+
+        if (kind === 'currency') {
+            item.amount = row.amount != null && row.amount !== '' ? Number(row.amount) : null;
+        } else if (kind === 'number') {
+            item.numberValue = row.numberValue != null && row.numberValue !== '' ? Number(row.numberValue) : null;
+        } else {
+            item.textValue = row.textValue != null ? String(row.textValue) : '';
+        }
+
+        customItems.push(item);
+        if (customItems.length >= maxCustomLineItems) break;
+    }
+
+    return [...baseItems, ...customItems];
 }
 
 function validateRequiredLineItems(template, lineItems) {
@@ -166,6 +218,23 @@ async function getBudgetById(req, orgId, budgetId) {
     const { OrgBudget } = getModels(req, 'OrgBudget');
     const b = await OrgBudget.findOne({ _id: budgetId, orgId }).lean();
     return b;
+}
+
+async function getBudgetLineItemPolicy(req) {
+    const atlasPolicy = await getEffectivePolicy(req);
+    const budgetPolicy = atlasPolicy?.budgets || {};
+    const lineItemMode = budgetPolicy.lineItemMode === 'template_plus_custom'
+        ? 'template_plus_custom'
+        : 'template_only';
+    const maxCustomLineItems = Math.min(
+        100,
+        Math.max(0, Number(budgetPolicy.maxCustomLineItems) || 20)
+    );
+    return {
+        lineItemMode,
+        allowCustomLineItems: lineItemMode === 'template_plus_custom',
+        maxCustomLineItems
+    };
 }
 
 async function createBudget(req, orgId, userId, { templateKey, fiscalYear, title }) {
@@ -249,7 +318,8 @@ async function updateBudgetDraft(req, orgId, budgetId, userId, { lineItems: inco
         throw err;
     }
     if (title != null) budget.title = String(title);
-    budget.lineItems = materializeLineItems(template, incoming);
+    const lineItemPolicy = await getBudgetLineItemPolicy(req);
+    budget.lineItems = materializeLineItems(template, incoming, lineItemPolicy);
     budget.updatedBy = userId;
     if (budget.status === 'revision_requested') {
         pushAudit(budget, {
@@ -676,6 +746,7 @@ module.exports = {
     defaultFinancePayload,
     pickTemplateForOrg,
     getPreset,
+    getBudgetLineItemPolicy,
     listBudgetsForOrg,
     getBudgetById,
     createBudget,

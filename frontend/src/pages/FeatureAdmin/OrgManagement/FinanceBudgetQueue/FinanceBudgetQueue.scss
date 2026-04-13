@@ -276,6 +276,87 @@
     min-height: 0;
 }
 
+.fb-review-context {
+    margin-bottom: 16px;
+}
+
+.fb-review-org-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--lightborder);
+    border-radius: 14px;
+    background: var(--background);
+    box-shadow: var(--shadow);
+}
+
+.fb-review-org-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.fb-review-org-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--lightborder);
+    background: var(--lighter);
+}
+
+.fb-review-org-kicker {
+    margin: 0 0 3px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    color: var(--light-text);
+}
+
+.fb-review-org-name {
+    margin: 0;
+    font-size: 16px;
+    color: var(--text);
+}
+
+.fb-review-org-sub {
+    margin: 3px 0 0;
+    font-size: 13px;
+    color: var(--light-text);
+}
+
+.fb-review-org-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+}
+
+.fb-review-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--lighter);
+    border: 1px solid var(--lightborder);
+
+    .label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--light-text);
+        font-weight: 700;
+    }
+
+    strong {
+        font-size: 13px;
+        color: var(--text);
+        line-height: 1.3;
+    }
+}
+
 .fb-review-modal__loading,
 .fb-review-modal__error {
     margin: 0 0 12px;
