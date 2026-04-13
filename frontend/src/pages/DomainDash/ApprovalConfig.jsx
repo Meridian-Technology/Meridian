@@ -47,6 +47,7 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
             const step = {
                 role: stakeholderRole.stakeholderName,
                 stakeholderRoleId: stakeholderRole._id,
+                stakeholderType: stakeholderRole.stakeholderType || 'approver',
                 conditionGroups: stakeholderRole.conditionGroups || [],
                 groupLogicalOperators: stakeholderRole.groupLogicalOperators || []
             };
@@ -77,6 +78,7 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
         try {
             // Update the stakeholder role with new condition groups
             const response = await postRequest(`/api/stakeholder-roles/${stakeholderRole._id}`, {
+                stakeholderType: pendingChanges.stakeholderType || selectedStep.stakeholderType || stakeholderRole.stakeholderType || 'approver',
                 conditionGroups: pendingChanges.conditionGroups || selectedStep.conditionGroups || [],
                 groupLogicalOperators: pendingChanges.groupLogicalOperators || selectedStep.groupLogicalOperators || []
             }, {
@@ -94,6 +96,7 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
                 // Update the selected step with the new data
                 setSelectedStep(prev => ({
                     ...prev,
+                    stakeholderType: pendingChanges.stakeholderType || prev.stakeholderType,
                     conditionGroups: pendingChanges.conditionGroups || prev.conditionGroups,
                     groupLogicalOperators: pendingChanges.groupLogicalOperators || prev.groupLogicalOperators
                 }));
@@ -282,6 +285,12 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
                                         fieldDefinitions={fieldDefinitions} 
                                         allowedOperators={allowedOperators}
                                         onDelete={handleDeleteRuleGroup}
+                                        thenAction={selectedStep.stakeholderType || 'approver'}
+                                        onThenActionChange={(value) => {
+                                            setSelectedStep(prev => ({ ...prev, stakeholderType: value }));
+                                            setHasChanges(true);
+                                            setPendingChanges(prev => ({ ...prev, stakeholderType: value }));
+                                        }}
                                     />
                                 ))
                             )}

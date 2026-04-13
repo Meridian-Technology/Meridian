@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { Squircle } from '@squircle-js/react';
@@ -43,6 +43,39 @@ function ProfilePopup({
     useOutsideClick(ref, () => {
         setShowPopup(false);
     }, ["profile"]);
+
+    const stakeholderDomainAssignments = useMemo(() => {
+        const sources = [
+            user?.stakeholderAssignments,
+            user?.stakeholderRoles,
+            user?.domainStakeholderRoles,
+            user?.assignedStakeholderRoles
+        ];
+
+        const items = sources.flatMap((source) => (Array.isArray(source) ? source : []));
+        if (!items.length) return [];
+
+        const normalized = items.map((assignment) => {
+            const rawDomain = assignment?.domainId || assignment?.domain || assignment?.domain_id;
+            const domainId = typeof rawDomain === 'string'
+                ? rawDomain
+                : rawDomain?._id || rawDomain?.id || null;
+
+            if (!domainId) return null;
+
+            return {
+                domainId,
+                domainName: assignment?.domainName || assignment?.domain?.name || assignment?.domain_id?.name || null
+            };
+        }).filter(Boolean);
+
+        const seen = new Set();
+        return normalized.filter((item) => {
+            if (seen.has(item.domainId)) return false;
+            seen.add(item.domainId);
+            return true;
+        });
+    }, [user]);
 
     // Safety check - don't render if user is not loaded
     if (!user) {
@@ -160,11 +193,22 @@ function ProfilePopup({
                         </>
                     }
                     {
-                        user && user.approvalRoles && user.approvalRoles.length > 0 && 
+                        user && ((user.approvalRoles && user.approvalRoles.length > 0) || stakeholderDomainAssignments.length > 0) && 
                         <>
                             <hr/>
                             <p className="section">APPROVALS</p>
-                            {user.approvalRoles.map(
+                            {stakeholderDomainAssignments.map((assignment) => (
+                                <Link to={`/domain-dashboard/${assignment.domainId}`} key={`domain-${assignment.domainId}`}>
+                                    <div className="menu-item">
+                                        <Icon icon="mdi:domain" />
+                                        <p>
+                                            Domain Dashboard
+                                            {assignment.domainName ? ` (${assignment.domainName})` : ''}
+                                        </p>
+                                    </div>
+                                </Link>
+                            ))}
+                            {(user.approvalRoles || []).map(
                                 (role) => {
                                     const url = role === 'root' ? '/root-dashboard' : `/approval-dashboard/${role}` 
                                     if(role === 'root'){

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useFetch } from '../../hooks/useFetch';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import DomainOverview from './components/DomainOverview';
+import DomainPendingEvents from './components/DomainPendingEvents';
 import DomainStakeholders from './components/DomainStakeholders';
 import DomainApprovalRules from './components/DomainApprovalRules';
 import DomainSettings from './components/DomainSettings';
@@ -21,6 +22,11 @@ function DomainDashboard() {
             label: 'Overview', 
             icon: 'mdi:view-dashboard',
             element: <DomainOverview />
+        },
+        {
+            label: 'Pending approvals',
+            icon: 'mdi:clipboard-check-outline',
+            element: <DomainPendingEvents />
         },
         { 
             label: 'Stakeholder Roles', 
