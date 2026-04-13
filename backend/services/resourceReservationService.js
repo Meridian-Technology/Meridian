@@ -29,8 +29,90 @@ class ResourceReservationService {
             resourceId,
             state,
             lastCheckedAt: current.lastCheckedAt || null,
-            conflictSummary: current.conflictSummary || { hasConflict: false, reason: '' }
+            conflictSummary: current.conflictSummary || { hasConflict: false, reason: '' },
+            conflictType: current.conflictType || '',
+            conflictSource: current.conflictSource || '',
+            detectedAt: current.detectedAt || null,
+            resolutionStatus: current.resolutionStatus || 'resolved',
+            resolutionNote: current.resolutionNote || '',
+            assignedTo: current.assignedTo || null,
+            history: Array.isArray(current.history) ? current.history : [],
+            sync: {
+                sourceOfTruth: current.sync?.sourceOfTruth || 'internal',
+                externalProvider: current.sync?.externalProvider || '',
+                externalResourceId: current.sync?.externalResourceId || '',
+                lastDryRunAt: current.sync?.lastDryRunAt || null,
+                lastDryRunStatus: current.sync?.lastDryRunStatus || ''
+            }
         };
+    }
+
+    static inferConflictMeta(availability = {}) {
+        const reason = availability?.reason || '';
+        if (reason.toLowerCase().includes('class')) {
+            return { conflictType: 'class_schedule_conflict', conflictSource: 'class_schedule' };
+        }
+        if (reason.toLowerCase().includes('event')) {
+            return { conflictType: 'event_overlap_conflict', conflictSource: 'event_overlap' };
+        }
+        return { conflictType: 'reservation_conflict', conflictSource: 'manual' };
+    }
+
+    appendHistoryEntry(eventDoc, action, actorId = null, note = '', metadata = {}) {
+        const reservation = this.normalizeEventReservation(eventDoc);
+        reservation.history = Array.isArray(reservation.history) ? reservation.history : [];
+        reservation.history.push({
+            action,
+            actorId,
+            at: new Date(),
+            note: note || '',
+            metadata: metadata || {}
+        });
+        eventDoc.reservation = reservation;
+    }
+
+    applyExceptionState(eventDoc, { actorId = null, action = 'acknowledged', note = '', assignedTo = null } = {}) {
+        const reservation = this.normalizeEventReservation(eventDoc);
+        if (action === 'resolved') {
+            reservation.resolutionStatus = 'resolved';
+            reservation.resolutionNote = note || reservation.resolutionNote || '';
+            reservation.conflictSummary = { hasConflict: false, reason: '' };
+            reservation.conflictType = '';
+            reservation.conflictSource = '';
+            reservation.detectedAt = null;
+            reservation.assignedTo = assignedTo || null;
+            this.appendHistoryEntry(eventDoc, 'exception_resolved', actorId, note, { assignedTo });
+            eventDoc.reservation = this.normalizeEventReservation(eventDoc);
+            eventDoc.reservation.resolutionStatus = reservation.resolutionStatus;
+            eventDoc.reservation.resolutionNote = reservation.resolutionNote;
+            eventDoc.reservation.conflictSummary = reservation.conflictSummary;
+            eventDoc.reservation.conflictType = reservation.conflictType;
+            eventDoc.reservation.conflictSource = reservation.conflictSource;
+            eventDoc.reservation.detectedAt = reservation.detectedAt;
+            eventDoc.reservation.assignedTo = reservation.assignedTo;
+            return;
+        }
+        reservation.resolutionStatus = 'acknowledged';
+        reservation.resolutionNote = note || reservation.resolutionNote || '';
+        reservation.assignedTo = assignedTo || reservation.assignedTo || null;
+        eventDoc.reservation = reservation;
+        this.appendHistoryEntry(eventDoc, 'exception_acknowledged', actorId, note, { assignedTo: reservation.assignedTo });
+    }
+
+    async listUnresolvedConflicts({ orgId = null, limit = 50 } = {}) {
+        const { Event } = this.models;
+        const query = {
+            isDeleted: false,
+            'reservation.conflictSummary.hasConflict': true,
+            'reservation.resolutionStatus': { $ne: 'resolved' }
+        };
+        if (orgId) {
+            query.$or = [{ hostingId: orgId }, { 'collaboratorOrgs.orgId': orgId }];
+        }
+        return Event.find(query)
+            .select('_id name start_time end_time status location hostingId reservation')
+            .sort({ 'reservation.detectedAt': -1, updatedAt: -1 })
+            .limit(Math.max(1, Math.min(Number(limit) || 50, 250)));
     }
 
     async checkAvailability({ startTime, endTime, resourceId, excludeEventId = null }) {
@@ -96,6 +178,19 @@ class ResourceReservationService {
             hasConflict: !availability.isAvailable,
             reason: availability.reason || ''
         };
+        if (!availability.isAvailable) {
+            const meta = ResourceReservationService.inferConflictMeta(availability);
+            reservation.conflictType = meta.conflictType;
+            reservation.conflictSource = meta.conflictSource;
+            reservation.detectedAt = new Date();
+            reservation.resolutionStatus = 'unresolved';
+        } else {
+            reservation.conflictType = '';
+            reservation.conflictSource = '';
+            reservation.detectedAt = null;
+            reservation.resolutionStatus = 'resolved';
+            reservation.resolutionNote = '';
+        }
         if (!availability.isAvailable && reservation.state === 'approved') {
             reservation.state = 'requested';
         }

@@ -11,6 +11,7 @@ import EventPreview from '../EventPreview';
 import EventCollaborationSection from './EventCollaborationSection';
 import apiRequest from '../../../../../../utils/postRequest';
 import { extractResourceId, buildResourcePreflightPayload } from '../../../../../CreateEvent/shared/resourcePreflight';
+import ReservationOpsPanel from '../../../../../CreateEvent/shared/ReservationOpsPanel';
 import './EventEditorTab.scss';
 
 function EventEditorTab({ event, agenda, orgId, onRefresh }) {
@@ -431,6 +432,7 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
                         setFormData={setFormData}
                         preflightError={resourcePreflightError}
                     />
+                    <ReservationOpsPanel orgId={orgId} eventId={event?._id} compact />
                 </div>
 
                 <div className="form-section">

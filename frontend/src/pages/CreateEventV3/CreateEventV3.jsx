@@ -93,6 +93,7 @@ const CreateEventV3 = () => {
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [resourcePreflightError, setResourcePreflightError] = useState('');
+    const [approvalPreviewSummary, setApprovalPreviewSummary] = useState(null);
     const preflightTimerRef = useRef(null);
     const lastConflictKeyRef = useRef('');
 
@@ -183,6 +184,56 @@ const CreateEventV3 = () => {
             if (preflightTimerRef.current) clearTimeout(preflightTimerRef.current);
         };
     }, [formData.start_time, formData.end_time, formData.classroom_id, formData.classroomId, addNotification]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadApprovalPreview = async () => {
+            // Best-effort preview for button nuance: require only type.
+            if (!formData.type) {
+                setApprovalPreviewSummary(null);
+                return;
+            }
+            try {
+                const previewResourceId = extractResourceId(formData);
+                const response = await apiRequest('/preview-approvals', {
+                    location: formData.location,
+                    type: formData.type,
+                    start_time: formData.start_time,
+                    end_time: formData.end_time,
+                    expectedAttendance: formData.expectedAttendance || 0,
+                    name: formData.name,
+                    description: formData.description,
+                    visibility: formData.visibility,
+                    customFields: formData.customFields || {},
+                    classroom_id: previewResourceId,
+                    resourceId: previewResourceId
+                }, { method: 'POST' });
+                if (cancelled) return;
+                if (response?.success) {
+                    setApprovalPreviewSummary(response.data || null);
+                } else {
+                    setApprovalPreviewSummary(null);
+                }
+            } catch (_error) {
+                if (!cancelled) setApprovalPreviewSummary(null);
+            }
+        };
+        loadApprovalPreview();
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        formData.location,
+        formData.type,
+        formData.start_time,
+        formData.end_time,
+        formData.expectedAttendance,
+        formData.name,
+        formData.description,
+        formData.visibility,
+        formData.classroom_id,
+        formData.classroomId
+    ]);
 
     const getMissingFields = useCallback((data, config) => {
         const missing = [];
@@ -352,6 +403,13 @@ const CreateEventV3 = () => {
     };
 
     const steps = getActiveSteps();
+    const requiresApprovalOrAcknowledgement = Boolean(
+        (approvalPreviewSummary?.approvals?.length || 0) > 0 ||
+        (approvalPreviewSummary?.acknowledgements?.length || 0) > 0
+    );
+    const publishButtonLabel = isSubmitting
+        ? 'Creating...'
+        : (requiresApprovalOrAcknowledgement ? 'Create & Submit for Review' : 'Create & Publish');
     const collaborationCandidates = allOrgs
         .filter(org => org?._id && org._id !== selectedHost?.id)
         .sort((a, b) => (a.org_name || '').localeCompare(b.org_name || ''));
@@ -481,7 +539,11 @@ const CreateEventV3 = () => {
                         </div>
 
                         <div className="form-section approval-preview-section">
-                            <ApprovalPreview formData={formData} hideUnlessRequired />
+                            <ApprovalPreview
+                                formData={formData}
+                                hideUnlessRequired
+                                hideWhenOnlyNotifications
+                            />
                         </div>
 
                         <div className="form-section collaboration-section">
@@ -552,7 +614,7 @@ const CreateEventV3 = () => {
                                 onClick={() => handleSubmit(false)}
                                 disabled={isSubmitting}
                             >
-                                {isSubmitting ? 'Creating...' : 'Create & Publish'}
+                                {publishButtonLabel}
                             </button>
                         </div>
                     </div>

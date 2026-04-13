@@ -152,17 +152,20 @@ function Explore({ scrollContainerRef, coverSentinelRef, onScrollReport, onHasCo
     // Update events when new data arrives
     useEffect(() => {
         if (data) {
+            const visibleEvents = (data.events || []).filter((event) =>
+                ['approved', 'not-applicable'].includes(String(event?.status || ''))
+            );
             if (page === 1) {
-                setEvents(data.events);
+                setEvents(visibleEvents);
             } else {
                 // Filter out duplicates when adding new events
                 setEvents(prevEvents => {
                     const existingIds = new Set(prevEvents.map(event => event._id));
-                    const newEvents = data.events.filter(event => !existingIds.has(event._id));
+                    const newEvents = visibleEvents.filter(event => !existingIds.has(event._id));
                     return [...prevEvents, ...newEvents];
                 });
             }
-            setHasMore(data.events.length === limit);
+            setHasMore(visibleEvents.length === limit);
         }
     }, [data, page]);
 

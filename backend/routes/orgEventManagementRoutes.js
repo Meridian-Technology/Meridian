@@ -5,6 +5,8 @@ const getModels  = require('../services/getModelService');
 const { requireEventManagement, requireOrgPermission } = require('../middlewares/orgPermissions');
 const StudySessionService = require('../services/studySessionService');
 const ResourceReservationService = require('../services/resourceReservationService');
+const ReservationMetricsService = require('../services/reservationMetricsService');
+const ExternalRoomSyncService = require('../services/externalRoomSyncService');
 const { resolveAnonymousEmail, resolveAnonymousName } = require('../services/eventAnnouncementService');
 const { getEffectivePolicy, assertOrgAllowsEventCreation, assertEventReservationReady } = require('../services/atlasPolicyService');
 
@@ -22,6 +24,7 @@ const buildScopedEventQuery = (orgId, eventId) => ({
 
 const getHostOrgIdFromEvent = (event) => String(event?.hostingId?._id || event?.hostingId || '');
 const RESERVATION_PREFLIGHT_ENFORCED = process.env.ENFORCE_RESOURCE_PREFLIGHT !== 'false';
+const RESERVATION_OPS_PHASE2_ENABLED = process.env.RESERVATION_OPS_PHASE2 !== 'false';
 
 async function runReservationPreflight(req, event, options = {}) {
     const resourceId = options.resourceId || event?.reservation?.resourceId || event?.classroom_id || null;
@@ -51,6 +54,12 @@ async function runReservationPreflight(req, event, options = {}) {
         reason: availability.reason || ''
     });
     return { ok: true, availability };
+}
+
+function reservationOpsDisabled(res) {
+    if (RESERVATION_OPS_PHASE2_ENABLED) return false;
+    res.status(404).json({ success: false, message: 'Reservation operations are disabled' });
+    return true;
 }
 
 // ==================== ORGANIZATION EVENT ANALYTICS ====================
@@ -3369,6 +3378,81 @@ router.post('/:orgId/events/:eventId/export', verifyToken, requireEventManagemen
             message: 'Error exporting report',
             error: error.message
         });
+    }
+});
+
+router.get('/:orgId/reservations/conflicts', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    if (reservationOpsDisabled(res)) return;
+    try {
+        const { orgId } = req.params;
+        const { limit = 50 } = req.query;
+        const service = new ResourceReservationService(req);
+        const conflicts = await service.listUnresolvedConflicts({ orgId, limit: Number(limit) || 50 });
+        return res.status(200).json({ success: true, data: conflicts });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.patch('/:orgId/reservations/:eventId/exception', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    if (reservationOpsDisabled(res)) return;
+    try {
+        const { Event } = getModels(req, 'Event');
+        const { orgId, eventId } = req.params;
+        const { action = 'acknowledged', note = '', assignedTo = null } = req.body || {};
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+        const service = new ResourceReservationService(req);
+        service.applyExceptionState(event, { action, note, assignedTo, actorId: req.user?.userId || null });
+        await event.save();
+        return res.status(200).json({ success: true, data: event.reservation });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/:orgId/reservations/metrics', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    if (reservationOpsDisabled(res)) return;
+    try {
+        const { orgId } = req.params;
+        const { startDate, endDate, format = 'json' } = req.query;
+        const service = new ReservationMetricsService(req);
+        const metrics = await service.getMetrics({ orgId, startDate, endDate });
+        if (format === 'csv') {
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename="reservation-metrics.csv"');
+            return res.send(ReservationMetricsService.toCsv(metrics));
+        }
+        return res.status(200).json({ success: true, data: metrics });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/:orgId/reservations/:eventId/sync/dry-run', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    if (reservationOpsDisabled(res)) return;
+    try {
+        const { Event } = getModels(req, 'Event');
+        const { orgId, eventId } = req.params;
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+        const syncService = new ExternalRoomSyncService(req);
+        const result = await syncService.dryRunSyncReservation(event, req.body || {});
+        event.reservation = {
+            ...(event.reservation || {}),
+            sync: {
+                ...((event.reservation && event.reservation.sync) || {}),
+                sourceOfTruth: 'external',
+                externalProvider: result.provider || '',
+                externalResourceId: result.externalResourceId || '',
+                lastDryRunAt: result.checkedAt || new Date(),
+                lastDryRunStatus: result.status || ''
+            }
+        };
+        await event.save();
+        return res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
     }
 });
 
