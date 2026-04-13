@@ -107,4 +107,79 @@ describe('user route outcome tests', () => {
     expect(response.body.success).toBe(true);
     expect(response.body.message).toBe('Username is available');
   });
+
+  test('POST /update-user rejects taken username with 400', async () => {
+    const alice = await new User({
+      username: 'aliceupdate',
+      email: 'alice_up@example.com',
+      password: 'password123',
+    }).save();
+
+    await new User({
+      username: 'bobupdate',
+      email: 'bob_up@example.com',
+      password: 'password123',
+    }).save();
+
+    const accessToken = jwt.sign(
+      {userId: alice._id.toString(), roles: ['user']},
+      process.env.JWT_SECRET,
+      {expiresIn: '1h'},
+    );
+
+    const response = await request(app)
+      .post('/update-user')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({name: 'Alice', username: 'bobupdate'});
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('USERNAME_TAKEN');
+    expect(response.body.field).toBe('username');
+  });
+
+  test('POST /update-user allows keeping same username with different casing', async () => {
+    const alice = await new User({
+      username: 'CaseUser',
+      email: 'case_up@example.com',
+      password: 'password123',
+    }).save();
+
+    const accessToken = jwt.sign(
+      {userId: alice._id.toString(), roles: ['user']},
+      process.env.JWT_SECRET,
+      {expiresIn: '1h'},
+    );
+
+    const response = await request(app)
+      .post('/update-user')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({name: 'Alice Name', username: 'caseuser'});
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+  });
+
+  test('POST /update-user rejects invalid username pattern', async () => {
+    const alice = await new User({
+      username: 'validuser99',
+      email: 'invalid_pat@example.com',
+      password: 'password123',
+    }).save();
+
+    const accessToken = jwt.sign(
+      {userId: alice._id.toString(), roles: ['user']},
+      process.env.JWT_SECRET,
+      {expiresIn: '1h'},
+    );
+
+    const response = await request(app)
+      .post('/update-user')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({name: 'Alice', username: 'bad_name'});
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('USERNAME_INVALID');
+    expect(response.body.field).toBe('username');
+  });
 });
