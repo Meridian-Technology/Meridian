@@ -23,11 +23,11 @@ export const useDashboardOverlay = () => {
     const show = (content) => {
         if (hasOverlay && showOverlay) showOverlay(content);
     };
-
+    
     /**
      * Hide the current overlay
-     */
-    const hide = () => {
+    */
+   const hide = () => {
         if (hasOverlay && hideOverlay) hideOverlay();
     };
 

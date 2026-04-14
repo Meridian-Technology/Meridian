@@ -2,6 +2,7 @@ import React from 'react';
 import './IndividualBugReport.scss';
 import { useGradient } from '../../../../hooks/useGradient';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
+import { useDashboardOverlay } from '../../../../hooks/useDashboardOverlay';
 
 const bugData = {
     "title": 'Dashboard not loading',
@@ -52,9 +53,10 @@ const analyticData = [
     }
 ]
 
-function IndividualBugReport(title, bugNumber, priority, status, tags, assignee, description, image) { 
+function IndividualBugReport(title, bugNumber, priority, status, tags, assignee, description, image, onBack) { 
     const { AdminGrad } = useGradient();
     const analytics = analyticData[0];
+    const {hideOverlay} = useDashboardOverlay();
 
     return (
         <div className="individual-bug-report dash">
@@ -62,9 +64,14 @@ function IndividualBugReport(title, bugNumber, priority, status, tags, assignee,
                 <h1>Bug Report</h1>
                 <img src={AdminGrad} alt="Admin Gradient" />
             </header>
-
             <div className="individual-bug-report__body">
+
                 <div className="report-main-column">
+                    <div className="back" onClick={()=>{hideOverlay()}}>
+                        <Icon icon="material-symbols:arrow-back-rounded"/>
+                        <p>Back</p>
+                        
+                    </div>
                     <div className="report_details">
                         <div>
                             <h1 className="report-title">

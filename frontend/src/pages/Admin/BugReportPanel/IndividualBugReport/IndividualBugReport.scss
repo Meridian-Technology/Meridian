@@ -14,6 +14,19 @@
         box-sizing: border-box;
         flex: 1;
         min-width: 0;
+        .back{
+            display: flex;
+            align-items: center;
+            padding-left: 25px;
+            cursor:pointer;
+            p {
+                margin: 0;
+                font-weight: 600;
+                font-size: 15px;
+                margin-left: 10px;
+            }
+
+        }
     }
 
     .report-main-column {
@@ -40,7 +53,7 @@
     .report_details {
         --gap-meta-to-title: 1rem;
         padding: 25px 30px;
-        
+
         h1.report-title {
             margin: 0;
             color: var(--text);

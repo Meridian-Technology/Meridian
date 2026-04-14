@@ -3,6 +3,8 @@ import './BugReportPanel.scss';
 import { useGradient } from '../../../hooks/useGradient';
 import HeaderContainer from '../../../components/HeaderContainer/HeaderContainer';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
+import IndividualBugReport from './IndividualBugReport/IndividualBugReport';
+import { useDashboardOverlay } from '../../../hooks/useDashboardOverlay';
 
 
 function StatCard({number, statCard, description}) {
@@ -38,9 +40,9 @@ const priorityData = [
     },
 ]
 
-function BugCard({title, date, bugNumber, priority, status}) {
+function BugCard({title, date, bugNumber, priority, status, onInteract}) {
     return (
-        <div className="bug-card">
+        <div className="bug-card" onClick={onInteract}>
             <div className="icon-title-date">
                 <Icon icon="solar:bug-bold"/>
                 <div className="title-date">
@@ -105,6 +107,7 @@ const bugData = [
 
 function BugReportPanel() {
     const { AdminGrad } = useGradient();
+    const { showOverlay, hideOverlay } = useDashboardOverlay();
     return (
         <section className="bug_report_panel dash">
             <header className="header">
@@ -124,7 +127,15 @@ function BugReportPanel() {
                 </section>
                 <HeaderContainer header="Recent Bugs" classN="bug-cards">
                 {
-                    bugData.map((item) => <BugCard title={item.title} date={item.date} bugNumber={item.bugNumber} priority={item.priority} status={item.status}/>)
+                    bugData.map((item) =>
+                         <BugCard 
+                            title={item.title} 
+                            date={item.date} 
+                            bugNumber={item.bugNumber} 
+                            priority={item.priority} 
+                            status={item.status}
+                            onInteract={()=>showOverlay(<IndividualBugReport/>)}
+                        />)
                 }
                 </HeaderContainer>
             </div>
