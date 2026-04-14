@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
 import ProportionalBarList from '../../../components/ProportionalBarList/ProportionalBarList';
@@ -77,17 +76,6 @@ function MobileAnalyticsDashboard() {
                 <div className="header-content">
                     <h1>Mobile App Analytics</h1>
                     <p>Analytics for the Meridian mobile app (iOS & Android)</p>
-                    <div className="platform-switcher">
-                        <Link to="/analytics-dashboard" className="platform-tab">
-                            <Icon icon="mdi:web" /> Web
-                        </Link>
-                        <span className="platform-tab active">
-                            <Icon icon="mdi:cellphone" /> Mobile App
-                        </span>
-                        <Link to="/user-journey-analytics" className="platform-tab">
-                            <Icon icon="mdi:graph" /> User Journey
-                        </Link>
-                    </div>
                 </div>
                 <div className="header-actions">
                     <div className="time-selector">

@@ -1,16 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import '../Forms.scss';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import useAuth from '../../../hooks/useAuth';
+import { useNotification } from '../../../NotificationContext';
 import { useGoogleLogin } from '@react-oauth/google';
 import circleWarning from '../../../assets/circle-warning.svg';
 import { generalIcons } from '../../../Icons';
 import Flag from '../../Flag/Flag';
 import apiRequest from '../../../utils/postRequest';
+import { isWww } from '../../../config/tenantRedirect';
+import TenantSelectorBanner from '../TenantSelectorBanner/TenantSelectorBanner';
 
 function RegisterForm() {
-    const { isAuthenticated, googleLogin, appleLogin, login } = useAuth();
+    const { isAuthenticated, googleLogin, appleLogin, validateToken } = useAuth();
+    const { addNotification } = useNotification();
     const [valid, setValid] = useState(false);
     const [formData, setFormData] = useState({
         username: '',
@@ -50,7 +54,7 @@ function RegisterForm() {
                     codeVerifier = verifierFromUrl;
                 }
                 
-                const codeResponse = await googleLogin(code, true, codeVerifier);
+                const codeResponse = await googleLogin(code, true, codeVerifier, undefined, {});
                 console.log("codeResponse: " + codeResponse);
                 
                 // Clear code verifier after use
@@ -131,14 +135,20 @@ function RegisterForm() {
             return;
         }
         try {
-            const payload = { ...formData };
+                const payload = { ...formData };
             if (inviteToken) {
                 payload.invite_token = inviteToken;
             }
-            const response = await axios.post('/register', payload);
-            console.log(response.data);
-            await login(formData);
-            navigate(from, { replace: true });
+            const response = await axios.post('/register', payload, { withCredentials: true });
+            if (response.data?.success) {
+                addNotification({ title: 'Registered successfully', type: 'success' });
+                await validateToken();
+                if (response.data?.data?.user?.roles?.includes('admin')) {
+                    window.location.href = '/admin';
+                } else {
+                    navigate(from, { replace: true });
+                }
+            }
         } catch (error) {
             if (error.response?.status === 400) {
                 if (error.response?.data?.code === 'INVITE_EMAIL_MISMATCH') {
@@ -151,7 +161,10 @@ function RegisterForm() {
             }
         }
     }
-    // codeResponse => responseGoogle1(codeResponse)
+    const handleGoogleClick = () => {
+        google();
+    };
+
     const google = useGoogleLogin({
         onSuccess: (codeResponse) => { 
             console.log("Google OAuth succeeded", codeResponse);
@@ -185,7 +198,6 @@ function RegisterForm() {
             failed("Apple Sign In is not available. Please check your browser compatibility.");
             return;
         }
-
         // Store redirect path in state for callback to use
         const redirectState = JSON.stringify({ redirect: from });
         
@@ -208,8 +220,13 @@ function RegisterForm() {
         return ("");
     }
 
+    if (isWww() && !(process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && localStorage.getItem('devTenantOverride'))) {
+        return <Navigate to="/select-school" replace />;
+    }
+
     return (
         <form onSubmit={handleSubmit} className='form'>
+            <TenantSelectorBanner />
             <h1>Register</h1>
             {inviteData?.orgName && (
                 <p className="invite-banner">You're signing up to join <strong>{inviteData.orgName}</strong></p>
@@ -217,7 +234,7 @@ function RegisterForm() {
             {errorText !== "" && 
                 <Flag text={errorText} img={circleWarning} color={"#FD5858"} primary={"rgba(250, 117, 109, 0.16)"} accent={"#FD5858"} /> 
             }
-            <button type="button" className="button google" onClick={() => google()}>Continue with Google<img src={googleLogo} alt="google" /></button>
+            <button type="button" className="button google" onClick={handleGoogleClick}>Continue with Google<img src={googleLogo} alt="google" /></button>
             
             {/* Apple Login Button */}
             <button 

@@ -1,56 +1,75 @@
 const jwt = require('jsonwebtoken');
 const getModels = require('../services/getModelService');
+const authGlobalService = require('../services/authGlobalService');
+const { validateSession } = require('../utilities/sessionUtils');
+const { getCookieDomain } = require('../utilities/cookieUtils');
 
-// Constants for token expiry (matching authRoutes.js)
 const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
 const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_EXPIRY_MINUTES}m`;
 const ACCESS_TOKEN_EXPIRY_MS = ACCESS_TOKEN_EXPIRY_MINUTES * 60 * 1000;
 
-const verifyToken = (req, res, next) => {
-    // Check for token in cookies first, then headers (for backward compatibility)
-    const token = req.cookies.accessToken || 
-                  (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
-  
-    // console.log('🔍 Verifying token for:', req.path);
-    // console.log('📦 Cookies:', req.cookies);
-    // console.log('Token found:', !!token);
-  
+/**
+ * Resolve req.user from decoded JWT: for new tokens (globalUserId) resolve tenant user from TenantMembership;
+ * for legacy tokens (userId only) pass through.
+ */
+async function resolveRequestUser(req, decodedToken) {
+    if (decodedToken.globalUserId) {
+        const { tenantUserId, tenantUser } = await authGlobalService.resolveTenantUserForRequest(req, decodedToken.globalUserId);
+        const roles = tenantUser && tenantUser.roles ? tenantUser.roles : (decodedToken.roles || ['user']);
+        req.user = {
+            globalUserId: decodedToken.globalUserId,
+            userId: tenantUserId,
+            tenantUserId,
+            roles,
+            platformRoles: decodedToken.platformRoles || [],
+            mfaConfigured: Boolean(decodedToken.mfaConfigured),
+            mfaVerified: Boolean(decodedToken.mfaVerified),
+        };
+        return;
+    }
+    // Legacy token: userId and roles only
+    req.user = {
+        userId: decodedToken.userId,
+        roles: decodedToken.roles || ['user'],
+    };
+}
+
+const verifyToken = async (req, res, next) => {
+    const token = req.cookies.accessToken ||
+        (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
+
     if (token == null) {
-        console.log('❌ No token provided');
-        return res.status(401).json({ 
-            success: false, 
+        console.log('No token provided');
+        return res.status(401).json({
+            success: false,
             message: 'No access token provided',
-            code: 'NO_TOKEN'
+            code: 'NO_TOKEN',
         });
     }
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, decodedToken) => {
-        if (err) {
-            if (err.name === 'TokenExpiredError') {
-                console.log('⏰ Token expired');
-                return res.status(401).json({ 
-                    success: false, 
-                    message: 'Access token expired',
-                    code: 'TOKEN_EXPIRED'
-                });
-            }
-            console.log('❌ Invalid token:', err.message);
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Invalid access token',
-                code: 'INVALID_TOKEN'
+    try {
+        const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        await resolveRequestUser(req, decodedToken);
+        return next();
+    } catch (err) {
+        if (err.name === 'TokenExpiredError') {
+            return res.status(401).json({
+                success: false,
+                message: 'Access token expired',
+                code: 'TOKEN_EXPIRED',
             });
         }
-        //log time left
-        // console.log('✅ Token valid for user:', decodedToken.userId);
-        req.user = decodedToken;
-        next();
-    });
+        return res.status(403).json({
+            success: false,
+            message: 'Invalid access token',
+            code: 'INVALID_TOKEN',
+        });
+    }
 };
 
 function authorizeRoles(...allowedRoles) {
     return (req, res, next) => {
-        const { roles } = req.user;
+        const { roles } = req.user || {};
         if (!roles || !allowedRoles.some(role => roles.includes(role))) {
             return res.status(403).json({ message: 'Forbidden' });
         }
@@ -58,66 +77,115 @@ function authorizeRoles(...allowedRoles) {
     };
 }
 
-const verifyTokenOptional = async (req, res, next) => {
-  // Check for token in cookies first, then headers
-  const token = req.cookies.accessToken || 
-                (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
+/**
+ * Creates verifyTokenOptional middleware.
+ * @param {Object} [options]
+ * @param {boolean} [options.requireAuthWhenTokenPresent] - When true, if a token was present but
+ *   could not be authenticated (expired + refresh failed, or invalid), return 401 so the client
+ *   can retry after refreshing. When false/omitted, proceed without req.user (backwards compatible).
+ */
+function createVerifyTokenOptional(options = {}) {
+  const requireAuthWhenTokenPresent = options.requireAuthWhenTokenPresent === true;
 
-  // If there's no token, just move on without setting req.user
-  if (token == null) {
+  return async (req, res, next) => {
+    const token = req.cookies.accessToken ||
+      (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
+    const refreshToken = req.cookies.refreshToken;
+
+    const tryRefresh = async () => {
+      if (!refreshToken) {
+        console.log('[Auth] tryRefresh: no refresh token in cookies');
+        return false;
+      }
+      try {
+        const validation = await validateSession(refreshToken, req);
+        if (!validation.valid) {
+          console.log('[Auth] tryRefresh: session invalid:', validation.error);
+          return false;
+        }
+        const { user, globalUser } = validation;
+        if (globalUser) {
+          const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+          await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles, {
+            mfaConfigured: Boolean(validation.decoded?.mfaConfigured),
+            mfaVerified: Boolean(validation.decoded?.mfaVerified),
+          });
+          req.user = {
+            globalUserId: globalUser._id,
+            userId: user ? user._id : null,
+            tenantUserId: user ? user._id : null,
+            roles: user ? (user.roles || ['user']) : ['user'],
+            platformRoles: platformRoles || [],
+            mfaConfigured: Boolean(validation.decoded?.mfaConfigured),
+            mfaVerified: Boolean(validation.decoded?.mfaVerified),
+          };
+        } else if (user) {
+          const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: ACCESS_TOKEN_EXPIRY_MS,
+            path: '/',
+          };
+          const domain = getCookieDomain(req);
+          if (domain) cookieOptions.domain = domain;
+          const newAccessToken = jwt.sign(
+            { userId: user._id, roles: user.roles },
+            process.env.JWT_SECRET,
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
+          );
+          res.cookie('accessToken', newAccessToken, cookieOptions);
+          req.user = { userId: user._id, roles: user.roles };
+        } else {
+          return false;
+        }
+        console.log('[Auth] Token refreshed successfully for user:', user ? user._id : globalUser?._id);
+        return true;
+      } catch (refreshError) {
+        console.log('[Auth] Refresh failed:', refreshError.message);
+        return false;
+      }
+    };
+
+    if (token == null) {
+      console.log('[Auth] No access token, attempting refresh from refreshToken cookie');
+      const refreshed = await tryRefresh();
+      console.log('[Auth] Refresh result:', refreshed ? 'success' : 'failed');
       return next();
-  }
+    }
 
-  jwt.verify(token, process.env.JWT_SECRET, async (err, decodedToken) => {
-      if (!err) {
-          req.user = decodedToken; // Set the user if the token is valid
-          return next();
+    try {
+      const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+      await resolveRequestUser(req, decodedToken);
+      return next();
+    } catch (err) {
+      if (err.name !== 'TokenExpiredError') {
+        if (requireAuthWhenTokenPresent) {
+          return res.status(401).json({
+            success: false,
+            message: 'Invalid access token',
+            code: 'INVALID_TOKEN'
+          });
+        }
+        return next();
       }
-
-      // If token is expired, try to refresh it
-      if (err.name === 'TokenExpiredError') {
-          const refreshToken = req.cookies.refreshToken;
-          
-          if (refreshToken) {
-              try {
-                  // Verify refresh token
-                  const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
-                  
-                                     // Get user from database to check refresh token
-                   const { User } = getModels(req, 'User');
-                   const user = await User.findById(decoded.userId);
-                  
-                  if (user && user.refreshToken === refreshToken) {
-                      // Generate new access token
-                      const newAccessToken = jwt.sign(
-                          { userId: user._id, roles: user.roles }, 
-                          process.env.JWT_SECRET, 
-                          { expiresIn: ACCESS_TOKEN_EXPIRY }
-                      );
-
-                      // Set new access token cookie
-                      res.cookie('accessToken', newAccessToken, {
-                          httpOnly: true,
-                          secure: process.env.NODE_ENV === 'production',
-                          sameSite: 'strict',
-                          maxAge: ACCESS_TOKEN_EXPIRY_MS,
-                          path: '/'
-                      });
-
-                      // Set user in request
-                      req.user = { userId: user._id, roles: user.roles };
-                      console.log('🔄 Token refreshed successfully for user:', user._id);
-                  }
-              } catch (refreshError) {
-                  console.log('🔄 Refresh token failed:', refreshError.message);
-                  // Continue without setting req.user - this is optional verification
-              }
-          }
+      const refreshed = await tryRefresh();
+      if (refreshed) {
+        return next();
       }
-      
-      // Proceed regardless of token validity or refresh success
-      next();
-  });
-};
+      if (requireAuthWhenTokenPresent && !req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Access token expired',
+          code: 'TOKEN_EXPIRED'
+        });
+      }
+      return next();
+    }
+  };
+}
 
-module.exports = { verifyToken, verifyTokenOptional, authorizeRoles };
+const verifyTokenOptional = createVerifyTokenOptional();
+verifyTokenOptional.withOptions = createVerifyTokenOptional;
+
+module.exports = { verifyToken, verifyTokenOptional, authorizeRoles, resolveRequestUser };

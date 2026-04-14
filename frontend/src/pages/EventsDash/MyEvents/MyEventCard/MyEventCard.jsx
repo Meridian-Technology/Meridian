@@ -3,13 +3,13 @@ import './MyEventCard.scss';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import { useNavigate } from 'react-router-dom';
 import useAuth from '../../../../hooks/useAuth';
-import { useDashboardOverlay } from '../../../../hooks/useDashboardOverlay';
 
 const MyEventCard = ({ event }) => {
     const navigate = useNavigate();
     const { user } = useAuth();
-    const { showEventWorkspace } = useDashboardOverlay();
     const date = new Date(event?.start_time || Date.now());
+    const dateEnd = new Date(event?.end_time || event?.start_time || Date.now());
+    const isLive = date <= new Date() && dateEnd >= new Date();
     
     // Check if user is hosting this event
     const isHosting = user && event && (
@@ -43,26 +43,8 @@ const MyEventCard = ({ event }) => {
         }
     };
 
-    const handleWorkspaceClick = (e) => {
-        e.stopPropagation(); // Prevent card click
-        if (event?._id) {
-            showEventWorkspace(event._id);
-        }
-    };
-
-
-
     return (
         <div className="my-event-card" onClick={handleCardClick}>
-            {isHosting && (
-                <button 
-                    className="workspace-button"
-                    onClick={handleWorkspaceClick}
-                    title="Open Event Workspace"
-                >
-                    <Icon icon="mdi:briefcase-edit" />
-                </button>
-            )}
             {/* Event Image or Gradient */}
             <div 
                 className={`event-image ${!hasPreviewImage ? 'gradient-background' : ''}`}
@@ -86,6 +68,12 @@ const MyEventCard = ({ event }) => {
                 <div className="row">
                     <Icon icon="heroicons:calendar-16-solid" />
                     <p>{date.toLocaleString('default', {weekday: 'long'})} {date.toLocaleString('default', {month: 'numeric'})}/{date.getDate()}</p>
+                    {isLive && (
+                        <span className="my-event-card__live-badge" role="status">
+                            <Icon icon="mdi:circle" className="my-event-card__live-dot" />
+                            Live
+                        </span>
+                    )}
                 </div>
 
                 {/* Location Row */}

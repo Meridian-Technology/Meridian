@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const getModels = require('../services/getModelService');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const { uploadImageToS3, upload } = require('../services/imageUploadService');
 const { emitToOrgApprovalRoom } = require('../socket');
 const { clean, isProfane } = require('../services/profanityFilterService');
@@ -184,7 +185,7 @@ router.get('/verification-requests', verifyToken, async (req, res) => {
 });
 
 // Review verification request
-router.put('/verification-requests/:requestId', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.put('/verification-requests/:requestId', verifyToken, requireAdmin, async (req, res) => {
     const { OrgVerification, Org, User } = getModels(req, 'OrgVerification', 'Org', 'User');
     const { requestId } = req.params;
     const { status, reviewNotes } = req.body;
@@ -256,7 +257,7 @@ router.put('/verification-requests/:requestId', verifyToken, authorizeRoles('adm
 // ==================== PENDING APPROVALS ====================
 
 // Get orgs pending approval (admin/root only)
-router.get('/pending-approvals', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/pending-approvals', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
 
     try {
@@ -334,7 +335,7 @@ router.get('/config', verifyToken, async (req, res) => {
 });
 
 // Update management configuration
-router.put('/config', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.put('/config', verifyToken, requireAdmin, async (req, res) => {
     const { OrgManagementConfig } = getModels(req, 'OrgManagementConfig');
     const updates = req.body;
 
@@ -406,7 +407,7 @@ router.put('/config', verifyToken, authorizeRoles('admin', 'root'), async (req, 
 // ==================== ORGANIZATION ANALYTICS ====================
 
 // Get organization analytics
-router.get('/analytics', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/analytics', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event, OrgVerification } = getModels(req, 'Org', 'OrgMember', 'Event', 'OrgVerification');
     const { timeRange = '30d' } = req.query;
 
@@ -545,7 +546,7 @@ router.get('/analytics', verifyToken, authorizeRoles('admin', 'root'), async (re
 // ==================== ORGANIZATION MANAGEMENT ====================
 
 // Get all organizations with management data
-router.get('/organizations', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
     const { 
         search, 
@@ -620,7 +621,7 @@ router.get('/organizations', verifyToken, authorizeRoles('admin', 'root'), async
 });
 
 // Export organizations data (must be before /organizations/:orgId to avoid route conflict)
-router.get('/organizations/export', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/organizations/export', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
     const { format = 'json' } = req.query;
 
@@ -675,7 +676,7 @@ router.get('/organizations/export', verifyToken, authorizeRoles('admin', 'root')
 });
 
 // Get single organization by ID (admin only)
-router.get('/organizations/:orgId', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
     const { orgId } = req.params;
 
@@ -717,7 +718,7 @@ router.get('/organizations/:orgId', verifyToken, authorizeRoles('admin', 'root')
 });
 
 // Admin edit organization (name, description, images)
-router.post('/organizations/:orgId/edit', verifyToken, authorizeRoles('admin', 'root'), upload.fields([
+router.post('/organizations/:orgId/edit', verifyToken, requireAdmin, upload.fields([
     { name: 'image', maxCount: 1 },
     { name: 'bannerImage', maxCount: 1 }
 ]), handleMulterError, async (req, res) => {
@@ -807,7 +808,7 @@ router.post('/organizations/:orgId/edit', verifyToken, authorizeRoles('admin', '
 });
 
 // Assign new owner (admin only)
-router.put('/organizations/:orgId/owner', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.put('/organizations/:orgId/owner', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
     const { orgId } = req.params;
     const { newOwnerId } = req.body;
@@ -878,7 +879,7 @@ router.put('/organizations/:orgId/owner', verifyToken, authorizeRoles('admin', '
 });
 
 // Get organization members (admin only)
-router.get('/organizations/:orgId/members', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/organizations/:orgId/members', verifyToken, requireAdmin, async (req, res) => {
     const { OrgMember, OrgMemberApplication } = getModels(req, 'OrgMember', 'OrgMemberApplication');
     const { orgId } = req.params;
 
@@ -907,7 +908,7 @@ router.get('/organizations/:orgId/members', verifyToken, authorizeRoles('admin',
 });
 
 // Add member to organization (admin only)
-router.post('/organizations/:orgId/members', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.post('/organizations/:orgId/members', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
     const { orgId } = req.params;
     const { userId, role = 'member' } = req.body;
@@ -988,7 +989,7 @@ router.post('/organizations/:orgId/members', verifyToken, authorizeRoles('admin'
 });
 
 // Remove member from organization (admin only)
-router.delete('/organizations/:orgId/members/:userId', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.delete('/organizations/:orgId/members/:userId', verifyToken, requireAdmin, async (req, res) => {
     const { OrgMember, Org, User } = getModels(req, 'OrgMember', 'Org', 'User');
     const { orgId, userId } = req.params;
 
@@ -1039,7 +1040,7 @@ router.delete('/organizations/:orgId/members/:userId', verifyToken, authorizeRol
 });
 
 // Change member role (admin only)
-router.put('/organizations/:orgId/members/:userId/role', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.put('/organizations/:orgId/members/:userId/role', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
     const { orgId, userId } = req.params;
     const { role } = req.body;
@@ -1119,7 +1120,7 @@ router.put('/organizations/:orgId/members/:userId/role', verifyToken, authorizeR
 });
 
 // Approve a pending organization
-router.put('/organizations/:orgId/approve', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.put('/organizations/:orgId/approve', verifyToken, requireAdmin, async (req, res) => {
     const { Org } = getModels(req, 'Org');
     const { orgId } = req.params;
     const adminId = req.user.userId;
@@ -1165,7 +1166,7 @@ router.put('/organizations/:orgId/approve', verifyToken, authorizeRoles('admin',
 });
 
 // Update organization status
-router.put('/organizations/:orgId', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.put('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) => {
     const { Org } = getModels(req, 'Org');
     const { orgId } = req.params;
     const { verified, status, notes } = req.body;
@@ -1213,7 +1214,7 @@ router.put('/organizations/:orgId', verifyToken, authorizeRoles('admin', 'root')
  * Add _id to org positions that don't have it (for role rename detection).
  * Run once per tenant. Protected: admin or root only.
  */
-router.post('/migrate/org-positions-ids', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.post('/migrate/org-positions-ids', verifyToken, requireAdmin, async (req, res) => {
     const mongoose = require('mongoose');
     const { Org } = getModels(req, 'Org');
 

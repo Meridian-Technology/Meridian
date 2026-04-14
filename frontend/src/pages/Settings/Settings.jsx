@@ -3,6 +3,7 @@ import Header from '../../components/Header/Header';
 import AccountSettings from '../../components/AcccountSettings/AccountSettings.jsx';
 import Profile from '../../pages/Profile/Profile.jsx';
 import StudyPreferences from '../../components/StudyPreferences/StudyPreferences.jsx';
+import AdminMfaSettings from '../../components/AdminMfaSettings/AdminMfaSettings.jsx';
 import './Settings.scss';
 import pfp from '../../assets/defaultAvatar.svg';
 import preferences from '../../assets/Icons/Preferences.svg';
@@ -62,6 +63,14 @@ function Settings() {
             element: <StudyPreferences userInfo={userInfo} />
         }
     ];
+
+    if (Array.isArray(userInfo.roles) && userInfo.roles.includes('admin')) {
+        menuItems.push({
+            label: 'Admin Security',
+            icon: 'mdi:shield-lock',
+            element: <AdminMfaSettings />,
+        });
+    }
 
     // Developer account activation button as middle item
     const middleItem = isDeveloper !== null && !isDeveloper ? (

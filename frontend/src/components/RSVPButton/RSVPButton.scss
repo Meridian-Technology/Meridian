@@ -44,6 +44,18 @@
                 margin-right:3px;
             }
         }
+        &.add-another {
+            border-color: var(--blue, #007bff);
+            color: var(--blue, #007bff);
+            background: transparent;
+
+            &:hover:not(:disabled) {
+                background: rgba(0, 123, 255, 0.08);
+                border-color: var(--blue, #007bff);
+                color: var(--blue, #007bff);
+            }
+        }
+
         &.active {
             border-color: #4CAF50;
             background: rgba(76, 175, 80, 0.1);

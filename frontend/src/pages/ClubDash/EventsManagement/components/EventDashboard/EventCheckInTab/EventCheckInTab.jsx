@@ -3,16 +3,42 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
 import apiRequest from '../../../../../../utils/postRequest';
-import Popup from '../../../../../../components/Popup/Popup';
 import QRCodeDisplay from '../../../../../../components/EventCheckIn/QRCodeDisplay';
 import CheckInLink from '../../../../../../components/EventCheckIn/CheckInLink';
 import CheckInList from '../../../../../../components/EventCheckIn/CheckInList';
 import EmptyState from '../../../../../../components/EmptyState/EmptyState';
 import CheckInSettingsModal from './CheckInSettingsModal';
+import Popup from '../../../../../../components/Popup/Popup';
+import ManualCheckInModal from './ManualCheckInModal';
 import HeaderContainer from '../../../../../../components/HeaderContainer/HeaderContainer';
 import KpiCard from '../../../../../../components/Analytics/Dashboard/KpiCard';
 import { useEventRoom } from '../../../../../../WebSocketContext';
 import './EventCheckInTab.scss';
+
+function withCurrentTenantSubdomain(rawUrl) {
+    if (!rawUrl || typeof window === 'undefined') return rawUrl;
+    try {
+        const parsed = new URL(rawUrl, window.location.origin);
+        const host = window.location.hostname || '';
+        if (!host) return parsed.toString();
+        if (host === 'localhost') {
+            parsed.protocol = window.location.protocol;
+            parsed.host = window.location.host;
+            return parsed.toString();
+        }
+        const hostParts = host.split('.');
+        const currentSubdomain = hostParts[0]?.toLowerCase();
+        if (!currentSubdomain || currentSubdomain === 'www' || hostParts.length < 3) {
+            return parsed.toString();
+        }
+        const baseDomain = hostParts.slice(1).join('.');
+        parsed.protocol = window.location.protocol;
+        parsed.host = `${currentSubdomain}.${baseDomain}`;
+        return parsed.toString();
+    } catch (_) {
+        return rawUrl;
+    }
+}
 
 function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }) {
     const { addNotification } = useNotification();
@@ -51,27 +77,24 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
             : null
     );
 
-    // Fetch all registrations when manual check-in modal is open (to pick someone to check in)
-    const { data: allRegistrationsResponse, loading: loadingRegistrations } = useFetch(
-        showManualCheckInModal && event?._id ? `/attendees/${event._id}` : null
-    );
-
     // Live updates: only open websocket when check-in tab is active and check-in is enabled; disconnect when leaving tab
     const shouldConnect = Boolean(isTabActive && event?.checkInEnabled && event?._id);
     useEventRoom(shouldConnect ? event._id : null, () => {
-        refetchAttendees?.();
-        onRefresh?.();
+        refetchAttendees?.({ silent: true });
     });
 
     useEffect(() => {
         if (qrResponse?.success) {
             setQrCodeData(qrResponse.qrCode);
+            if (qrResponse.checkInUrl) {
+                setCheckInLink((prev) => prev || withCurrentTenantSubdomain(qrResponse.checkInUrl));
+            }
         }
     }, [qrResponse]);
 
     useEffect(() => {
         if (linkResponse?.success) {
-            setCheckInLink(linkResponse.checkInUrl);
+            setCheckInLink(withCurrentTenantSubdomain(linkResponse.checkInUrl));
         }
     }, [linkResponse]);
 
@@ -121,52 +144,25 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
         }
     };
 
-    const handleManualCheckIn = async (userId) => {
+    const handleRemoveCheckIn = async (attendee) => {
         try {
-            const response = await apiRequest(
-                `/events/${event._id}/check-in/${userId}`,
-                {},
-                { method: 'POST' }
-            );
-
-            if (response.success) {
-                addNotification({
-                    title: 'Success',
-                    message: 'User checked in successfully',
-                    type: 'success'
-                });
-                setShowManualCheckInModal(false);
-                await refetchAttendees();
-                if (onRefresh) {
-                    onRefresh();
-                }
+            let response;
+            if (attendee.formResponseId) {
+                const id = attendee.formResponseId?._id || attendee.formResponseId;
+                response = await apiRequest(
+                    `/events/${event._id}/check-out/form-response/${id}`,
+                    {},
+                    { method: 'POST' }
+                );
             } else {
-                throw new Error(response.message || 'Failed to check in user');
+                const userId = attendee.userId?._id || attendee.userId?.id || attendee.userId;
+                if (!userId) return;
+                response = await apiRequest(
+                    `/events/${event._id}/check-out/${userId}`,
+                    {},
+                    { method: 'POST' }
+                );
             }
-        } catch (error) {
-            addNotification({
-                title: 'Error',
-                message: error.message || 'Failed to check in user',
-                type: 'error'
-            });
-        }
-    };
-
-    const getAttendeeUserId = (a) => (a.userId && (a.userId._id || a.userId.id || a.userId)) ? String(a.userId._id || a.userId.id || a.userId) : null;
-    const checkedInIds = new Set((attendees || []).map(getAttendeeUserId).filter(Boolean));
-    const allRegistrations = allRegistrationsResponse?.success ? (allRegistrationsResponse.attendees || []) : [];
-    const notCheckedIn = allRegistrations.filter((r) => {
-        const id = getAttendeeUserId(r);
-        return id && !checkedInIds.has(id);
-    });
-
-    const handleRemoveCheckIn = async (userId) => {
-        try {
-            const response = await apiRequest(
-                `/events/${event._id}/check-out/${userId}`,
-                {},
-                { method: 'POST' }
-            );
 
             if (response.success) {
                 addNotification({
@@ -174,10 +170,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                     message: 'Check-in removed',
                     type: 'success'
                 });
-                await refetchAttendees();
-                if (onRefresh) {
-                    onRefresh();
-                }
+                await refetchAttendees({ silent: true });
             } else {
                 throw new Error(response.message || 'Failed to remove check-in');
             }
@@ -341,6 +334,11 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                         value={`${stats.checkInRate}%`}
                         icon="mdi:chart-line"
                     />
+                    <KpiCard
+                        title="Anonymous User Check-Ins"
+                        value={stats.anonymousBrowserCheckIns ?? 0}
+                        icon="mdi:incognito"
+                    />
                 </div>
             )}
 
@@ -367,8 +365,8 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                     >
                         <div className="checkin-section-content">
                             {showQR ? (
-                                qrCodeData ? (
-                                    <QRCodeDisplay qrCode={qrCodeData} eventName={event.name} />
+                                (checkInLink || qrCodeData) ? (
+                                    <QRCodeDisplay qrCode={qrCodeData} checkInUrl={checkInLink} eventName={event.name} />
                                 ) : (
                                     <div className="loading-placeholder">Loading QR code...</div>
                                 )
@@ -410,7 +408,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                         ) : (
                             <CheckInList 
                                 attendees={attendees}
-                                onManualCheckIn={handleManualCheckIn}
+                                onManualCheckIn={() => {}}
                                 onRemoveCheckIn={handleRemoveCheckIn}
                                 onOpenManualCheckInModal={() => setShowManualCheckInModal(true)}
                             />
@@ -428,45 +426,23 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                 onSaved={() => onRefresh?.()}
             />
 
-            {/* Manual check-in modal: pick a registrant not yet checked in */}
             <Popup
                 isOpen={showManualCheckInModal}
                 onClose={() => setShowManualCheckInModal(false)}
-                customClassName="manual-checkin-modal"
+                customClassName="manual-checkin-modal manual-checkin-modal--streamlined wide-content no-padding"
+                hideCloseButton={true}
+                disableOutsideClick={true}
             >
-                <div className="manual-checkin-modal-content">
-                    <h3>
-                        <Icon icon="mdi:account-plus" />
-                        Manually Check In Attendee
-                    </h3>
-                    <p className="manual-checkin-modal-hint">Select a registrant who has not checked in yet.</p>
-                    {loadingRegistrations ? (
-                        <p className="manual-checkin-modal-loading">Loading registrations...</p>
-                    ) : notCheckedIn.length === 0 ? (
-                        <p className="manual-checkin-modal-empty">Everyone registered has already checked in.</p>
-                    ) : (
-                        <ul className="manual-checkin-modal-list">
-                            {notCheckedIn.map((reg) => {
-                                const uid = getAttendeeUserId(reg);
-                                const name = reg.userId?.name || reg.userId?.username || 'Unknown';
-                                return (
-                                    <li key={uid}>
-                                        <button
-                                            type="button"
-                                            className="manual-checkin-modal-item"
-                                            onClick={() => handleManualCheckIn(uid)}
-                                        >
-                                            {name}
-                                        </button>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-                    <button type="button" className="manual-checkin-modal-close" onClick={() => setShowManualCheckInModal(false)}>
-                        Cancel
-                    </button>
-                </div>
+                <ManualCheckInModal
+                    onClose={() => setShowManualCheckInModal(false)}
+                    event={event}
+                    orgId={orgId}
+                    checkedInAttendees={attendees}
+                    onCheckInSuccess={async () => {
+                        await refetchAttendees({ silent: true });
+                    }}
+                    onOpenSettings={() => setShowSettingsModal(true)}
+                />
             </Popup>
         </div>
     );

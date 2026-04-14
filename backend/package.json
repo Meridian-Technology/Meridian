@@ -2,6 +2,7 @@
   "dependencies": {
     "@react-email/components": "0.0.32",
     "@react-email/render": "^1.0.4",
+    "@simplewebauthn/server": "^13.3.0",
     "apple-signin-auth": "^2.0.0",
     "aws-sdk": "^2.1662.0",
     "axios": "^1.7.2",
@@ -23,6 +24,7 @@
     "nanoid": "^5.1.6",
     "node-cron": "^3.0.3",
     "nodemon": "^3.1.7",
+    "otplib": "^13.4.0",
     "passport": "^0.7.0",
     "passport-saml": "^3.2.4",
     "qrcode": "^1.5.4",
@@ -40,8 +42,17 @@
   "version": "1.0.0",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:coverage",
+    "test:unit": "NODE_ENV=test jest --runInBand --testPathPatterns=tests/unit",
+    "test:integration": "NODE_ENV=test jest --runInBand --testPathPatterns=tests/integration",
+    "test:routes": "NODE_ENV=test jest --runInBand --testPathPatterns=tests/route-outcomes",
+    "test:coverage": "NODE_ENV=test jest --runInBand --coverage",
     "setup-saml": "node scripts/setupSAML.js"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "mongodb-memory-server": "^11.0.1",
+    "supertest": "^7.2.2"
   },
   "keywords": [],
   "author": "",

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
@@ -6,54 +7,59 @@ import apiRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
 import './EventCheckInButton.scss';
 
+const ANON_EVENT_CHECKIN_KEY_PREFIX = 'meridian_anon_event_checked_in_';
+
+function getAnonEventCheckInKey(eventId) {
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'unknown-host';
+    return `${ANON_EVENT_CHECKIN_KEY_PREFIX}${host}_${eventId}`;
+}
+
 /**
  * Check-in button for the event page. Shown when:
  * - Event has check-in enabled
  * - On-page check-in is allowed (checkInSettings.allowOnPageCheckIn !== false)
- * - User is logged in
- * - Current time is within event start_time and end_time
- * Calls POST /events/:eventId/check-in/self (no token required).
+ * - Current time allows check-in (during event, or before if allowEarlyCheckIn)
+ * Logged-in users: can check in/out on page or via confirmation.
+ * Anonymous users: button navigates to check-in page (log in or use token link).
  */
 function EventCheckInButton({ event, onCheckedIn }) {
+    const navigate = useNavigate();
     const { user } = useAuth();
     const { addNotification } = useNotification();
     const [loading, setLoading] = useState(false);
-    const [checkedIn, setCheckedIn] = useState(!!event?.currentUserCheckedIn);
+    const [checkedIn, setCheckedIn] = useState(false);
 
     useEffect(() => {
-        setCheckedIn(!!event?.currentUserCheckedIn);
-    }, [event?.currentUserCheckedIn, event?._id]);
+        const loggedInCheckedIn = !!event?.currentUserCheckedIn;
+        if (loggedInCheckedIn) {
+            setCheckedIn(true);
+            return;
+        }
+        if (!user && event?._id && event?.checkInSettings?.fullyAnonymousCheckIn) {
+            const anonCheckedIn = localStorage.getItem(getAnonEventCheckInKey(event._id)) === '1';
+            setCheckedIn(anonCheckedIn);
+            return;
+        }
+        setCheckedIn(false);
+    }, [event?.currentUserCheckedIn, event?._id, event?.checkInSettings?.fullyAnonymousCheckIn, user]);
 
-    if (!event || !user) return null;
+    if (!event) return null;
     if (!event.checkInEnabled) return null;
     if (event.checkInSettings?.allowOnPageCheckIn === false) return null;
 
     const now = new Date();
     const start = new Date(event.start_time);
     const end = new Date(event.end_time);
-    if (now < start || now > end) return null;
+    const allowEarly = event.checkInSettings?.allowEarlyCheckIn;
+    if (!allowEarly && now < start) return null;
+    if (now > end) return null;
 
-    const handleCheckIn = async () => {
-        setLoading(true);
-        try {
-            const response = await apiRequest(
-                `/events/${event._id}/check-in/self`,
-                {},
-                { method: 'POST' }
-            );
-            if (response?.success) {
-                analytics.track('event_checkin', { event_id: event._id });
-                setCheckedIn(true);
-                addNotification?.('You’re checked in!', 'success');
-                onCheckedIn?.();
-            } else {
-                addNotification?.(response?.message || 'Check-in failed', 'error');
-            }
-        } catch (err) {
-            const msg = err.response?.data?.message || err.message || 'Check-in failed';
-            addNotification?.(msg, 'error');
-        } finally {
-            setLoading(false);
+    const handleCheckIn = () => {
+        // Anonymous users need the token to access the pick-your-registration flow
+        if (!user && event.checkInToken) {
+            navigate(`/check-in/${event._id}/${event.checkInToken}`);
+        } else {
+            navigate(`/check-in/${event._id}`);
         }
     };
 
@@ -68,7 +74,7 @@ function EventCheckInButton({ event, onCheckedIn }) {
             if (response?.success) {
                 analytics.track('event_checkout', { event_id: event._id });
                 setCheckedIn(false);
-                addNotification?.('You’ve checked out.', 'success');
+                addNotification?.("You've checked out.", 'success');
                 onCheckedIn?.();
             } else {
                 addNotification?.(response?.message || 'Check-out failed', 'error');
@@ -82,22 +88,25 @@ function EventCheckInButton({ event, onCheckedIn }) {
     };
 
     if (checkedIn) {
+        const showCheckOut = !!user;
         return (
             <div className="event-check-in-button checked-in">
                 <Icon icon="mdi:check-circle" />
                 <span>You're checked in</span>
-                <button
-                    type="button"
-                    className="check-out-btn"
-                    onClick={handleCheckOut}
-                    disabled={loading}
-                >
-                    {loading ? (
-                        <Icon icon="mdi:loading" className="spinner" />
-                    ) : (
-                        'Check out'
-                    )}
-                </button>
+                {showCheckOut && (
+                    <button
+                        type="button"
+                        className="check-out-btn"
+                        onClick={handleCheckOut}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <Icon icon="mdi:loading" className="spinner" />
+                        ) : (
+                            'Check out'
+                        )}
+                    </button>
+                )}
             </div>
         );
     }

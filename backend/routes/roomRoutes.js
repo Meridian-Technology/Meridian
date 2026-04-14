@@ -1,5 +1,6 @@
 const express = require('express');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const getModels = require('../services/getModelService');
 const multer = require('multer');
 const path = require('path');
@@ -8,7 +9,7 @@ const { uploadImageToS3 } = require('../services/imageUploadService');
 const router = express.Router();
 
 // List rooms with optional search/pagination
-router.get('/rooms', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/rooms', verifyToken, requireAdmin, async (req, res) => {
   const { Classroom } = getModels(req, 'Classroom');
   const { search = '', page = 1, limit = 20 } = req.query;
 
@@ -52,7 +53,7 @@ router.get('/rooms', verifyToken, authorizeRoles('admin', 'root'), async (req, r
 });
 
 // Get single room
-router.get('/rooms/:id', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.get('/rooms/:id', verifyToken, requireAdmin, async (req, res) => {
   const { Classroom } = getModels(req, 'Classroom');
   try {
     const room = await Classroom.findById(req.params.id);
@@ -65,7 +66,7 @@ router.get('/rooms/:id', verifyToken, authorizeRoles('admin', 'root'), async (re
 });
 
 // Create room
-router.post('/rooms', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.post('/rooms', verifyToken, requireAdmin, async (req, res) => {
   const { Classroom } = getModels(req, 'Classroom');
   const { name, image = '/classrooms/default.png', attributes = [], mainSearch = true } = req.body;
   try {
@@ -83,7 +84,7 @@ router.post('/rooms', verifyToken, authorizeRoles('admin', 'root'), async (req, 
 });
 
 // Update room
-router.put('/rooms/:id', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.put('/rooms/:id', verifyToken, requireAdmin, async (req, res) => {
   const { Classroom } = getModels(req, 'Classroom');
   const updates = req.body;
   try {
@@ -101,7 +102,7 @@ router.put('/rooms/:id', verifyToken, authorizeRoles('admin', 'root'), async (re
 });
 
 // Delete room
-router.delete('/rooms/:id', verifyToken, authorizeRoles('admin', 'root'), async (req, res) => {
+router.delete('/rooms/:id', verifyToken, requireAdmin, async (req, res) => {
   const { Classroom } = getModels(req, 'Classroom');
   try {
     const room = await Classroom.findByIdAndDelete(req.params.id);
@@ -115,7 +116,7 @@ router.delete('/rooms/:id', verifyToken, authorizeRoles('admin', 'root'), async 
 
 // Upload room image
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
-router.post('/rooms/:id/image', verifyToken, authorizeRoles('admin', 'root'), upload.single('image'), async (req, res) => {
+router.post('/rooms/:id/image', verifyToken, requireAdmin, upload.single('image'), async (req, res) => {
   const { Classroom } = getModels(req, 'Classroom');
   try {
     const room = await Classroom.findById(req.params.id);

@@ -115,9 +115,17 @@ function FunnelChart({ width, height, data }) {
                             <div
                                 xmlns="http://www.w3.org/1999/xhtml"
                                 className="funnel-segment-label-bg"
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    background: 'rgba(255,255,255,0.95)',
+                                    border: '1px solid #e4e5e6',
+                                    borderRadius: 6,
+                                    padding: '4px 10px'
+                                }}
                             >
-                                <span className="funnel-segment-value-text">{formatNumber(seg.value)}</span>
-                                <span className="funnel-segment-label-text">{seg.label}</span>
+                                <span className="funnel-segment-value-text" style={{ color: 'var(--org-primary, #64AB6C)', fontSize: '1.15rem', fontWeight: 700 }}>{formatNumber(seg.value)}</span>
+                                <span className="funnel-segment-label-text" style={{ color: 'var(--lighter-text, #5C5C5C)', fontSize: '0.75rem', fontWeight: 500 }}>{seg.label}</span>
                             </div>
                         </foreignObject>
                     </g>
@@ -129,14 +137,19 @@ function FunnelChart({ width, height, data }) {
 
 function FunnelChartWithSize(props) {
     return (
-        <ParentSize>
-            {(parent) => (
-                <FunnelChart
-                    {...props}
-                    width={parent?.width ?? 400}
-                    height={parent?.height ?? 160}
-                />
-            )}
+        <ParentSize debounceTime={120}>
+            {(parent) => {
+                const width = Math.floor(parent?.width ?? 0);
+                const height = Math.floor(parent?.height ?? 0);
+                if (width < 40 || height < 40) return null;
+                return (
+                    <FunnelChart
+                        {...props}
+                        width={width}
+                        height={height}
+                    />
+                );
+            }}
         </ParentSize>
     );
 }

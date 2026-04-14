@@ -18,7 +18,7 @@ const orgMessageSchema = new Schema({
         type: String,
         required: true,
         trim: true,
-        maxlength: 2000 // Will be configurable per org, but max is 2000
+        maxlength: 10000 // Will be configurable per org, but max is 2000
     },
     visibility: {
         type: String,

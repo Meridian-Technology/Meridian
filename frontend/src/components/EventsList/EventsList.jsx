@@ -54,8 +54,6 @@ const EventsList = ({
             observer.observe(lastEventElementRef.current);
         }
 
-        console.log(groupedEvents);
-
         return () => {
             if (observerRef.current) {
                 observerRef.current.disconnect();

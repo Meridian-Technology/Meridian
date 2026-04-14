@@ -207,6 +207,8 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
         return "";
     }
 
+    const bookingLink = room.booking_link ? room.booking_link.trim() : "";
+
     const backtoResults = () => {
         setState("calendarSearch");
         
@@ -411,6 +413,11 @@ function Classroom({ room, state, setState, schedule, roomName, width, setShowMo
                     }
                     <div className="button-container">
                         {width < 800 && <button className="schedule-button" onClick={() => { setShowMobileCalendar(true) }}>view-schedule</button>}
+                        {bookingLink && (
+                            <a className="booking-link" href={bookingLink} target="_blank" rel="noopener noreferrer">
+                                book externally
+                            </a>
+                        )}
                         {
                             user && room.checked_in.includes(user._id) ?
                                 <button className="out" onClick={handleCheckOut}>check out</button>

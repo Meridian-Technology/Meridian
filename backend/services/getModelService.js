@@ -9,6 +9,7 @@ const orgSchema = require('../schemas/org');
 const orgFollowerSchema = require('../schemas/orgFollower');
 const orgMemberSchema = require('../schemas/orgMember');
 const orgInviteSchema = require('../schemas/orgInvite');
+const eventCollaborationInviteSchema = require('../schemas/eventCollaborationInvite');
 const qrSchema = require('../schemas/qr');
 const ratingSchema = require('../schemas/rating');
 const repeatedVisitSchema = require('../schemas/repeatedVisit');
@@ -58,78 +59,93 @@ const eventEquipmentSchema = require('../schemas/EventEquipment');
 const orgEquipmentSchema = require('../schemas/OrgEquipment');
 const analyticsEventSchema = require('../events/schemas/analyticsEvent');
 const eventQRSchema = require('../events/schemas/eventQR');
+const registeredConnections = new WeakSet();
+const MODEL_DEFINITIONS = Object.freeze({
+    BadgeGrant: { modelName: 'BadgeGrant', schema: badgeGrantSchema, collection: 'badgegrants' },
+    Building: { modelName: 'Building', schema: buildingSchema, collection: 'buildings' },
+    Classroom: { modelName: 'Classroom', schema: classroomSchema, collection: 'classrooms1' },
+    Developer: { modelName: 'Developer', schema: developerSchema, collection: 'developers' },
+    Event: { modelName: 'Event', schema: eventSchema, collection: 'events' },
+    Friendship: { modelName: 'Friendship', schema: friendshipSchema, collection: 'friendships' },
+    OIEStatus: { modelName: 'OIE', schema: OIESchema, collection: 'OIEStatuses' },
+    OIEConfig: { modelName: 'OIEConfig', schema: OIEConfigSchema, collection: 'OIEConfig' },
+    Org: { modelName: 'Org', schema: orgSchema, collection: 'orgs' },
+    OrgFollower: { modelName: 'OrgFollower', schema: orgFollowerSchema, collection: 'followers' },
+    OrgMember: { modelName: 'OrgMember', schema: orgMemberSchema, collection: 'members' },
+    OrgInvite: { modelName: 'OrgInvite', schema: orgInviteSchema, collection: 'orgInvites' },
+    EventCollaborationInvite: { modelName: 'EventCollaborationInvite', schema: eventCollaborationInviteSchema, collection: 'eventCollaborationInvites' },
+    QR: { modelName: 'QR', schema: qrSchema, collection: 'QR' },
+    Rating: { modelName: 'Rating', schema: ratingSchema, collection: 'ratings' },
+    RepeatedVisit: { modelName: 'RepeatedVisit', schema: repeatedVisitSchema, collection: 'repeatedVisits' },
+    Report: { modelName: 'Report', schema: reportSchema, collection: 'reports' },
+    Schedule: { modelName: 'Schedule', schema: scheduleSchema, collection: 'schedules' },
+    Search: { modelName: 'Search', schema: searchSchema, collection: 'searches' },
+    StudyHistory: { modelName: 'StudyHistory', schema: studyHistorySchema, collection: 'studyHistories' },
+    User: { modelName: 'User', schema: userSchema, collection: 'users' },
+    Visit: { modelName: 'Visit', schema: visitSchema, collection: 'visits' },
+    Session: { modelName: 'Session', schema: sessionSchema, collection: 'sessions' },
+    ApprovalFlow: { modelName: 'ApprovalFlow', schema: approvalFlowDefinition, collection: 'approvalFlows' },
+    ApprovalInstance: { modelName: 'ApprovalInstance', schema: approvalFlowInstance, collection: 'approvalInstances' },
+    RssFeed: { modelName: 'RssFeed', schema: rssFeedSchema, collection: 'rssFeeds' },
+    Form: { modelName: 'Form', schema: formSchema, collection: 'forms' },
+    FormResponse: { modelName: 'FormResponse', schema: formResponseSchema, collection: 'formResponses' },
+    StudySession: { modelName: 'StudySession', schema: studySessionSchema, collection: 'studySessions' },
+    OrgVerification: { modelName: 'OrgVerification', schema: orgVerificationSchema, collection: 'orgVerifications' },
+    OrgManagementConfig: { modelName: 'OrgManagementConfig', schema: orgManagementConfigSchema, collection: 'orgManagementConfigs' },
+    OrgMemberApplication: { modelName: 'OrgMemberApplication', schema: orgMemberApplicationSchema, collection: 'orgMemberApplications' },
+    SAMLConfig: { modelName: 'SAMLConfig', schema: samlConfigSchema, collection: 'samlConfigs' },
+    Notification: { modelName: 'Notification', schema: notificationSchema, collection: 'notifications' },
+    OrgMessage: { modelName: 'OrgMessage', schema: orgMessageSchema, collection: 'orgMessages' },
+    EventAnalytics: { modelName: 'EventAnalytics', schema: eventAnalyticsSchema, collection: 'eventAnalytics' },
+    AvailabilityPoll: { modelName: 'AvailabilityPoll', schema: availabilityPollSchema, collection: 'availabilityPolls' },
+    UniversalFeedback: { modelName: 'UniversalFeedback', schema: universalFeedbackSchema, collection: 'universalFeedback' },
+    FeedbackConfig: { modelName: 'FeedbackConfig', schema: feedbackConfigSchema, collection: 'feedbackConfigs' },
+    SystemVersion: { modelName: 'SystemVersion', schema: systemVersionSchema, collection: 'systemVersions' },
+    EventSystemConfig: { modelName: 'EventSystemConfig', schema: eventSystemConfigSchema, collection: 'eventSystemConfigs' },
+    StakeholderRole: { modelName: 'StakeholderRole', schema: stakeholderRoleSchema, collection: 'stakeholderRoles' },
+    Domain: { modelName: 'Domain', schema: domainSchema, collection: 'domains' },
+    ContactRequest: { modelName: 'ContactRequest', schema: contactRequestSchema, collection: 'contactRequests' },
+    AndroidTesterSignup: { modelName: 'AndroidTesterSignup', schema: androidTesterSignupSchema, collection: 'androidTesterSignups' },
+    EventAgenda: { modelName: 'EventAgenda', schema: eventAgendaSchema, collection: 'eventAgendas' },
+    EventJob: { modelName: 'EventJob', schema: eventJobSchema, collection: 'eventRoles' },
+    OrgEventRole: { modelName: 'OrgEventRole', schema: orgEventRoleSchema, collection: 'orgEventRoles' },
+    VolunteerSignup: { modelName: 'VolunteerSignup', schema: volunteerSignupSchema, collection: 'volunteerSignups' },
+    EventEquipment: { modelName: 'EventEquipment', schema: eventEquipmentSchema, collection: 'eventEquipment' },
+    OrgEquipment: { modelName: 'OrgEquipment', schema: orgEquipmentSchema, collection: 'orgEquipment' },
+    AnalyticsEvent: { modelName: 'AnalyticsEvent', schema: analyticsEventSchema, collection: 'analytics_events' },
+    EventQR: { modelName: 'EventQR', schema: eventQRSchema, collection: 'event_qrs' },
+    ResourcesConfig: { modelName: 'ResourcesConfig', schema: resourcesConfigSchema, collection: 'resourcesConfigs' },
+    ShuttleConfig: { modelName: 'ShuttleConfig', schema: shuttleConfigSchema, collection: 'shuttleConfigs' },
+    NoticeConfig: { modelName: 'NoticeConfig', schema: noticeConfigSchema, collection: 'noticeConfigs' },
+});
 
+function getOrCreateModel(req, definition) {
+    const existingModel = req.db.models[definition.modelName];
+    if (existingModel) return existingModel;
+    return req.db.model(definition.modelName, definition.schema, definition.collection);
+}
 
+function ensureAllModelsRegistered(req) {
+    if (registeredConnections.has(req.db)) return;
+
+    Object.values(MODEL_DEFINITIONS).forEach((definition) => {
+        getOrCreateModel(req, definition);
+    });
+
+    registeredConnections.add(req.db);
+}
 
 const getModels = (req, ...names) => {
-    const models = {
-        BadgeGrant: req.db.model('BadgeGrant', badgeGrantSchema, 'badgegrants'),
-        Building: req.db.model('Building', buildingSchema, 'buildings'),
-        Classroom: req.db.model('Classroom', classroomSchema, 'classrooms1'),
-        Developer: req.db.model('Developer', developerSchema, 'developers'),
-        Event: req.db.model('Event', eventSchema, 'events'),
-        Friendship: req.db.model('Friendship', friendshipSchema, 'friendships'),
-        OIEStatus: req.db.model('OIE', OIESchema, 'OIEStatuses'),
-        OIEConfig: req.db.model('OIEConfig', OIEConfigSchema, 'OIEConfig'),
-        Org: req.db.model('Org', orgSchema, 'orgs'),
-        OrgFollower: req.db.model('OrgFollower', orgFollowerSchema, 'followers'),
-        OrgMember: req.db.model('OrgMember', orgMemberSchema, 'members'),
-        OrgInvite: req.db.model('OrgInvite', orgInviteSchema, 'orgInvites'),
-        QR: req.db.model('QR', qrSchema, 'QR'),
-        Rating: req.db.model('Rating', ratingSchema, 'ratings'),
-        RepeatedVisit: req.db.model('RepeatedVisit', repeatedVisitSchema, 'repeatedVisits'),
-        Report: req.db.model('Report', reportSchema, 'reports'),
-        Schedule: req.db.model('Schedule', scheduleSchema, 'schedules'),
-        Search: req.db.model('Search', searchSchema, 'searches'),
-        StudyHistory: req.db.model('StudyHistory', studyHistorySchema, 'studyHistories'),
-        User: req.db.model('User', userSchema, 'users'),
-        Visit: req.db.model('Visit', visitSchema, 'visits'),
-        Session: req.db.model('Session', sessionSchema, 'sessions'),
-        ApprovalFlow: req.db.model('ApprovalFlow', approvalFlowDefinition, 'approvalFlows'),
-        ApprovalInstance: req.db.model('ApprovalInstance', approvalFlowInstance, 'approvalInstances'),
-        RssFeed: req.db.model('RssFeed', rssFeedSchema, 'rssFeeds'),
-        Form: req.db.model('Form', formSchema, 'forms'),    
-        FormResponse: req.db.model('FormResponse', formResponseSchema, 'formResponses'),
-        StudySession: req.db.model('StudySession', studySessionSchema, 'studySessions'),
-        OrgVerification: req.db.model('OrgVerification', orgVerificationSchema, 'orgVerifications'),
-        OrgManagementConfig: req.db.model('OrgManagementConfig', orgManagementConfigSchema, 'orgManagementConfigs'),
-        OrgMemberApplication: req.db.model('OrgMemberApplication', orgMemberApplicationSchema, 'orgMemberApplications'),
-        SAMLConfig: req.db.model('SAMLConfig', samlConfigSchema, 'samlConfigs'),
-        Notification: req.db.model('Notification', notificationSchema, 'notifications'),
-        OrgMessage: req.db.model('OrgMessage', orgMessageSchema, 'orgMessages'),
-        EventAnalytics: req.db.model('EventAnalytics', eventAnalyticsSchema, 'eventAnalytics'),
+    if (!req?.db) {
+        throw new Error('getModels requires req.db to be available.');
+    }
 
-        // Study Sessions
-        StudySession: req.db.model('StudySession', studySessionSchema, 'studySessions'),
-        AvailabilityPoll: req.db.model('AvailabilityPoll', availabilityPollSchema, 'availabilityPolls'),
-
-        // Universal Feedback System
-        UniversalFeedback: req.db.model('UniversalFeedback', universalFeedbackSchema, 'universalFeedback'),
-        FeedbackConfig: req.db.model('FeedbackConfig', feedbackConfigSchema, 'feedbackConfigs'),
-        SystemVersion: req.db.model('SystemVersion', systemVersionSchema, 'systemVersions'),
-
-        EventAnalytics: req.db.model('EventAnalytics', eventAnalyticsSchema, 'eventAnalytics'),
-        EventSystemConfig: req.db.model('EventSystemConfig', eventSystemConfigSchema, 'eventSystemConfigs'),
-        StakeholderRole: req.db.model('StakeholderRole', stakeholderRoleSchema, 'stakeholderRoles'),
-        Domain: req.db.model('Domain', domainSchema, 'domains'),
-        ContactRequest: req.db.model('ContactRequest', contactRequestSchema, 'contactRequests'),
-        AndroidTesterSignup: req.db.model('AndroidTesterSignup', androidTesterSignupSchema, 'androidTesterSignups'),
-        EventAgenda: req.db.model('EventAgenda', eventAgendaSchema, 'eventAgendas'),
-        EventJob: req.db.model('EventJob', eventJobSchema, 'eventRoles'),
-        OrgEventRole: req.db.model('OrgEventRole', orgEventRoleSchema, 'orgEventRoles'),
-        VolunteerSignup: req.db.model('VolunteerSignup', volunteerSignupSchema, 'volunteerSignups'),
-        EventEquipment: req.db.model('EventEquipment', eventEquipmentSchema, 'eventEquipment'),
-        OrgEquipment: req.db.model('OrgEquipment', orgEquipmentSchema, 'orgEquipment'),
-        AnalyticsEvent: req.db.model('AnalyticsEvent', analyticsEventSchema, 'analytics_events'),
-        EventQR: req.db.model('EventQR', eventQRSchema, 'event_qrs'),
-        ResourcesConfig: req.db.model('ResourcesConfig', resourcesConfigSchema, 'resourcesConfigs'),
-        ShuttleConfig: req.db.model('ShuttleConfig', shuttleConfigSchema, 'shuttleConfigs'),
-        NoticeConfig: req.db.model('NoticeConfig', noticeConfigSchema, 'noticeConfigs'),
-    };
+    ensureAllModelsRegistered(req);
 
     return names.reduce((acc, name) => {
-        if (models[name]) {
-            acc[name] = models[name];
+        const definition = MODEL_DEFINITIONS[name];
+        if (definition) {
+            acc[name] = getOrCreateModel(req, definition);
         }
         return acc;
     }, {});

@@ -63,20 +63,12 @@ export const useDashboardOverlay = () => {
     };
 
     /**
-     * Show an EventWorkspace overlay (or navigate to workspace page when no overlay)
-     * @param {string} eventId - The event ID to display workspace for
+     * @deprecated EventWorkspace is legacy. Navigates to event page.
+     * @param {string} eventId - The event ID
      */
     const showEventWorkspace = (eventId) => {
         if (!eventId) return;
-        if (hasOverlay && showOverlay) {
-            import('../pages/EventWorkspace/EventWorkspace').then(({ default: EventWorkspace }) => {
-                showOverlay(
-                    <EventWorkspace eventId={eventId} onClose={hide} />
-                );
-            });
-        } else {
-            navigate(`/event/${eventId}/workspace`);
-        }
+        navigate(`/event/${eventId}`);
     };
 
     /**
@@ -112,12 +104,34 @@ export const useDashboardOverlay = () => {
         });
     };
 
+    /**
+     * Show an EventPostMortem overlay (for past events)
+     * @param {Object} event - The event object
+     * @param {string} orgId - The organization ID
+     * @param {Object} options - Options
+     * @param {boolean} options.returnToEventDashboard - If true, closing returns to EventDashboard instead of the list
+     */
+    const showEventPostMortem = (event, orgId, options = {}) => {
+        if (!hasOverlay || !showOverlay) return;
+        const { returnToEventDashboard = false } = options;
+        import('../pages/ClubDash/EventsManagement/components/EventPostMortem/EventPostMortem').then(({ default: EventPostMortem }) => {
+            showOverlay(
+                <EventPostMortem
+                    event={event}
+                    orgId={orgId}
+                    onClose={returnToEventDashboard ? () => showEventDashboard(event, orgId) : hide}
+                />
+            );
+        });
+    };
+
     return {
         showOverlay: show,
         hideOverlay: hide,
         showEventViewer,
         showEventWorkspace,
-        showEventDashboard
+        showEventDashboard,
+        showEventPostMortem
     };
 };
 

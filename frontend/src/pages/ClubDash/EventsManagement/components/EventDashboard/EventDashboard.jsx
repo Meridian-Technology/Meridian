@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../../hooks/useFetch';
 import { analytics } from '../../../../../services/analytics/analytics';
 import { useNotification } from '../../../../../NotificationContext';
 import useAuth from '../../../../../hooks/useAuth';
+import { useDashboardOverlay } from '../../../../../hooks/useDashboardOverlay';
 import { useGradient } from '../../../../../hooks/useGradient';
 import TabbedContainer from '../../../../../components/TabbedContainer';
 import Popup from '../../../../../components/Popup/Popup';
@@ -27,10 +28,43 @@ import './EventDashboard.scss';
 /** Set to true to always show the onboarding popup (ignores localStorage) */
 const FORCE_EVENT_DASHBOARD_ONBOARDING = false;
 
+const COLLAB_ACCEPT_BANNER_KEY = 'meridian_event_dash_collab_accept_v1';
+
+function readCollabAcceptDismissStore() {
+    try {
+        const raw = localStorage.getItem(COLLAB_ACCEPT_BANNER_KEY);
+        if (!raw) return {};
+        return JSON.parse(raw);
+    } catch {
+        return {};
+    }
+}
+
+function getDismissedCollabOrgIdsForEvent(eventId) {
+    const store = readCollabAcceptDismissStore();
+    return store[eventId]?.dismissedCollabOrgIds || [];
+}
+
+function dismissCollabAcceptsForEvent(eventId, collabOrgIds) {
+    const store = readCollabAcceptDismissStore();
+    const prev = new Set(store[eventId]?.dismissedCollabOrgIds || []);
+    collabOrgIds.forEach((id) => prev.add(String(id)));
+    store[eventId] = { dismissedCollabOrgIds: [...prev] };
+    localStorage.setItem(COLLAB_ACCEPT_BANNER_KEY, JSON.stringify(store));
+}
+
+function formatCollaboratorNames(names) {
+    if (!names || names.length === 0) return '';
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
 function EventDashboard({ event, orgId, onClose, className = '' }) {
     const { addNotification } = useNotification();
     const { user } = useAuth();
     const { AtlasMain } = useGradient();
+    const { showEventPostMortem } = useDashboardOverlay();
     const [dashboardData, setDashboardData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -39,6 +73,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [showAnnouncementSpotlight, setShowAnnouncementSpotlight] = useState(false);
     const [openRegistrationSettingsFromAnnouncement, setOpenRegistrationSettingsFromAnnouncement] = useState(false);
+    const [collabAcceptBannerTick, setCollabAcceptBannerTick] = useState(0);
 
     // Fetch dashboard data
     const { data, loading: dataLoading, error, refetch } = useFetch(
@@ -138,6 +173,34 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
         setOpenRegistrationSettingsFromAnnouncement(true);
     }, []);
 
+    const isEventCompleted = dashboardData?.stats?.operationalStatus === 'completed';
+
+    const collaborationAcceptBanner = useMemo(() => {
+        if (!dashboardData?.event || !orgId) return null;
+        const ev = dashboardData.event;
+        if (ev.hostingType !== 'Org') return null;
+        const hostId = String(ev.hostingId?._id || ev.hostingId);
+        if (String(orgId) !== hostId) return null;
+
+        const eventKey = String(ev._id);
+        const dismissed = getDismissedCollabOrgIdsForEvent(eventKey);
+        const unseen = (ev.collaboratorOrgs || []).filter((e) => {
+            const cid = String(e.orgId?._id || e.orgId);
+            return e.status === 'active' && e.acceptedAt && !dismissed.includes(cid);
+        });
+        if (unseen.length === 0) return null;
+        const names = unseen.map((e) => e.orgId?.org_name || 'An organization');
+        const collabIds = unseen.map((e) => String(e.orgId?._id || e.orgId));
+        return { names, collabIds, eventKey };
+    }, [dashboardData, orgId, collabAcceptBannerTick]);
+
+    const handlePostMortem = useCallback(() => {
+        const eventToShow = dashboardData?.event || event;
+        if (eventToShow?._id && orgId) {
+            showEventPostMortem(eventToShow, orgId, { returnToEventDashboard: true });
+        }
+    }, [dashboardData, event, orgId, showEventPostMortem]);
+
     if (loading) {
         return (
             <div className={`event-dashboard ${className}`}>
@@ -171,8 +234,6 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         event={dashboardData.event}
                         stats={dashboardData.stats}
                         agenda={dashboardData.agenda}
-                        roles={dashboardData.roles}
-                        equipment={dashboardData.equipment}
                         orgId={orgId}
                         onRefresh={handleRefresh}
                         onTabChange={handleTabChange}
@@ -208,6 +269,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             description: 'Detailed event analytics and insights',
             content: <EventAnalyticsDetail
                         event={dashboardData.event}
+                        stats={dashboardData.stats}
                         orgId={orgId}
                         onRefresh={handleRefresh}
                     />
@@ -217,6 +279,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             label: 'Details',
             icon: 'mdi:pencil',
             description: 'Event details and basic information',
+            // Date/time + location match CreateEventV3 (DateTimePicker + LocationAutocomplete; see EventEditorTab)
             content: <EventEditorTab
                         event={dashboardData.event}
                         agenda={dashboardData.agenda}
@@ -246,6 +309,7 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             content: <CommunicationsTab
                         event={dashboardData.event}
                         orgId={orgId}
+                        onRefresh={handleRefresh}
                         onSendAnnouncement={handleSendAnnouncementClick}
                         onOpenRegistrationSettings={handleOpenRegistrationSettings}
                         onNavigateToAnalytics={() => handleTabChange('analytics')}
@@ -310,7 +374,63 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         onRefresh={handleRefresh}
                         orgId={orgId}
                         onSendAnnouncement={handleSendAnnouncementClick}
+                        onPostMortem={handlePostMortem}
+                        showPostMortem={isEventCompleted}
                 />
+                {collaborationAcceptBanner && (
+                    <div className="event-dashboard-collab-accept-banner" role="status">
+                        <Icon icon="mdi:account-group" className="event-dashboard-collab-accept-banner__icon" />
+                        <p className="event-dashboard-collab-accept-banner__text">
+                            <strong>{formatCollaboratorNames(collaborationAcceptBanner.names)}</strong> accepted your
+                            collaboration invite. Open the <strong>Details</strong> tab to manage collaborating
+                            organizations.
+                        </p>
+                        <div className="event-dashboard-collab-accept-banner__actions">
+                            <button
+                                type="button"
+                                className="event-dashboard-collab-accept-banner__btn"
+                                onClick={() => {
+                                    dismissCollabAcceptsForEvent(
+                                        collaborationAcceptBanner.eventKey,
+                                        collaborationAcceptBanner.collabIds
+                                    );
+                                    setCollabAcceptBannerTick((t) => t + 1);
+                                    handleTabChange('edit');
+                                }}
+                            >
+                                View Details
+                            </button>
+                            <button
+                                type="button"
+                                className="event-dashboard-collab-accept-banner__dismiss"
+                                onClick={() => {
+                                    dismissCollabAcceptsForEvent(
+                                        collaborationAcceptBanner.eventKey,
+                                        collaborationAcceptBanner.collabIds
+                                    );
+                                    setCollabAcceptBannerTick((t) => t + 1);
+                                }}
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {isEventCompleted && (
+                    <div className="event-dashboard-postmortem-banner">
+                        <Icon icon="mdi:chart-box-outline" className="event-dashboard-postmortem-banner__icon" />
+                        <p className="event-dashboard-postmortem-banner__text">
+                            Review your event performance and collect attendee feedback in the post-mortem report.
+                        </p>
+                        <button
+                            type="button"
+                            className="event-dashboard-postmortem-banner__btn"
+                            onClick={handlePostMortem}
+                        >
+                            View post-mortem
+                        </button>
+                    </div>
+                )}
                 <div className="event-dashboard-content">
                     <TabbedContainer
                         key={refreshTrigger}

@@ -294,6 +294,21 @@
 
 }
 
+.classroom-component .check-in .booking-link{
+    font-size: 14px;
+    font-family: 'Inter';
+    font-weight: 650;
+    color: white;
+    background-color: var(--blue);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    flex-grow: 1;
+    text-decoration: none;
+    text-align: center;
+    transition: all 0.3s;
+}
+
 .classroom-component .check-in .check-in-button{
     /* position: relative; */
 }
@@ -348,6 +363,10 @@
 
 .classroom-component .check-in button:hover{
     cursor:pointer;
+}
+
+.classroom-component .check-in .booking-link:hover{
+    cursor: pointer;
 }
 
 .classroom-component .check-in button:disabled{

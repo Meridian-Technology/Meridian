@@ -5,6 +5,7 @@ import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
+import { isWww, setLastTenant, setTenantConfigCache } from './config/tenantRedirect';
 
 import Room from './pages/Room/Room';
 import Room1 from './pages/Room/Room1';
@@ -53,17 +54,20 @@ import Layout from './pages/Layout/Layout';
 import axios from 'axios';
 import CreateEvent from './pages/CreateEventV3/CreateEventV3';
 import EventsDash from './pages/EventsDash/EventsDash';
+// Mockup only — safe to delete
+import AdminOutreachMock from './mockups/AdminOutreach/AdminOutreachMock';
 import EventsHub from './pages/EventsHub/EventsHub';
 import EventPage from './pages/EventPage/EventPage';
-import EventWorkspace from './pages/EventWorkspace/EventWorkspace';
 import SubSidebarExample from './components/Dashboard/SubSidebarExample';
 import RebrandingNotice from './components/RebrandingNotice/RebrandingNotice';
+import DevTenantSelector from './components/DevTenantSelector/DevTenantSelector';
 import Beacon from './pages/FeatureAdmin/Beacon/Beacon';
 import Compass from './pages/FeatureAdmin/Compass/Compass';
 import Atlas from './pages/FeatureAdmin/Atlas/Atlas';
 import AnalyticsDashboard from './pages/FeatureAdmin/AnalyticsDashboard/AnalyticsDashboard';
 import MobileAnalyticsDashboard from './pages/FeatureAdmin/MobileAnalyticsDashboard/MobileAnalyticsDashboard';
 import UserJourneyAnalytics from './pages/FeatureAdmin/UserJourneyAnalytics/UserJourneyAnalytics';
+import IndividualUserJourney from './pages/FeatureAdmin/IndividualUserJourney/IndividualUserJourney';
 import DomainDashboard from './pages/DomainDash/DomainDashboard';
 import Contact from './pages/Contact/Contact';
 import Booking from './pages/Booking/Booking';
@@ -71,10 +75,13 @@ import Form from './pages/Form/Form';
 import Support from './pages/Support/Support';
 import CheckInConfirmation from './pages/CheckIn/CheckInConfirmation';
 import OrgInviteLanding from './pages/OrgInviteLanding/OrgInviteLanding';
+import SelectSchool from './pages/SelectSchool/SelectSchool';
 import OrgInviteLandingToken from './pages/OrgInviteLanding/OrgInviteLandingToken';
 import OrgInviteRedirect from './pages/OrgInviteAccept/OrgInviteRedirect';
 import StudySessionCallback from './pages/StudySessionCallback/StudySessionCallback';
 import StudySessionResponses from './pages/StudySessionResponses/StudySessionResponses';
+import PostMortemPdfPreview from './pages/ClubDash/EventsManagement/components/EventPostMortem/PostMortemPdfPreview';
+import TenantStatus from './pages/TenantStatus/TenantStatus';
 function App() {
     // Initialize analytics on app start
     useEffect(() => {
@@ -90,6 +97,14 @@ function App() {
         initAnalytics().catch(error => {
             console.error('Failed to initialize analytics:', error);
         });
+    }, []);
+
+    // Remember tenant for next time user visits www (single-tenant: no picker)
+    useEffect(() => {
+        if (typeof window !== 'undefined' && !isWww() && window.location.hostname) {
+            const sub = window.location.hostname.split('.')[0];
+            if (sub && sub !== 'www') setLastTenant(sub);
+        }
     }, []);
 
     useEffect(() => {
@@ -150,10 +165,30 @@ function App() {
 
         
     }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadTenantConfig = async () => {
+            try {
+                const response = await fetch('/api/tenant-config', { credentials: 'include' });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (cancelled) return;
+                if (payload?.success && Array.isArray(payload?.data?.tenants)) {
+                    setTenantConfigCache(payload.data.tenants);
+                }
+            } catch (_) {}
+        };
+        loadTenantConfig();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     // document.documentElement.classList.add('dark-mode');
     return (
         <GoogleOAuthProvider clientId="639818062398-k4qnm9l320phu967ctc2l1jt1sp9ib7p.apps.googleusercontent.com">
             <RebrandingNotice />
+            <DevTenantSelector />
             <ErrorProvider>
                 <NotificationProvider>
                     <WebSocketProvider>
@@ -167,6 +202,7 @@ function App() {
                                             <Route path="/qr/e/:shortId" element={<EventQRRedirect/>}/>
                                             <Route path="/qr/:id" element={<QR/>}/>
                                             <Route path="/check-in/:eventId/:token" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
+                                            <Route path="/check-in/:eventId" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route index element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />
                                             <Route path="/room/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/room1/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
@@ -175,6 +211,7 @@ function App() {
                                             <Route path="/org-invites/landing/:token" element={<AnimatedPageWrapper><OrgInviteLandingToken /></AnimatedPageWrapper>}/>
                                             <Route path="/org-invites/accept" element={<OrgInviteRedirect />}/>
                                             <Route path="/org-invites/decline" element={<OrgInviteRedirect />}/>
+                                            <Route path="/select-school" element={<AnimatedPageWrapper><SelectSchool /></AnimatedPageWrapper>}/>
                                             <Route path="/login" element={<AnimatedPageWrapper><Login /></AnimatedPageWrapper>}/>
                                             <Route path="/contact" element={<AnimatedPageWrapper><Contact /></AnimatedPageWrapper>}/>
                                             <Route path="/support" element={<AnimatedPageWrapper><Support /></AnimatedPageWrapper>}/>
@@ -184,6 +221,7 @@ function App() {
                                             <Route path="/child-safety-standards" element={<AnimatedPageWrapper><ChildSafetyStandards /></AnimatedPageWrapper>}/>
                                             <Route path="/forgot-password" element={<AnimatedPageWrapper><ForgotPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/reset-password" element={<AnimatedPageWrapper><ResetPassword /></AnimatedPageWrapper>}/>
+                                            <Route path="/tenant-status" element={<AnimatedPageWrapper><TenantStatus /></AnimatedPageWrapper>}/>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>
                                             <Route path="*" element={<Error />}/>
                                             <Route path="/error/:errorCode" element={<Error />}/>
@@ -196,6 +234,7 @@ function App() {
                                             
                                             {/* logged in routes */}
                                             <Route element={ <ProtectedRoute/> }>
+                                                <Route path="/post-mortem-preview/:orgId/:eventId" element={<AnimatedPageWrapper><PostMortemPdfPreview /></AnimatedPageWrapper>}/>
                                                 <Route path="/profile" element={<AnimatedPageWrapper><Profile/></AnimatedPageWrapper>}/>
                                                 <Route path="/onboard" element={<AnimatedPageWrapper><Onboard /></AnimatedPageWrapper>}/>
                                                 {/* <Route path="/friends" element={<AnimatedPageWrapper><Friends/></AnimatedPageWrapper>}/> */}
@@ -210,6 +249,8 @@ function App() {
                                                 <Route path="/admin" element={<AnimatedPageWrapper><Admin/></AnimatedPageWrapper>}/>
                                                 <Route path="/analytics-dashboard" element={<AnimatedPageWrapper><AnalyticsDashboard/></AnimatedPageWrapper>}/>
                                                 <Route path="/user-journey-analytics" element={<AnimatedPageWrapper><UserJourneyAnalytics/></AnimatedPageWrapper>}/>
+                                                <Route path="/user-journey" element={<AnimatedPageWrapper><IndividualUserJourney/></AnimatedPageWrapper>}/>
+                                                <Route path="/user-journey/:type/:identifier" element={<AnimatedPageWrapper><IndividualUserJourney/></AnimatedPageWrapper>}/>
                                                 <Route path="/mobile-analytics-dashboard" element={<AnimatedPageWrapper><MobileAnalyticsDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
 
@@ -226,13 +267,11 @@ function App() {
                                             </Route>
                                             <Route path='/create-org' element={<AnimatedPageWrapper><CreateOrg/></AnimatedPageWrapper>}/>
                                             <Route path='/org-application' element={<AnimatedPageWrapper><SignUpCreateClub/></AnimatedPageWrapper>}/>
-                                            <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsDash/></AnimatedPageWrapper>}/>
+                                            <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsHub/></AnimatedPageWrapper>}/>
                                             <Route path="/events" element={<AnimatedPageWrapper><EventsHub/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session/:sessionId/responses" element={<AnimatedPageWrapper><StudySessionResponses/></AnimatedPageWrapper>}/>
-                                            <Route path="/event/:eventId/workspace" element={<AnimatedPageWrapper><EventWorkspace/></AnimatedPageWrapper>}/>
-
                                             {/* oie routes */}
                                             <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'oie']}/> }>
                                                 <Route path="/oie-dashboard" element={<AnimatedPageWrapper><OIEDash/></AnimatedPageWrapper>}/>
@@ -241,6 +280,8 @@ function App() {
                                                 <Route path="/feature-admin/atlas" element={<AnimatedPageWrapper><OrgManagement/></AnimatedPageWrapper>}/>
                                             </Route>
                                             <Route path="/create-event" element={<AnimatedPageWrapper><CreateEvent/></AnimatedPageWrapper   >}/>
+                                            {/* Mockup only — Admin Outreach wireframes; no auth, no prod */}
+                                            {/* <Route path="/mockup/admin-outreach" element={<AdminOutreachMock />}/> */}
                                         </Route>
                                     </Routes>
                                     </ProfileCreationProvider>

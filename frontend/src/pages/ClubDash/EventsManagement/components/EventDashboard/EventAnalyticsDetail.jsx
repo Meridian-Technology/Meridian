@@ -17,10 +17,14 @@ const FAKE_FUNNEL_DATA = [
     { label: 'Check-ins', value: 189 },
 ];
 
-function EventAnalyticsDetail({ event, orgId, onRefresh }) {
+function EventAnalyticsDetail({ event, stats, orgId, onRefresh }) {
     const { addNotification } = useNotification();
     const [analytics, setAnalytics] = useState(null);
     const [loading, setLoading] = useState(true);
+
+    // Compute early so always in scope (used in funnel, key metrics, form conversion)
+    const actualRegistrations = stats?.registrationCount ?? analytics?.platform?.registrations ?? analytics?.platform?.uniqueRegistrations ?? analytics?.registrations ?? analytics?.uniqueRegistrations ?? 0;
+    const actualCheckIns = stats?.checkIn?.totalCheckedIn ?? analytics?.platform?.checkins ?? analytics?.platform?.uniqueCheckins ?? 0;
     const [exporting, setExporting] = useState(false);
     const [timeRange, setTimeRange] = useState('30d');
 
@@ -68,13 +72,11 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     const platform = analytics?.platform || {};
     const safeAnalyticsForFunnel = USE_FAKE_FUNNEL_DATA ? {} : (analytics || {});
     const uniqueViewsTotalForFunnel = (safeAnalyticsForFunnel.uniqueViews || 0) + (safeAnalyticsForFunnel.uniqueAnonymousViews || 0);
-    const uniqueRegistrationsTotalForFunnel = safeAnalyticsForFunnel.uniqueRegistrations || 0;
 
     const funnelData = useMemo(() => {
         if (USE_FAKE_FUNNEL_DATA) return FAKE_FUNNEL_DATA;
 
         const uniqueViews = platform.uniqueEventViews > 0 ? platform.uniqueEventViews : uniqueViewsTotalForFunnel;
-        const uniqueRegs = platform.uniqueRegistrations > 0 ? platform.uniqueRegistrations : uniqueRegistrationsTotalForFunnel;
         const steps = [
             { label: 'Unique viewers', value: uniqueViews },
         ];
@@ -82,11 +84,11 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
             steps.push({ label: 'Opened form', value: platform.uniqueFormOpens || 0 });
         }
         steps.push(
-            { label: 'Registrations', value: uniqueRegs },
-            { label: 'Check-ins', value: platform.uniqueCheckins || 0 }
+            { label: 'Registrations', value: actualRegistrations },
+            { label: 'Check-ins', value: actualCheckIns }
         );
         return steps;
-    }, [platform, event?.registrationFormId, uniqueViewsTotalForFunnel, uniqueRegistrationsTotalForFunnel]);
+    }, [platform, event?.registrationFormId, uniqueViewsTotalForFunnel, actualRegistrations, actualCheckIns]);
 
     // const handleExport = async () => {
     //     if (!event?._id || !orgId) return;
@@ -150,7 +152,6 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
 
     const safeAnalytics = USE_FAKE_FUNNEL_DATA ? {} : analytics;
     const registrationHistory = safeAnalytics.registrationHistory || [];
-    const totalRegistrations = safeAnalytics.registrations || registrationHistory.length || 0;
 
     // Get view data - viewHistory is filtered by timeRange on backend
     const viewHistory = safeAnalytics.viewHistory || [];
@@ -162,9 +163,10 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
     const totalViews = loggedInViewsCount + anonymousViewsCount;
 
     const uniqueViewsTotal = (safeAnalytics.uniqueViews || 0) + (safeAnalytics.uniqueAnonymousViews || 0);
-    const uniqueRegistrationsTotal = safeAnalytics.uniqueRegistrations || 0;
-    const conversionRate = uniqueViewsTotal > 0
-        ? ((uniqueRegistrationsTotal / uniqueViewsTotal) * 100).toFixed(1)
+    const uniqueViewersForConversion = (platform.uniqueEventViews || 0) > 0 ? platform.uniqueEventViews : uniqueViewsTotal;
+    const registrationsForConversion = (platform.uniqueRegistrations || 0) > 0 ? platform.uniqueRegistrations : actualRegistrations;
+    const conversionRate = uniqueViewersForConversion > 0
+        ? (Math.min(100, (registrationsForConversion / uniqueViewersForConversion) * 100)).toFixed(1)
         : 0;
 
     const isEventStarted = event?.start_time && new Date(event.start_time) <= new Date();
@@ -197,7 +199,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                 </div>
             </div>
 
-            {(USE_FAKE_FUNNEL_DATA || totalViews > 0 || totalRegistrations > 0 || platform.checkins > 0 || platform.registrationFormOpens > 0) && (
+            {(USE_FAKE_FUNNEL_DATA || totalViews > 0 || actualRegistrations > 0 || actualCheckIns > 0 || platform.registrationFormOpens > 0) && (
                 <HeaderContainer
                     icon="mingcute:chart-bar-fill"
                     header="Engagement Funnel"
@@ -222,12 +224,12 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                 <div className="card-content">
                     <div className="key-metrics-grid">
                         <div className="key-metric key-metric-primary">
-                            <span className="key-metric-value">{formatNumber(totalRegistrations)}</span>
+                            <span className="key-metric-value">{formatNumber(actualRegistrations)}</span>
                             <span className="key-metric-label">Registrations</span>
                         </div>
                         {isEventStarted && (
                             <div className="key-metric key-metric-primary">
-                                <span className="key-metric-value">{formatNumber(platform.checkins || 0)}</span>
+                                <span className="key-metric-value">{formatNumber(actualCheckIns)}</span>
                                 <span className="key-metric-label">Check-ins</span>
                             </div>
                         )}
@@ -237,7 +239,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                             <span className="key-metric-subtitle">Total, includes repeat</span>
                         </div>
                         <div className="key-metric">
-                            <span className="key-metric-value">{formatNumber(uniqueViewsTotal)}</span>
+                            <span className="key-metric-value">{formatNumber(uniqueViewersForConversion)}</span>
                             <span className="key-metric-label">Unique Viewers</span>
                         </div>
                         <div className="key-metric">
@@ -274,18 +276,39 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                 <div className="analytics-sources-row">
                     {totalViews > 0 && (() => {
                         const referrerSources = platform.referrerSources || { org_page: 0, explore: 0, direct: 0, email: 0 };
+                        const referrerRegs = platform.referrerRegistrations || {};
                         const qrSources = platform.qrReferrerSources || [];
+                        const sourceKeys = [
+                            { key: 'direct', label: 'Direct', icon: 'mdi:link' },
+                            { key: 'explore', label: 'Explore', icon: 'mingcute:compass-fill' },
+                            { key: 'org_page', label: 'Org Page', icon: 'mdi:domain' },
+                            { key: 'email', label: 'Email', icon: 'mdi:email-open' },
+                        ];
                         const sourceItems = [
-                            { key: 'direct', label: 'Direct', icon: 'mdi:arrow-right', value: referrerSources.direct },
-                            { key: 'explore', label: 'Explore', icon: 'mingcute:compass-fill', value: referrerSources.explore },
-                            { key: 'org_page', label: 'Org Page', icon: 'mdi:domain', value: referrerSources.org_page },
-                            { key: 'email', label: 'Email', icon: 'mdi:email-open', value: referrerSources.email },
-                            ...qrSources.map(({ qr_id, name, count }) => ({
-                                key: `qr_${qr_id}`,
-                                label: name,
-                                icon: 'mdi:qrcode',
-                                value: count
-                            }))
+                            ...sourceKeys.map(({ key, label, icon }) => {
+                                const views = referrerSources[key] ?? 0;
+                                const regs = referrerRegs[key] ?? 0;
+                                const conv = views > 0 ? ((regs / views) * 100).toFixed(0) : null;
+                                return {
+                                    key,
+                                    label,
+                                    icon,
+                                    value: views,
+                                    subLabel: conv != null ? `${conv}% → registration` : null,
+                                };
+                            }),
+                            ...qrSources.map(({ qr_id, name, count, registrations }) => {
+                                const views = count ?? 0;
+                                const regs = registrations ?? 0;
+                                const conv = views > 0 ? ((regs / views) * 100).toFixed(0) : null;
+                                return {
+                                    key: `qr_${qr_id}`,
+                                    label: name,
+                                    icon: 'mdi:qrcode',
+                                    value: views,
+                                    subLabel: conv != null ? `${conv}% → registration` : null,
+                                };
+                            }),
                         ];
                         const hasSourceData = sourceItems.some((item) => (item.value ?? 0) > 0);
                         return hasSourceData && (
@@ -345,7 +368,7 @@ function EventAnalyticsDetail({ event, orgId, onRefresh }) {
                             <div className="form-metric">
                                 <span className="form-metric-value">
                                     {(platform.uniqueFormOpens || 0) > 0
-                                        ? ((totalRegistrations / (platform.uniqueFormOpens || 1)) * 100).toFixed(1)
+                                        ? ((actualRegistrations / (platform.uniqueFormOpens || 1)) * 100).toFixed(1)
                                         : 0}%
                                 </span>
                                 <span className="form-metric-label">Form conversion</span>

@@ -156,6 +156,24 @@ const FormViewer = ({ form, onSubmit, handleClose, ownerInfo, hasSubmitted, isAu
             ))}
           </div>
         );
+      case 'rating_scale':
+        return (
+          <div className="options-list rating-scale">
+            {question.options?.map((option, index) => (
+              <label key={index} className="option-label">
+                <input
+                  type="radio"
+                  name={question._id}
+                  value={option}
+                  checked={responses[question._id] === option}
+                  onChange={(e) => handleResponseChange(question._id, e.target.value)}
+                  required={question.required}
+                />
+                {option}
+              </label>
+            ))}
+          </div>
+        );
       default:
         return null;
     }

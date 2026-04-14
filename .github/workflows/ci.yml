@@ -7,10 +7,11 @@ on:
 
 jobs:
   build:
+    name: Build
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Validate lockfile
         run: |
@@ -18,7 +19,7 @@ jobs:
           if [ -z "$REF" ]; then echo "private-deps.lock missing events.ref"; exit 1; fi
           if ! echo "$REF" | grep -qE '^[a-fA-F0-9]{40}$'; then echo "events.ref must be 40-char hex SHA, got: $REF"; exit 1; fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
 
@@ -37,5 +38,201 @@ jobs:
       - name: Install backend deps
         run: npm install --prefix backend
 
-      - name: Smoke test backend
-        run: node -e "const { createApp } = require('./backend/app'); createApp(); console.log('ok')"
+      - name: Install frontend deps
+        run: npm install --prefix frontend
+
+      - name: Build frontend
+        run: CI=false npm --prefix frontend run build
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate lockfile
+        run: |
+          REF=$(node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('./private-deps.lock','utf8'));console.log(d?.events?.ref||'')")
+          if [ -z "$REF" ]; then echo "private-deps.lock missing events.ref"; exit 1; fi
+          if ! echo "$REF" | grep -qE '^[a-fA-F0-9]{40}$'; then echo "events.ref must be 40-char hex SHA, got: $REF"; exit 1; fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Install SSH
+        run: sudo apt-get update && sudo apt-get install -y openssh-client git
+
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY_BASE64: ${{ secrets.SSH_PRIVATE_KEY_BASE64 }}
+        run: chmod +x ./bin/setup_ssh && ./bin/setup_ssh
+
+      - name: Fetch private deps
+        run: chmod +x ./bin/fetch_private_deps && ./bin/fetch_private_deps
+
+      - name: Install backend deps
+        run: npm install --prefix backend
+
+      - name: Install frontend deps
+        run: npm install --prefix frontend
+
+      - name: Run backend unit tests
+        run: npm --prefix backend run test:unit
+
+      - name: Run backend integration tests
+        run: npm --prefix backend run test:integration
+
+      - name: Run backend route outcome tests
+        run: npm --prefix backend run test:routes
+
+      - name: Run frontend unit tests
+        run: npm --prefix frontend run test:ci
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate lockfile
+        run: |
+          REF=$(node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('./private-deps.lock','utf8'));console.log(d?.events?.ref||'')")
+          if [ -z "$REF" ]; then echo "private-deps.lock missing events.ref"; exit 1; fi
+          if ! echo "$REF" | grep -qE '^[a-fA-F0-9]{40}$'; then echo "events.ref must be 40-char hex SHA, got: $REF"; exit 1; fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Install SSH
+        run: sudo apt-get update && sudo apt-get install -y openssh-client git
+
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY_BASE64: ${{ secrets.SSH_PRIVATE_KEY_BASE64 }}
+        run: chmod +x ./bin/setup_ssh && ./bin/setup_ssh
+
+      - name: Fetch private deps
+        run: chmod +x ./bin/fetch_private_deps && ./bin/fetch_private_deps
+
+      - name: Install backend deps
+        run: npm install --prefix backend
+
+      - name: Install frontend deps
+        run: npm install --prefix frontend
+
+      - name: Run backend comprehensive test suite with coverage
+        run: npm --prefix backend run test:coverage -- --json --outputFile=coverage/test-results.json
+
+      - name: Run frontend test suite with coverage
+        run: npm --prefix frontend run test:coverage -- --json --outputFile=coverage/test-results.json --coverageReporters=text --coverageReporters=lcov --coverageReporters=clover --coverageReporters=json-summary
+
+      - name: Publish test and coverage summary
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+          const readJson = (p) => {
+            try {
+              return JSON.parse(fs.readFileSync(p, 'utf8'));
+            } catch {
+              return null;
+            }
+          };
+
+          const backendTests = readJson('backend/coverage/test-results.json');
+          const frontendTests = readJson('frontend/coverage/test-results.json');
+          const backendCoverage = readJson('backend/coverage/coverage-summary.json');
+          const frontendCoverage = readJson('frontend/coverage/coverage-summary.json');
+
+          const row = (name, data) => {
+            if (!data) return '| ' + name + ' | n/a | n/a | n/a | n/a | n/a |';
+            return (
+              '| ' +
+              name +
+              ' | ' +
+              data.numTotalTests +
+              ' | ' +
+              data.numPassedTests +
+              ' | ' +
+              data.numFailedTests +
+              ' | ' +
+              data.numPendingTests +
+              ' | ' +
+              (data.numTodoTests || 0) +
+              ' |'
+            );
+          };
+
+          const cov = (name, data) => {
+            const t = data && data.total;
+            if (!t) return '| ' + name + ' | n/a | n/a | n/a | n/a |';
+            return (
+              '| ' +
+              name +
+              ' | ' +
+              t.lines.pct +
+              '% | ' +
+              t.statements.pct +
+              '% | ' +
+              t.branches.pct +
+              '% | ' +
+              t.functions.pct +
+              '% |'
+            );
+          };
+
+          const md = [
+            '## Test Results',
+            '',
+            '| Suite | Total | Passed | Failed | Skipped | Todo |',
+            '|---|---:|---:|---:|---:|---:|',
+            row('Backend', backendTests),
+            row('Frontend', frontendTests),
+            '',
+            '## Coverage Summary',
+            '',
+            '| Suite | Lines | Statements | Branches | Functions |',
+            '|---|---:|---:|---:|---:|',
+            cov('Backend', backendCoverage),
+            cov('Frontend', frontendCoverage),
+            '',
+            'Detailed artifacts are attached to this run (coverage HTML + raw test result JSON).',
+            ''
+          ].join('\n');
+
+          fs.appendFileSync(summaryPath, md);
+          NODE
+
+      - name: Upload backend coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-test-and-coverage
+          path: |
+            backend/coverage/lcov.info
+            backend/coverage/coverage-summary.json
+            backend/coverage/test-results.json
+            backend/coverage/lcov-report/**
+          if-no-files-found: warn
+
+      - name: Upload frontend coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-test-and-coverage
+          path: |
+            frontend/coverage/lcov.info
+            frontend/coverage/coverage-summary.json
+            frontend/coverage/test-results.json
+            frontend/coverage/clover.xml
+            frontend/coverage/coverage-final.json
+            frontend/coverage/lcov-report/**
+          if-no-files-found: warn

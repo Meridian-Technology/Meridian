@@ -8,23 +8,26 @@ const passport = require('passport');
 require('dotenv').config();
 const { createServer } = require('http');
 const enforce = require('express-sslify');
-const { connectToDatabase } = require('./connectionsManager');
+const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
+const getGlobalModels = require('./services/getGlobalModelService');
 
 const s3 = require('./aws-config');
 
 function createApp() {
   const app = express();
   const server = createServer(app);
+  let tenantConfigCache = null;
+  let tenantConfigLastFetchedAt = 0;
 
   const corsOrigin = process.env.NODE_ENV === 'production'
-    ? ['https://www.meridian.study', 'https://meridian.study']
+    ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
     : 'http://localhost:3000';
   initSocket(server, { origin: corsOrigin });
 
   const corsOptions = {
     origin: process.env.NODE_ENV === 'production'
-      ? ['https://www.meridian.study', 'https://meridian.study']
+      ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
       : 'http://localhost:3000',
     credentials: true,
     optionsSuccessStatus: 200
@@ -67,20 +70,137 @@ function createApp() {
         // console.log(`[${timestamp}] ${method}: ${path} | School: ${req.headers.host?.split('.')[0] || 'unknown'} | User-Agent: ${userAgent.substring(0, 50)}`);
         
         const host = req.headers.host || '';
-        // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' or IP -> 'rpi'
+        // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' -> default tenant
         let subdomain = host.split('.')[0];
         
-        // In development, if host is localhost or an IP address, default to 'rpi'
+        // In development, if host is localhost or an IP address, default to rpi so tenant features
+        // (rooms, events, etc.) work. Use ?school= or X-Tenant header to override. Production www
+        // uses www subdomain explicitly (e.g. www.meridian.study).
         if (host.includes('localhost') || /^\d+\.\d+\.\d+\.\d+/.test(subdomain) || !host.includes('.')) {
-            subdomain = 'rpi';
+            subdomain = process.env.NODE_ENV === 'production' ? 'www' : 'rpi';
+        }
+
+        // Development only: allow X-Tenant header or ?school= to override tenant (for local testing)
+        if (process.env.NODE_ENV !== 'production') {
+            const override = req.headers['x-tenant'] || req.query.school;
+            const validTenants = ['rpi', 'tvcog']; // keep in sync with connectionsManager
+            if (override && validTenants.includes(override.toLowerCase())) {
+                subdomain = override.toLowerCase();
+            }
         }
         
         req.db = await connectToDatabase(subdomain);
         req.school = subdomain;
+        req.globalDb = await connectToGlobalDatabase();
         next();
     } catch (error) {
         console.error('Error establishing database connection:', error);
         res.status(500).send('Database connection error');
+    }
+  });
+
+  // When on www, allow landing pages + APIs. Block tenant-only routes (auth, events, etc.).
+  // Page paths: SPA routes (/, /landing, etc.) and static assets
+  const wwwAllowedPathPrefixes = [
+    '/',
+    '/landing',
+    '/mobile',
+    '/contact',
+    '/support',
+    '/privacy-policy',
+    '/terms-of-service',
+    '/child-safety-standards',
+    '/booking',
+    '/documentation',
+    '/error',
+    '/select-school',
+    '/tenant-status',
+    '/static',
+    '/health',
+    '/validate-token',
+    '/log-visit',
+    '/log-repeated-visit',
+    '/v1/events',
+    '/api/event-system-config/analytics-config',
+    '/api/android-tester',
+    '/api/tenant-config',
+  ];
+  app.use((req, res, next) => {
+    if (req.school !== 'www') return next();
+    const rawPath = (req.path || req.url || '').split('?')[0];
+    const path = rawPath && rawPath.trim() !== '' ? rawPath : '/';
+    const allowed = wwwAllowedPathPrefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'));
+    if (allowed) return next();
+    const acceptHeader = (req.headers.accept || '').toLowerCase();
+    const secFetchDest = (req.headers['sec-fetch-dest'] || '').toLowerCase();
+    const secFetchMode = (req.headers['sec-fetch-mode'] || '').toLowerCase();
+    const isDocumentRequest = req.method === 'GET' && (
+      secFetchDest === 'document' ||
+      secFetchMode === 'navigate' ||
+      acceptHeader.includes('text/html')
+    );
+    if (isDocumentRequest) {
+      const nextPath = req.originalUrl || '/';
+      return res.redirect(302, `/select-school?next=${encodeURIComponent(nextPath)}`);
+    }
+    res.status(403).json({
+      success: false,
+      message: 'Use your school’s site (e.g. rpi.meridian.study) for this page.',
+      code: 'USE_TENANT_SUBDOMAIN'
+    });
+  });
+
+  async function getTenantStatus(tenantKey, globalReq) {
+    if (!tenantKey || tenantKey === 'www') return 'active';
+    const now = Date.now();
+    if (!tenantConfigCache || now - tenantConfigLastFetchedAt > 30000) {
+      const { TenantConfig } = getGlobalModels(globalReq, 'TenantConfig');
+      const doc = await TenantConfig.findOne({ configKey: 'default' }).lean();
+      tenantConfigCache = Array.isArray(doc?.tenants) ? doc.tenants : [];
+      tenantConfigLastFetchedAt = now;
+    }
+    const row = tenantConfigCache.find((item) => item.tenantKey === tenantKey);
+    return row?.status || 'active';
+  }
+
+  app.use(async (req, res, next) => {
+    try {
+      if (req.school === 'www') return next();
+      const status = await getTenantStatus(req.school, req);
+      if (status === 'active' || status === 'hidden') return next();
+
+      const path = (req.path || req.url || '').split('?')[0];
+      const allowStatusPage = path === '/tenant-status' || path.startsWith('/tenant-status/');
+      const allowSharedAssets =
+        path.startsWith('/static') ||
+        path.startsWith('/assets') ||
+        path.startsWith('/favicon') ||
+        path === '/manifest.json' ||
+        path === '/health' ||
+        path === '/api/tenant-config';
+      if (allowStatusPage || allowSharedAssets) return next();
+
+      const acceptHeader = (req.headers.accept || '').toLowerCase();
+      const secFetchDest = (req.headers['sec-fetch-dest'] || '').toLowerCase();
+      const secFetchMode = (req.headers['sec-fetch-mode'] || '').toLowerCase();
+      const isDocumentRequest = req.method === 'GET' && (
+        secFetchDest === 'document' ||
+        secFetchMode === 'navigate' ||
+        acceptHeader.includes('text/html')
+      );
+
+      if (isDocumentRequest) {
+        return res.redirect(302, '/tenant-status');
+      }
+      return res.status(503).json({
+        success: false,
+        message: `Tenant ${req.school} is currently unavailable.`,
+        code: 'TENANT_UNAVAILABLE',
+        data: { status, tenant: req.school },
+      });
+    } catch (error) {
+      console.error('Error enforcing tenant availability:', error);
+      return res.status(500).json({ success: false, message: 'Tenant status enforcement failed' });
     }
   });
 
@@ -158,6 +278,7 @@ function createApp() {
   app.use('/api/shuttle-config', shuttleConfigRoutes);
   app.use('/api/notice', noticeRoutes);
   app.use('/verify-affiliated-email', affiliatedEmailRoutes);
+  app.use('/proxy-image', require('./routes/proxyImageRoutes.js'));
 
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, '../frontend/build')));

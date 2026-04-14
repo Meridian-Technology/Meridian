@@ -32,6 +32,11 @@ const classroomSchema = new Schema({
     building:{
         type:String,
         required:false
+    },
+    booking_link: {
+        type: String,
+        required: false,
+        trim: true
     }
 });
 

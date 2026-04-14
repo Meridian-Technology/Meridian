@@ -70,6 +70,23 @@
             input[type="datetime-local"] {
                 min-width: 180px;
             }
+
+            .settings-coming-soon {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                color: var(--light-text);
+
+                input:disabled {
+                    cursor: not-allowed;
+                    opacity: 0.6;
+                }
+
+                span {
+                    font-size: 0.8rem;
+                    font-style: italic;
+                }
+            }
         }
     }
 

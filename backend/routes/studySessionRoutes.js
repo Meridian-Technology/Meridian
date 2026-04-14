@@ -1,5 +1,6 @@
 const express = require('express');
 const { verifyToken, verifyTokenOptional, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const getModels = require('../services/getModelService');
 const StudySessionService = require('../services/studySessionService');
 const { body, validationResult } = require('express-validator');
@@ -1388,7 +1389,7 @@ router.post('/:id/submit-feedback', [
 // Get feedback results for study session (admin only)
 router.get('/:id/feedback-results', [
     verifyToken,
-    authorizeRoles('admin', 'root')
+    requireAdmin
 ], withStudySessionService, async (req, res) => {
     try {
         const stats = await req.studySessionService.getFeedbackStats(req.params.id);
@@ -1415,7 +1416,7 @@ router.get('/:id/feedback-results', [
 // Get aggregate feedback analytics (admin only)
 router.get('/feedback-analytics', [
     verifyToken,
-    authorizeRoles('admin', 'root')
+    requireAdmin
 ], withStudySessionService, async (req, res) => {
     try {
         const stats = await req.studySessionService.feedbackService.getFeedbackStats('studySession');

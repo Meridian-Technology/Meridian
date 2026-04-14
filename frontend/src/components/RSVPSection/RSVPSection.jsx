@@ -210,6 +210,7 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
                             setShowRegistrationPromptOpen(false);
                             handleRegisterUpdate();
                         }}
+                        addAnotherOnly={anonymousRegistered && !isDeadlinePassed && !isAtCapacity}
                     />
                 </div>
             </div>
@@ -253,26 +254,42 @@ const RSVPSection = ({ event, compact, previewAsUnregistered = false }) => {
                             <span>Registered</span>
                         </div>
                         {!isDeadlinePassed && (
-                            <button
-                                className="rsvp-withdraw-button"
-                                onClick={!user && anonymousRegistered
-                                    ? () => setShowClaimPromptFromWithdraw(true)
-                                    : handleWithdraw
-                                }
-                                disabled={withdrawing}
-                            >
-                                {withdrawing ? (
-                                    <>
-                                        <Icon icon="mdi:loading" className="spinning" />
-                                        <span>Withdrawing...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Icon icon="mdi:close-circle" />
-                                        <span>Withdraw Registration</span>
-                                    </>
+                            <>
+                                {anonymousRegistered && (
+                                    <RSVPButton
+                                        event={event}
+                                        onRSVPUpdate={handleRegisterUpdate}
+                                        rsvpStatus={registration || {}}
+                                        onRSVPStatusUpdate={() => {}}
+                                        onRegistrationPromptOpen={() => setShowRegistrationPromptOpen(true)}
+                                        onRegistrationPromptClose={() => {
+                                            setShowRegistrationPromptOpen(false);
+                                            handleRegisterUpdate();
+                                        }}
+                                        addAnotherOnly
+                                    />
                                 )}
-                            </button>
+                                <button
+                                    className="rsvp-withdraw-button"
+                                    onClick={!user && anonymousRegistered
+                                        ? () => setShowClaimPromptFromWithdraw(true)
+                                        : handleWithdraw
+                                    }
+                                    disabled={withdrawing}
+                                >
+                                    {withdrawing ? (
+                                        <>
+                                            <Icon icon="mdi:loading" className="spinning" />
+                                            <span>Withdrawing...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Icon icon="mdi:close-circle" />
+                                            <span>Withdraw Registration</span>
+                                        </>
+                                    )}
+                                </button>
+                            </>
                         )}
                     </div>
                 </>

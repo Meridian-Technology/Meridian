@@ -9,7 +9,18 @@ require('dotenv').config();
 const router = express.Router();
 const { verifyToken } = require('../middlewares/verifyToken.js');
 const getModels = require('../services/getModelService.js');
-const { createSession, deleteSession } = require('../utilities/sessionUtils');
+const { deleteSession } = require('../utilities/sessionUtils');
+const { getCookieDomain } = require('../utilities/cookieUtils');
+const authGlobalService = require('../services/authGlobalService');
+const {
+    isAdminLevelAccount,
+    getMfaStatus,
+    buildTokenMfaClaims,
+    createPendingMfaToken,
+    getMfaPendingCookieOptions,
+} = require('../services/adminMfaService');
+
+const ADMIN_MFA_PENDING_COOKIE = 'adminMfaPending';
 
 // Token configuration
 const ACCESS_TOKEN_EXPIRY_MINUTES = 1;
@@ -48,9 +59,10 @@ async function getSAMLConfig(school, req) {
     }
 }
 
-async function createOrUpdateUserFromSAML(profile, school) {
+async function createOrUpdateUserFromSAML(profile, school, req) {
     try {
-        const { User } = getModels({ school }, 'User');
+        const modelsReq = req && req.db ? req : { db: await require('../connectionsManager').connectToDatabase(school) };
+        const { User } = getModels(modelsReq, 'User');
         
         //extract user info
         const email = profile['urn:oid:1.3.6.1.4.1.5923.1.1.1.6'] || profile.email || profile.mail;
@@ -75,7 +87,7 @@ async function createOrUpdateUserFromSAML(profile, school) {
         if (user) {
             //update existing user with SAML information
             user.samlId = uid;
-            user.samlProvider = 'rpi';
+            user.samlProvider = school;
             user.name = displayName || `${givenName} ${surname}`.trim();
             user.samlAttributes = profile;
             
@@ -96,12 +108,14 @@ async function createOrUpdateUserFromSAML(profile, school) {
                 username: username,
                 name: displayName || `${givenName} ${surname}`.trim(),
                 samlId: uid,
-                samlProvider: 'rpi',
+                samlProvider: school,
                 samlAttributes: profile,
                 roles: affiliation && affiliation.includes('faculty') ? ['user', 'admin'] : ['user']
             });
             
             await user.save();
+            const { runAutoClaimAsync } = require('../services/autoClaimEventRegistrationsService');
+            runAutoClaimAsync(modelsReq, user._id.toString(), user.email);
         }
 
         return user;
@@ -119,7 +133,7 @@ function configureSAMLStrategy(school, req) {
             
             const strategy = new SamlStrategy(config, async (profile, done) => {
                 try {
-                    const user = await createOrUpdateUserFromSAML(profile, school);
+                    const user = await createOrUpdateUserFromSAML(profile, school, req);
                     return done(null, user);
                 } catch (error) {
                     return done(error, null);
@@ -190,39 +204,29 @@ router.post('/callback', async (req, res) => {
             }
             
             try {
-                //generate tokens
-                const accessToken = jwt.sign(
-                    { userId: user._id, roles: user.roles }, 
-                    process.env.JWT_SECRET, 
-                    { expiresIn: ACCESS_TOKEN_EXPIRY }
-                );
-                
-                const refreshToken = jwt.sign(
-                    { userId: user._id, type: 'refresh' }, 
-                    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-                    { expiresIn: REFRESH_TOKEN_EXPIRY }
-                );
-
-                // Create session instead of storing refresh token directly on user
-                // req should already have db from middleware in app.js
-                await createSession(user._id, refreshToken, req);
-
-                //set cookies
-                res.cookie('accessToken', accessToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: ACCESS_TOKEN_EXPIRY_MS,
-                    path: '/'
-                });
-
-                res.cookie('refreshToken', refreshToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: REFRESH_TOKEN_EXPIRY_MS,
-                    path: '/'
-                });
+                const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
+                await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);
+                const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
+                const isAdmin = isAdminLevelAccount(user, platformRoles);
+                const mfaStatus = getMfaStatus(user);
+                let requiresMfa = false;
+                if (isAdmin && mfaStatus.configured) {
+                    const pendingToken = createPendingMfaToken({
+                        globalUserId: globalUser._id.toString(),
+                        tenantUserId: user._id.toString(),
+                        school,
+                        platformRoles,
+                    });
+                    res.cookie(ADMIN_MFA_PENDING_COOKIE, pendingToken, getMfaPendingCookieOptions(req));
+                    requiresMfa = true;
+                } else {
+                    const tokenMfaClaims = buildTokenMfaClaims({
+                        isAdminLevel: isAdmin,
+                        mfaConfigured: mfaStatus.configured,
+                        mfaVerified: !isAdmin,
+                    });
+                    await authGlobalService.issueTokens(req, res, globalUser, user, platformRoles, tokenMfaClaims);
+                }
 
                 // RelayState is echoed back by IdP in POST body (no server session)
                 const relayState = req.body?.RelayState || '/room/none';
@@ -234,6 +238,9 @@ router.post('/callback', async (req, res) => {
                     ? 'https://study-compass.com'
                     : 'http://localhost:3000';
                 
+                if (requiresMfa) {
+                    return res.redirect(`${frontendUrl}/login?mfa=required`);
+                }
                 res.redirect(`${frontendUrl}/auth/saml/callback?relayState=${encodeURIComponent(relayState)}`);
                 
             } catch (error) {
@@ -254,9 +261,13 @@ router.post('/logout', verifyToken, async (req, res) => {
         const school = req.school || 'rpi';
         const config = await getSAMLConfig(school);
         
-        //clear cookies
-        res.clearCookie('accessToken');
-        res.clearCookie('refreshToken');
+        // Clear cookies (must match domain used when setting)
+        const clearOpts = { path: '/', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' };
+        const domain = getCookieDomain(req);
+        if (domain) clearOpts.domain = domain;
+        res.clearCookie('accessToken', clearOpts);
+        res.clearCookie('refreshToken', clearOpts);
+        res.clearCookie(ADMIN_MFA_PENDING_COOKIE, clearOpts);
         
         // Delete the specific session instead of clearing user's refreshToken
         const refreshToken = req.cookies.refreshToken;

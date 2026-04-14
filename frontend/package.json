@@ -4,9 +4,11 @@
   "private": true,
   "dependencies": {
     "@babel/core": "^7.16.0",
+    "@iconify/react": "^6.0.2",
     "@nivo/funnel": "^0.99.0",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.5.3",
     "@react-oauth/google": "^0.12.1",
+    "@simplewebauthn/browser": "^13.3.0",
     "@squircle-js/react": "^1.2.17",
     "@svgr/webpack": "^5.5.0",
     "@testing-library/jest-dom": "^5.17.0",
@@ -39,10 +41,12 @@
     "framer-motion": "^11.18.2",
     "fs-extra": "^10.0.0",
     "html-webpack-plugin": "^5.5.0",
+    "html2canvas": "^1.4.1",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^27.4.3",
     "jest-resolve": "^27.4.2",
     "jest-watch-typeahead": "^1.0.0",
+    "jspdf": "^2.5.2",
     "luxon": "^3.5.0",
     "marked": "^17.0.2",
     "mini-css-extract-plugin": "^2.4.5",
@@ -89,8 +93,11 @@
   "scripts": {
     "start": "node scripts/start.js",
     "build": "node scripts/build.js",
-    "test": "node scripts/test.js"
+    "test": "node scripts/test.js",
+    "test:ci": "CI=true node scripts/test.js --watch=false --runInBand",
+    "test:coverage": "CI=true node scripts/test.js --watch=false --runInBand --coverage"
   },
+  "proxy": "http://localhost:5001/",
   "eslintConfig": {
     "extends": [
       "react-app",
@@ -109,7 +116,6 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:5001/",
   "jest": {
     "roots": [
       "<rootDir>/src"

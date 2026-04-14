@@ -11,6 +11,7 @@ classes1.json
 
 # testing
 /coverage
+/frontend/coverage/
 
 # production
 /build
@@ -50,4 +51,4 @@ scripts/
 dump/
 
 # Events backend cloned at build time (replaces git submodule)
-backend/events/
+backend/events

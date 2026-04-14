@@ -8,6 +8,7 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import WorkflowGraph from './WorkflowGraph';
 import RPI from "../../assets/Schools/RPI.svg";
 import useAuth from "../../hooks/useAuth";
+import { getLastTenant, getTenantKeys, getTenantRedirectUrl, isWww } from "../../config/tenantRedirect";
 
 function Landing() {
     const navigate = useNavigate();
@@ -27,15 +28,44 @@ function Landing() {
         setBannerDismissed(true);
     };
 
-    // Redirect logged-in users from / to events-dashboard; /landing stays accessible
+    // Redirect behavior from /:
+    // - tenant subdomain + logged in -> /events-dashboard
+    // - www + known lastTenant -> tenant domain (even when logged out)
+    // - www + logged in with no lastTenant -> picker
     useEffect(() => {
         if (isAuthenticating) {
             return;
         }
-        if (isAuthenticated && location.pathname === '/') {
-            navigate('/events-dashboard');
+        if (location.pathname !== '/') {
+            return;
         }
-    }, [isAuthenticating, isAuthenticated, location.pathname]);
+
+        if (!isWww()) {
+            if (isAuthenticated) {
+                navigate('/events-dashboard');
+            }
+            return;
+        }
+
+        const tenant = getLastTenant();
+        const validTenants = getTenantKeys({ includeHidden: true });
+        if (tenant && validTenants.includes(tenant)) {
+            const redirectPath = isAuthenticated ? '/events-dashboard' : '/';
+            const targetUrl = getTenantRedirectUrl(tenant, redirectPath, '');
+            const currentUrl = `${window.location.origin}${window.location.pathname}${window.location.search || ''}`;
+
+            // In local dev, tenant redirect URL can equal current URL (same origin), which
+            // would cause a hard-reload loop. Only redirect when target differs.
+            if (targetUrl !== currentUrl) {
+                window.location.href = targetUrl;
+                return;
+            }
+        }
+
+        if (isAuthenticated) {
+            navigate('/select-school?next=%2Fevents-dashboard', { replace: true });
+        }
+    }, [isAuthenticating, isAuthenticated, location.pathname, navigate]);
 
     useEffect(() => {
         window.addEventListener('resize', () => {
@@ -947,8 +977,8 @@ function Landing() {
                         </div>
                         <div className="footer__col">
                             <h6>Company</h6>
-                            <a href="/login">Sign in</a>
-                            <a href="/register">Create account</a>
+                            <a href="/select-school?next=%2Flogin">Sign in</a>
+                            <a href="/select-school?next=%2Fregister">Create account</a>
                         </div>
                         <div className="footer__col">
                             <h6>Legal</h6>

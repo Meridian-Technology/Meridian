@@ -38,13 +38,16 @@ const CreateEventV3 = () => {
     const { addNotification } = useNotification();
     const formConfigData = useFetch('/api/event-system-config/form-config');
     const eligibilityData = useFetch(user ? '/api/event-system-config/event-creation-eligibility' : null);
+    const allOrgsData = useFetch('/get-orgs?exhaustive=true');
     const formConfig = formConfigData.data?.data ?? formConfigData.data;
     const eligibility = eligibilityData.data?.data;
+    const allOrgs = allOrgsData.data?.orgs || [];
 
     const initialStateHost = location.state?.selectedOrg
         ? { id: location.state.selectedOrg._id, type: 'Org' }
         : null;
     const [selectedHost, setSelectedHost] = useState(initialStateHost);
+    const [selectedCollaboratorOrgIds, setSelectedCollaboratorOrgIds] = useState([]);
 
     useEffect(() => {
         if (!eligibility || !user) return;
@@ -107,6 +110,11 @@ const CreateEventV3 = () => {
             }));
         }
     }, [selectedHost]);
+
+    useEffect(() => {
+        // Never allow host org to also be selected as a collaborator.
+        setSelectedCollaboratorOrgIds(prev => prev.filter(orgId => orgId !== selectedHost?.id));
+    }, [selectedHost?.id]);
 
     useEffect(() => {
         if (user?.email) {
@@ -205,6 +213,7 @@ const CreateEventV3 = () => {
                 maxAttendees: formData.maxAttendees,
                 registrationFormId: formData.registrationFormId,
                 orgId: selectedHost?.type === 'Org' ? selectedHost.id : null,
+                collaboratorOrgIds: selectedCollaboratorOrgIds,
                 asDraft: asDraft ? 'true' : 'false'
             };
 
@@ -265,6 +274,14 @@ const CreateEventV3 = () => {
         setFormData(prev => ({ ...prev, [fieldName]: value }));
     };
 
+    const toggleCollaboratorOrg = (orgId) => {
+        setSelectedCollaboratorOrgIds((prev) => (
+            prev.includes(orgId)
+                ? prev.filter(id => id !== orgId)
+                : [...prev, orgId]
+        ));
+    };
+
     const rsvpFieldNames = ['rsvpEnabled', 'rsvpRequired', 'rsvpDeadline', 'maxAttendees'];
 
     const getFieldsForStep = (stepId) => {
@@ -282,6 +299,9 @@ const CreateEventV3 = () => {
     };
 
     const steps = getActiveSteps();
+    const collaborationCandidates = allOrgs
+        .filter(org => org?._id && org._id !== selectedHost?.id)
+        .sort((a, b) => (a.org_name || '').localeCompare(b.org_name || ''));
 
     if (formConfigData.loading && !formConfigData.data && !formConfigData.error) {
         return (
@@ -405,6 +425,42 @@ const CreateEventV3 = () => {
 
                         <div className="form-section approval-preview-section">
                             <ApprovalPreview formData={formData} hideUnlessRequired />
+                        </div>
+
+                        <div className="form-section collaboration-section">
+                            <div className="collaboration-header">
+                                <label className="section-label">Collaboration</label>
+                                <p className="collaboration-help">
+                                    Invite one or more organizations to co-host this event.
+                                </p>
+                            </div>
+                            {selectedHost?.type !== 'Org' ? (
+                                <p className="collaboration-empty">Select an organization host to enable collaboration invites.</p>
+                            ) : (
+                                <>
+                                    <div className="collaboration-warning" role="note">
+                                        <Icon icon="mdi:alert-circle-outline" />
+                                        <span>
+                                            Invited organizations that accept will have admins with event-management permissions who can edit and manage this event.
+                                        </span>
+                                    </div>
+                                    <div className="collaboration-org-list">
+                                        {collaborationCandidates.map((org) => {
+                                            const checked = selectedCollaboratorOrgIds.includes(org._id);
+                                            return (
+                                                <label key={org._id} className={`collaboration-org-item ${checked ? 'selected' : ''}`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() => toggleCollaboratorOrg(org._id)}
+                                                    />
+                                                    <span>{org.org_name}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {getFieldsForStep('additional')

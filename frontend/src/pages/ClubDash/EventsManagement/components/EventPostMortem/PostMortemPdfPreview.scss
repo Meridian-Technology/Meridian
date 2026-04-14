@@ -1,0 +1,107 @@
+.post-mortem-preview-page {
+    min-height: 100vh;
+    background: #f5f5f5;
+    padding: 1rem;
+}
+
+.post-mortem-preview__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+}
+
+.post-mortem-preview__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #fff;
+    border: 1px solid #e4e5e6;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: var(--text, #333);
+
+    &:hover {
+        background: #f8f8f8;
+    }
+}
+
+.post-mortem-preview__hint {
+    font-size: 0.85rem;
+    color: var(--light-text, #666);
+}
+
+.post-mortem-preview__content {
+    background: #fff;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    max-width: 210mm;
+    margin: 0 auto;
+    position: relative;
+}
+
+.post-mortem-preview__content::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc(297mm - 2px),
+        rgba(100, 171, 108, 0.35) calc(297mm - 2px),
+        rgba(100, 171, 108, 0.35) 297mm
+    );
+}
+
+.post-mortem-preview-loading,
+.post-mortem-preview-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 50vh;
+}
+
+.post-mortem-preview__loading,
+.post-mortem-preview__error {
+    text-align: center;
+
+    .spinner {
+        font-size: 2rem;
+        color: var(--org-primary, #64AB6C);
+        animation: spin 1s linear infinite;
+    }
+
+    p {
+        margin: 0.5rem 0;
+        color: var(--light-text);
+    }
+
+    button {
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+        background: var(--org-primary, #64AB6C);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+}
+
+.post-mortem-preview__error iconify-icon {
+    font-size: 2.5rem;
+    color: var(--light-text);
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

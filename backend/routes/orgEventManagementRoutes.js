@@ -4,6 +4,21 @@ const { verifyToken } = require('../middlewares/verifyToken');
 const getModels  = require('../services/getModelService');
 const { requireEventManagement, requireOrgPermission } = require('../middlewares/orgPermissions');
 const StudySessionService = require('../services/studySessionService');
+const { resolveAnonymousEmail, resolveAnonymousName } = require('../services/eventAnnouncementService');
+
+const buildOrgEventScope = (orgId) => ([
+    { hostingId: orgId },
+    { collaboratorOrgs: { $elemMatch: { orgId, status: 'active' } } }
+]);
+
+const buildScopedEventQuery = (orgId, eventId) => ({
+    _id: eventId,
+    hostingType: 'Org',
+    isDeleted: false,
+    $or: buildOrgEventScope(orgId)
+});
+
+const getHostOrgIdFromEvent = (event) => String(event?.hostingId?._id || event?.hostingId || '');
 
 // ==================== ORGANIZATION EVENT ANALYTICS ====================
 
@@ -36,10 +51,10 @@ router.get('/:orgId/analytics', verifyToken, requireEventManagement('orgId'), as
 
         // Build event filter
         const eventFilter = {
-            hostingId: orgId,
             hostingType: 'Org',
             isDeleted: false,
-            createdAt: { $gte: startDate }
+            createdAt: { $gte: startDate },
+            $or: buildOrgEventScope(orgId)
         };
 
         if (eventType !== 'all') {
@@ -161,7 +176,14 @@ router.get('/:orgId/analytics', verifyToken, requireEventManagement('orgId'), as
                     from: 'events',
                     let: { uid: '$user_id' },
                     pipeline: [
-                        { $match: { hostingId: orgId, hostingType: 'Org', isDeleted: false, $expr: { $in: ['$$uid', '$attendees.userId'] } } },
+                        {
+                            $match: {
+                                hostingType: 'Org',
+                                isDeleted: false,
+                                $or: buildOrgEventScope(orgId),
+                                $expr: { $in: ['$$uid', '$attendees.userId'] }
+                            }
+                        },
                         { $count: 'count' }
                     ],
                     as: 'attendedEvents'
@@ -247,10 +269,11 @@ router.get('/:orgId/events', verifyToken, requireEventManagement('orgId'), async
         const skip = (page - 1) * limit;
         
         // Build filter
+        const baseOrgScope = buildOrgEventScope(orgId);
         const filter = {
-            hostingId: orgId,
             hostingType: 'Org',
-            isDeleted: false
+            isDeleted: false,
+            $or: baseOrgScope
         };
 
         // Status filter
@@ -291,11 +314,16 @@ router.get('/:orgId/events', verifyToken, requireEventManagement('orgId'), async
 
         // Search filter
         if (search) {
-            filter.$or = [
+            const searchFilter = [
                 { name: { $regex: search, $options: 'i' } },
                 { description: { $regex: search, $options: 'i' } },
                 { location: { $regex: search, $options: 'i' } }
             ];
+            filter.$and = [
+                { $or: baseOrgScope },
+                { $or: searchFilter }
+            ];
+            delete filter.$or;
         }
 
         // Build sort
@@ -309,6 +337,28 @@ router.get('/:orgId/events', verifyToken, requireEventManagement('orgId'), async
             .limit(parseInt(limit))
             .populate('hostingId', 'org_name org_profile_image')
             .lean();
+
+        // Defensive: one document per _id (Mongo find should not duplicate; guards bad data / migration edge cases)
+        const eventsUnique = [];
+        const seenEventIds = new Set();
+        for (const ev of events) {
+            const id = ev?._id != null ? String(ev._id) : '';
+            if (!id || seenEventIds.has(id)) continue;
+            seenEventIds.add(id);
+            eventsUnique.push(ev);
+        }
+
+        const normalizedEvents = eventsUnique.map((event) => {
+            const hostOrgId = String(event.hostingId?._id || event.hostingId || '');
+            const isHost = hostOrgId === String(orgId);
+            const isCollaborating = !isHost && (event.collaboratorOrgs || []).some(
+                entry => String(entry.orgId) === String(orgId) && entry.status === 'active'
+            );
+            return {
+                ...event,
+                collaborationRole: isHost ? 'hosting' : (isCollaborating ? 'collaborating' : 'viewer')
+            };
+        });
 
         // Get total count for pagination
         const totalEvents = await Event.countDocuments(filter);
@@ -338,7 +388,7 @@ router.get('/:orgId/events', verifyToken, requireEventManagement('orgId'), async
         res.status(200).json({
             success: true,
             data: {
-                events,
+                events: normalizedEvents,
                 pagination: {
                     currentPage: parseInt(page),
                     totalPages: Math.ceil(totalEvents / limit),
@@ -364,6 +414,48 @@ router.get('/:orgId/events', verifyToken, requireEventManagement('orgId'), async
     }
 });
 
+// Get pending collaboration invites for organization event managers
+router.get('/:orgId/collaboration-invites/pending', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { EventCollaborationInvite } = getModels(req, 'EventCollaborationInvite');
+    const { orgId } = req.params;
+
+    try {
+        // One invite row per collaborating org per event; any org admin with manage_events may act on it.
+        const invites = await EventCollaborationInvite.find({
+            collaboratorOrgId: orgId,
+            status: 'pending'
+        })
+            .sort({ createdAt: -1 })
+            .populate({
+                path: 'eventId',
+                select:
+                    'name start_time end_time location image description visibility hostingType type expectedAttendance',
+                populate: {
+                    path: 'hostingId',
+                    select: 'org_name org_profile_image'
+                }
+            })
+            .populate('hostOrgId', 'org_name org_profile_image')
+            .populate('invitedByUserId', 'name')
+            .populate('acceptedByUserId', 'name picture')
+            .populate('declinedByUserId', 'name picture');
+
+        res.status(200).json({
+            success: true,
+            data: {
+                invites
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching collaboration invites:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching collaboration invites',
+            error: error.message
+        });
+    }
+});
+
 // Get single event with detailed analytics
 router.get('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { Event, EventAnalytics } = getModels(req, 'Event', 'EventAnalytics');
@@ -372,10 +464,12 @@ router.get('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
     try {
         const event = await Event.findOne({
             _id: eventId,
-            hostingId: orgId,
             hostingType: 'Org',
-            isDeleted: false
-        }).populate('hostingId', 'org_name org_profile_image');
+            isDeleted: false,
+            $or: buildOrgEventScope(orgId)
+        })
+            .populate('hostingId', 'org_name org_profile_image')
+            .populate('collaboratorOrgs.orgId', 'org_name org_profile_image');
 
         if (!event) {
             return res.status(404).json({
@@ -427,10 +521,12 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
     try {
         const event = await Event.findOne({
             _id: eventId,
-            hostingId: orgId,
             hostingType: 'Org',
-            isDeleted: false
-        }).populate('hostingId', 'org_name org_profile_image');
+            isDeleted: false,
+            $or: buildOrgEventScope(orgId)
+        })
+            .populate('hostingId', 'org_name org_profile_image')
+            .populate('collaboratorOrgs.orgId', 'org_name org_profile_image');
 
         if (!event) {
             return res.status(404).json({
@@ -540,6 +636,73 @@ router.get('/:orgId/events/:eventId/dashboard', verifyToken, requireEventManagem
     }
 });
 
+// Get feedback form responses for an event
+router.get('/:orgId/events/:eventId/feedback-responses', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, FormResponse } = getModels(req, 'Event', 'FormResponse');
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId)).select('feedbackFormId hostingId');
+
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const feedbackFormId = event.feedbackFormId;
+        if (!feedbackFormId) {
+            return res.status(200).json({
+                success: true,
+                data: { responses: [], aggregated: null, responseCount: 0 }
+            });
+        }
+
+        const responses = await FormResponse.find({
+            event: eventId,
+            form: feedbackFormId
+        })
+            .populate('submittedBy', 'name username email')
+            .sort({ submittedAt: -1 })
+            .lean();
+
+        const formSnapshot = responses[0]?.formSnapshot;
+        const questions = formSnapshot?.questions || [];
+
+        const aggregated = {};
+        questions.forEach((q, idx) => {
+            if (q.type === 'rating_scale' && q.options?.length) {
+                const counts = {};
+                q.options.forEach((opt) => { counts[opt] = 0; });
+                responses.forEach((r) => {
+                    const ans = r.answers?.[idx];
+                    if (ans != null && counts.hasOwnProperty(ans)) counts[ans]++;
+                });
+                aggregated[q._id?.toString() || idx] = {
+                    question: q.question,
+                    options: q.options,
+                    counts,
+                    total: responses.length
+                };
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                responses,
+                aggregated,
+                responseCount: responses.length
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching feedback responses:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching feedback responses',
+            error: error.message
+        });
+    }
+});
+
 // ==================== EVENT QR CODES ====================
 
 // List event QRs
@@ -548,17 +711,13 @@ router.get('/:orgId/events/:eventId/qr', verifyToken, requireEventManagement('or
     const { orgId, eventId } = req.params;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
+        const hostOrgId = getHostOrgIdFromEvent(event);
 
-        const qrCodes = await EventQR.find({ eventId, orgId })
+        const qrCodes = await EventQR.find({ eventId, orgId: hostOrgId })
             .select('-scanHistory')
             .sort({ createdAt: -1 })
             .lean();
@@ -582,20 +741,16 @@ router.post('/:orgId/events/:eventId/qr', verifyToken, requireEventManagement('o
             return res.status(400).json({ success: false, message: 'Name is required' });
         }
 
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
+        const hostOrgId = getHostOrgIdFromEvent(event);
 
         const shortId = nanoid(8);
         const qr = new EventQR({
             eventId,
-            orgId,
+            orgId: hostOrgId,
             name: name.trim(),
             shortId,
             fgColor,
@@ -620,17 +775,13 @@ router.put('/:orgId/events/:eventId/qr/:qrId', verifyToken, requireEventManageme
     const { name, fgColor, bgColor, transparentBg, dotType, cornerType } = req.body;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
+        const hostOrgId = getHostOrgIdFromEvent(event);
 
-        const qr = await EventQR.findOne({ _id: qrId, eventId, orgId });
+        const qr = await EventQR.findOne({ _id: qrId, eventId, orgId: hostOrgId });
         if (!qr) {
             return res.status(404).json({ success: false, message: 'QR code not found' });
         }
@@ -656,17 +807,13 @@ router.delete('/:orgId/events/:eventId/qr/:qrId', verifyToken, requireEventManag
     const { orgId, eventId, qrId } = req.params;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
+        const hostOrgId = getHostOrgIdFromEvent(event);
 
-        const qr = await EventQR.findOneAndDelete({ _id: qrId, eventId, orgId });
+        const qr = await EventQR.findOneAndDelete({ _id: qrId, eventId, orgId: hostOrgId });
         if (!qr) {
             return res.status(404).json({ success: false, message: 'QR code not found' });
         }
@@ -685,17 +832,13 @@ router.get('/:orgId/events/:eventId/qr/analytics', verifyToken, requireEventMana
     const { orgId, eventId } = req.params;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
+        const hostOrgId = getHostOrgIdFromEvent(event);
 
-        const qrCodes = await EventQR.find({ eventId, orgId }).sort({ createdAt: 1 }).lean();
+        const qrCodes = await EventQR.find({ eventId, orgId: hostOrgId }).sort({ createdAt: 1 }).lean();
         const qrIds = qrCodes.map(q => q._id.toString());
         const shortIds = qrCodes.map(q => q.shortId);
 
@@ -791,17 +934,13 @@ router.get('/:orgId/events/:eventId/qr/:qrId/analytics', verifyToken, requireEve
     const { timeRange = '30d' } = req.query;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
+        const hostOrgId = getHostOrgIdFromEvent(event);
 
-        const qr = await EventQR.findOne({ _id: qrId, eventId, orgId });
+        const qr = await EventQR.findOne({ _id: qrId, eventId, orgId: hostOrgId });
         if (!qr) {
             return res.status(404).json({ success: false, message: 'QR code not found' });
         }
@@ -984,12 +1123,7 @@ router.get('/:orgId/events/:eventId/registration-responses', verifyToken, requir
     const { orgId, eventId } = req.params;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        })
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId))
             .populate('attendees.userId', 'name username email');
 
         if (!event) {
@@ -999,13 +1133,15 @@ router.get('/:orgId/events/:eventId/registration-responses', verifyToken, requir
             });
         }
 
-        const registrations = (event.attendees || []).map(a => ({
-            userId: a.userId,
-            registeredAt: a.registeredAt,
-            guestCount: a.guestCount,
-            checkedIn: a.checkedIn,
-            checkedInAt: a.checkedInAt
-        }));
+        const registrations = (event.attendees || [])
+            .filter(a => !a.walkIn)
+            .map(a => ({
+                userId: a.userId,
+                registeredAt: a.registeredAt,
+                guestCount: a.guestCount,
+                checkedIn: a.checkedIn,
+                checkedInAt: a.checkedInAt
+            }));
 
         let formResponses = [];
         if (event.registrationFormId) {
@@ -1047,12 +1183,7 @@ router.delete('/:orgId/events/:eventId/registration-responses/:responseId', veri
     const { orgId, eventId, responseId } = req.params;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
@@ -1111,12 +1242,7 @@ router.delete('/:orgId/events/:eventId/registrations/:userId', verifyToken, requ
     const { orgId, eventId, userId } = req.params;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
         if (!event) {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
@@ -1293,12 +1419,7 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
     const updateData = req.body;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
 
         if (!event) {
             return res.status(404).json({
@@ -1335,13 +1456,15 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
 
         await event.save();
 
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
         // Ensure EventAgenda exists for this event (create if it doesn't exist)
         try {
-            let agenda = await EventAgenda.findOne({ eventId, orgId });
+            let agenda = await EventAgenda.findOne({ eventId, orgId: hostOrgId });
             if (!agenda) {
                 agenda = new EventAgenda({
                     eventId: event._id,
-                    orgId: orgId,
+                    orgId: hostOrgId,
                     items: [],
                     isPublished: false
                 });
@@ -1369,6 +1492,77 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
     }
 });
 
+// Get check-in registrations (logged-in + anonymous when allowAnonymousCheckIn)
+router.get('/:orgId/events/:eventId/check-in/registrations', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, FormResponse, User } = getModels(req, 'Event', 'FormResponse', 'User');
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId)).populate('attendees.userId', 'name email');
+
+        if (!event) {
+            return res.status(404).json({
+                success: false,
+                message: 'Event not found'
+            });
+        }
+
+        const registrations = [];
+
+        // Logged-in: from event.attendees (not checked in)
+        const notCheckedIn = (event.attendees || []).filter(a => a.userId && !a.checkedIn);
+        for (const a of notCheckedIn) {
+            registrations.push({
+                type: 'logged-in',
+                userId: a.userId?._id,
+                formResponseId: null,
+                displayName: a.userId?.name || 'User',
+                email: a.userId?.email || '',
+                guestName: null,
+                guestEmail: null
+            });
+        }
+
+        // Anonymous: from FormResponse where submittedBy null, not in attendees
+        if (event.checkInSettings?.allowAnonymousCheckIn && event.registrationFormId) {
+            const inAttendeesFormIds = (event.attendees || [])
+                .filter(a => a.formResponseId)
+                .map(a => a.formResponseId);
+            const anonymousQuery = { event: eventId, submittedBy: null };
+            if (inAttendeesFormIds.length > 0) {
+                anonymousQuery._id = { $nin: inAttendeesFormIds };
+            }
+            const anonymousResponses = await FormResponse.find(anonymousQuery).lean();
+
+            for (const fr of anonymousResponses) {
+                const guestName = resolveAnonymousName(fr, event) || (fr.guestName && String(fr.guestName).trim()) || 'Guest';
+                const guestEmail = resolveAnonymousEmail(fr, event) || fr.guestEmail || '';
+                registrations.push({
+                    type: 'anonymous',
+                    userId: null,
+                    formResponseId: fr._id,
+                    displayName: guestName,
+                    email: guestEmail,
+                    guestName,
+                    guestEmail
+                });
+            }
+        }
+
+        res.status(200).json({
+            success: true,
+            data: { registrations }
+        });
+    } catch (error) {
+        console.error('Error fetching check-in registrations:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching check-in registrations',
+            error: error.message
+        });
+    }
+});
+
 // Update event status
 router.put('/:orgId/events/:eventId/status', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { Event } = getModels(req, 'Event');
@@ -1391,12 +1585,7 @@ router.put('/:orgId/events/:eventId/status', verifyToken, requireEventManagement
             });
         }
 
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
 
         if (!event) {
             return res.status(404).json({
@@ -1429,17 +1618,22 @@ router.put('/:orgId/events/:eventId/status', verifyToken, requireEventManagement
 
 // Get event agenda
 router.get('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventAgenda } = getModels(req, 'EventAgenda');
+    const { EventAgenda, Event } = getModels(req, 'EventAgenda', 'Event');
     const { orgId, eventId } = req.params;
 
     try {
-        let agenda = await EventAgenda.findOne({ eventId, orgId });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+        let agenda = await EventAgenda.findOne({ eventId, orgId: hostOrgId });
 
         if (!agenda) {
             // Create default agenda if it doesn't exist
             agenda = new EventAgenda({
                 eventId,
-                orgId,
+                orgId: hostOrgId,
                 items: []
             });
             await agenda.save();
@@ -1463,11 +1657,17 @@ router.get('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagement
 
 // Create/update event agenda
 router.post('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventAgenda } = getModels(req, 'EventAgenda');
+    const { EventAgenda, Event } = getModels(req, 'EventAgenda', 'Event');
     const { orgId, eventId } = req.params;
     const { items, publicNotes, internalNotes } = req.body;
 
     try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
         if (items && Array.isArray(items)) {
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];
@@ -1527,7 +1727,7 @@ router.post('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagemen
             };
         });
 
-        let agenda = await EventAgenda.findOne({ eventId, orgId });
+        let agenda = await EventAgenda.findOne({ eventId, orgId: hostOrgId });
 
         if (agenda) {
             if (items) {
@@ -1540,7 +1740,7 @@ router.post('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagemen
         } else {
             agenda = new EventAgenda({
                 eventId,
-                orgId,
+                orgId: hostOrgId,
                 items: sanitizedItems,
                 publicNotes,
                 internalNotes,
@@ -1568,12 +1768,17 @@ router.post('/:orgId/events/:eventId/agenda', verifyToken, requireEventManagemen
 
 // Update agenda item
 router.put('/:orgId/events/:eventId/agenda/items/:itemId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventAgenda } = getModels(req, 'EventAgenda');
+    const { EventAgenda, Event } = getModels(req, 'EventAgenda', 'Event');
     const { orgId, eventId, itemId } = req.params;
     const updateData = req.body;
 
     try {
-        const agenda = await EventAgenda.findOne({ eventId, orgId });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+        const agenda = await EventAgenda.findOne({ eventId, orgId: hostOrgId });
 
         if (!agenda) {
             return res.status(404).json({
@@ -1625,12 +1830,7 @@ router.post('/:orgId/events/:eventId/check-room-availability', verifyToken, requ
     const { startTime, endTime } = req.body;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
 
         if (!event) {
             return res.status(404).json({
@@ -1678,7 +1878,12 @@ router.post('/:orgId/events/:eventId/agenda/publish', verifyToken, requireEventM
     const { newEndTime } = req.body;
 
     try {
-        const agenda = await EventAgenda.findOne({ eventId, orgId });
+        const eventForScope = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!eventForScope) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(eventForScope);
+        const agenda = await EventAgenda.findOne({ eventId, orgId: hostOrgId });
 
         if (!agenda) {
             return res.status(404).json({
@@ -1750,11 +1955,16 @@ router.post('/:orgId/events/:eventId/agenda/publish', verifyToken, requireEventM
 
 // Delete agenda item
 router.delete('/:orgId/events/:eventId/agenda/items/:itemId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventAgenda } = getModels(req, 'EventAgenda');
+    const { EventAgenda, Event } = getModels(req, 'EventAgenda', 'Event');
     const { orgId, eventId, itemId } = req.params;
 
     try {
-        const agenda = await EventAgenda.findOne({ eventId, orgId });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+        const agenda = await EventAgenda.findOne({ eventId, orgId: hostOrgId });
 
         if (!agenda) {
             return res.status(404).json({
@@ -1910,11 +2120,17 @@ router.delete('/:orgId/event-roles/:roleId', verifyToken, requireEventManagement
 
 // Get event roles
 router.get('/:orgId/events/:eventId/roles', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventJob } = getModels(req, 'EventJob');
+    const { EventJob, Event } = getModels(req, 'EventJob', 'Event');
     const { orgId, eventId } = req.params;
 
     try {
-        const roles = await EventJob.find({ eventId, orgId })
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
+        const roles = await EventJob.find({ eventId, orgId: hostOrgId })
             .populate('assignments.memberId', 'name email')
             .populate('orgRoleId', 'name description');
 
@@ -1936,11 +2152,17 @@ router.get('/:orgId/events/:eventId/roles', verifyToken, requireEventManagement(
 
 // Create event role
 router.post('/:orgId/events/:eventId/roles', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventJob, OrgEventRole } = getModels(req, 'EventJob', 'OrgEventRole');
+    const { EventJob, OrgEventRole, Event } = getModels(req, 'EventJob', 'OrgEventRole', 'Event');
     const { orgId, eventId } = req.params;
     const { orgRoleId, name, description, requiredCount, shiftStart, shiftEnd, agendaItemIds } = req.body;
 
     try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
         let roleName = name;
         let roleDescription = description;
 
@@ -1958,7 +2180,7 @@ router.post('/:orgId/events/:eventId/roles', verifyToken, requireEventManagement
 
         const role = new EventJob({
             eventId,
-            orgId,
+            orgId: hostOrgId,
             orgRoleId: orgRoleId || null,
             name: roleName,
             description: roleDescription,
@@ -1990,15 +2212,21 @@ router.post('/:orgId/events/:eventId/roles', verifyToken, requireEventManagement
 
 // Update event role
 router.put('/:orgId/events/:eventId/roles/:roleId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventJob, OrgEventRole } = getModels(req, 'EventJob', 'OrgEventRole');
+    const { EventJob, OrgEventRole, Event } = getModels(req, 'EventJob', 'OrgEventRole', 'Event');
     const { orgId, eventId, roleId } = req.params;
     const updateData = req.body;
 
     try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
         const role = await EventJob.findOne({
             _id: roleId,
             eventId,
-            orgId
+            orgId: hostOrgId
         });
 
         if (!role) {
@@ -2052,14 +2280,20 @@ router.put('/:orgId/events/:eventId/roles/:roleId', verifyToken, requireEventMan
 
 // Delete event role
 router.delete('/:orgId/events/:eventId/roles/:roleId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventJob } = getModels(req, 'EventJob');
+    const { EventJob, Event } = getModels(req, 'EventJob', 'Event');
     const { orgId, eventId, roleId } = req.params;
 
     try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
         const role = await EventJob.findOne({
             _id: roleId,
             eventId,
-            orgId
+            orgId: hostOrgId
         });
 
         if (!role) {
@@ -2089,11 +2323,17 @@ router.delete('/:orgId/events/:eventId/roles/:roleId', verifyToken, requireEvent
 
 // Get assignments for event
 router.get('/:orgId/events/:eventId/assignments', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventJob } = getModels(req, 'EventJob');
+    const { EventJob, Event } = getModels(req, 'EventJob', 'Event');
     const { orgId, eventId } = req.params;
 
     try {
-        const roles = await EventJob.find({ eventId, orgId })
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
+        const roles = await EventJob.find({ eventId, orgId: hostOrgId })
             .populate('assignments.memberId', 'name email');
 
         // Flatten all assignments
@@ -2126,15 +2366,21 @@ router.get('/:orgId/events/:eventId/assignments', verifyToken, requireEventManag
 
 // Create assignment
 router.post('/:orgId/events/:eventId/assignments', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventJob } = getModels(req, 'EventJob');
+    const { EventJob, Event } = getModels(req, 'EventJob', 'Event');
     const { orgId, eventId } = req.params;
     const { roleId, memberId, status, notes } = req.body;
 
     try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
         const role = await EventJob.findOne({
             _id: roleId,
             eventId,
-            orgId
+            orgId: hostOrgId
         });
 
         if (!role) {
@@ -2182,14 +2428,20 @@ router.post('/:orgId/events/:eventId/assignments', verifyToken, requireEventMana
 
 // Update assignment
 router.put('/:orgId/events/:eventId/assignments/:assignmentId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventJob } = getModels(req, 'EventJob');
+    const { EventJob, Event } = getModels(req, 'EventJob', 'Event');
     const { orgId, eventId, assignmentId } = req.params;
     const { status, notes } = req.body;
 
     try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
         const role = await EventJob.findOne({
             eventId,
-            orgId,
+            orgId: hostOrgId,
             'assignments._id': assignmentId
         });
 
@@ -2226,13 +2478,19 @@ router.put('/:orgId/events/:eventId/assignments/:assignmentId', verifyToken, req
 
 // Delete assignment
 router.delete('/:orgId/events/:eventId/assignments/:assignmentId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventJob } = getModels(req, 'EventJob');
+    const { EventJob, Event } = getModels(req, 'EventJob', 'Event');
     const { orgId, eventId, assignmentId } = req.params;
 
     try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+        const hostOrgId = getHostOrgIdFromEvent(event);
+
         const role = await EventJob.findOne({
             eventId,
-            orgId,
+            orgId: hostOrgId,
             'assignments._id': assignmentId
         });
 
@@ -2766,12 +3024,7 @@ router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManag
     console.log('[rsvp-growth] request', { eventId, orgId, school: req.school, host: req.headers?.host, timezone: req.query?.timezone });
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
 
         if (!event) {
             console.log('[rsvp-growth] event not found');
@@ -2890,10 +3143,15 @@ router.get('/:orgId/events/:eventId/rsvp-growth', verifyToken, requireEventManag
 
 // Get detailed event analytics
 router.get('/:orgId/events/:eventId/analytics', verifyToken, requireEventManagement('orgId'), async (req, res) => {
-    const { EventAnalytics, EventJob, VolunteerSignup } = getModels(req, 'EventAnalytics', 'EventJob', 'VolunteerSignup');
+    const { Event, EventAnalytics, EventJob, VolunteerSignup } = getModels(req, 'Event', 'EventAnalytics', 'EventJob', 'VolunteerSignup');
     const { orgId, eventId } = req.params;
 
     try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
         const analytics = await EventAnalytics.findOne({ eventId });
 
         // Get volunteer stats
@@ -2947,12 +3205,7 @@ router.post('/:orgId/events/:eventId/export', verifyToken, requireEventManagemen
     const { format = 'json' } = req.body;
 
     try {
-        const event = await Event.findOne({
-            _id: eventId,
-            hostingId: orgId,
-            hostingType: 'Org',
-            isDeleted: false
-        });
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
 
         if (!event) {
             return res.status(404).json({

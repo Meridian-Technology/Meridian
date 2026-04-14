@@ -64,7 +64,7 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
             type,
             question: '',
             required: false,
-            ...(type === 'multiple_choice' || type === 'select_multiple' ? { options: [''] } : {})
+            ...(type === 'multiple_choice' || type === 'select_multiple' || type === 'rating_scale' ? { options: [''] } : {})
         };
 
         setForm(prev => ({
@@ -206,6 +206,17 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
                     ))}
                 </div>
             );
+          case 'rating_scale':
+            return (
+              <div className="options-list rating-scale">
+                {question.options?.map((option, index) => (
+                  <label key={index} className="option-label">
+                    <input type="radio" name={question._id} value={null} checked={false} disabled={true} />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            );
           default:
             return null;
         }
@@ -241,7 +252,7 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
                     rows={2}
                 />
 
-                {(question.type === 'multiple_choice' || question.type === 'select_multiple') && (
+                {(question.type === 'multiple_choice' || question.type === 'select_multiple' || question.type === 'rating_scale') && (
                     <div className="options-editor">
                         {question.options.map((option, index) => (
                             <div key={index} className="option-row">
@@ -303,6 +314,7 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
                                         {question.type === 'long' && 'Long Answer'}
                                         {question.type === 'multiple_choice' && 'Multiple Choice'}
                                         {question.type === 'select_multiple' && 'Select Multiple'}
+                                        {question.type === 'rating_scale' && 'Rating Scale'}
                                     </span>
                                     <div className="question-actions">
                                         {/* required  toggle switch */}
@@ -332,6 +344,7 @@ const FormBuilder = ({ initialForm = { title: '', description: '', questions: []
                     <button onClick={() => addQuestion('long')}><Icon icon="cuida:long-text-outline" /> Add Long Answer</button>
                     <button onClick={() => addQuestion('multiple_choice')}><Icon icon="cuida:check-circle-outline" /> Add Multiple Choice</button>
                     <button onClick={() => addQuestion('select_multiple')}><Icon icon="cuida:checkbox-checked-outlined" /> Add Select Multiple</button>
+                    <button onClick={() => addQuestion('rating_scale')}><Icon icon="mdi:star-outline" /> Add Rating Scale</button>
                 </div>
 
                 <button className="save-button" onClick={handleSave}>Save Form</button>

@@ -15,6 +15,20 @@ import MemberApplicationsViewer from './MemberApplicationsViewer/MemberApplicati
 import TabbedContainer, { CommonTabConfigs } from '../../../components/TabbedContainer';
 import ComingSoon from '../EventsManagement/components/EventDashboard/ComingSoon';
 
+/** Prefer display name; fall back to username when name is unset or empty. */
+function getMemberDisplayName(user) {
+    if (!user) return 'Unknown User';
+    const name = typeof user.name === 'string' ? user.name.trim() : '';
+    if (name) return name;
+    const username = typeof user.username === 'string' ? user.username.trim() : '';
+    if (username) return username;
+    return user.email || 'Unknown User';
+}
+
+function getMemberInitial(user) {
+    return getMemberDisplayName(user).charAt(0).toUpperCase() || 'U';
+}
+
 function Members({ expandedClass, org, adminBypass = false }) {
     const { user } = useAuth();
     const { addNotification } = useNotification();
@@ -348,15 +362,15 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                 <div key={member._id} className="member-card">
                                     <div className="member-avatar">
                                         {member.user_id?.picture ? (
-                                            <img src={member.user_id.picture} alt={member.user_id.name} />
+                                            <img src={member.user_id.picture} alt={getMemberDisplayName(member.user_id)} />
                                         ) : (
                                             <div className="avatar-placeholder">
-                                                {member.user_id?.name?.charAt(0) || 'U'}
+                                                {getMemberInitial(member.user_id)}
                                             </div>
                                         )}
                                     </div>
                                     <div className="member-details">
-                                        <h4>{member.user_id?.name || 'Unknown User'}</h4>
+                                        <h4>{getMemberDisplayName(member.user_id)}</h4>
                                         <p className="email">{member.user_id?.email || 'No email'}</p>
                                     </div>
                                     <div className="member-meta">
@@ -365,7 +379,7 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                         </span>
                                         {member.assignedBy && (
                                             <span className="assigned-by">
-                                                Assigned by {member.assignedBy?.name || 'Unknown'}
+                                                Assigned by {getMemberDisplayName(member.assignedBy)}
                                             </span>
                                         )}
                                     </div>
@@ -511,7 +525,7 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                         {getRoleDisplayName(inv.role)}
                                     </span>
                                     <span className="invite-inviter">
-                                        {inv.invited_by?.name || inv.invited_by?.username || '—'}
+                                        {inv.invited_by ? getMemberDisplayName(inv.invited_by) : '—'}
                                     </span>
                                     <span className="invite-expires">
                                         {new Date(inv.expires_at).toLocaleDateString()}
@@ -581,16 +595,20 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                 <div className="member-summary-header">
                                     <div className="member-avatar-summary">
                                         {selectedMember.user_id?.picture ? (
-                                            <img src={selectedMember.user_id.picture} alt={selectedMember.user_id.name} />
+                                            <img src={selectedMember.user_id.picture} alt={getMemberDisplayName(selectedMember.user_id)} />
                                         ) : (
                                             <div className="avatar-placeholder">
-                                                {selectedMember.user_id?.name?.charAt(0) || 'U'}
+                                                {getMemberInitial(selectedMember.user_id)}
                                             </div>
                                         )}
                                     </div>
                                     <div className="member-summary-info">
-                                        <h4>{selectedMember.user_id?.name || 'Unknown User'}</h4>
-                                        <p className="member-username">@{selectedMember.user_id?.username}</p>
+                                        <h4>{getMemberDisplayName(selectedMember.user_id)}</h4>
+                                        {selectedMember.user_id?.username &&
+                                            getMemberDisplayName(selectedMember.user_id) !==
+                                                String(selectedMember.user_id.username).trim() && (
+                                                <p className="member-username">@{String(selectedMember.user_id.username).trim()}</p>
+                                            )}
                                     </div>
                                 </div>
                                 <div className="current-role-display">

@@ -5,6 +5,7 @@ const ratingSchema = require('../schemas/rating.js');
 const userSchema = require('../schemas/user.js');
 const reportSchema = require('../schemas/report.js');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
+const { requireAdmin } = require('../middlewares/requireAdmin');
 const { sortByAvailability } = require('../helpers.js');
 const multer = require('multer');
 const path = require('path');
@@ -127,7 +128,7 @@ router.post('/upload-image/:classroomName', upload.single('image'), async (req, 
   }
 });
 
-router.post('/main-search-change', verifyToken, authorizeRoles('admin'), async (req, res) => {
+router.post('/main-search-change', verifyToken, requireAdmin, async (req, res) => {
     const userId = req.user.userId;
     const classroomId = req.body.classroomId;
     try{
