@@ -1,0 +1,122 @@
+@keyframes eventTasksListCardMovedFlash {
+    0% {
+        background: rgba(77, 170, 87, 0.22);
+        border-color: rgba(77, 170, 87, 0.55);
+    }
+
+    100% {
+        background: var(--background);
+        border-color: var(--task-border);
+    }
+}
+
+.event-tasks-task-list-card {
+    border: 1px solid var(--task-border);
+    background: var(--background);
+    border-radius: 12px;
+    padding: 0.62rem 0.74rem;
+    box-shadow: 0 1px 2px rgba(15, 18, 22, 0.035);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+
+    &:hover {
+        border-color: rgba(77, 170, 87, 0.22);
+        box-shadow: 0 1px 3px rgba(77, 170, 87, 0.06);
+    }
+
+    &__main--clickable {
+        cursor: pointer;
+        border-radius: 8px;
+        margin: -0.2rem;
+        padding: 0.2rem;
+        transition: background 0.12s ease;
+
+        &:hover {
+            background: rgba(77, 170, 87, 0.06);
+        }
+
+        &:focus-visible {
+            outline: 2px solid rgba(77, 170, 87, 0.45);
+            outline-offset: 2px;
+        }
+    }
+
+    &__meta {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.2rem 0.35rem;
+        margin-top: 0.42rem;
+        padding-top: 0.42rem;
+        border-top: 1px solid var(--task-border);
+        font-size: 0.7rem;
+        line-height: 1.35;
+        color: var(--task-muted);
+
+        .event-tasks-task-list-card__meta-text {
+            display: inline-flex;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+            color: inherit;
+            font-size: inherit;
+        }
+
+        > * + *::before {
+            content: '·';
+            margin-right: 0.42rem;
+            color: var(--task-muted);
+            opacity: 0.45;
+            font-weight: 700;
+            user-select: none;
+        }
+    }
+
+    header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.35rem;
+
+        h5 {
+            margin: 0;
+            font-size: 0.9rem;
+            font-weight: 600;
+            letter-spacing: -0.005em;
+        }
+    }
+
+    .event-tasks-task-card__description {
+        font-size: 0.8rem;
+        line-height: 1.35;
+    }
+
+    footer {
+        margin-top: 0.55rem;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+
+    cursor: grab;
+
+    &:active {
+        cursor: grabbing;
+    }
+
+    &.event-tasks-task-list-card--dragging {
+        opacity: 0.45;
+    }
+
+    &.event-tasks-task-list-card--moved {
+        animation: eventTasksListCardMovedFlash 650ms ease;
+    }
+}
+
+@media (max-width: 760px) {
+    .event-tasks-task-list-card footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

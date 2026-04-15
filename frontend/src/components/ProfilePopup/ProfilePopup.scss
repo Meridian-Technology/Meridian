@@ -175,6 +175,19 @@
             font-weight: 600;
             color: var(--text);
             font-size: 13.5px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+            line-height: 1.25;
+        }
+
+        .menu-item-sub {
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--lighter-text);
+            text-transform: none;
+            letter-spacing: 0.01em;
         }
 
         &:hover {

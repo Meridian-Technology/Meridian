@@ -18,23 +18,77 @@ import {
     AnalyticsTab
 } from './tabs';
 
-function ManageFlow(){
+function ManageFlow() {
     const navigate = useNavigate();
     const approvalGroupsData = useFetch('/approval-groups');
     const approvalFlowData = useFetch('/api/event-system-config/get-approval-flow');
     const domainsData = useFetch('/api/domains');
     const [popupOpen, setPopupOpen] = useState(false);
     const [popupType, setPopupType] = useState('stakeholder'); // 'stakeholder', 'domain'
+    const [popupContext, setPopupContext] = useState({
+        editingDomainId: null,
+        editingStakeholderRoleId: null,
+        stakeholderDefaultDomainId: null
+    });
     const [activeTab, setActiveTab] = useState('overview');
     const [selectedDomain, setSelectedDomain] = useState(null);
     const [stakeholderRoles, setStakeholderRoles] = useState([]);
     const [loadingStakeholders, setLoadingStakeholders] = useState(false);
     const { addNotification } = useNotification();
-    const {BeaconMain} = useGradient();
-    const openPopup = (type = 'stakeholder') => {
-        setPopupType(type);
+    const { AdminGrad } = useGradient();
+
+    const resetPopupContext = () => {
+        setPopupContext({
+            editingDomainId: null,
+            editingStakeholderRoleId: null,
+            stakeholderDefaultDomainId: null
+        });
+    };
+
+    const closeWorkflowPopup = () => {
+        setPopupOpen(false);
+        resetPopupContext();
+    };
+
+    const openCreateStakeholder = (domainIdPrefill = null) => {
+        setPopupType('stakeholder');
+        setPopupContext({
+            editingDomainId: null,
+            editingStakeholderRoleId: null,
+            stakeholderDefaultDomainId: domainIdPrefill || null
+        });
         setPopupOpen(true);
-    }
+    };
+
+    const openEditStakeholder = (roleId, domainIdPrefill = null) => {
+        setPopupType('stakeholder');
+        setPopupContext({
+            editingDomainId: null,
+            editingStakeholderRoleId: roleId,
+            stakeholderDefaultDomainId: domainIdPrefill || null
+        });
+        setPopupOpen(true);
+    };
+
+    const openCreateDomain = () => {
+        setPopupType('domain');
+        setPopupContext({
+            editingDomainId: null,
+            editingStakeholderRoleId: null,
+            stakeholderDefaultDomainId: null
+        });
+        setPopupOpen(true);
+    };
+
+    const openEditDomain = (domainId) => {
+        setPopupType('domain');
+        setPopupContext({
+            editingDomainId: domainId,
+            editingStakeholderRoleId: null,
+            stakeholderDefaultDomainId: null
+        });
+        setPopupOpen(true);
+    };
 
     const handleGroupDelete = async (groupId) => {
         if (!window.confirm('Are you sure you want to delete this approval group? This action cannot be undone.')) {
@@ -146,18 +200,30 @@ function ManageFlow(){
 
     return (
         <div className="dash manage-flow">
-            <Popup onClose={()=>setPopupOpen(false)} isOpen={popupOpen} defaultStyling={false}>
+            <Popup
+                onClose={closeWorkflowPopup}
+                isOpen={popupOpen}
+                defaultStyling={false}
+                customClassName={popupType === 'domain' ? 'wider-content' : ''}
+                hideCloseButton={popupType === 'domain'}
+            >
                 {popupType === 'stakeholder' ? (
                     <NewStakeholderRole 
-                        handleClose={() => setPopupOpen(false)} 
+                        handleClose={closeWorkflowPopup}
+                        editingRoleId={popupContext.editingStakeholderRoleId}
+                        defaultDomainId={popupContext.stakeholderDefaultDomainId}
                         refetch={() => {
                             approvalFlowData.refetch();
                             domainsData.refetch();
+                            if (selectedDomain) {
+                                handleDomainSelect(selectedDomain);
+                            }
                         }}
                     />
                 ) : popupType === 'domain' ? (
                     <NewDomain 
-                        handleClose={() => setPopupOpen(false)} 
+                        handleClose={closeWorkflowPopup}
+                        editingDomainId={popupContext.editingDomainId}
                         refetch={() => {
                             approvalFlowData.refetch();
                             domainsData.refetch();
@@ -167,18 +233,17 @@ function ManageFlow(){
             </Popup>
             
             <header className="header">
-                <img src={BeaconMain} alt="" />
+                <img src={AdminGrad} alt="" />
                 <h1>Event Workflow Management</h1>
                 <p>Manage approval workflows, stakeholder configurations, and event processing rules</p>
-
             </header>
             <div className="actions row">
-                    <button className="create-btn" onClick={() => openPopup('stakeholder')}>
-                        <Icon icon="fluent:person-add-24-filled"/>
+                    <button className="create-btn" onClick={() => openCreateStakeholder()}>
+                        <Icon icon="fluent:person-add-24-filled" />
                         Create Stakeholder Role
                     </button>
-                    <button className="create-btn" onClick={() => openPopup('domain')}>
-                        <Icon icon="ic:round-add-home"/>
+                    <button className="create-btn" onClick={() => openCreateDomain()}>
+                        <Icon icon="ic:round-add-home" />
                         Create Domain
                     </button>
                 </div>
@@ -198,7 +263,7 @@ function ManageFlow(){
                         <Icon icon="mdi:domain" />
                         Domains
                     </button>
-                    <button 
+                    <button
                         className={`tab ${activeTab === 'stakeholders' ? 'active' : ''}`}
                         onClick={() => setActiveTab('stakeholders')}
                     >
@@ -225,7 +290,10 @@ function ManageFlow(){
                     {activeTab === 'domains' && (
                         <DomainsTab 
                             domainsData={domainsData}
-                            openPopup={openPopup}
+                            openCreateDomain={openCreateDomain}
+                            openEditDomain={openEditDomain}
+                            openCreateStakeholder={openCreateStakeholder}
+                            openEditStakeholder={openEditStakeholder}
                             selectedDomain={selectedDomain}
                             setSelectedDomain={setSelectedDomain}
                             handleDomainSelect={handleDomainSelect}
@@ -244,7 +312,9 @@ function ManageFlow(){
                     {activeTab === 'stakeholders' && (
                         <StakeholdersTab 
                             domainsData={domainsData}
-                            openPopup={openPopup}
+                            openCreateDomain={openCreateDomain}
+                            openCreateStakeholder={openCreateStakeholder}
+                            openEditStakeholder={openEditStakeholder}
                         />
                     )}
 

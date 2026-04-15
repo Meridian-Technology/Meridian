@@ -224,6 +224,82 @@
     }
 }
 
+// Assign-user popup (content is portaled under .popup-overlay, not inside .domain-stakeholders)
+.assign-user-modal {
+    padding: 22px 24px 26px;
+    box-sizing: border-box;
+    min-width: min(100%, 380px);
+    max-width: 100%;
+    background: var(--background);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+
+    .assign-user-modal__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+
+        h3 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text);
+            font-family: 'Satoshi', 'Inter', sans-serif;
+        }
+    }
+
+    .assign-user-modal__close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 10px;
+        background: var(--lighter);
+        color: var(--lighter-text);
+        cursor: pointer;
+        flex-shrink: 0;
+
+        &:hover:not(:disabled) {
+            background: var(--offwhite);
+            color: var(--text);
+        }
+
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        iconify-icon {
+            font-size: 22px;
+        }
+    }
+
+    .assign-user-modal__hint {
+        margin: 0 0 18px 0;
+        font-size: 0.88rem;
+        line-height: 1.45;
+        color: var(--lighter-text);
+    }
+
+    .assign-user-modal__status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 14px 0 0 0;
+        font-size: 0.85rem;
+        color: var(--lighter-text);
+
+        .spinning {
+            animation: spin 0.9s linear infinite;
+            font-size: 1.25rem;
+        }
+    }
+}
+
 // Domain Stakeholders Styles
 .domain-stakeholders {
     .stakeholders-header {

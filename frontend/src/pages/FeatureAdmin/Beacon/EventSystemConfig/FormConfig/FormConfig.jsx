@@ -48,7 +48,7 @@ function FormConfig({ config, onChange }) {
         if (config?.formConfig && config.formConfig.fields && config.formConfig.fields.length > 0) {
             // Ensure all required locked fields are present
             const requiredLockedFieldNames = ['name', 'start_time', 'end_time', 'hostingId', 'hostingType'];
-            const defaultConfigurableFieldNames = ['description', 'type', 'visibility', 'expectedAttendance', 'image', 'location', 'classroom_id', 'contact', 'rsvpEnabled', 'rsvpRequired', 'rsvpDeadline', 'maxAttendees'];
+            const defaultConfigurableFieldNames = ['description', 'type', 'event_tags', 'visibility', 'expectedAttendance', 'image', 'location', 'classroom_id', 'contact', 'rsvpEnabled', 'rsvpRequired', 'rsvpDeadline', 'maxAttendees'];
             const existingFieldNames = config.formConfig.fields.map(f => f.name);
             const missingLockedFields = [];
             const missingConfigurableFields = [];
@@ -161,8 +161,31 @@ function FormConfig({ config, onChange }) {
                     isRequired: true,
                     order: 2,
                     step: 'basic-info',
-                    validation: { required: true, options: ['study', 'workshop', 'campus', 'social', 'club', 'meeting', 'sports'] },
+                    validation: {
+                        required: true,
+                        options: ['Meeting', 'Workshop', 'Social', 'Community', 'Training', 'Networking', 'Fundraiser', 'Performance', 'Competition', 'Other'],
+                        defaultValue: 'Meeting'
+                    },
                     helpText: 'Choose the category that best describes your event'
+                },
+                'event_tags': {
+                    name: 'event_tags',
+                    type: 'select',
+                    label: 'Event Tags',
+                    description: 'Optional topics for discovery',
+                    inputType: 'multi-select',
+                    isActive: true,
+                    isLocked: false,
+                    isRequired: false,
+                    order: 3,
+                    step: 'basic-info',
+                    validation: {
+                        required: false,
+                        multiple: true,
+                        options: ['Computer Science', 'Gaming', 'Career', 'Entrepreneurship', 'Arts', 'Music', 'Sports', 'Health & Wellness', 'Community Service', 'Culture', 'Academic'],
+                        defaultValue: []
+                    },
+                    helpText: 'Select all tags that represent your event'
                 },
                 'visibility': {
                     name: 'visibility',
@@ -336,7 +359,7 @@ function FormConfig({ config, onChange }) {
                         description: 'General information about your event',
                         order: 0,
                         isActive: true,
-                        fields: ['name', 'description', 'type', 'visibility', 'expectedAttendance', 'image']
+                        fields: ['name', 'description', 'type', 'event_tags', 'visibility', 'expectedAttendance', 'image']
                     },
                     {
                         id: 'location',
@@ -477,9 +500,29 @@ function FormConfig({ config, onChange }) {
                         step: 'basic-info',
                         validation: {
                             required: true,
-                            options: ['study', 'workshop', 'campus', 'social', 'club', 'meeting', 'sports']
+                            options: ['Meeting', 'Workshop', 'Social', 'Community', 'Training', 'Networking', 'Fundraiser', 'Performance', 'Competition', 'Other'],
+                            defaultValue: 'Meeting'
                         },
                         helpText: 'Choose the category that best describes your event'
+                    },
+                    {
+                        name: 'event_tags',
+                        type: 'select',
+                        label: 'Event Tags',
+                        description: 'Optional topics for discovery',
+                        inputType: 'multi-select',
+                        isActive: true,
+                        isLocked: false,
+                        isRequired: false,
+                        order: 3,
+                        step: 'basic-info',
+                        validation: {
+                            required: false,
+                            multiple: true,
+                            options: ['Computer Science', 'Gaming', 'Career', 'Entrepreneurship', 'Arts', 'Music', 'Sports', 'Health & Wellness', 'Community Service', 'Culture', 'Academic'],
+                            defaultValue: []
+                        },
+                        helpText: 'Select all tags that represent your event'
                     },
                     {
                         name: 'visibility',

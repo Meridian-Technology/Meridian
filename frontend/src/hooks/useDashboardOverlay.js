@@ -7,7 +7,7 @@ const EVENT_DASHBOARD_OVERLAY_KEY = 'event-dashboard';
 /**
  * Custom hook for easy overlay management in Dashboard components.
  * When outside DashboardProvider (e.g. EventsHub), overlay helpers fall back to navigation.
- * @returns {Object} Object containing showOverlay, hideOverlay, showEventViewer, showEventWorkspace, showEventDashboard
+ * @returns {Object} Overlay helpers including showAdminEventOperator for tenant admin event detail
  */
 export const useDashboardOverlay = () => {
     const context = useDashboardOptional();
@@ -125,13 +125,33 @@ export const useDashboardOverlay = () => {
         });
     };
 
+    /**
+     * Tenant admin event panel. Navigates when Dashboard overlay is unavailable.
+     * @param {string} eventId
+     * @param {{ className?: string }} [options]
+     */
+    const showAdminEventOperator = (eventId, options = {}) => {
+        if (!eventId) return;
+        const { className = 'full-width-admin-event-operator' } = options;
+        if (!hasOverlay || !showOverlay) {
+            navigate(`/operator-event/${eventId}`);
+            return;
+        }
+        import('../pages/RootDash/AdminEventOperatorPage').then(({ AdminEventOperatorContent }) => {
+            showOverlay(
+                <AdminEventOperatorContent eventId={String(eventId)} onClose={hide} className={className} />
+            );
+        });
+    };
+
     return {
         showOverlay: show,
         hideOverlay: hide,
         showEventViewer,
         showEventWorkspace,
         showEventDashboard,
-        showEventPostMortem
+        showEventPostMortem,
+        showAdminEventOperator,
     };
 };
 

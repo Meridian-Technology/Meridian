@@ -255,6 +255,27 @@ const DynamicFormField = ({ field, value, onChange, formData, errors = {}, speci
                     </select>
                 );
 
+            case 'multi-select':
+                return (
+                    <select
+                        id={field.name}
+                        multiple
+                        value={Array.isArray(localValue) ? localValue : []}
+                        onChange={(e) => {
+                            const selectedValues = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+                            handleChange(selectedValues);
+                        }}
+                        className={errors[field.name] ? 'error' : ''}
+                        required={field.isRequired || field.validation?.required}
+                    >
+                        {field.validation?.options?.map((option, index) => (
+                            <option key={index} value={option}>
+                                {option}
+                            </option>
+                        ))}
+                    </select>
+                );
+
             case 'checkbox':
                 return (
                     <label className="checkbox-field">

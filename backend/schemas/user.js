@@ -113,6 +113,14 @@ const userSchema = new mongoose.Schema({
         type:Array,
         default: [],
     },
+    onboardingResponses: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+    },
+    onboardingCompletedSteps: {
+        type: [String],
+        default: []
+    },
     developer: {
         type: Number,
         default: 0,
@@ -209,6 +217,15 @@ const userSchema = new mongoose.Schema({
         required: false,
         default: null,
         trim: true
+    },
+    /** When true, password login and API access (verifyToken) are blocked for this tenant user. */
+    accessSuspended: {
+        type: Boolean,
+        default: false,
+    },
+    accessSuspendedAt: {
+        type: Date,
+        default: null,
     },
 
     

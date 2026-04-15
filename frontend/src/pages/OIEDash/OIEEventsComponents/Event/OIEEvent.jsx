@@ -9,8 +9,23 @@ import { useNotification } from '../../../../NotificationContext';
 import defaultAvatar from '../../../../assets/defaultAvatar.svg';
 import deleteRequest from '../../../../utils/deleteRequest';
 import apiRequest from '../../../../utils/postRequest';
+import EventTaskAssigneeStack from '../../../../components/EventTaskAssigneeStack/EventTaskAssigneeStack';
 
-function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showExpand=true, manage=false, viewingRole, showHosting=true, extraInfo, showHostingType=true, onOpenDashboard}){
+function OIEEvent({
+    event,
+    showStatus = false,
+    refetch,
+    showOIE = false,
+    index,
+    showExpand = true,
+    manage = false,
+    viewingRole,
+    showHosting = true,
+    extraInfo,
+    showHostingType = true,
+    onOpenDashboard,
+    taskAssignees
+}){
     const [popupOpen, setPopupOpen] = useState(false);
     const [edited, setEdited] = useState(false);
     const navigate = useNavigate();
@@ -136,6 +151,12 @@ function OIEEvent({event, showStatus=false, refetch, showOIE=false, index, showE
                     <Icon icon="fluent:location-28-filled" />
                     <p className="location">{event.location}</p>
                 </div>
+                {Array.isArray(taskAssignees) && taskAssignees.length > 0 && (
+                    <div className="row oie-event-task-assignees">
+                        <Icon icon="mdi:clipboard-account-outline" />
+                        <EventTaskAssigneeStack assignees={taskAssignees} maxVisible={3} />
+                    </div>
+                )}
             </div>
             <div className="event-button-container">
                 {

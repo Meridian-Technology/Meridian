@@ -107,14 +107,32 @@ function getSparseTickValues(values, maxTicks = MAX_X_TICKS) {
     return result;
 }
 
-function RSVPGrowthChart({ eventId, orgId, expectedAttendance, registrationCount, rsvpGrowth: rsvpGrowthProp, report = false }) {
+function RSVPGrowthChart({
+    eventId,
+    orgId,
+    expectedAttendance,
+    registrationCount,
+    rsvpGrowth: rsvpGrowthProp,
+    report = false,
+    /** Full path to RSVP growth API (e.g. tenant-operator route); timezone query appended when absent */
+    rsvpGrowthUrlOverride,
+}) {
     const [isCumulative, setIsCumulative] = useState(true);
     const [useFakeRsvpData, setUseFakeRsvpData] = useState(false);
 
     const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
-    const rsvpGrowthUrl = eventId && orgId && !rsvpGrowthProp
-        ? `/org-event-management/${orgId}/events/${eventId}/rsvp-growth${timezone ? `?timezone=${encodeURIComponent(timezone)}` : ''}`
-        : null;
+    const rsvpGrowthUrl = (() => {
+        if (rsvpGrowthProp) return null;
+        if (rsvpGrowthUrlOverride && eventId) {
+            const hasTz = /[?&]timezone=/.test(rsvpGrowthUrlOverride);
+            if (hasTz) return rsvpGrowthUrlOverride;
+            return `${rsvpGrowthUrlOverride}${rsvpGrowthUrlOverride.includes('?') ? '&' : '?'}timezone=${encodeURIComponent(timezone || 'UTC')}`;
+        }
+        if (eventId && orgId) {
+            return `/org-event-management/${orgId}/events/${eventId}/rsvp-growth${timezone ? `?timezone=${encodeURIComponent(timezone)}` : ''}`;
+        }
+        return null;
+    })();
     const { data: fetchedData, loading, error } = useFetch(rsvpGrowthUrl);
 
     // Use pre-fetched data when provided (e.g. from PDF export where fetch may fail in separate React root)

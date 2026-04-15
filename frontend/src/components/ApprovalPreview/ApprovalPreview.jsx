@@ -2,19 +2,35 @@ import React, { useState, useEffect } from 'react';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import { useFetch } from '../../hooks/useFetch';
 import postRequest from '../../utils/postRequest';
+import { extractResourceId } from '../../pages/CreateEvent/shared/resourcePreflight';
 import './ApprovalPreview.scss';
 
-const ApprovalPreview = ({ formData, hideUnlessRequired = false }) => {
+const ApprovalPreview = ({
+    formData,
+    hideUnlessRequired = false,
+    hideWhenOnlyNotifications = false
+}) => {
     const [previewData, setPreviewData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        // Only fetch if we have minimum required data
-        if (formData && formData.location && formData.type && formData.start_time) {
+        // Best-effort preview: start as soon as event type exists, refine as more fields are filled.
+        if (formData && formData.type) {
             fetchApprovalPreview();
+        } else {
+            setPreviewData(null);
+            setError(null);
         }
-    }, [formData?.location, formData?.type, formData?.start_time, formData?.end_time, formData?.expectedAttendance]);
+    }, [
+        formData?.location,
+        formData?.type,
+        formData?.start_time,
+        formData?.end_time,
+        formData?.expectedAttendance,
+        formData?.classroom_id,
+        formData?.classroomId
+    ]);
 
     const fetchApprovalPreview = async () => {
         setLoading(true);
@@ -22,6 +38,7 @@ const ApprovalPreview = ({ formData, hideUnlessRequired = false }) => {
         
         try {
             // Prepare event data for preview
+            const resourceId = extractResourceId(formData);
             const eventPreview = {
                 location: formData.location,
                 type: formData.type,
@@ -31,7 +48,9 @@ const ApprovalPreview = ({ formData, hideUnlessRequired = false }) => {
                 name: formData.name,
                 description: formData.description,
                 visibility: formData.visibility,
-                customFields: formData.customFields || {}
+                customFields: formData.customFields || {},
+                classroom_id: resourceId,
+                resourceId
             };
 
             const response = await postRequest('/preview-approvals', eventPreview);
@@ -89,8 +108,15 @@ const ApprovalPreview = ({ formData, hideUnlessRequired = false }) => {
 
     if (hideUnlessRequired) {
         if (loading || error || !previewData) return null;
-        const { total } = previewData;
+        const {
+            total = 0,
+            approvals = [],
+            acknowledgements = []
+        } = previewData;
         if (total === 0) return null;
+        if (hideWhenOnlyNotifications && approvals.length === 0 && acknowledgements.length === 0) {
+            return null;
+        }
     } else {
         if (loading) {
             return (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useFetch } from '../../../../../../hooks/useFetch';
 import { useNotification } from '../../../../../../NotificationContext';
 import useUnsavedChanges from '../../../../../../hooks/useUnsavedChanges';
@@ -10,6 +10,8 @@ import LocationAutocomplete from '../../../../../../pages/CreateEventV2/Componen
 import EventPreview from '../EventPreview';
 import EventCollaborationSection from './EventCollaborationSection';
 import apiRequest from '../../../../../../utils/postRequest';
+import { extractResourceId, buildResourcePreflightPayload } from '../../../../../CreateEvent/shared/resourcePreflight';
+import ReservationOpsPanel from '../../../../../CreateEvent/shared/ReservationOpsPanel';
 import './EventEditorTab.scss';
 
 function EventEditorTab({ event, agenda, orgId, onRefresh }) {
@@ -35,6 +37,9 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
     });
 
     const [originalData, setOriginalData] = useState(null);
+    const [resourcePreflightError, setResourcePreflightError] = useState('');
+    const preflightTimerRef = useRef(null);
+    const lastConflictKeyRef = useRef('');
 
     // Initialize form data from event prop (details only; no rsvp/hosting/registration/check-in)
     useEffect(() => {
@@ -70,6 +75,53 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
             [fieldName]: value
         }));
     };
+
+    useEffect(() => {
+        if (!event?._id) return undefined;
+        const resourceId = extractResourceId(formData);
+        const startTime = formData.start_time;
+        const endTime = formData.end_time;
+        if (preflightTimerRef.current) {
+            clearTimeout(preflightTimerRef.current);
+            preflightTimerRef.current = null;
+        }
+        if (!resourceId || !startTime || !endTime) {
+            setResourcePreflightError('');
+            setFormData((prev) =>
+                prev.resourcePreflightError ? { ...prev, resourcePreflightError: '' } : prev
+            );
+            lastConflictKeyRef.current = '';
+            return undefined;
+        }
+        const key = `${event._id}|${resourceId}|${new Date(startTime).toISOString()}|${new Date(endTime).toISOString()}`;
+        preflightTimerRef.current = setTimeout(async () => {
+            const preflight = await apiRequest('/resource-preflight', buildResourcePreflightPayload({
+                resourceId,
+                startTime,
+                endTime,
+                excludeEventId: event._id
+            }), { method: 'POST' });
+            if (!preflight.success) {
+                const msg = preflight.message || 'Resource is unavailable for this time';
+                setResourcePreflightError(msg);
+                setFormData((prev) =>
+                    prev.resourcePreflightError === msg ? prev : { ...prev, resourcePreflightError: msg }
+                );
+                if (lastConflictKeyRef.current !== key) {
+                    lastConflictKeyRef.current = key;
+                }
+                return;
+            }
+            setResourcePreflightError('');
+            setFormData((prev) =>
+                prev.resourcePreflightError ? { ...prev, resourcePreflightError: '' } : prev
+            );
+            lastConflictKeyRef.current = '';
+        }, 350);
+        return () => {
+            if (preflightTimerRef.current) clearTimeout(preflightTimerRef.current);
+        };
+    }, [formData.start_time, formData.end_time, formData.classroom_id, formData.classroomId, event?._id, addNotification]);
 
     const validateForm = () => {
         const errors = {};
@@ -110,6 +162,7 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
             return false;
         }
         try {
+            const resourceId = extractResourceId(formData);
             const updateData = {
                 name: formData.name,
                 description: formData.description,
@@ -120,9 +173,12 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
                 externalLink: formData.externalLink || '',
                 start_time: formData.start_time.toISOString(),
                 end_time: formData.end_time.toISOString(),
-                classroom_id: formData.classroom_id,
+                classroom_id: resourceId,
+                resourceId,
                 location: formData.location
             };
+
+            if (resourcePreflightError) throw new Error(resourcePreflightError);
 
             const customFields = {};
             if (formConfigData.data?.data?.fields) {
@@ -138,6 +194,7 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
                     'end_time',
                     'location',
                     'classroom_id',
+                    'resourceId',
                     'selectedRoomIds',
                     'image',
                     'hostingId',
@@ -216,6 +273,7 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
             'end_time',
             'location',
             'classroom_id',
+            'resourceId',
             'selectedRoomIds',
             'contact',
             'externalLink',
@@ -369,7 +427,12 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
 
                 <div className="form-section">
                     <label className="section-label">Add Event Location</label>
-                    <LocationAutocomplete formData={formData} setFormData={setFormData} />
+                    <LocationAutocomplete
+                        formData={formData}
+                        setFormData={setFormData}
+                        preflightError={resourcePreflightError}
+                    />
+                    <ReservationOpsPanel orgId={orgId} eventId={event?._id} compact />
                 </div>
 
                 <div className="form-section">

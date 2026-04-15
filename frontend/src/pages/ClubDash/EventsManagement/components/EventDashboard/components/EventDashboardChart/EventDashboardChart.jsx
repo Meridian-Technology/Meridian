@@ -85,10 +85,15 @@ function EventDashboardChart({
     showArea = true,
     showLine = true,
     showGlyph = true,
+    showPointMarkers = false,
     emptyMessage = 'No data',
     xDomain,
     series,
+    debugInteractions = false,
+    debugPrefix = 'EventDashboardChart',
 }) {
+    const lastMoveLogAtRef = React.useRef(0);
+    const lastTooltipLogAtRef = React.useRef(0);
     const accessors = { xAccessor, yAccessor };
     const isMultiSeries = series && series.length > 0;
     const displayData = isMultiSeries ? series.flatMap((s) => s.data) : data;
@@ -111,9 +116,35 @@ function EventDashboardChart({
 
     const yMax = Math.max(...allValues, 0) * 1.1 || 10;
     const gradientId = (c) => `chart-gradient-${c.replace('#', '')}`;
+    const maybeLog = (ref, message, payload, everyMs = 350) => {
+        if (!debugInteractions) return;
+        const now = Date.now();
+        if (now - ref.current < everyMs) return;
+        ref.current = now;
+        console.log(`[${debugPrefix}] ${message}`, payload);
+    };
 
     return (
-        <div className="chart-container chart-container-visx">
+        <div
+            className="chart-container chart-container-visx"
+            onMouseMove={(e) =>
+                maybeLog(
+                    lastMoveLogAtRef,
+                    'mousemove',
+                    {
+                        x: e.clientX,
+                        y: e.clientY,
+                        targetTag: e.target?.tagName || 'unknown',
+                        isMultiSeries
+                    },
+                    450
+                )
+            }
+            onMouseLeave={() => {
+                if (!debugInteractions) return;
+                console.log(`[${debugPrefix}] mouseleave`);
+            }}
+        >
             <XYChart
                 theme={chartTheme}
                 xScale={{ type: 'band', paddingInner: 0.3, paddingOuter: 0.2, ...(xDomain && { domain: xDomain }) }}
@@ -212,6 +243,26 @@ function EventDashboardChart({
                                                 )}
                                             />
                                         )}
+                                        {showPointMarkers && (
+                                            <GlyphSeries
+                                                dataKey={`series-points-${i}`}
+                                                data={s.data}
+                                                xAccessor={accessors.xAccessor}
+                                                yAccessor={accessors.yAccessor}
+                                                size={10}
+                                                enableEvents={false}
+                                                renderGlyph={({ key, x, y }) => (
+                                                    <circle
+                                                        key={key}
+                                                        cx={x}
+                                                        cy={y}
+                                                        r={2.2}
+                                                        fill={s.color}
+                                                        fillOpacity={0.9}
+                                                    />
+                                                )}
+                                            />
+                                        )}
                                     </>
                                 )}
                             </React.Fragment>
@@ -264,6 +315,26 @@ function EventDashboardChart({
                                         )}
                                     />
                                 )}
+                                {showPointMarkers && (
+                                    <GlyphSeries
+                                        dataKey="series-points"
+                                        data={data}
+                                        xAccessor={accessors.xAccessor}
+                                        yAccessor={accessors.yAccessor}
+                                        size={10}
+                                        enableEvents={false}
+                                        renderGlyph={({ key, x, y }) => (
+                                            <circle
+                                                key={key}
+                                                cx={x}
+                                                cy={y}
+                                                r={2.2}
+                                                fill={color}
+                                                fillOpacity={0.9}
+                                            />
+                                        )}
+                                    />
+                                )}
                             </>
                         )}
                     </>
@@ -273,8 +344,17 @@ function EventDashboardChart({
                     snapTooltipToDatumX
                     snapTooltipToDatumY
                     showVerticalCrosshair
-                    showSeriesGlyphs={isMultiSeries}
+                    showSeriesGlyphs={false}
                     renderTooltip={({ tooltipData }) => {
+                        maybeLog(
+                            lastTooltipLogAtRef,
+                            'tooltip render',
+                            {
+                                hasNearest: !!tooltipData?.nearestDatum,
+                                keys: tooltipData?.datumByKey ? Object.keys(tooltipData.datumByKey) : [],
+                            },
+                            200
+                        );
                         if (!tooltipData?.datumByKey) return null;
                         const entries = Object.entries(tooltipData.datumByKey).filter(
                             ([k, v]) => v?.datum && (k.startsWith('series-') && !k.includes('series-end'))

@@ -16,6 +16,8 @@ const path = require('path');
 const { uploadImageToS3, upload } = require('../services/imageUploadService');
 const { requireMemberManagement, requireOrgOwner } = require('../middlewares/orgPermissions');
 const NotificationService = require('../services/notificationService');
+const { getEffectivePolicyFromConfig } = require('../services/atlasPolicyService');
+const { recordMemberJoined } = require('../services/orgMembershipService');
 
 // Error handling middleware for multer
 const handleMulterError = (err, req, res, next) => {
@@ -206,6 +208,7 @@ router.post("/create-org", verifyToken, upload.fields([
         const config = await OrgManagementConfig.findOne();
         const approvalMode = config?.orgApproval?.mode || 'none';
         const requiresApproval = ['manual', 'auto', 'both'].includes(approvalMode);
+        const atlasPolicy = getEffectivePolicyFromConfig(config || {});
 
         // Prepare default roles (only owner and member)
         const defaultRoles = [
@@ -287,6 +290,8 @@ router.post("/create-org", verifyToken, upload.fields([
             owner: userId,
             approvalStatus: requiresApproval ? 'pending' : 'approved',
             requireApprovalForJoin: requireApprovalForJoin === 'true' || requireApprovalForJoin === true,
+            lifecycleStatus: atlasPolicy.lifecycle?.defaultStatus || 'active',
+            orgTypeKey: atlasPolicy.defaultOrgTypeKey || 'default'
         });
 
         // Handle profile image upload if file is present
@@ -320,6 +325,7 @@ router.post("/create-org", verifyToken, upload.fields([
         });
 
         await newMember.save();
+        await recordMemberJoined(newMember, userId, 'org_created');
 
         user.clubAssociations.push(newOrg._id);
         await user.save();
@@ -1084,8 +1090,14 @@ router.post('/send-email', async (req,res) => {
 router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
     try {
         const { exhaustive, includePending } = req.query;
-        const { Org, OrgMember, OrgFollower, Event } = getModels(req, 'Org', 'OrgMember', 'OrgFollower', 'Event');
+        const { Org, OrgMember, OrgFollower, Event, OrgManagementConfig } = getModels(req, 'Org', 'OrgMember', 'OrgFollower', 'Event', 'OrgManagementConfig');
         const userId = req.user?.userId;
+
+        const mgmtConfig = await OrgManagementConfig.findOne();
+        const atlasPolicy = getEffectivePolicyFromConfig(mgmtConfig || {});
+        const hideNonActive =
+            atlasPolicy.directory?.hideNonActiveFromPublicList &&
+            includePending !== 'true';
 
         // Atlas: Default filter - only approved orgs for discoverability. includePending + auth = add user's orgs.
         const baseApprovalFilter = {
@@ -1114,10 +1126,25 @@ router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
         // Exclude unlisted orgs from the public Organizations list
         const unlistedFilter = { unlisted: { $ne: true } };
 
+        const matchParts = [
+            approvalFilter,
+            unlistedFilter,
+            { isDeleted: { $ne: true } }
+        ];
+        if (hideNonActive) {
+            const hideStatuses = atlasPolicy.directory?.nonActiveStatuses || ['inactive'];
+            matchParts.push({
+                $or: [
+                    { lifecycleStatus: { $exists: false } },
+                    { lifecycleStatus: { $nin: hideStatuses } }
+                ]
+            });
+        }
+
         //if exhaustive, return org stats like memberCount, followerCount, eventCount, using aggregate using efficeint query
         if (exhaustive) {
             const orgs = await Org.aggregate([
-                { $match: { ...approvalFilter, ...unlistedFilter, isDeleted: { $ne: true } } },
+                { $match: { $and: matchParts } },
                 // Lookup members and count them (only active members)
                 {
                     $lookup: {
@@ -1181,6 +1208,8 @@ router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
                         verified: 1,
                         verificationType: 1,
                         verificationStatus: 1,
+                        lifecycleStatus: 1,
+                        orgTypeKey: 1,
                         memberCount: { $size: '$members' },
                         followerCount: { $size: '$followers' },
                         eventCount: { $size: '$events' }
@@ -1193,7 +1222,7 @@ router.get('/get-orgs', verifyTokenOptional, async (req, res) => {
                 orgs: orgs
             });
         }
-        const orgs = await Org.find({ ...approvalFilter, ...unlistedFilter });
+        const orgs = await Org.find({ $and: matchParts });
         res.status(200).json({
             success: true,
             orgs

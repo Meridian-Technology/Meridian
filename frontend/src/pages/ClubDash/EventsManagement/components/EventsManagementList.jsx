@@ -3,6 +3,8 @@ import { Icon } from '@iconify-icon/react';
 import { useNavigate } from 'react-router-dom';
 import { useCache } from '../../../../CacheContext';
 import { useDashboardOverlay } from '../../../../hooks/useDashboardOverlay';
+import apiRequest from '../../../../utils/postRequest';
+import EventTaskAssigneeStack from '../../../../components/EventTaskAssigneeStack/EventTaskAssigneeStack';
 import './EventsManagementList.scss';
 
 function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, onCreateEvent }) {
@@ -26,6 +28,35 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, on
     const [quickFilter, setQuickFilter] = useState('upcoming'); // Default to upcoming filter active
     const searchTimeoutRef = useRef(null);
     const ITEMS_PER_PAGE = 20;
+    const [assigneesByEventId, setAssigneesByEventId] = useState({});
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadAssignees = async () => {
+            if (!orgId) {
+                setAssigneesByEventId({});
+                return;
+            }
+            try {
+                const res = await apiRequest(
+                    `/org-event-management/${orgId}/tasks/event-assignee-summary`,
+                    null,
+                    { method: 'GET' }
+                );
+                if (!cancelled && res?.success && res?.data?.assigneesByEventId) {
+                    setAssigneesByEventId(res.data.assigneesByEventId);
+                } else if (!cancelled) {
+                    setAssigneesByEventId({});
+                }
+            } catch {
+                if (!cancelled) setAssigneesByEventId({});
+            }
+        };
+        loadAssignees();
+        return () => {
+            cancelled = true;
+        };
+    }, [orgId, refreshTrigger]);
 
     // Fetch all events once using CacheContext
     useEffect(() => {
@@ -517,6 +548,17 @@ function EventsList({ orgId, orgName, refreshTrigger, onRefresh, onViewEvent, on
                                         <Icon icon="mingcute:user-group-fill" />
                                         <span>{event.expectedAttendance || 0} expected</span>
                                     </div>
+                                    {(() => {
+                                        const key = event?._id != null ? String(event._id) : '';
+                                        const assignees = key ? assigneesByEventId[key] : null;
+                                        if (!assignees?.length) return null;
+                                        return (
+                                            <div className="meta-item meta-item--assignees">
+                                                <Icon icon="mdi:clipboard-account-outline" />
+                                                <EventTaskAssigneeStack assignees={assignees} maxVisible={3} />
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </div>
 

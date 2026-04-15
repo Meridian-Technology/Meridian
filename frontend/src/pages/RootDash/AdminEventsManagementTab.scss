@@ -1,0 +1,12 @@
+.admin-events-management-tab {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 0 24px;
+
+    &__panel {
+        .admin-event-feed {
+            margin-left: 30px;
+            margin-right: 30px;
+        }
+    }
+}

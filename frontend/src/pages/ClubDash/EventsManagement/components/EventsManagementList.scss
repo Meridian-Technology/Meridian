@@ -449,6 +449,10 @@
                             color: var(--lightborder);
                             margin: 0 0.25rem;
                         }
+
+                        &--assignees {
+                            gap: 0.5rem;
+                        }
                     }
                 }
             }

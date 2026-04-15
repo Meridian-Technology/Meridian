@@ -8,7 +8,16 @@ import FeedbackFormConfig from '../EventPostMortem/FeedbackFormConfig';
 import FeedbackSlide from '../EventPostMortem/slides/FeedbackSlide';
 import './EventDashboard.scss';
 
-function EventOverview({ event, stats, agenda, orgId, onRefresh, onTabChange }) {
+function EventOverview({
+    event,
+    stats,
+    agenda,
+    orgId,
+    onRefresh,
+    onTabChange,
+    operatorOrganizerMode = false,
+    rsvpGrowthUrlOverride,
+}) {
     const { addNotification } = useNotification();
 
     const agendaItemsWithTimes = useMemo(() => {
@@ -68,18 +77,22 @@ function EventOverview({ event, stats, agenda, orgId, onRefresh, onTabChange }) 
             </button>
             {onTabChange && (
                 <>
-                    <button type="button" className="event-preview-action" onClick={() => onTabChange('edit')} title="Edit event details">
-                        <Icon icon="mdi:pencil" />
-                        <span>Edit event</span>
-                    </button>
+                    {!operatorOrganizerMode && (
+                        <button type="button" className="event-preview-action" onClick={() => onTabChange('edit')} title="Edit event details">
+                            <Icon icon="mdi:pencil" />
+                            <span>Edit event</span>
+                        </button>
+                    )}
                     <button type="button" className="event-preview-action" onClick={() => onTabChange('registrations')} title="View registrations">
                         <Icon icon="mdi:clipboard-list-outline" />
                         <span>Registrations</span>
                     </button>
-                    <button type="button" className="event-preview-action" onClick={() => onTabChange('checkin')} title="Check-in management">
-                        <Icon icon="uil:qrcode-scan" />
-                        <span>Check-in</span>
-                    </button>
+                    {!operatorOrganizerMode && (
+                        <button type="button" className="event-preview-action" onClick={() => onTabChange('checkin')} title="Check-in management">
+                            <Icon icon="uil:qrcode-scan" />
+                            <span>Check-in</span>
+                        </button>
+                    )}
                 </>
             )}
         </div>
@@ -122,10 +135,12 @@ function EventOverview({ event, stats, agenda, orgId, onRefresh, onTabChange }) 
                                                 <Icon icon="mdi:clipboard-list-outline" />
                                                 <span>Registrations</span>
                                             </button>
-                                            <button type="button" className="event-preview-action" onClick={() => onTabChange('checkin')} title="Check-in management">
-                                                <Icon icon="uil:qrcode-scan" />
-                                                <span>Check-in</span>
-                                            </button>
+                                            {!operatorOrganizerMode && (
+                                                <button type="button" className="event-preview-action" onClick={() => onTabChange('checkin')} title="Check-in management">
+                                                    <Icon icon="uil:qrcode-scan" />
+                                                    <span>Check-in</span>
+                                                </button>
+                                            )}
                                         </>
                                     )}
                                 </div>
@@ -146,13 +161,14 @@ function EventOverview({ event, stats, agenda, orgId, onRefresh, onTabChange }) 
                                     orgId={orgId}
                                     expectedAttendance={expectedAttendance}
                                     registrationCount={registrationCount}
+                                    rsvpGrowthUrlOverride={rsvpGrowthUrlOverride}
                                 />
                             </div>
                         </div>
                     )}
                 </div>
             )}
-            {isEventPassed && (
+            {isEventPassed && (!operatorOrganizerMode || orgId) && (
                 <div className="overview-layout">
                     <div className="overview-left-column">
                         {event?.feedbackFormId ? (
@@ -170,7 +186,7 @@ function EventOverview({ event, stats, agenda, orgId, onRefresh, onTabChange }) 
                                     resultsOnly={true}
                                 />
                             </div>
-                        ) : (
+                        ) : !operatorOrganizerMode ? (
                             <div className="overview-feedback-prompt">
                                 <div className="overview-feedback-prompt__content">
                                     <Icon icon="mdi:message-star-outline" className="overview-feedback-prompt__icon" />
@@ -188,7 +204,7 @@ function EventOverview({ event, stats, agenda, orgId, onRefresh, onTabChange }) 
                                     </button>
                                 </div>
                             </div>
-                        )}
+                        ) : null}
                     </div>
                 </div>
             )}

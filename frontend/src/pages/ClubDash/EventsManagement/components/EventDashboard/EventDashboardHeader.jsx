@@ -241,7 +241,13 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
                                 {event?.status === 'draft' && (
                                     <span className="event-status-bubble draft">Draft</span>
                                 )}
-                                {eventStatus && event?.status !== 'draft' && (
+                                {event?.status === 'pending' && (
+                                    <span className="event-status-bubble upcoming">Pending Review</span>
+                                )}
+                                {event?.status === 'rejected' && (
+                                    <span className="event-status-bubble passed">Rejected</span>
+                                )}
+                                {eventStatus && !['draft', 'pending', 'rejected'].includes(event?.status) && (
                                     <span className={`event-status-bubble ${eventStatus}`}>
                                         {eventStatus === 'upcoming' && 'Upcoming'}
                                         {eventStatus === 'live' && 'Live'}

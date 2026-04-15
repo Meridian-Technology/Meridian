@@ -3,6 +3,65 @@
     min-height: 100vh;
     background: var(--background);
 
+    &--embedded {
+        min-height: 0;
+        padding: 0;
+        background: transparent;
+
+        .config-item {
+            margin: 0;
+        }
+
+        .approval-container {
+            border-radius: 15px;
+        }
+    }
+
+    &-embedded-tools {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+        padding: 12px 14px;
+        background: var(--lightest);
+        border: 1px solid var(--lightborder);
+        border-radius: 12px;
+
+        p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--lighter-text);
+            flex: 1;
+            min-width: 160px;
+        }
+
+        .form-buttons {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+
+            button {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 8px 12px;
+                background: var(--primary);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+
+                &:hover {
+                    opacity: 0.92;
+                }
+            }
+        }
+    }
+
     &.loading {
         display: flex;
         align-items: center;

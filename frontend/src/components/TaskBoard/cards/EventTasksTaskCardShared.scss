@@ -1,0 +1,126 @@
+.event-tasks-task-card__description {
+    margin: 0;
+    color: var(--task-muted);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+}
+
+.event-tasks-task-card__description--lines-2 {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+.event-tasks-task-card__description--lines-3 {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+}
+
+.event-tasks-task-card__badges {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.event-tasks-task-card__status-pill,
+.event-tasks-task-card__priority-pill,
+.event-tasks-task-card__badge--critical,
+.event-tasks-task-card__badge--overdue {
+    border-radius: 4px;
+    border: none;
+    padding: 0.14rem 0.34rem;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.event-tasks-task-card__status-pill {
+    color: #5c656e;
+    background: rgba(0, 0, 0, 0.05);
+
+    &.todo {
+        color: #5c656e;
+    }
+
+    &.in_progress {
+        color: #2456a6;
+        background: rgba(46, 109, 200, 0.12);
+    }
+
+    &.blocked {
+        color: #a63d48;
+        background: rgba(220, 53, 69, 0.12);
+    }
+
+    &.done {
+        color: #2f6b3c;
+        background: rgba(77, 170, 87, 0.14);
+    }
+}
+
+.event-tasks-task-card__priority-pill {
+    &.low {
+        color: #5c656e;
+        background: rgba(0, 0, 0, 0.045);
+    }
+
+    &.medium {
+        color: #2456a6;
+        background: rgba(46, 109, 200, 0.12);
+    }
+
+    &.high {
+        color: #8f5218;
+        background: rgba(218, 143, 63, 0.14);
+    }
+
+    &.critical {
+        color: #a63d48;
+        background: rgba(220, 53, 69, 0.12);
+    }
+}
+
+.event-tasks-task-card__badge--critical,
+.event-tasks-task-card__badge--overdue {
+    color: #a63d48;
+    background: rgba(220, 53, 69, 0.12);
+}
+
+.event-tasks-task-card__actions {
+    display: inline-flex;
+    gap: 0.15rem;
+    flex-wrap: wrap;
+}
+
+.event-tasks-task-card__actions button {
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--task-muted);
+    padding: 0.32rem 0.45rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 120ms ease, background 120ms ease;
+
+    &:hover:not(:disabled) {
+        color: var(--text);
+        background: rgba(0, 0, 0, 0.04);
+    }
+
+    &:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+
+    &.event-tasks-task-card__btn--danger {
+        color: #c24f5d;
+
+        &:hover:not(:disabled) {
+            background: rgba(220, 53, 69, 0.08);
+        }
+    }
+}

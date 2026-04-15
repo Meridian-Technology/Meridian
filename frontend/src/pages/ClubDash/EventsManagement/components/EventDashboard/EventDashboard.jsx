@@ -21,6 +21,7 @@ import EventQRTab from './EventQRTab/EventQRTab';
 import RegistrationsTab from './RegistrationsTab/RegistrationsTab';
 import CommunicationsTab from './CommunicationsTab/CommunicationsTab';
 import ComingSoon from './ComingSoon';
+import EventTasksTab from './EventTasksTab';
 // Temporarily disabled - EquipmentManager functionality commented out
 // import EquipmentManager from './EventEquipment/EquipmentManager';
 import './EventDashboard.scss';
@@ -174,6 +175,31 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     }, []);
 
     const isEventCompleted = dashboardData?.stats?.operationalStatus === 'completed';
+    const approvalStatus = dashboardData?.event?.status || '';
+    const approvalStatusConfig = useMemo(() => {
+        if (approvalStatus === 'pending') {
+            return {
+                tone: 'pending',
+                title: 'Pending review',
+                message: 'This event is currently in an approval or acknowledgement workflow.'
+            };
+        }
+        if (approvalStatus === 'rejected') {
+            return {
+                tone: 'rejected',
+                title: 'Needs changes',
+                message: 'This event was rejected. Update details and re-submit for review.'
+            };
+        }
+        if (approvalStatus === 'approved') {
+            return {
+                tone: 'approved',
+                title: 'Approved for publishing',
+                message: 'This event is clear to publish and appear in public experiences.'
+            };
+        }
+        return null;
+    }, [approvalStatus]);
 
     const collaborationAcceptBanner = useMemo(() => {
         if (!dashboardData?.event || !orgId) return null;
@@ -257,6 +283,17 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             icon: 'mdi:briefcase',
             description: 'Manage event jobs and assignments',
             content: <JobsManager
+                        event={dashboardData.event}
+                        orgId={orgId}
+                        onRefresh={handleRefresh}
+                    />
+        },
+        {
+            id: 'tasks',
+            label: 'Tasks',
+            icon: 'mdi:check-circle-outline',
+            description: 'Plan and execute event tasks',
+            content: <EventTasksTab
                         event={dashboardData.event}
                         orgId={orgId}
                         onRefresh={handleRefresh}
@@ -429,6 +466,24 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                         >
                             View post-mortem
                         </button>
+                    </div>
+                )}
+                {approvalStatusConfig && (
+                    <div className={`event-dashboard-approval-banner ${approvalStatusConfig.tone}`}>
+                        <Icon
+                            icon={
+                                approvalStatusConfig.tone === 'approved'
+                                    ? 'mdi:shield-check'
+                                    : approvalStatusConfig.tone === 'rejected'
+                                        ? 'mdi:alert-circle'
+                                        : 'mdi:clock-outline'
+                            }
+                            className="event-dashboard-approval-banner__icon"
+                        />
+                        <div className="event-dashboard-approval-banner__content">
+                            <strong>{approvalStatusConfig.title}</strong>
+                            <span>{approvalStatusConfig.message}</span>
+                        </div>
                     </div>
                 )}
                 <div className="event-dashboard-content">

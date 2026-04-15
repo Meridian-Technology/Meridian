@@ -48,7 +48,7 @@ function PendingApprovalModal({ org, orgName, config, memberCount = 0, onClose }
                         className="pending-approval-modal__btn primary"
                         onClick={() => {
                             onClose?.();
-                            navigate(`/club-dashboard/${orgName}?page=3`);
+                            navigate(`/club-dashboard/${orgName}?page=4`);
                         }}
                     >
                         <Icon icon="mdi:account-plus" />

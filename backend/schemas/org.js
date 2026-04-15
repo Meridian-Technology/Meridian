@@ -277,6 +277,54 @@ const OrgSchema= new Schema({
         type: Boolean,
         default: false
     },
+    /** Operational lifecycle (distinct from verificationStatus / approvalStatus). See atlasPolicy in OrgManagementConfig. */
+    lifecycleStatus: {
+        type: String,
+        default: 'active',
+        trim: true
+    },
+    orgTypeKey: {
+        type: String,
+        trim: true,
+        default: undefined
+    },
+    lifecycleChangedAt: {
+        type: Date
+    },
+    lifecycleChangedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    adminNotes: {
+        type: String,
+        maxlength: 4000
+    },
+    governanceDocuments: {
+        type: [{
+            key: {
+                type: String,
+                required: true,
+                trim: true
+            },
+            versions: [{
+                version: { type: Number, required: true },
+                storageUrl: { type: String, required: true },
+                originalFilename: { type: String },
+                mimeType: { type: String },
+                uploadedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+                uploadedAt: { type: Date, default: Date.now },
+                effectiveFrom: { type: Date },
+                status: {
+                    type: String,
+                    enum: ['draft', 'approved', 'superseded'],
+                    default: 'draft'
+                },
+                approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+                approvedAt: { type: Date }
+            }]
+        }],
+        default: []
+    },
     // Soft delete
     isDeleted: {
         type: Boolean,
@@ -290,6 +338,33 @@ const OrgSchema= new Schema({
         type: Schema.Types.ObjectId,
         ref: 'User',
         default: null
+    },
+    /** Custom task hub / event task Kanban columns (max 10). Empty/absent = platform defaults. */
+    taskBoardStatuses: {
+        type: [{
+            key: {
+                type: String,
+                required: true,
+                trim: true,
+                lowercase: true
+            },
+            label: {
+                type: String,
+                required: true,
+                trim: true,
+                maxlength: 64
+            },
+            category: {
+                type: String,
+                enum: ['backlog', 'active', 'done', 'cancelled'],
+                required: true
+            },
+            order: {
+                type: Number,
+                default: 0
+            }
+        }],
+        default: undefined
     }
 });
 
@@ -362,6 +437,9 @@ OrgSchema.methods.hasPermission = function(roleName, permission) {
 
     if (role.permissions.includes('all')) return true;
     if (role.permissions.includes(permission)) return true;
+
+    // Finance: managing implies viewing (roles often grant manage_finances only)
+    if (permission === 'view_finances' && role.permissions.includes('manage_finances')) return true;
 
     // Also check boolean flags (roles may have canManageEvents etc. without permissions array)
     if (permission === 'manage_events' && role.canManageEvents) return true;
@@ -460,6 +538,26 @@ OrgSchema.statics.createApprovalGroup = function(name, displayName, description,
             }
         }
     });
+};
+
+OrgSchema.methods.getGovernanceSlot = function (key) {
+    const docs = this.governanceDocuments || [];
+    return docs.find((d) => d.key === key);
+};
+
+OrgSchema.methods.addGovernanceVersion = function (key, versionPayload) {
+    if (!this.governanceDocuments) {
+        this.governanceDocuments = [];
+    }
+    let slot = this.governanceDocuments.find((d) => d.key === key);
+    if (!slot) {
+        this.governanceDocuments.push({ key, versions: [] });
+        slot = this.governanceDocuments[this.governanceDocuments.length - 1];
+    }
+    const versions = slot.versions || [];
+    const nextVer = versions.length ? Math.max(...versions.map((v) => v.version)) + 1 : 1;
+    slot.versions.push({ ...versionPayload, version: nextVer });
+    return nextVer;
 };
 
 module.exports=OrgSchema;

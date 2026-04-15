@@ -149,6 +149,13 @@ const orgManagementConfigSchema = new mongoose.Schema({
         default: false
     },
 
+    /** Root operator dashboard: classic (full root + Compass/Atlas/Beacon) vs engagement_hub (single consolidated shell). */
+    operatorDashboardMode: {
+        type: String,
+        enum: ['classic', 'engagement_hub'],
+        default: 'classic'
+    },
+
     // Atlas org approval config
     orgApproval: {
         mode: {
@@ -408,6 +415,70 @@ const orgManagementConfigSchema = new mongoose.Schema({
                 type: Boolean,
                 default: true
             }
+        }
+    },
+
+    /** CMS Phase 1: tenant/org-type lifecycle, governance terminology, directory rules (see atlasPolicyService defaults). */
+    atlasPolicy: {
+        type: mongoose.Schema.Types.Mixed,
+        default: undefined
+    },
+
+    /** User onboarding shown after signup/login (tenant configurable, root-managed). */
+    userOnboarding: {
+        enabled: {
+            type: Boolean,
+            default: false
+        },
+        welcomeTitle: {
+            type: String,
+            default: 'Welcome to your community'
+        },
+        welcomeSubtitle: {
+            type: String,
+            default: 'A quick setup helps community managers and campus admins better support your interests.'
+        },
+        collectName: {
+            type: Boolean,
+            default: true
+        },
+        collectInterests: {
+            type: Boolean,
+            default: true
+        },
+        enforceMinInterests: {
+            type: Boolean,
+            default: true
+        },
+        enforceMaxInterests: {
+            type: Boolean,
+            default: true
+        },
+        minInterests: {
+            type: Number,
+            default: 1
+        },
+        maxInterests: {
+            type: Number,
+            default: 6
+        },
+        customSteps: {
+            type: [
+                {
+                    id: { type: String, required: true },
+                    label: { type: String, required: true },
+                    type: {
+                        type: String,
+                        enum: ['short-text', 'long-text', 'single-select', 'multi-select'],
+                        default: 'short-text'
+                    },
+                    required: { type: Boolean, default: false },
+                    options: { type: [String], default: [] },
+                    placeholder: { type: String, default: '' },
+                    helpText: { type: String, default: '' }
+                }
+            ],
+            default: []
         }
     }
 }, { timestamps: true });

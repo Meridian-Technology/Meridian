@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const mongoose = require('mongoose');
 const path = require('path');
 const getModels = require('../services/getModelService');
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
@@ -7,8 +8,35 @@ const { requireAdmin } = require('../middlewares/requireAdmin');
 const { uploadImageToS3, upload } = require('../services/imageUploadService');
 const { emitToOrgApprovalRoom } = require('../socket');
 const { clean, isProfane } = require('../services/profanityFilterService');
+const {
+    getEffectivePolicyFromConfig,
+    assertLifecycleTransition
+} = require('../services/atlasPolicyService');
+const { recordMemberJoined, recordMemberRemoved } = require('../services/orgMembershipService');
+const budgetService = require('../services/budgetService');
+const adminTenantSummaryService = require('../services/adminTenantSummaryService');
+const adminTenantEventsService = require('../services/adminTenantEventsService');
+const adminTenantEventOperatorService = require('../services/adminTenantEventOperatorService');
+const rootOperatorUsersService = require('../services/rootOperatorUsersService');
 
 const router = express.Router();
+
+/** Org schema has no timestamps; derive a stable created time from _id when createdAt is missing. */
+function resolveOrgCreatedAt(plainOrg) {
+    const raw = plainOrg.createdAt || plainOrg.created_at;
+    if (raw != null && raw !== '') {
+        const d = raw instanceof Date ? raw : new Date(raw);
+        if (!Number.isNaN(d.getTime())) return d;
+    }
+    if (plainOrg._id != null && mongoose.Types.ObjectId.isValid(plainOrg._id)) {
+        try {
+            return new mongoose.Types.ObjectId(String(plainOrg._id)).getTimestamp();
+        } catch (e) {
+            return undefined;
+        }
+    }
+    return undefined;
+}
 
 const handleMulterError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
@@ -318,6 +346,7 @@ router.get('/config', verifyToken, async (req, res) => {
         } else {
             data.messaging = { ...MESSAGING_SCHEMA_DEFAULTS, ...data.messaging };
         }
+        data.atlasPolicy = getEffectivePolicyFromConfig(config);
 
         console.log(`GET: /org-management/config`);
         res.status(200).json({
@@ -330,6 +359,41 @@ router.get('/config', verifyToken, async (req, res) => {
             success: false,
             message: 'Error fetching management configuration',
             error: error.message
+        });
+    }
+});
+
+router.get('/onboarding-config', verifyToken, async (req, res) => {
+    const { OrgManagementConfig } = getModels(req, 'OrgManagementConfig');
+    try {
+        let config = await OrgManagementConfig.findOne();
+        if (!config) {
+            config = new OrgManagementConfig();
+            await config.save();
+        }
+        const defaults = {
+            enabled: false,
+            welcomeTitle: 'Welcome to your community',
+            welcomeSubtitle:
+                'A quick setup helps community managers and campus admins better support your interests.',
+            collectName: true,
+            collectInterests: true,
+            enforceMinInterests: true,
+            enforceMaxInterests: true,
+            minInterests: 1,
+            maxInterests: 6,
+            customSteps: [],
+        };
+        const onboarding = { ...defaults, ...(config.userOnboarding || {}) };
+        return res.status(200).json({
+            success: true,
+            data: onboarding,
+        });
+    } catch (error) {
+        console.error('GET /org-management/onboarding-config failed:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to load onboarding config',
         });
     }
 });
@@ -404,7 +468,565 @@ router.put('/config', verifyToken, requireAdmin, async (req, res) => {
     }
 });
 
+// ==================== ADMIN TENANT (read-only summary & events) ====================
+
+router.get(
+    '/admin-tenant-summary',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const data = await adminTenantSummaryService.getAdminTenantSummary(req);
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/admin-tenant-summary failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load admin tenant summary',
+            });
+        }
+    }
+);
+
+router.get(
+    '/admin-tenant-events',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const page = parseInt(String(req.query.page || '1'), 10);
+            const limit = parseInt(String(req.query.limit || '20'), 10);
+            const q = typeof req.query.q === 'string' ? req.query.q : '';
+            const includePast = ['1', 'true', 'yes'].includes(String(req.query.includePast || '').toLowerCase());
+            const data = await adminTenantEventsService.listAdminTenantUpcomingEvents(req, {
+                page,
+                limit,
+                q,
+                includePast,
+            });
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/admin-tenant-events failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load admin tenant events',
+            });
+        }
+    }
+);
+
+router.get(
+    '/admin-tenant-events/:eventId/dashboard',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { eventId } = req.params;
+            const data = await adminTenantEventOperatorService.getAdminTenantEventDashboard(req, eventId);
+            if (!data) {
+                return res.status(404).json({ success: false, message: 'Event not found' });
+            }
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/admin-tenant-events/:eventId/dashboard failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load event dashboard',
+            });
+        }
+    }
+);
+
+router.get(
+    '/admin-tenant-events/:eventId/registration-responses',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { eventId } = req.params;
+            const data = await adminTenantEventOperatorService.getAdminTenantEventRegistrationResponses(req, eventId);
+            if (!data) {
+                return res.status(404).json({ success: false, message: 'Event not found' });
+            }
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error(
+                'GET /org-management/admin-tenant-events/:eventId/registration-responses failed:',
+                error
+            );
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load registration responses',
+            });
+        }
+    }
+);
+
+router.get(
+    '/admin-tenant-events/:eventId/rsvp-growth',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { eventId } = req.params;
+            const data = await adminTenantEventOperatorService.getAdminTenantEventRsvpGrowth(req, eventId, {
+                timezone: req.query.timezone,
+            });
+            if (!data) {
+                return res.status(404).json({ success: false, message: 'Event not found' });
+            }
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/admin-tenant-events/:eventId/rsvp-growth failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load RSVP growth',
+            });
+        }
+    }
+);
+
+// ==================== ROOT / COMMUNITY DASHBOARD: PEOPLE & ACCESS ====================
+
+router.get(
+    '/root-operator-user-stats',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const data = await rootOperatorUsersService.getRootOperatorUserStats(req);
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/root-operator-user-stats failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load user statistics',
+            });
+        }
+    }
+);
+
+router.get(
+    '/root-operator-users',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const q = typeof req.query.q === 'string' ? req.query.q : '';
+            const limit = parseInt(String(req.query.limit || '25'), 10);
+            const role = typeof req.query.role === 'string' ? req.query.role : '';
+            const data = await rootOperatorUsersService.searchRootOperatorUsers(req, { q, limit, role });
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/root-operator-users failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to search users',
+            });
+        }
+    }
+);
+
+router.post(
+    '/root-operator-users/:userId/role',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { userId } = req.params;
+            const { role, assign } = req.body || {};
+            const data = await rootOperatorUsersService.setRootOperatorUserRole(req, {
+                userId,
+                role,
+                assign: assign === true || assign === 'true',
+            });
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const status = error.statusCode || 500;
+            console.error('POST /org-management/root-operator-users/:userId/role failed:', error);
+            res.status(status).json({
+                success: false,
+                message: error.message || 'Failed to update role',
+            });
+        }
+    }
+);
+
+router.patch(
+    '/root-operator-users/:userId/access',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { userId } = req.params;
+            const { accessSuspended } = req.body || {};
+            const data = await rootOperatorUsersService.setRootOperatorAccessSuspended(req, {
+                userId,
+                accessSuspended: accessSuspended === true || accessSuspended === 'true',
+            });
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const status = error.statusCode || 500;
+            console.error('PATCH /org-management/root-operator-users/:userId/access failed:', error);
+            res.status(status).json({
+                success: false,
+                message: error.message || 'Failed to update access',
+            });
+        }
+    }
+);
+
+router.get(
+    '/user-onboarding-responses-summary',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { User, OrgManagementConfig } = getModels(req, 'User', 'OrgManagementConfig');
+            const config = await OrgManagementConfig.findOne().lean();
+            const onboardingConfig = config?.userOnboarding || {};
+            const customSteps = Array.isArray(onboardingConfig.customSteps) ? onboardingConfig.customSteps : [];
+
+            const users = await User.find({})
+                .select('tags onboardingResponses')
+                .lean();
+
+            const summary = {
+                totalUsers: users.length,
+                interests: {
+                    totalTaggedUsers: 0,
+                    optionCounts: {},
+                },
+                customSteps: customSteps.map((step) => ({
+                    id: step.id,
+                    label: step.label,
+                    type: step.type,
+                    required: !!step.required,
+                    responseCount: 0,
+                    optionCounts: {},
+                    textSamples: [],
+                })),
+            };
+
+            const stepMap = new Map(summary.customSteps.map((s) => [String(s.id), s]));
+
+            users.forEach((user) => {
+                const tags = Array.isArray(user.tags) ? user.tags : [];
+                if (tags.length > 0) summary.interests.totalTaggedUsers += 1;
+                tags.forEach((tag) => {
+                    const key = String(tag || '').trim();
+                    if (!key) return;
+                    summary.interests.optionCounts[key] = (summary.interests.optionCounts[key] || 0) + 1;
+                });
+
+                const responses = user.onboardingResponses && typeof user.onboardingResponses === 'object'
+                    ? user.onboardingResponses
+                    : {};
+
+                customSteps.forEach((step) => {
+                    const s = stepMap.get(String(step.id));
+                    if (!s) return;
+                    const value = responses[step.id];
+                    if (Array.isArray(value)) {
+                        const cleaned = value.map((v) => String(v || '').trim()).filter(Boolean);
+                        if (cleaned.length > 0) s.responseCount += 1;
+                        cleaned.forEach((v) => {
+                            s.optionCounts[v] = (s.optionCounts[v] || 0) + 1;
+                        });
+                        return;
+                    }
+                    const normalized = String(value || '').trim();
+                    if (!normalized) return;
+                    s.responseCount += 1;
+                    if (step.type === 'single-select') {
+                        s.optionCounts[normalized] = (s.optionCounts[normalized] || 0) + 1;
+                    } else if (s.textSamples.length < 8) {
+                        s.textSamples.push(normalized);
+                    }
+                });
+            });
+
+            return res.status(200).json({
+                success: true,
+                data: summary,
+            });
+        } catch (error) {
+            console.error('GET /org-management/user-onboarding-responses-summary failed:', error);
+            return res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load onboarding responses summary',
+            });
+        }
+    }
+);
+
 // ==================== ORGANIZATION ANALYTICS ====================
+
+function parseOrgOverviewTimeRange(rawRange) {
+    const now = new Date();
+    const range = ['7d', '30d', '90d', '1y'].includes(rawRange) ? rawRange : '30d';
+    let startDate;
+    switch (range) {
+        case '7d':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+        case '90d':
+            startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+            break;
+        case '1y':
+            startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+            break;
+        case '30d':
+        default:
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+    }
+    return { range, startDate, endDate: now };
+}
+
+// New org overview endpoint backed by analytics_events (platform analytics pipeline)
+router.get('/analytics/platform-overview', verifyToken, requireAdmin, async (req, res) => {
+    const { Org, OrgMember, OrgVerification, AnalyticsEvent, Event } = getModels(
+        req,
+        'Org',
+        'OrgMember',
+        'OrgVerification',
+        'AnalyticsEvent',
+        'Event'
+    );
+    const { timeRange = '30d' } = req.query;
+
+    try {
+        const { range, startDate, endDate } = parseOrgOverviewTimeRange(timeRange);
+        const match = {
+            ts: { $gte: startDate, $lte: endDate },
+            event: { $in: ['event_view', 'event_registration'] }
+        };
+
+        const [totalOrgs, verifiedOrgs, newOrgs, memberStats, verificationStats, totalsByType, trendRows, sourceRows] = await Promise.all([
+            Org.countDocuments(),
+            Org.countDocuments({ verified: true }),
+            Org.countDocuments({ createdAt: { $gte: startDate } }),
+            OrgMember.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalMembers: { $sum: 1 }
+                    }
+                }
+            ]),
+            OrgVerification.aggregate([
+                {
+                    $group: {
+                        _id: '$status',
+                        count: { $sum: 1 }
+                    }
+                }
+            ]),
+            AnalyticsEvent.aggregate([
+                { $match: match },
+                { $group: { _id: '$event', count: { $sum: 1 } } }
+            ]),
+            AnalyticsEvent.aggregate([
+                { $match: match },
+                {
+                    $group: {
+                        _id: {
+                            date: { $dateToString: { format: '%Y-%m-%d', date: '$ts' } },
+                            event: '$event'
+                        },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.date': 1 } }
+            ]),
+            AnalyticsEvent.aggregate([
+                { $match: { ...match, event: 'event_view' } },
+                {
+                    $project: {
+                        source: {
+                            $ifNull: [
+                                '$properties.source',
+                                {
+                                    $switch: {
+                                        branches: [
+                                            { case: { $regexMatch: { input: { $ifNull: ['$context.referrer', ''] }, regex: 'org/|club-dashboard' } }, then: 'org_page' },
+                                            { case: { $regexMatch: { input: { $ifNull: ['$context.referrer', ''] }, regex: 'events-dashboard' } }, then: 'explore' }
+                                        ],
+                                        default: 'direct'
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$source',
+                        count: { $sum: 1 }
+                    }
+                }
+            ])
+        ]);
+
+        const totalsMap = totalsByType.reduce((acc, row) => {
+            acc[row._id] = row;
+            return acc;
+        }, {});
+        const totalViews = totalsMap.event_view?.count || 0;
+        const totalRegistrations = totalsMap.event_registration?.count || 0;
+        const registrationRate = totalViews > 0 ? Number(((totalRegistrations / totalViews) * 100).toFixed(1)) : 0;
+        const [uniqueViewActorCount, uniqueRegistrantActorCount] = await Promise.all([
+            AnalyticsEvent.aggregate([
+                { $match: { ...match, event: 'event_view' } },
+                {
+                    $project: {
+                        actor: {
+                            $ifNull: [
+                                { $concat: ['u:', { $toString: '$user_id' }] },
+                                { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                            ]
+                        }
+                    }
+                },
+                { $match: { actor: { $ne: 'a:' } } },
+                { $group: { _id: '$actor' } },
+                { $count: 'count' }
+            ]),
+            AnalyticsEvent.aggregate([
+                { $match: { ...match, event: 'event_registration' } },
+                {
+                    $project: {
+                        actor: {
+                            $ifNull: [
+                                { $concat: ['u:', { $toString: '$user_id' }] },
+                                { $concat: ['a:', { $ifNull: ['$anonymous_id', ''] }] }
+                            ]
+                        }
+                    }
+                },
+                { $match: { actor: { $ne: 'a:' } } },
+                { $group: { _id: '$actor' } },
+                { $count: 'count' }
+            ])
+        ]);
+        const uniqueViewers = uniqueViewActorCount[0]?.count || 0;
+        const uniqueRegistrants = uniqueRegistrantActorCount[0]?.count || 0;
+
+        const trendMap = {};
+        for (const row of trendRows) {
+            const date = row._id?.date;
+            const event = row._id?.event;
+            if (!date) continue;
+            if (!trendMap[date]) trendMap[date] = { date, views: 0, registrations: 0 };
+            if (event === 'event_view') trendMap[date].views = row.count;
+            if (event === 'event_registration') trendMap[date].registrations = row.count;
+        }
+        const trends = Object.values(trendMap).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+        const viewSources = { direct: 0, explore: 0, org_page: 0, email: 0, qr: 0 };
+        for (const row of sourceRows) {
+            const key = String(row._id || '').toLowerCase();
+            if (Object.prototype.hasOwnProperty.call(viewSources, key)) {
+                viewSources[key] = row.count;
+            } else {
+                viewSources.direct += row.count;
+            }
+        }
+
+        const topEventCounts = await AnalyticsEvent.aggregate([
+            {
+                $match: {
+                    ts: { $gte: startDate, $lte: endDate },
+                    event: { $in: ['event_view', 'event_registration'] },
+                    'properties.event_id': { $exists: true, $ne: null }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        eventId: { $toString: '$properties.event_id' },
+                        event: '$event'
+                    },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const topEventIds = [...new Set(topEventCounts.map((r) => r?._id?.eventId).filter(Boolean))];
+        const topEventObjIds = topEventIds
+            .filter((id) => mongoose.Types.ObjectId.isValid(id))
+            .map((id) => new mongoose.Types.ObjectId(id));
+        const eventRows = topEventObjIds.length
+            ? await Event.find({
+                _id: { $in: topEventObjIds },
+                hostingType: 'Org'
+            }).select('_id hostingId').lean()
+            : [];
+        const eventToOrgMap = new Map(eventRows.map((row) => [String(row._id), String(row.hostingId)]));
+
+        const orgMetricMap = new Map();
+        for (const row of topEventCounts) {
+            const eventId = row?._id?.eventId ? String(row._id.eventId) : '';
+            const orgId = eventToOrgMap.get(eventId) || '';
+            if (!orgId) continue;
+            if (!orgMetricMap.has(orgId)) orgMetricMap.set(orgId, { orgId, views: 0, registrations: 0 });
+            const current = orgMetricMap.get(orgId);
+            if (row?._id?.event === 'event_view') current.views = row.count;
+            if (row?._id?.event === 'event_registration') current.registrations = row.count;
+        }
+
+        const rankedOrgMetrics = [...orgMetricMap.values()]
+            .map((row) => ({ ...row, score: row.views + row.registrations * 4 }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 6);
+
+        const orgDocs = rankedOrgMetrics.length
+            ? await Org.find({ _id: { $in: rankedOrgMetrics.map((r) => r.orgId) } }).select('org_name').lean()
+            : [];
+        const orgNameMap = Object.fromEntries(orgDocs.map((o) => [String(o._id), o.org_name || 'Unknown org']));
+
+        const topOrganizations = rankedOrgMetrics.map((row) => ({
+            orgId: row.orgId,
+            orgName: orgNameMap[row.orgId] || 'Unknown org',
+            views: row.views,
+            registrations: row.registrations,
+            score: row.score
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: {
+                timeRange: range,
+                window: { startDate, endDate },
+                overview: {
+                    totalOrgs,
+                    verifiedOrgs,
+                    newOrgs,
+                    totalMembers: memberStats[0]?.totalMembers || 0,
+                    pendingVerificationRequests: verificationStats.find((s) => s._id === 'pending')?.count || 0
+                },
+                engagement: {
+                    totalViews,
+                    totalRegistrations,
+                    registrationRate,
+                    uniqueViewers,
+                    uniqueRegistrants
+                },
+                trends,
+                viewSources,
+                topOrganizations
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching org platform overview analytics:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching org platform overview analytics',
+            error: error.message
+        });
+    }
+});
 
 // Get organization analytics
 router.get('/analytics', verifyToken, requireAdmin, async (req, res) => {
@@ -545,17 +1167,55 @@ router.get('/analytics', verifyToken, requireAdmin, async (req, res) => {
 
 // ==================== ORGANIZATION MANAGEMENT ====================
 
+// Draft governance versions awaiting platform admin approval (must be before /organizations/:orgId)
+router.get('/governance/pending-drafts', verifyToken, requireAdmin, async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    try {
+        const orgs = await Org.find({
+            'governanceDocuments.versions.status': 'draft'
+        })
+            .select('org_name org_profile_image governanceDocuments')
+            .lean();
+
+        const rows = [];
+        for (const org of orgs) {
+            for (const slot of org.governanceDocuments || []) {
+                for (const ver of slot.versions || []) {
+                    if (ver.status === 'draft') {
+                        rows.push({
+                            orgId: org._id.toString(),
+                            orgName: org.org_name,
+                            orgProfileImage: org.org_profile_image || null,
+                            docKey: slot.key,
+                            version: ver.version,
+                            uploadedAt: ver.uploadedAt,
+                            originalFilename: ver.originalFilename || null,
+                            storageUrl: ver.storageUrl || null
+                        });
+                    }
+                }
+            }
+        }
+        rows.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
+        res.status(200).json({ success: true, data: rows });
+    } catch (error) {
+        console.error('Error listing pending governance drafts:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Get all organizations with management data
 router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
-    const { 
-        search, 
-        status, 
-        verified, 
-        page = 1, 
-        limit = 20, 
-        sortBy = 'createdAt', 
-        sortOrder = 'desc' 
+    const {
+        search,
+        status,
+        lifecycleStatus,
+        verified,
+        page: pageRaw = 1,
+        limit: limitRaw = 20,
+        sortBy = 'createdAt',
+        sortOrder = 'desc'
     } = req.query;
 
     try {
@@ -569,9 +1229,19 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
         }
         
         if (status) filter.status = status;
-        if (verified !== '') filter.verified = verified === 'true';
+        if (lifecycleStatus) filter.lifecycleStatus = lifecycleStatus;
+        // Only apply when explicitly requested; missing/undefined verified must not imply false
+        if (verified === 'true' || verified === 'false') {
+            filter.verified = verified === 'true';
+        }
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const pageNum = Math.max(1, parseInt(String(pageRaw), 10) || 1);
+        const limitParsed = parseInt(String(limitRaw), 10);
+        const limitNum = Number.isFinite(limitParsed) && limitParsed > 0
+            ? Math.min(limitParsed, 100)
+            : 20;
+
+        const skip = (pageNum - 1) * limitNum;
         const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
         console.log(filter);
@@ -579,7 +1249,7 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
         const orgs = await Org.find(filter)
             .sort(sort)
             .skip(skip)
-            .limit(parseInt(limit));
+            .limit(limitNum);
 
         // Get additional data for each org
         const orgsWithData = await Promise.all(orgs.map(async (org) => {
@@ -590,8 +1260,14 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
                 createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
             });
 
+            const plain = org.toObject();
+            const createdAt = resolveOrgCreatedAt(plain);
+            const createdAtOut =
+                createdAt != null && !Number.isNaN(createdAt.getTime()) ? createdAt : null;
+
             return {
-                ...org.toObject(),
+                ...plain,
+                createdAt: createdAtOut,
                 memberCount,
                 recentEventCount: eventCount
             };
@@ -600,14 +1276,16 @@ router.get('/organizations', verifyToken, requireAdmin, async (req, res) => {
         const total = await Org.countDocuments(filter);
 
         console.log(`GET: /org-management/organizations - Retrieved ${orgsWithData.length} organizations`);
+        const totalPages = Math.max(1, Math.ceil(total / limitNum));
+
         res.status(200).json({
             success: true,
             data: orgsWithData,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: pageNum,
+                limit: limitNum,
                 total,
-                totalPages: Math.ceil(total / limit)
+                totalPages
             }
         });
     } catch (error) {
@@ -675,13 +1353,443 @@ router.get('/organizations/export', verifyToken, requireAdmin, async (req, res) 
     }
 });
 
+/** Platform admin: org-hosted events time window for snapshot / list. */
+function parseAdminOrgEventTime(query) {
+    const range = ['7d', '30d', '90d', '1y'].includes(query.range) ? query.range : '30d';
+    const windowMode = query.window === 'upcoming' ? 'upcoming' : 'past';
+    const now = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const rangeMs =
+        range === '7d' ? 7 * dayMs
+            : range === '90d' ? 90 * dayMs
+                : range === '1y' ? 365 * dayMs
+                    : 30 * dayMs;
+    let startDate;
+    let endDate;
+    if (windowMode === 'past') {
+        endDate = now;
+        startDate = new Date(now.getTime() - rangeMs);
+    } else {
+        startDate = now;
+        endDate = new Date(now.getTime() + rangeMs);
+    }
+    return { startDate, endDate, range, windowMode };
+}
+
+function adminOrgEventEngagementScore(ev, an) {
+    const attendeeCount = ev.registrationCount ?? (Array.isArray(ev.attendees) ? ev.attendees.length : 0);
+    const ur = an?.uniqueRegistrations ?? 0;
+    const r = an?.registrations ?? 0;
+    const uv = an?.uniqueViews ?? 0;
+    const v = an?.views ?? 0;
+    return ur * 5 + r * 2 + attendeeCount * 3 + uv * 0.08 + v * 0.02 + (ev.expectedAttendance || 0) * 0.05;
+}
+
+function deriveEventViewSource(raw) {
+    const source = raw?.properties?.source;
+    if (['org_page', 'explore', 'direct', 'email'].includes(source)) return source;
+    const referrer = String(raw?.context?.referrer || '');
+    if (referrer.includes('org/') || referrer.includes('club-dashboard')) return 'org_page';
+    if (referrer.includes('events-dashboard')) return 'explore';
+    return 'direct';
+}
+
+function buildAnalyticsEventIdMatch(eventIds) {
+    const strIds = [...new Set((eventIds || []).map((id) => String(id)).filter(Boolean))];
+    const objIds = strIds
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+    return {
+        strIds,
+        match: {
+            $or: [
+                { 'properties.event_id': { $in: strIds } },
+                { 'properties.event_id': { $in: objIds } }
+            ]
+        }
+    };
+}
+
+function finalizeAnalyticsBuckets(bucketMap) {
+    const out = new Map();
+    for (const [eventId, b] of bucketMap.entries()) {
+        out.set(eventId, {
+            views: b.views,
+            uniqueViews: b.uniqueViewActors.size,
+            anonymousViews: b.anonymousViews,
+            uniqueAnonymousViews: b.uniqueAnonymousActors.size,
+            registrations: b.registrations,
+            uniqueRegistrations: b.uniqueRegistrationActors.size,
+            sources: b.sources
+        });
+    }
+    return out;
+}
+
+async function buildAnalyticsByEventId(AnalyticsEvent, eventIds) {
+    const { strIds, match } = buildAnalyticsEventIdMatch(eventIds);
+    if (!strIds.length) return new Map();
+
+    const rows = await AnalyticsEvent.find({
+        event: { $in: ['event_view', 'event_registration'] },
+        ...match
+    })
+        .select('event user_id anonymous_id session_id properties context ts')
+        .lean();
+
+    const targetIds = new Set(strIds);
+    const buckets = new Map();
+
+    for (const row of rows) {
+        const eventId = row?.properties?.event_id != null ? String(row.properties.event_id) : '';
+        if (!targetIds.has(eventId)) continue;
+        if (!buckets.has(eventId)) {
+            buckets.set(eventId, {
+                views: 0,
+                registrations: 0,
+                anonymousViews: 0,
+                uniqueViewActors: new Set(),
+                uniqueAnonymousActors: new Set(),
+                uniqueRegistrationActors: new Set(),
+                sources: { org_page: 0, explore: 0, direct: 0, email: 0 }
+            });
+        }
+        const b = buckets.get(eventId);
+        const userKey = row.user_id ? `u:${String(row.user_id)}` : '';
+        const anonKey = row.anonymous_id ? `a:${String(row.anonymous_id)}` : '';
+        const sessionKey = row.session_id ? `s:${String(row.session_id)}` : '';
+        const actor = userKey || anonKey || sessionKey || `e:${String(row._id)}`;
+
+        if (row.event === 'event_view') {
+            b.views += 1;
+            b.uniqueViewActors.add(actor);
+            if (!userKey) {
+                b.anonymousViews += 1;
+                b.uniqueAnonymousActors.add(actor);
+            }
+            const source = deriveEventViewSource(row);
+            if (Object.prototype.hasOwnProperty.call(b.sources, source)) b.sources[source] += 1;
+        }
+
+        if (row.event === 'event_registration') {
+            b.registrations += 1;
+            b.uniqueRegistrationActors.add(actor);
+        }
+    }
+
+    return finalizeAnalyticsBuckets(buckets);
+}
+
+// Admin: ranked "best" events in a time window (by engagement heuristics)
+router.get('/organizations/:orgId/events/snapshot', verifyToken, requireAdmin, async (req, res) => {
+    const { Event, AnalyticsEvent } = getModels(req, 'Event', 'AnalyticsEvent');
+    const { orgId } = req.params;
+    const topN = Math.min(Math.max(parseInt(String(req.query.top || '5'), 10) || 5, 1), 25);
+    const { startDate, endDate, range, windowMode } = parseAdminOrgEventTime(req.query);
+
+    try {
+        const filter = {
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false,
+            start_time: { $gte: startDate, $lte: endDate }
+        };
+
+        const events = await Event.find(filter)
+            .select('name type start_time end_time location status registrationCount attendees expectedAttendance image')
+            .lean();
+
+        const ids = events.map((e) => e._id);
+        const analyticsById = await buildAnalyticsByEventId(AnalyticsEvent, ids);
+
+        const enriched = events.map((ev) => {
+            const an = analyticsById.get(String(ev._id));
+            const attendeeCount = ev.registrationCount ?? (Array.isArray(ev.attendees) ? ev.attendees.length : 0);
+            const score = adminOrgEventEngagementScore(ev, an);
+            return {
+                _id: ev._id,
+                name: ev.name,
+                type: ev.type,
+                start_time: ev.start_time,
+                end_time: ev.end_time,
+                location: ev.location,
+                status: ev.status,
+                image: ev.image,
+                expectedAttendance: ev.expectedAttendance,
+                registrationCount: attendeeCount,
+                analytics: {
+                    views: an?.views ?? 0,
+                    uniqueViews: an?.uniqueViews ?? 0,
+                    registrations: an?.registrations ?? 0,
+                    uniqueRegistrations: an?.uniqueRegistrations ?? 0
+                },
+                score
+            };
+        });
+        enriched.sort((a, b) => b.score - a.score);
+        const topEvents = enriched.slice(0, topN);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                range,
+                window: windowMode,
+                startDate,
+                endDate,
+                totalInRange: enriched.length,
+                topEvents
+            }
+        });
+    } catch (error) {
+        console.error('Error building org event snapshot (admin):', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error loading event snapshot',
+            error: error.message
+        });
+    }
+});
+
+// Admin: paginated events in window (optional sort by engagement score)
+router.get('/organizations/:orgId/events', verifyToken, requireAdmin, async (req, res) => {
+    const { Event, AnalyticsEvent } = getModels(req, 'Event', 'AnalyticsEvent');
+    const { orgId } = req.params;
+    const pageNum = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const limitNum = Math.min(Math.max(parseInt(String(req.query.limit || '15'), 10) || 15, 1), 50);
+    const sort = req.query.sort === 'start_time' ? 'start_time' : 'engagement';
+    const { startDate, endDate, range, windowMode } = parseAdminOrgEventTime(req.query);
+
+    try {
+        const filter = {
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false,
+            start_time: { $gte: startDate, $lte: endDate }
+        };
+
+        const events = await Event.find(filter)
+            .select('name type start_time end_time location status registrationCount attendees expectedAttendance image')
+            .lean();
+
+        const ids = events.map((e) => e._id);
+        const analyticsById = await buildAnalyticsByEventId(AnalyticsEvent, ids);
+
+        const enriched = events.map((ev) => {
+            const an = analyticsById.get(String(ev._id));
+            const attendeeCount = ev.registrationCount ?? (Array.isArray(ev.attendees) ? ev.attendees.length : 0);
+            const score = adminOrgEventEngagementScore(ev, an);
+            return {
+                _id: ev._id,
+                name: ev.name,
+                type: ev.type,
+                start_time: ev.start_time,
+                end_time: ev.end_time,
+                location: ev.location,
+                status: ev.status,
+                image: ev.image,
+                expectedAttendance: ev.expectedAttendance,
+                registrationCount: attendeeCount,
+                analytics: {
+                    views: an?.views ?? 0,
+                    uniqueViews: an?.uniqueViews ?? 0,
+                    registrations: an?.registrations ?? 0,
+                    uniqueRegistrations: an?.uniqueRegistrations ?? 0
+                },
+                score
+            };
+        });
+
+        if (sort === 'start_time') {
+            enriched.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+        } else {
+            enriched.sort((a, b) => b.score - a.score);
+        }
+
+        const total = enriched.length;
+        const skip = (pageNum - 1) * limitNum;
+        const pageRows = enriched.slice(skip, skip + limitNum);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                range,
+                window: windowMode,
+                startDate,
+                endDate,
+                events: pageRows,
+                pagination: {
+                    page: pageNum,
+                    limit: limitNum,
+                    total,
+                    totalPages: Math.max(1, Math.ceil(total / limitNum))
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error listing org events (admin):', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error loading events',
+            error: error.message
+        });
+    }
+});
+
+// Admin: deep engagement + ops snapshot for one org-hosted event
+router.get('/organizations/:orgId/events/:eventId/engagement', verifyToken, requireAdmin, async (req, res) => {
+    const { Event, AnalyticsEvent, EventAgenda, EventJob, VolunteerSignup, EventEquipment } = getModels(
+        req,
+        'Event',
+        'AnalyticsEvent',
+        'EventAgenda',
+        'EventJob',
+        'VolunteerSignup',
+        'EventEquipment'
+    );
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne({
+            _id: eventId,
+            hostingId: orgId,
+            hostingType: 'Org',
+            isDeleted: false
+        })
+            .populate('hostingId', 'org_name org_profile_image')
+            .populate('collaboratorOrgs.orgId', 'org_name org_profile_image')
+            .lean();
+
+        if (!event) {
+            return res.status(404).json({ success: false, message: 'Event not found' });
+        }
+
+        const analyticsByEvent = await buildAnalyticsByEventId(AnalyticsEvent, [eventId]);
+        const analytics = analyticsByEvent.get(String(eventId)) || null;
+        const agenda = await EventAgenda.findOne({ eventId }).lean();
+        const roles = await EventJob.find({ eventId }).lean();
+        const totalVolunteers = roles.reduce((sum, role) => sum + (role.assignments?.length || 0), 0);
+        const confirmedVolunteers = roles.reduce(
+            (sum, role) => sum + (role.assignments?.filter((a) => a.status === 'confirmed')?.length || 0),
+            0
+        );
+        const signups = await VolunteerSignup.find({ eventId }).populate('memberId', 'name email').lean();
+        const equipment = await EventEquipment.findOne({ eventId }).lean();
+
+        const registrationCount = event.registrationCount ?? (event.attendees?.length ?? 0);
+        const checkedInCount = signups.filter((s) => s.checkedIn).length;
+
+        let eventCheckIn = null;
+        if (event.checkInEnabled && event.attendees && Array.isArray(event.attendees)) {
+            const totalCheckedIn = event.attendees.filter((a) => a.checkedIn).length;
+            const totalRegistrations = event.registrationCount ?? event.attendees.length;
+            eventCheckIn = {
+                totalCheckedIn,
+                totalRegistrations,
+                checkInRate: totalRegistrations > 0
+                    ? ((totalCheckedIn / totalRegistrations) * 100).toFixed(1)
+                    : '0'
+            };
+        }
+
+        const now = new Date();
+        let operationalStatus = 'upcoming';
+        if (event.start_time <= now && event.end_time >= now) {
+            operationalStatus = 'active';
+        } else if (event.end_time < now) {
+            operationalStatus = 'completed';
+        }
+
+        const { match } = buildAnalyticsEventIdMatch([eventId]);
+        const historyRows = await AnalyticsEvent.find({
+            event: { $in: ['event_view', 'event_registration'] },
+            ...match
+        })
+            .select('event ts user_id anonymous_id session_id properties context')
+            .sort({ ts: -1 })
+            .limit(400)
+            .lean();
+
+        const viewHistory = historyRows
+            .filter((r) => r.event === 'event_view')
+            .slice(0, 40)
+            .map((r) => ({
+                timestamp: r.ts,
+                isAnonymous: !r.user_id,
+                source: deriveEventViewSource(r)
+            }));
+
+        const registrationHistory = historyRows
+            .filter((r) => r.event === 'event_registration')
+            .slice(0, 40)
+            .map((r) => ({
+                timestamp: r.ts,
+                isAnonymous: !r.user_id
+            }));
+
+        res.status(200).json({
+            success: true,
+            data: {
+                event,
+                analytics: analytics
+                    ? {
+                        views: analytics.views,
+                        uniqueViews: analytics.uniqueViews,
+                        anonymousViews: analytics.anonymousViews,
+                        uniqueAnonymousViews: analytics.uniqueAnonymousViews,
+                        registrations: analytics.registrations,
+                        uniqueRegistrations: analytics.uniqueRegistrations,
+                        sources: analytics.sources || { org_page: 0, explore: 0, direct: 0, email: 0 },
+                        viewHistorySample: viewHistory,
+                        registrationHistorySample: registrationHistory
+                    }
+                    : {
+                        views: 0,
+                        uniqueViews: 0,
+                        anonymousViews: 0,
+                        uniqueAnonymousViews: 0,
+                        registrations: 0,
+                        uniqueRegistrations: 0,
+                        sources: { org_page: 0, explore: 0, direct: 0, email: 0 },
+                        viewHistorySample: [],
+                        registrationHistorySample: []
+                    },
+                agenda: agenda || { items: [] },
+                roles: {
+                    total: roles.length,
+                    assignments: totalVolunteers,
+                    confirmed: confirmedVolunteers,
+                    signups: signups.length
+                },
+                equipment: equipment || { items: [] },
+                stats: {
+                    registrationCount,
+                    volunteers: {
+                        total: totalVolunteers,
+                        confirmed: confirmedVolunteers,
+                        checkedIn: checkedInCount
+                    },
+                    operationalStatus,
+                    checkIn: eventCheckIn
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error loading org event engagement (admin):', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error loading event engagement',
+            error: error.message
+        });
+    }
+});
+
 // Get single organization by ID (admin only)
 router.get('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) => {
     const { Org, OrgMember, Event } = getModels(req, 'Org', 'OrgMember', 'Event');
     const { orgId } = req.params;
 
     try {
-        const org = await Org.findById(orgId).populate('owner', 'username name email');
+        const org = await Org.findById(orgId).populate('owner', 'username name email picture');
         if (!org) {
             return res.status(404).json({
                 success: false,
@@ -690,16 +1798,30 @@ router.get('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) 
         }
 
         const memberCount = await OrgMember.countDocuments({ org_id: orgId });
-        const eventCount = await Event.countDocuments({
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const recentEventCount = await Event.countDocuments({
             hostingId: orgId,
             hostingType: 'Org',
-            createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+            createdAt: { $gte: thirtyDaysAgo }
+        });
+        const totalEventCount = await Event.countDocuments({
+            hostingId: orgId,
+            hostingType: 'Org'
         });
 
+        const plain = org.toObject();
+        const createdResolved = resolveOrgCreatedAt(plain);
+        const createdAtOut =
+            createdResolved != null && !Number.isNaN(createdResolved.getTime())
+                ? createdResolved
+                : null;
+
         const orgWithData = {
-            ...org.toObject(),
+            ...plain,
+            createdAt: createdAtOut,
             memberCount,
-            recentEventCount: eventCount
+            recentEventCount,
+            totalEventCount
         };
 
         console.log(`GET: /org-management/organizations/${orgId} - Retrieved org`);
@@ -957,9 +2079,11 @@ router.post('/organizations/:orgId/members', verifyToken, requireAdmin, async (r
             org_id: orgId,
             user_id: userId,
             role,
+            status: 'active',
             assignedBy: req.user.userId
         });
         await member.save();
+        await recordMemberJoined(member, req.user.userId, 'admin_added');
 
         if (!user.clubAssociations || !user.clubAssociations.some(c => c.toString() === orgId)) {
             if (!user.clubAssociations) user.clubAssociations = [];
@@ -1017,6 +2141,12 @@ router.delete('/organizations/:orgId/members/:userId', verifyToken, requireAdmin
             });
         }
 
+        await recordMemberRemoved(req, {
+            org_id: orgId,
+            user_id: userId,
+            actorUserId: req.user.userId,
+            reason: 'admin_removed'
+        });
         await OrgMember.deleteOne({ _id: member._id });
 
         const user = await User.findById(userId);
@@ -1092,7 +2222,10 @@ router.put('/organizations/:orgId/members/:userId/role', verifyToken, requireAdm
             });
         }
 
-        await member.changeRole(role, req.user.userId, 'Role changed by admin');
+        await member.changeRole(role, req.user.userId, 'Role changed by admin', {
+            termStart: req.body.roleTermStart ? new Date(req.body.roleTermStart) : undefined,
+            termEnd: req.body.roleTermEnd ? new Date(req.body.roleTermEnd) : undefined
+        });
 
         if (!user.clubAssociations || !user.clubAssociations.some(c => c.toString() === orgId)) {
             if (!user.clubAssociations) user.clubAssociations = [];
@@ -1165,11 +2298,11 @@ router.put('/organizations/:orgId/approve', verifyToken, requireAdmin, async (re
     }
 });
 
-// Update organization status
+// Update organization (verification flags, admin notes, optional orgTypeKey — not lifecycle; use PATCH lifecycle)
 router.put('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) => {
     const { Org } = getModels(req, 'Org');
     const { orgId } = req.params;
-    const { verified, status, notes } = req.body;
+    const { verified, notes, orgTypeKey } = req.body;
     const adminId = req.user.userId;
 
     try {
@@ -1187,8 +2320,8 @@ router.put('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) 
             org.verifiedBy = verified ? adminId : null;
         }
 
-        if (status) org.status = status;
-        if (notes) org.adminNotes = notes;
+        if (notes !== undefined) org.adminNotes = notes;
+        if (orgTypeKey !== undefined) org.orgTypeKey = orgTypeKey;
 
         await org.save();
 
@@ -1208,53 +2341,210 @@ router.put('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) 
     }
 });
 
-// ==================== MIGRATIONS ====================
-
-/**
- * Add _id to org positions that don't have it (for role rename detection).
- * Run once per tenant. Protected: admin or root only.
- */
-router.post('/migrate/org-positions-ids', verifyToken, requireAdmin, async (req, res) => {
-    const mongoose = require('mongoose');
-    const { Org } = getModels(req, 'Org');
+// PATCH lifecycle (platform admin)
+router.patch('/organizations/:orgId/lifecycle', verifyToken, requireAdmin, async (req, res) => {
+    const { Org, OrgManagementConfig } = getModels(req, 'Org', 'OrgManagementConfig');
+    const { orgId } = req.params;
+    const { lifecycleStatus: nextStatus } = req.body;
+    const adminId = req.user.userId;
 
     try {
-        const orgs = await Org.find({}).lean();
-        let updated = 0;
-
-        for (const org of orgs) {
-            const positions = org.positions || [];
-            let changed = false;
-
-            for (let i = 0; i < positions.length; i++) {
-                if (!positions[i]._id) {
-                    positions[i]._id = new mongoose.Types.ObjectId();
-                    changed = true;
-                }
-            }
-
-            if (changed) {
-                await Org.updateOne(
-                    { _id: org._id },
-                    { $set: { positions } }
-                );
-                updated++;
-            }
+        if (!nextStatus) {
+            return res.status(400).json({ success: false, message: 'lifecycleStatus is required' });
         }
-
-        console.log(`POST: /org-management/migrate/org-positions-ids - Updated ${updated} org(s)`);
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const config = await OrgManagementConfig.findOne();
+        const policy = getEffectivePolicyFromConfig(config);
+        assertLifecycleTransition(policy, org, nextStatus, { isPlatformAdmin: true, isOfficer: false });
+        org.lifecycleStatus = nextStatus;
+        org.lifecycleChangedAt = new Date();
+        org.lifecycleChangedBy = adminId;
+        await org.save();
         res.status(200).json({
             success: true,
-            message: `Migration completed. Updated ${updated} organization(s) with _id on role positions.`,
-            data: { orgsUpdated: updated }
+            message: 'Lifecycle updated',
+            data: org
         });
     } catch (error) {
-        console.error('Migration org-positions-ids failed:', error);
-        res.status(500).json({
+        const code = error.statusCode || 500;
+        console.error('Error updating lifecycle:', error);
+        res.status(code).json({
             success: false,
-            message: error.message || 'Migration failed'
+            message: error.message || 'Error updating lifecycle'
         });
     }
 });
+
+// Approve a governance document version (platform admin)
+router.put('/organizations/:orgId/governance/:docKey/versions/:version/approve', verifyToken, requireAdmin, async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId, docKey, version } = req.params;
+    const adminId = req.user.userId;
+    const verNum = parseInt(version, 10);
+
+    try {
+        if (Number.isNaN(verNum)) {
+            return res.status(400).json({ success: false, message: 'Invalid version' });
+        }
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const slot = org.getGovernanceSlot(docKey);
+        if (!slot || !slot.versions?.length) {
+            return res.status(404).json({ success: false, message: 'Governance document not found' });
+        }
+        const v = slot.versions.find((x) => x.version === verNum);
+        if (!v) {
+            return res.status(404).json({ success: false, message: 'Version not found' });
+        }
+        for (const x of slot.versions) {
+            if (x.status === 'approved') {
+                x.status = 'superseded';
+            }
+        }
+        v.status = 'approved';
+        v.approvedBy = adminId;
+        v.approvedAt = new Date();
+        org.markModified('governanceDocuments');
+        await org.save();
+        res.status(200).json({
+            success: true,
+            message: 'Version approved',
+            data: org.governanceDocuments
+        });
+    } catch (error) {
+        console.error('Governance approve error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ==================== FINANCE (CMS Phase 2) ====================
+
+router.get('/finance/config', verifyToken, requireAdmin, async (req, res) => {
+    try {
+        const data = await budgetService.ensureFinanceConfig(req);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('GET finance config:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/finance/config', verifyToken, requireAdmin, async (req, res) => {
+    try {
+        const data = await budgetService.updateFinanceConfig(req, req.body || {});
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('PUT finance config:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/finance/budgets', verifyToken, requireAdmin, async (req, res) => {
+    try {
+        const result = await budgetService.listBudgetsAdmin(req, req.query);
+        res.status(200).json({
+            success: true,
+            data: result.data,
+            pagination: {
+                page: result.page,
+                limit: result.limit,
+                total: result.total,
+                totalPages: Math.ceil(result.total / result.limit)
+            }
+        });
+    } catch (error) {
+        console.error('GET finance budgets:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get(
+    '/organizations/:orgId/budgets/:budgetId',
+    verifyToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const { orgId, budgetId } = req.params;
+            const data = await budgetService.getBudgetById(req, orgId, budgetId);
+            if (!data) {
+                return res.status(404).json({ success: false, message: 'Budget not found' });
+            }
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET admin budget:', error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+);
+
+router.put(
+    '/organizations/:orgId/budgets/:budgetId/stages/:stageKey/approve',
+    verifyToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const { orgId, budgetId, stageKey } = req.params;
+            const data = await budgetService.approveStagePlatform(req, orgId, budgetId, req.user.userId, stageKey);
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const code = error.statusCode || 500;
+            console.error('Platform budget approve:', error);
+            res.status(code).json({ success: false, message: error.message });
+        }
+    }
+);
+
+router.put(
+    '/organizations/:orgId/budgets/:budgetId/stages/:stageKey/reject',
+    verifyToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const { orgId, budgetId, stageKey } = req.params;
+            const data = await budgetService.rejectBudget(
+                req,
+                orgId,
+                budgetId,
+                req.user.userId,
+                { ...(req.body || {}), stageKey },
+                { platformOnly: true }
+            );
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const code = error.statusCode || 500;
+            console.error('Platform budget reject:', error);
+            res.status(code).json({ success: false, message: error.message });
+        }
+    }
+);
+
+router.put(
+    '/organizations/:orgId/budgets/:budgetId/stages/:stageKey/request-revision',
+    verifyToken,
+    requireAdmin,
+    async (req, res) => {
+        try {
+            const { orgId, budgetId, stageKey } = req.params;
+            const data = await budgetService.requestRevision(
+                req,
+                orgId,
+                budgetId,
+                req.user.userId,
+                { ...(req.body || {}), stageKey },
+                { platformOnly: true }
+            );
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const code = error.statusCode || 500;
+            console.error('Platform budget request-revision:', error);
+            res.status(code).json({ success: false, message: error.message });
+        }
+    }
+);
 
 module.exports = router;

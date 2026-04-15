@@ -1,24 +1,47 @@
 const getModels = require('../services/getModelService');
 
+function normalizeComparable(value) {
+    if (typeof value === 'string') return value.trim().toLowerCase();
+    return value;
+}
+
+function asComparableArray(value) {
+    if (Array.isArray(value)) return value.map(normalizeComparable);
+    if (typeof value === 'string') return value.split(',').map((v) => normalizeComparable(v)).filter(Boolean);
+    return [normalizeComparable(value)];
+}
+
 // Helper function to evaluate a single condition
 function evaluateCondition(condition, event) {
-    const value = event[condition.field];
+    const fieldAliases = {
+        room: 'location',
+        roomName: 'location',
+        classroom: 'classroom_id',
+        resourceId: 'classroom_id',
+        eventType: 'type',
+        startTime: 'start_time',
+        endTime: 'end_time'
+    };
+    const fieldKey = fieldAliases[condition.field] || condition.field;
+    const value = event[fieldKey];
     if (value === undefined) return false;
+    const normalizedValue = normalizeComparable(value);
+    const normalizedConditionValue = normalizeComparable(condition.value);
 
     switch (condition.operator) {
         // String operators
         case 'equals':
-            return value === condition.value;
+            return normalizedValue === normalizedConditionValue;
         case 'notEquals':
-            return value !== condition.value;
+            return normalizedValue !== normalizedConditionValue;
         case 'contains':
-            return value.includes(condition.value);
+            return String(normalizedValue).includes(String(normalizedConditionValue));
         case 'notContains':
-            return !value.includes(condition.value);
+            return !String(normalizedValue).includes(String(normalizedConditionValue));
         case 'in':
-            return condition.value.includes(value);
+            return asComparableArray(condition.value).includes(normalizedValue);
         case 'notIn':
-            return !condition.value.includes(value);
+            return !asComparableArray(condition.value).includes(normalizedValue);
 
         // Number operators
         case 'greaterThan':

@@ -10,7 +10,7 @@ import { useFetch } from '../../../hooks/useFetch';
 
 function General() {
     const { addNotification } = useNotification();
-    const [migrating, setMigrating] = useState(false);
+    const [classroomBuildingMigrating, setClassroomBuildingMigrating] = useState(false);
     const [savingAutoClaim, setSavingAutoClaim] = useState(false);
     const { data: configData, refetch: refetchConfig } = useFetch('/org-management/config');
     const config = configData?.data;
@@ -33,31 +33,47 @@ function General() {
         }
     };
 
-    const runOrgUnlistedMigration = async () => {
-        setMigrating(true);
+    const runClassroomBuildingMigration = async () => {
+        if (
+            !window.confirm(
+                'Create Building documents from classroom building names and switch classrooms to ObjectId refs? This is intended to run once per school database. Continue?'
+            )
+        ) {
+            return;
+        }
+        setClassroomBuildingMigrating(true);
         try {
-            const res = await apiRequest('/migrate/org-add-unlisted-field', {});
+            const res = await apiRequest('/admin/migrate-classroom-building-refs', {});
             if (res?.success) {
-                addNotification({
-                    title: 'Migration complete',
-                    message: `Orgs updated: ${res.data?.orgsUpdated ?? 0}`,
-                    type: 'success'
-                });
+                const d = res.data || {};
+                if (d.skipped) {
+                    addNotification({
+                        title: 'Already completed',
+                        message: d.reason === 'already_run' ? 'This migration was already run for this tenant.' : 'Skipped.',
+                        type: 'info',
+                    });
+                } else {
+                    addNotification({
+                        title: 'Migration complete',
+                        message: `Rooms updated: ${d.classroomsUpdated ?? 0}. New buildings: ${d.buildingsCreatedCount ?? 0}.`,
+                        type: 'success',
+                    });
+                }
             } else {
                 addNotification({
                     title: 'Migration failed',
                     message: res?.message || res?.error || 'Unknown error',
-                    type: 'error'
+                    type: 'error',
                 });
             }
         } catch (e) {
             addNotification({
                 title: 'Migration failed',
                 message: e?.message || 'Request failed',
-                type: 'error'
+                type: 'error',
             });
         } finally {
-            setMigrating(false);
+            setClassroomBuildingMigrating(false);
         }
     };
 
@@ -84,23 +100,30 @@ function General() {
                     </label>
                 </div>
                 <div className="admin-migration-section" style={{ marginTop: 16 }}>
-                    <h3>Orgs: Add unlisted field</h3>
-                    <p className="admin-migration-hint">Adds unlisted: false to orgs missing the field. Safe to run multiple times.</p>
+                    <h3>Classrooms: Building references</h3>
+                    <p className="admin-migration-hint">
+                        Backfills the buildings collection from each classroom&apos;s legacy string building field,
+                        then stores an ObjectId reference on the classroom. Guarded so it normally runs once per tenant;
+                        support can re-run by calling the same endpoint with a JSON body of force: true if needed.
+                        Upgrading an existing database: run the CLI migration once before restarting servers on this
+                        release (see backend/migrations/migrateClassroomBuildingRefs.js header), or run this button
+                        immediately after deploy before other traffic hits room APIs.
+                    </p>
                     <button
                         type="button"
                         className="admin-migration-btn"
-                        onClick={runOrgUnlistedMigration}
-                        disabled={migrating}
+                        onClick={runClassroomBuildingMigration}
+                        disabled={classroomBuildingMigrating}
                     >
-                        {migrating ? (
+                        {classroomBuildingMigrating ? (
                             <>
                                 <Icon icon="mdi:loading" className="spin" />
                                 Running…
                             </>
                         ) : (
                             <>
-                                <Icon icon="mdi:database-export" />
-                                Run org unlisted migration
+                                <Icon icon="mdi:office-building" />
+                                Run classroom → building migration
                             </>
                         )}
                     </button>

@@ -5,16 +5,26 @@ import apiRequest from '../../../../utils/postRequest';
 import { Icon } from '@iconify-icon/react';
 import UnsavedChangesBanner from '../../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
 import useUnsavedChanges from '../../../../hooks/useUnsavedChanges';
+import SettingsList from '../../../../components/SettingsList/SettingsList';
 import './Configuration.scss';
+import FinanceTemplatesConfig from './FinanceTemplatesConfig';
 
-function Configuration({ section = 'general' }) {
+const ALLOWED_ACTIONS_OPTIONS = [
+    { value: 'view_page', label: 'View page' },
+    { value: 'edit_profile', label: 'Edit profile' },
+    { value: 'manage_members', label: 'Manage members' },
+    { value: 'create_events', label: 'Create events' },
+    { value: 'post_messages', label: 'Post messages' },
+];
+
+function Configuration({ section = 'general', communityEssentials = false }) {
     const { data: config, loading, error, refetch } = useFetch('/org-management/config');
     const [localConfig, setLocalConfig] = useState(null);
     const [selectedTypeKey, setSelectedTypeKey] = useState(null);
     const [benefitDraft, setBenefitDraft] = useState('');
     const [inputValues, setInputValues] = useState({});
     const originalDataRef = useRef(null);
-    const { AtlasMain } = useGradient();
+    const { AtlasMain, AdminGrad } = useGradient();
 
     React.useEffect(() => {
         if (config?.data) {
@@ -89,6 +99,10 @@ function Configuration({ section = 'general' }) {
                 return renderPolicies();
             case 'messaging':
                 return renderMessaging();
+            case 'atlas-policy':
+                return renderAtlasPolicy();
+            case 'finance-templates':
+                return null;
             case 'general':
             default:
                 return renderGeneral();
@@ -313,24 +327,126 @@ function Configuration({ section = 'general' }) {
         );
     }
 
-    const ALLOWED_ACTIONS_OPTIONS = [
-        { value: 'view_page', label: 'View page' },
-        { value: 'edit_profile', label: 'Edit profile' },
-        { value: 'manage_members', label: 'Manage members' },
-        { value: 'create_events', label: 'Create events' },
-        { value: 'post_messages', label: 'Post messages' }
-    ];
-
     // Render functions for different sections
-    const renderGeneral = () => {
+    const renderOrgApprovalSection = () => {
         const orgApproval = localConfig.orgApproval || {
             mode: 'none',
             autoApproveMemberThreshold: 5,
-            pendingOrgLimits: { discoverable: false, allowedActions: ['view_page', 'edit_profile'] }
+            pendingOrgLimits: { discoverable: false, allowedActions: ['view_page', 'edit_profile'] },
         };
         const pendingLimits = orgApproval.pendingOrgLimits || { discoverable: false, allowedActions: [] };
         const showThreshold = ['auto', 'both'].includes(orgApproval.mode);
+        const approvalItems = [
+            {
+                title: 'Approval mode',
+                subtitle:
+                    'Manual = admin approves. Auto = approve when member count reaches threshold. Both = either path can approve.',
+                action: (
+                    <select
+                        value={orgApproval.mode}
+                        onChange={(e) => updateConfig('orgApproval.mode', e.target.value)}
+                    >
+                        <option value="none">None</option>
+                        <option value="manual">Manual</option>
+                        <option value="auto">Auto (member threshold)</option>
+                        <option value="both">Both</option>
+                    </select>
+                ),
+            },
+            ...(showThreshold
+                ? [
+                      {
+                          title: 'Auto-approve member threshold',
+                          subtitle: 'Minimum members required for auto-approval.',
+                          action: (
+                              <input
+                                  type="number"
+                                  value={orgApproval.autoApproveMemberThreshold ?? 5}
+                                  onChange={(e) =>
+                                      updateConfig(
+                                          'orgApproval.autoApproveMemberThreshold',
+                                          parseInt(e.target.value, 10) || 0
+                                      )
+                                  }
+                                  min="1"
+                              />
+                          ),
+                      },
+                  ]
+                : []),
+            {
+                title: 'Discoverable while pending',
+                subtitle: 'Allow pending orgs to appear in org browse/search.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!pendingLimits.discoverable}
+                        onChange={(e) => updateConfig('orgApproval.pendingOrgLimits.discoverable', e.target.checked)}
+                    />
+                ),
+            },
+            {
+                title: 'Allowed actions for pending orgs',
+                subtitle: 'Choose what pending orgs can do before approval.',
+                action: (
+                    <div className="allowed-actions-checkboxes">
+                        {ALLOWED_ACTIONS_OPTIONS.map((opt) => (
+                            <label key={opt.value} className="checkbox-inline">
+                                <input
+                                    type="checkbox"
+                                    checked={(pendingLimits.allowedActions || []).includes(opt.value)}
+                                    onChange={(e) => {
+                                        const current = pendingLimits.allowedActions || [];
+                                        const next = e.target.checked
+                                            ? [...current, opt.value]
+                                            : current.filter((a) => a !== opt.value);
+                                        updateConfig('orgApproval.pendingOrgLimits.allowedActions', next);
+                                    }}
+                                />
+                                {opt.label}
+                            </label>
+                        ))}
+                    </div>
+                ),
+            },
+        ];
 
+        return (
+            <div className="config-section">
+                <h2>
+                    <Icon icon="mdi:clipboard-check" />
+                    Org Approval
+                </h2>
+                <SettingsList items={approvalItems} />
+            </div>
+        );
+    };
+
+    const renderGeneral = () => {
+        const verificationItems = [
+            {
+                title: 'Enable verification system',
+                subtitle: 'Allow organizations to submit verification requests.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!localConfig.verificationEnabled}
+                        onChange={(e) => updateConfig('verificationEnabled', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Require verification',
+                subtitle: 'Make verification mandatory for all organizations.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!localConfig.verificationRequired}
+                        onChange={(e) => updateConfig('verificationRequired', e.target.checked)}
+                    />
+                )
+            }
+        ];
         return (
             <div className="config-sections">
                 <div className="config-section">
@@ -338,98 +454,11 @@ function Configuration({ section = 'general' }) {
                         <Icon icon="mdi:shield-check" />
                         Verification Settings
                     </h2>
-                    <div className="config-group">
-                        <div className="config-item">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={localConfig.verificationEnabled}
-                                    onChange={(e) => updateConfig('verificationEnabled', e.target.checked)}
-                                />
-                                Enable Verification System
-                            </label>
-                            <p>Allow organizations to submit verification requests</p>
-                        </div>
-                        <div className="config-item">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={localConfig.verificationRequired}
-                                    onChange={(e) => updateConfig('verificationRequired', e.target.checked)}
-                                />
-                                Require Verification
-                            </label>
-                            <p>Make verification mandatory for all organizations</p>
-                        </div>
-                    </div>
+                    <SettingsList items={verificationItems} />
                 </div>
 
-                <div className="config-section">
-                    <h2>
-                        <Icon icon="mdi:clipboard-check" />
-                        Org Approval
-                    </h2>
-                    <div className="config-group">
-                        <div className="config-item">
-                            <label>Approval Mode</label>
-                            <select
-                                value={orgApproval.mode}
-                                onChange={(e) => updateConfig('orgApproval.mode', e.target.value)}
-                            >
-                                <option value="none">None</option>
-                                <option value="manual">Manual</option>
-                                <option value="auto">Auto (member threshold)</option>
-                                <option value="both">Both</option>
-                            </select>
-                            <p>New orgs require approval before full access. Manual = admin approves. Auto = approve when member count reaches threshold.</p>
-                        </div>
-                        {showThreshold && (
-                            <div className="config-item">
-                                <label>Auto-approve member threshold</label>
-                                <input
-                                    type="number"
-                                    value={orgApproval.autoApproveMemberThreshold ?? 5}
-                                    onChange={(e) => updateConfig('orgApproval.autoApproveMemberThreshold', parseInt(e.target.value) || 0)}
-                                    min="1"
-                                />
-                                <p>Minimum members required for auto-approval</p>
-                            </div>
-                        )}
-                        <div className="config-item">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={pendingLimits.discoverable}
-                                    onChange={(e) => updateConfig('orgApproval.pendingOrgLimits.discoverable', e.target.checked)}
-                                />
-                                Discoverable in browse
-                            </label>
-                            <p>Allow pending orgs to appear in org browse/search (default: hidden)</p>
-                        </div>
-                        <div className="config-item">
-                            <label>Allowed actions for pending orgs</label>
-                            <div className="allowed-actions-checkboxes">
-                                {ALLOWED_ACTIONS_OPTIONS.map((opt) => (
-                                    <label key={opt.value} className="checkbox-inline">
-                                        <input
-                                            type="checkbox"
-                                            checked={(pendingLimits.allowedActions || []).includes(opt.value)}
-                                            onChange={(e) => {
-                                                const current = pendingLimits.allowedActions || [];
-                                                const next = e.target.checked
-                                                    ? [...current, opt.value]
-                                                    : current.filter((a) => a !== opt.value);
-                                                updateConfig('orgApproval.pendingOrgLimits.allowedActions', next);
-                                            }}
-                                        />
-                                        {opt.label}
-                                    </label>
-                                ))}
-                            </div>
-                            <p>Actions pending orgs can perform before approval</p>
-                        </div>
-                    </div>
-                </div>
+                {renderOrgApprovalSection()}
+
             </div>
         );
     };
@@ -438,6 +467,31 @@ function Configuration({ section = 'general' }) {
         const verificationTypes = localConfig.verificationTiers || {};
         const verificationEntries = Object.entries(verificationTypes);
         const selectedType = selectedTypeKey ? verificationTypes[selectedTypeKey] : null;
+        const verificationTypeSettingsItems = [
+            {
+                title: 'Enable custom verification types',
+                subtitle: 'Allow organizations to request different verification levels.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!localConfig.enableCustomVerificationTypes}
+                        onChange={(e) => updateConfig('enableCustomVerificationTypes', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Auto-upgrade threshold (days)',
+                subtitle: 'Days before an org can request a higher tier.',
+                action: (
+                    <input
+                        type="number"
+                        value={localConfig.autoUpgradeThreshold ?? 0}
+                        onChange={(e) => updateConfig('autoUpgradeThreshold', parseInt(e.target.value, 10) || 0)}
+                        min="0"
+                    />
+                )
+            }
+        ];
 
         return (
             <div className="config-sections">
@@ -446,40 +500,16 @@ function Configuration({ section = 'general' }) {
                         <Icon icon="mdi:shield-star" />
                         Verification Types Management
                     </h2>
-
-                    <div className="config-group">
-                        <div className="config-item">
-                            <label>Enable Custom Verification Types</label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.enableCustomVerificationTypes}
-                                onChange={(e) => updateConfig('enableCustomVerificationTypes', e.target.checked)}
-                            />
-                            <p>Allow organizations to request different verification levels</p>
-                        </div>
-
-                        <div className="config-item inline">
-                            <div>
-                                <label>Auto-upgrade Threshold (days)</label>
-                                <input
-                                    type="number"
-                                    value={localConfig.autoUpgradeThreshold}
-                                    onChange={(e) => updateConfig('autoUpgradeThreshold', parseInt(e.target.value) || 0)}
-                                    min="0"
-                                />
-                                <p>Days before an org can request a higher tier</p>
-                            </div>
-                            <div className="summary-pills">
-                                <span className="pill">
-                                    <Icon icon="mdi:layers" />
-                                    {verificationEntries.length} tiers
-                                </span>
-                                <span className="pill default">
-                                    <Icon icon="mdi:star" />
-                                    Default: {localConfig.defaultVerificationType}
-                                </span>
-                            </div>
-                        </div>
+                    <SettingsList items={verificationTypeSettingsItems} />
+                    <div className="summary-pills verification-summary-pills">
+                        <span className="pill">
+                            <Icon icon="mdi:layers" />
+                            {verificationEntries.length} tiers
+                        </span>
+                        <span className="pill default">
+                            <Icon icon="mdi:star" />
+                            Default: {localConfig.defaultVerificationType}
+                        </span>
                     </div>
 
                     <div className="verification-types-layout">
@@ -697,446 +727,563 @@ function Configuration({ section = 'general' }) {
         );
     };
 
-    const renderReviewWorkflow = () => (
-        <div className="config-sections">
-            {/* Review Workflow */}
-            <div className="config-section">
-                <h2>
-                    <Icon icon="mdi:clipboard-check" />
-                    Review Workflow Settings
-                </h2>
-                
-                <div className="config-group">
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.reviewWorkflow?.requireMultipleApprovers}
-                                onChange={(e) => updateConfig('reviewWorkflow.requireMultipleApprovers', e.target.checked)}
-                            />
-                            Require Multiple Approvers
-                        </label>
-                    </div>
-
-                    <div className="config-item">
-                        <label>Minimum Approvers</label>
-                        <input
-                            type="number"
-                            value={localConfig.reviewWorkflow?.minApprovers}
-                            onChange={(e) => updateConfig('reviewWorkflow.minApprovers', parseInt(e.target.value))}
-                            min="1"
-                        />
-                    </div>
-
-                    <div className="config-item">
-                        <label>Auto-escalate after (days)</label>
-                        <input
-                            type="number"
-                            value={localConfig.reviewWorkflow?.autoEscalateAfterDays}
-                            onChange={(e) => updateConfig('reviewWorkflow.autoEscalateAfterDays', parseInt(e.target.value))}
-                            min="1"
-                        />
-                    </div>
+    const renderReviewWorkflow = () => {
+        const workflowItems = [
+            {
+                title: 'Require multiple approvers',
+                subtitle: 'Require at least the minimum approver count before completion.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!localConfig.reviewWorkflow?.requireMultipleApprovers}
+                        onChange={(e) => updateConfig('reviewWorkflow.requireMultipleApprovers', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Minimum approvers',
+                subtitle: 'Minimum number of approvers required for workflow completion.',
+                action: (
+                    <input
+                        type="number"
+                        value={localConfig.reviewWorkflow?.minApprovers ?? 1}
+                        onChange={(e) => updateConfig('reviewWorkflow.minApprovers', parseInt(e.target.value, 10) || 1)}
+                        min="1"
+                    />
+                )
+            },
+            {
+                title: 'Auto-escalate after (days)',
+                subtitle: 'Escalate stale approvals after this many days.',
+                action: (
+                    <input
+                        type="number"
+                        value={localConfig.reviewWorkflow?.autoEscalateAfterDays ?? 1}
+                        onChange={(e) =>
+                            updateConfig('reviewWorkflow.autoEscalateAfterDays', parseInt(e.target.value, 10) || 1)
+                        }
+                        min="1"
+                    />
+                )
+            }
+        ];
+        return (
+            <div className="config-sections">
+                <div className="config-section">
+                    <h2>
+                        <Icon icon="mdi:clipboard-check" />
+                        Review Workflow Settings
+                    </h2>
+                    <SettingsList items={workflowItems} />
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
-    const renderPolicies = () => (
-        <div className="config-sections">
-            {/* Policies */}
+    const renderAtlasPolicy = () => {
+        const ap = localConfig?.atlasPolicy || {};
+        const atlasItems = [
+            {
+                title: 'Hide non-active orgs from public list',
+                subtitle: 'When enabled, non-active lifecycle statuses are hidden from public directory browsing.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!ap.directory?.hideNonActiveFromPublicList}
+                        onChange={(e) =>
+                            updateConfig('atlasPolicy.directory.hideNonActiveFromPublicList', e.target.checked)
+                        }
+                    />
+                )
+            },
+            {
+                title: 'Block event creation for inactive lifecycle statuses',
+                subtitle: 'Prevent new org-hosted events when lifecycle is sunset/inactive.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={ap.events?.inactiveOrgBlocksEventCreation !== false}
+                        onChange={(e) =>
+                            updateConfig('atlasPolicy.events.inactiveOrgBlocksEventCreation', e.target.checked)
+                        }
+                    />
+                )
+            },
+            {
+                title: 'Default org type key',
+                subtitle: 'Fallback org type key for new organizations.',
+                action: (
+                    <input
+                        type="text"
+                        value={ap.defaultOrgTypeKey || ''}
+                        onChange={(e) => updateConfig('atlasPolicy.defaultOrgTypeKey', e.target.value)}
+                        placeholder="default"
+                    />
+                )
+            }
+        ];
+        return (
+            <div className="config-sections">
+                <div className="config-section">
+                    <h2>
+                        <Icon icon="mdi:map" />
+                        Atlas policy (lifecycle &amp; governance)
+                    </h2>
+                    <p className="config-help">
+                        Controls org lifecycle transitions, org types, public directory filtering, and whether inactive orgs can create events.
+                    </p>
+                    <SettingsList items={atlasItems} />
+                </div>
+            </div>
+        );
+    };
+
+    const renderOrganizationPoliciesSection = () => {
+        const policyItems = [
+            {
+                title: 'Max members per organization',
+                subtitle: 'Upper limit for total members in a single org.',
+                action: (
+                    <input
+                        type="number"
+                        value={localConfig.policies?.maxMembersPerOrg ?? 1}
+                        onChange={(e) => updateConfig('policies.maxMembersPerOrg', parseInt(e.target.value, 10) || 1)}
+                        min="1"
+                    />
+                ),
+            },
+            {
+                title: 'Max events per month',
+                subtitle: 'Maximum monthly events allowed per org.',
+                action: (
+                    <input
+                        type="number"
+                        value={localConfig.policies?.maxEventsPerMonth ?? 0}
+                        onChange={(e) => updateConfig('policies.maxEventsPerMonth', parseInt(e.target.value, 10) || 0)}
+                        min="0"
+                    />
+                ),
+            },
+            {
+                title: 'Require faculty advisor',
+                subtitle: 'Require organizations to list an advisor.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!localConfig.policies?.requireFacultyAdvisor}
+                        onChange={(e) => updateConfig('policies.requireFacultyAdvisor', e.target.checked)}
+                    />
+                ),
+            },
+            {
+                title: 'Minimum meeting frequency',
+                subtitle: 'Baseline cadence expected for active organizations.',
+                action: (
+                    <select
+                        value={localConfig.policies?.minMeetingFrequency || 'monthly'}
+                        onChange={(e) => updateConfig('policies.minMeetingFrequency', e.target.value)}
+                    >
+                        <option value="weekly">Weekly</option>
+                        <option value="biweekly">Bi-weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                    </select>
+                ),
+            },
+        ];
+        return (
             <div className="config-section">
                 <h2>
                     <Icon icon="mdi:policy" />
                     Organization Policies
                 </h2>
-                
-                <div className="config-group">
-                    <div className="config-item">
-                        <label>Max Members per Organization</label>
-                        <input
-                            type="number"
-                            value={localConfig.policies?.maxMembersPerOrg}
-                            onChange={(e) => updateConfig('policies.maxMembersPerOrg', parseInt(e.target.value))}
-                            min="1"
-                        />
-                    </div>
-
-                    <div className="config-item">
-                        <label>Max Events per Month</label>
-                        <input
-                            type="number"
-                            value={localConfig.policies?.maxEventsPerMonth}
-                            onChange={(e) => updateConfig('policies.maxEventsPerMonth', parseInt(e.target.value))}
-                            min="0"
-                        />
-                    </div>
-
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.policies?.requireFacultyAdvisor}
-                                onChange={(e) => updateConfig('policies.requireFacultyAdvisor', e.target.checked)}
-                            />
-                            Require Faculty Advisor
-                        </label>
-                    </div>
-
-                    <div className="config-item">
-                        <label>Minimum Meeting Frequency</label>
-                        <select
-                            value={localConfig.policies?.minMeetingFrequency}
-                            onChange={(e) => updateConfig('policies.minMeetingFrequency', e.target.value)}
-                        >
-                            <option value="weekly">Weekly</option>
-                            <option value="biweekly">Bi-weekly</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="quarterly">Quarterly</option>
-                        </select>
-                    </div>
-                </div>
+                <SettingsList items={policyItems} />
             </div>
-        </div>
+        );
+    };
+
+    const renderPolicies = () => (
+        <div className="config-sections">{renderOrganizationPoliciesSection()}</div>
     );
 
-    const renderMessaging = () => (
-        <div className="config-sections">
-            <div className="config-section">
-                <h2>
-                    <Icon icon="mdi:message-text" />
-                    Messaging System Configuration
-                </h2>
-                
-                <div className="config-group">
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.messaging?.enabled !== false}
-                                onChange={(e) => updateConfig('messaging.enabled', e.target.checked)}
-                            />
-                            Enable Messaging System
-                        </label>
-                        <p>Allow organizations to post messages and announcements</p>
-                    </div>
+    const renderMessaging = () => {
+        const messagingItems = [
+            {
+                title: 'Enable messaging system',
+                subtitle: 'Allow organizations to post messages and announcements.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.enabled !== false}
+                        onChange={(e) => updateConfig('messaging.enabled', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Default character limit',
+                subtitle: `Default for messages (${localConfig.messaging?.minCharacterLimit ?? 100} - ${
+                    localConfig.messaging?.maxCharacterLimit ?? 2000
+                }).`,
+                action: (
+                    <input
+                        type="number"
+                        value={
+                            inputValues['messaging.defaultCharacterLimit'] !== undefined
+                                ? inputValues['messaging.defaultCharacterLimit']
+                                : (localConfig.messaging?.defaultCharacterLimit ?? 500)
+                        }
+                        onChange={(e) => {
+                            const inputVal = e.target.value;
+                            setInputValues((prev) => ({ ...prev, 'messaging.defaultCharacterLimit': inputVal }));
+                            if (inputVal !== '') {
+                                const numVal = parseInt(inputVal, 10);
+                                if (!isNaN(numVal) && numVal >= 0) updateConfig('messaging.defaultCharacterLimit', numVal);
+                            }
+                        }}
+                        onBlur={(e) => {
+                            const inputVal = e.target.value;
+                            if (inputVal === '') {
+                                setInputValues((prev) => {
+                                    const next = { ...prev };
+                                    delete next['messaging.defaultCharacterLimit'];
+                                    return next;
+                                });
+                                return;
+                            }
+                            const numVal = parseInt(inputVal, 10);
+                            if (!isNaN(numVal) && numVal >= 0) {
+                                updateConfig('messaging.defaultCharacterLimit', numVal);
+                                setInputValues((prev) => {
+                                    const next = { ...prev };
+                                    delete next['messaging.defaultCharacterLimit'];
+                                    return next;
+                                });
+                            }
+                        }}
+                        min={localConfig.messaging?.minCharacterLimit ?? 100}
+                        max={localConfig.messaging?.maxCharacterLimit ?? 2000}
+                    />
+                )
+            },
+            {
+                title: 'Minimum character limit',
+                subtitle: 'Minimum characters required for a message.',
+                action: (
+                    <input
+                        type="number"
+                        value={
+                            inputValues['messaging.minCharacterLimit'] !== undefined
+                                ? inputValues['messaging.minCharacterLimit']
+                                : (localConfig.messaging?.minCharacterLimit ?? 100)
+                        }
+                        onChange={(e) => {
+                            const inputVal = e.target.value;
+                            setInputValues((prev) => ({ ...prev, 'messaging.minCharacterLimit': inputVal }));
+                            if (inputVal !== '') {
+                                const numVal = parseInt(inputVal, 10);
+                                if (!isNaN(numVal) && numVal >= 1) updateConfig('messaging.minCharacterLimit', numVal);
+                            }
+                        }}
+                        onBlur={(e) => {
+                            const inputVal = e.target.value;
+                            if (inputVal === '') {
+                                setInputValues((prev) => {
+                                    const next = { ...prev };
+                                    delete next['messaging.minCharacterLimit'];
+                                    return next;
+                                });
+                                return;
+                            }
+                            const numVal = parseInt(inputVal, 10);
+                            if (!isNaN(numVal) && numVal >= 1) {
+                                updateConfig('messaging.minCharacterLimit', numVal);
+                                setInputValues((prev) => {
+                                    const next = { ...prev };
+                                    delete next['messaging.minCharacterLimit'];
+                                    return next;
+                                });
+                            }
+                        }}
+                        min="1"
+                    />
+                )
+            },
+            {
+                title: 'Maximum character limit',
+                subtitle: 'Maximum characters allowed for a message.',
+                action: (
+                    <input
+                        type="number"
+                        value={
+                            inputValues['messaging.maxCharacterLimit'] !== undefined
+                                ? inputValues['messaging.maxCharacterLimit']
+                                : (localConfig.messaging?.maxCharacterLimit ?? 2000)
+                        }
+                        onChange={(e) => {
+                            const inputVal = e.target.value;
+                            setInputValues((prev) => ({ ...prev, 'messaging.maxCharacterLimit': inputVal }));
+                            if (inputVal !== '') {
+                                const numVal = parseInt(inputVal, 10);
+                                if (!isNaN(numVal) && numVal >= 100) updateConfig('messaging.maxCharacterLimit', numVal);
+                            }
+                        }}
+                        onBlur={(e) => {
+                            const inputVal = e.target.value;
+                            if (inputVal === '') {
+                                setInputValues((prev) => {
+                                    const next = { ...prev };
+                                    delete next['messaging.maxCharacterLimit'];
+                                    return next;
+                                });
+                                return;
+                            }
+                            const numVal = parseInt(inputVal, 10);
+                            if (!isNaN(numVal) && numVal >= 100) {
+                                updateConfig('messaging.maxCharacterLimit', numVal);
+                                setInputValues((prev) => {
+                                    const next = { ...prev };
+                                    delete next['messaging.maxCharacterLimit'];
+                                    return next;
+                                });
+                            }
+                        }}
+                        min="100"
+                    />
+                )
+            },
+            {
+                title: 'Default visibility',
+                subtitle: 'Default visibility setting for new messages.',
+                action: (
+                    <select
+                        value={localConfig.messaging?.defaultVisibility || 'members_and_followers'}
+                        onChange={(e) => updateConfig('messaging.defaultVisibility', e.target.value)}
+                    >
+                        <option value="members_only">Members Only</option>
+                        <option value="members_and_followers">Members and Followers</option>
+                        <option value="public">Public</option>
+                    </select>
+                )
+            },
+            {
+                title: 'Enable moderation',
+                subtitle: 'Require messages to be approved before being visible.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!localConfig.messaging?.moderationEnabled}
+                        onChange={(e) => updateConfig('messaging.moderationEnabled', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Require profanity filter',
+                subtitle: 'Automatically filter profanity from messages.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.requireProfanityFilter !== false}
+                        onChange={(e) => updateConfig('messaging.requireProfanityFilter', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Allow event mentions',
+                subtitle: 'Allow organizations to mention events in messages.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.allowEventMentions !== false}
+                        onChange={(e) => updateConfig('messaging.allowEventMentions', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Allow event-specific announcements',
+                subtitle: 'Allow messages targeted at org-hosted event attendees.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.eventAnnouncements?.enabled !== false}
+                        onChange={(e) => updateConfig('messaging.eventAnnouncements.enabled', e.target.checked)}
+                    />
+                )
+            },
+            ...(localConfig.messaging?.eventAnnouncements?.enabled !== false
+                ? [
+                      {
+                          title: 'Announcement lead time (days)',
+                          subtitle: '0 or empty = no restriction before event start.',
+                          action: (
+                              <input
+                                  type="number"
+                                  min={0}
+                                  value={localConfig.messaging?.eventAnnouncements?.allowAnnouncementsDaysBeforeEvent ?? ''}
+                                  placeholder="Any time"
+                                  onChange={(e) => {
+                                      const v = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                                      updateConfig(
+                                          'messaging.eventAnnouncements.allowAnnouncementsDaysBeforeEvent',
+                                          v !== null && !isNaN(v) && v >= 0 ? v : null
+                                      );
+                                  }}
+                              />
+                          )
+                      },
+                      {
+                          title: 'Include checked-in attendees',
+                          subtitle: 'Include everyone currently checked in, not just registrants.',
+                          action: (
+                              <input
+                                  type="checkbox"
+                                  checked={localConfig.messaging?.eventAnnouncements?.includeCheckedIn !== false}
+                                  onChange={(e) =>
+                                      updateConfig('messaging.eventAnnouncements.includeCheckedIn', e.target.checked)
+                                  }
+                              />
+                          )
+                      },
+                      {
+                          title: 'Include anonymous registrants in email',
+                          subtitle:
+                              'Include guests without accounts when an email can be resolved from guest/form fields.',
+                          action: (
+                              <input
+                                  type="checkbox"
+                                  checked={localConfig.messaging?.eventAnnouncements?.includeAnonymousInEmail !== false}
+                                  onChange={(e) =>
+                                      updateConfig('messaging.eventAnnouncements.includeAnonymousInEmail', e.target.checked)
+                                  }
+                              />
+                          )
+                      }
+                  ]
+                : []),
+            {
+                title: 'Allow links',
+                subtitle: 'Allow URLs in org messages.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.allowLinks !== false}
+                        onChange={(e) => updateConfig('messaging.allowLinks', e.target.checked)}
+                    />
+                )
+            }
+        ];
 
-                    <div className="config-item">
-                        <label>Default Character Limit</label>
-                        <input
-                            type="number"
-                            value={inputValues['messaging.defaultCharacterLimit'] !== undefined 
-                                ? inputValues['messaging.defaultCharacterLimit'] 
-                                : (localConfig.messaging?.defaultCharacterLimit ?? 500)}
-                            onChange={(e) => {
-                                const inputVal = e.target.value;
-                                setInputValues(prev => ({ ...prev, 'messaging.defaultCharacterLimit': inputVal }));
-                                if (inputVal !== '') {
-                                    const numVal = parseInt(inputVal, 10);
-                                    if (!isNaN(numVal) && numVal >= 0) {
-                                        updateConfig('messaging.defaultCharacterLimit', numVal);
-                                    }
-                                }
-                            }}
-                            onBlur={(e) => {
-                                const inputVal = e.target.value;
-                                if (inputVal === '') {
-                                    // Reset to current config value
-                                    setInputValues(prev => {
-                                        const newVals = { ...prev };
-                                        delete newVals['messaging.defaultCharacterLimit'];
-                                        return newVals;
-                                    });
-                                } else {
-                                    const numVal = parseInt(inputVal, 10);
-                                    if (!isNaN(numVal) && numVal >= 0) {
-                                        updateConfig('messaging.defaultCharacterLimit', numVal);
-                                        setInputValues(prev => {
-                                            const newVals = { ...prev };
-                                            delete newVals['messaging.defaultCharacterLimit'];
-                                            return newVals;
-                                        });
-                                    }
-                                }
-                            }}
-                            min={localConfig.messaging?.minCharacterLimit ?? 100}
-                            max={localConfig.messaging?.maxCharacterLimit ?? 2000}
-                        />
-                        <p>Default character limit for messages (between {localConfig.messaging?.minCharacterLimit ?? 100} and {localConfig.messaging?.maxCharacterLimit ?? 2000})</p>
-                    </div>
+        const notificationItems = [
+            {
+                title: 'Notify on new messages',
+                subtitle: 'Send notifications when organizations post new messages.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.notificationSettings?.notifyOnNewMessage !== false}
+                        onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnNewMessage', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Notify on event mentions',
+                subtitle: 'Send notifications when events are mentioned in messages.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.notificationSettings?.notifyOnMention !== false}
+                        onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnMention', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Notify on replies',
+                subtitle: 'Send notifications when messages receive replies.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.notificationSettings?.notifyOnReply !== false}
+                        onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnReply', e.target.checked)}
+                    />
+                )
+            },
+            {
+                title: 'Notify on event announcements',
+                subtitle: 'Send in-app and push notifications for event-specific announcements.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.notificationSettings?.notifyOnEventAnnouncement !== false}
+                        onChange={(e) =>
+                            updateConfig('messaging.notificationSettings.notifyOnEventAnnouncement', e.target.checked)
+                        }
+                    />
+                )
+            },
+            {
+                title: 'Email event announcements',
+                subtitle: 'Send email when organizations publish event-specific announcements.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={localConfig.messaging?.notificationSettings?.eventAnnouncementEmail !== false}
+                        onChange={(e) => updateConfig('messaging.notificationSettings.eventAnnouncementEmail', e.target.checked)}
+                    />
+                )
+            }
+        ];
 
-                    <div className="config-item">
-                        <label>Minimum Character Limit</label>
-                        <input
-                            type="number"
-                            value={inputValues['messaging.minCharacterLimit'] !== undefined 
-                                ? inputValues['messaging.minCharacterLimit'] 
-                                : (localConfig.messaging?.minCharacterLimit ?? 100)}
-                            onChange={(e) => {
-                                const inputVal = e.target.value;
-                                setInputValues(prev => ({ ...prev, 'messaging.minCharacterLimit': inputVal }));
-                                if (inputVal !== '') {
-                                    const numVal = parseInt(inputVal, 10);
-                                    if (!isNaN(numVal) && numVal >= 1) {
-                                        updateConfig('messaging.minCharacterLimit', numVal);
-                                    }
-                                }
-                            }}
-                            onBlur={(e) => {
-                                const inputVal = e.target.value;
-                                if (inputVal === '') {
-                                    // Reset to current config value
-                                    setInputValues(prev => {
-                                        const newVals = { ...prev };
-                                        delete newVals['messaging.minCharacterLimit'];
-                                        return newVals;
-                                    });
-                                } else {
-                                    const numVal = parseInt(inputVal, 10);
-                                    if (!isNaN(numVal) && numVal >= 1) {
-                                        updateConfig('messaging.minCharacterLimit', numVal);
-                                        setInputValues(prev => {
-                                            const newVals = { ...prev };
-                                            delete newVals['messaging.minCharacterLimit'];
-                                            return newVals;
-                                        });
-                                    }
-                                }
-                            }}
-                            min="1"
-                        />
-                        <p>Minimum characters required for a message</p>
-                    </div>
-
-                    <div className="config-item">
-                        <label>Maximum Character Limit</label>
-                        <input
-                            type="number"
-                            value={inputValues['messaging.maxCharacterLimit'] !== undefined 
-                                ? inputValues['messaging.maxCharacterLimit'] 
-                                : (localConfig.messaging?.maxCharacterLimit ?? 2000)}
-                            onChange={(e) => {
-                                const inputVal = e.target.value;
-                                setInputValues(prev => ({ ...prev, 'messaging.maxCharacterLimit': inputVal }));
-                                if (inputVal !== '') {
-                                    const numVal = parseInt(inputVal, 10);
-                                    if (!isNaN(numVal) && numVal >= 100) {
-                                        updateConfig('messaging.maxCharacterLimit', numVal);
-                                    }
-                                }
-                            }}
-                            onBlur={(e) => {
-                                const inputVal = e.target.value;
-                                if (inputVal === '') {
-                                    // Reset to current config value
-                                    setInputValues(prev => {
-                                        const newVals = { ...prev };
-                                        delete newVals['messaging.maxCharacterLimit'];
-                                        return newVals;
-                                    });
-                                } else {
-                                    const numVal = parseInt(inputVal, 10);
-                                    if (!isNaN(numVal) && numVal >= 100) {
-                                        updateConfig('messaging.maxCharacterLimit', numVal);
-                                        setInputValues(prev => {
-                                            const newVals = { ...prev };
-                                            delete newVals['messaging.maxCharacterLimit'];
-                                            return newVals;
-                                        });
-                                    }
-                                }
-                            }}
-                            min="100"
-                        />
-                        <p>Maximum characters allowed for a message</p>
-                    </div>
-
-                    <div className="config-item">
-                        <label>Default Visibility</label>
-                        <select
-                            value={localConfig.messaging?.defaultVisibility || 'members_and_followers'}
-                            onChange={(e) => updateConfig('messaging.defaultVisibility', e.target.value)}
-                        >
-                            <option value="members_only">Members Only</option>
-                            <option value="members_and_followers">Members and Followers</option>
-                            <option value="public">Public</option>
-                        </select>
-                        <p>Default visibility setting for new messages</p>
-                    </div>
-
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.messaging?.moderationEnabled || false}
-                                onChange={(e) => updateConfig('messaging.moderationEnabled', e.target.checked)}
-                            />
-                            Enable Moderation
-                        </label>
-                        <p>Require messages to be approved before being visible</p>
-                    </div>
-
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.messaging?.requireProfanityFilter !== false}
-                                onChange={(e) => updateConfig('messaging.requireProfanityFilter', e.target.checked)}
-                            />
-                            Require Profanity Filter
-                        </label>
-                        <p>Automatically filter profanity from messages</p>
-                    </div>
-
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.messaging?.allowEventMentions !== false}
-                                onChange={(e) => updateConfig('messaging.allowEventMentions', e.target.checked)}
-                            />
-                            Allow Event Mentions
-                        </label>
-                        <p>Allow organizations to mention events in messages</p>
-                    </div>
-
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.messaging?.eventAnnouncements?.enabled !== false}
-                                onChange={(e) => updateConfig('messaging.eventAnnouncements.enabled', e.target.checked)}
-                            />
-                            Allow event-specific announcements
-                        </label>
-                        <p>Allow organizations to send announcements targeted at specific org-hosted events (attendees only)</p>
-                    </div>
-
-                    {localConfig.messaging?.eventAnnouncements?.enabled !== false && (
-                        <>
-                            <div className="config-item">
-                                <label>Allow organizers to send announcements starting this many days before the event</label>
-                                <input
-                                    type="number"
-                                    min={0}
-                                    value={localConfig.messaging?.eventAnnouncements?.allowAnnouncementsDaysBeforeEvent ?? ''}
-                                    placeholder="Any time (no restriction)"
-                                    onChange={(e) => {
-                                        const v = e.target.value === '' ? null : parseInt(e.target.value, 10);
-                                        updateConfig('messaging.eventAnnouncements.allowAnnouncementsDaysBeforeEvent', (v !== null && !isNaN(v) && v >= 0) ? v : null);
-                                    }}
-                                />
-                                <p>Leave empty or 0 to allow anytime. Set to e.g. 7 to unlock sending only from 7 days before the event start onward.</p>
-                            </div>
-                            <div className="config-item">
-                                <label>
-                                    <input
-                                        type="checkbox"
-                                        checked={localConfig.messaging?.eventAnnouncements?.includeCheckedIn !== false}
-                                        onChange={(e) => updateConfig('messaging.eventAnnouncements.includeCheckedIn', e.target.checked)}
-                                    />
-                                    Also include currently checked-in attendees
-                                </label>
-                                <p>In addition to registrants, include everyone who is currently checked in to the event</p>
-                            </div>
-                            <div className="config-item">
-                                <label>
-                                    <input
-                                        type="checkbox"
-                                        checked={localConfig.messaging?.eventAnnouncements?.includeAnonymousInEmail !== false}
-                                        onChange={(e) => updateConfig('messaging.eventAnnouncements.includeAnonymousInEmail', e.target.checked)}
-                                    />
-                                    Include anonymous registrants in announcement emails
-                                </label>
-                                <p>When event has a registration form, include guests who registered without an account (email only), when an email can be resolved from guest details or a custom form field.</p>
-                            </div>
-                        </>
-                    )}
-
-                    <div className="config-item">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={localConfig.messaging?.allowLinks !== false}
-                                onChange={(e) => updateConfig('messaging.allowLinks', e.target.checked)}
-                            />
-                            Allow Links
-                        </label>
-                        <p>Allow URLs in messages</p>
-                    </div>
+        return (
+            <div className="config-sections">
+                <div className="config-section">
+                    <h2>
+                        <Icon icon="mdi:message-text" />
+                        Messaging System Configuration
+                    </h2>
+                    <SettingsList items={messagingItems} />
                 </div>
 
                 <div className="config-section">
-                    <h3>
+                    <h2>
                         <Icon icon="mdi:bell" />
                         Notification Settings
-                    </h3>
-                    
-                    <div className="config-group">
-                        <div className="config-item">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={localConfig.messaging?.notificationSettings?.notifyOnNewMessage !== false}
-                                    onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnNewMessage', e.target.checked)}
-                                />
-                                Notify on New Messages
-                            </label>
-                            <p>Send notifications when organizations post new messages</p>
-                        </div>
+                    </h2>
+                    <SettingsList items={notificationItems} />
+                </div>
+            </div>
+        );
+    };
 
-                        <div className="config-item">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={localConfig.messaging?.notificationSettings?.notifyOnMention !== false}
-                                    onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnMention', e.target.checked)}
-                                />
-                                Notify on Event Mentions
-                            </label>
-                            <p>Send notifications when events are mentioned in messages</p>
-                        </div>
+    if (communityEssentials) {
+        return (
+            <div className="configuration dash configuration--community">
+                <UnsavedChangesBanner
+                    hasChanges={hasChanges}
+                    onSave={saveChanges}
+                    onDiscard={discardChanges}
+                    saving={saving}
+                />
 
-                        <div className="config-item">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={localConfig.messaging?.notificationSettings?.notifyOnReply !== false}
-                                    onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnReply', e.target.checked)}
-                                />
-                                Notify on Replies
-                            </label>
-                            <p>Send notifications when messages receive replies</p>
-                        </div>
+                <header className="header">
+                    <h1>Organization settings</h1>
+                    <p>
+                        Essentials for community groups: how new organizations are approved and baseline policy limits.
+                    </p>
+                    <img src={AdminGrad} alt="" />
+                </header>
 
-                        <div className="config-item">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={localConfig.messaging?.notificationSettings?.notifyOnEventAnnouncement !== false}
-                                    onChange={(e) => updateConfig('messaging.notificationSettings.notifyOnEventAnnouncement', e.target.checked)}
-                                />
-                                Notify on event announcement
-                            </label>
-                            <p>Send in-app and push notifications when an event-specific announcement is sent</p>
-                        </div>
-
-                        <div className="config-item">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={localConfig.messaging?.notificationSettings?.eventAnnouncementEmail !== false}
-                                    onChange={(e) => updateConfig('messaging.notificationSettings.eventAnnouncementEmail', e.target.checked)}
-                                />
-                                Send email for event announcements
-                            </label>
-                            <p>Email event attendees when an organization sends an event-specific announcement</p>
-                        </div>
+                <div className="content">
+                    <div className="config-sections">
+                        {renderOrgApprovalSection()}
+                        {renderOrganizationPoliciesSection()}
                     </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    }
+
+    if (section === 'finance-templates') {
+        return <FinanceTemplatesConfig />;
+    }
 
     return (
         <div className="configuration dash">

@@ -2,36 +2,23 @@ import React, { useState, useEffect } from 'react';
 import './Rule.scss';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import Condition from './Condition/Condition';
-import { useFetch } from '../../../../hooks/useFetch';
 import Select from '../../../../components/Select/Select';
+const THEN_ACTION_OPTIONS = [
+    { value: 'approver', label: 'require approval' },
+    { value: 'acknowledger', label: 'require acknowledgement' },
+    { value: 'notifiee', label: 'send notification only' }
+];
 
-const conditonTypes = [
-    {
-        label: 'location',
-        value: 'location',
-        type: 'string'
-    },
-    {
-        label: 'expected attendance',
-        value: 'expectedAttendance',
-        type: 'number'
-    },
-    {
-        label: 'event type',
-        value: 'eventType',
-        type: 'string'
-    },
-
-]
-
-const operators = {
-    string: ["equals", "notEquals", "contains", "notContains"],
-    number: ["equals", "notEquals", "greaterThan", "lessThan", "greaterThanOrEqual", "lessThanOrEqual"],
-    boolean: ["equals", "notEquals"],
-    date: ["equals", "notEquals", "before", "after", "between"]
-  };
-
-const ConditionGroup = ({group, onChange, fieldDefinitions, allowedOperators, index, onDelete}) => {
+const ConditionGroup = ({
+    group,
+    onChange,
+    fieldDefinitions,
+    allowedOperators,
+    index,
+    onDelete,
+    thenAction = 'approver',
+    onThenActionChange = () => {}
+}) => {
     const [conditions, setConditions] = useState(group.conditions);
     const [conditionLogicalOperators, setConditionLogicalOperators] = useState(group.conditionLogicalOperators || []);
 
@@ -147,8 +134,9 @@ const ConditionGroup = ({group, onChange, fieldDefinitions, allowedOperators, in
                     then
                 </p>
                 <Select
-                    options={['require approval', 'insert form']}
-                    defaultValue={index !== 0 ? 'require approval' : 'insert form'}
+                    optionItems={THEN_ACTION_OPTIONS}
+                    defaultValue={thenAction}
+                    onChange={onThenActionChange}
                 />
             </div>
         </div>

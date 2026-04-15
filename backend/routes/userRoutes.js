@@ -21,30 +21,179 @@ const upload = multer({
     },
 });
 
+/** Driver / Mongoose versions differ: code may be number or string, or only message (E11000). */
+function isMongoDuplicateKeyError(err) {
+    if (!err) return false;
+    const c = err.code;
+    if (c === 11000 || c === '11000') return true;
+    if (err.name === 'MongoServerError' && (c === 11000 || c === '11000')) return true;
+    if (String(err.message || '').includes('E11000') && String(err.message || '').includes('duplicate key')) {
+        return true;
+    }
+    if (err.cause && isMongoDuplicateKeyError(err.cause)) return true;
+    return false;
+}
+
+function duplicateIndexFieldFromError(err) {
+    const root = err.cause && (err.cause.keyPattern || err.cause.keyValue) ? err.cause : err;
+    if (root.keyPattern && typeof root.keyPattern === 'object') {
+        const keys = Object.keys(root.keyPattern);
+        if (keys.length) return keys[0];
+    }
+    const msg = String(err.message || '');
+    if (/username_1|dup key:\s*\{\s*username:/i.test(msg)) return 'username';
+    if (/email_1|dup key:\s*\{\s*email:/i.test(msg)) return 'email';
+    if (/affiliatedEmail/i.test(msg) && /dup key/i.test(msg)) return 'affiliatedEmail';
+    return null;
+}
 
 const router = express.Router();
 
 router.post("/update-user", verifyToken, async (req, res) => {
     const { User } = getModels(req, 'User');
-    const { name, username, classroom, recommendation, onboarded } = req.body
+    const { name, username, classroom, recommendation, onboarded, tags, onboardingResponses, onboardingCompletedSteps } = req.body;
     try {
         const user = await User.findById(req.user.userId);
         if (!user) {
-            console.log(`POST: /update-user token is invalid`)
-            return res.status(404).json({ success: false, message: 'User not found' });
+            console.log(`POST: /update-user token is invalid`);
+            return res.status(404).json({ success: false, message: 'User not found', code: 'USER_NOT_FOUND' });
         }
-        user.name = name ? name : user.name;
-        user.username = username ? username : user.username;
+
+        if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
+            const trimmedName = String(name ?? '').trim();
+            if (!trimmedName) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please enter your name',
+                    code: 'NAME_REQUIRED',
+                    field: 'name',
+                });
+            }
+            if (trimmedName.length > 120) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Name must be 120 characters or less',
+                    code: 'NAME_TOO_LONG',
+                    field: 'name',
+                });
+            }
+            user.name = trimmedName;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body, 'username')) {
+            const trimmedUsername = String(username ?? '').trim();
+            if (!trimmedUsername) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please choose a username',
+                    code: 'USERNAME_REQUIRED',
+                    field: 'username',
+                });
+            }
+            if (trimmedUsername.length < 3) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Username must be at least 3 characters',
+                    code: 'USERNAME_TOO_SHORT',
+                    field: 'username',
+                });
+            }
+            if (trimmedUsername.length > 20) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Username must be 20 characters or less',
+                    code: 'USERNAME_TOO_LONG',
+                    field: 'username',
+                });
+            }
+            if (!/^[a-zA-Z0-9]+$/.test(trimmedUsername)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Username can only use letters and numbers (no spaces or symbols)',
+                    code: 'USERNAME_INVALID',
+                    field: 'username',
+                });
+            }
+            if (isProfane(trimmedUsername)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Username does not abide by community standards',
+                    code: 'USERNAME_PROFANE',
+                    field: 'username',
+                });
+            }
+            const escaped = trimmedUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const conflict = await User.findOne({
+                username: { $regex: new RegExp(`^${escaped}$`, 'i') },
+                _id: { $ne: user._id },
+            });
+            if (conflict) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This username is already taken',
+                    code: 'USERNAME_TAKEN',
+                    field: 'username',
+                });
+            }
+            user.username = trimmedUsername;
+        }
+
         user.classroomPreferences = classroom ? classroom : user.classroomPreferences;
         user.recommendationPreferences = recommendation ? recommendation : user.recommendationPreferences;
         user.onboarded = onboarded ? onboarded : user.onboarded;
+        if (Array.isArray(tags)) {
+            user.tags = tags
+                .map((t) => String(t || '').trim())
+                .filter(Boolean)
+                .slice(0, 30);
+        }
+        if (onboardingResponses && typeof onboardingResponses === 'object' && !Array.isArray(onboardingResponses)) {
+            user.onboardingResponses = onboardingResponses;
+        }
+        if (Array.isArray(onboardingCompletedSteps)) {
+            user.onboardingCompletedSteps = onboardingCompletedSteps
+                .map((stepId) => String(stepId || '').trim())
+                .filter(Boolean)
+                .slice(0, 300);
+        }
 
         await user.save();
         console.log(`POST: /update-user ${req.user.userId} successful`);
         return res.status(200).json({ success: true, message: 'User updated successfully' });
     } catch (error) {
-    console.log(`POST: /update-user ${req.user.userId} failed`)
-        return res.status(500).json({ success: false, message: error.message });
+        console.log(`POST: /update-user ${req.user.userId} failed`, error?.message || error);
+        if (isMongoDuplicateKeyError(error)) {
+            const dupField = duplicateIndexFieldFromError(error);
+            if (dupField === 'username') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This username is already taken',
+                    code: 'USERNAME_TAKEN',
+                    field: 'username',
+                });
+            }
+            return res.status(400).json({
+                success: false,
+                message: 'This value is already in use',
+                code: 'DUPLICATE_KEY',
+            });
+        }
+        if (error.name === 'ValidationError') {
+            const keys = Object.keys(error.errors || {});
+            const firstKey = keys[0];
+            const firstMsg = firstKey ? error.errors[firstKey].message : error.message;
+            return res.status(400).json({
+                success: false,
+                message: firstMsg || 'Invalid profile data',
+                code: 'VALIDATION_ERROR',
+                field: firstKey || undefined,
+            });
+        }
+        return res.status(500).json({
+            success: false,
+            message: 'Something went wrong. Please try again.',
+            code: 'SERVER_ERROR',
+        });
     }
 });
 
@@ -78,14 +227,17 @@ router.post("/check-in", verifyToken, async (req, res) => {
     const { classroomId } = req.body;
     try {
         //check if user is checked in elsewhere in the checked_in array
-        const classrooms = await Classroom.find({ checked_in: { $in: [req.user.userId] } });
+        const classrooms = await Classroom.find({ checked_in: { $in: [req.user.userId] } }).populate(
+            'building',
+            'name'
+        );
 
         // const classrooms = await Classroom.find({ checkIns: req.user.userId });
         if (classrooms.length > 0) {
             console.log(`POST: /check-in ${req.user.userId} is already checked in`)
             return res.status(400).json({ success: false, message: 'User is already checked in' });
         }
-        const classroom = await Classroom.findOne({ _id: classroomId });
+        const classroom = await Classroom.findOne({ _id: classroomId }).populate('building', 'name');
         classroom.checked_in.push(req.user.userId);
         await classroom.save();
         if (req.user.userId !== "65f474445dca7aca4fb5acaf") {
@@ -134,7 +286,10 @@ router.post("/check-in", verifyToken, async (req, res) => {
 router.get("/checked-in", verifyToken, async (req, res) => {
     const { Classroom } = getModels(req, 'Classroom');
     try {
-        const classrooms = await Classroom.find({ checked_in: { $in: [req.user.userId] } });
+        const classrooms = await Classroom.find({ checked_in: { $in: [req.user.userId] } }).populate(
+            'building',
+            'name'
+        );
         console.log(`GET: /checked-in ${req.user.userId} successful`)
         return res.status(200).json({ success: true, message: 'Checked in classrooms retrieved', classrooms });
     } catch (error) {
@@ -147,7 +302,7 @@ router.post("/check-out", verifyToken, async (req, res) => {
     const { Classroom, Schedule, User, StudyHistory } = getModels(req, 'Classroom', 'Schedule', 'User', 'StudyHistory');
     const { classroomId } = req.body;
     try {
-        const classroom = await Classroom.findOne({ _id: classroomId });
+        const classroom = await Classroom.findOne({ _id: classroomId }).populate('building', 'name');
         classroom.checked_in = classroom.checked_in.filter(userId => userId !== req.user.userId);
         await classroom.save();
         const schedule = await Schedule.findOne({ classroom_id: classroomId });

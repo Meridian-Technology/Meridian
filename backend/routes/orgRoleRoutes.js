@@ -1,12 +1,21 @@
 const express = require('express');
 const getModels = require('../services/getModelService');
 const { verifyToken } = require('../middlewares/verifyToken');
-const { 
-    requireOrgOwner, 
-    requireRoleManagement, 
+const {
+    requireOrgOwner,
+    requireRoleManagement,
     requireMemberManagement,
-    requireOrgPermission 
+    requireOrgPermission,
+    requireAnyOrgPermission
 } = require('../middlewares/orgPermissions');
+const { governanceUpload } = require('../services/imageUploadService');
+const {
+    getEffectivePolicyFromConfig,
+    assertLifecycleTransition,
+    governanceRequirementsForOrg,
+    labelForGovernanceKey
+} = require('../services/atlasPolicyService');
+const { recordMemberJoined, recordMemberRemoved } = require('../services/orgMembershipService');
 
 const router = express.Router();
 
@@ -421,19 +430,21 @@ router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
         let member = await OrgMember.findOne({ org_id: orgId, user_id: userId });
         
         if (!member) {
-            // Create new member record
             member = new OrgMember({
                 org_id: orgId,
                 user_id: userId,
                 role: role,
-                assignedBy: req.user.userId
+                assignedBy: req.user.userId,
+                status: 'active'
             });
+            await member.save();
+            await recordMemberJoined(member, req.user.userId, reason || 'role_assigned');
         } else {
-            // Update existing member's role
-            await member.changeRole(role, req.user.userId, reason);
+            await member.changeRole(role, req.user.userId, reason, {
+                termStart: req.body.roleTermStart ? new Date(req.body.roleTermStart) : undefined,
+                termEnd: req.body.roleTermEnd ? new Date(req.body.roleTermEnd) : undefined
+            });
         }
-
-        await member.save();
 
         // Check auto-approve for org (Atlas: when member count reaches threshold)
         const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
@@ -520,6 +531,12 @@ router.delete('/:orgId/members/:userId', verifyToken, requireMemberManagement(),
         // Soft delete by setting status to inactive
         // member.status = 'inactive';
         // await member.save();
+        await recordMemberRemoved(req, {
+            org_id: orgId,
+            user_id: userId,
+            actorUserId: req.user.userId,
+            reason: 'removed_by_org_manager'
+        });
         await OrgMember.deleteOne({ _id: member._id });
 
         res.status(200).json({
@@ -638,6 +655,7 @@ router.post('/:orgId/applications/:applicationId/approve', verifyToken, requireM
         });
 
         await newMember.save();
+        await recordMemberJoined(newMember, userId, 'application_approved');
 
         // Check auto-approve for org (Atlas: when member count reaches threshold)
         const { checkAndAutoApproveOrg } = require('../services/orgApprovalService');
@@ -755,6 +773,152 @@ router.get('/:orgId/applications', verifyToken, requireMemberManagement(), async
             success: false,
             message: 'Error fetching applications'
         });
+    }
+});
+
+// --- Atlas CMS Phase 1: lifecycle, governance, membership history ---
+
+router.patch('/:orgId/lifecycle', verifyToken, requireAnyOrgPermission(['manage_roles', 'manage_settings']), async (req, res) => {
+    const { Org, OrgManagementConfig } = getModels(req, 'Org', 'OrgManagementConfig');
+    const { orgId } = req.params;
+    const { lifecycleStatus: nextStatus } = req.body;
+
+    try {
+        if (!nextStatus) {
+            return res.status(400).json({ success: false, message: 'lifecycleStatus is required' });
+        }
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const config = await OrgManagementConfig.findOne();
+        const policy = getEffectivePolicyFromConfig(config);
+        assertLifecycleTransition(policy, org, nextStatus, { isPlatformAdmin: false, isOfficer: true });
+        org.lifecycleStatus = nextStatus;
+        org.lifecycleChangedAt = new Date();
+        org.lifecycleChangedBy = req.user.userId;
+        await org.save();
+        res.status(200).json({ success: true, message: 'Lifecycle updated', data: org });
+    } catch (error) {
+        const code = error.statusCode || 500;
+        console.error('PATCH lifecycle error:', error);
+        res.status(code).json({
+            success: false,
+            message: error.message || 'Error updating lifecycle'
+        });
+    }
+});
+
+router.get('/:orgId/governance', verifyToken, requireOrgPermission('view_events'), async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId } = req.params;
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        res.status(200).json({
+            success: true,
+            documents: org.governanceDocuments || []
+        });
+    } catch (error) {
+        console.error('GET governance error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/:orgId/governance/requirements', verifyToken, requireOrgPermission('view_events'), async (req, res) => {
+    const { Org, OrgManagementConfig } = getModels(req, 'Org', 'OrgManagementConfig');
+    const { orgId } = req.params;
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const config = await OrgManagementConfig.findOne();
+        const policy = getEffectivePolicyFromConfig(config);
+        const requiredKeys = governanceRequirementsForOrg(policy, org);
+        const labels = {};
+        for (const k of requiredKeys) {
+            labels[k] = labelForGovernanceKey(policy, k);
+        }
+        res.status(200).json({
+            success: true,
+            requiredKeys,
+            labels,
+            terminology: policy.terminology || {}
+        });
+    } catch (error) {
+        console.error('GET governance requirements error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/:orgId/governance/:docKey/upload', verifyToken, requireOrgPermission('manage_governance'), governanceUpload.single('file'), async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { uploadDocumentToS3 } = require('../services/imageUploadService');
+    const { orgId, docKey } = req.params;
+
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'PDF file is required (field name: file)' });
+        }
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const safeKey = String(docKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+        if (!safeKey) {
+            return res.status(400).json({ success: false, message: 'Invalid document key' });
+        }
+        const fileName = `governance-${orgId}-${safeKey}`;
+        const storageUrl = await uploadDocumentToS3(req.file, 'orgs/governance', fileName);
+        const effectiveFrom = req.body.effectiveFrom ? new Date(req.body.effectiveFrom) : undefined;
+        org.addGovernanceVersion(safeKey, {
+            storageUrl,
+            originalFilename: req.file.originalname,
+            mimeType: req.file.mimetype,
+            uploadedBy: req.user.userId,
+            uploadedAt: new Date(),
+            effectiveFrom,
+            status: 'draft'
+        });
+        await org.save();
+        res.status(201).json({
+            success: true,
+            message: 'Governance document version uploaded',
+            documents: org.governanceDocuments
+        });
+    } catch (error) {
+        console.error('POST governance upload error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Upload failed'
+        });
+    }
+});
+
+router.get('/:orgId/members/:userId/history', verifyToken, requireMemberManagement(), async (req, res) => {
+    const { OrgMember, OrgMembershipAudit } = getModels(req, 'OrgMember', 'OrgMembershipAudit');
+    const { orgId, userId } = req.params;
+
+    try {
+        const member = await OrgMember.findOne({ org_id: orgId, user_id: userId }).lean();
+        const audits = await OrgMembershipAudit.find({ org_id: orgId, user_id: userId })
+            .sort({ at: -1 })
+            .limit(100)
+            .lean();
+        res.status(200).json({
+            success: true,
+            membershipHistory: member?.membershipHistory || [],
+            roleHistory: member?.roleHistory || [],
+            roleTermStart: member?.roleTermStart,
+            roleTermEnd: member?.roleTermEnd,
+            removedAudits: audits
+        });
+    } catch (error) {
+        console.error('GET member history error:', error);
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 

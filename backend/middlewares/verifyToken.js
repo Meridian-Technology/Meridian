@@ -50,6 +50,21 @@ const verifyToken = async (req, res, next) => {
     try {
         const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
         await resolveRequestUser(req, decodedToken);
+        if (req.user?.userId) {
+            try {
+                const { User } = getModels(req, 'User');
+                const accountUser = await User.findById(req.user.userId).select('accessSuspended').lean();
+                if (accountUser?.accessSuspended) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'This account has been suspended.',
+                        code: 'ACCOUNT_SUSPENDED',
+                    });
+                }
+            } catch (checkErr) {
+                console.error('[verifyToken] accessSuspended check failed:', checkErr);
+            }
+        }
         return next();
     } catch (err) {
         if (err.name === 'TokenExpiredError') {

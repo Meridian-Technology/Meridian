@@ -1,0 +1,35 @@
+.event-task-assignee-stack {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+
+    &__avatars {
+        display: inline-flex;
+        align-items: center;
+        flex-direction: row;
+    }
+
+    &__avatar {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid var(--background, #fff);
+        box-sizing: content-box;
+        flex-shrink: 0;
+
+        &:not(:first-child) {
+            margin-left: -10px;
+        }
+    }
+
+    &__overflow {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--light-text, #6b737c);
+        letter-spacing: -0.02em;
+        line-height: 1;
+        padding-left: 0.1rem;
+    }
+}

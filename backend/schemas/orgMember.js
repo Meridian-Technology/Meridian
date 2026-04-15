@@ -35,6 +35,14 @@ const memberSchema = new Schema({
         type: Date,
         default: Date.now
     },
+    roleTermStart: {
+        type: Date,
+        required: false
+    },
+    roleTermEnd: {
+        type: Date,
+        required: false
+    },
     // For tracking role changes
     roleHistory: [{
         role: String,
@@ -45,6 +53,22 @@ const memberSchema = new Schema({
         assignedAt: {
             type: Date,
             default: Date.now
+        },
+        reason: String
+    }],
+
+    membershipHistory: [{
+        at: { type: Date, default: Date.now },
+        action: {
+            type: String,
+            required: true
+        },
+        fromStatus: String,
+        toStatus: String,
+        role: String,
+        actorUserId: {
+            type: Schema.Types.ObjectId,
+            ref: 'User'
         },
         reason: String
     }],
@@ -118,20 +142,33 @@ memberSchema.methods.canViewAnalytics = async function(org) {
 };
 
 // Method to change role with history tracking
-memberSchema.methods.changeRole = async function(newRole, assignedBy, reason = '') {
-    // Add to history
+memberSchema.methods.changeRole = async function(newRole, assignedBy, reason = '', options = {}) {
+    const { termStart, termEnd } = options || {};
     this.roleHistory.push({
         role: this.role,
         assignedBy: this.assignedBy,
         assignedAt: this.assignedAt,
         reason: reason
     });
-    
-    // Update current role
+    if (!this.membershipHistory) {
+        this.membershipHistory = [];
+    }
+    this.membershipHistory.push({
+        at: new Date(),
+        action: 'role_change',
+        role: newRole,
+        actorUserId: assignedBy,
+        reason: reason || ''
+    });
     this.role = newRole;
     this.assignedBy = assignedBy;
     this.assignedAt = new Date();
-    
+    if (termStart !== undefined) {
+        this.roleTermStart = termStart;
+    }
+    if (termEnd !== undefined) {
+        this.roleTermEnd = termEnd;
+    }
     return this.save();
 };
 

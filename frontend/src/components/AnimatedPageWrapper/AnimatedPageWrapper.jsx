@@ -1,6 +1,19 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 
+/**
+ * Same full-bleed shell as the motion wrapper below, without Framer Motion.
+ * Club dashboard + calendar subtree stressed the compositor and triggered Chrome
+ * renderer crashes (Aw, Snap / error 4) when combined with page enter/exit animations.
+ */
+export function StaticFullBleedPage({ children }) {
+  return (
+    <div style={{ position: 'absolute', width: '100%', height: '100%' }}>
+      {children}
+    </div>
+  );
+}
+
 const variants = {
   initial: { opacity: 0, y: 10 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.4 } },

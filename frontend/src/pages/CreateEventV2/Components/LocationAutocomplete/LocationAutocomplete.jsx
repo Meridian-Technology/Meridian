@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from '@iconify-icon/react';
 import apiRequest from '../../../../utils/postRequest';
+import Popup from '../../../../components/Popup/Popup';
+import WeeklyCalendar from '../../../../pages/OIEDash/EventsCalendar/Week/WeeklyCalendar/WeeklyCalendar';
+import { classroomBuildingLabel } from '../../../../utils/classroomBuildingLabel';
 import './LocationAutocomplete.scss';
 
 // Abbreviation support (matches SearchBar) – full names ↔ building abbreviations
@@ -52,7 +55,7 @@ function normalizeLocation(value) {
     return getFull(trimmed);
 }
 
-function LocationAutocomplete({ formData, setFormData }) {
+function LocationAutocomplete({ formData, setFormData, preflightError = '' }) {
     const [inputValue, setInputValue] = useState(formData.location || '');
     const [suggestions, setSuggestions] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -61,6 +64,26 @@ function LocationAutocomplete({ formData, setFormData }) {
     const debounceRef = useRef(null);
     const containerRef = useRef(null);
     const inputRef = useRef(null);
+    const [showSchedulePopup, setShowSchedulePopup] = useState(false);
+    const [roomWeeklySchedule, setRoomWeeklySchedule] = useState(null);
+    const [scheduleEvents, setScheduleEvents] = useState([]);
+    const [scheduleLoading, setScheduleLoading] = useState(false);
+    const [startOfWeek, setStartOfWeek] = useState(() => {
+        const now = new Date();
+        const s = new Date(now);
+        s.setDate(now.getDate() - now.getDay());
+        s.setHours(0, 0, 0, 0);
+        return s;
+    });
+
+    const getStartOfWeek = useCallback((dateLike) => {
+        const d = new Date(dateLike);
+        if (Number.isNaN(d.getTime())) return null;
+        d.setDate(d.getDate() - d.getDay());
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }, []);
+    const validationMessage = preflightError || formData.resourcePreflightError || '';
 
     // Sync input with formData.location when it changes externally
     useEffect(() => {
@@ -109,7 +132,7 @@ function LocationAutocomplete({ formData, setFormData }) {
                             mergedRooms.push({
                                 id: room._id,
                                 name: room.name || 'Unknown Room',
-                                building: room.building || '',
+                                building: classroomBuildingLabel(room),
                                 capacity: room.capacity || 0
                             });
                         }
@@ -187,6 +210,79 @@ function LocationAutocomplete({ formData, setFormData }) {
         }
     };
 
+    const buildScheduleEvents = useCallback((weeklySchedule) => {
+        const dayMap = { M: 1, T: 2, W: 3, R: 4, F: 5 };
+        const out = [];
+        if (!weeklySchedule) return out;
+        const base = new Date(startOfWeek);
+        for (const [dayKey, dayOffset] of Object.entries(dayMap)) {
+            const slots = weeklySchedule[dayKey] || [];
+            slots.forEach((slot, idx) => {
+                const slotDate = new Date(base);
+                slotDate.setDate(base.getDate() + dayOffset);
+                const start = new Date(slotDate);
+                start.setHours(Math.floor(slot.start_time / 60), slot.start_time % 60, 0, 0);
+                const end = new Date(slotDate);
+                end.setHours(Math.floor(slot.end_time / 60), slot.end_time % 60, 0, 0);
+                out.push({
+                    id: `room-slot-${dayKey}-${idx}`,
+                    name: slot.class_name || 'Unavailable',
+                    type: 'blocked',
+                    start_time: start,
+                    end_time: end,
+                    status: 'blocked'
+                });
+            });
+        }
+        return out;
+    }, [startOfWeek]);
+
+    useEffect(() => {
+        if (!showSchedulePopup) return;
+        if (!formData.start_time) return;
+        const weekStart = getStartOfWeek(formData.start_time);
+        if (weekStart) setStartOfWeek(weekStart);
+    }, [showSchedulePopup, formData.start_time, getStartOfWeek]);
+
+    useEffect(() => {
+        const blockedEvents = buildScheduleEvents(roomWeeklySchedule);
+        let prospectiveEvents = [];
+        if (formData.start_time && formData.end_time) {
+            prospectiveEvents = [{
+                id: 'prospective-event',
+                name: formData.name || 'Prospective Event',
+                type: 'prospective',
+                location: formData.location || '',
+                start_time: new Date(formData.start_time),
+                end_time: new Date(formData.end_time),
+                status: 'prospective'
+            }];
+        }
+        setScheduleEvents([...blockedEvents, ...prospectiveEvents]);
+    }, [roomWeeklySchedule, buildScheduleEvents, formData.start_time, formData.end_time, formData.name, formData.location]);
+
+    useEffect(() => {
+        if (!showSchedulePopup || !formData.classroom_id) return;
+        let cancelled = false;
+        const loadSchedule = async () => {
+            setScheduleLoading(true);
+            try {
+                const batch = await apiRequest('/getbatch-new', {
+                    queries: [formData.classroom_id],
+                    exhaustive: true
+                });
+                if (cancelled) return;
+                setRoomWeeklySchedule(batch?.data?.[0]?.data?.weekly_schedule || null);
+            } finally {
+                if (!cancelled) setScheduleLoading(false);
+            }
+        };
+        loadSchedule();
+        return () => {
+            cancelled = true;
+        };
+    }, [showSchedulePopup, formData.classroom_id]);
+
     return (
         <div className="location-autocomplete" ref={containerRef}>
             <div className="location-autocomplete-input-wrapper">
@@ -228,6 +324,67 @@ function LocationAutocomplete({ formData, setFormData }) {
                     ))}
                 </ul>
             )}
+            {validationMessage && formData.classroom_id && (
+                <div className="location-autocomplete-validation" role="alert">
+                    <strong>Validation error:</strong> {validationMessage}
+                    <button
+                        type="button"
+                        className="location-autocomplete-validation__link"
+                        onClick={() => setShowSchedulePopup(true)}
+                    >
+                        View room schedule
+                    </button>
+                </div>
+            )}
+            <Popup
+                isOpen={showSchedulePopup}
+                onClose={() => setShowSchedulePopup(false)}
+                customClassName="location-autocomplete-schedule-popup"
+            >
+                <h3>Room schedule</h3>
+                <div className="location-autocomplete-schedule-nav">
+                    <button type="button" onClick={() => {
+                        const d = new Date(startOfWeek);
+                        d.setDate(d.getDate() - 7);
+                        setStartOfWeek(d);
+                    }}>Previous week</button>
+                    <span>
+                        {startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {
+                            new Date(startOfWeek.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                        }
+                    </span>
+                    <button type="button" onClick={() => {
+                        const d = new Date(startOfWeek);
+                        d.setDate(d.getDate() + 7);
+                        setStartOfWeek(d);
+                    }}>Next week</button>
+                </div>
+                {(formData.start_time && formData.end_time) && (
+                    <div className="location-autocomplete-scheduled-period">
+                        Scheduled period: {new Date(formData.start_time).toLocaleString()} - {new Date(formData.end_time).toLocaleString()}
+                    </div>
+                )}
+                <div className="location-autocomplete-schedule-calendar">
+                    {scheduleLoading ? (
+                        <p>Loading schedule...</p>
+                    ) : (
+                        <WeeklyCalendar
+                            startOfWeek={startOfWeek}
+                            events={scheduleEvents}
+                            height="66vh"
+                            dayClick={() => {}}
+                            autoEnableSelection={false}
+                            selectionMode="single"
+                            singleSelectionOnly={true}
+                            allowCrossDaySelection={false}
+                            showAvailability={true}
+                            startHour={6}
+                            endHour={24}
+                            timeIncrement={15}
+                        />
+                    )}
+                </div>
+            </Popup>
         </div>
     );
 }

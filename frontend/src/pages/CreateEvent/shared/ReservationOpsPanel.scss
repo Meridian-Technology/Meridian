@@ -1,0 +1,74 @@
+.reservation-ops-panel {
+    border: 1px solid var(--lighterborder);
+    border-radius: 10px;
+    background: var(--background);
+    padding: 12px;
+    margin-top: 12px;
+
+    &__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+
+        h4 {
+            margin: 0;
+            font-size: 0.95rem;
+        }
+
+        button {
+            border: 1px solid var(--lighterborder);
+            background: transparent;
+            border-radius: 6px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+    }
+
+    &__metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 10px;
+
+        div {
+            border: 1px solid var(--lighterborder);
+            border-radius: 8px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        span {
+            font-size: 0.75rem;
+            color: var(--mutedtext);
+        }
+    }
+
+    &__item {
+        border-left: 3px solid #d78934;
+        background: #fff8ef;
+        border-radius: 6px;
+        padding: 8px;
+        margin-bottom: 6px;
+    }
+
+    &__title {
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    &__meta {
+        font-size: 0.8rem;
+        color: var(--text);
+        margin-top: 2px;
+    }
+
+    &__error {
+        color: #b00020;
+        font-size: 0.8rem;
+        margin-bottom: 8px;
+    }
+}
+

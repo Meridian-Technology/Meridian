@@ -25,7 +25,10 @@ const ORG_PERMISSIONS = {
     
     // Advanced features
     MANAGE_INTEGRATIONS: 'manage_integrations', // Can manage third-party integrations
-    ACCESS_ADVANCED_FEATURES: 'access_advanced_features' // Can access beta/advanced features
+    ACCESS_ADVANCED_FEATURES: 'access_advanced_features', // Can access beta/advanced features
+
+    /** Atlas CMS Phase 1: upload/version governance documents (constitution, etc.) */
+    MANAGE_GOVERNANCE: 'manage_governance'
 };
 
 // Event-specific permissions

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useFetch } from '../../hooks/useFetch';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import DomainOverview from './components/DomainOverview';
+import DomainPendingEvents from './components/DomainPendingEvents';
 import DomainStakeholders from './components/DomainStakeholders';
 import DomainApprovalRules from './components/DomainApprovalRules';
 import DomainSettings from './components/DomainSettings';
@@ -11,7 +12,7 @@ import eventsLogo from '../../assets/Brand Image/EventsLogo.svg';
 function DomainDashboard() {
     const { domainId } = useParams();
     const navigate = useNavigate();
-    const domainData = useFetch(`/api/domain/${domainId}`);
+    const domainData = useFetch(domainId ? `/api/domain/${domainId}` : null);
 
     const domain = domainData.data?.data;
 
@@ -21,6 +22,11 @@ function DomainDashboard() {
             label: 'Overview', 
             icon: 'mdi:view-dashboard',
             element: <DomainOverview />
+        },
+        {
+            label: 'Pending approvals',
+            icon: 'mdi:clipboard-check-outline',
+            element: <DomainPendingEvents />
         },
         { 
             label: 'Stakeholder Roles', 

@@ -10,6 +10,7 @@ import RSSManagement from '../../RootDash/RSSManagement/RSSManagement';
 import EventSystemConfig from './EventSystemConfig/EventSystemConfig';
 import { useGradient } from '../../../hooks/useGradient';
 import EventsAnalytics from '../../../components/EventsAnalytics/EventsAnalytics';
+import AdminEventsManagementTab from '../../RootDash/AdminEventsManagementTab';
 
 const Beacon = () => {
     const navigate = useNavigate();
@@ -24,6 +25,11 @@ const Beacon = () => {
             label: 'Home',
             icon: 'fluent:flow-16-filled',
             element: <ManageFlow />
+        },
+        {
+            label: 'Events',
+            icon: 'mdi:calendar-multiselect',
+            element: <AdminEventsManagementTab useBeaconHeaderImage />,
         },
         {
             label: 'System Configuration',

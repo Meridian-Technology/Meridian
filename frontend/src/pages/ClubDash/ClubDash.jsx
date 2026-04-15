@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import './ClubDash.scss';
 import useAuth from '../../hooks/useAuth';
 import { analytics } from '../../services/analytics/analytics';
@@ -7,7 +7,6 @@ import logo from '../../assets/red_logo.svg';
 import { getAllEvents } from '../../components/EventsViewer/EventHelpers';
 import { useNotification } from '../../NotificationContext';
 import {Icon} from '@iconify-icon/react';  
-import Dash from './Dash/Dash';
 import Members from './Members/Members';
 import Roles from './Roles/Roles';
 import Testing from './Testing/Testing';
@@ -34,17 +33,26 @@ import {
 } from './OrgSettings/components';
 import VerificationRequest from './Settings/VerificationRequest/VerificationRequest';
 import OrgPendingBanner from '../../components/OrgPendingBanner/OrgPendingBanner';
+import OrgLifecycleBanner from '../../components/OrgLifecycleBanner/OrgLifecycleBanner';
 import PendingApprovalOverlay from '../../components/PendingApprovalOverlay/PendingApprovalOverlay';
 import AdminViewBanner from '../../components/AdminViewBanner/AdminViewBanner';
 import { useOrgApprovalRoom } from '../../WebSocketContext';
 import Popup from '../../components/Popup/Popup';
 import ClubDashOnboarding from './ClubDashOnboarding/ClubDashOnboarding';
+import GovernanceSettings from './OrgSettings/components/GovernanceSettings';
+import BudgetSettings from './OrgSettings/components/BudgetSettings';
+import LifecycleSettings from './OrgSettings/components/LifecycleSettings';
 
 /** Set to true to always show the onboarding popup (ignores localStorage) */
 const FORCE_CLUB_DASH_ONBOARDING = false;
 
+const TasksHub = lazy(() => import('./TasksHub/TasksHub'));
+const Dash = lazy(() => import('./Dash/Dash'));
+
 function ClubDash(){
-    const [clubId, setClubId] = useState(useParams().id);
+    const { id: clubIdParam } = useParams();
+    const clubId = clubIdParam ?? '';
+    const orgEnterShellRef = useRef(null);
     const [expanded, setExpanded] = useState(false);
     const [expandedClass, setExpandedClass] = useState("");
     const{isAuthenticated, isAuthenticating, user} = useAuth();
@@ -58,12 +66,24 @@ function ClubDash(){
         canManageRoles: false,
         canManageMembers: false,
         canViewAnalytics: false,
-        canManageEvents: false
+        canManageEvents: false,
+        canAccessBudgets: false
     });
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [showJustApprovedBanner, setShowJustApprovedBanner] = useState(false);
     const approvedBannerTimeoutRef = useRef(null);
     const [showOnboarding, setShowOnboarding] = useState(false);
+
+    useEffect(() => {
+        setPermissionsChecked(false);
+        setUserPermissions({
+            canManageRoles: false,
+            canManageMembers: false,
+            canViewAnalytics: false,
+            canManageEvents: false,
+            canAccessBudgets: false
+        });
+    }, [clubId]);
 
     const orgData = useFetch(`/get-org-by-name/${clubId}?exhaustive=true`);
     const meetings = useFetch(`/get-meetings/${clubId}`);
@@ -75,6 +95,23 @@ function ClubDash(){
 
     const location = useLocation();
 
+    useLayoutEffect(() => {
+        const el = orgEnterShellRef.current;
+        if (orgData.loading) {
+            if (el) el.classList.remove('club-dash-org-enter--animate');
+            return;
+        }
+        if (
+            typeof window !== 'undefined' &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ) {
+            return;
+        }
+        if (!el) return;
+        el.classList.remove('club-dash-org-enter--animate');
+        void el.offsetWidth;
+        el.classList.add('club-dash-org-enter--animate');
+    }, [clubId, orgData.loading]);
 
     useEffect(()=>{
         if(isAuthenticating){
@@ -106,17 +143,23 @@ function ClubDash(){
             }
             if(orgData.data){
                 console.log(orgData.data);
-                // Only check permissions once when org data is loaded
-                if (!permissionsChecked && orgData.data && user) {
+                const overview = orgData.data.org?.overview;
+                if (
+                    !permissionsChecked &&
+                    user &&
+                    overview?.org_name === clubId
+                ) {
                     checkUserPermissions();
                 }
             }
         }
     }
-    ,[orgData, user, permissionsChecked]);
+    ,[orgData, user, permissionsChecked, clubId]);
 
     const checkUserPermissions = async () => {
         if (!orgData.data || !user || permissionsChecked) return;
+        const org = orgData.data.org?.overview;
+        if (!org || org.org_name !== clubId) return;
 
         // Admin view: grant full permissions without checking org role
         if (isAdminView && isSiteAdmin) {
@@ -124,15 +167,14 @@ function ClubDash(){
                 canManageRoles: true,
                 canManageMembers: true,
                 canViewAnalytics: true,
-                canManageEvents: true
+                canManageEvents: true,
+                canAccessBudgets: true
             });
             setPermissionsChecked(true);
             return;
         }
 
         try {
-            const org = orgData.data.org.overview;
-            
             // Check if user is the owner
             const isOwner = org.owner === user._id;
             
@@ -141,7 +183,8 @@ function ClubDash(){
                     canManageRoles: true,
                     canManageMembers: true,
                     canViewAnalytics: true,
-                    canManageEvents: true
+                    canManageEvents: true,
+                    canAccessBudgets: true
                 });
                 setPermissionsChecked(true);
                 return;
@@ -161,11 +204,17 @@ function ClubDash(){
                     const userRoleData = org.positions.find(role => role.name === userMember.role);
                     
                     if (userRoleData) {
+                        const perms = userRoleData.permissions || [];
+                        const all = perms.includes('all');
                         setUserPermissions({
-                            canManageRoles: userRoleData.canManageRoles || userRoleData.permissions.includes('manage_roles') || userRoleData.permissions.includes('all'),
-                            canManageMembers: userRoleData.canManageMembers || userRoleData.permissions.includes('manage_members') || userRoleData.permissions.includes('all'),
-                            canViewAnalytics: userRoleData.canViewAnalytics || userRoleData.permissions.includes('view_analytics') || userRoleData.permissions.includes('all'),
-                            canManageEvents: userRoleData.canManageEvents || userRoleData.permissions.includes('manage_events') || userRoleData.permissions.includes('all')
+                            canManageRoles: userRoleData.canManageRoles || perms.includes('manage_roles') || all,
+                            canManageMembers: userRoleData.canManageMembers || perms.includes('manage_members') || all,
+                            canViewAnalytics: userRoleData.canViewAnalytics || perms.includes('view_analytics') || all,
+                            canManageEvents: userRoleData.canManageEvents || perms.includes('manage_events') || all,
+                            canAccessBudgets:
+                                all ||
+                                perms.includes('view_finances') ||
+                                perms.includes('manage_finances')
                         });
                     }
                 }
@@ -206,7 +255,7 @@ function ClubDash(){
                 navigate('/');
             }
         }
-    },[userInfo, isAdminView, isSiteAdmin]);
+    },[userInfo, isAdminView, isSiteAdmin, clubId, navigate, addNotification]);
 
     const onExpand = () => {
         if(expanded){
@@ -223,13 +272,17 @@ function ClubDash(){
         }
     }
 
-    function openMembers(){
+    const menuItemsRef = useRef([]);
+
+    const openMembers = useCallback(() => {
+        const idx = menuItemsRef.current.findIndex((item) => item.key === 'members');
+        if (idx < 0) return;
         const basePath = `/club-dashboard/${encodeURIComponent(clubId)}`;
         const params = new URLSearchParams();
-        params.set('page', '3');
+        params.set('page', String(idx));
         if (isAdminView && isSiteAdmin) params.set('adminView', 'true');
         navigate(`${basePath}?${params.toString()}`);
-    }
+    }, [clubId, isAdminView, isSiteAdmin, navigate]);
 
     const onOrgChange = (org) => {
         const basePath = `/club-dashboard/${org.org_name}`;
@@ -237,109 +290,174 @@ function ClubDash(){
         navigate(newPath);
     }
 
-    const baseMenuItems = [
-        { 
-            label: 'Dashboard', 
-            icon: 'ic:round-dashboard', 
-            key: 'dash',
-            element: <Dash expandedClass={expandedClass} openMembers={openMembers} clubName={clubId} meetings={meetings.data} org={orgData.data} canManageEvents={userPermissions.canManageEvents}/>
-        },
-        { 
-            label: 'Events', 
-            icon: 'mingcute:calendar-fill', 
-            key: 'events',
-            element: <EventsManagement expandedClass={expandedClass} orgId={clubId} orgData={orgData.data} adminBypass={adminBypass}/>
-        },
-        { 
-            label: 'Announcements', 
-            icon: 'mdi:message-text', 
-            key: 'announcements',
-            element: <ClubAnnouncements orgData={orgData} expandedClass={expandedClass}/>
-        },
-        { 
-            label: 'Members', 
-            icon: 'mdi:account-group', 
-            key: 'members', 
-            requiresPermission: 'canManageMembers',
-            element: <Members expandedClass={expandedClass} org={orgData.data?.org?.overview} adminBypass={adminBypass}/>
-        },
-        // { 
-        //     label: 'Forms', 
-        //     icon: 'mdi:file-document', 
-        //     key: 'forms',
-        //     element: <ClubForms expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
-        // },
-        // { 
-        //     label: 'Roles', 
-        //     icon: 'mdi:shield-account', 
-        //     key: 'roles', 
-        //     requiresPermission: 'canManageRoles',
-        //     element: <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
-        // },
-        { 
-            label: 'Settings', 
-            icon: 'mdi:cog', 
-            key: 'settings',
-            subItems: [
-                {
-                    label: 'General',
-                    icon: 'mdi:cog',
-                    element: <GeneralSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
-                },
-                {
-                    label: 'Roles & Permissions',
-                    icon: 'mdi:shield-account',
-                    element:  <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview} refetch={orgData.refetch} adminBypass={adminBypass}/>
-                },
-                {
-                    label: 'Equipment',
-                    icon: 'mdi:package-variant-closed',
-                    comingSoon: true,
-                    element: null
-                    // Temporarily disabled - Equipment functionality commented out
-                    // element: <OrgEquipment expandedClass={expandedClass} org={orgData.data?.org?.overview} />
-                },
-                {
-                    label: 'Application Process',
-                    icon: 'mdi:form-select',
-                    element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
-                },
-                {
-                    label: 'Social Links',
-                    icon: 'mdi:link-variant',
-                    element: <SocialLinksSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
-                },
-                // {
-                //     label: 'Verification Requests',
-                //     icon: 'mdi:shield-check',
-                //     element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
-                // },
-                {
-                    label: 'Danger Zone',
-                    icon: 'mdi:alert-circle',
-                    element: <DangerZone org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
-                },
-                {
-                    label: 'Audit Log',
-                    icon: 'mdi:clipboard-text-clock',
-                    comingSoon: true,
-                    element: null
-                },
-            ]
-        },
-        // { 
-        //     label: 'Testing', 
-        //     icon: 'mdi:test-tube', 
-        //     key: 'testing',
-        //     element: <Testing expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
-        // },
-    ];
-    // Filter menu items based on user permissions (show all when admin view)
-    const menuItems = baseMenuItems.filter(item => {
-        if (isAdminView && isSiteAdmin) return true;
-        if (!item.requiresPermission) return true;
-        return userPermissions[item.requiresPermission];
-    });
+    const orgOverview = orgData.data?.org?.overview;
+    const orgMongoId = orgOverview?._id;
+
+    const menuItems = useMemo(() => {
+        const baseMenuItems = [
+            {
+                label: 'Dashboard',
+                icon: 'ic:round-dashboard',
+                key: 'dash',
+                element: (
+                    <Suspense fallback={<div className="club-dash-tab-fallback">Loading dashboard…</div>}>
+                        <Dash expandedClass={expandedClass} openMembers={openMembers} clubName={clubId} meetings={meetings.data} org={orgData.data} canManageEvents={userPermissions.canManageEvents}/>
+                    </Suspense>
+                )
+            },
+            {
+                label: 'Events',
+                icon: 'mingcute:calendar-fill',
+                key: 'events',
+                element: <EventsManagement expandedClass={expandedClass} orgId={clubId} orgData={orgData.data} adminBypass={adminBypass}/>
+            },
+            {
+                label: 'Tasks',
+                icon: 'mdi:check-all',
+                key: 'tasks',
+                element: (
+                    <Suspense fallback={<div className="club-dash-tab-fallback">Loading tasks…</div>}>
+                        <TasksHub expandedClass={expandedClass} orgId={orgMongoId} clubName={clubId} />
+                    </Suspense>
+                )
+            },
+            {
+                label: 'Announcements',
+                icon: 'mdi:message-text',
+                key: 'announcements',
+                element: <ClubAnnouncements orgData={orgData} expandedClass={expandedClass}/>
+            },
+            {
+                label: 'Members',
+                icon: 'mdi:account-group',
+                key: 'members',
+                requiresPermission: 'canManageMembers',
+                element: <Members expandedClass={expandedClass} org={orgData.data?.org?.overview} adminBypass={adminBypass}/>
+            },
+            // {
+            //     label: 'Forms',
+            //     icon: 'mdi:file-document',
+            //     key: 'forms',
+            //     element: <ClubForms expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
+            // },
+            // {
+            //     label: 'Roles',
+            //     icon: 'mdi:shield-account',
+            //     key: 'roles',
+            //     requiresPermission: 'canManageRoles',
+            //     element: <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
+            // },
+            {
+                label: 'Settings',
+                icon: 'mdi:cog',
+                key: 'settings',
+                subItems: [
+                    {
+                        label: 'General',
+                        icon: 'mdi:cog',
+                        element: <GeneralSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
+                    },
+                    {
+                        label: 'Roles & Permissions',
+                        icon: 'mdi:shield-account',
+                        element:  <Roles expandedClass={expandedClass} org={orgData.data?.org?.overview} refetch={orgData.refetch} adminBypass={adminBypass}/>
+                    },
+                    {
+                        label: 'Equipment',
+                        icon: 'mdi:package-variant-closed',
+                        comingSoon: true,
+                        // Temporarily disabled - Equipment functionality commented out
+                        // element: <OrgEquipment expandedClass={expandedClass} org={orgData.data?.org?.overview} />
+                        element: null
+                    },
+                    {
+                        label: 'Application Process',
+                        icon: 'mdi:form-select',
+                        element: <MemberSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
+                    },
+                    {
+                        label: 'Social Links',
+                        icon: 'mdi:link-variant',
+                        element: <SocialLinksSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
+                    },
+                    {
+                        label: 'Lifecycle',
+                        icon: 'mdi:state-machine',
+                        element: (
+                            <LifecycleSettings
+                                org={orgData.data?.org?.overview}
+                                expandedClass={expandedClass}
+                            />
+                        )
+                    },
+                    {
+                        label: 'Governance',
+                        icon: 'mdi:file-document-outline',
+                        element: (
+                            <GovernanceSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                        )
+                    },
+                    {
+                        label: 'Budgets',
+                        icon: 'mdi:cash-multiple',
+                        requiresFinances: true,
+                        element: <BudgetSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                    },
+                    {
+                        label: 'Verification Requests',
+                        icon: 'mdi:shield-check',
+                        element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                    },
+                    {
+                        label: 'Danger Zone',
+                        icon: 'mdi:alert-circle',
+                        element: <DangerZone org={orgData.data?.org?.overview} expandedClass={expandedClass} adminBypass={adminBypass} />
+                    },
+                    {
+                        label: 'Audit Log',
+                        icon: 'mdi:clipboard-text-clock',
+                        comingSoon: true,
+                        element: null
+                    },
+                ]
+            },
+            // {
+            //     label: 'Testing',
+            //     icon: 'mdi:test-tube',
+            //     key: 'testing',
+            //     element: <Testing expandedClass={expandedClass} org={orgData.data?.org?.overview}/>
+            // },
+        ];
+        const withFilteredSettings = baseMenuItems.map((item) => {
+            if (item.key !== 'settings' || !item.subItems) return item;
+            const showBudgets =
+                adminBypass ||
+                userPermissions.canAccessBudgets;
+            return {
+                ...item,
+                subItems: item.subItems.filter((sub) => !sub.requiresFinances || showBudgets)
+            };
+        });
+        return withFilteredSettings.filter((item) => {
+            if (isAdminView && isSiteAdmin) return true;
+            if (!item.requiresPermission) return true;
+            return userPermissions[item.requiresPermission];
+        });
+    }, [
+        expandedClass,
+        openMembers,
+        clubId,
+        meetings.data,
+        orgData.data,
+        orgData.refetch,
+        orgMongoId,
+        userPermissions,
+        adminBypass,
+        isAdminView,
+        isSiteAdmin
+    ]);
+
+    menuItemsRef.current = menuItems;
 
     
 
@@ -382,9 +500,11 @@ function ClubDash(){
         setShowOnboarding(false);
     }, []);
 
-    if(orgData.loading){
+    if (orgData.loading) {
         return (
-            <div></div>
+            <div className="club-dash-with-banner">
+                <div ref={orgEnterShellRef} className="club-dash-org-enter" aria-busy="true" />
+            </div>
         );
     }
 
@@ -393,12 +513,12 @@ function ClubDash(){
     const allowedActions = configData?.orgApproval?.pendingOrgLimits?.allowedActions ?? ['view_page', 'edit_profile', 'manage_members'];
 
     const pageToAction = [
-        'view_page',      // 0: Dashboard
-        'create_events',  // 1: Events
-        'post_messages',  // 2: Announcements
-        'manage_members', // 3: Members
-        'edit_profile',   // 4: Forms
-        'edit_profile',   // 5: Settings
+        'view_page',       // 0: Dashboard
+        'create_events',   // 1: Events
+        'create_events',   // 2: Tasks (org/event ops; same gate as Events management)
+        'post_messages',   // 3: Announcements
+        'manage_members',  // 4: Members
+        'edit_profile',    // 5: Settings
     ];
     const pageParam = parseInt(searchParams.get('page') ?? '0', 10);
     const requiredAction = pageToAction[Math.min(pageParam, pageToAction.length - 1)] ?? 'view_page';
@@ -426,31 +546,34 @@ function ClubDash(){
             {isPending && (
                 <OrgPendingBanner org={org} orgName={clubId} />
             )}
-            <Dashboard
-                menuItems={menuItems}
-                additionalClass='club-dash'
-                middleItem={isAdminView && isSiteAdmin ? (
-                    <div className="org-dropdown org-dropdown--admin-view">
-                        <img src={org?.org_profile_image || '/Logo.svg'} alt="" />
-                        <span className="org-dropdown__viewing-label">Viewing: {clubId}</span>
-                    </div>
-                ) : (
-                    <OrgDropdown showDrop={showDrop} setShowDrop={setShowDrop} user={user} currentOrgName={clubId} onOrgChange={onOrgChange}/>
-                )}
-                logo={orgLogo}
-                secondaryColor="#EDF6EE"
-                primaryColor="#4DAA57"
-                enableSubSidebar={true}
-                onBack={() => navigate(isAdminView && isSiteAdmin ? '/org-management' : '/events-dashboard')}
-                contentOverlay={isRestricted ? (
-                    <PendingApprovalOverlay
-                        org={org}
-                        orgName={clubId}
-                        config={configData}
-                        memberCount={memberCount}
-                    />
-                ) : null}
-            />
+            <OrgLifecycleBanner lifecycleStatus={org?.lifecycleStatus} />
+            <div ref={orgEnterShellRef} className="club-dash-org-enter">
+                <Dashboard
+                    menuItems={menuItems}
+                    additionalClass='club-dash'
+                    middleItem={isAdminView && isSiteAdmin ? (
+                        <div className="org-dropdown org-dropdown--admin-view">
+                            <img src={org?.org_profile_image || '/Logo.svg'} alt="" />
+                            <span className="org-dropdown__viewing-label">Viewing: {clubId}</span>
+                        </div>
+                    ) : (
+                        <OrgDropdown showDrop={showDrop} setShowDrop={setShowDrop} user={user} currentOrgName={clubId} onOrgChange={onOrgChange}/>
+                    )}
+                    logo={orgLogo}
+                    secondaryColor="#EDF6EE"
+                    primaryColor="#4DAA57"
+                    enableSubSidebar={true}
+                    onBack={() => navigate(isAdminView && isSiteAdmin ? '/org-management' : '/events-dashboard')}
+                    contentOverlay={isRestricted ? (
+                        <PendingApprovalOverlay
+                            org={org}
+                            orgName={clubId}
+                            config={configData}
+                            memberCount={memberCount}
+                        />
+                    ) : null}
+                />
+            </div>
         </div>
     )
 }

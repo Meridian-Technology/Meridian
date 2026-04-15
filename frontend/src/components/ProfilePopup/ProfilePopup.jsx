@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { Squircle } from '@squircle-js/react';
@@ -43,6 +43,56 @@ function ProfilePopup({
     useOutsideClick(ref, () => {
         setShowPopup(false);
     }, ["profile"]);
+
+    /** Domains linked to active stakeholder memberships (from validate-token + legacy user fields). */
+    const domainDashboardLinks = useMemo(() => {
+        const fromToken = (user?.stakeholderDomainDashboards || [])
+            .map((row) => ({
+                domainId: String(row.domainId || row._id || '').trim(),
+                domainName: row.domainName || null
+            }))
+            .filter((row) => row.domainId);
+
+        if (fromToken.length) {
+            const seen = new Set();
+            return fromToken.filter((row) => {
+                if (seen.has(row.domainId)) return false;
+                seen.add(row.domainId);
+                return true;
+            });
+        }
+
+        const sources = [
+            user?.stakeholderAssignments,
+            user?.stakeholderRoles,
+            user?.domainStakeholderRoles,
+            user?.assignedStakeholderRoles
+        ];
+
+        const items = sources.flatMap((source) => (Array.isArray(source) ? source : []));
+        if (!items.length) return [];
+
+        const normalized = items.map((assignment) => {
+            const rawDomain = assignment?.domainId || assignment?.domain || assignment?.domain_id;
+            const domainId = typeof rawDomain === 'string'
+                ? rawDomain
+                : rawDomain?._id || rawDomain?.id || null;
+
+            if (!domainId) return null;
+
+            return {
+                domainId: String(domainId),
+                domainName: assignment?.domainName || assignment?.domain?.name || assignment?.domain_id?.name || null
+            };
+        }).filter(Boolean);
+
+        const seen = new Set();
+        return normalized.filter((item) => {
+            if (seen.has(item.domainId)) return false;
+            seen.add(item.domainId);
+            return true;
+        });
+    }, [user]);
 
     // Safety check - don't render if user is not loaded
     if (!user) {
@@ -129,7 +179,7 @@ function ProfilePopup({
                         </>
                     }
                     {
-                        user && user.roles && user.approvalRoles.includes('root') && 
+                        user && user.roles && (user.approvalRoles || []).includes('root') && 
                         <>
                             <Link to="/root-dashboard">
                                 <div className="menu-item">
@@ -159,29 +209,26 @@ function ProfilePopup({
                             )}
                         </>
                     }
-                    {
-                        user && user.approvalRoles && user.approvalRoles.length > 0 && 
+                    {user && domainDashboardLinks.length > 0 && (
                         <>
-                            <hr/>
-                            <p className="section">APPROVALS</p>
-                            {user.approvalRoles.map(
-                                (role) => {
-                                    const url = role === 'root' ? '/root-dashboard' : `/approval-dashboard/${role}` 
-                                    if(role === 'root'){
-                                        return null;
-                                    }
-                                    return(
-                                        <Link to={`${url}`} key={role}>
-                                            <div className="menu-item">
-                                                <Icon icon="fluent:flowchart-24-filled" />
-                                                <p>{role}</p>
-                                            </div>
-                                        </Link>
-                                    )
-                                }
-                            )}
+                            <hr />
+                            <p className="section">DOMAIN DASHBOARDS</p>
+                            {domainDashboardLinks.map((assignment) => (
+                                <Link
+                                    to={`/domain-dashboard/${assignment.domainId}`}
+                                    key={`domain-dash-${assignment.domainId}`}
+                                >
+                                    <div className="menu-item">
+                                        <Icon icon="mdi:domain" />
+                                        <p>
+                                            {assignment.domainName || 'Domain'}
+                                            <span className="menu-item-sub">Stakeholder workspace</span>
+                                        </p>
+                                    </div>
+                                </Link>
+                            ))}
                         </>
-                    }
+                    )}
 
                     <hr />
                     <Link to="">

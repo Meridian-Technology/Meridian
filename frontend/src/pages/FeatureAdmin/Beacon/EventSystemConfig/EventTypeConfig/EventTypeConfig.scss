@@ -1,0 +1,122 @@
+.event-type-config {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
+    &__header {
+        h2 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 6px;
+        }
+
+        p {
+            margin: 0;
+            color: var(--darkborder);
+            font-size: 0.9rem;
+        }
+    }
+
+    &__card {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--background);
+        box-shadow: var(--shadow);
+        padding: 16px;
+
+        label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        input,
+        select {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--background);
+            color: var(--text);
+            font: inherit;
+            font-size: 0.9rem;
+            padding: 10px 12px;
+            box-sizing: border-box;
+        }
+    }
+
+    &__adder {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    &__chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    &__chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px 5px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--text) 4%, var(--background));
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text);
+
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--darkborder);
+            cursor: pointer;
+            padding: 0;
+        }
+    }
+
+    &__hint {
+        margin: 0;
+        font-size: 0.8rem;
+        color: var(--darkborder);
+    }
+
+    &__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 4px;
+    }
+
+    &__btn {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        cursor: pointer;
+
+        &--primary {
+            background: var(--text);
+            color: var(--background);
+            border-color: var(--text);
+        }
+
+        &--secondary {
+            background: var(--background);
+            color: var(--text);
+        }
+    }
+}

@@ -382,6 +382,18 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                                 Assigned by {getMemberDisplayName(member.assignedBy)}
                                             </span>
                                         )}
+                                        {(member.roleTermStart || member.roleTermEnd) && (
+                                            <span className="role-term">
+                                                Term:{' '}
+                                                {member.roleTermStart
+                                                    ? new Date(member.roleTermStart).toLocaleDateString()
+                                                    : '—'}
+                                                {' → '}
+                                                {member.roleTermEnd
+                                                    ? new Date(member.roleTermEnd).toLocaleDateString()
+                                                    : '—'}
+                                            </span>
+                                        )}
                                     </div>
                                     
                                     <div className="role-badge" style={{ backgroundColor: getOrgRoleColor(member.role, 0.1, roles), color: getOrgRoleColor(member.role, 1, roles) }}>

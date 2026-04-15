@@ -3,7 +3,7 @@ import './App.scss';
 import './assets/fonts.css';
 import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
-import AnimatedPageWrapper from './components/AnimatedPageWrapper/AnimatedPageWrapper';
+import AnimatedPageWrapper, { StaticFullBleedPage } from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
 import { isWww, setLastTenant, setTenantConfigCache } from './config/tenantRedirect';
 
@@ -34,6 +34,8 @@ import ClubDash from './pages/ClubDash/ClubDash';
 import PendingApprovalScreen from './pages/ClubDash/PendingApprovalScreen/PendingApprovalScreen';
 import OrgDisplay from './pages/Org/OrgDisplay';
 import RootDash from './pages/RootDash/RootDash';
+import AdminEventOperatorPage from './pages/RootDash/AdminEventOperatorPage';
+import AdminEventsListPage from './pages/RootDash/AdminEventsListPage';
 import OrgManagement from './pages/FeatureAdmin/OrgManagement/Atlas';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -61,6 +63,7 @@ import EventPage from './pages/EventPage/EventPage';
 import SubSidebarExample from './components/Dashboard/SubSidebarExample';
 import RebrandingNotice from './components/RebrandingNotice/RebrandingNotice';
 import DevTenantSelector from './components/DevTenantSelector/DevTenantSelector';
+import CommunityOrganizerFeatureAdminRedirect from './components/CommunityOrganizerFeatureAdminRedirect/CommunityOrganizerFeatureAdminRedirect';
 import Beacon from './pages/FeatureAdmin/Beacon/Beacon';
 import Compass from './pages/FeatureAdmin/Compass/Compass';
 import Atlas from './pages/FeatureAdmin/Atlas/Atlas';
@@ -254,12 +257,14 @@ function App() {
                                                 <Route path="/mobile-analytics-dashboard" element={<AnimatedPageWrapper><MobileAnalyticsDashboard/></AnimatedPageWrapper>}/>
                                             </Route>
 
-                                                <Route path="/club-dashboard/:id/pending-approval" element={<AnimatedPageWrapper><PendingApprovalScreen/></AnimatedPageWrapper>}/>
-                                                <Route path="/club-dashboard/:id" element={<AnimatedPageWrapper><ClubDash/></AnimatedPageWrapper>}/>
+                                                <Route path="/club-dashboard/:id/pending-approval" element={<StaticFullBleedPage><PendingApprovalScreen/></StaticFullBleedPage>}/>
+                                                <Route path="/club-dashboard/:id" element={<StaticFullBleedPage><ClubDash/></StaticFullBleedPage>}/>
                                             {/* features under development */}
                                             <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'beta']}/> }>
                                                 {/* <Route path="/events" element={<AnimatedPageWrapper><Events/></AnimatedPageWrapper>}/> */}
                                                 <Route path="/root-dashboard" element={<AnimatedPageWrapper><RootDash/></AnimatedPageWrapper>}/>
+                                                <Route path="/operator-event/:eventId" element={<AnimatedPageWrapper><AdminEventOperatorPage /></AnimatedPageWrapper>}/>
+                                                <Route path="/operator-events" element={<AnimatedPageWrapper><AdminEventsListPage /></AnimatedPageWrapper>}/>
                                                 <Route path="/form/:id" element={<AnimatedPageWrapper><Form/></AnimatedPageWrapper>}/>
                                             <Route path="/org-management" element={<AnimatedPageWrapper><OrgManagement/></AnimatedPageWrapper>}/>
                                                 <Route path="/approval-dashboard/:id" element={<AnimatedPageWrapper><OIEDash/></AnimatedPageWrapper>}/>
@@ -275,9 +280,9 @@ function App() {
                                             {/* oie routes */}
                                             <Route element={ <ProtectedRoute authorizedRoles={['admin', 'developer', 'oie']}/> }>
                                                 <Route path="/oie-dashboard" element={<AnimatedPageWrapper><OIEDash/></AnimatedPageWrapper>}/>
-                                                <Route path="/feature-admin/beacon" element={<AnimatedPageWrapper><Beacon/></AnimatedPageWrapper>}/>
-                                                <Route path="/feature-admin/compass" element={<AnimatedPageWrapper><Compass/></AnimatedPageWrapper>}/>
-                                                <Route path="/feature-admin/atlas" element={<AnimatedPageWrapper><OrgManagement/></AnimatedPageWrapper>}/>
+                                                <Route path="/feature-admin/beacon" element={<AnimatedPageWrapper><CommunityOrganizerFeatureAdminRedirect><Beacon/></CommunityOrganizerFeatureAdminRedirect></AnimatedPageWrapper>}/>
+                                                <Route path="/feature-admin/compass" element={<AnimatedPageWrapper><CommunityOrganizerFeatureAdminRedirect><Compass/></CommunityOrganizerFeatureAdminRedirect></AnimatedPageWrapper>}/>
+                                                <Route path="/feature-admin/atlas" element={<AnimatedPageWrapper><CommunityOrganizerFeatureAdminRedirect><OrgManagement/></CommunityOrganizerFeatureAdminRedirect></AnimatedPageWrapper>}/>
                                             </Route>
                                             <Route path="/create-event" element={<AnimatedPageWrapper><CreateEvent/></AnimatedPageWrapper   >}/>
                                             {/* Mockup only — Admin Outreach wireframes; no auth, no prod */}

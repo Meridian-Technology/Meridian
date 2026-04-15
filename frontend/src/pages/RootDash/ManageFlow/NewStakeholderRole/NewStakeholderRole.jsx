@@ -7,7 +7,40 @@ import postRequest from '../../../../utils/postRequest';
 import { useFetch } from '../../../../hooks/useFetch';
 import './NewStakeholderRole.scss';
 
-const NewStakeholderRole = ({ handleClose, refetch }) => {
+function memberUserId(m) {
+    if (!m || m.userId == null) return null;
+    return m.userId._id || m.userId;
+}
+
+function buildStakeholderPayload(data) {
+    const members = (data.members || []).map((m) => ({
+        userId: memberUserId(m),
+        assignedAt: m.assignedAt || new Date(),
+        assignedBy: m.assignedBy?._id || m.assignedBy || 'system',
+        isActive: m.isActive !== false
+    }));
+    const activeCount = members.filter((m) => m.isActive).length;
+    return {
+        stakeholderId: data.stakeholderId,
+        stakeholderName: data.stakeholderName,
+        stakeholderType: data.stakeholderType,
+        domainId: data.domainId,
+        description: data.description,
+        permissions: data.permissions,
+        requirements: data.requirements,
+        members,
+        approvalConfig: {
+            ...data.approvalConfig,
+            totalMembers: activeCount
+        },
+        escalationRules: data.escalationRules,
+        conditionGroups: data.conditionGroups || [],
+        groupLogicalOperators: data.groupLogicalOperators || [],
+        isActive: data.isActive
+    };
+}
+
+const NewStakeholderRole = ({ handleClose, refetch, editingRoleId = null, defaultDomainId = null }) => {
     const [stakeholderData, setStakeholderData] = useState({
         stakeholderId: '',
         stakeholderName: '',
@@ -34,6 +67,8 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
 
     const [domains, setDomains] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [roleDetailLoading, setRoleDetailLoading] = useState(false);
+    const [roleDetailError, setRoleDetailError] = useState(null);
     const [errors, setErrors] = useState({});
     const { addNotification } = useNotification();
 
@@ -47,8 +82,9 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
         }
     }, [eventSystemConfigData.data]);
 
-    // Auto-generate stakeholderId from stakeholderName
+    // Auto-generate stakeholderId from stakeholderName (create only)
     useEffect(() => {
+        if (editingRoleId) return;
         if (stakeholderData.stakeholderName) {
             const generatedId = stakeholderData.stakeholderName
                 .toLowerCase()
@@ -60,7 +96,75 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                 stakeholderId: generatedId
             }));
         }
-    }, [stakeholderData.stakeholderName]);
+    }, [stakeholderData.stakeholderName, editingRoleId]);
+
+    useEffect(() => {
+        if (editingRoleId) return;
+        if (!defaultDomainId) return;
+        setStakeholderData((prev) => ({ ...prev, domainId: String(defaultDomainId) }));
+    }, [editingRoleId, defaultDomainId]);
+
+    useEffect(() => {
+        if (!editingRoleId) {
+            setRoleDetailLoading(false);
+            setRoleDetailError(null);
+            return;
+        }
+
+        let cancelled = false;
+        setRoleDetailLoading(true);
+        setRoleDetailError(null);
+
+        (async () => {
+            try {
+                const res = await postRequest(`/api/stakeholder-roles/${editingRoleId}`, null, {
+                    method: 'GET'
+                });
+                if (cancelled) return;
+                if (res?.success && res.data) {
+                    const r = res.data;
+                    setStakeholderData({
+                        stakeholderId: r.stakeholderId,
+                        stakeholderName: r.stakeholderName,
+                        stakeholderType: r.stakeholderType,
+                        domainId: r.domainId?._id ? String(r.domainId._id) : String(r.domainId),
+                        description: r.description || '',
+                        permissions: [...(r.permissions || [])],
+                        requirements: [...(r.requirements || [])],
+                        members: [...(r.members || [])],
+                        approvalConfig: {
+                            requiredApprovals: r.approvalConfig?.requiredApprovals ?? 1,
+                            totalMembers:
+                                r.approvalConfig?.totalMembers ??
+                                (r.members || []).filter((m) => m.isActive !== false).length,
+                            allowSelfApproval: !!r.approvalConfig?.allowSelfApproval,
+                            requireAllMembers: !!r.approvalConfig?.requireAllMembers
+                        },
+                        escalationRules: {
+                            timeout: r.escalationRules?.timeout ?? 72,
+                            autoEscalate: r.escalationRules?.autoEscalate !== false,
+                            escalateTo: r.escalationRules?.escalateTo,
+                            escalateToUser: r.escalationRules?.escalateToUser,
+                            escalationMessage: r.escalationRules?.escalationMessage
+                        },
+                        conditionGroups: [...(r.conditionGroups || [])],
+                        groupLogicalOperators: [...(r.groupLogicalOperators || [])],
+                        isActive: r.isActive !== false
+                    });
+                } else {
+                    setRoleDetailError(res?.message || 'Failed to load stakeholder role');
+                }
+            } catch (e) {
+                if (!cancelled) setRoleDetailError(e?.message || 'Failed to load stakeholder role');
+            } finally {
+                if (!cancelled) setRoleDetailLoading(false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [editingRoleId]);
 
     const validateForm = () => {
         const newErrors = {};
@@ -155,30 +259,45 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
     };
 
     const handleMemberAdd = (user) => {
-        setStakeholderData(prev => ({
-            ...prev,
-            members: [...prev.members, {
-                userId: user._id,
-                assignedAt: new Date()
-                // assignedBy will be set by the backend
-            }],
-            approvalConfig: {
-                ...prev.approvalConfig,
-                totalMembers: prev.members.length + 1
-            }
-        }));
+        setStakeholderData((prev) => {
+            const nextMembers = [
+                ...prev.members,
+                {
+                    userId: user._id,
+                    assignedAt: new Date(),
+                    assignedBy: 'system',
+                    isActive: true
+                }
+            ];
+            const active = nextMembers.filter((m) => m.isActive !== false).length;
+            return {
+                ...prev,
+                members: nextMembers,
+                approvalConfig: {
+                    ...prev.approvalConfig,
+                    totalMembers: active
+                }
+            };
+        });
     };
 
     const handleMemberRemove = (index) => {
-        setStakeholderData(prev => ({
-            ...prev,
-            members: prev.members.filter((_, i) => i !== index),
-            approvalConfig: {
-                ...prev.approvalConfig,
-                totalMembers: prev.members.length - 1,
-                requiredApprovals: Math.min(prev.approvalConfig.requiredApprovals, prev.members.length - 1)
-            }
-        }));
+        setStakeholderData((prev) => {
+            const nextMembers = prev.members.filter((_, i) => i !== index);
+            const active = nextMembers.filter((m) => m.isActive !== false).length;
+            return {
+                ...prev,
+                members: nextMembers,
+                approvalConfig: {
+                    ...prev.approvalConfig,
+                    totalMembers: active,
+                    requiredApprovals: Math.min(
+                        Math.max(1, prev.approvalConfig.requiredApprovals),
+                        Math.max(1, active)
+                    )
+                }
+            };
+        });
     };
 
     const onSubmit = async (e) => {
@@ -196,16 +315,20 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
         setLoading(true);
         
         try {
-            const response = await postRequest('/api/stakeholder-role', stakeholderData);
+            const payload = buildStakeholderPayload(stakeholderData);
+            const response = editingRoleId
+                ? await postRequest(`/api/stakeholder-roles/${editingRoleId}`, payload, { method: 'PUT' })
+                : await postRequest('/api/stakeholder-role', payload);
             
             if (response.success) {
                 addNotification({
                     title: 'Success',
-                    message: 'Stakeholder role created successfully',
+                    message: editingRoleId
+                        ? 'Stakeholder role updated successfully'
+                        : 'Stakeholder role created successfully',
                     type: 'success'
                 });
                 
-                // Reset form
                 setStakeholderData({
                     stakeholderId: '',
                     stakeholderName: '',
@@ -235,15 +358,22 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
             } else {
                 addNotification({
                     title: 'Error',
-                    message: response.message || 'Failed to create stakeholder role',
+                    message:
+                        response.message ||
+                        (editingRoleId ? 'Failed to update stakeholder role' : 'Failed to create stakeholder role'),
                     type: 'error'
                 });
             }
         } catch (error) {
-            console.error('Error creating stakeholder role:', error);
+            console.error(
+                editingRoleId ? 'Error updating stakeholder role:' : 'Error creating stakeholder role:',
+                error
+            );
             addNotification({
                 title: 'Error',
-                message: 'Failed to create stakeholder role',
+                message: editingRoleId
+                    ? 'Failed to update stakeholder role'
+                    : 'Failed to create stakeholder role',
                 type: 'error'
             });
         } finally {
@@ -281,11 +411,24 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
         { value: 'notifiee', label: 'Notifiee', description: 'Receives notifications for awareness' }
     ];
 
+    const isEditMode = Boolean(editingRoleId);
+    const editFormBlocked = isEditMode && (roleDetailLoading || roleDetailError);
+
     return (
-        <HeaderContainer classN="new-stakeholder-role" icon="fluent:person-24-filled" header="New Stakeholder Role" subHeader="create a new stakeholder role">
+        <HeaderContainer
+            classN="new-stakeholder-role"
+            icon="fluent:person-24-filled"
+            header={isEditMode ? 'Edit Stakeholder Role' : 'New Stakeholder Role'}
+            subHeader={isEditMode ? 'update role, members, and approval settings' : 'create a new stakeholder role'}
+        >
+            {isEditMode && roleDetailLoading ? (
+                <p className="role-form-loading">Loading stakeholder role…</p>
+            ) : isEditMode && roleDetailError ? (
+                <p className="role-form-loading">Unable to load this role. Close and try again.</p>
+            ) : null}
             <div className="header">
-                <h2>New Stakeholder Role</h2>
-                <p>create a new stakeholder role for event management</p>
+                <h2>{isEditMode ? 'Edit Stakeholder Role' : 'New Stakeholder Role'}</h2>
+                <p>{isEditMode ? 'Update this role for your domain' : 'create a new stakeholder role for event management'}</p>
             </div>
             <Flag 
                 text="Stakeholder roles define who can approve, acknowledge, or be notified about events. Each role is associated with a specific domain and can have multiple users assigned as primary or backup assignees." 
@@ -322,6 +465,8 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                             value={stakeholderData.stakeholderId} 
                             onChange={(e) => handleInputChange('stakeholderId', e.target.value)}
                             placeholder="Auto-generated from name (e.g., alumni_house_manager)"
+                            readOnly={isEditMode}
+                            title={isEditMode ? 'Stakeholder ID cannot be changed after creation' : undefined}
                         />
                         {errors.stakeholderId && <span className="error">{errors.stakeholderId}</span>}
                     </div>
@@ -441,7 +586,7 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                     <UserSearch 
                         onUserSelect={handleMemberAdd}
                         placeholder="Search for members by name or username"
-                        excludeIds={stakeholderData.members.map(m => m.userId)}
+                        excludeIds={stakeholderData.members.map((m) => memberUserId(m)).filter(Boolean)}
                     />
                     {errors.members && <span className="error">{errors.members}</span>}
                     
@@ -537,8 +682,14 @@ const NewStakeholderRole = ({ handleClose, refetch }) => {
                     </div>
                 </div>
 
-                <button type="submit" className="submit-button" disabled={loading}>
-                    {loading ? 'Creating...' : 'Create Stakeholder Role'}
+                <button type="submit" className="submit-button" disabled={loading || editFormBlocked}>
+                    {loading
+                        ? isEditMode
+                            ? 'Saving...'
+                            : 'Creating...'
+                        : isEditMode
+                            ? 'Save Stakeholder Role'
+                            : 'Create Stakeholder Role'}
                 </button>
             </form>
         </HeaderContainer>

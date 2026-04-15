@@ -21,25 +21,40 @@ function Dash({ expandedClass, openMembers, clubName, meetings, org, canManageEv
     const [events, setEvents] = useState([]);
     const weeklyRef = useRef(null);
     const [height, setHeight] = useState(0);
+    /** Defer heavy Week/calendar subtree until after first paint (reduces renderer pressure with layout + images). */
+    const [weekReady, setWeekReady] = useState(false);
     const { user } = useAuth();
     const [selectedTab, setSelectedTab] = useState("upcoming");
     const navigate = useNavigate();
 
 
 
-    const filter = {
-        "hostingId": { "$eq": org.org.overview._id }
-    }
+    const orgOverview = org?.org?.overview;
+    const orgId = orgOverview?._id || null;
+    const filter = orgId
+        ? {
+            hostingId: { $eq: orgId }
+        }
+        : {};
 
 
-    console.log(filter);
+    useEffect(() => {
+        let cancelled = false;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (!cancelled) setWeekReady(true);
+            });
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     useEffect(() => {
         if (weeklyRef.current) {
             setTimeout(() => {
                 const height = weeklyRef?.current?.clientHeight;
                 setHeight(height);
-                console.log(height);
             }, 100);
         }
     }, []);
@@ -52,6 +67,18 @@ function Dash({ expandedClass, openMembers, clubName, meetings, org, canManageEv
                 selectedOrg: org?.org?.overview ? { _id: org.org.overview._id } : null
             }
         });
+    }
+
+    if (!orgId) {
+        return (
+            <div className={`dash ${expandedClass}`}>
+                <header className="header">
+                    <h1>{welcomeText}, {clubName}</h1>
+                    <p>loading organization dashboard…</p>
+                    <img src={AtlasMain} alt="" />
+                </header>
+            </div>
+        );
     }
 
     return (
@@ -72,7 +99,7 @@ function Dash({ expandedClass, openMembers, clubName, meetings, org, canManageEv
                     </div>
                 </div>
                 <DashStatus 
-                    orgId={org.org.overview._id} 
+                    orgId={orgId} 
                     action={openMembers} 
                     actionText="view all" 
                     color="var(--green)" 
@@ -137,7 +164,7 @@ function Dash({ expandedClass, openMembers, clubName, meetings, org, canManageEv
                 </div> */}
                 <div className="week-container" ref={weeklyRef}>
                     {
-                        height !== 0 &&
+                        height !== 0 && weekReady &&
                         <Week height={`${height-50}px`} changeToDay={() => { }} start={new Date()} nav={false} filter={filter} showSwitch={false} startingText="This Week at a Glance"/>
                     }
                 </div>

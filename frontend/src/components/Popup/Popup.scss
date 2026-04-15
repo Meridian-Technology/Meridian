@@ -14,6 +14,11 @@
     opacity: 0;
   }
 
+  /* Second modal (e.g. revision) above another Popup or high z-index shells */
+  .popup-overlay.popup-overlay--elevated {
+    z-index: 10050;
+  }
+
   .popup-content-overlay{
     background-color: white;
     padding: 20px;
@@ -33,7 +38,11 @@
       max-width: 1000px;
       width:95%;
       
-
+      
+    }
+    &.-domain{
+      max-width: 1200px;
+      width: 95%;
     }
   }
 
@@ -97,12 +106,38 @@
 
     }
 
+    &.wider-content{
+      max-width: 1400px;
+      width: 95%;
+    }
+
     &.oie{
         max-height:700px;
     }
     &.manage-user{
         max-width: 600px;
     }    
+  }
+  .popup-content-new {
+    background-color: var(--background);
+    border-radius: 25px;
+    position: absolute;
+    max-width:100%;
+    box-sizing: border-box;
+    display:flex;
+    flex-direction: column;  
+    overflow:hidden;
+    max-height: 90vh;
+    z-index: 1000;
+    padding:5px;
+    border: 1px solid var(--border);
+    .popup-content-inner{
+        border:1px solid var(--border);
+        border-radius: 20px;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+    
   }
 
   .popup-overlay .popup-content.no-styling {
@@ -131,7 +166,8 @@
   .popup-overlay .popup-content.no-padding {
     padding: 0;
   }
-  .popup-content .close-popup{
+  .popup-content .close-popup,
+  .popup-content-new .close-popup{
     position: absolute;
     width:15px;
     top:15px;
@@ -140,6 +176,7 @@
     right:15px;
     z-index: 100;
     cursor: pointer;
+
   }
 
   .close-popup.popout{

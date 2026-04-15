@@ -28,13 +28,14 @@ function Dashboard({
     contentOverlay=null
 } ) {
     const [expanded, setExpanded] = useState(false);
-    const [expandedClass, setExpandedClass] = useState("");
     const [currentDisplay, setCurrentDisplay] = useState(null); // Initialize as null to prevent flash
     const [navigationStack, setNavigationStack] = useState([]);
     const [currentSubItems, setCurrentSubItems] = useState(null);
     const [isTransitioning, setIsTransitioning] = useState(false);
     const [contentOpacity, setContentOpacity] = useState(1);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isSidebarEdgePeek, setIsSidebarEdgePeek] = useState(false);
+    const edgePeekTimeoutRef = useRef(null);
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const location = useLocation();
@@ -74,7 +75,7 @@ function Dashboard({
     // Check if menuItems have elements or if we're using the old children pattern
     const hasElementsInMenuItems = menuItems && menuItems.length > 0 && menuItems[0].element;
 
-
+    const menuStructureKey = menuItems?.map((item) => item.key ?? item.label).join('|') ?? '';
 
     // Close mobile menu when clicking outside
     useEffect(() => {
@@ -190,7 +191,7 @@ function Dashboard({
             setIsInitialized(true);
             console.log('Dashboard initialized with currentDisplay:', currentDisplay);
         }
-    }, [searchParams, menuItems, defaultPage]);
+    }, [searchParams, menuItems.length, menuStructureKey, defaultPage]);
 
     // Set initial URL if no page parameter is present
     useEffect(() => {
@@ -266,9 +267,40 @@ function Dashboard({
     }, [pendingNavigation, isTransitioning, navigationStack, menuItems, setSearchParams]);
 
     const onExpand = () => {
-        setExpanded(prev => !prev);
-        setExpandedClass(expanded ? "minimized" : "maximized");
+        setExpanded((prev) => !prev);
     }
+
+    useEffect(() => {
+        if (!expanded || width < 768) {
+            setIsSidebarEdgePeek(false);
+            if (edgePeekTimeoutRef.current) {
+                clearTimeout(edgePeekTimeoutRef.current);
+                edgePeekTimeoutRef.current = null;
+            }
+            return;
+        }
+
+        const handleMouseMove = (event) => {
+            if (event.clientX > 28) return;
+            setIsSidebarEdgePeek(true);
+            if (edgePeekTimeoutRef.current) {
+                clearTimeout(edgePeekTimeoutRef.current);
+            }
+            edgePeekTimeoutRef.current = setTimeout(() => {
+                setIsSidebarEdgePeek(false);
+                edgePeekTimeoutRef.current = null;
+            }, 900);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            if (edgePeekTimeoutRef.current) {
+                clearTimeout(edgePeekTimeoutRef.current);
+                edgePeekTimeoutRef.current = null;
+            }
+        };
+    }, [expanded, width]);
 
     const handlePageChange = (index) => {
         // Start opacity transition
@@ -579,7 +611,28 @@ function Dashboard({
                     </div>
                 )
             }
-            <div className={`dash-left ${expanded ? "hidden" : ""} ${isMobileMenuOpen ? "mobile-open" : ""}`}>
+            <div
+                className={`dash-left ${expanded ? "hidden" : ""} ${isSidebarEdgePeek ? "edge-peek" : ""} ${
+                    isMobileMenuOpen ? "mobile-open" : ""
+                }`}
+            >
+                {width >= 768 && (
+                    <button
+                        type="button"
+                        className="dashboard-sidebar-toggle"
+                        onClick={onExpand}
+                        aria-label={expanded ? 'Restore sidebar' : 'Collapse sidebar and expand content'}
+                        title={expanded ? 'Restore sidebar' : 'Collapse sidebar'}
+                    >
+                        <Icon
+                            icon={
+                                expanded
+                                    ? 'material-symbols:left-panel-open-rounded'
+                                    : 'material-symbols:left-panel-close-rounded'
+                            }
+                        />
+                    </button>
+                )}
                 <div className="top">
                     <div className="logo">
                         <img src={logo} alt="Logo" />
@@ -670,7 +723,7 @@ function Dashboard({
                     }
                 </div>
             </div>
-            <div className={`dash-right ${expandedClass}`}>
+            <div className={`dash-right ${expanded ? 'maximized' : 'minimized'}`}>
                 <div 
                     className="dash-content"
                     style={{
@@ -679,9 +732,6 @@ function Dashboard({
                     }}
                 >
                     {getCurrentChildren()}
-                </div>
-                <div className={`expand`} onClick={onExpand}>
-                    <Icon icon="material-symbols:expand-content-rounded" />
                 </div>
                 
                 {/* Overlay for full-screen content */}

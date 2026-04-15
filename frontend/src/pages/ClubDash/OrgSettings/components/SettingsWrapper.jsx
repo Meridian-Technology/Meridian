@@ -3,6 +3,9 @@ import { Icon } from '@iconify-icon/react';
 import GeneralSettings from './GeneralSettings';
 import RolesSettings from './RolesSettings';
 import DangerZone from './DangerZone';
+import GovernanceSettings from './GovernanceSettings';
+import BudgetSettings from './BudgetSettings';
+import LifecycleSettings from './LifecycleSettings';
 import './SettingsWrapper.scss';
 
 const SettingsWrapper = ({ org, expandedClass }) => {
@@ -10,6 +13,9 @@ const SettingsWrapper = ({ org, expandedClass }) => {
 
     const sections = [
         { key: 'general', label: 'General', icon: 'mdi:cog', component: GeneralSettings },
+        { key: 'lifecycle', label: 'Lifecycle', icon: 'mdi:state-machine', component: LifecycleSettings },
+        { key: 'governance', label: 'Governance docs', icon: 'mdi:file-document-outline', component: GovernanceSettings },
+        { key: 'budgets', label: 'Budgets', icon: 'mdi:cash-multiple', component: BudgetSettings },
         { key: 'roles', label: 'Roles & Permissions', icon: 'mdi:shield-account', component: RolesSettings },
         { key: 'danger', label: 'Danger Zone', icon: 'mdi:alert-circle', component: DangerZone },
     ];

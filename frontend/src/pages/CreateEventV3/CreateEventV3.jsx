@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { analytics } from '../../services/analytics/analytics';
@@ -14,12 +14,14 @@ import RegistrationSection from '../CreateEventV2/Components/RegistrationSection
 import ApprovalPreview from '../../components/ApprovalPreview/ApprovalPreview';
 import ImageUpload from '../../components/ImageUpload/ImageUpload';
 import Header from '../../components/Header/Header';
+import { extractResourceId, buildResourcePreflightPayload } from '../CreateEvent/shared/resourcePreflight';
 import './CreateEventV3.scss';
 
 const DEFAULT_FIELDS = [
     { name: 'name', type: 'string', label: 'Event Name', inputType: 'text', step: 'basic-info', isActive: true, order: 0, validation: { required: true }, placeholder: 'Event Name' },
     { name: 'description', type: 'textarea', label: 'Description', inputType: 'markdown-textarea', step: 'basic-info', isActive: true, order: 1, validation: { required: true }, placeholder: 'Tell us about your event', allowExpand: true },
-    { name: 'type', type: 'select', label: 'Event Type', inputType: 'select', step: 'basic-info', isActive: true, order: 2, validation: { required: true, options: ['study', 'workshop', 'campus', 'social', 'club', 'meeting', 'sports'] } },
+    { name: 'type', type: 'select', label: 'Event Type', inputType: 'select', step: 'basic-info', isActive: true, order: 2, validation: { required: true, options: ['Meeting', 'Workshop', 'Social', 'Community', 'Training', 'Networking', 'Fundraiser', 'Performance', 'Competition', 'Other'], defaultValue: 'Meeting' } },
+    { name: 'event_tags', type: 'select', label: 'Event Tags', inputType: 'multi-select', step: 'basic-info', isActive: true, order: 3, validation: { required: false, multiple: true, options: ['Computer Science', 'Gaming', 'Career', 'Entrepreneurship', 'Arts', 'Music', 'Sports', 'Health & Wellness', 'Community Service', 'Culture', 'Academic'], defaultValue: [] } },
     { name: 'visibility', type: 'select', label: 'Visibility', inputType: 'select', step: 'basic-info', isActive: true, order: 3, validation: { required: true, options: ['public', 'unlisted', 'members_only'] } },
     { name: 'expectedAttendance', type: 'number', label: 'Expected Attendance', inputType: 'number', step: 'basic-info', isActive: true, order: 4, validation: { required: true, min: 1, max: 10000, defaultValue: 1 }, placeholder: '1' },
     { name: 'contact', type: 'string', label: 'Contact', inputType: 'text', step: 'additional', isActive: true, order: 0, validation: { required: false }, placeholder: 'Email or phone' },
@@ -89,8 +91,13 @@ const CreateEventV3 = () => {
         rsvpEnabled: false,
         rsvpRequired: false,
         rsvpDeadline: null,
+        event_tags: [],
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [resourcePreflightError, setResourcePreflightError] = useState('');
+    const [approvalPreviewSummary, setApprovalPreviewSummary] = useState(null);
+    const preflightTimerRef = useRef(null);
+    const lastConflictKeyRef = useRef('');
 
     useEffect(() => {
         document.body.classList.add('create-event-v3-page');
@@ -134,6 +141,101 @@ const CreateEventV3 = () => {
             setFormData(prev => ({ ...prev, ...defaultValues }));
         }
     }, [formConfig]);
+
+    useEffect(() => {
+        const resourceId = extractResourceId(formData);
+        const startTime = formData.start_time;
+        const endTime = formData.end_time;
+        if (preflightTimerRef.current) {
+            clearTimeout(preflightTimerRef.current);
+            preflightTimerRef.current = null;
+        }
+        if (!resourceId || !startTime || !endTime) {
+            setResourcePreflightError('');
+            setFormData((prev) =>
+                prev.resourcePreflightError ? { ...prev, resourcePreflightError: '' } : prev
+            );
+            lastConflictKeyRef.current = '';
+            return;
+        }
+        const key = `${resourceId}|${new Date(startTime).toISOString()}|${new Date(endTime).toISOString()}`;
+        preflightTimerRef.current = setTimeout(async () => {
+            const preflight = await apiRequest('/resource-preflight', buildResourcePreflightPayload({
+                resourceId,
+                startTime,
+                endTime
+            }), { method: 'POST' });
+            if (!preflight.success) {
+                const msg = preflight.message || 'Resource is unavailable for this time';
+                setResourcePreflightError(msg);
+                setFormData((prev) =>
+                    prev.resourcePreflightError === msg ? prev : { ...prev, resourcePreflightError: msg }
+                );
+                if (lastConflictKeyRef.current !== key) {
+                    lastConflictKeyRef.current = key;
+                }
+                return;
+            }
+            setResourcePreflightError('');
+            setFormData((prev) =>
+                prev.resourcePreflightError ? { ...prev, resourcePreflightError: '' } : prev
+            );
+            lastConflictKeyRef.current = '';
+        }, 350);
+        return () => {
+            if (preflightTimerRef.current) clearTimeout(preflightTimerRef.current);
+        };
+    }, [formData.start_time, formData.end_time, formData.classroom_id, formData.classroomId, addNotification]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadApprovalPreview = async () => {
+            // Best-effort preview for button nuance: require only type.
+            if (!formData.type) {
+                setApprovalPreviewSummary(null);
+                return;
+            }
+            try {
+                const previewResourceId = extractResourceId(formData);
+                const response = await apiRequest('/preview-approvals', {
+                    location: formData.location,
+                    type: formData.type,
+                    start_time: formData.start_time,
+                    end_time: formData.end_time,
+                    expectedAttendance: formData.expectedAttendance || 0,
+                    name: formData.name,
+                    description: formData.description,
+                    visibility: formData.visibility,
+                    customFields: formData.customFields || {},
+                    classroom_id: previewResourceId,
+                    resourceId: previewResourceId
+                }, { method: 'POST' });
+                if (cancelled) return;
+                if (response?.success) {
+                    setApprovalPreviewSummary(response.data || null);
+                } else {
+                    setApprovalPreviewSummary(null);
+                }
+            } catch (_error) {
+                if (!cancelled) setApprovalPreviewSummary(null);
+            }
+        };
+        loadApprovalPreview();
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        formData.location,
+        formData.type,
+        formData.start_time,
+        formData.end_time,
+        formData.expectedAttendance,
+        formData.name,
+        formData.description,
+        formData.visibility,
+        formData.classroom_id,
+        formData.classroomId
+    ]);
 
     const getMissingFields = useCallback((data, config) => {
         const missing = [];
@@ -193,9 +295,11 @@ const CreateEventV3 = () => {
         setIsSubmitting(true);
         try {
             const submitData = new FormData();
+            const resourceId = extractResourceId(formData);
             const data = {
                 name: formData.name,
                 type: formData.type,
+                event_tags: Array.isArray(formData.event_tags) ? formData.event_tags : [],
                 hostingId: selectedHost?.id || formData.hostingId || user?._id,
                 hostingType: selectedHost?.type || formData.hostingType || (user ? 'User' : ''),
                 going: formData.going || [],
@@ -203,7 +307,8 @@ const CreateEventV3 = () => {
                 start_time: formData.start_time,
                 end_time: formData.end_time,
                 description: formData.description,
-                classroom_id: formData.classroom_id || formData.classroomId,
+                classroom_id: resourceId,
+                resourceId,
                 visibility: formData.visibility,
                 expectedAttendance: formData.expectedAttendance,
                 contact: formData.contact,
@@ -216,6 +321,8 @@ const CreateEventV3 = () => {
                 collaboratorOrgIds: selectedCollaboratorOrgIds,
                 asDraft: asDraft ? 'true' : 'false'
             };
+
+            if (resourcePreflightError) throw new Error(resourcePreflightError);
 
             Object.keys(data).forEach(key => {
                 if (data[key] !== null && data[key] !== undefined) {
@@ -299,6 +406,13 @@ const CreateEventV3 = () => {
     };
 
     const steps = getActiveSteps();
+    const requiresApprovalOrAcknowledgement = Boolean(
+        (approvalPreviewSummary?.approvals?.length || 0) > 0 ||
+        (approvalPreviewSummary?.acknowledgements?.length || 0) > 0
+    );
+    const publishButtonLabel = isSubmitting
+        ? 'Creating...'
+        : (requiresApprovalOrAcknowledgement ? 'Create & Submit for Review' : 'Create & Publish');
     const collaborationCandidates = allOrgs
         .filter(org => org?._id && org._id !== selectedHost?.id)
         .sort((a, b) => (a.org_name || '').localeCompare(b.org_name || ''));
@@ -378,7 +492,11 @@ const CreateEventV3 = () => {
                         {steps.some(s => s.id === 'location') && (
                             <div className="form-section">
                                 <label className="section-label">Add Event Location</label>
-                                <LocationAutocomplete formData={formData} setFormData={setFormData} />
+                                <LocationAutocomplete
+                                    formData={formData}
+                                    setFormData={setFormData}
+                                    preflightError={resourcePreflightError}
+                                />
                             </div>
                         )}
 
@@ -397,7 +515,7 @@ const CreateEventV3 = () => {
                             ))}
 
                         {getFieldsForStep('basic-info')
-                            .filter(f => ['type', 'expectedAttendance'].includes(f.name))
+                            .filter(f => ['type', 'event_tags', 'expectedAttendance'].includes(f.name))
                             .map(field => {
                                 const fieldToRender = field.name === 'expectedAttendance'
                                     ? { ...field, inputType: 'number', placeholder: field.placeholder || '1' }
@@ -424,7 +542,11 @@ const CreateEventV3 = () => {
                         </div>
 
                         <div className="form-section approval-preview-section">
-                            <ApprovalPreview formData={formData} hideUnlessRequired />
+                            <ApprovalPreview
+                                formData={formData}
+                                hideUnlessRequired
+                                hideWhenOnlyNotifications
+                            />
                         </div>
 
                         <div className="form-section collaboration-section">
@@ -495,7 +617,7 @@ const CreateEventV3 = () => {
                                 onClick={() => handleSubmit(false)}
                                 disabled={isSubmitting}
                             >
-                                {isSubmitting ? 'Creating...' : 'Create & Publish'}
+                                {publishButtonLabel}
                             </button>
                         </div>
                     </div>

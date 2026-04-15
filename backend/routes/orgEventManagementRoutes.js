@@ -4,7 +4,11 @@ const { verifyToken } = require('../middlewares/verifyToken');
 const getModels  = require('../services/getModelService');
 const { requireEventManagement, requireOrgPermission } = require('../middlewares/orgPermissions');
 const StudySessionService = require('../services/studySessionService');
+const ResourceReservationService = require('../services/resourceReservationService');
+const ReservationMetricsService = require('../services/reservationMetricsService');
+const ExternalRoomSyncService = require('../services/externalRoomSyncService');
 const { resolveAnonymousEmail, resolveAnonymousName } = require('../services/eventAnnouncementService');
+const { getEffectivePolicy, assertOrgAllowsEventCreation, assertEventReservationReady } = require('../services/atlasPolicyService');
 
 const buildOrgEventScope = (orgId) => ([
     { hostingId: orgId },
@@ -19,6 +23,44 @@ const buildScopedEventQuery = (orgId, eventId) => ({
 });
 
 const getHostOrgIdFromEvent = (event) => String(event?.hostingId?._id || event?.hostingId || '');
+const RESERVATION_PREFLIGHT_ENFORCED = process.env.ENFORCE_RESOURCE_PREFLIGHT !== 'false';
+const RESERVATION_OPS_PHASE2_ENABLED = process.env.RESERVATION_OPS_PHASE2 !== 'false';
+
+async function runReservationPreflight(req, event, options = {}) {
+    const resourceId = options.resourceId || event?.reservation?.resourceId || event?.classroom_id || null;
+    if (!resourceId) return { ok: true, availability: { isAvailable: true, reason: 'No reservable resource linked' } };
+    const reservationService = new ResourceReservationService(req);
+    const availability = await reservationService.applyAvailabilitySnapshot(event, {
+        startTime: options.startTime || event.start_time,
+        endTime: options.endTime || event.end_time,
+        resourceId,
+        excludeEventId: options.excludeEventId || event._id
+    });
+    if (!availability.isAvailable && RESERVATION_PREFLIGHT_ENFORCED) {
+        console.info('[reservation_preflight]', {
+            route: 'org-event-management',
+            eventId: String(event?._id || ''),
+            resourceId: String(resourceId),
+            outcome: 'blocked',
+            reason: availability.reason || 'unknown'
+        });
+        return { ok: false, code: 'reservation_conflict', availability };
+    }
+    console.info('[reservation_preflight]', {
+        route: 'org-event-management',
+        eventId: String(event?._id || ''),
+        resourceId: String(resourceId),
+        outcome: availability.isAvailable ? 'allowed' : 'advisory_conflict',
+        reason: availability.reason || ''
+    });
+    return { ok: true, availability };
+}
+
+function reservationOpsDisabled(res) {
+    if (RESERVATION_OPS_PHASE2_ENABLED) return false;
+    res.status(404).json({ success: false, message: 'Reservation operations are disabled' });
+    return true;
+}
 
 // ==================== ORGANIZATION EVENT ANALYTICS ====================
 
@@ -1367,6 +1409,17 @@ router.post('/:orgId/events/from-template/:templateId', verifyToken, requireEven
             });
         }
 
+        const { Org } = getModels(req, 'Org');
+        const hostOrg = await Org.findById(orgId);
+        if (!hostOrg) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+        const atlasPolicy = await getEffectivePolicy(req);
+        const createCheck = assertOrgAllowsEventCreation(atlasPolicy, hostOrg);
+        if (!createCheck.ok) {
+            return res.status(403).json({ success: false, message: createCheck.message });
+        }
+
         // Create event from template
         const eventData = {
             ...template.templateData,
@@ -1379,6 +1432,28 @@ router.post('/:orgId/events/from-template/:templateId', verifyToken, requireEven
         };
 
         const event = new Event(eventData);
+        const reservationService = new ResourceReservationService(req);
+        const resourceId = customizations.resourceId || event.classroom_id || null;
+        event.reservation = reservationService.normalizeEventReservation({
+            classroom_id: resourceId,
+            status: event.status
+        });
+        if (resourceId) {
+            event.classroom_id = resourceId;
+        }
+        const reservationPreflight = await runReservationPreflight(req, event, {
+            resourceId: event.classroom_id,
+            startTime: event.start_time,
+            endTime: event.end_time
+        });
+        if (!reservationPreflight.ok) {
+            return res.status(409).json({
+                success: false,
+                code: reservationPreflight.code,
+                message: reservationPreflight.availability.reason || 'Resource is unavailable for the requested time',
+                conflicts: reservationPreflight.availability.conflicts || []
+            });
+        }
         await event.save();
 
         // Create default EventAgenda for the new event
@@ -1453,6 +1528,41 @@ router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId
                 event[key] = updateData[key];
             }
         });
+
+        if (updateData.resourceId !== undefined) {
+            event.classroom_id = updateData.resourceId || null;
+        }
+        if (event.classroom_id || event.reservation?.resourceId) {
+            const reservationService = new ResourceReservationService(req);
+            event.reservation = reservationService.normalizeEventReservation(event);
+            if (event.classroom_id && !event.reservation.resourceId) {
+                event.reservation.resourceId = event.classroom_id;
+            }
+            const reservationPreflight = await runReservationPreflight(req, event, {
+                resourceId: event.reservation.resourceId || event.classroom_id,
+                startTime: event.start_time,
+                endTime: event.end_time,
+                excludeEventId: event._id
+            });
+            if (!reservationPreflight.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: reservationPreflight.code,
+                    message: reservationPreflight.availability.reason || 'Resource is unavailable for the requested time',
+                    conflicts: reservationPreflight.availability.conflicts || []
+                });
+            }
+            const reservationReady = assertEventReservationReady(event, {
+                allowedStates: ['requested', 'approved', 'hold']
+            });
+            if (!reservationReady.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: reservationReady.code || 'EVENT_RESERVATION_NOT_READY',
+                    message: reservationReady.message
+                });
+            }
+        }
 
         await event.save();
 
@@ -1909,23 +2019,29 @@ router.post('/:orgId/events/:eventId/agenda/publish', verifyToken, requireEventM
                 });
             }
 
-            // Only check room availability if event has a classroom_id
-            if (event.classroom_id) {
-                const studySessionService = new StudySessionService(req);
-                const availability = await studySessionService.checkRoomAvailabilityByClassroomId(
-                    event.start_time,
-                    new Date(newEndTime),
-                    event.classroom_id,
-                    eventId
-                );
-
-                if (!availability.isAvailable) {
-                    return res.status(409).json({
-                        success: false,
-                        message: availability.reason || 'Room is unavailable for the requested time',
-                        conflicts: availability.conflicts
-                    });
-                }
+            const reservationPreflight = await runReservationPreflight(req, event, {
+                resourceId: event?.reservation?.resourceId || event.classroom_id,
+                startTime: event.start_time,
+                endTime: new Date(newEndTime),
+                excludeEventId: eventId
+            });
+            if (!reservationPreflight.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: reservationPreflight.code,
+                    message: reservationPreflight.availability.reason || 'Resource is unavailable for the requested time',
+                    conflicts: reservationPreflight.availability.conflicts || []
+                });
+            }
+            const reservationReady = assertEventReservationReady(event, {
+                allowedStates: ['requested', 'approved', 'hold']
+            });
+            if (!reservationReady.ok) {
+                return res.status(409).json({
+                    success: false,
+                    code: reservationReady.code || 'EVENT_RESERVATION_NOT_READY',
+                    message: reservationReady.message
+                });
             }
 
             // Update event end_time
@@ -3262,6 +3378,81 @@ router.post('/:orgId/events/:eventId/export', verifyToken, requireEventManagemen
             message: 'Error exporting report',
             error: error.message
         });
+    }
+});
+
+router.get('/:orgId/reservations/conflicts', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    if (reservationOpsDisabled(res)) return;
+    try {
+        const { orgId } = req.params;
+        const { limit = 50 } = req.query;
+        const service = new ResourceReservationService(req);
+        const conflicts = await service.listUnresolvedConflicts({ orgId, limit: Number(limit) || 50 });
+        return res.status(200).json({ success: true, data: conflicts });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.patch('/:orgId/reservations/:eventId/exception', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    if (reservationOpsDisabled(res)) return;
+    try {
+        const { Event } = getModels(req, 'Event');
+        const { orgId, eventId } = req.params;
+        const { action = 'acknowledged', note = '', assignedTo = null } = req.body || {};
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+        const service = new ResourceReservationService(req);
+        service.applyExceptionState(event, { action, note, assignedTo, actorId: req.user?.userId || null });
+        await event.save();
+        return res.status(200).json({ success: true, data: event.reservation });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/:orgId/reservations/metrics', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    if (reservationOpsDisabled(res)) return;
+    try {
+        const { orgId } = req.params;
+        const { startDate, endDate, format = 'json' } = req.query;
+        const service = new ReservationMetricsService(req);
+        const metrics = await service.getMetrics({ orgId, startDate, endDate });
+        if (format === 'csv') {
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename="reservation-metrics.csv"');
+            return res.send(ReservationMetricsService.toCsv(metrics));
+        }
+        return res.status(200).json({ success: true, data: metrics });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/:orgId/reservations/:eventId/sync/dry-run', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    if (reservationOpsDisabled(res)) return;
+    try {
+        const { Event } = getModels(req, 'Event');
+        const { orgId, eventId } = req.params;
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+        const syncService = new ExternalRoomSyncService(req);
+        const result = await syncService.dryRunSyncReservation(event, req.body || {});
+        event.reservation = {
+            ...(event.reservation || {}),
+            sync: {
+                ...((event.reservation && event.reservation.sync) || {}),
+                sourceOfTruth: 'external',
+                externalProvider: result.provider || '',
+                externalResourceId: result.externalResourceId || '',
+                lastDryRunAt: result.checkedAt || new Date(),
+                lastDryRunStatus: result.status || ''
+            }
+        };
+        await event.save();
+        return res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
     }
 });
 
