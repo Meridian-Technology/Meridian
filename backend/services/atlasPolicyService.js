@@ -79,6 +79,9 @@ function getEffectivePolicyFromConfig(configDoc) {
 async function getEffectivePolicy(req) {
     const getModels = require('./getModelService');
     const { OrgManagementConfig } = getModels(req, 'OrgManagementConfig');
+    if (!OrgManagementConfig) {
+        return getEffectivePolicyFromConfig(null);
+    }
     const config = await OrgManagementConfig.findOne();
     return getEffectivePolicyFromConfig(config);
 }
