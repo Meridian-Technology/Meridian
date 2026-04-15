@@ -14,6 +14,10 @@ const {
 } = require('../services/atlasPolicyService');
 const { recordMemberJoined, recordMemberRemoved } = require('../services/orgMembershipService');
 const budgetService = require('../services/budgetService');
+const adminTenantSummaryService = require('../services/adminTenantSummaryService');
+const adminTenantEventsService = require('../services/adminTenantEventsService');
+const adminTenantEventOperatorService = require('../services/adminTenantEventOperatorService');
+const rootOperatorUsersService = require('../services/rootOperatorUsersService');
 
 const router = express.Router();
 
@@ -359,6 +363,41 @@ router.get('/config', verifyToken, async (req, res) => {
     }
 });
 
+router.get('/onboarding-config', verifyToken, async (req, res) => {
+    const { OrgManagementConfig } = getModels(req, 'OrgManagementConfig');
+    try {
+        let config = await OrgManagementConfig.findOne();
+        if (!config) {
+            config = new OrgManagementConfig();
+            await config.save();
+        }
+        const defaults = {
+            enabled: false,
+            welcomeTitle: 'Welcome to your community',
+            welcomeSubtitle:
+                'A quick setup helps community managers and campus admins better support your interests.',
+            collectName: true,
+            collectInterests: true,
+            enforceMinInterests: true,
+            enforceMaxInterests: true,
+            minInterests: 1,
+            maxInterests: 6,
+            customSteps: [],
+        };
+        const onboarding = { ...defaults, ...(config.userOnboarding || {}) };
+        return res.status(200).json({
+            success: true,
+            data: onboarding,
+        });
+    } catch (error) {
+        console.error('GET /org-management/onboarding-config failed:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to load onboarding config',
+        });
+    }
+});
+
 // Update management configuration
 router.put('/config', verifyToken, requireAdmin, async (req, res) => {
     const { OrgManagementConfig } = getModels(req, 'OrgManagementConfig');
@@ -428,6 +467,298 @@ router.put('/config', verifyToken, requireAdmin, async (req, res) => {
         });
     }
 });
+
+// ==================== ADMIN TENANT (read-only summary & events) ====================
+
+router.get(
+    '/admin-tenant-summary',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const data = await adminTenantSummaryService.getAdminTenantSummary(req);
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/admin-tenant-summary failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load admin tenant summary',
+            });
+        }
+    }
+);
+
+router.get(
+    '/admin-tenant-events',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const page = parseInt(String(req.query.page || '1'), 10);
+            const limit = parseInt(String(req.query.limit || '20'), 10);
+            const q = typeof req.query.q === 'string' ? req.query.q : '';
+            const includePast = ['1', 'true', 'yes'].includes(String(req.query.includePast || '').toLowerCase());
+            const data = await adminTenantEventsService.listAdminTenantUpcomingEvents(req, {
+                page,
+                limit,
+                q,
+                includePast,
+            });
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/admin-tenant-events failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load admin tenant events',
+            });
+        }
+    }
+);
+
+router.get(
+    '/admin-tenant-events/:eventId/dashboard',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { eventId } = req.params;
+            const data = await adminTenantEventOperatorService.getAdminTenantEventDashboard(req, eventId);
+            if (!data) {
+                return res.status(404).json({ success: false, message: 'Event not found' });
+            }
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/admin-tenant-events/:eventId/dashboard failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load event dashboard',
+            });
+        }
+    }
+);
+
+router.get(
+    '/admin-tenant-events/:eventId/registration-responses',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { eventId } = req.params;
+            const data = await adminTenantEventOperatorService.getAdminTenantEventRegistrationResponses(req, eventId);
+            if (!data) {
+                return res.status(404).json({ success: false, message: 'Event not found' });
+            }
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error(
+                'GET /org-management/admin-tenant-events/:eventId/registration-responses failed:',
+                error
+            );
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load registration responses',
+            });
+        }
+    }
+);
+
+router.get(
+    '/admin-tenant-events/:eventId/rsvp-growth',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { eventId } = req.params;
+            const data = await adminTenantEventOperatorService.getAdminTenantEventRsvpGrowth(req, eventId, {
+                timezone: req.query.timezone,
+            });
+            if (!data) {
+                return res.status(404).json({ success: false, message: 'Event not found' });
+            }
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/admin-tenant-events/:eventId/rsvp-growth failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load RSVP growth',
+            });
+        }
+    }
+);
+
+// ==================== ROOT / COMMUNITY DASHBOARD: PEOPLE & ACCESS ====================
+
+router.get(
+    '/root-operator-user-stats',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const data = await rootOperatorUsersService.getRootOperatorUserStats(req);
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/root-operator-user-stats failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load user statistics',
+            });
+        }
+    }
+);
+
+router.get(
+    '/root-operator-users',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const q = typeof req.query.q === 'string' ? req.query.q : '';
+            const limit = parseInt(String(req.query.limit || '25'), 10);
+            const role = typeof req.query.role === 'string' ? req.query.role : '';
+            const data = await rootOperatorUsersService.searchRootOperatorUsers(req, { q, limit, role });
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            console.error('GET /org-management/root-operator-users failed:', error);
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to search users',
+            });
+        }
+    }
+);
+
+router.post(
+    '/root-operator-users/:userId/role',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { userId } = req.params;
+            const { role, assign } = req.body || {};
+            const data = await rootOperatorUsersService.setRootOperatorUserRole(req, {
+                userId,
+                role,
+                assign: assign === true || assign === 'true',
+            });
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const status = error.statusCode || 500;
+            console.error('POST /org-management/root-operator-users/:userId/role failed:', error);
+            res.status(status).json({
+                success: false,
+                message: error.message || 'Failed to update role',
+            });
+        }
+    }
+);
+
+router.patch(
+    '/root-operator-users/:userId/access',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { userId } = req.params;
+            const { accessSuspended } = req.body || {};
+            const data = await rootOperatorUsersService.setRootOperatorAccessSuspended(req, {
+                userId,
+                accessSuspended: accessSuspended === true || accessSuspended === 'true',
+            });
+            res.status(200).json({ success: true, data });
+        } catch (error) {
+            const status = error.statusCode || 500;
+            console.error('PATCH /org-management/root-operator-users/:userId/access failed:', error);
+            res.status(status).json({
+                success: false,
+                message: error.message || 'Failed to update access',
+            });
+        }
+    }
+);
+
+router.get(
+    '/user-onboarding-responses-summary',
+    verifyToken,
+    authorizeRoles('admin', 'developer', 'beta'),
+    async (req, res) => {
+        try {
+            const { User, OrgManagementConfig } = getModels(req, 'User', 'OrgManagementConfig');
+            const config = await OrgManagementConfig.findOne().lean();
+            const onboardingConfig = config?.userOnboarding || {};
+            const customSteps = Array.isArray(onboardingConfig.customSteps) ? onboardingConfig.customSteps : [];
+
+            const users = await User.find({})
+                .select('tags onboardingResponses')
+                .lean();
+
+            const summary = {
+                totalUsers: users.length,
+                interests: {
+                    totalTaggedUsers: 0,
+                    optionCounts: {},
+                },
+                customSteps: customSteps.map((step) => ({
+                    id: step.id,
+                    label: step.label,
+                    type: step.type,
+                    required: !!step.required,
+                    responseCount: 0,
+                    optionCounts: {},
+                    textSamples: [],
+                })),
+            };
+
+            const stepMap = new Map(summary.customSteps.map((s) => [String(s.id), s]));
+
+            users.forEach((user) => {
+                const tags = Array.isArray(user.tags) ? user.tags : [];
+                if (tags.length > 0) summary.interests.totalTaggedUsers += 1;
+                tags.forEach((tag) => {
+                    const key = String(tag || '').trim();
+                    if (!key) return;
+                    summary.interests.optionCounts[key] = (summary.interests.optionCounts[key] || 0) + 1;
+                });
+
+                const responses = user.onboardingResponses && typeof user.onboardingResponses === 'object'
+                    ? user.onboardingResponses
+                    : {};
+
+                customSteps.forEach((step) => {
+                    const s = stepMap.get(String(step.id));
+                    if (!s) return;
+                    const value = responses[step.id];
+                    if (Array.isArray(value)) {
+                        const cleaned = value.map((v) => String(v || '').trim()).filter(Boolean);
+                        if (cleaned.length > 0) s.responseCount += 1;
+                        cleaned.forEach((v) => {
+                            s.optionCounts[v] = (s.optionCounts[v] || 0) + 1;
+                        });
+                        return;
+                    }
+                    const normalized = String(value || '').trim();
+                    if (!normalized) return;
+                    s.responseCount += 1;
+                    if (step.type === 'single-select') {
+                        s.optionCounts[normalized] = (s.optionCounts[normalized] || 0) + 1;
+                    } else if (s.textSamples.length < 8) {
+                        s.textSamples.push(normalized);
+                    }
+                });
+            });
+
+            return res.status(200).json({
+                success: true,
+                data: summary,
+            });
+        } catch (error) {
+            console.error('GET /org-management/user-onboarding-responses-summary failed:', error);
+            return res.status(500).json({
+                success: false,
+                message: error.message || 'Failed to load onboarding responses summary',
+            });
+        }
+    }
+);
 
 // ==================== ORGANIZATION ANALYTICS ====================
 
@@ -2215,53 +2546,5 @@ router.put(
         }
     }
 );
-
-// ==================== MIGRATIONS ====================
-
-/**
- * Add _id to org positions that don't have it (for role rename detection).
- * Run once per tenant. Protected: admin or root only.
- */
-router.post('/migrate/org-positions-ids', verifyToken, requireAdmin, async (req, res) => {
-    const { Org } = getModels(req, 'Org');
-
-    try {
-        const orgs = await Org.find({}).lean();
-        let updated = 0;
-
-        for (const org of orgs) {
-            const positions = org.positions || [];
-            let changed = false;
-
-            for (let i = 0; i < positions.length; i++) {
-                if (!positions[i]._id) {
-                    positions[i]._id = new mongoose.Types.ObjectId();
-                    changed = true;
-                }
-            }
-
-            if (changed) {
-                await Org.updateOne(
-                    { _id: org._id },
-                    { $set: { positions } }
-                );
-                updated++;
-            }
-        }
-
-        console.log(`POST: /org-management/migrate/org-positions-ids - Updated ${updated} org(s)`);
-        res.status(200).json({
-            success: true,
-            message: `Migration completed. Updated ${updated} organization(s) with _id on role positions.`,
-            data: { orgsUpdated: updated }
-        });
-    } catch (error) {
-        console.error('Migration org-positions-ids failed:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Migration failed'
-        });
-    }
-});
 
 module.exports = router;

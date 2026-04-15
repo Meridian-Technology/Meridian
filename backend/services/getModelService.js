@@ -18,6 +18,8 @@ const reportSchema = require('../schemas/report');
 const scheduleSchema = require('../schemas/schedule');
 const searchSchema = require('../schemas/search');
 const studyHistorySchema = require('../schemas/studyHistory');
+const taskSchema = require('../schemas/task');
+const eventTemplateSchema = require('../schemas/eventTemplate');
 const userSchema = require('../schemas/user');
 const visitSchema = require('../schemas/visit');
 const sessionSchema = require('../schemas/session');
@@ -67,6 +69,7 @@ const MODEL_DEFINITIONS = Object.freeze({
     BadgeGrant: { modelName: 'BadgeGrant', schema: badgeGrantSchema, collection: 'badgegrants' },
     Building: { modelName: 'Building', schema: buildingSchema, collection: 'buildings' },
     Classroom: { modelName: 'Classroom', schema: classroomSchema, collection: 'classrooms1' },
+    Room: { modelName: 'Classroom', schema: classroomSchema, collection: 'classrooms1' },
     Developer: { modelName: 'Developer', schema: developerSchema, collection: 'developers' },
     Event: { modelName: 'Event', schema: eventSchema, collection: 'events' },
     Friendship: { modelName: 'Friendship', schema: friendshipSchema, collection: 'friendships' },
@@ -75,6 +78,7 @@ const MODEL_DEFINITIONS = Object.freeze({
     Org: { modelName: 'Org', schema: orgSchema, collection: 'orgs' },
     OrgFollower: { modelName: 'OrgFollower', schema: orgFollowerSchema, collection: 'followers' },
     OrgMember: { modelName: 'OrgMember', schema: orgMemberSchema, collection: 'members' },
+    OrgMembershipAudit: { modelName: 'OrgMembershipAudit', schema: orgMembershipAuditSchema, collection: 'orgMembershipAudits' },
     OrgInvite: { modelName: 'OrgInvite', schema: orgInviteSchema, collection: 'orgInvites' },
     EventCollaborationInvite: { modelName: 'EventCollaborationInvite', schema: eventCollaborationInviteSchema, collection: 'eventCollaborationInvites' },
     QR: { modelName: 'QR', schema: qrSchema, collection: 'QR' },
@@ -84,6 +88,8 @@ const MODEL_DEFINITIONS = Object.freeze({
     Schedule: { modelName: 'Schedule', schema: scheduleSchema, collection: 'schedules' },
     Search: { modelName: 'Search', schema: searchSchema, collection: 'searches' },
     StudyHistory: { modelName: 'StudyHistory', schema: studyHistorySchema, collection: 'studyHistories' },
+    History: { modelName: 'StudyHistory', schema: studyHistorySchema, collection: 'studyHistories' },
+    Task: { modelName: 'Task', schema: taskSchema, collection: 'tasks' },
     User: { modelName: 'User', schema: userSchema, collection: 'users' },
     Visit: { modelName: 'Visit', schema: visitSchema, collection: 'visits' },
     Session: { modelName: 'Session', schema: sessionSchema, collection: 'sessions' },
@@ -92,9 +98,12 @@ const MODEL_DEFINITIONS = Object.freeze({
     RssFeed: { modelName: 'RssFeed', schema: rssFeedSchema, collection: 'rssFeeds' },
     Form: { modelName: 'Form', schema: formSchema, collection: 'forms' },
     FormResponse: { modelName: 'FormResponse', schema: formResponseSchema, collection: 'formResponses' },
+    EventTemplate: { modelName: 'EventTemplate', schema: eventTemplateSchema, collection: 'eventtemplates' },
     StudySession: { modelName: 'StudySession', schema: studySessionSchema, collection: 'studySessions' },
     OrgVerification: { modelName: 'OrgVerification', schema: orgVerificationSchema, collection: 'orgVerifications' },
     OrgManagementConfig: { modelName: 'OrgManagementConfig', schema: orgManagementConfigSchema, collection: 'orgManagementConfigs' },
+    FinanceConfig: { modelName: 'FinanceConfig', schema: financeConfigSchema, collection: 'financeConfigs' },
+    OrgBudget: { modelName: 'OrgBudget', schema: orgBudgetSchema, collection: 'orgBudgets' },
     OrgMemberApplication: { modelName: 'OrgMemberApplication', schema: orgMemberApplicationSchema, collection: 'orgMemberApplications' },
     SAMLConfig: { modelName: 'SAMLConfig', schema: samlConfigSchema, collection: 'samlConfigs' },
     Notification: { modelName: 'Notification', schema: notificationSchema, collection: 'notifications' },

@@ -12,10 +12,38 @@ const path = require('path');
 const mongoose = require('mongoose');
 const { clean } = require('../services/profanityFilterService');
 const getModels = require('../services/getModelService');
+const { classroomBuildingName } = require('../utilities/classroomBuildingName');
 
 
 const router = express.Router();
 
+
+// Lightweight space availability summary for tenant-aware UI decisions
+router.get('/spaces-summary', async (req, res) => {
+    try {
+        const { Classroom, Building } = getModels(req, 'Classroom', 'Building');
+        const [roomsCount, buildingsCount] = await Promise.all([
+            Classroom.countDocuments({}),
+            Building.countDocuments({}),
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                roomsCount,
+                buildingsCount,
+                hasRoomsOrBuildings: roomsCount > 0 || buildingsCount > 0,
+            },
+        });
+    } catch (error) {
+        console.error('GET /spaces-summary failed', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to load spaces summary',
+            error: error.message,
+        });
+    }
+});
 
 // Route to get featured content (rooms and events) for explore screen
 router.get('/featured-all', async (req, res) => {
@@ -26,6 +54,22 @@ router.get('/featured-all', async (req, res) => {
         const rooms = await Classroom.aggregate([
             { $sample: { size: 5 } },
             {
+                $lookup: {
+                    from: 'buildings',
+                    localField: 'building',
+                    foreignField: '_id',
+                    as: '__buildingDoc',
+                },
+            },
+            {
+                $addFields: {
+                    building: {
+                        $ifNull: [{ $arrayElemAt: ['$__buildingDoc.name', 0] }, ''],
+                    },
+                },
+            },
+            { $project: { __buildingDoc: 0 } },
+            {
                 $project: {
                     _id: 1,
                     name: 1,
@@ -35,9 +79,9 @@ router.get('/featured-all', async (req, res) => {
                     image: 1,
                     attributes: 1,
                     average_rating: 1,
-                    number_of_ratings: 1
-                }
-            }
+                    number_of_ratings: 1,
+                },
+            },
         ]);
 
         // Get 5 random events
@@ -575,7 +619,7 @@ router.get('/getroom/:id', async (req, res) => {
         }
 
         // Find the classroom and schedule
-        const room = await Classroom.findOne({ _id: roomId });
+        const room = await Classroom.findOne({ _id: roomId }).populate('building', 'name');
         const schedule = await Schedule.findOne({ classroom_id: roomId });
         console.log(`GET: /getroom/${roomId}`);
         if (room) {
@@ -627,6 +671,7 @@ router.get('/top-rated-rooms', async (req, res) => {
         })
         .limit(parseInt(limit))
         .select('_id name image building floor capacity attributes average_rating number_of_ratings')
+        .populate('building', 'name')
         .lean();
 
         // Get room IDs to fetch schedules
@@ -648,7 +693,7 @@ router.get('/top-rated-rooms', async (req, res) => {
                 id: room._id.toString(),
                 name: room.name || 'Unknown Room',
                 image: room.image || null,
-                building: room.building || '',
+                building: classroomBuildingName(room),
                 floor: room.floor || '',
                 capacity: room.capacity || 0,
                 attributes: room.attributes || [],
@@ -901,7 +946,11 @@ router.post('/getbatch-new', async (req, res) => {
 
         // Fetch schedules and populate the referenced classrooms
         let schedules = await Schedule.find({ classroom_id: { $in: queryIds } })
-            .populate(exhaustive ? { path: 'classroom_id', model: 'Classroom' } : '')
+            .populate(
+                exhaustive
+                    ? { path: 'classroom_id', model: 'Classroom', populate: { path: 'building', select: 'name' } }
+                    : ''
+            )
             .lean();
 
         // Create a mapping from classroom_id to schedule data
@@ -989,7 +1038,10 @@ router.get('/get-recommendation', verifyTokenOptional, async (req, res) => {
 
             if (randomClassroom && randomClassroom.length > 0) {
                 randomClassroom = randomClassroom[0];
-                randomClassroom = await Classroom.findOne({ _id: randomClassroom.classroom_id });
+                randomClassroom = await Classroom.findOne({ _id: randomClassroom.classroom_id }).populate(
+                    'building',
+                    'name'
+                );
                 console.log(`GET: /get-recommendation/${userId}`);
                 return res.status(200).json({ success: true, message: 'Recommendation found', data: randomClassroom });
             }
@@ -1014,7 +1066,10 @@ router.get('/get-recommendation', verifyTokenOptional, async (req, res) => {
 
         if (randomClassroom && randomClassroom.length > 0) {
             randomClassroom = randomClassroom[0];
-            randomClassroom = await Classroom.findOne({ _id: randomClassroom.classroom_id });
+            randomClassroom = await Classroom.findOne({ _id: randomClassroom.classroom_id }).populate(
+                'building',
+                'name'
+            );
             console.log(`GET: /get-recommendation`);
             return res.status(200).json({ success: true, message: 'Recommendation found', data: randomClassroom });
         }

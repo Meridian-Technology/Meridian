@@ -328,6 +328,8 @@ function createApp() {
     };
 
     try {
+        const getModels = require('./services/getModelService');
+        const { Classroom } = getModels(req, 'Classroom');
         // Upload image to S3
         const s3Response = await s3.upload(s3Params).promise();
         const imageUrl = s3Response.Location;
@@ -337,7 +339,7 @@ function createApp() {
             { name: classroomName },
             { image: imageUrl },
             { new: true, upsert: true }
-        );
+        ).populate('building', 'name');
 
         res.status(200).json({ message: 'Image uploaded and classroom updated.', classroom });
     } catch (error) {

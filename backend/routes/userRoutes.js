@@ -51,7 +51,7 @@ const router = express.Router();
 
 router.post("/update-user", verifyToken, async (req, res) => {
     const { User } = getModels(req, 'User');
-    const { name, username, classroom, recommendation, onboarded } = req.body;
+    const { name, username, classroom, recommendation, onboarded, tags, onboardingResponses, onboardingCompletedSteps } = req.body;
     try {
         const user = await User.findById(req.user.userId);
         if (!user) {
@@ -141,6 +141,21 @@ router.post("/update-user", verifyToken, async (req, res) => {
         user.classroomPreferences = classroom ? classroom : user.classroomPreferences;
         user.recommendationPreferences = recommendation ? recommendation : user.recommendationPreferences;
         user.onboarded = onboarded ? onboarded : user.onboarded;
+        if (Array.isArray(tags)) {
+            user.tags = tags
+                .map((t) => String(t || '').trim())
+                .filter(Boolean)
+                .slice(0, 30);
+        }
+        if (onboardingResponses && typeof onboardingResponses === 'object' && !Array.isArray(onboardingResponses)) {
+            user.onboardingResponses = onboardingResponses;
+        }
+        if (Array.isArray(onboardingCompletedSteps)) {
+            user.onboardingCompletedSteps = onboardingCompletedSteps
+                .map((stepId) => String(stepId || '').trim())
+                .filter(Boolean)
+                .slice(0, 300);
+        }
 
         await user.save();
         console.log(`POST: /update-user ${req.user.userId} successful`);
@@ -212,14 +227,17 @@ router.post("/check-in", verifyToken, async (req, res) => {
     const { classroomId } = req.body;
     try {
         //check if user is checked in elsewhere in the checked_in array
-        const classrooms = await Classroom.find({ checked_in: { $in: [req.user.userId] } });
+        const classrooms = await Classroom.find({ checked_in: { $in: [req.user.userId] } }).populate(
+            'building',
+            'name'
+        );
 
         // const classrooms = await Classroom.find({ checkIns: req.user.userId });
         if (classrooms.length > 0) {
             console.log(`POST: /check-in ${req.user.userId} is already checked in`)
             return res.status(400).json({ success: false, message: 'User is already checked in' });
         }
-        const classroom = await Classroom.findOne({ _id: classroomId });
+        const classroom = await Classroom.findOne({ _id: classroomId }).populate('building', 'name');
         classroom.checked_in.push(req.user.userId);
         await classroom.save();
         if (req.user.userId !== "65f474445dca7aca4fb5acaf") {
@@ -268,7 +286,10 @@ router.post("/check-in", verifyToken, async (req, res) => {
 router.get("/checked-in", verifyToken, async (req, res) => {
     const { Classroom } = getModels(req, 'Classroom');
     try {
-        const classrooms = await Classroom.find({ checked_in: { $in: [req.user.userId] } });
+        const classrooms = await Classroom.find({ checked_in: { $in: [req.user.userId] } }).populate(
+            'building',
+            'name'
+        );
         console.log(`GET: /checked-in ${req.user.userId} successful`)
         return res.status(200).json({ success: true, message: 'Checked in classrooms retrieved', classrooms });
     } catch (error) {
@@ -281,7 +302,7 @@ router.post("/check-out", verifyToken, async (req, res) => {
     const { Classroom, Schedule, User, StudyHistory } = getModels(req, 'Classroom', 'Schedule', 'User', 'StudyHistory');
     const { classroomId } = req.body;
     try {
-        const classroom = await Classroom.findOne({ _id: classroomId });
+        const classroom = await Classroom.findOne({ _id: classroomId }).populate('building', 'name');
         classroom.checked_in = classroom.checked_in.filter(userId => userId !== req.user.userId);
         await classroom.save();
         const schedule = await Schedule.findOne({ classroom_id: classroomId });

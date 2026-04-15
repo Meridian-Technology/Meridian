@@ -84,6 +84,16 @@ async function getCurrentTenantAdminUser(req) {
 }
 
 async function completeLoginWithAdminMfa(req, res, globalUser, tenantUser, platformRoles, message) {
+    if (tenantUser?.accessSuspended) {
+        return {
+            status: 403,
+            body: {
+                success: false,
+                message: 'This account has been suspended.',
+                code: 'ACCOUNT_SUSPENDED',
+            },
+        };
+    }
     const isAdmin = isAdminLevelAccount(tenantUser, platformRoles);
     const mfaStatus = getMfaStatus(tenantUser);
 
@@ -356,6 +366,14 @@ router.post('/refresh-token', async (req, res) => {
         const { user, globalUser } = validation;
         const isMobile = isMobileClient(req);
 
+        if (user?.accessSuspended) {
+            return res.status(403).json({
+                success: false,
+                message: 'This account has been suspended.',
+                code: 'ACCOUNT_SUSPENDED',
+            });
+        }
+
         if (globalUser) {
             const platformRoles = await authGlobalService.getPlatformRolesForGlobalUser(req, globalUser._id);
             const tokens = await authGlobalService.issueTokens(
@@ -511,6 +529,37 @@ router.get('/validate-token', verifyToken, async (req, res) => {
 
         // Fetch pending org invites for this user
         const pendingOrgInvites = await orgInviteService.getPendingForUser(req);
+
+        // Domains where this user is an active member of a stakeholder role (domain dashboard entry points)
+        try {
+            const { StakeholderRole, Domain } = getModels(req, 'StakeholderRole', 'Domain');
+            const roles = await StakeholderRole.find({
+                members: {
+                    $elemMatch: {
+                        userId: user._id,
+                        isActive: { $ne: false }
+                    }
+                },
+                isActive: true
+            })
+                .select('domainId')
+                .lean();
+
+            const rawDomainIds = [...new Set((roles || []).map((r) => r.domainId).filter(Boolean))];
+            const domainDocs =
+                rawDomainIds.length > 0
+                    ? await Domain.find({ _id: { $in: rawDomainIds }, isActive: true }).select('name').lean()
+                    : [];
+            const nameById = new Map(domainDocs.map((d) => [String(d._id), d.name]));
+
+            user.stakeholderDomainDashboards = rawDomainIds.map((id) => ({
+                domainId: String(id),
+                domainName: nameById.get(String(id)) || null
+            }));
+        } catch (e) {
+            console.warn('validate-token: stakeholder domain dashboards skipped', e?.message || e);
+            user.stakeholderDomainDashboards = [];
+        }
 
         console.log(`GET: /validate-token token is valid for user ${user.username}`)
         const data = {

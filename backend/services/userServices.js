@@ -81,6 +81,9 @@ async function loginUser({ email, password, req }) {
     if (!passwordMatch) {
         throw new Error('Invalid credentials');
     }
+    if (user.accessSuspended) {
+        throw new Error('This account has been suspended');
+    }
     delete user.password;
     return { user };
 }

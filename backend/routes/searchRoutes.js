@@ -107,7 +107,7 @@ router.get('/search', verifyTokenOptional, async (req, res) => {
                 sortedClassrooms.map(async (classroom) => {
                     try {
                         // Get full classroom data
-                        const fullRoom = await Classroom.findById(classroom._id);
+                        const fullRoom = await Classroom.findById(classroom._id).populate('building', 'name');
                         // Get schedule data
                         const schedule = await Schedule.findOne({ classroom_id: classroom._id });
                         
@@ -178,6 +178,7 @@ router.get('/search-rooms', verifyTokenOptional, async (req, res) => {
         // Execute search with pagination
         const [rooms, total] = await Promise.all([
             Classroom.find(searchQuery)
+                .populate('building', 'name')
                 .sort({ name: 1 })
                 .skip(skip)
                 .limit(parseInt(limit)),
@@ -473,6 +474,7 @@ router.get('/unified-search', verifyTokenOptional, async (req, res) => {
 
             // Rooms
             Classroom.find(roomQuery)
+                .populate('building', 'name')
                 .limit(parseInt(limit))
                 .lean(),
 

@@ -114,4 +114,4 @@ const eventTemplateSchema = new mongoose.Schema(
 eventTemplateSchema.index({ orgId: 1, isActive: 1 });
 eventTemplateSchema.index({ createdBy: 1 });
 
-module.exports = mongoose.model('EventTemplate', eventTemplateSchema);
+module.exports = eventTemplateSchema;

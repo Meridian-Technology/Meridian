@@ -29,9 +29,10 @@ const classroomSchema = new Schema({
         default:true,
         required:true
     },
-    building:{
-        type:String,
-        required:false
+    building: {
+        type: Schema.Types.ObjectId,
+        ref: 'Building',
+        required: false,
     },
     booking_link: {
         type: String,

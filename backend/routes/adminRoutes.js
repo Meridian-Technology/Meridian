@@ -5,7 +5,7 @@ const router = express.Router();
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
 const { requireAdmin } = require('../middlewares/requireAdmin');
 const mongoose = require('mongoose');
-const { connectToDatabase, connectToGlobalDatabase } = require('../connectionsManager');
+const { connectToDatabase } = require('../connectionsManager');
 const { getConnections, disconnectSocket, disconnectAll } = require('../socket');
 const { createSession } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
@@ -342,99 +342,19 @@ router.post('/admin/platform-admins', verifyToken, requireAdmin, async (req, res
 });
 
 /**
- * POST /admin/migrate-users-to-global-identity – backfill GlobalUser + TenantMembership for existing tenant Users.
- * Alternative to running scripts/migrateUsersToGlobalIdentity.js when shell access is unavailable.
- * Idempotent. Body: { tenantKeys?: string[] } (optional; defaults to rpi,tvcog).
- * Restricted to platform admins only.
+ * POST /admin/migrate-classroom-building-refs
+ * One-shot (per tenant DB): create Building docs from distinct legacy Classroom.building strings,
+ * then replace those strings with ObjectId refs. Guarded by admin_migration_runs; optional body.force to re-run.
  */
-router.post('/admin/migrate-users-to-global-identity', verifyToken, requireAdmin, async (req, res) => {
-  if (!req.user.platformRoles?.includes('platform_admin')) {
-    return res.status(403).json({ success: false, message: 'Platform admin required.' });
-  }
+router.post('/admin/migrate-classroom-building-refs', verifyToken, requireAdmin, async (req, res) => {
   try {
-    const tenantKeys = Array.isArray(req.body?.tenantKeys) && req.body.tenantKeys.length > 0
-      ? req.body.tenantKeys.map((k) => String(k).trim().toLowerCase()).filter(Boolean)
-      : ['rpi', 'tvcog'];
-
-    const userSchema = require('../schemas/user');
-    const globalUserSchema = require('../schemas/globalUser');
-    const tenantMembershipSchema = require('../schemas/tenantMembership');
-
-    const globalDb = await connectToGlobalDatabase();
-    const GlobalUser = globalDb.model('GlobalUser', globalUserSchema, 'global_users');
-    const TenantMembership = globalDb.model('TenantMembership', tenantMembershipSchema, 'tenant_memberships');
-
-    const summary = { globalUsersCreated: 0, membershipsCreated: 0, tenants: {} };
-
-    for (const tenantKey of tenantKeys) {
-      summary.tenants[tenantKey] = { usersProcessed: 0, globalUsersCreated: 0, membershipsCreated: 0 };
-      const db = await connectToDatabase(tenantKey);
-      const User = db.model('User', userSchema, 'users');
-      const users = await User.find({}).lean();
-
-      for (const user of users) {
-        const email = (user.email || '').trim().toLowerCase();
-        if (!email) continue;
-
-        summary.tenants[tenantKey].usersProcessed++;
-
-        const source = {
-          email: user.email,
-          name: user.name,
-          picture: user.picture,
-          googleId: user.googleId,
-          appleId: user.appleId,
-          samlId: user.samlId,
-          samlProvider: user.samlProvider,
-        };
-
-        let globalUser = await GlobalUser.findOne({ email });
-        if (!globalUser) {
-          const providerQuery = { $or: [{ email }] };
-          if (source.googleId) providerQuery.$or.push({ googleId: source.googleId });
-          if (source.appleId) providerQuery.$or.push({ appleId: source.appleId });
-          if (source.samlId && source.samlProvider) {
-            providerQuery.$or.push({ samlId: source.samlId, samlProvider: source.samlProvider });
-          }
-          globalUser = await GlobalUser.findOne(providerQuery);
-        }
-        if (!globalUser) {
-          globalUser = new GlobalUser({
-            email,
-            name: source.name || '',
-            picture: source.picture || '',
-            googleId: source.googleId,
-            appleId: source.appleId,
-            samlId: source.samlId,
-            samlProvider: source.samlProvider,
-          });
-          await globalUser.save();
-          summary.globalUsersCreated++;
-          summary.tenants[tenantKey].globalUsersCreated++;
-        }
-
-        let membership = await TenantMembership.findOne({
-          globalUserId: globalUser._id,
-          tenantKey,
-        });
-        if (!membership) {
-          membership = new TenantMembership({
-            globalUserId: globalUser._id,
-            tenantKey,
-            tenantUserId: user._id,
-            status: 'active',
-          });
-          await membership.save();
-          summary.membershipsCreated++;
-          summary.tenants[tenantKey].membershipsCreated++;
-        }
-      }
-    }
-
-    console.log('POST /admin/migrate-users-to-global-identity completed:', summary);
-    res.json({ success: true, data: summary });
+    const { runMigrateClassroomBuildingRefs } = require('../migrations/migrateClassroomBuildingRefs');
+    const force = Boolean(req.body?.force);
+    const data = await runMigrateClassroomBuildingRefs(req.db, { force });
+    console.log('POST /admin/migrate-classroom-building-refs completed:', data);
+    res.json({ success: true, data });
   } catch (err) {
-    console.error('POST /admin/migrate-users-to-global-identity failed:', err);
+    console.error('POST /admin/migrate-classroom-building-refs failed:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
