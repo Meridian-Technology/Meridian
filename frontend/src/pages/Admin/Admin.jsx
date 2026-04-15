@@ -4,6 +4,7 @@ import useAuth from '../../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import General from './General/General';
+import OperatorHubMode from './OperatorHubMode/OperatorHubMode';
 import WebSocketConnectionsPage from './WebSocketConnectionsPage/WebSocketConnectionsPage';
 import PlatformAdminsPage from './PlatformAdminsPage/PlatformAdminsPage';
 import BadgeManager from './BadgeManager/BadgeManager';
@@ -36,6 +37,11 @@ function Admin(){
             label: 'General', 
             icon: 'ic:round-dashboard',
             element: <General/>
+        },
+        {
+            label: 'Community organizer',
+            icon: 'mdi:view-dashboard-variant',
+            element: <OperatorHubMode />,
         },
         { 
             label: 'Analytics', 

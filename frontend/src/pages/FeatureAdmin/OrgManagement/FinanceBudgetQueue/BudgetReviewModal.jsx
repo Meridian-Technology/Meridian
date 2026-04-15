@@ -141,36 +141,49 @@ function BudgetReviewBody({
 
                         <section className="fb-review-section">
                             <h3>Line items</h3>
-                            <div className="fb-review-lines">
+                            <div className="fb-review-lines fb-review-lines--sheet">
                                 {(budgetForLines.lineItems || []).length === 0 ? (
                                     <p className="fb-review-muted">No line items.</p>
                                 ) : (
-                                    <table className="fb-review-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Item</th>
-                                                <th>Value</th>
-                                                <th>Note</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {(budgetForLines.lineItems || []).map((li) => (
-                                                <tr key={li.key}>
-                                                    <td>{li.label || li.key}</td>
-                                                    <td>
-                                                        {li.kind === 'currency' && formatCurrency(li.amount)}
-                                                        {li.kind === 'number' &&
-                                                            (li.numberValue != null && !Number.isNaN(Number(li.numberValue))
-                                                                ? String(li.numberValue)
-                                                                : '—')}
-                                                        {li.kind === 'text' && (li.textValue || '—')}
-                                                        {!['currency', 'number', 'text'].includes(li.kind) && '—'}
-                                                    </td>
-                                                    <td className="fb-review-note">{li.note || '—'}</td>
+                                    <div className="fb-review-sheet-scroll">
+                                        <table className="fb-review-table fb-review-table--sheet">
+                                            <thead>
+                                                <tr>
+                                                    <th className="fb-review-table__col-num" scope="col">
+                                                        #
+                                                    </th>
+                                                    <th scope="col">Line item</th>
+                                                    <th className="fb-review-table__col-type" scope="col">
+                                                        Type
+                                                    </th>
+                                                    <th className="fb-review-table__col-value" scope="col">
+                                                        Value
+                                                    </th>
+                                                    <th scope="col">Note</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                            </thead>
+                                            <tbody>
+                                                {(budgetForLines.lineItems || []).map((li, idx) => (
+                                                    <tr key={li.key}>
+                                                        <td className="fb-review-table__col-num">{idx + 1}</td>
+                                                        <td>{li.label || li.key}</td>
+                                                        <td className="fb-review-table__col-type">{li.kind || '—'}</td>
+                                                        <td className="fb-review-table__col-value">
+                                                            {li.kind === 'currency' && formatCurrency(li.amount)}
+                                                            {li.kind === 'number' &&
+                                                                (li.numberValue != null &&
+                                                                !Number.isNaN(Number(li.numberValue))
+                                                                    ? String(li.numberValue)
+                                                                    : '—')}
+                                                            {li.kind === 'text' && (li.textValue || '—')}
+                                                            {!['currency', 'number', 'text'].includes(li.kind) && '—'}
+                                                        </td>
+                                                        <td className="fb-review-note">{li.note || '—'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 )}
                             </div>
                         </section>

@@ -9,7 +9,6 @@ import BeaconLogo from '../../../assets/Brand Image/SolutionLogos/Beacon.svg';
 import CompassLogo from '../../../assets/Brand Image/SolutionLogos/Compass.svg';
 import AtlasLogo from '../../../assets/Brand Image/SolutionLogos/Atlas.svg';
 import { useNavigate } from 'react-router-dom';
-
 function RootManagement(){
     const {user} = useAuth();
     const navigate = useNavigate();

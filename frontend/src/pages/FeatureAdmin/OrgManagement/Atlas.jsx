@@ -10,7 +10,6 @@ import FinanceBudgetQueue from './FinanceBudgetQueue/FinanceBudgetQueue';
 import OrgList from './OrgList/OrgList';
 import Configuration from './Configuration/Configuration';
 import Analytics from './Analytics/Analytics';
-import Migrations from './Migrations/Migrations';
 import AtlasLogo from '../../../assets/Brand Image/SolutionLogos/Atlas.svg';
 import { useNavigate } from 'react-router-dom';
 function Atlas() {
@@ -94,11 +93,6 @@ function Atlas() {
                     label: 'Messaging Configuration',
                     icon: 'mdi:message-text',
                     element: <Configuration section="messaging" />
-                },
-                {
-                    label: 'Migrations',
-                    icon: 'mdi:database-sync-outline',
-                    element: <Migrations />
                 }
             ]
         }

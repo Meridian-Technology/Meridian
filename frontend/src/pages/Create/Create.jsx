@@ -14,7 +14,9 @@ function Create() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const eligibilityData = useFetch(user ? '/api/event-system-config/event-creation-eligibility' : null);
+    const orgConfigData = useFetch(user ? '/org-management/config' : null);
     const eligibility = eligibilityData.data?.data;
+    const isCommunityTenant = orgConfigData.data?.data?.operatorDashboardMode === 'engagement_hub';
     const canCreateEvent = eligibility
         ? (eligibility.allowIndividualUserHosting || (eligibility.orgsWithEventPermission?.length > 0))
         : false;
@@ -67,18 +69,20 @@ function Create() {
                     
                     {isMenuOpen && (
                         <div ref={menuRef} className="create-menu">
-                            <div 
-                                className="create-menu-item"
-                                onClick={() => handleOptionClick('study-session')}
-                            >
-                                <div className="menu-item-icon">
-                                    <Icon icon="mingcute:book-6-fill" />
+                            {!isCommunityTenant && (
+                                <div
+                                    className="create-menu-item"
+                                    onClick={() => handleOptionClick('study-session')}
+                                >
+                                    <div className="menu-item-icon">
+                                        <Icon icon="mingcute:book-6-fill" />
+                                    </div>
+                                    <div className="menu-item-content">
+                                        <span className="menu-item-title">Study Session</span>
+                                        <span className="menu-item-subtitle">Create a new study session</span>
+                                    </div>
                                 </div>
-                                <div className="menu-item-content">
-                                    <span className="menu-item-title">Study Session</span>
-                                    <span className="menu-item-subtitle">Create a new study session</span>
-                                </div>
-                            </div>
+                            )}
                             {canCreateEvent && (
                                 <div 
                                     className="create-menu-item"
@@ -110,7 +114,7 @@ function Create() {
                 </div>
             </div>
         );
-    } else if(createType === 'study-session'){
+    } else if(createType === 'study-session' && !isCommunityTenant){
         return <CreateStudySession />;
     }
 }

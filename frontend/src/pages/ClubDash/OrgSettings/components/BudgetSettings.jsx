@@ -463,81 +463,132 @@ export default function BudgetSettings({ org, expandedClass }) {
                                                             {canEdit && (
                                                                 <div className="budget-lines">
                                                                     <h4 className="budget-card__subhead">Line items</h4>
-                                                                    {(b.lineItems || []).map((li) => (
-                                                                        <div className="budget-line" key={li.key}>
-                                                                            <label>
-                                                                                {li.label}
-                                                                                {li.kind === 'currency' && (
-                                                                                    <input
-                                                                                        type="number"
-                                                                                        min="0"
-                                                                                        step="0.01"
-                                                                                        value={li.amount ?? ''}
-                                                                                        onChange={(e) =>
-                                                                                            patchLocalLineItem(
-                                                                                                b._id,
-                                                                                                li.key,
-                                                                                                'amount',
-                                                                                                e.target.value
-                                                                                            )
-                                                                                        }
-                                                                                    />
-                                                                                )}
-                                                                                {li.kind === 'number' && (
-                                                                                    <input
-                                                                                        type="number"
-                                                                                        value={li.numberValue ?? ''}
-                                                                                        onChange={(e) =>
-                                                                                            patchLocalLineItem(
-                                                                                                b._id,
-                                                                                                li.key,
-                                                                                                'numberValue',
-                                                                                                e.target.value
-                                                                                            )
-                                                                                        }
-                                                                                    />
-                                                                                )}
-                                                                                {li.kind === 'text' && (
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        value={li.textValue || ''}
-                                                                                        onChange={(e) =>
-                                                                                            patchLocalLineItem(
-                                                                                                b._id,
-                                                                                                li.key,
-                                                                                                'textValue',
-                                                                                                e.target.value
-                                                                                            )
-                                                                                        }
-                                                                                    />
-                                                                                )}
-                                                                            </label>
-                                                                            <input
-                                                                                type="text"
-                                                                                className="budget-line__note"
-                                                                                placeholder="Note"
-                                                                                value={li.note || ''}
-                                                                                onChange={(e) =>
-                                                                                    patchLocalLineItem(
-                                                                                        b._id,
-                                                                                        li.key,
-                                                                                        'note',
-                                                                                        e.target.value
-                                                                                    )
-                                                                                }
-                                                                            />
-                                                                            {allowCustomLineItems &&
-                                                                                !(templateLineItemKeysByTemplate[b.templateKey] || new Set()).has(li.key) && (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        className="budget-linkish budget-line__remove"
-                                                                                        onClick={() => removeLocalCustomLineItem(b, li.key)}
-                                                                                    >
-                                                                                        Remove custom line item
-                                                                                    </button>
-                                                                                )}
-                                                                        </div>
-                                                                    ))}
+                                                                    <div className="budget-sheet-scroll">
+                                                                        <table className="budget-sheet-table">
+                                                                            <thead>
+                                                                                <tr>
+                                                                                    <th className="budget-sheet-table__num" scope="col">
+                                                                                        #
+                                                                                    </th>
+                                                                                    <th scope="col">Line item</th>
+                                                                                    <th className="budget-sheet-table__type" scope="col">
+                                                                                        Type
+                                                                                    </th>
+                                                                                    <th className="budget-sheet-table__value" scope="col">
+                                                                                        Value
+                                                                                    </th>
+                                                                                    <th scope="col">Note</th>
+                                                                                    <th className="budget-sheet-table__actions" scope="col">
+                                                                                        <span className="budget-sheet-table__sr-only">Actions</span>
+                                                                                    </th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                {(b.lineItems || []).map((li, idx) => {
+                                                                                    const isTemplateLine = (
+                                                                                        templateLineItemKeysByTemplate[b.templateKey] ||
+                                                                                        new Set()
+                                                                                    ).has(li.key);
+                                                                                    return (
+                                                                                        <tr key={li.key}>
+                                                                                            <td className="budget-sheet-table__num">
+                                                                                                {idx + 1}
+                                                                                            </td>
+                                                                                            <td className="budget-sheet-table__label">
+                                                                                                {li.label}
+                                                                                            </td>
+                                                                                            <td className="budget-sheet-table__type">
+                                                                                                {li.kind}
+                                                                                            </td>
+                                                                                            <td className="budget-sheet-table__value">
+                                                                                                {li.kind === 'currency' && (
+                                                                                                    <input
+                                                                                                        type="number"
+                                                                                                        min="0"
+                                                                                                        step="0.01"
+                                                                                                        value={li.amount ?? ''}
+                                                                                                        aria-label={`${li.label} amount`}
+                                                                                                        onChange={(e) =>
+                                                                                                            patchLocalLineItem(
+                                                                                                                b._id,
+                                                                                                                li.key,
+                                                                                                                'amount',
+                                                                                                                e.target.value
+                                                                                                            )
+                                                                                                        }
+                                                                                                    />
+                                                                                                )}
+                                                                                                {li.kind === 'number' && (
+                                                                                                    <input
+                                                                                                        type="number"
+                                                                                                        value={li.numberValue ?? ''}
+                                                                                                        aria-label={`${li.label} number`}
+                                                                                                        onChange={(e) =>
+                                                                                                            patchLocalLineItem(
+                                                                                                                b._id,
+                                                                                                                li.key,
+                                                                                                                'numberValue',
+                                                                                                                e.target.value
+                                                                                                            )
+                                                                                                        }
+                                                                                                    />
+                                                                                                )}
+                                                                                                {li.kind === 'text' && (
+                                                                                                    <input
+                                                                                                        type="text"
+                                                                                                        value={li.textValue || ''}
+                                                                                                        aria-label={`${li.label} text`}
+                                                                                                        onChange={(e) =>
+                                                                                                            patchLocalLineItem(
+                                                                                                                b._id,
+                                                                                                                li.key,
+                                                                                                                'textValue',
+                                                                                                                e.target.value
+                                                                                                            )
+                                                                                                        }
+                                                                                                    />
+                                                                                                )}
+                                                                                                {!['currency', 'number', 'text'].includes(li.kind) && (
+                                                                                                    <span className="budget-sheet-table__dash">—</span>
+                                                                                                )}
+                                                                                            </td>
+                                                                                            <td className="budget-sheet-table__note">
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    placeholder="Note"
+                                                                                                    value={li.note || ''}
+                                                                                                    aria-label={`${li.label} note`}
+                                                                                                    onChange={(e) =>
+                                                                                                        patchLocalLineItem(
+                                                                                                            b._id,
+                                                                                                            li.key,
+                                                                                                            'note',
+                                                                                                            e.target.value
+                                                                                                        )
+                                                                                                    }
+                                                                                                />
+                                                                                            </td>
+                                                                                            <td className="budget-sheet-table__actions">
+                                                                                                {allowCustomLineItems && !isTemplateLine ? (
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        className="budget-linkish budget-sheet-table__remove"
+                                                                                                        onClick={() =>
+                                                                                                            removeLocalCustomLineItem(b, li.key)
+                                                                                                        }
+                                                                                                    >
+                                                                                                        Remove
+                                                                                                    </button>
+                                                                                                ) : (
+                                                                                                    <span className="budget-sheet-table__dash">—</span>
+                                                                                                )}
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    );
+                                                                                })}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
                                                                     {allowCustomLineItems && (
                                                                         <div className="budget-custom-line-builder">
                                                                             <strong>Add custom line item</strong>

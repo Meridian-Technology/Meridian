@@ -20,7 +20,8 @@ import './CreateEventV3.scss';
 const DEFAULT_FIELDS = [
     { name: 'name', type: 'string', label: 'Event Name', inputType: 'text', step: 'basic-info', isActive: true, order: 0, validation: { required: true }, placeholder: 'Event Name' },
     { name: 'description', type: 'textarea', label: 'Description', inputType: 'markdown-textarea', step: 'basic-info', isActive: true, order: 1, validation: { required: true }, placeholder: 'Tell us about your event', allowExpand: true },
-    { name: 'type', type: 'select', label: 'Event Type', inputType: 'select', step: 'basic-info', isActive: true, order: 2, validation: { required: true, options: ['study', 'workshop', 'campus', 'social', 'club', 'meeting', 'sports'] } },
+    { name: 'type', type: 'select', label: 'Event Type', inputType: 'select', step: 'basic-info', isActive: true, order: 2, validation: { required: true, options: ['Meeting', 'Workshop', 'Social', 'Community', 'Training', 'Networking', 'Fundraiser', 'Performance', 'Competition', 'Other'], defaultValue: 'Meeting' } },
+    { name: 'event_tags', type: 'select', label: 'Event Tags', inputType: 'multi-select', step: 'basic-info', isActive: true, order: 3, validation: { required: false, multiple: true, options: ['Computer Science', 'Gaming', 'Career', 'Entrepreneurship', 'Arts', 'Music', 'Sports', 'Health & Wellness', 'Community Service', 'Culture', 'Academic'], defaultValue: [] } },
     { name: 'visibility', type: 'select', label: 'Visibility', inputType: 'select', step: 'basic-info', isActive: true, order: 3, validation: { required: true, options: ['public', 'unlisted', 'members_only'] } },
     { name: 'expectedAttendance', type: 'number', label: 'Expected Attendance', inputType: 'number', step: 'basic-info', isActive: true, order: 4, validation: { required: true, min: 1, max: 10000, defaultValue: 1 }, placeholder: '1' },
     { name: 'contact', type: 'string', label: 'Contact', inputType: 'text', step: 'additional', isActive: true, order: 0, validation: { required: false }, placeholder: 'Email or phone' },
@@ -90,6 +91,7 @@ const CreateEventV3 = () => {
         rsvpEnabled: false,
         rsvpRequired: false,
         rsvpDeadline: null,
+        event_tags: [],
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [resourcePreflightError, setResourcePreflightError] = useState('');
@@ -297,6 +299,7 @@ const CreateEventV3 = () => {
             const data = {
                 name: formData.name,
                 type: formData.type,
+                event_tags: Array.isArray(formData.event_tags) ? formData.event_tags : [],
                 hostingId: selectedHost?.id || formData.hostingId || user?._id,
                 hostingType: selectedHost?.type || formData.hostingType || (user ? 'User' : ''),
                 going: formData.going || [],
@@ -512,7 +515,7 @@ const CreateEventV3 = () => {
                             ))}
 
                         {getFieldsForStep('basic-info')
-                            .filter(f => ['type', 'expectedAttendance'].includes(f.name))
+                            .filter(f => ['type', 'event_tags', 'expectedAttendance'].includes(f.name))
                             .map(field => {
                                 const fieldToRender = field.name === 'expectedAttendance'
                                     ? { ...field, inputType: 'number', placeholder: field.placeholder || '1' }

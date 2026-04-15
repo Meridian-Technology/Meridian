@@ -9,14 +9,22 @@ import SettingsList from '../../../../components/SettingsList/SettingsList';
 import './Configuration.scss';
 import FinanceTemplatesConfig from './FinanceTemplatesConfig';
 
-function Configuration({ section = 'general' }) {
+const ALLOWED_ACTIONS_OPTIONS = [
+    { value: 'view_page', label: 'View page' },
+    { value: 'edit_profile', label: 'Edit profile' },
+    { value: 'manage_members', label: 'Manage members' },
+    { value: 'create_events', label: 'Create events' },
+    { value: 'post_messages', label: 'Post messages' },
+];
+
+function Configuration({ section = 'general', communityEssentials = false }) {
     const { data: config, loading, error, refetch } = useFetch('/org-management/config');
     const [localConfig, setLocalConfig] = useState(null);
     const [selectedTypeKey, setSelectedTypeKey] = useState(null);
     const [benefitDraft, setBenefitDraft] = useState('');
     const [inputValues, setInputValues] = useState({});
     const originalDataRef = useRef(null);
-    const { AtlasMain } = useGradient();
+    const { AtlasMain, AdminGrad } = useGradient();
 
     React.useEffect(() => {
         if (config?.data) {
@@ -319,22 +327,102 @@ function Configuration({ section = 'general' }) {
         );
     }
 
-    const ALLOWED_ACTIONS_OPTIONS = [
-        { value: 'view_page', label: 'View page' },
-        { value: 'edit_profile', label: 'Edit profile' },
-        { value: 'manage_members', label: 'Manage members' },
-        { value: 'create_events', label: 'Create events' },
-        { value: 'post_messages', label: 'Post messages' }
-    ];
     // Render functions for different sections
-    const renderGeneral = () => {
+    const renderOrgApprovalSection = () => {
         const orgApproval = localConfig.orgApproval || {
             mode: 'none',
             autoApproveMemberThreshold: 5,
-            pendingOrgLimits: { discoverable: false, allowedActions: ['view_page', 'edit_profile'] }
+            pendingOrgLimits: { discoverable: false, allowedActions: ['view_page', 'edit_profile'] },
         };
         const pendingLimits = orgApproval.pendingOrgLimits || { discoverable: false, allowedActions: [] };
         const showThreshold = ['auto', 'both'].includes(orgApproval.mode);
+        const approvalItems = [
+            {
+                title: 'Approval mode',
+                subtitle:
+                    'Manual = admin approves. Auto = approve when member count reaches threshold. Both = either path can approve.',
+                action: (
+                    <select
+                        value={orgApproval.mode}
+                        onChange={(e) => updateConfig('orgApproval.mode', e.target.value)}
+                    >
+                        <option value="none">None</option>
+                        <option value="manual">Manual</option>
+                        <option value="auto">Auto (member threshold)</option>
+                        <option value="both">Both</option>
+                    </select>
+                ),
+            },
+            ...(showThreshold
+                ? [
+                      {
+                          title: 'Auto-approve member threshold',
+                          subtitle: 'Minimum members required for auto-approval.',
+                          action: (
+                              <input
+                                  type="number"
+                                  value={orgApproval.autoApproveMemberThreshold ?? 5}
+                                  onChange={(e) =>
+                                      updateConfig(
+                                          'orgApproval.autoApproveMemberThreshold',
+                                          parseInt(e.target.value, 10) || 0
+                                      )
+                                  }
+                                  min="1"
+                              />
+                          ),
+                      },
+                  ]
+                : []),
+            {
+                title: 'Discoverable while pending',
+                subtitle: 'Allow pending orgs to appear in org browse/search.',
+                action: (
+                    <input
+                        type="checkbox"
+                        checked={!!pendingLimits.discoverable}
+                        onChange={(e) => updateConfig('orgApproval.pendingOrgLimits.discoverable', e.target.checked)}
+                    />
+                ),
+            },
+            {
+                title: 'Allowed actions for pending orgs',
+                subtitle: 'Choose what pending orgs can do before approval.',
+                action: (
+                    <div className="allowed-actions-checkboxes">
+                        {ALLOWED_ACTIONS_OPTIONS.map((opt) => (
+                            <label key={opt.value} className="checkbox-inline">
+                                <input
+                                    type="checkbox"
+                                    checked={(pendingLimits.allowedActions || []).includes(opt.value)}
+                                    onChange={(e) => {
+                                        const current = pendingLimits.allowedActions || [];
+                                        const next = e.target.checked
+                                            ? [...current, opt.value]
+                                            : current.filter((a) => a !== opt.value);
+                                        updateConfig('orgApproval.pendingOrgLimits.allowedActions', next);
+                                    }}
+                                />
+                                {opt.label}
+                            </label>
+                        ))}
+                    </div>
+                ),
+            },
+        ];
+
+        return (
+            <div className="config-section">
+                <h2>
+                    <Icon icon="mdi:clipboard-check" />
+                    Org Approval
+                </h2>
+                <SettingsList items={approvalItems} />
+            </div>
+        );
+    };
+
+    const renderGeneral = () => {
         const verificationItems = [
             {
                 title: 'Enable verification system',
@@ -359,81 +447,6 @@ function Configuration({ section = 'general' }) {
                 )
             }
         ];
-        const approvalItems = [
-            {
-                title: 'Approval mode',
-                subtitle:
-                    'Manual = admin approves. Auto = approve when member count reaches threshold. Both = either path can approve.',
-                action: (
-                    <select
-                        value={orgApproval.mode}
-                        onChange={(e) => updateConfig('orgApproval.mode', e.target.value)}
-                    >
-                        <option value="none">None</option>
-                        <option value="manual">Manual</option>
-                        <option value="auto">Auto (member threshold)</option>
-                        <option value="both">Both</option>
-                    </select>
-                )
-            },
-            ...(showThreshold
-                ? [
-                      {
-                          title: 'Auto-approve member threshold',
-                          subtitle: 'Minimum members required for auto-approval.',
-                          action: (
-                              <input
-                                  type="number"
-                                  value={orgApproval.autoApproveMemberThreshold ?? 5}
-                                  onChange={(e) =>
-                                      updateConfig(
-                                          'orgApproval.autoApproveMemberThreshold',
-                                          parseInt(e.target.value, 10) || 0
-                                      )
-                                  }
-                                  min="1"
-                              />
-                          )
-                      }
-                  ]
-                : []),
-            {
-                title: 'Discoverable while pending',
-                subtitle: 'Allow pending orgs to appear in org browse/search.',
-                action: (
-                    <input
-                        type="checkbox"
-                        checked={!!pendingLimits.discoverable}
-                        onChange={(e) => updateConfig('orgApproval.pendingOrgLimits.discoverable', e.target.checked)}
-                    />
-                )
-            },
-            {
-                title: 'Allowed actions for pending orgs',
-                subtitle: 'Choose what pending orgs can do before approval.',
-                action: (
-                    <div className="allowed-actions-checkboxes">
-                        {ALLOWED_ACTIONS_OPTIONS.map((opt) => (
-                            <label key={opt.value} className="checkbox-inline">
-                                <input
-                                    type="checkbox"
-                                    checked={(pendingLimits.allowedActions || []).includes(opt.value)}
-                                    onChange={(e) => {
-                                        const current = pendingLimits.allowedActions || [];
-                                        const next = e.target.checked
-                                            ? [...current, opt.value]
-                                            : current.filter((a) => a !== opt.value);
-                                        updateConfig('orgApproval.pendingOrgLimits.allowedActions', next);
-                                    }}
-                                />
-                                {opt.label}
-                            </label>
-                        ))}
-                    </div>
-                )
-            }
-        ];
-
         return (
             <div className="config-sections">
                 <div className="config-section">
@@ -444,13 +457,8 @@ function Configuration({ section = 'general' }) {
                     <SettingsList items={verificationItems} />
                 </div>
 
-                <div className="config-section">
-                    <h2>
-                        <Icon icon="mdi:clipboard-check" />
-                        Org Approval
-                    </h2>
-                    <SettingsList items={approvalItems} />
-                </div>
+                {renderOrgApprovalSection()}
+
             </div>
         );
     };
@@ -830,7 +838,7 @@ function Configuration({ section = 'general' }) {
         );
     };
 
-    const renderPolicies = () => {
+    const renderOrganizationPoliciesSection = () => {
         const policyItems = [
             {
                 title: 'Max members per organization',
@@ -842,7 +850,7 @@ function Configuration({ section = 'general' }) {
                         onChange={(e) => updateConfig('policies.maxMembersPerOrg', parseInt(e.target.value, 10) || 1)}
                         min="1"
                     />
-                )
+                ),
             },
             {
                 title: 'Max events per month',
@@ -854,7 +862,7 @@ function Configuration({ section = 'general' }) {
                         onChange={(e) => updateConfig('policies.maxEventsPerMonth', parseInt(e.target.value, 10) || 0)}
                         min="0"
                     />
-                )
+                ),
             },
             {
                 title: 'Require faculty advisor',
@@ -865,7 +873,7 @@ function Configuration({ section = 'general' }) {
                         checked={!!localConfig.policies?.requireFacultyAdvisor}
                         onChange={(e) => updateConfig('policies.requireFacultyAdvisor', e.target.checked)}
                     />
-                )
+                ),
             },
             {
                 title: 'Minimum meeting frequency',
@@ -880,21 +888,23 @@ function Configuration({ section = 'general' }) {
                         <option value="monthly">Monthly</option>
                         <option value="quarterly">Quarterly</option>
                     </select>
-                )
-            }
+                ),
+            },
         ];
         return (
-            <div className="config-sections">
-                <div className="config-section">
-                    <h2>
-                        <Icon icon="mdi:policy" />
-                        Organization Policies
-                    </h2>
-                    <SettingsList items={policyItems} />
-                </div>
+            <div className="config-section">
+                <h2>
+                    <Icon icon="mdi:policy" />
+                    Organization Policies
+                </h2>
+                <SettingsList items={policyItems} />
             </div>
         );
     };
+
+    const renderPolicies = () => (
+        <div className="config-sections">{renderOrganizationPoliciesSection()}</div>
+    );
 
     const renderMessaging = () => {
         const messagingItems = [
@@ -1242,6 +1252,34 @@ function Configuration({ section = 'general' }) {
             </div>
         );
     };
+
+    if (communityEssentials) {
+        return (
+            <div className="configuration dash configuration--community">
+                <UnsavedChangesBanner
+                    hasChanges={hasChanges}
+                    onSave={saveChanges}
+                    onDiscard={discardChanges}
+                    saving={saving}
+                />
+
+                <header className="header">
+                    <h1>Organization settings</h1>
+                    <p>
+                        Essentials for community groups: how new organizations are approved and baseline policy limits.
+                    </p>
+                    <img src={AdminGrad} alt="" />
+                </header>
+
+                <div className="content">
+                    <div className="config-sections">
+                        {renderOrgApprovalSection()}
+                        {renderOrganizationPoliciesSection()}
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if (section === 'finance-templates') {
         return <FinanceTemplatesConfig />;

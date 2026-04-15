@@ -391,6 +391,17 @@
     color: var(--light-text);
 }
 
+.fb-review-lines--sheet {
+    margin-top: 4px;
+}
+
+.fb-review-sheet-scroll {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid var(--lightborder);
+    background: var(--background);
+}
+
 .fb-review-table {
     width: 100%;
     border-collapse: collapse;
@@ -416,6 +427,54 @@
         color: var(--light-text);
         font-size: 13px;
         max-width: 220px;
+    }
+
+    &--sheet {
+        min-width: 520px;
+
+        th,
+        td {
+            border-right: 1px solid var(--lightborder);
+            border-bottom: 1px solid var(--lightborder);
+            vertical-align: middle;
+        }
+
+        th:last-child,
+        td:last-child {
+            border-right: none;
+        }
+
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            box-shadow: 0 1px 0 var(--lightborder);
+        }
+
+        tbody tr:nth-child(even) td {
+            background: rgba(0, 0, 0, 0.02);
+        }
+
+        .fb-review-table__col-num {
+            width: 40px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            color: var(--light-text);
+            font-size: 12px;
+        }
+
+        .fb-review-table__col-type {
+            width: 88px;
+            text-transform: lowercase;
+            font-size: 12px;
+            color: var(--light-text);
+        }
+
+        .fb-review-table__col-value {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-feature-settings: 'tnum' 1;
+        }
     }
 }
 

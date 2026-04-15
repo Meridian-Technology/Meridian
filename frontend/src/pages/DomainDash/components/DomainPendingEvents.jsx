@@ -54,6 +54,14 @@ function DomainPendingEventRow({ ev, index, onSelect, renderHostBlock }) {
     const showThumb = Boolean(coverUrl) && !thumbBroken;
     const start = ev.start_time ? new Date(ev.start_time) : null;
     const locLine = formatLocationPreview(ev.location);
+    const scopeReasonLabel =
+        ev.scopeMatchReason === 'governing_scope'
+            ? 'Governing scope'
+            : ev.scopeMatchReason === 'concern_scope'
+              ? 'Concern scope'
+              : 'Approval step role';
+    const hasConflict = Boolean(ev?.reservationConflictSummary?.hasConflict);
+    const crossDomainCount = Array.isArray(ev?.crossDomainImpacts) ? ev.crossDomainImpacts.length : 0;
 
     return (
         <li className="domain-pending-events__card" style={{ animationDelay: `${index * 45}ms` }}>
@@ -76,6 +84,14 @@ function DomainPendingEventRow({ ev, index, onSelect, renderHostBlock }) {
                     {ev.visibility && (
                         <span className="domain-pending-events__badge domain-pending-events__badge--muted">
                             {String(ev.visibility).replace(/_/g, ' ')}
+                        </span>
+                    )}
+                    <span className="domain-pending-events__badge domain-pending-events__badge--muted">
+                        {scopeReasonLabel}
+                    </span>
+                    {hasConflict && (
+                        <span className="domain-pending-events__badge domain-pending-events__badge--pending">
+                            Conflict
                         </span>
                     )}
                 </div>
@@ -102,6 +118,12 @@ function DomainPendingEventRow({ ev, index, onSelect, renderHostBlock }) {
                             <span>{locLine}</span>
                         </div>
                     )}
+                    {ev?.spaceContext?.building && (
+                        <div className="domain-pending-events__detail-row">
+                            <Icon icon="mdi:office-building" />
+                            <span>{ev.spaceContext.building}</span>
+                        </div>
+                    )}
                     <div className="domain-pending-events__detail-row domain-pending-events__detail-row--step">
                         <span className="domain-pending-events__step-dot" aria-hidden />
                         <Icon icon="mdi:shield-account" />
@@ -109,6 +131,12 @@ function DomainPendingEventRow({ ev, index, onSelect, renderHostBlock }) {
                             <strong>Current step:</strong> {ev.pendingStepRoleName}
                         </span>
                     </div>
+                    {crossDomainCount > 0 && (
+                        <div className="domain-pending-events__detail-row">
+                            <Icon icon="mdi:account-multiple-outline" />
+                            <span>{crossDomainCount} other impacted domain{crossDomainCount === 1 ? '' : 's'}</span>
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="domain-pending-events__card-actions">

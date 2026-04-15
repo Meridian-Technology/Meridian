@@ -76,6 +76,12 @@ function EventsHubHome({ onRoomNavigation, onTabChangeByKey }) {
   const { data: hostingData } = useFetch('/get-my-events?sort=desc&limit=100');
   const { data: featuredData } = useFetch('/featured-all');
   const { data: suggestedActionData, loading: suggestedActionLoading } = useFetch('/suggested-action');
+  const { data: spacesSummaryData } = useFetch('/spaces-summary');
+  const hasRoomsOrBuildings = spacesSummaryData?.data?.hasRoomsOrBuildings !== false;
+  const visibleQuickActions = useMemo(
+    () => QUICK_ACTIONS.filter((action) => action.key !== 'rooms' || hasRoomsOrBuildings),
+    [hasRoomsOrBuildings]
+  );
 
   // Saved spaces that are free now (user's saved rooms filtered by availability)
   useEffect(() => {
@@ -221,7 +227,7 @@ function EventsHubHome({ onRoomNavigation, onTabChangeByKey }) {
           </h1>
           <p className="events-hub-home__subline events-hub-home__subline--animated">Here&apos;s what&apos;s happening {user?.username ? 'for you' : ''} today</p>
           <div className="events-hub-home__quick-actions events-hub-home__quick-actions--animated">
-            {QUICK_ACTIONS.map((action) => (
+            {visibleQuickActions.map((action) => (
               <button
                 key={action.key}
                 type="button"

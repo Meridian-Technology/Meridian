@@ -8,8 +8,6 @@ import './PlatformAdminsPage.scss';
 function PlatformAdminsPage() {
   const [addEmail, setAddEmail] = useState('');
   const [adding, setAdding] = useState(false);
-  const [migrating, setMigrating] = useState(false);
-  const [migrationResult, setMigrationResult] = useState(null);
   const [mutationError, setMutationError] = useState(null);
   const [tenantDrafts, setTenantDrafts] = useState({});
   const [savingTenants, setSavingTenants] = useState(false);
@@ -58,28 +56,6 @@ function PlatformAdminsPage() {
       setMutationError(data?.message || 'Failed to add');
     }
   }, [addEmail, refetch]);
-
-  const handleMigrate = useCallback(async () => {
-    if (!window.confirm('Backfill GlobalUser + TenantMembership for existing tenant users? This is idempotent and safe to run multiple times.')) return;
-    setMigrating(true);
-    setMutationError(null);
-    setMigrationResult(null);
-    const { data, error } = await authenticatedRequest('/admin/migrate-users-to-global-identity', {
-      method: 'POST',
-      data: {},
-      headers: { 'Content-Type': 'application/json' },
-    });
-    setMigrating(false);
-    if (error) {
-      setMutationError(data?.message || error);
-      return;
-    }
-    if (data?.success) {
-      setMigrationResult(data.data);
-    } else {
-      setMutationError(data?.message || 'Migration failed');
-    }
-  }, []);
 
   const handleRemove = useCallback(async (globalUserId) => {
     if (!window.confirm('Remove this platform admin?')) return;
@@ -151,15 +127,6 @@ function PlatformAdminsPage() {
           />
           <button type="submit" disabled={adding || !addEmail.trim()}>Add</button>
         </form>
-        <div className="platform-admins-migrate">
-          <p className="platform-admins-migrate-desc">Backfill GlobalUser + TenantMembership for existing tenant users (alternative to running the migration script).</p>
-          <button type="button" onClick={handleMigrate} disabled={migrating}>
-            {migrating ? 'Running…' : 'Run migration'}
-          </button>
-          {migrationResult && (
-            <pre className="platform-admins-migrate-result">{JSON.stringify(migrationResult, null, 2)}</pre>
-          )}
-        </div>
         <div className="platform-admins-tenants">
           <div className="platform-admins-tenants-header">
             <h2>Tenant visibility</h2>

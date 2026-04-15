@@ -5,10 +5,10 @@ import { useGradient } from '../../hooks/useGradient';
 import KpiCard from '../Analytics/Dashboard/KpiCard';
 import './EventsAnalytics.scss';
 
-function EventsAnalytics() {
+function EventsAnalytics({ useAdminHeaderGradient = false }) {
     const [timeRange, setTimeRange] = useState('30d');
     const { data: analytics, loading, error, refetch } = useFetch(`/event-analytics/overview?timeRange=${timeRange}`);
-    const { BeaconMain } = useGradient();
+    const { BeaconMain, AdminGrad } = useGradient();
 
     const formatNumber = (num) => {
         return new Intl.NumberFormat().format(num);
@@ -50,7 +50,7 @@ function EventsAnalytics() {
             <header className="header">
                 <h1>Events Analytics</h1>
                 <p>Comprehensive insights into event performance and engagement</p>
-                <img src={BeaconMain} alt="Events Analytics Grad" />
+                <img src={useAdminHeaderGradient ? AdminGrad : BeaconMain} alt="" />
             </header>
 
             <div className="analytics-grid">

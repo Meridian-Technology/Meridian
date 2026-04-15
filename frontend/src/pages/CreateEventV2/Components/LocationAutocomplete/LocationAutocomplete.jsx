@@ -3,6 +3,7 @@ import { Icon } from '@iconify-icon/react';
 import apiRequest from '../../../../utils/postRequest';
 import Popup from '../../../../components/Popup/Popup';
 import WeeklyCalendar from '../../../../pages/OIEDash/EventsCalendar/Week/WeeklyCalendar/WeeklyCalendar';
+import { classroomBuildingLabel } from '../../../../utils/classroomBuildingLabel';
 import './LocationAutocomplete.scss';
 
 // Abbreviation support (matches SearchBar) – full names ↔ building abbreviations
@@ -131,7 +132,7 @@ function LocationAutocomplete({ formData, setFormData, preflightError = '' }) {
                             mergedRooms.push({
                                 id: room._id,
                                 name: room.name || 'Unknown Room',
-                                building: room.building || '',
+                                building: classroomBuildingLabel(room),
                                 capacity: room.capacity || 0
                             });
                         }

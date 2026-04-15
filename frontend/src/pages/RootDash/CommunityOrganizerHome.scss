@@ -1,0 +1,52 @@
+.community-organizer-home {
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
+
+
+    .content{
+        padding: 8px 30px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    &__kpis {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    &__secondary {
+        padding: 0 30px 28px;
+    }
+
+    &__events-preview {
+        margin-bottom: 16px;
+    }
+
+    &__secondary-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text);
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+
+    &__loading,
+    &__error {
+        padding: 16px 30px;
+        color: var(--darkborder);
+    }
+
+    &__error {
+        color: var(--red, #c62828);
+    }
+
+}

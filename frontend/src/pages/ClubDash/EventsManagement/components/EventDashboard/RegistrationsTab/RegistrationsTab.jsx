@@ -15,28 +15,44 @@ const VIEW_MODES = [
     { id: 'summary', label: 'Summary', icon: 'mdi:chart-bar' }
 ];
 
-function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSettingsFromAnnouncement, onConsumeOpenRegistrationSettings }) {
+function RegistrationsTab({
+    event,
+    orgId,
+    onRefresh,
+    color,
+    openRegistrationSettingsFromAnnouncement,
+    onConsumeOpenRegistrationSettings,
+    readOnly = false,
+    /** When set (e.g. tenant operator), bypass org-event-management registration-responses */
+    registrationResponsesUrl,
+}) {
     const { addNotification } = useNotification();
     const [updatingForm, setUpdatingForm] = useState(false);
     const [viewMode, setViewMode] = useState('table');
     const [removingId, setRemovingId] = useState(null);
     const [confirmRemove, setConfirmRemove] = useState(null);
 
-    const { data, loading, error, refetch } = useFetch(
-        event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/registration-responses` : null
-    );
-    const { data: formsData, refetch: refetchForms } = useFetch(orgId ? `/org-event-management/${orgId}/forms` : null);
+    const registrationUrl = useMemo(() => {
+        if (registrationResponsesUrl) return registrationResponsesUrl;
+        if (event?._id && orgId) return `/org-event-management/${orgId}/events/${event._id}/registration-responses`;
+        return null;
+    }, [registrationResponsesUrl, event?._id, orgId]);
+
+    const { data, loading, error, refetch } = useFetch(registrationUrl);
+    const formsUrl = orgId ? `/org-event-management/${orgId}/forms` : null;
+    const { data: formsData, refetch: refetchForms } = useFetch(formsUrl);
     const orgForms = formsData?.success ? (formsData.data || []) : [];
     const [showCreateFormModal, setShowCreateFormModal] = useState(false);
     const [editingFormId, setEditingFormId] = useState(null);
     const [showRegistrationSettingsModal, setShowRegistrationSettingsModal] = useState(false);
 
     useEffect(() => {
+        if (readOnly) return;
         if (openRegistrationSettingsFromAnnouncement && typeof onConsumeOpenRegistrationSettings === 'function') {
             setShowRegistrationSettingsModal(true);
             onConsumeOpenRegistrationSettings();
         }
-    }, [openRegistrationSettingsFromAnnouncement, onConsumeOpenRegistrationSettings]);
+    }, [readOnly, openRegistrationSettingsFromAnnouncement, onConsumeOpenRegistrationSettings]);
 
     const { registrations = [], formResponses = [], registrationFormId } = data?.data || {};
     const hasForm = Boolean(registrationFormId);
@@ -140,6 +156,7 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
     };
 
     const removeRegistration = async (payload) => {
+        if (readOnly) return;
         const { responseId, userId } = payload || {};
         const id = responseId || userId;
         if (!orgId || !event?._id || !id) return;
@@ -292,18 +309,24 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                         <Icon icon="mdi:account-off" className="disabled-icon" />
                         <div className="disabled-text">
                             <strong>Registration is disabled</strong>
-                            <p>Enable registration to allow attendees to register for this event.</p>
+                            <p>
+                                {readOnly
+                                    ? 'Attendees cannot register until the host enables registration.'
+                                    : 'Enable registration to allow attendees to register for this event.'}
+                            </p>
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        className="enable-registration-btn"
-                        onClick={handleEnableRegistration}
-                        disabled={updatingForm}
-                    >
-                        <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:account-plus'} className={updatingForm ? 'spin' : ''} />
-                        {updatingForm ? 'Enabling...' : 'Enable Registration'}
-                    </button>
+                    {!readOnly && (
+                        <button
+                            type="button"
+                            className="enable-registration-btn"
+                            onClick={handleEnableRegistration}
+                            disabled={updatingForm}
+                        >
+                            <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:account-plus'} className={updatingForm ? 'spin' : ''} />
+                            {updatingForm ? 'Enabling...' : 'Enable Registration'}
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -321,25 +344,29 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                 <div className="registrations-tab-actions">
                     {registrationEnabled && (
                         <>
-                            <button
-                                type="button"
-                                className="registration-settings-btn"
-                                onClick={() => setShowRegistrationSettingsModal(true)}
-                                title="Registration settings"
-                            >
-                                <Icon icon="mdi:cog" />
-                                Settings
-                            </button>
-                            <button
-                                type="button"
-                                className="disable-registration-btn"
-                                onClick={handleDisableRegistration}
-                                disabled={updatingForm}
-                                title="Disable registration"
-                            >
-                                <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:account-off'} className={updatingForm ? 'spin' : ''} />
-                                {updatingForm ? 'Disabling...' : 'Disable'}
-                            </button>
+                            {!readOnly && (
+                                <>
+                                    <button
+                                        type="button"
+                                        className="registration-settings-btn"
+                                        onClick={() => setShowRegistrationSettingsModal(true)}
+                                        title="Registration settings"
+                                    >
+                                        <Icon icon="mdi:cog" />
+                                        Settings
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="disable-registration-btn"
+                                        onClick={handleDisableRegistration}
+                                        disabled={updatingForm}
+                                        title="Disable registration"
+                                    >
+                                        <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:account-off'} className={updatingForm ? 'spin' : ''} />
+                                        {updatingForm ? 'Disabling...' : 'Disable'}
+                                    </button>
+                                </>
+                            )}
                             <button
                                 type="button"
                                 className="copy-registration-link-btn"
@@ -386,37 +413,44 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                                 <label>Registration form</label>
                                 <span className="form-title">{currentForm?.title || 'Untitled Form'}</span>
                             </div>
-                            <div className="registrations-form-actions">
-                                <button
-                                    type="button"
-                                    className="edit-form-btn"
-                                    onClick={() => {
-                                        setEditingFormId(registrationFormId);
-                                        setShowCreateFormModal(true);
-                                    }}
-                                    disabled={updatingForm}
-                                >
-                                    <Icon icon="mdi:pencil" />
-                                    Edit
-                                </button>
-                                <button
-                                    type="button"
-                                    className="delete-form-btn"
-                                    onClick={handleDeleteForm}
-                                    disabled={updatingForm}
-                                >
-                                    <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:delete-outline'} className={updatingForm ? 'spin' : ''} />
-                                    Delete
-                                </button>
-                            </div>
+                            {!readOnly && (
+                                <div className="registrations-form-actions">
+                                    <button
+                                        type="button"
+                                        className="edit-form-btn"
+                                        onClick={() => {
+                                            setEditingFormId(registrationFormId);
+                                            setShowCreateFormModal(true);
+                                        }}
+                                        disabled={updatingForm}
+                                    >
+                                        <Icon icon="mdi:pencil" />
+                                        Edit
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="delete-form-btn"
+                                        onClick={handleDeleteForm}
+                                        disabled={updatingForm}
+                                    >
+                                        <Icon icon={updatingForm ? 'mdi:loading' : 'mdi:delete-outline'} className={updatingForm ? 'spin' : ''} />
+                                        Delete
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                        {updatingForm && (
+                        {!readOnly && updatingForm && (
                             <span className="registrations-form-selector-saving">
                                 <Icon icon="mdi:loading" className="spin" />
                                 Saving…
                             </span>
                         )}
                     </>
+                ) : readOnly ? (
+                    <div className="registrations-form-empty registrations-form-empty--readonly">
+                        <Icon icon="mdi:form-select" className="empty-icon" />
+                        <p>No registration form is linked to this event.</p>
+                    </div>
                 ) : (
                     <div className="registrations-form-empty">
                         <div className="registrations-form-empty-content">
@@ -436,7 +470,7 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                         </button>
                     </div>
                 )}
-                {showCreateFormModal && (
+                {showCreateFormModal && !readOnly && (
                     <CreateRegistrationFormModal
                         orgId={orgId}
                         formId={editingFormId || undefined}
@@ -485,7 +519,7 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                                         {questions.map((q, idx) => (
                                             <th key={idx}>{q.question || `Q${idx + 1}`}</th>
                                         ))}
-                                        <th className="th-actions">Actions</th>
+                                        <th className="th-actions">{readOnly ? 'Copy' : 'Actions'}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -503,15 +537,17 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                                                 <button type="button" className="action-btn copy-email" onClick={() => copyEmail(r.submittedBy?.email || r.guestEmail)} title="Copy email">
                                                     <Icon icon="mdi:email-outline" />
                                                 </button>
-                                                <button
-                                                    type="button"
-                                                    className="action-btn remove"
-                                                    onClick={() => setConfirmRemove({ responseId: r._id, name: getResponseDisplayName(r) })}
-                                                    title="Remove registration"
-                                                    disabled={removingId === r._id}
-                                                >
-                                                    <Icon icon={removingId === r._id ? 'mdi:loading' : 'mdi:account-minus'} className={removingId === r._id ? 'spin' : ''} />
-                                                </button>
+                                                {!readOnly && (
+                                                    <button
+                                                        type="button"
+                                                        className="action-btn remove"
+                                                        onClick={() => setConfirmRemove({ responseId: r._id, name: getResponseDisplayName(r) })}
+                                                        title="Remove registration"
+                                                        disabled={removingId === r._id}
+                                                    >
+                                                        <Icon icon={removingId === r._id ? 'mdi:loading' : 'mdi:account-minus'} className={removingId === r._id ? 'spin' : ''} />
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -535,15 +571,17 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                                             <button type="button" className="action-btn copy-email" onClick={() => copyEmail(r.submittedBy?.email || r.guestEmail)} title="Copy email">
                                                 <Icon icon="mdi:email-outline" />
                                             </button>
-                                            <button
-                                                type="button"
-                                                className="action-btn remove"
-                                                onClick={() => setConfirmRemove({ responseId: r._id, name: getResponseDisplayName(r) })}
-                                                title="Remove registration"
-                                                disabled={removingId === r._id}
-                                            >
-                                                <Icon icon={removingId === r._id ? 'mdi:loading' : 'mdi:account-minus'} className={removingId === r._id ? 'spin' : ''} />
-                                            </button>
+                                            {!readOnly && (
+                                                <button
+                                                    type="button"
+                                                    className="action-btn remove"
+                                                    onClick={() => setConfirmRemove({ responseId: r._id, name: getResponseDisplayName(r) })}
+                                                    title="Remove registration"
+                                                    disabled={removingId === r._id}
+                                                >
+                                                    <Icon icon={removingId === r._id ? 'mdi:loading' : 'mdi:account-minus'} className={removingId === r._id ? 'spin' : ''} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="registration-card-answers">
@@ -635,15 +673,17 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                                             <button type="button" className="action-btn copy-email" onClick={() => copyEmail(reg.userId?.email)} title="Copy email">
                                                 <Icon icon="mdi:email-outline" />
                                             </button>
-                                            <button
-                                                type="button"
-                                                className="action-btn remove"
-                                                onClick={() => setConfirmRemove({ userId: uidStr, name: getDisplayName(reg.userId) })}
-                                                title="Remove registration"
-                                                disabled={removingId === uidStr}
-                                            >
-                                                <Icon icon={removingId === uidStr ? 'mdi:loading' : 'mdi:account-minus'} className={removingId === uidStr ? 'spin' : ''} />
-                                            </button>
+                                            {!readOnly && (
+                                                <button
+                                                    type="button"
+                                                    className="action-btn remove"
+                                                    onClick={() => setConfirmRemove({ userId: uidStr, name: getDisplayName(reg.userId) })}
+                                                    title="Remove registration"
+                                                    disabled={removingId === uidStr}
+                                                >
+                                                    <Icon icon={removingId === uidStr ? 'mdi:loading' : 'mdi:account-minus'} className={removingId === uidStr ? 'spin' : ''} />
+                                                </button>
+                                            )}
                                         </span>
                                     </li>
                                 );
@@ -653,21 +693,23 @@ function RegistrationsTab({ event, orgId, onRefresh, color, openRegistrationSett
                 </div>
             )}
 
-            <RegistrationSettingsModal
-                isOpen={showRegistrationSettingsModal}
-                onClose={() => setShowRegistrationSettingsModal(false)}
-                event={event}
-                orgId={orgId}
-                orgForms={orgForms}
-                refetchForms={refetchForms}
-                color={'var(--org-primary)'}
-                onSaved={() => {
-                    onRefresh?.();
-                    refetch?.();
-                }}
-            />
+            {!readOnly && (
+                <RegistrationSettingsModal
+                    isOpen={showRegistrationSettingsModal}
+                    onClose={() => setShowRegistrationSettingsModal(false)}
+                    event={event}
+                    orgId={orgId}
+                    orgForms={orgForms}
+                    refetchForms={refetchForms}
+                    color={'var(--org-primary)'}
+                    onSaved={() => {
+                        onRefresh?.();
+                        refetch?.();
+                    }}
+                />
+            )}
 
-            {confirmRemove && (
+            {confirmRemove && !readOnly && (
                 <Popup isOpen onClose={() => setConfirmRemove(null)} customClassName="registrations-confirm-remove-modal">
                     <div className="registrations-confirm-remove-inner">
                         <h3>Remove registration?</h3>

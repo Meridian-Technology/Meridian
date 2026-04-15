@@ -6,6 +6,7 @@ import SpaceAnalytics from './Pages/SpaceAnalytics/SpaceAnalytics';
 import CompassLogo from '../../../assets/Brand Image/SolutionLogos/Compass.svg';
 import { useNavigate } from 'react-router-dom';
 import RoomManager from '../../RootDash/RoomManager/RoomManager';
+import BuildingManager from './Pages/BuildingManager/BuildingManager';
 
 const Compass = () => {
     const navigate = useNavigate();
@@ -14,6 +15,11 @@ const Compass = () => {
             label: 'Overview',
             icon: 'mdi:chart-box',
             element: <SpaceAnalytics />
+        },
+        {
+            label: 'Building manager',
+            icon: 'mdi:office-building',
+            element: <BuildingManager />
         },
         {
             label: 'Room Manager',

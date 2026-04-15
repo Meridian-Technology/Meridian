@@ -4,6 +4,7 @@ import { useFetch } from '../../../hooks/useFetch';
 import CommentsSection from '../../../components/CommentsSection.jsx/CommentsSection';
 import StarGradient from '../../../assets/OIE-Gradient2.png';
 import defaultAvatar from '../../../assets/defaultAvatar.svg';
+import { classroomBuildingLabel } from '../../../utils/classroomBuildingLabel';
 import './DomainEventApprovalModal.scss';
 
 function eventCoverUrl(ev) {
@@ -46,7 +47,7 @@ function formatLocation(loc) {
 function formatClassroom(room) {
     if (!room) return null;
     if (typeof room === 'string') return room;
-    const parts = [room.building, room.name].filter(Boolean);
+    const parts = [classroomBuildingLabel(room), room.name].filter(Boolean);
     return parts.length ? parts.join(' — ') : room.name || '—';
 }
 
@@ -191,6 +192,14 @@ function DomainEventApprovalModal({
     const start = ev?.start_time ? new Date(ev.start_time) : null;
     const end = ev?.end_time ? new Date(ev.end_time) : null;
     const roomLabel = formatClassroom(ev?.classroom_id);
+    const scopeReasonLabel =
+        ev?.scopeMatchReason === 'governing_scope'
+            ? 'This event intersects your domain governing scope.'
+            : ev?.scopeMatchReason === 'concern_scope'
+              ? 'This event intersects your domain concern scope.'
+              : 'This event is currently waiting on a role mapped to your domain.';
+    const reservationConflict = ev?.reservationConflictSummary || {};
+    const crossDomainImpacts = Array.isArray(ev?.crossDomainImpacts) ? ev.crossDomainImpacts : [];
     const customEntries =
         ev?.customFields && typeof ev.customFields === 'object'
             ? Object.entries(ev.customFields).filter(([, v]) => v !== '' && v != null)
@@ -381,6 +390,36 @@ function DomainEventApprovalModal({
                                     {typeof ev?.maxAttendees === 'number' ? ` · cap ${ev.maxAttendees}` : ''}
                                 </dd>
                             </div>
+                            <div className="domain-event-approval-modal__dl domain-event-approval-modal__dl--wide">
+                                <dt>Scope context</dt>
+                                <dd>{scopeReasonLabel}</dd>
+                            </div>
+                            {ev?.spaceContext?.building && (
+                                <div className="domain-event-approval-modal__dl">
+                                    <dt>Building</dt>
+                                    <dd>{ev.spaceContext.building}</dd>
+                                </div>
+                            )}
+                            {ev?.spaceContext?.buildingId && (
+                                <div className="domain-event-approval-modal__dl">
+                                    <dt>Building ID</dt>
+                                    <dd className="domain-event-approval-modal__mono">{ev.spaceContext.buildingId}</dd>
+                                </div>
+                            )}
+                            {ev?.spaceContext?.resourceId && (
+                                <div className="domain-event-approval-modal__dl">
+                                    <dt>Space ID</dt>
+                                    <dd className="domain-event-approval-modal__mono">{ev.spaceContext.resourceId}</dd>
+                                </div>
+                            )}
+                            <div className="domain-event-approval-modal__dl domain-event-approval-modal__dl--wide">
+                                <dt>Reservation conflict</dt>
+                                <dd>
+                                    {reservationConflict?.hasConflict
+                                        ? `${reservationConflict.reason || 'Conflict detected'} (${reservationConflict.conflictType || 'unspecified'})`
+                                        : 'No active conflict'}
+                                </dd>
+                            </div>
                         </div>
                     </section>
                 </aside>
@@ -445,6 +484,25 @@ function DomainEventApprovalModal({
                                                 {c.orgId?.org_name || 'Organization'}
                                             </span>
                                             <span className="domain-event-approval-modal__collab-status">{c.status}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </section>
+                        )}
+
+                        {crossDomainImpacts.length > 0 && (
+                            <section className="domain-event-approval-modal__section">
+                                <h2 className="domain-event-approval-modal__section-title">
+                                    <Icon icon="mdi:account-multiple-outline" />
+                                    Other impacted domains
+                                </h2>
+                                <ul className="domain-event-approval-modal__collab-list">
+                                    {crossDomainImpacts.map((impact) => (
+                                        <li key={`${impact.domainId}-${impact.relation}`}>
+                                            <span className="domain-event-approval-modal__collab-name">
+                                                {impact.domainName}
+                                            </span>
+                                            <span className="domain-event-approval-modal__collab-status">{impact.relation}</span>
                                         </li>
                                     ))}
                                 </ul>

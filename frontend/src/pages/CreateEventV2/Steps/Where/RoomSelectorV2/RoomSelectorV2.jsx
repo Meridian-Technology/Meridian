@@ -7,6 +7,7 @@ import Loader from '../../../../../components/Loader/Loader';
 import FilledStar from '../../../../../assets/Icons/FilledStar.svg';
 import { attributeIcons, selectedAttributeIcons } from '../../../../../Icons';
 import Popup from '../../../../../components/Popup/Popup';
+import { classroomBuildingLabel } from '../../../../../utils/classroomBuildingLabel';
 import './RoomSelectorV2.scss';
 
 function RoomSelectorV2({ formData, setFormData, onComplete }) {
@@ -119,7 +120,7 @@ function RoomSelectorV2({ formData, setFormData, onComplete }) {
                             id: room._id,
                             name: room.name || 'Unknown Room',
                             image: room.image || null,
-                            building: room.building || '',
+                            building: classroomBuildingLabel(room),
                             floor: room.floor || '',
                             capacity: room.capacity || 0,
                             attributes: room.attributes || [],
@@ -185,7 +186,7 @@ function RoomSelectorV2({ formData, setFormData, onComplete }) {
                                                     id: sampleRoomIds[index],
                                                     name: room.name || 'Unknown Room',
                                                     image: room.image || null,
-                                                    building: room.building || '',
+                                                    building: classroomBuildingLabel(room),
                                                     floor: room.floor || '',
                                                     capacity: room.capacity || 0,
                                                     attributes: room.attributes || [],
@@ -310,7 +311,7 @@ function RoomSelectorV2({ formData, setFormData, onComplete }) {
                                 id: missingIds[index],
                                 name: room.name || 'Unknown Room',
                                 image: room.image || null,
-                                building: room.building || '',
+                                building: classroomBuildingLabel(room),
                                 floor: room.floor || '',
                                 capacity: room.capacity || 0,
                                 attributes: room.attributes || [],

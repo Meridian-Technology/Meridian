@@ -71,6 +71,46 @@ const TAB_CONFIG = {
 const EXPLORE_HEADER_SCROLL_THRESHOLD = 50;
 const CONTENT_SCROLL_THRESHOLD = 20;
 
+function hasNameValue(userLike) {
+    return String(userLike?.name || '').trim().length > 0;
+}
+
+function hasUsernameValue(userLike) {
+    return String(userLike?.username || '').trim().length >= 3;
+}
+
+function hasMissingOnboardingSteps(user, onboardingConfig) {
+    if (!user || !onboardingConfig || onboardingConfig.enabled !== true) return false;
+    const completed = new Set(Array.isArray(user.onboardingCompletedSteps) ? user.onboardingCompletedSteps : []);
+    const responses = user.onboardingResponses && typeof user.onboardingResponses === 'object'
+        ? user.onboardingResponses
+        : {};
+
+    if (onboardingConfig.collectName !== false && !hasNameValue(user)) return true;
+    if (!hasUsernameValue(user)) return true;
+    if (onboardingConfig.collectInterests !== false) {
+        const enforceMin = onboardingConfig.enforceMinInterests !== false;
+        const tags = Array.isArray(user.tags) ? user.tags : [];
+        if (enforceMin) {
+            const min = Number(onboardingConfig.minInterests ?? 1);
+            if (tags.length < min) return true;
+        }
+    }
+
+    const customSteps = Array.isArray(onboardingConfig.customSteps) ? onboardingConfig.customSteps : [];
+    return customSteps.some((step) => {
+        const stepId = String(step?.id || '').trim();
+        if (!stepId) return false;
+        const response = responses[stepId];
+        const hasResponse = Array.isArray(response)
+            ? response.length > 0
+            : String(response || '').trim().length > 0;
+        if (!completed.has(stepId) && !hasResponse) return true;
+        if (step.required && !hasResponse) return true;
+        return false;
+    });
+}
+
 function EventsHub() {
     const [showSignUpPrompt, setShowSignUpPrompt] = useState(false);
     const [showCreatePopup, setShowCreatePopup] = useState(false);
@@ -88,6 +128,7 @@ function EventsHub() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const eligibilityData = useFetch(user ? '/api/event-system-config/event-creation-eligibility' : null);
+    const onboardingConfigData = useFetch(user ? '/org-management/onboarding-config' : null);
     const eligibility = eligibilityData.data?.data;
     const canCreateEvent = eligibility
         ? (eligibility.allowIndividualUserHosting || (eligibility.orgsWithEventPermission?.length > 0))
@@ -146,6 +187,21 @@ function EventsHub() {
             }
         }
     }, [isAuthenticating, user, navigate]);
+
+    // Hard gate onboarding on events dashboard.
+    useEffect(() => {
+        if (isAuthenticating || !user) return;
+        const onboardingConfig = onboardingConfigData.data?.data;
+        if (!onboardingConfigData.data?.success || !onboardingConfig) return;
+        const isOnboardPath = window.location.pathname.startsWith('/onboard');
+        if (!isOnboardPath && hasMissingOnboardingSteps(user, onboardingConfig)) {
+            const nextPath = window.location.pathname + (window.location.search || '');
+            const next = nextPath && nextPath !== '/onboard'
+                ? `?next=${encodeURIComponent(nextPath)}`
+                : '';
+            navigate(`/onboard${next}`, { replace: true });
+        }
+    }, [isAuthenticating, user, onboardingConfigData.data, navigate]);
 
     useEffect(() => {
         const handleClickOutside = (e) => {

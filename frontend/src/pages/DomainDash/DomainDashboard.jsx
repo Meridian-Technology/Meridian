@@ -12,7 +12,7 @@ import eventsLogo from '../../assets/Brand Image/EventsLogo.svg';
 function DomainDashboard() {
     const { domainId } = useParams();
     const navigate = useNavigate();
-    const domainData = useFetch(`/api/domain/${domainId}`);
+    const domainData = useFetch(domainId ? `/api/domain/${domainId}` : null);
 
     const domain = domainData.data?.data;
 

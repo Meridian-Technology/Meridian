@@ -19,7 +19,7 @@ function buildOrgListQuery(filters) {
     return p.toString();
 }
 
-function OrgList() {
+function OrgList({ useAdminHeaderGradient = false }) {
     const navigate = useNavigate();
     const [manageOrgId, setManageOrgId] = useState(null);
     const [searchDraft, setSearchDraft] = useState('');
@@ -28,7 +28,7 @@ function OrgList() {
         verified: '',
         page: 1
     });
-    const { AtlasMain } = useGradient();
+    const { AtlasMain, AdminGrad } = useGradient();
 
     useEffect(() => {
         const id = window.setTimeout(() => {
@@ -126,43 +126,44 @@ function OrgList() {
             <header className="header">
                 <h1>Organizations</h1>
                 <p>Manage and monitor all student organizations</p>
-                <img src={AtlasMain} alt="Organizations Grad" />
+                <img src={useAdminHeaderGradient ? AdminGrad : AtlasMain} alt="" />
             </header>
 
             <div className="content">
-                {/* Filters and Actions */}
-                <div className={`toolbar${loading ? ' toolbar--refreshing' : ''}`}>
-                    <div className="org-filters">
-                        <div className="search-box">
-                            <Icon icon="mdi:magnify" />
+                <div className={`org-list__toolbar${loading ? ' org-list__toolbar--refreshing' : ''}`}>
+                    <div className="org-list__toolbar-main">
+                        <label className="org-list__search">
+                            <Icon icon="mdi:magnify" aria-hidden />
                             <input
                                 type="search"
-                                placeholder="Search by name or description..."
+                                placeholder="Search by name or description…"
                                 value={searchDraft}
                                 onChange={(e) => setSearchDraft(e.target.value)}
                                 autoComplete="off"
                             />
+                        </label>
+                        <div className="org-list__filter">
+                            <select
+                                id="org-list-verified-filter"
+                                value={filters.verified}
+                                onChange={(e) =>
+                                    setFilters((f) => ({ ...f, verified: e.target.value, page: 1 }))
+                                }
+                            >
+                                <option value="">All organizations</option>
+                                <option value="true">Verified only</option>
+                                <option value="false">Unverified only</option>
+                            </select>
                         </div>
-
-                        <select
-                            value={filters.verified}
-                            onChange={(e) =>
-                                setFilters((f) => ({ ...f, verified: e.target.value, page: 1 }))
-                            }
-                        >
-                            <option value="">All Organizations</option>
-                            <option value="true">Verified Only</option>
-                            <option value="false">Unverified Only</option>
-                        </select>
                     </div>
 
-                    <div className="actions">
-                        <button className="export-btn" onClick={() => handleExport('csv')}>
-                            <Icon icon="mdi:download" />
+                    <div className="org-list__toolbar-actions">
+                        <button type="button" className="export-btn" onClick={() => handleExport('csv')}>
+                            <Icon icon="mdi:download" aria-hidden />
                             Export CSV
                         </button>
-                        <button className="export-btn" onClick={() => handleExport('json')}>
-                            <Icon icon="mdi:download" />
+                        <button type="button" className="export-btn" onClick={() => handleExport('json')}>
+                            <Icon icon="mdi:download" aria-hidden />
                             Export JSON
                         </button>
                     </div>

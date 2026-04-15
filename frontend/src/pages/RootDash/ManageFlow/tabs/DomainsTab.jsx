@@ -4,7 +4,10 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 
 function DomainsTab({ 
     domainsData, 
-    openPopup, 
+    openCreateDomain,
+    openEditDomain,
+    openCreateStakeholder,
+    openEditStakeholder,
     selectedDomain, 
     setSelectedDomain, 
     handleDomainSelect, 
@@ -19,7 +22,7 @@ function DomainsTab({
                 <div className="domain-actions">
                     <button 
                         className="bulk-action-btn primary"
-                        onClick={() => openPopup('domain')}
+                        onClick={() => openCreateDomain()}
                     >
                         <Icon icon="ic:round-add-home" />
                         Create Domain
@@ -110,7 +113,11 @@ function DomainsTab({
                                         <Icon icon="mdi:account-group" />
                                         Manage Stakeholders
                                     </button>
-                                    <button className="edit-domain-btn">
+                                    <button
+                                        type="button"
+                                        className="edit-domain-btn"
+                                        onClick={() => openEditDomain(domain._id)}
+                                    >
                                         <Icon icon="mdi:pencil" />
                                         Edit Domain
                                     </button>
@@ -124,7 +131,8 @@ function DomainsTab({
                                         <h4>Stakeholder Roles for {domain.name}</h4>
                                         <button 
                                             className="add-role-btn"
-                                            onClick={() => openPopup('stakeholder')}
+                                            type="button"
+                                            onClick={() => openCreateStakeholder(domain._id)}
                                         >
                                             <Icon icon="mdi:plus" />
                                             Add Stakeholder Role
@@ -143,7 +151,8 @@ function DomainsTab({
                                             <p>This domain doesn't have any stakeholder roles configured yet.</p>
                                             <button 
                                                 className="create-role-btn"
-                                                onClick={() => openPopup('stakeholder')}
+                                                type="button"
+                                                onClick={() => openCreateStakeholder(domain._id)}
                                             >
                                                 <Icon icon="mdi:plus" />
                                                 Create First Role
@@ -168,7 +177,12 @@ function DomainsTab({
                                                         </div>
                                                     </div>
                                                     <div className="role-actions">
-                                                        <button className="edit-role-btn" title="Edit Role">
+                                                        <button
+                                                            type="button"
+                                                            className="edit-role-btn"
+                                                            title="Edit Role"
+                                                            onClick={() => openEditStakeholder(role._id, domain._id)}
+                                                        >
                                                             <Icon icon="mdi:pencil" />
                                                         </button>
                                                         <button className="assign-role-btn" title="Assign User">
@@ -195,7 +209,8 @@ function DomainsTab({
                         <p>Create domains to manage facility-specific event settings, stakeholder roles, and approval workflows.</p>
                         <button 
                             className="create-domain-btn"
-                            onClick={() => openPopup('domain')}
+                            type="button"
+                            onClick={() => openCreateDomain()}
                         >
                             <Icon icon="mdi:domain-plus" />
                             Create Your First Domain

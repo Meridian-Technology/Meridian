@@ -5,6 +5,7 @@ import CommentsSection from '../../../components/CommentsSection.jsx/CommentsSec
 import StarGradient from '../../../assets/OIE-Gradient2.png';
 import MockPoster from '../../../assets/MockPoster.png';
 import defaultAvatar from '../../../assets/defaultAvatar.svg';
+import { classroomBuildingLabel } from '../../../utils/classroomBuildingLabel';
 import './EventApprovalReviewModal.scss';
 
 function formatLocation(loc) {
@@ -41,7 +42,7 @@ function formatLocation(loc) {
 function formatClassroom(room) {
     if (!room) return null;
     if (typeof room === 'string') return room;
-    const parts = [room.building, room.name].filter(Boolean);
+    const parts = [classroomBuildingLabel(room), room.name].filter(Boolean);
     return parts.length ? parts.join(' — ') : room.name || '—';
 }
 

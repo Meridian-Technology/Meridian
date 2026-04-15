@@ -201,13 +201,10 @@ export default function FinanceTemplatesConfig() {
                 addNotification({ title: 'Error', message: financeRes.message || 'Save failed', type: 'error' });
                 return;
             }
-            const managementPayload = managementRes?.data || {};
             const policyRes = await apiRequest(
                 '/org-management/config',
                 {
-                    ...managementPayload,
                     atlasPolicy: {
-                        ...(managementPayload.atlasPolicy || {}),
                         budgets: lineItemPolicy
                     }
                 },

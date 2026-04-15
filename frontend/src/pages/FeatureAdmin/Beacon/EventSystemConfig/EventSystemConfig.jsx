@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import './EventSystemConfig.scss';
 import { useFetch } from '../../../../hooks/useFetch';
 import useUnsavedChanges from '../../../../hooks/useUnsavedChanges';
@@ -12,18 +12,44 @@ import AnalyticsConfig from './AnalyticsConfig/AnalyticsConfig';
 import ApprovalFlowConfig from './ApprovalFlowConfig/ApprovalFlowConfig';
 import FormConfig from './FormConfig/FormConfig';
 import EventsCoverConfig from './EventsCoverConfig/EventsCoverConfig';
+import EventTypeConfig from './EventTypeConfig/EventTypeConfig';
 import { useNotification } from '../../../../NotificationContext';
 import { useGradient } from '../../../../hooks/useGradient';
 import postRequest from '../../../../utils/postRequest';
 
-const EventSystemConfig = () => {
+const ENGAGEMENT_TAB_IDS = new Set(['system', 'templates', 'event-types', 'form-config', 'cover']);
+
+const TAB_DEFS = [
+    { id: 'system', label: 'System Settings', icon: 'mdi:cog' },
+    { id: 'domains', label: 'Domains', icon: 'mdi:domain' },
+    { id: 'templates', label: 'Templates', icon: 'mdi:file-document-multiple' },
+    { id: 'integrations', label: 'Integrations', icon: 'mdi:connection' },
+    { id: 'analytics', label: 'Analytics', icon: 'mdi:chart-line' },
+    { id: 'approval', label: 'Approval Flow', icon: 'mdi:check-circle' },
+    { id: 'event-types', label: 'Event Types', icon: 'mdi:shape-outline' },
+    { id: 'form-config', label: 'Form Config', icon: 'mdi:form-select' },
+    { id: 'cover', label: 'Page Header', icon: 'mdi:image' },
+];
+
+function EventSystemConfig({ mode = 'full' }) {
     const [activeTab, setActiveTab] = useState('system');
     const [config, setConfig] = useState(null);
     const [originalConfig, setOriginalConfig] = useState(null);
     const { addNotification } = useNotification();
-    const { BeaconMain } = useGradient();
+    const { AdminGrad } = useGradient();
     const configData = useFetch('/api/event-system-config');
-    
+
+    const visibleTabs = useMemo(
+        () => (mode === 'engagement' ? TAB_DEFS.filter((t) => ENGAGEMENT_TAB_IDS.has(t.id)) : TAB_DEFS),
+        [mode]
+    );
+
+    useEffect(() => {
+        if (mode === 'engagement' && !ENGAGEMENT_TAB_IDS.has(activeTab)) {
+            setActiveTab('system');
+        }
+    }, [mode, activeTab]);
+
     useEffect(() => {
         if (configData.data?.success) {
             const config = configData.data.data;
@@ -121,13 +147,18 @@ const EventSystemConfig = () => {
         );
     }
     
+    const headerSubtitle =
+        mode === 'engagement'
+            ? 'Branding, templates, and registration experience for your institution.'
+            : 'Configure global settings for the event management system';
+
     return (
         <div className="event-system-config dash">
             <header className="header">
                 <div className="header-content">
                     <h1>Event System Configuration</h1>
-                    <p>Configure global settings for the event management system</p>
-                    <img src={BeaconMain} alt="" />
+                    <p>{headerSubtitle}</p>
+                    <img src={AdminGrad} alt="" />
                 </div>
             </header>
             
@@ -141,62 +172,17 @@ const EventSystemConfig = () => {
             />
             
             <div className="config-tabs">
-                <button 
-                    className={`tab ${activeTab === 'system' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('system')}
-                >
-                    <Icon icon="mdi:cog" />
-                    System Settings
-                </button>
-                <button 
-                    className={`tab ${activeTab === 'domains' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('domains')}
-                >
-                    <Icon icon="mdi:domain" />
-                    Domains
-                </button>
-                <button 
-                    className={`tab ${activeTab === 'templates' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('templates')}
-                >
-                    <Icon icon="mdi:file-document-multiple" />
-                    Templates
-                </button>
-                <button 
-                    className={`tab ${activeTab === 'integrations' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('integrations')}
-                >
-                    <Icon icon="mdi:connection" />
-                    Integrations
-                </button>
-                <button 
-                    className={`tab ${activeTab === 'analytics' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('analytics')}
-                >
-                    <Icon icon="mdi:chart-line" />
-                    Analytics
-                </button>
-                <button 
-                    className={`tab ${activeTab === 'approval' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('approval')}
-                >
-                    <Icon icon="mdi:check-circle" />
-                    Approval Flow
-                </button>
-                <button 
-                    className={`tab ${activeTab === 'form-config' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('form-config')}
-                >
-                    <Icon icon="mdi:form-select" />
-                    Form Config
-                </button>
-                <button 
-                    className={`tab ${activeTab === 'cover' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('cover')}
-                >
-                    <Icon icon="mdi:image" />
-                    Page Header
-                </button>
+                {visibleTabs.map((tab) => (
+                    <button
+                        key={tab.id}
+                        type="button"
+                        className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+                        onClick={() => setActiveTab(tab.id)}
+                    >
+                        <Icon icon={tab.icon} />
+                        {tab.label}
+                    </button>
+                ))}
             </div>
             
             <div className="config-content">
@@ -239,6 +225,21 @@ const EventSystemConfig = () => {
                     <ApprovalFlowConfig
                         config={config.approvalFlow}
                         onChange={(approvalFlow) => handleConfigChange('approvalFlow', approvalFlow)}
+                    />
+                )}
+
+                {activeTab === 'event-types' && (
+                    <EventTypeConfig
+                        config={config}
+                        onChange={(updates) => {
+                            setConfig((prev) => ({
+                                ...prev,
+                                formConfig: {
+                                    ...prev.formConfig,
+                                    ...(updates.formConfig || {}),
+                                },
+                            }));
+                        }}
                     />
                 )}
                 

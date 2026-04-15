@@ -155,6 +155,117 @@
         font-weight: 600;
     }
 
+    .onboarding-config__preview {
+        margin-top: 16px;
+    }
+
+    .onboarding-config__preview-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--lightborder);
+        background: var(--lighter);
+        color: var(--text);
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .onboarding-config__steps {
+        margin-top: 16px;
+        display: grid;
+        gap: 12px;
+    }
+
+    .onboarding-config__steps-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+
+        h3 {
+            margin: 0;
+            font-size: 15px;
+            color: var(--text);
+        }
+    }
+
+    .onboarding-config__add-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: none;
+        background: var(--red);
+        color: var(--background);
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .onboarding-config__empty {
+        margin: 0;
+        color: var(--light-text);
+        font-size: 13px;
+    }
+
+    .onboarding-config__step {
+        border: 1px solid var(--lightborder);
+        border-radius: 10px;
+        background: var(--lighter);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+    }
+
+    .onboarding-config__grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+
+        @media (max-width: 780px) {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .onboarding-config__grid label,
+    .onboarding-config__block {
+        display: grid;
+        gap: 6px;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .onboarding-config__grid input,
+    .onboarding-config__grid select,
+    .onboarding-config__block input {
+        padding: 10px 12px;
+        border: 1px solid var(--lightborder);
+        border-radius: 8px;
+        font-size: 14px;
+        background: var(--background);
+        color: var(--text);
+    }
+
+    .onboarding-config__actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .onboarding-config__delete {
+        border: 1px solid var(--red);
+        color: var(--red);
+        background: transparent;
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
     .verification-types-section {
         .config-group {
             gap: 12px;

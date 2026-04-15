@@ -1,0 +1,306 @@
+.user-onboarding-config {
+    padding-bottom:80px;
+    &__card {
+        background: var(--background);
+        border: 1px solid var(--lightborder);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        padding: 16px;
+        margin: 16px 40px;
+        display: grid;
+        gap: 10px;
+    }
+
+    &__section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    &__section-head h2 {
+        margin: 0;
+        font-size: 16px;
+    }
+
+    &__grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 14px;
+
+        @media (max-width: 820px) {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    &__card label {
+        display: grid;
+        gap: 6px;
+        color: var(--text);
+        font-weight: 600;
+        font-size: 13px;
+    }
+
+    &__card input[type='text'],
+    &__card input[type='number'],
+    &__card select {
+        border: 1px solid var(--lightborder);
+        border-radius: 8px;
+        height: 38px;
+        padding: 0 10px;
+        background: var(--lighter);
+        color: var(--text);
+    }
+
+    &__actions button,
+    &__row button,
+    &__footer button,
+    &__step .danger,
+    &__editor-actions button {
+        border: none;
+        border-radius: 8px;
+        height: 36px;
+        padding: 0 12px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+    }
+
+    &__actions button,
+    &__row button,
+    &__footer button,
+    &__editor-actions button {
+        background: var(--red);
+        color: var(--background);
+    }
+
+    &__row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    &__row h2 {
+        margin: 0;
+        font-size: 16px;
+    }
+
+    &__step {
+        border: 1px solid var(--lightborder);
+        border-radius: 10px;
+        padding: 10px;
+        display: grid;
+        gap: 8px;
+        background: var(--lighter);
+    }
+
+    &__builder {
+        gap: 14px;
+    }
+
+    &__builder-layout {
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr);
+        gap: 14px;
+
+        @media (max-width: 980px) {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    &__steps-list {
+        border: 1px solid var(--lightborder);
+        border-radius: 10px;
+        background: var(--lighter);
+        padding: 8px;
+        display: grid;
+        gap: 8px;
+        align-content: start;
+        max-height: 540px;
+        overflow: auto;
+    }
+
+    &__step-item {
+        border: 1px solid var(--lightborder);
+        background: var(--background);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 10px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px;
+        align-items: center;
+        text-align: left;
+        cursor: pointer;
+
+        &.is-active {
+            border-color: var(--red);
+            box-shadow: inset 0 0 0 1px var(--red);
+        }
+    }
+
+    &__step-order {
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        background: var(--red);
+        color: var(--background);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    &__step-main {
+        display: grid;
+        gap: 3px;
+    }
+
+    &__step-main strong {
+        font-size: 13px;
+    }
+
+    &__step-main small {
+        color: var(--light-text);
+        font-size: 12px;
+    }
+
+    &__step-editor {
+        border: 1px solid var(--lightborder);
+        border-radius: 10px;
+        background: var(--lighter);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+        align-content: start;
+    }
+
+    &__editor-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    &__step .danger {
+        background: transparent;
+        color: var(--red);
+        border: 1px solid var(--red);
+        width: fit-content;
+    }
+
+    &__editor-actions .danger {
+        background: transparent;
+        color: var(--red);
+        border: 1px solid var(--red);
+    }
+
+    &__empty {
+        color: var(--light-text);
+        font-size: 13px;
+        padding: 8px;
+    }
+
+    &__insights {
+        display: grid;
+        gap: 12px;
+    }
+
+    &__stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    &__stat {
+        border: 1px solid var(--lightborder);
+        background: var(--lighter);
+        border-radius: 10px;
+        padding: 10px 12px;
+        display: grid;
+        gap: 4px;
+
+        span {
+            color: var(--light-text);
+            font-size: 12px;
+        }
+
+        strong {
+            font-size: 20px;
+            line-height: 1.1;
+        }
+    }
+
+    &__insight-block {
+        display: grid;
+        gap: 8px;
+    }
+
+    &__insight-block h3 {
+        margin: 0;
+        font-size: 15px;
+    }
+
+    &__chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    &__chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        border: 1px solid var(--lightborder);
+        background: color-mix(in srgb, var(--red) 8%, var(--lighter));
+        padding: 4px 10px;
+        font-size: 12px;
+    }
+
+    &__question-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    &__question {
+        border: 1px solid var(--lightborder);
+        border-radius: 10px;
+        background: var(--lighter);
+        padding: 10px 12px;
+        display: grid;
+        gap: 8px;
+    }
+
+    &__question-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    &__question-head h4 {
+        margin: 0;
+        font-size: 14px;
+    }
+
+    &__question-head span {
+        color: var(--light-text);
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    &__samples {
+        margin: 0;
+        padding-left: 20px;
+        display: grid;
+        gap: 4px;
+    }
+
+    &__footer {
+        margin: 0 40px 24px;
+    }
+}

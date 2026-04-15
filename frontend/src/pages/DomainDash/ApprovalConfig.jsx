@@ -10,12 +10,12 @@ import Rule from '../OIEDash/ApprovalConfig/Rule/Rule';
 import postRequest from '../../utils/postRequest';
 import { useNotification } from '../../NotificationContext';
 
-const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
+const ApprovalConfig = ({ approvalId, domainId, stakeholderRole, embedded = false, onSaved }) => {
     const { addNotification } = useNotification();
     
     // Data fetching
     const approvalFlowData = useFetch('/api/event-system-config/get-approval-flow');
-    const domainData = useFetch(`/api/domain/${domainId}`);
+    const domainData = useFetch(domainId ? `/api/domain/${domainId}` : null);
     
     // State management
     const [fieldDefinitions, setFieldDefinitions] = useState([]);
@@ -100,6 +100,9 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
                     conditionGroups: pendingChanges.conditionGroups || prev.conditionGroups,
                     groupLogicalOperators: pendingChanges.groupLogicalOperators || prev.groupLogicalOperators
                 }));
+                if (typeof onSaved === 'function') {
+                    onSaved();
+                }
             } else {
                 addNotification({
                     title: 'Error',
@@ -203,30 +206,70 @@ const ApprovalConfig = ({ approvalId, domainId, stakeholderRole }) => {
     }
 
     return (
-        <div className="approval-config">
-            <div className="header">    
-                <h1>Approval Configuration - {stakeholderRole?.stakeholderName}</h1>
-                <div className="form-buttons">
-                    <button onClick={() => {
-                        if (!currentForm) {
-                            setCurrentForm(mockForm);
-                        }
-                        setShowFormBuilder(true);
-                    }}>
-                        <Icon icon="mdi:pencil" />
-                        Edit Approval Form
-                    </button>
-                    <button onClick={() => {
-                        if (!currentForm) {
-                            setCurrentForm(mockForm);
-                        }
-                        setShowFormViewer(true);
-                    }}>
-                        <Icon icon="mdi:eye" />
-                        View Sample Form
-                    </button>
+        <div className={`approval-config${embedded ? ' approval-config--embedded' : ''}`}>
+            {!embedded && (
+                <div className="header">
+                    <h1>Approval Configuration - {stakeholderRole?.stakeholderName}</h1>
+                    <div className="form-buttons">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!currentForm) {
+                                    setCurrentForm(mockForm);
+                                }
+                                setShowFormBuilder(true);
+                            }}
+                        >
+                            <Icon icon="mdi:pencil" />
+                            Edit Approval Form
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!currentForm) {
+                                    setCurrentForm(mockForm);
+                                }
+                                setShowFormViewer(true);
+                            }}
+                        >
+                            <Icon icon="mdi:eye" />
+                            View Sample Form
+                        </button>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {embedded && (
+                <div className="approval-config-embedded-tools">
+                    <p>Optional sample form for this role (prototype)</p>
+                    <div className="form-buttons">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!currentForm) {
+                                    setCurrentForm(mockForm);
+                                }
+                                setShowFormBuilder(true);
+                            }}
+                        >
+                            <Icon icon="mdi:pencil" />
+                            Edit form
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!currentForm) {
+                                    setCurrentForm(mockForm);
+                                }
+                                setShowFormViewer(true);
+                            }}
+                        >
+                            <Icon icon="mdi:eye" />
+                            Preview
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="config-item">
                 <div className="approval-container">

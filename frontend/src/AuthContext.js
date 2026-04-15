@@ -13,6 +13,47 @@ https://incongruous-reply-44a.notion.site/Frontend-AuthProvider-Component-AuthCo
 
 export const AuthContext = createContext();
 
+function hasNameValue(userLike) {
+    return String(userLike?.name || '').trim().length > 0;
+}
+
+function hasUsernameValue(userLike) {
+    return String(userLike?.username || '').trim().length >= 3;
+}
+
+function hasMissingOnboardingSteps(user, onboardingConfig) {
+    if (!user || !onboardingConfig || onboardingConfig.enabled !== true) return false;
+    const completed = new Set(Array.isArray(user.onboardingCompletedSteps) ? user.onboardingCompletedSteps : []);
+    const responses = user.onboardingResponses && typeof user.onboardingResponses === 'object'
+        ? user.onboardingResponses
+        : {};
+
+    if (onboardingConfig.collectName !== false && !hasNameValue(user)) return true;
+    if (!hasUsernameValue(user)) return true;
+    if (onboardingConfig.collectInterests !== false) {
+        const enforceMin = onboardingConfig.enforceMinInterests !== false;
+        const tags = Array.isArray(user.tags) ? user.tags : [];
+        if (enforceMin) {
+            const min = Number(onboardingConfig.minInterests ?? 1);
+            if (tags.length < min) return true;
+        }
+    }
+
+    const customSteps = Array.isArray(onboardingConfig.customSteps) ? onboardingConfig.customSteps : [];
+    return customSteps.some((step) => {
+        const stepId = String(step?.id || '').trim();
+        if (!stepId) return false;
+        const response = responses[stepId];
+        const hasResponse = Array.isArray(response)
+            ? response.length > 0
+            : String(response || '').trim().length > 0;
+        // Show newly added steps even if optional until acknowledged once.
+        if (!completed.has(stepId) && !hasResponse) return true;
+        if (step.required && !hasResponse) return true;
+        return false;
+    });
+}
+
 export const AuthProvider = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isAuthenticating, setIsAuthenticating] = useState(true); // [1
@@ -137,6 +178,23 @@ export const AuthProvider = ({ children }) => {
                     }
                     setIsAuthenticated(true);
                     getCheckedIn();
+
+                    // Root-configurable onboarding gate for all users missing newly required/unseen steps.
+                    try {
+                        const onboarding = await apiRequest('/org-management/onboarding-config', null, { method: 'GET' });
+                        const isEnabled = onboarding?.success && onboarding?.data?.enabled === true;
+                        const isOnboardPath = window.location.pathname.startsWith('/onboard');
+                        if (isEnabled && hasMissingOnboardingSteps(u, onboarding?.data) && !isOnboardPath) {
+                            const nextPath = window.location.pathname + (window.location.search || '');
+                            const next = nextPath && nextPath !== '/onboard'
+                                ? `?next=${encodeURIComponent(nextPath)}`
+                                : '';
+                            window.location.href = `/onboard${next}`;
+                            return response;
+                        }
+                    } catch (_) {
+                        // If config lookup fails, don't block login.
+                    }
                 }
                 setIsAuthenticating(false);
             } else {

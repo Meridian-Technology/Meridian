@@ -44,7 +44,24 @@ function ProfilePopup({
         setShowPopup(false);
     }, ["profile"]);
 
-    const stakeholderDomainAssignments = useMemo(() => {
+    /** Domains linked to active stakeholder memberships (from validate-token + legacy user fields). */
+    const domainDashboardLinks = useMemo(() => {
+        const fromToken = (user?.stakeholderDomainDashboards || [])
+            .map((row) => ({
+                domainId: String(row.domainId || row._id || '').trim(),
+                domainName: row.domainName || null
+            }))
+            .filter((row) => row.domainId);
+
+        if (fromToken.length) {
+            const seen = new Set();
+            return fromToken.filter((row) => {
+                if (seen.has(row.domainId)) return false;
+                seen.add(row.domainId);
+                return true;
+            });
+        }
+
         const sources = [
             user?.stakeholderAssignments,
             user?.stakeholderRoles,
@@ -64,7 +81,7 @@ function ProfilePopup({
             if (!domainId) return null;
 
             return {
-                domainId,
+                domainId: String(domainId),
                 domainName: assignment?.domainName || assignment?.domain?.name || assignment?.domain_id?.name || null
             };
         }).filter(Boolean);
@@ -162,7 +179,7 @@ function ProfilePopup({
                         </>
                     }
                     {
-                        user && user.roles && user.approvalRoles.includes('root') && 
+                        user && user.roles && (user.approvalRoles || []).includes('root') && 
                         <>
                             <Link to="/root-dashboard">
                                 <div className="menu-item">
@@ -192,40 +209,26 @@ function ProfilePopup({
                             )}
                         </>
                     }
-                    {
-                        user && ((user.approvalRoles && user.approvalRoles.length > 0) || stakeholderDomainAssignments.length > 0) && 
+                    {user && domainDashboardLinks.length > 0 && (
                         <>
-                            <hr/>
-                            <p className="section">APPROVALS</p>
-                            {stakeholderDomainAssignments.map((assignment) => (
-                                <Link to={`/domain-dashboard/${assignment.domainId}`} key={`domain-${assignment.domainId}`}>
+                            <hr />
+                            <p className="section">DOMAIN DASHBOARDS</p>
+                            {domainDashboardLinks.map((assignment) => (
+                                <Link
+                                    to={`/domain-dashboard/${assignment.domainId}`}
+                                    key={`domain-dash-${assignment.domainId}`}
+                                >
                                     <div className="menu-item">
                                         <Icon icon="mdi:domain" />
                                         <p>
-                                            Domain Dashboard
-                                            {assignment.domainName ? ` (${assignment.domainName})` : ''}
+                                            {assignment.domainName || 'Domain'}
+                                            <span className="menu-item-sub">Stakeholder workspace</span>
                                         </p>
                                     </div>
                                 </Link>
                             ))}
-                            {(user.approvalRoles || []).map(
-                                (role) => {
-                                    const url = role === 'root' ? '/root-dashboard' : `/approval-dashboard/${role}` 
-                                    if(role === 'root'){
-                                        return null;
-                                    }
-                                    return(
-                                        <Link to={`${url}`} key={role}>
-                                            <div className="menu-item">
-                                                <Icon icon="fluent:flowchart-24-filled" />
-                                                <p>{role}</p>
-                                            </div>
-                                        </Link>
-                                    )
-                                }
-                            )}
                         </>
-                    }
+                    )}
 
                     <hr />
                     <Link to="">

@@ -49,6 +49,10 @@ export const authenticatedRequest = async (url, options = {}) => {
   }
 };
 
+/**
+ * @param options.params For GET requests, pass a stable object (e.g. from useMemo([])). Inline `{ ... }` changes
+ *   identity every render and will refetch in a tight loop because params is in the memo dependency array.
+ */
 export const useFetch = (url, options = { method: "GET", data: null }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
