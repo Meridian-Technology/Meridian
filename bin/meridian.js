@@ -18,6 +18,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { spawnSync } = require('child_process');
 const { findWorkspaceRoot, getRepoPaths, assertRepoExists } = require('./lib/workspace');
 const {
   isClean,
@@ -61,6 +62,7 @@ function usage() {
   console.log(dim(`  ${sep}`));
   console.log('');
   console.log(cyan('  Commands'));
+  console.log(dim('  ├─ setup        ') + 'Bootstrap local Meridian development');
   console.log(dim('  ├─ status       ') + 'Show repo state and lockfile pin');
   console.log(dim('  ├─ start        ') + 'Create fresh feature branch in both repos');
   console.log(dim('  ├─ switch       ') + 'Switch both repos to existing branch');
@@ -70,6 +72,7 @@ function usage() {
   console.log('');
   console.log(cyan('  Examples'));
   console.log(dim('  meridian start MER-123-Org-Forms'));
+  console.log(dim('  meridian setup'));
   console.log(dim('  meridian start MER-123-Org-Forms ') + cyan('--from-current') + dim('   (create from current branch)'));
   console.log(dim('  meridian switch MER-123-Org-Forms'));
   console.log(dim('  meridian symlink'));
@@ -139,6 +142,82 @@ function resolveWorkspace() {
     process.exit(1);
   }
   return { meridianPath, eventsPath };
+}
+
+function resolveWorkspaceForSetup() {
+  const root = findWorkspaceRoot();
+  if (!root) {
+    console.error('');
+    console.error(red('  Could not find Meridian workspace'));
+    console.error(dim('  Run from Meridian/ or set MERIDIAN_WORKSPACE.'));
+    console.error('');
+    process.exit(1);
+  }
+  const { meridianPath, eventsPath } = getRepoPaths(root);
+  const merCheck = assertRepoExists(meridianPath, 'Meridian');
+  if (!merCheck.ok) {
+    console.error('');
+    console.error(red('  Meridian not found'));
+    console.error(dim(`  ${merCheck.message}`));
+    console.error('');
+    process.exit(1);
+  }
+  return { meridianPath, eventsPath };
+}
+
+function runCommand(command, args, cwd, label) {
+  console.log('');
+  console.log(cyan(`  ${label}`));
+  const res = spawnSync(command, args, { cwd, stdio: 'inherit' });
+  if (res.status !== 0) {
+    console.error('');
+    console.error(red(`  Failed: ${label}`));
+    console.error('');
+    process.exit(res.status || 1);
+  }
+}
+
+function cloneEventsRepo(eventsPath) {
+  runCommand('git', ['clone', EVENTS_CLONE_URL, eventsPath], process.cwd(), 'Cloning Events-Backend');
+}
+
+async function cmdSetup() {
+  const { meridianPath, eventsPath } = resolveWorkspaceForSetup();
+  const eventsCheck = assertRepoExists(eventsPath, 'Events-Backend');
+
+  if (!eventsCheck.ok) {
+    console.log('');
+    console.log(yellow('  Events-Backend not found'));
+    console.log(dim(`  Expected at: ${eventsPath}`));
+    const shouldClone = await promptYesNo('Clone Events-Backend now?');
+    if (!shouldClone) {
+      console.error('');
+      console.error(dim(`  Clone manually: git clone ${EVENTS_CLONE_URL} ${eventsPath}`));
+      console.error('');
+      process.exit(1);
+    }
+    cloneEventsRepo(eventsPath);
+  }
+
+  runCommand('npm', ['install'], meridianPath, 'Installing root dependencies');
+  runCommand('npm', ['install'], path.join(meridianPath, 'frontend'), 'Installing frontend dependencies');
+  runCommand('npm', ['install'], path.join(meridianPath, 'backend'), 'Installing backend dependencies');
+
+  if (!isEventsSymlink(meridianPath)) {
+    const shouldSymlink = await promptYesNo('Symlink backend/events to sibling Events-Backend now?');
+    if (shouldSymlink) {
+      cmdSymlink();
+    } else {
+      console.log('');
+      console.log(yellow('  backend/events is not symlinked'));
+      console.log(dim('  Run ') + cyan('meridian symlink') + dim(' when you are ready to link Events-Backend for local dev.'));
+      console.log('');
+    }
+  }
+
+  console.log(green('  Setup complete.'));
+  console.log(dim('  Next: copy .env files and run ') + cyan('npm run dev'));
+  console.log('');
 }
 
 function isEventsSymlink(meridianPath) {
@@ -648,6 +727,9 @@ async function main() {
   const allowMain = args.includes('--allow-main');
 
   switch (cmd) {
+    case 'setup':
+      await cmdSetup();
+      break;
     case 'status':
       cmdStatus();
       break;
