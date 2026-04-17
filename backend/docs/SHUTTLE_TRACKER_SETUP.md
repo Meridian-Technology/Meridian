@@ -187,7 +187,7 @@ If the mobile app shows "Shuttle tracker is not available for this school":
 If the shuttle API is not accessible:
 - Verify the API URL is correct and accessible
 - Check CORS settings on the shuttle API
-- Ensure the API follows the expected format (see ShuttleTracker.mdx)
+- Ensure the API follows the expected format (see `Meridian-Mintlify/mobile/shuttle-tracker.mdx`, published as `/mobile/shuttle-tracker` in developer docs)
 
 ### Mobile App Not Showing Map
 
