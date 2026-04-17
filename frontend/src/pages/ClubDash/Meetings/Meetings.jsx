@@ -37,6 +37,119 @@ function Meetings(){
                             <span className="stat-label">Meeting Minutes</span>
                         </div>
                     </div>
+                    <HeaderContainer
+                        icon="mdi:calendar-clock"
+                        header="Meetings"
+                        subheader="GBM & Officer Meetings"
+                        right={<button className="plan-meeting-button">+ Plan Meeting</button>}
+                        >
+                        <div className="upcoming-meetings">
+                            <h2 className="section-title">
+                                <Icon icon="mdi:calendar-clock" width={20} />
+                                Upcoming <span className="section-count">(2)</span>
+                            </h2>
+
+                            <div className="meeting-card">
+                                <div className="meeting-card__top">
+                                    <span className="meeting-tag meeting-tag--gbm">
+                                        <Icon icon="mdi:account-group" width={14} /> General Body
+                                    </span>
+                                </div>
+                                <div className="meeting-card__title">General Body Meeting - March</div>
+                                <div className="meeting-card__meta">
+                                    <span><Icon icon="mdi:calendar" width={14} /> 6:00 PM – 8:00 PM</span>
+                                    <span><Icon icon="mdi:map-marker" width={14} /> Student Center Room 301</span>
+                                </div>
+                                <div className="meeting-card__rsvp">
+                                    <span className="rsvp attending"><Icon icon="mdi:check-circle" width={14} /> 42 attending</span>
+                                    <span className="rsvp excused"><Icon icon="mdi:close-circle" width={14} /> 8 excused</span>
+                                    <span className="rsvp no-response"><Icon icon="mdi:help-circle" width={14} /> 15 no response</span>
+                                </div>
+                            </div>
+
+                            <div className="meeting-card">
+                                <div className="meeting-card__top">
+                                    <span className="meeting-tag meeting-tag--officer">Officer</span>
+                                </div>
+                                <div className="meeting-card__title">Officer Meeting - Weekly Sync</div>
+                                <div className="meeting-card__meta">
+                                    <span><Icon icon="mdi:calendar" width={14} /> 2:00 PM – 3:00 PM</span>
+                                    <span>Zoom</span>
+                                </div>
+                                <div className="meeting-card__rsvp">
+                                    <span className="rsvp attending">7 attending</span>
+                                    <span className="rsvp excused">0 excused</span>
+                                    <span className="rsvp no-response">1 no response</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="past-meetings">
+                            <h2 className="section-title">
+                                Past <span className="section-count">(3)</span>
+                            </h2>
+
+                            <div className="meeting-card">
+                                <div className="meeting-card__top">
+                                    <span className="meeting-tag meeting-tag--gbm">General Body</span>
+                                    <div className="meeting-card__badges">
+                                        <span className="badge badge--completed">Completed</span>
+                                        <span className="badge badge--minutes">Minutes</span>
+                                    </div>
+                                </div>
+                                <div className="meeting-card__title">General Body Meeting - February</div>
+                                <div className="meeting-card__meta">
+                                    <span>6:00 PM – 8:00 PM</span>
+                                    <span>Student Center Room 301</span>
+                                </div>
+                                <div className="meeting-card__rsvp">
+                                    <span className="rsvp attending">38 attending</span>
+                                    <span className="rsvp excused">5 excused</span>
+                                    <span className="rsvp no-response">22 no response</span>
+                                </div>
+                            </div>
+
+                            <div className="meeting-card">
+                                <div className="meeting-card__top">
+                                    <span className="meeting-tag meeting-tag--special">Special / Officer</span>
+                                    <div className="meeting-card__badges">
+                                        <span className="badge badge--completed">Completed</span>
+                                        <span className="badge badge--minutes">Minutes</span>
+                                    </div>
+                                </div>
+                                <div className="meeting-card__title">Special Planning Session</div>
+                                <div className="meeting-card__meta">
+                                    <span>4:00 PM – 6:00 PM</span>
+                                    <span>Conference Room A</span>
+                                </div>
+                                <div className="meeting-card__rsvp">
+                                    <span className="rsvp attending">5 attending</span>
+                                    <span className="rsvp excused">2 excused</span>
+                                    <span className="rsvp no-response">0 no response</span>
+                                </div>
+                            </div>
+
+                            <div className="meeting-card">
+                                <div className="meeting-card__top">
+                                    <span className="meeting-tag meeting-tag--officer">Officer</span>
+                                    <div className="meeting-card__badges">
+                                        <span className="badge badge--completed">Completed</span>
+                                        <span className="badge badge--minutes">Minutes</span>
+                                    </div>
+                                </div>
+                                <div className="meeting-card__title">Officer Meeting - Mar 3</div>
+                                <div className="meeting-card__meta">
+                                    <span>2:00 PM – 3:00 PM</span>
+                                    <span>Zoom</span>
+                                </div>
+                                <div className="meeting-card__rsvp">
+                                    <span className="rsvp attending">8 attending</span>
+                                    <span className="rsvp excused">0 excused</span>
+                                    <span className="rsvp no-response">0 no response</span>
+                                </div>
+                            </div>
+                            </div>
+                    </HeaderContainer>
                 </div>
             )
         },
@@ -179,14 +292,6 @@ function Meetings(){
                     tabPosition="top"
                     tabStyle="default"
                 />
-                <HeaderContainer
-                    icon="mdi:calendar-clock"
-                    header="Meetings"
-                    subheader="GBM & Officer Meetings"
-                    right={<button className="plan-meeting-button">+ Plan Meeting</button>}
-                >
-                    <div className="upcoming-meetings"></div>
-                </HeaderContainer>
             </div>
         </div>
     );

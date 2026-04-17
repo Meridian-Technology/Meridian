@@ -100,17 +100,18 @@
                 gap: 4px;
                 color: #6b7280;
                 font-size: 0.85rem;
-
-                .location-icon {
-                    font-size: 0.75rem;
-                }
             }
         }
     }
-    
 }
+
+// ── Overview Tab ─────────────────────────────────────────────
 .overview-content {
-    padding-top: 1.25rem; 
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding-top: 1.25rem;
+
     .stat-cards {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -150,6 +151,137 @@
     }
 }
 
+// ── Upcoming & Past Meetings ──────────────────────────────────
+.upcoming-meetings,
+.past-meetings {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 1rem 1.5rem 1rem 1.5rem;
+}
+
+.past-meetings {
+    margin-top: 8px;
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 4px 0;
+
+    .section-count {
+        font-weight: 400;
+        color: #6b7280;
+    }
+}
+
+.meeting-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 1.25rem;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid var(--lighterborder);
+
+    &__top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    &__title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text);
+    }
+
+    &__meta {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 0.85rem;
+        color: #6b7280;
+
+        span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+    }
+
+    &__badges {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    &__rsvp {
+        display: flex;
+        gap: 16px;
+        font-size: 0.85rem;
+    }
+}
+
+// ── Meeting Tags ──────────────────────────────────────────────
+.meeting-tag {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    &--gbm {
+        background: rgba(197, 246, 197, 0.4);
+        color: rgb(30, 110, 44);
+    }
+    &--officer {
+        background: rgba(197, 220, 255, 0.4);
+        color: rgb(37, 99, 180);
+    }
+    &--special {
+        background: rgba(255, 240, 180, 0.5);
+        color: rgb(130, 90, 10);
+    }
+}
+
+// ── Badges ────────────────────────────────────────────────────
+.badge {
+    font-size: 0.75rem;
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-weight: 500;
+
+    &--completed {
+        background: #f3f4f6;
+        color: #374151;
+    }
+    &--minutes {
+        background: transparent;
+        color: rgb(30, 110, 44);
+        cursor: pointer;
+        &:hover { text-decoration: underline; }
+    }
+}
+
+// ── RSVP Status Colors ────────────────────────────────────────
+.rsvp {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    &.attending   { color: rgb(30, 110, 44); }
+    &.excused     { color: #6b7280; }
+    &.no-response { color: #9ca3af; }
+}
+
+// ── Attendance Tab ────────────────────────────────────────────
 .attendance-content {
     padding-top: 1.25rem;
     display: flex;
@@ -215,15 +347,9 @@
                     gap: 8px;
                     font-size: 0.875rem;
 
-                    &.attended {
-                        color: rgb(30, 110, 44);
-                    }
-                    &.excused {
-                        color: #6b7280;
-                    }
-                    &.unexcused {
-                        color: #ef4444;
-                    }
+                    &.attended  { color: rgb(30, 110, 44); }
+                    &.excused   { color: #6b7280; }
+                    &.unexcused { color: #ef4444; }
                 }
             }
 
@@ -249,10 +375,7 @@
                 font-size: 0.85rem;
                 color: rgb(30, 110, 44);
                 cursor: pointer;
-
-                &:hover {
-                    text-decoration: underline;
-                }
+                &:hover { text-decoration: underline; }
             }
         }
     }
