@@ -1,4 +1,35 @@
 .platform-admins-page {
+  .platform-admins-auto-claim {
+    margin-bottom: 1.5rem;
+
+    h2 {
+      margin: 0 0 0.35rem;
+      font-size: 1.05rem;
+    }
+  }
+
+  .platform-admins-auto-claim__label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    cursor: pointer;
+
+    input:disabled {
+      cursor: not-allowed;
+    }
+
+    .spin {
+      animation: platform-admins-spin 0.8s linear infinite;
+    }
+  }
+
+  @keyframes platform-admins-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   .platform-admins-error {
     color: var(--error, #c00);
     margin-bottom: 1rem;

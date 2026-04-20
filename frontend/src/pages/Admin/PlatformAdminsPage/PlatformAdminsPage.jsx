@@ -1,16 +1,21 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { Icon } from '@iconify-icon/react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { setTenantConfigCache } from '../../../config/tenantRedirect';
+import { useNotification } from '../../../NotificationContext';
+import apiRequest from '../../../utils/postRequest';
 import GradientHeader from '../../../assets/Gradients/ApprovalGrad.png';
 import '../General/General.scss';
 import './PlatformAdminsPage.scss';
 
 function PlatformAdminsPage() {
+  const { addNotification } = useNotification();
   const [addEmail, setAddEmail] = useState('');
   const [adding, setAdding] = useState(false);
   const [mutationError, setMutationError] = useState(null);
   const [tenantDrafts, setTenantDrafts] = useState({});
   const [savingTenants, setSavingTenants] = useState(false);
+  const [savingAutoClaim, setSavingAutoClaim] = useState(false);
 
   const { data: listResponse, loading, error: fetchError, refetch } = useFetch('/admin/platform-admins');
   const list = listResponse?.success ? (listResponse.data || []) : [];
@@ -21,6 +26,27 @@ function PlatformAdminsPage() {
     refetch: refetchTenantConfig,
   } = useFetch('/admin/tenant-config');
   const tenantRows = tenantConfigResponse?.success ? (tenantConfigResponse.data?.tenants || []) : [];
+
+  const { data: orgConfigResponse, refetch: refetchOrgConfig } = useFetch('/org-management/config');
+  const orgConfig = orgConfigResponse?.data;
+  const autoClaimEnabled = orgConfig?.autoClaimEnabled ?? false;
+
+  const handleAutoClaimToggle = useCallback(async (checked) => {
+    setSavingAutoClaim(true);
+    try {
+      const res = await apiRequest('/org-management/config', { autoClaimEnabled: checked }, { method: 'PUT' });
+      if (res?.success) {
+        addNotification({ title: 'Saved', message: 'Auto-claim setting updated', type: 'success' });
+        refetchOrgConfig();
+      } else {
+        addNotification({ title: 'Error', message: res?.message || 'Failed to save', type: 'error' });
+      }
+    } catch (e) {
+      addNotification({ title: 'Error', message: e?.message || 'Failed to save', type: 'error' });
+    } finally {
+      setSavingAutoClaim(false);
+    }
+  }, [addNotification, refetchOrgConfig]);
 
   useEffect(() => {
     const nextDrafts = {};
@@ -117,6 +143,23 @@ function PlatformAdminsPage() {
       </div>
       <div className="general-content">
         {error && <div className="platform-admins-error">{error}</div>}
+        <div className="admin-migration-section platform-admins-auto-claim">
+          <h2>Auto-claim event registrations</h2>
+          <p className="admin-migration-hint">
+            When enabled, anonymous event registrations are automatically linked to user accounts when they sign up
+            with a matching email. Applies tenant-wide to events that use registration forms.
+          </p>
+          <label className="platform-admins-auto-claim__label">
+            <input
+              type="checkbox"
+              checked={autoClaimEnabled}
+              disabled={savingAutoClaim}
+              onChange={(e) => handleAutoClaimToggle(e.target.checked)}
+            />
+            <span>Auto-claim registrations when user signs up with matching email</span>
+            {savingAutoClaim ? <Icon icon="mdi:loading" className="spin" /> : null}
+          </label>
+        </div>
         <form onSubmit={handleAdd} className="platform-admins-add">
           <input
             type="email"
