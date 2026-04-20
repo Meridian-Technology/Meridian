@@ -339,6 +339,11 @@ const OrgSchema= new Schema({
         ref: 'User',
         default: null
     },
+    /** Enabled per-org beta feature keys (validated on write against platform registry). */
+    betaFeatureKeys: {
+        type: [String],
+        default: []
+    },
     /** Custom task hub / event task Kanban columns (max 10). Empty/absent = platform defaults. */
     taskBoardStatuses: {
         type: [{

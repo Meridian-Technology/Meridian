@@ -22,6 +22,10 @@ const {
     getAllowedStatusKeys,
     DEFAULT_TASK_BOARD_STATUSES
 } = require('../services/taskBoardStatusUtils');
+const {
+    ORG_BETA_FEATURE_ORG_TASKS,
+    orgHasBetaFeature
+} = require('../constants/orgBetaFeatures');
 
 function toBoolean(value, defaultValue = false) {
     if (value === undefined || value === null || value === '') return defaultValue;
@@ -180,6 +184,26 @@ async function loadOrgTaskBoardConfig(models, orgId) {
     if (!models?.Org) return DEFAULT_TASK_BOARD_STATUSES;
     const org = await models.Org.findById(asObjectId(orgId)).select('taskBoardStatuses').lean();
     return getResolvedTaskBoardStatuses(org);
+}
+
+/** Returns false if response was already sent (404/403). */
+async function assertOrgTasksHubBeta(req, res, orgId) {
+    const models = getModels(req, 'Org');
+    const org = await models.Org.findById(asObjectId(orgId)).select('betaFeatureKeys').lean();
+    if (!org) {
+        res.status(404).json({ success: false, message: 'Organization not found' });
+        return false;
+    }
+    if (!orgHasBetaFeature(org, ORG_BETA_FEATURE_ORG_TASKS)) {
+        res.status(403).json({
+            success: false,
+            code: 'BETA_FEATURE_DISABLED',
+            featureKey: ORG_BETA_FEATURE_ORG_TASKS,
+            message: 'Organization task hub is not enabled for this organization'
+        });
+        return false;
+    }
+    return true;
 }
 
 async function ensureOrgEventAccess(models, orgId, eventId) {
@@ -448,6 +472,7 @@ router.get('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), as
     const models = getModels(req, 'Task', 'Event', 'Org');
 
     try {
+        if (!(await assertOrgTasksHubBeta(req, res, orgId))) return;
         const tasks = await listTasks(models, orgId, {
             eventId: eventId === 'all' ? undefined : eventId,
             status,
@@ -485,6 +510,7 @@ router.get('/:orgId/tasks/hub/:taskId', verifyToken, requireEventManagement('org
     const models = getModels(req, 'Task', 'Org');
 
     try {
+        if (!(await assertOrgTasksHubBeta(req, res, orgId))) return;
         const task = await findOneTaskDto(models, orgId, taskId, null);
         if (!task) {
             return res.status(404).json({ success: false, message: 'Task not found' });
@@ -503,6 +529,7 @@ router.post('/:orgId/tasks/hub', verifyToken, requireEventManagement('orgId'), a
     const models = getModels(req, 'Task', 'Org');
 
     try {
+        if (!(await assertOrgTasksHubBeta(req, res, orgId))) return;
         if (!payload.title || !String(payload.title).trim()) {
             return res.status(400).json({ success: false, message: 'Task title is required' });
         }
@@ -549,6 +576,7 @@ router.put('/:orgId/tasks/hub/column-order', verifyToken, requireEventManagement
     const models = getModels(req, 'Task');
 
     try {
+        if (!(await assertOrgTasksHubBeta(req, res, orgId))) return;
         if (!Array.isArray(taskIds)) {
             return res.status(400).json({ success: false, message: 'taskIds must be an array' });
         }
@@ -567,6 +595,7 @@ router.put('/:orgId/tasks/hub/:taskId', verifyToken, requireEventManagement('org
     const models = getModels(req, 'Task', 'Event', 'Org');
 
     try {
+        if (!(await assertOrgTasksHubBeta(req, res, orgId))) return;
         const task = await models.Task.findOne({
             _id: asObjectId(taskId),
             orgId: asObjectId(orgId)
@@ -600,6 +629,7 @@ router.delete('/:orgId/tasks/hub/:taskId', verifyToken, requireEventManagement('
     const { orgId, taskId } = req.params;
     const models = getModels(req, 'Task');
     try {
+        if (!(await assertOrgTasksHubBeta(req, res, orgId))) return;
         const deleted = await models.Task.findOneAndDelete({
             _id: asObjectId(taskId),
             orgId: asObjectId(orgId)

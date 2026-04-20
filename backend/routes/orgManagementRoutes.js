@@ -18,6 +18,10 @@ const adminTenantSummaryService = require('../services/adminTenantSummaryService
 const adminTenantEventsService = require('../services/adminTenantEventsService');
 const adminTenantEventOperatorService = require('../services/adminTenantEventOperatorService');
 const rootOperatorUsersService = require('../services/rootOperatorUsersService');
+const {
+    validateBetaFeatureKeysArray,
+    getBetaFeatureCatalogForApi
+} = require('../constants/orgBetaFeatures');
 
 const router = express.Router();
 
@@ -359,6 +363,22 @@ router.get('/config', verifyToken, async (req, res) => {
             success: false,
             message: 'Error fetching management configuration',
             error: error.message
+        });
+    }
+});
+
+// Catalog of org-level beta features (Atlas / admin tooling)
+router.get('/beta-feature-catalog', verifyToken, requireAdmin, (req, res) => {
+    try {
+        res.status(200).json({
+            success: true,
+            data: { features: getBetaFeatureCatalogForApi() }
+        });
+    } catch (error) {
+        console.error('GET /org-management/beta-feature-catalog failed:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to load beta feature catalog'
         });
     }
 });
@@ -2336,6 +2356,48 @@ router.put('/organizations/:orgId', verifyToken, requireAdmin, async (req, res) 
         res.status(500).json({
             success: false,
             message: 'Error updating organization',
+            error: error.message
+        });
+    }
+});
+
+// Replace enabled per-org beta feature keys (validated against platform registry)
+router.patch('/organizations/:orgId/beta-features', verifyToken, requireAdmin, async (req, res) => {
+    const { Org } = getModels(req, 'Org');
+    const { orgId } = req.params;
+    const enabledKeys = req.body && req.body.enabledKeys;
+
+    const parsed = validateBetaFeatureKeysArray(enabledKeys);
+    if (!parsed.ok) {
+        return res.status(400).json({
+            success: false,
+            message: parsed.error
+        });
+    }
+
+    try {
+        const org = await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found'
+            });
+        }
+
+        org.betaFeatureKeys = parsed.keys;
+        await org.save();
+
+        console.log(`PATCH: /org-management/organizations/${orgId}/beta-features`);
+        res.status(200).json({
+            success: true,
+            message: 'Beta features updated',
+            data: org
+        });
+    } catch (error) {
+        console.error('Error updating org beta features:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating beta features',
             error: error.message
         });
     }
