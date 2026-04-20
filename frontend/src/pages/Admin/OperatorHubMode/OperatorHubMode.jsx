@@ -244,7 +244,7 @@ function OperatorHubMode() {
     };
 
     return (
-        <div className="operator-hub-mode">
+        <div className="operator-hub-mode dash">
             <Popup
                 isOpen={confirmVariant != null}
                 onClose={closeConfirmModal}
@@ -262,70 +262,72 @@ function OperatorHubMode() {
                 />
             </Popup>
             <img src={GradientHeader} alt="" className="grad" />
-            <div className="simple-header">
+            <header className="header">
                 <h1>Community organizer</h1>
+            </header>
+            <div className="content">
                 <p className="operator-hub-mode__lede">
                     Choose how staff experience Meridian on <strong>/root-dashboard</strong>. Community organizer
                     mode is the home for makerspaces and smaller managed communities; classic mode keeps the full
                     multi-app setup. Club and member apps are unchanged.
                 </p>
-            </div>
-            <div className="operator-hub-mode__content">
-                {loading && !config ? (
-                    <p className="operator-hub-mode__loading">
-                        <Icon icon="mdi:loading" className="spin" /> Loading…
-                    </p>
-                ) : (
-                    <>
-                        <ul className="operator-hub-mode__options" role="radiogroup" aria-label="Root dashboard mode">
-                            {MODES.map((m) => (
-                                <li key={m.value}>
-                                    <button
-                                        type="button"
-                                        className={`operator-hub-mode__card ${current === m.value ? 'is-selected' : ''}`}
-                                        onClick={() => handleSelect(m.value)}
-                                        disabled={saving}
-                                        aria-pressed={current === m.value}
-                                    >
-                                        <span className="operator-hub-mode__card-title">{m.title}</span>
-                                        <span className="operator-hub-mode__card-desc">{m.description}</span>
-                                        {current === m.value && (
-                                            <span className="operator-hub-mode__badge">
-                                                <Icon icon="mdi:check-circle" /> Current
-                                            </span>
-                                        )}
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                        <div className="operator-hub-mode__defaults">
-                            <label className="operator-hub-mode__defaults-label">
-                                <input
-                                    type="checkbox"
-                                    checked={applySuggestedDefaults}
-                                    onChange={(e) => setApplySuggestedDefaults(e.target.checked)}
-                                    disabled={saving || current === 'engagement_hub'}
-                                />
-                                <span>
-                                    When switching <strong>to</strong> Community organizer, also apply suggested
-                                    low-ceremony defaults (turn off org approval gate, simplify allowed request types to
-                                    verification only, and set verification as not required). You can change these later
-                                    under org management configuration.
-                                </span>
-                            </label>
-                            {applySuggestedDefaults && current !== 'engagement_hub' && (
-                                <p className="operator-hub-mode__warning" role="note">
-                                    <Icon icon="mdi:alert-outline" aria-hidden />
+                <div className="operator-hub-mode__content">
+                    {loading && !config ? (
+                        <p className="operator-hub-mode__loading">
+                            <Icon icon="mdi:loading" className="spin" /> Loading…
+                        </p>
+                    ) : (
+                        <>
+                            <ul className="operator-hub-mode__options" role="radiogroup" aria-label="Root dashboard mode">
+                                {MODES.map((m) => (
+                                    <li key={m.value}>
+                                        <button
+                                            type="button"
+                                            className={`operator-hub-mode__card ${current === m.value ? 'is-selected' : ''}`}
+                                            onClick={() => handleSelect(m.value)}
+                                            disabled={saving}
+                                            aria-pressed={current === m.value}
+                                        >
+                                            <span className="operator-hub-mode__card-title">{m.title}</span>
+                                            <span className="operator-hub-mode__card-desc">{m.description}</span>
+                                            {current === m.value && (
+                                                <span className="operator-hub-mode__badge">
+                                                    <Icon icon="mdi:check-circle" /> Current
+                                                </span>
+                                            )}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="operator-hub-mode__defaults">
+                                <label className="operator-hub-mode__defaults-label">
+                                    <input
+                                        type="checkbox"
+                                        checked={applySuggestedDefaults}
+                                        onChange={(e) => setApplySuggestedDefaults(e.target.checked)}
+                                        disabled={saving || current === 'engagement_hub'}
+                                    />
                                     <span>
-                                        Switching <strong>back</strong> to Classic later will <strong>not</strong> undo
-                                        these defaults—you will need to restore org approval, request types, and
-                                        verification settings manually if required.
+                                        When switching <strong>to</strong> Community organizer, also apply suggested
+                                        low-ceremony defaults (turn off org approval gate, simplify allowed request types to
+                                        verification only, and set verification as not required). You can change these later
+                                        under org management configuration.
                                     </span>
-                                </p>
-                            )}
-                        </div>
-                    </>
-                )}
+                                </label>
+                                {applySuggestedDefaults && current !== 'engagement_hub' && (
+                                    <p className="operator-hub-mode__warning" role="note">
+                                        <Icon icon="mdi:alert-outline" aria-hidden />
+                                        <span>
+                                            Switching <strong>back</strong> to Classic later will <strong>not</strong> undo
+                                            these defaults—you will need to restore org approval, request types, and
+                                            verification settings manually if required.
+                                        </span>
+                                    </p>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
     );
