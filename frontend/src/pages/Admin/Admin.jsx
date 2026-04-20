@@ -14,6 +14,7 @@ import AnalyticsDashboard from '../FeatureAdmin/AnalyticsDashboard/AnalyticsDash
 import MobileAnalyticsDashboard from '../FeatureAdmin/MobileAnalyticsDashboard/MobileAnalyticsDashboard';
 import UserJourneyAnalytics from '../FeatureAdmin/UserJourneyAnalytics/UserJourneyAnalytics';
 import IndividualUserJourney from '../FeatureAdmin/IndividualUserJourney/IndividualUserJourney';
+import OrgBetaFeatures from '../FeatureAdmin/OrgManagement/OrgBetaFeatures/OrgBetaFeatures';
 
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 
@@ -42,6 +43,11 @@ function Admin(){
             label: 'Community organizer',
             icon: 'mdi:view-dashboard-variant',
             element: <OperatorHubMode />,
+        },
+        {
+            label: 'Beta features',
+            icon: 'mdi:flask-outline',
+            element: <OrgBetaFeatures />,
         },
         { 
             label: 'Analytics', 
