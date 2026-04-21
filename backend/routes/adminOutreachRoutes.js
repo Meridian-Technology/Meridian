@@ -11,6 +11,50 @@ router.use(verifyToken);
 router.use(authorizeRoles(...OUTREACH_ROLES));
 
 /**
+ * GET /admin/outreach/configurations — get outreach system configuration
+ */
+router.get('/configurations', async (req, res) => {
+    try {
+        const { OutreachSystemConfig } = getModels(req, 'OutreachSystemConfig');
+        let config = await OutreachSystemConfig.findOne({}).lean();
+        if (!config) {
+            const created = await OutreachSystemConfig.create({ updatedBy: req.user.userId });
+            config = created.toObject();
+        }
+        return res.json({ success: true, data: config });
+    } catch (err) {
+        console.error('GET /admin/outreach/configurations', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+/**
+ * PUT /admin/outreach/configurations — update outreach system configuration
+ */
+router.put('/configurations', async (req, res) => {
+    try {
+        const { OutreachSystemConfig } = getModels(req, 'OutreachSystemConfig');
+        const allowed = ['attributes', 'dataSource', 'roles', 'delivery'];
+        const payload = {};
+        for (const key of allowed) {
+            if (req.body[key] !== undefined) payload[key] = req.body[key];
+        }
+        payload.updatedBy = req.user.userId;
+
+        const config = await OutreachSystemConfig.findOneAndUpdate(
+            {},
+            { $set: payload },
+            { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
+        );
+
+        return res.json({ success: true, data: config, message: 'Outreach configuration updated' });
+    } catch (err) {
+        console.error('PUT /admin/outreach/configurations', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+/**
  * POST /admin/outreach/audiences — create a saved audience
  */
 router.post('/audiences', async (req, res) => {
