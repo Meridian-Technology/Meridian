@@ -176,3 +176,36 @@
         }
     }
 }
+
+.new-outreach-toolbar .search-input.new-outreach-select {
+    cursor: pointer;
+}
+
+.new-outreach-channel {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    margin-top: 4px;
+}
+
+.new-outreach-banner {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.new-outreach-banner-error {
+    background: rgba(198, 40, 40, 0.08);
+    color: #c62828;
+}
+
+.new-outreach-banner-success {
+    background: rgba(46, 125, 50, 0.1);
+    color: #1b5e20;
+}
