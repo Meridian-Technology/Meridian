@@ -1,7 +1,9 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const QRCode = require('qrcode');
-const { generateSecret, generateURI, verify } = require('otplib');
+const { TOTP } = require('@otplib/totp');
+const { NodeCryptoPlugin } = require('@otplib/plugin-crypto-node');
+const { ScureBase32Plugin } = require('@otplib/plugin-base32-scure');
 const {
     generateRegistrationOptions,
     verifyRegistrationResponse,
@@ -17,6 +19,12 @@ const CHALLENGE_MAX_AGE_MS = 5 * 60 * 1000;
 
 const loginPasskeyChallenges = new Map();
 const registrationPasskeyChallenges = new Map();
+
+const totp = new TOTP({
+    issuer: MFA_ISSUER,
+    crypto: new NodeCryptoPlugin(),
+    base32: new ScureBase32Plugin(),
+});
 
 function getMfaJwtSecret() {
     return process.env.JWT_MFA_SECRET || process.env.JWT_SECRET;
@@ -188,12 +196,11 @@ function getPasskeySummary(tenantUser) {
 }
 
 async function createTotpEnrollment(tenantUser) {
-    const secret = generateSecret();
+    const secret = totp.generateSecret();
     const encryptedSecret = encryptSecret(secret);
     const label = tenantUser.email || tenantUser.username || String(tenantUser._id);
-    const otpauthUrl = generateURI({
+    const otpauthUrl = totp.toURI({
         secret,
-        issuer: MFA_ISSUER,
         label,
     });
     const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
@@ -217,7 +224,7 @@ async function enableTotpEnrollment(tenantUser, code) {
     }
     const secret = decryptSecret(encryptedSecret);
     const normalizedCode = normalizeTotpCode(code);
-    const result = await verify({ token: normalizedCode, secret, window: 1 });
+    const result = await totp.verify(normalizedCode, { secret, epochTolerance: 30 });
     const valid = Boolean(result?.valid);
     if (!valid) {
         throw new Error('Invalid authenticator code');
@@ -237,11 +244,7 @@ async function verifyTotpForLogin(tenantUser, code) {
         return false;
     }
     const secret = decryptSecret(encryptedSecret);
-    const result = await verify({
-        token: normalizeTotpCode(code),
-        secret,
-        window: 1,
-    });
+    const result = await totp.verify(normalizeTotpCode(code), { secret, epochTolerance: 30 });
     const valid = Boolean(result?.valid);
     if (valid) {
         tenantUser.adminMfa.totp.lastUsedAt = new Date();

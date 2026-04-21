@@ -65,42 +65,66 @@ const bugData = [
         "date": 'Jan 7, 2026',
         "bugNumber": '#BT-2041',
         "priority": 'Critical',
-        "status": 'In Progress'
+        "status": 'In Progress',
+        "tags": ['User Interface', 'Dashboard'],
+        "assignee": 'James Liu',
+        "description": 'Dashboard does not load when I log into my RPI email. It shows a blank white screen.',
+        "image": null,
     },
     {
         "title": 'Unable to Submit Application',
         "date": 'Jan 7, 2026',
         "bugNumber": '#BT-2041',
         "priority": 'Critical',
-        "status": 'In review'
+        "status": 'In review',
+        "tags": ['Forms', 'Application'],
+        "assignee": '—',
+        "description": 'On the final step, clicking Submit does nothing. No error message appears and the application is not saved.',
+        "image": null,
     },
     {
         "title": 'Not letting me log in',
         "date": 'Apr 7, 2026',
         "bugNumber": '#BT-2044',
         "priority": 'Critical',
-        "status": 'Unopened'
+        "status": 'Unopened',
+        "tags": ['Auth', 'Login'],
+        "assignee": '—',
+        "description": 'Login page loops back after entering credentials. User never reaches the dashboard.',
+        "image": null,
     },
     {
         "title": 'Cannot add my club, and cannot join any clubs',
         "date": 'Mar 7, 2026',
         "bugNumber": '#BT-2043',
         "priority": 'High',
-        "status": 'In Progress'
+        "status": 'In Progress',
+        "tags": ['Clubs', 'Permissions'],
+        "assignee": '—',
+        "description": 'Creating a club fails with an error, and joining any club shows a permission error even for valid users.',
+        "image": null,
     },
     {
         "title": 'Cannot upload club meeting',
         "date": 'Feb 7, 2026',
         "bugNumber": '#BT-2042',
         "priority": 'Medium',
-        "status": 'Unopened'
+        "status": 'Unopened',
+        "tags": ['Uploads', 'Clubs'],
+        "assignee": '—',
+        "description": 'Uploading a meeting agenda PDF fails. Spinner runs forever and no file appears afterwards.',
+        "image": null,
     },
     {
         "title": 'Cannot reserve this classroom for the entire campus',
         "date": 'Jan 7, 2026',
         "bugNumber": '#BT-2041',
         "priority": 'Low',
-        "status": 'In Review'
+        "status": 'In Review',
+        "tags": ['Reservations', 'Scheduling'],
+        "assignee": '—',
+        "description": 'Reservation form rejects valid time ranges with “conflict” even when no other reservations exist.',
+        "image": null,
     },
 
 ]
@@ -129,12 +153,13 @@ function BugReportPanel() {
                 {
                     bugData.map((item) =>
                          <BugCard 
+                            key={item.bugNumber + item.title}
                             title={item.title} 
                             date={item.date} 
                             bugNumber={item.bugNumber} 
                             priority={item.priority} 
                             status={item.status}
-                            onInteract={()=>showOverlay(<IndividualBugReport/>)}
+                            onInteract={() => showOverlay(<IndividualBugReport bugReport={item} />)}
                         />)
                 }
                 </HeaderContainer>

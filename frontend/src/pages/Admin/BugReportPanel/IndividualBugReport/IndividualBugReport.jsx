@@ -4,17 +4,6 @@ import { useGradient } from '../../../../hooks/useGradient';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import { useDashboardOverlay } from '../../../../hooks/useDashboardOverlay';
 
-const bugData = {
-    "title": 'Dashboard not loading',
-    "bugNumber": '#BT-2041',
-    "priority": 'Critical',
-    "status": 'In Progress',
-    "tags":[ 'User Interface'],
-    "assignee": 'James Liu',
-    "description": 'Dashboard does not load when I log into RPI email. It shows a blank white screen for me.',
-    "image": 'image'
-}
-
 const activityLogData = [
     {
         id: 'a1',
@@ -53,10 +42,19 @@ const analyticData = [
     }
 ]
 
-function IndividualBugReport(title, bugNumber, priority, status, tags, assignee, description, image, onBack) { 
+function IndividualBugReport({ bugReport }) {
     const { AdminGrad } = useGradient();
     const analytics = analyticData[0];
     const {hideOverlay} = useDashboardOverlay();
+
+    const bugData = bugReport ?? {};
+    const title = bugData.title ?? 'Bug report';
+    const bugNumber = bugData.bugNumber ?? '—';
+    const priority = bugData.priority ?? 'Low';
+    const status = bugData.status ?? 'Unopened';
+    const tags = bugData.tags ?? [];
+    const description = bugData.description ?? '—';
+    const image = bugData.image ?? null;
 
     return (
         <div className="individual-bug-report dash">
@@ -75,18 +73,18 @@ function IndividualBugReport(title, bugNumber, priority, status, tags, assignee,
                     <div className="report_details">
                         <div>
                             <h1 className="report-title">
-                                {bugData.title}
+                                {title}
                             </h1>
                             <div className="report-meta">
                                 <div className="bug-number-priority-status">
                                     <h3>
-                                        Bug Report {bugData.bugNumber}
+                                        Bug Report {bugNumber}
                                     </h3>
-                                    <h4 className={`priority-pill ${bugData.priority.toLowerCase()}`}>{bugData.priority}</h4>
-                                    <h4 className="status-pill">{bugData.status}</h4>
+                                    <h4 className={`priority-pill ${String(priority).toLowerCase()}`}>{priority}</h4>
+                                    <h4 className="status-pill">{status}</h4>
                                 </div>
                                 <div className="bug-meta-row bug-meta-row--tags">
-                                    {bugData?.tags?.map((tag) => (
+                                    {tags?.map((tag) => (
                                         <span key={tag} className="tag-pill">{tag}</span>
                                     ))}
                                 </div>
@@ -96,9 +94,9 @@ function IndividualBugReport(title, bugNumber, priority, status, tags, assignee,
                             </div>
                             <p className="report-description">
                                 <span className="report-field-label">Description:</span>{' '}
-                                {bugData.description}
+                                {description}
                             </p>
-                            <h1>{bugData.image}</h1>
+                            {image ? <h1>{image}</h1> : null}
                         </div>
                     </div>
 
