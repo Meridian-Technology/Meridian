@@ -820,11 +820,11 @@ function Landing() {
                             </div>
                             <div className="cred__stats">
                                 <div className="cred__stat">
-                                    <div className="cred__stat-value">8,000+</div>
+                                    <div className="cred__stat-value">13,000+</div>
                                     <div className="cred__stat-label">unique visitors</div>
                                 </div>
                                 <div className="cred__stat">
-                                    <div className="cred__stat-value">13%</div>
+                                    <div className="cred__stat-value">31%</div>
                                     <div className="cred__stat-label">of campus uses weekly</div>
                                 </div>
                                 <div className="cred__stat">
@@ -832,8 +832,8 @@ function Landing() {
                                     <div className="cred__stat-label">events processed</div>
                                 </div>
                                 <div className="cred__stat">
-                                    <div className="cred__stat-value">157</div>
-                                    <div className="cred__stat-label">classrooms integrated</div>
+                                    <div className="cred__stat-value">30+</div>
+                                    <div className="cred__stat-label">clubs onboarded</div>
                                 </div>
                             </div>
                         </div>
