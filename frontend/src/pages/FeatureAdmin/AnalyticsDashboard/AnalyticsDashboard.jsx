@@ -1,38 +1,20 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useFetch } from '../../../hooks/useFetch';
 import { Icon } from '@iconify-icon/react';
 import ProportionalBarList from '../../../components/ProportionalBarList/ProportionalBarList';
+import { formatAnalyticsDuration, formatAnalyticsNumber } from '../../../utils/analyticsDashboardUtils';
 import './AnalyticsDashboard.scss';
 
 function AnalyticsDashboard() {
     const [timeRange, setTimeRange] = useState('30d');
-    const { data: dashboardData, loading, error, refetch } = useFetch(`/dashboard/all?timeRange=${timeRange}&platform=web`);
-    
-    const formatNumber = (num) => {
-        if (num === null || num === undefined) return '0';
-        return new Intl.NumberFormat().format(num);
-    };
+    const dashboardParams = useMemo(() => ({ timeRange, platform: 'web' }), [timeRange]);
+    const { data: dashboardData, loading, error, refetch } = useFetch('/dashboard/all', {
+        method: 'GET',
+        params: dashboardParams
+    });
 
-    const formatDuration = (seconds) => {
-        if (!seconds) return '0s';
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        if (mins > 0) {
-            return `${mins}m ${secs}s`;
-        }
-        return `${secs}s`;
-    };
-
-    const getTimeRangeLabel = (range) => {
-        const labels = {
-            '1h': 'Last Hour',
-            '24h': 'Last 24 Hours',
-            '7d': 'Last 7 Days',
-            '30d': 'Last 30 Days',
-            '90d': 'Last 90 Days'
-        };
-        return labels[range] || range;
-    };
+    const formatNumber = formatAnalyticsNumber;
+    const formatDuration = formatAnalyticsDuration;
 
     if (loading) {
         return (

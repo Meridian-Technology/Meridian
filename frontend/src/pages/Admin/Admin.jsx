@@ -15,6 +15,7 @@ import MobileAnalyticsDashboard from '../FeatureAdmin/MobileAnalyticsDashboard/M
 import UserJourneyAnalytics from '../FeatureAdmin/UserJourneyAnalytics/UserJourneyAnalytics';
 import IndividualUserJourney from '../FeatureAdmin/IndividualUserJourney/IndividualUserJourney';
 import OrgBetaFeatures from '../FeatureAdmin/OrgManagement/OrgBetaFeatures/OrgBetaFeatures';
+import AdminTenantDropdown from './AdminTenantDropdown/AdminTenantDropdown';
 
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 
@@ -107,6 +108,7 @@ function Admin(){
             menuItems={menuItems} 
             additionalClass='admin' 
             logo={AdminLogo} 
+            middleItem={<AdminTenantDropdown />}
             onBack={()=>navigate('/events-dashboard')}
             enableSubSidebar={true}
         >

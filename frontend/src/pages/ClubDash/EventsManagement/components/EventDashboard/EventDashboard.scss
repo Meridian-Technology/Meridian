@@ -1427,6 +1427,25 @@
     pointer-events: none;
 }
 
+/* Visx renders vertical crosshair in a portal (sibling to chart), not inside .chart-container-visx */
+.visx-crosshair.visx-crosshair-vertical {
+    z-index: 10001 !important;
+    pointer-events: none;
+}
+
+.visx-crosshair.visx-crosshair-vertical line {
+    stroke: #94a3b8 !important;
+    stroke-width: 1px !important;
+    stroke-opacity: 1 !important;
+    stroke-dasharray: 1 4 !important;
+    stroke-linecap: round !important;
+}
+
+.visx-tooltip-glyph {
+    z-index: 10003 !important;
+    pointer-events: none;
+}
+
 .rsvp-chart-tooltip {
     padding: 0.5rem 0.75rem;
     background: var(--background);

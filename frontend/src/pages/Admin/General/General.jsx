@@ -1,20 +1,21 @@
 import React from 'react';
 import './General.scss';
-import GradientHeader from '../../../assets/Gradients/ApprovalGrad.png';
+import { useGradient } from '../../../hooks/useGradient';
 import SiteHealth from './SiteHealth/SiteHealth';
-import Analytics from '../../../components/Analytics/Analytics';
+import AdminPlatformAnalytics from './AdminPlatformAnalytics/AdminPlatformAnalytics';
 
 function General() {
+    const { AdminGrad } = useGradient();
     return (
-        <div className="general">
-            <img src={GradientHeader} alt="" className="grad" />
-            <div className="simple-header">
+        <div className="general dash">
+            <img src={AdminGrad} alt="" className="grad" />
+            <header className="header">
                 <h1>Administrator</h1>
-            </div>
+                <p>Manage your platform and track key metrics</p>
+            </header>
             <div className="general-content">
-                <SiteHealth />
                 <div style={{ marginTop: 16 }}>
-                    <Analytics />
+                    <AdminPlatformAnalytics />
                 </div>
             </div>
         </div>

@@ -3,13 +3,14 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { setTenantConfigCache } from '../../../config/tenantRedirect';
 import { useNotification } from '../../../NotificationContext';
+import { useGradient } from '../../../hooks/useGradient';
 import apiRequest from '../../../utils/postRequest';
-import GradientHeader from '../../../assets/Gradients/ApprovalGrad.png';
 import '../General/General.scss';
 import './PlatformAdminsPage.scss';
 
 function PlatformAdminsPage() {
   const { addNotification } = useNotification();
+  const { AdminGrad } = useGradient();
   const [addEmail, setAddEmail] = useState('');
   const [adding, setAdding] = useState(false);
   const [mutationError, setMutationError] = useState(null);
@@ -135,12 +136,12 @@ function PlatformAdminsPage() {
   const error = fetchError || tenantConfigFetchError || mutationError;
 
   return (
-    <div className="platform-admins-page general">
-      <img src={GradientHeader} alt="" className="grad" />
-      <div className="simple-header">
+    <div className="platform-admins-page general dash">
+      <img src={AdminGrad} alt="" className="grad" />
+      <header className="header">
         <h1>Platform Admins</h1>
-        <p className="sub">Users with platform_admin can access admin features on every tenant.</p>
-      </div>
+        <p>Users with platform_admin can access admin features on every tenant.</p>
+      </header>
       <div className="general-content">
         {error && <div className="platform-admins-error">{error}</div>}
         <div className="admin-migration-section platform-admins-auto-claim">
