@@ -14,6 +14,8 @@ import AnalyticsDashboard from '../FeatureAdmin/AnalyticsDashboard/AnalyticsDash
 import MobileAnalyticsDashboard from '../FeatureAdmin/MobileAnalyticsDashboard/MobileAnalyticsDashboard';
 import UserJourneyAnalytics from '../FeatureAdmin/UserJourneyAnalytics/UserJourneyAnalytics';
 import IndividualUserJourney from '../FeatureAdmin/IndividualUserJourney/IndividualUserJourney';
+import OrgBetaFeatures from '../FeatureAdmin/OrgManagement/OrgBetaFeatures/OrgBetaFeatures';
+import AdminTenantDropdown from './AdminTenantDropdown/AdminTenantDropdown';
 
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 
@@ -42,6 +44,11 @@ function Admin(){
             label: 'Community organizer',
             icon: 'mdi:view-dashboard-variant',
             element: <OperatorHubMode />,
+        },
+        {
+            label: 'Beta features',
+            icon: 'mdi:flask-outline',
+            element: <OrgBetaFeatures />,
         },
         { 
             label: 'Analytics', 
@@ -101,6 +108,7 @@ function Admin(){
             menuItems={menuItems} 
             additionalClass='admin' 
             logo={AdminLogo} 
+            middleItem={<AdminTenantDropdown />}
             onBack={()=>navigate('/events-dashboard')}
             enableSubSidebar={true}
         >

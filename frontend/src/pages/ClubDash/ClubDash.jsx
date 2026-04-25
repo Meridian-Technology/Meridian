@@ -42,6 +42,7 @@ import ClubDashOnboarding from './ClubDashOnboarding/ClubDashOnboarding';
 import GovernanceSettings from './OrgSettings/components/GovernanceSettings';
 import BudgetSettings from './OrgSettings/components/BudgetSettings';
 import LifecycleSettings from './OrgSettings/components/LifecycleSettings';
+import { ORG_BETA_FEATURE_ORG_TASKS, orgHasBetaFeature } from '../../constants/orgBetaFeatures';
 
 /** Set to true to always show the onboarding popup (ignores localStorage) */
 const FORCE_CLUB_DASH_ONBOARDING = false;
@@ -88,7 +89,7 @@ function ClubDash(){
     const orgData = useFetch(`/get-org-by-name/${clubId}?exhaustive=true`);
     const meetings = useFetch(`/get-meetings/${clubId}`);
     const { data: configData } = useFetch('/org-management/config');
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const isAdminView = searchParams.get('adminView') === 'true';
     const isSiteAdmin = user?.roles?.includes('admin') || user?.roles?.includes('root');
     const adminBypass = isAdminView && isSiteAdmin;
@@ -292,6 +293,23 @@ function ClubDash(){
 
     const orgOverview = orgData.data?.org?.overview;
     const orgMongoId = orgOverview?._id;
+    const tasksComingSoon =
+        !adminBypass && !orgHasBetaFeature(orgOverview, ORG_BETA_FEATURE_ORG_TASKS);
+
+    useEffect(() => {
+        if (orgData.loading) return;
+        if (!tasksComingSoon) return;
+        const page = parseInt(searchParams.get('page') ?? '0', 10);
+        if (page !== 2) return;
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('page', '0');
+                return next;
+            },
+            { replace: true }
+        );
+    }, [orgData.loading, tasksComingSoon, searchParams, setSearchParams]);
 
     const menuItems = useMemo(() => {
         const baseMenuItems = [
@@ -315,7 +333,8 @@ function ClubDash(){
                 label: 'Tasks',
                 icon: 'mdi:check-all',
                 key: 'tasks',
-                element: (
+                comingSoon: tasksComingSoon,
+                element: tasksComingSoon ? null : (
                     <Suspense fallback={<div className="club-dash-tab-fallback">Loading tasks…</div>}>
                         <TasksHub expandedClass={expandedClass} orgId={orgMongoId} clubName={clubId} />
                     </Suspense>
@@ -454,7 +473,8 @@ function ClubDash(){
         userPermissions,
         adminBypass,
         isAdminView,
-        isSiteAdmin
+        isSiteAdmin,
+        tasksComingSoon
     ]);
 
     menuItemsRef.current = menuItems;
@@ -512,10 +532,14 @@ function ClubDash(){
     const isPending = org?.approvalStatus === 'pending';
     const allowedActions = configData?.orgApproval?.pendingOrgLimits?.allowedActions ?? ['view_page', 'edit_profile', 'manage_members'];
 
+    const hasOrgTasksBeta =
+        adminBypass ||
+        orgHasBetaFeature(org, ORG_BETA_FEATURE_ORG_TASKS);
+
     const pageToAction = [
         'view_page',       // 0: Dashboard
         'create_events',   // 1: Events
-        'create_events',   // 2: Tasks (org/event ops; same gate as Events management)
+        hasOrgTasksBeta ? 'create_events' : 'view_page', // 2: Tasks hub beta
         'post_messages',   // 3: Announcements
         'manage_members',  // 4: Members
         'edit_profile',    // 5: Settings
