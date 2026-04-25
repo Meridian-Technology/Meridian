@@ -42,7 +42,16 @@ import ClubDashOnboarding from './ClubDashOnboarding/ClubDashOnboarding';
 import GovernanceSettings from './OrgSettings/components/GovernanceSettings';
 import BudgetSettings from './OrgSettings/components/BudgetSettings';
 import LifecycleSettings from './OrgSettings/components/LifecycleSettings';
-import { ORG_BETA_FEATURE_ORG_TASKS, orgHasBetaFeature } from '../../constants/orgBetaFeatures';
+import {
+    ORG_BETA_FEATURE_ORG_TASKS,
+    ORG_BETA_FEATURE_ORG_BUDGETING,
+    ORG_BETA_FEATURE_ORG_GOVERNANCE,
+    ORG_BETA_FEATURE_ORG_LIFECYCLE,
+    ORG_BETA_FEATURE_ORG_VERIFICATION_REQUESTS,
+    ORG_BETA_DISABLED_MENU_BEHAVIOR_COMING_SOON,
+    ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE,
+    orgHasBetaFeature
+} from '../../constants/orgBetaFeatures';
 
 /** Set to true to always show the onboarding popup (ignores localStorage) */
 const FORCE_CLUB_DASH_ONBOARDING = false;
@@ -295,6 +304,39 @@ function ClubDash(){
     const orgMongoId = orgOverview?._id;
     const tasksComingSoon =
         !adminBypass && !orgHasBetaFeature(orgOverview, ORG_BETA_FEATURE_ORG_TASKS);
+    const budgetingComingSoon =
+        !adminBypass && !orgHasBetaFeature(orgOverview, ORG_BETA_FEATURE_ORG_BUDGETING);
+    const governanceComingSoon =
+        !adminBypass && !orgHasBetaFeature(orgOverview, ORG_BETA_FEATURE_ORG_GOVERNANCE);
+    const lifecycleComingSoon =
+        !adminBypass && !orgHasBetaFeature(orgOverview, ORG_BETA_FEATURE_ORG_LIFECYCLE);
+    const verificationRequestsComingSoon =
+        !adminBypass &&
+        !orgHasBetaFeature(orgOverview, ORG_BETA_FEATURE_ORG_VERIFICATION_REQUESTS);
+    const disabledMenuBehaviorByKey =
+        configData?.data?.betaFeatures?.disabledMenuBehaviorByKey || {};
+    const getDisabledMenuBehavior = (featureKey) => {
+        const mode = disabledMenuBehaviorByKey[featureKey];
+        if (mode === ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE) return mode;
+        return ORG_BETA_DISABLED_MENU_BEHAVIOR_COMING_SOON;
+    };
+    const tasksDisabledMenuBehavior = getDisabledMenuBehavior(ORG_BETA_FEATURE_ORG_TASKS);
+    const budgetingDisabledMenuBehavior = getDisabledMenuBehavior(ORG_BETA_FEATURE_ORG_BUDGETING);
+    const governanceDisabledMenuBehavior = getDisabledMenuBehavior(ORG_BETA_FEATURE_ORG_GOVERNANCE);
+    const lifecycleDisabledMenuBehavior = getDisabledMenuBehavior(ORG_BETA_FEATURE_ORG_LIFECYCLE);
+    const verificationRequestsDisabledMenuBehavior = getDisabledMenuBehavior(
+        ORG_BETA_FEATURE_ORG_VERIFICATION_REQUESTS
+    );
+    const tasksHidden = tasksComingSoon && tasksDisabledMenuBehavior === ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE;
+    const budgetingHidden =
+        budgetingComingSoon && budgetingDisabledMenuBehavior === ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE;
+    const governanceHidden =
+        governanceComingSoon && governanceDisabledMenuBehavior === ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE;
+    const lifecycleHidden =
+        lifecycleComingSoon && lifecycleDisabledMenuBehavior === ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE;
+    const verificationRequestsHidden =
+        verificationRequestsComingSoon &&
+        verificationRequestsDisabledMenuBehavior === ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE;
 
     useEffect(() => {
         if (orgData.loading) return;
@@ -333,7 +375,8 @@ function ClubDash(){
                 label: 'Tasks',
                 icon: 'mdi:check-all',
                 key: 'tasks',
-                comingSoon: tasksComingSoon,
+                hidden: tasksHidden,
+                comingSoon: tasksComingSoon && !tasksHidden,
                 element: tasksComingSoon ? null : (
                     <Suspense fallback={<div className="club-dash-tab-fallback">Loading tasks…</div>}>
                         <TasksHub expandedClass={expandedClass} orgId={orgMongoId} clubName={clubId} />
@@ -402,7 +445,9 @@ function ClubDash(){
                     {
                         label: 'Lifecycle',
                         icon: 'mdi:state-machine',
-                        element: (
+                        hidden: lifecycleHidden,
+                        comingSoon: lifecycleComingSoon && !lifecycleHidden,
+                        element: lifecycleComingSoon ? null : (
                             <LifecycleSettings
                                 org={orgData.data?.org?.overview}
                                 expandedClass={expandedClass}
@@ -412,7 +457,9 @@ function ClubDash(){
                     {
                         label: 'Governance',
                         icon: 'mdi:file-document-outline',
-                        element: (
+                        hidden: governanceHidden,
+                        comingSoon: governanceComingSoon && !governanceHidden,
+                        element: governanceComingSoon ? null : (
                             <GovernanceSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
                         )
                     },
@@ -420,12 +467,20 @@ function ClubDash(){
                         label: 'Budgets',
                         icon: 'mdi:cash-multiple',
                         requiresFinances: true,
-                        element: <BudgetSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                        hidden: budgetingHidden,
+                        comingSoon: budgetingComingSoon && !budgetingHidden,
+                        element: budgetingComingSoon ? null : (
+                            <BudgetSettings org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                        )
                     },
                     {
                         label: 'Verification Requests',
                         icon: 'mdi:shield-check',
-                        element: <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                        hidden: verificationRequestsHidden,
+                        comingSoon: verificationRequestsComingSoon && !verificationRequestsHidden,
+                        element: verificationRequestsComingSoon ? null : (
+                            <VerificationRequest org={orgData.data?.org?.overview} expandedClass={expandedClass} />
+                        )
                     },
                     {
                         label: 'Danger Zone',
@@ -454,10 +509,13 @@ function ClubDash(){
                 userPermissions.canAccessBudgets;
             return {
                 ...item,
-                subItems: item.subItems.filter((sub) => !sub.requiresFinances || showBudgets)
+                subItems: item.subItems.filter(
+                    (sub) => (!sub.requiresFinances || showBudgets) && !sub.hidden
+                )
             };
         });
         return withFilteredSettings.filter((item) => {
+            if (item.hidden) return false;
             if (isAdminView && isSiteAdmin) return true;
             if (!item.requiresPermission) return true;
             return userPermissions[item.requiresPermission];
@@ -474,7 +532,17 @@ function ClubDash(){
         adminBypass,
         isAdminView,
         isSiteAdmin,
-        tasksComingSoon
+        tasksComingSoon,
+        tasksHidden,
+        budgetingComingSoon,
+        budgetingHidden,
+        governanceComingSoon,
+        governanceHidden,
+        lifecycleComingSoon,
+        lifecycleHidden,
+        verificationRequestsComingSoon,
+        verificationRequestsHidden,
+        configData
     ]);
 
     menuItemsRef.current = menuItems;

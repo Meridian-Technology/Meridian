@@ -1,28 +1,5 @@
 .org-beta-features {
 
-    &__header {
-        // h1 {
-        //     margin: 0 0 0.35rem;
-        //     font-size: 1.75rem;
-        // }
-
-        // p {
-        //     margin: 0;
-        //     color: var(--text-muted, #5c6570);
-        //     max-width: 40rem;
-        // }
-
-        // img {
-        //     position: absolute;
-        //     right: 0;
-        //     top: 0;
-        //     width: 120px;
-        //     height: auto;
-        //     opacity: 0.35;
-        //     pointer-events: none;
-        // }
-    }
-
     .content {
         display: flex;
         flex-direction: column;
@@ -67,10 +44,72 @@
         font: inherit;
     }
 
+    &__config-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.45rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color, #d0d7de);
+        background: var(--surface, #fff);
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+        transition: background 140ms ease;
+
+        &:hover {
+            background: #f5f7f8;
+        }
+    }
+
     &__meta {
         font-size: 0.9rem;
         color: var(--text-muted, #5c6570);
         margin: 0 0 0.75rem;
+    }
+
+    &__disabled-config {
+        border-radius: 10px;
+        padding: 0.9rem;
+        background: var(--surface, #fff);
+
+        h2 {
+            margin: 0 0 0.35rem;
+            font-size: 1rem;
+        }
+
+        p {
+            margin: 0 0 0.75rem;
+            color: var(--text-muted, #5c6570);
+            font-size: 0.9rem;
+        }
+    }
+
+    &__config-popup {
+        width: min(680px, calc(100vw - 32px));
+    }
+
+    &__disabled-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.65rem;
+    }
+
+    &__disabled-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+
+        select {
+            font: inherit;
+            font-weight: 400;
+            padding: 0.4rem 0.5rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color, #d0d7de);
+            background: var(--surface, #fff);
+        }
     }
 
     &__table-wrap {
