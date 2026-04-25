@@ -7,6 +7,7 @@ import defaultAvatar from '../../../assets/defaultAvatar.svg';
 import './ManageUsers.scss';
 
 const AVAILABLE_ROLES = ['user', 'admin', 'moderator', 'developer', 'oie', 'beta'];
+const ADMIN_USER_ANALYTICS_CACHE_TTL_MS = 30 * 1000;
 
 function ManageUsers() {
     const { addNotification } = useNotification();
@@ -19,7 +20,8 @@ function ManageUsers() {
     const [impersonating, setImpersonating] = useState(false);
 
     const { data: analyticsData, loading: analyticsLoading } = useFetch(
-        selectedUser ? `/admin/user/${selectedUser._id}/analytics?limit=50` : null
+        selectedUser ? `/admin/user/${selectedUser._id}/analytics?limit=50` : null,
+        { cache: { enabled: true, ttlMs: ADMIN_USER_ANALYTICS_CACHE_TTL_MS } }
     );
 
     const fetchUsers = useCallback(async () => {

@@ -1,0 +1,124 @@
+.admin-platform-trend-chart.visit-chart {
+    width: 100%;
+    padding: 14px 14px 10px;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    border: none;
+    box-sizing: border-box;
+    margin-bottom: 0;
+}
+
+.admin-platform-trend-chart .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    margin-left: 8px;
+}
+
+.admin-platform-trend-chart .header h2 {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--lighter-text);
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    text-transform: uppercase;
+}
+
+.admin-platform-trend-chart__total {
+    margin-right: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text, #111827);
+}
+
+.admin-platform-trend-chart__loading {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    white-space: nowrap;
+}
+
+.admin-platform-trend-chart .chart-container-visx {
+    width: 100%;
+    min-height: 160px;
+    overflow: visible;
+}
+
+.admin-platform-trend-chart .chart-container-visx > div {
+    width: 100% !important;
+}
+
+.admin-platform-trend-chart--detailed {
+    border: 1px solid var(--lighterborder);
+    border-radius: 10px;
+    padding: 14px;
+    background: var(--background, #fff);
+}
+
+.chart-empty-visx {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: #94a3b8;
+    font-size: 0.875rem;
+}
+
+/* Keep tooltip visuals tied to chart component usage, not parent pages. */
+.rsvp-chart-tooltip-wrapper.visx-tooltip {
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    z-index: 9999 !important;
+    pointer-events: none;
+}
+
+.visx-crosshair.visx-crosshair-vertical {
+    z-index: 10001 !important;
+    pointer-events: none;
+}
+
+.visx-crosshair.visx-crosshair-vertical line {
+    stroke: #94a3b8 !important;
+    stroke-width: 1px !important;
+    stroke-opacity: 1 !important;
+    stroke-dasharray: 1 4 !important;
+    stroke-linecap: round !important;
+}
+
+.visx-tooltip-glyph {
+    z-index: 10003 !important;
+    pointer-events: none;
+}
+
+.rsvp-chart-tooltip {
+    padding: 8px 10px;
+    background: var(--background, #fff);
+    border: 1px solid var(--lighterborder, #e5e7eb);
+    border-radius: 8px;
+    font-size: 12px;
+    box-shadow: var(--shadow, 0 4px 12px rgba(0, 0, 0, 0.08));
+}
+
+.rsvp-chart-tooltip-date {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text, #111827);
+}
+
+.rsvp-chart-tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    color: var(--lighter-text, #64748b);
+}
+
+.rsvp-chart-tooltip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex-shrink: 0;
+}

@@ -15,11 +15,15 @@ import {
     subWeeks,
     addWeeks,
     subDays,
-    addDays
+    addDays,
+    startOfHour,
+    addHours
 } from 'date-fns';
 import { Icon } from '@iconify-icon/react';
 import { useFetch } from '../../../../hooks/useFetch';
 import useAuth from '../../../../hooks/useAuth';
+import Popup from '../../../../components/Popup/Popup';
+import KeybindTooltip from '../../../../components/Interface/KeybindTooltip/KeybindTooltip';
 import KpiCard from '../../../../components/Analytics/Dashboard/KpiCard';
 import ComparisonBadge from '../../../../components/Analytics/Dashboard/ComparisonBadge';
 import {
@@ -34,6 +38,12 @@ import 'rsuite/DateRangePicker/styles/index.css';
 
 const TREND_METRICS_PARAM =
     'screen_views,sessions,unique_visitors,explore_screen_views,new_users';
+const ADMIN_ANALYTICS_CACHE_TTL_MS = 2 * 60 * 1000;
+const QUICK_RANGE_OPTIONS = [
+    { id: 'month', label: 'month', shortcut: 'M' },
+    { id: 'week', label: 'week', shortcut: 'W' },
+    { id: 'day', label: 'day', shortcut: 'D' }
+];
 
 const TREND_METRIC_DEFS = [
     { key: 'screen_views', title: 'Page views', color: '#45A1FC' },
@@ -87,6 +97,72 @@ function parseBucketBoundary(bucketValue, boundary = 'start') {
     return parsed;
 }
 
+function getRangeGranularityRank(mode) {
+    if (mode === 'all') return 0;
+    if (mode === 'month') return 1;
+    if (mode === 'week') return 2;
+    if (mode === 'day') return 3;
+    if (mode === 'custom') return 4;
+    return 5;
+}
+
+function toBucketDate(bucket, granularity) {
+    if (!bucket) return null;
+    if (granularity === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(String(bucket))) {
+        const parsed = parseISO(`${bucket}T00:00:00`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    const parsed = new Date(bucket);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatBucketValue(date, granularity, sampleBucket) {
+    if (granularity === 'day') {
+        return format(date, 'yyyy-MM-dd');
+    }
+    if (granularity === 'hour') {
+        const sample = String(sampleBucket || '');
+        if (sample.endsWith('Z') || sample.includes('.')) {
+            return date.toISOString();
+        }
+        return format(date, "yyyy-MM-dd'T'HH:mm:ss");
+    }
+    return date.toISOString();
+}
+
+function padTimeseriesRows(rows, { granularity, start, end, capEndAtNow = false }) {
+    if (!Array.isArray(rows) || !rows.length || !start || !end) return rows;
+    if (granularity !== 'day' && granularity !== 'hour') return rows;
+
+    const now = new Date();
+    const rawEnd = capEndAtNow && end > now ? now : end;
+    const rangeStart = granularity === 'hour' ? startOfHour(start) : startOfDay(start);
+    const rangeEnd = granularity === 'hour' ? startOfHour(rawEnd) : startOfDay(rawEnd);
+    if (rangeEnd < rangeStart) return rows;
+
+    const sampleBucket = rows[0]?.bucket;
+    const byTs = new Map();
+    rows.forEach((row) => {
+        const dt = toBucketDate(row?.bucket, granularity);
+        if (!dt) return;
+        const keyDate = granularity === 'hour' ? startOfHour(dt) : startOfDay(dt);
+        byTs.set(keyDate.getTime(), Number(row?.value) || 0);
+    });
+
+    const padded = [];
+    let cursor = rangeStart;
+    while (cursor <= rangeEnd) {
+        const cursorKey = cursor.getTime();
+        padded.push({
+            bucket: formatBucketValue(cursor, granularity, sampleBucket),
+            value: byTs.get(cursorKey) ?? 0
+        });
+        cursor = granularity === 'hour' ? addHours(cursor, 1) : addDays(cursor, 1);
+    }
+
+    return padded;
+}
+
 function KpiInfoTitle({ label, info }) {
     return (
         <span className="admin-platform-analytics__kpi-title">
@@ -113,6 +189,7 @@ function AdminPlatformAnalytics() {
     const [debouncedCustomRange, setDebouncedCustomRange] = useState(null);
     const [chartHoverSync, setChartHoverSync] = useState(null);
     const [showFiltersPopup, setShowFiltersPopup] = useState(false);
+    const [showDetailedChartsPopup, setShowDetailedChartsPopup] = useState(false);
     const [isCustomRangePickerOpen, setIsCustomRangePickerOpen] = useState(false);
     const handleChartHoverSyncChange = useCallback((signal) => {
         if (!signal || signal.type === 'leave') {
@@ -157,7 +234,8 @@ function AdminPlatformAnalytics() {
 
     const { data: snapRes, loading, error, refetch } = useFetch(snapshotUrl, {
         method: 'GET',
-        params: snapshotParams
+        params: snapshotParams,
+        cache: { enabled: true, ttlMs: ADMIN_ANALYTICS_CACHE_TTL_MS }
     });
 
     const payload = snapRes?.data;
@@ -186,7 +264,8 @@ function AdminPlatformAnalytics() {
     const prevTsUrl = isAuthenticated && comparisonEnabled && prevTimeseriesParams ? '/dashboard/timeseries' : null;
     const { data: prevTsRes, loading: prevTsLoading } = useFetch(prevTsUrl, {
         method: 'GET',
-        params: prevTimeseriesParams || {}
+        params: prevTimeseriesParams || {},
+        cache: { enabled: true, ttlMs: ADMIN_ANALYTICS_CACHE_TTL_MS }
     });
 
     const comparePeriodLabel =
@@ -205,18 +284,38 @@ function AdminPlatformAnalytics() {
     const trendCharts = useMemo(() => {
         const prevInner = prevTsRes?.data;
         const useFullMonthDayDomain = debouncedMode === 'month' && ts?.granularity === 'day';
+        const currentWindow =
+            debouncedMode === 'custom' && debouncedCustomRange
+                ? debouncedCustomRange
+                : computeRange(debouncedMode, debouncedAnchor);
+        const previousWindowStart = kpi?.windows?.previous?.start ? new Date(kpi.windows.previous.start) : null;
+        const previousWindowEnd = kpi?.windows?.previous?.end ? new Date(kpi.windows.previous.end) : null;
 
         return TREND_METRIC_DEFS.map((def) => {
             const curRows = ts?.series?.[def.key];
             const pRows = comparisonEnabled ? prevInner?.series?.[def.key] : null;
             const curRowsExcludingEnd = Array.isArray(curRows) && curRows.length > 1 ? curRows.slice(0, -1) : curRows;
             const pRowsExcludingEnd = Array.isArray(pRows) && pRows.length > 1 ? pRows.slice(0, -1) : pRows;
+            const paddedCurrentRows = padTimeseriesRows(curRowsExcludingEnd, {
+                granularity: ts?.granularity,
+                start: currentWindow.start,
+                end: currentWindow.end,
+                capEndAtNow: true
+            });
+            const paddedPreviousRows = comparisonEnabled
+                ? padTimeseriesRows(pRowsExcludingEnd, {
+                      granularity: ts?.granularity,
+                      start: previousWindowStart,
+                      end: previousWindowEnd,
+                      capEndAtNow: false
+                  })
+                : pRowsExcludingEnd;
 
-            if (useFullMonthDayDomain && curRowsExcludingEnd?.length) {
+            if (useFullMonthDayDomain && paddedCurrentRows?.length) {
                 const spec = buildComparisonVisxSeriesForCalendarMonthView(
                     debouncedAnchor,
-                    curRowsExcludingEnd,
-                    pRowsExcludingEnd,
+                    paddedCurrentRows,
+                    paddedPreviousRows,
                     def.color,
                     { thisPeriod: 'This period', compare: comparePeriodLabel },
                     {
@@ -231,13 +330,13 @@ function AdminPlatformAnalytics() {
                     showEndGlyph: spec.showEndGlyph,
                     totalValue:
                         metricTotalsFromKpi[def.key] ??
-                        curRowsExcludingEnd.reduce((sum, row) => sum + (Number(row?.value) || 0), 0)
+                        paddedCurrentRows.reduce((sum, row) => sum + (Number(row?.value) || 0), 0)
                 };
             }
 
             const { series } = buildComparisonVisxSeries(
-                curRowsExcludingEnd,
-                pRowsExcludingEnd,
+                paddedCurrentRows,
+                paddedPreviousRows,
                 def.color,
                 { thisPeriod: 'This period', compare: comparePeriodLabel },
                 { excludePreviousPeriodEnd: false }
@@ -249,25 +348,33 @@ function AdminPlatformAnalytics() {
                 showEndGlyph: false,
                 totalValue:
                     metricTotalsFromKpi[def.key] ??
-                    (curRowsExcludingEnd || []).reduce((sum, row) => sum + (Number(row?.value) || 0), 0)
+                    (paddedCurrentRows || []).reduce((sum, row) => sum + (Number(row?.value) || 0), 0)
             };
         });
-    }, [ts, prevTsRes, comparisonEnabled, comparePeriodLabel, debouncedMode, debouncedAnchor, previousPeriodMode, metricTotalsFromKpi]);
+    }, [ts, prevTsRes, comparisonEnabled, comparePeriodLabel, debouncedMode, debouncedAnchor, previousPeriodMode, metricTotalsFromKpi, debouncedCustomRange, kpi]);
 
     const showCompare = previousPeriodMode !== 'none' && kpi?.deltas;
 
     const handleRangeModeChange = useCallback((mode) => {
+        const previousMode = rangeMode;
+        const previousWindow =
+            previousMode === 'custom' && customRange
+                ? customRange
+                : computeRange(previousMode, anchorDate);
+        const shrinkingToMoreGranular =
+            getRangeGranularityRank(mode) > getRangeGranularityRank(previousMode);
+        const baseDate = shrinkingToMoreGranular ? previousWindow.start : new Date();
+
         setRangeMode(mode);
         if (mode !== 'custom') {
             setCustomRange(null);
         }
         if (mode === 'all') return;
         if (mode === 'custom') return;
-        const now = new Date();
-        if (mode === 'month') setAnchorDate(startOfMonth(now));
-        else if (mode === 'week') setAnchorDate(startOfWeek(now, { weekStartsOn: 0 }));
-        else setAnchorDate(now);
-    }, []);
+        if (mode === 'month') setAnchorDate(startOfMonth(baseDate));
+        else if (mode === 'week') setAnchorDate(startOfWeek(baseDate, { weekStartsOn: 0 }));
+        else setAnchorDate(startOfDay(baseDate));
+    }, [rangeMode, customRange, anchorDate]);
     const handleTrendRangeSelect = useCallback(({ startXValue, endXValue }) => {
         if (!startXValue || !endXValue) return;
         const normalizedStart = parseBucketBoundary(startXValue, 'start');
@@ -307,21 +414,43 @@ function AdminPlatformAnalytics() {
         if (rangeMode === 'month') setAnchorDate((d) => subMonths(startOfMonth(d), 1));
         else if (rangeMode === 'week') setAnchorDate((d) => subWeeks(startOfWeek(d, { weekStartsOn: 0 }), 1));
         else if (rangeMode === 'day') setAnchorDate((d) => subDays(d, 1));
-    }, [rangeMode]);
+        else if (rangeMode === 'custom' && customRange?.start && customRange?.end) {
+            const windowMs = customRange.end.getTime() - customRange.start.getTime();
+            if (windowMs <= 0) return;
+            const nextStart = new Date(customRange.start.getTime() - windowMs);
+            const nextEnd = new Date(customRange.end.getTime() - windowMs);
+            setCustomRange({ start: nextStart, end: nextEnd });
+            setAnchorDate(nextStart);
+        }
+    }, [rangeMode, customRange]);
     const navNext = useCallback(() => {
         if (rangeMode === 'month') setAnchorDate((d) => addMonths(startOfMonth(d), 1));
         else if (rangeMode === 'week') setAnchorDate((d) => addWeeks(startOfWeek(d, { weekStartsOn: 0 }), 1));
         else if (rangeMode === 'day') setAnchorDate((d) => addDays(d, 1));
-    }, [rangeMode]);
+        else if (rangeMode === 'custom' && customRange?.start && customRange?.end) {
+            const windowMs = customRange.end.getTime() - customRange.start.getTime();
+            if (windowMs <= 0) return;
+            const nextStart = new Date(customRange.start.getTime() + windowMs);
+            const nextEnd = new Date(customRange.end.getTime() + windowMs);
+            setCustomRange({ start: nextStart, end: nextEnd });
+            setAnchorDate(nextStart);
+        }
+    }, [rangeMode, customRange]);
 
     useEffect(() => {
         const handleKeyDown = (event) => {
             if (rangeMode === 'all' || isTypingTarget(event.target)) return;
+            const key = String(event.key || '').toLowerCase();
             if (showFiltersPopup && event.key === 'Escape') {
                 setShowFiltersPopup(false);
                 return;
             }
-            if (event.key === 'ArrowLeft') {
+            if (key === 'm' || key === 'w' || key === 'd') {
+                event.preventDefault();
+                if (key === 'm') handleRangeModeChange('month');
+                else if (key === 'w') handleRangeModeChange('week');
+                else handleRangeModeChange('day');
+            } else if (event.key === 'ArrowLeft') {
                 event.preventDefault();
                 navPrev();
             } else if (event.key === 'ArrowRight') {
@@ -332,7 +461,7 @@ function AdminPlatformAnalytics() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [rangeMode, navPrev, navNext, showFiltersPopup]);
+    }, [rangeMode, navPrev, navNext, showFiltersPopup, handleRangeModeChange]);
 
     if (!isAuthenticated) {
         return null;
@@ -385,6 +514,17 @@ function AdminPlatformAnalytics() {
         adjacent: 'Previous period',
         lastYear: 'Same window last year'
     };
+    const detailedRangeBoundsLabel = (() => {
+        if (rangeMode === 'custom' && customRange) {
+            return `${format(customRange.start, 'MMM d, yyyy h:mm aa')} – ${format(customRange.end, 'MMM d, yyyy h:mm aa')}`;
+        }
+        if (rangeMode === 'all') {
+            const allRange = computeRange('all', anchorDate);
+            return `${format(allRange.start, 'MMM d, yyyy')} – ${format(allRange.end, 'MMM d, yyyy')}`;
+        }
+        const computed = computeRange(rangeMode, anchorDate);
+        return `${format(computed.start, 'MMM d, yyyy')} – ${format(computed.end, 'MMM d, yyyy')}`;
+    })();
 
     return (
         <div className="admin-platform-analytics">
@@ -422,14 +562,18 @@ function AdminPlatformAnalytics() {
                             </div>
                         )}
                         <div className="admin-platform-analytics__quick-window-buttons" aria-label="Quick window controls">
-                            {['month', 'week', 'day'].map((m) => (
+                            {QUICK_RANGE_OPTIONS.map(({ id, label, shortcut }) => (
                                 <button
-                                    key={m}
+                                    key={id}
                                     type="button"
-                                    className={rangeMode === m ? 'active' : ''}
-                                    onClick={() => handleRangeModeChange(m)}
+                                    className={`admin-platform-analytics__kbd-tooltip-button ${rangeMode === id ? 'active' : ''}`}
+                                    onClick={() => handleRangeModeChange(id)}
                                 >
-                                    {m}
+                                    {label}
+                                    <KeybindTooltip
+                                        label={`${label[0].toUpperCase()}${label.slice(1)}`}
+                                        keybind={shortcut}
+                                    />
                                 </button>
                             ))}
                         </div>
@@ -481,10 +625,16 @@ function AdminPlatformAnalytics() {
                                             <button
                                                 key={m}
                                                 type="button"
-                                                className={rangeMode === m ? 'active' : ''}
+                                                className={`admin-platform-analytics__kbd-tooltip-button ${rangeMode === m ? 'active' : ''}`}
                                                 onClick={() => handleRangeModeChange(m)}
                                             >
                                                 {m}
+                                                {m === 'month' || m === 'week' || m === 'day' ? (
+                                                    <KeybindTooltip
+                                                        label={m === 'month' ? 'Month' : m === 'week' ? 'Week' : 'Day'}
+                                                        keybind={m === 'month' ? 'M' : m === 'week' ? 'W' : 'D'}
+                                                    />
+                                                ) : null}
                                             </button>
                                         ))}
                                     </div>
@@ -672,14 +822,23 @@ function AdminPlatformAnalytics() {
             <div className="admin-migration-section admin-platform-analytics__chart-wrap">
                 <div className="admin-platform-analytics__chart-header">
                     <h3>Trends</h3>
-                    <button
-                        type="button"
-                        className="admin-platform-analytics__chart-reset-btn"
-                        onClick={resetCustomRange}
-                        disabled={rangeMode !== 'custom'}
-                    >
-                        Reset
-                    </button>
+                    <div className="admin-platform-analytics__chart-actions">
+                        <button
+                            type="button"
+                            className="admin-platform-analytics__chart-reset-btn"
+                            onClick={() => setShowDetailedChartsPopup(true)}
+                        >
+                            Detailed view
+                        </button>
+                        <button
+                            type="button"
+                            className="admin-platform-analytics__chart-reset-btn"
+                            onClick={resetCustomRange}
+                            disabled={rangeMode !== 'custom'}
+                        >
+                            Reset
+                        </button>
+                    </div>
                 </div>
                 <div className="admin-platform-analytics__charts-grid">
                     {trendCharts.map(({ def, series, xDomain, showEndGlyph, totalValue }) => (
@@ -702,6 +861,81 @@ function AdminPlatformAnalytics() {
                     ))}
                 </div>
             </div>
+
+            <Popup
+                isOpen={showDetailedChartsPopup}
+                onClose={() => setShowDetailedChartsPopup(false)}
+                customClassName="wider-content admin-platform-analytics__detailed-popup"
+            >
+                <div className="admin-platform-analytics__detailed-popup-body">
+                    <div className="admin-platform-analytics__detailed-popup-header">
+                        <h3>Detailed trend graphs</h3>
+                        <p>Expanded charts with denser point-level detail. Uses the same date range and comparison settings.</p>
+                    </div>
+                    <div className="admin-platform-analytics__detailed-popup-controls">
+                        <div className="admin-platform-analytics__detailed-popup-bounds admin-platform-analytics__detailed-popup-bounds--prominent">
+                            <strong>Date bounds:</strong> {detailedRangeBoundsLabel}
+                        </div>
+                        <div className="admin-platform-analytics__detailed-popup-controls-right">
+                            <div className="admin-platform-analytics__quick-window-buttons" aria-label="Detailed quick window controls">
+                                {QUICK_RANGE_OPTIONS.map(({ id, label, shortcut }) => (
+                                    <button
+                                        key={`detailed-${id}`}
+                                        type="button"
+                                        className={`admin-platform-analytics__kbd-tooltip-button ${rangeMode === id ? 'active' : ''}`}
+                                        onClick={() => handleRangeModeChange(id)}
+                                    >
+                                        {label}
+                                        <KeybindTooltip
+                                            label={`${label[0].toUpperCase()}${label.slice(1)}`}
+                                            keybind={shortcut}
+                                        />
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="admin-platform-analytics__date-range-picker-wrap">
+                                <DateRangePicker
+                                    value={customRange ? [customRange.start, customRange.end] : null}
+                                    onChange={handleCustomDateRangeChange}
+                                    onSelect={handleCustomDateRangeSelect}
+                                    format="MMM dd, yyyy hh:mm aa"
+                                    character=" - "
+                                    placeholder="Custom date/time range"
+                                    placement="bottomEnd"
+                                    showMeridian
+                                    showTime
+                                    showOneCalendar
+                                    editable={false}
+                                    cleanable={false}
+                                    ranges={[]}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="admin-platform-analytics__detailed-popup-charts">
+                        {trendCharts.map(({ def, series, xDomain, showEndGlyph, totalValue }) => (
+                            <AdminPlatformMetricChart
+                                key={`detailed-${def.key}`}
+                                title={def.title}
+                                totalValue={formatAnalyticsNumber(totalValue)}
+                                series={series}
+                                granularity={ts?.granularity || 'day'}
+                                loadingCompare={comparisonEnabled && prevTsLoading}
+                                emptyMessage="No data for this metric in range"
+                                xDomain={xDomain}
+                                showEndGlyph={showEndGlyph}
+                                syncId={`admin-trend-detail-${def.key}`}
+                                hoverSyncSignal={chartHoverSync}
+                                onHoverSyncChange={handleChartHoverSyncChange}
+                                height={220}
+                                detailedView
+                                enableRangeSelection
+                                onRangeSelect={handleTrendRangeSelect}
+                            />
+                        ))}
+                    </div>
+                </div>
+            </Popup>
 
             <div className="admin-migration-section admin-platform-analytics__mobile">
                 <h3>

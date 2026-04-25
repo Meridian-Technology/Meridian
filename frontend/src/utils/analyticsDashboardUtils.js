@@ -185,9 +185,10 @@ export function buildComparisonVisxSeriesForCalendarMonthView(
     const todayIso = format(now, 'yyyy-MM-dd');
     const cutoffIso = viewingCurrentMonth && todayIso < monthEnd ? todayIso : monthEnd;
 
-    const curInRange = (currentRows || [])
-        .filter((r) => r?.bucket && r.bucket >= monthStart && r.bucket <= cutoffIso)
-        .sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0));
+    const curBy = new Map((currentRows || []).map((r) => [r.bucket, Number(r.value) || 0]));
+    const curInRange = fullDomain
+        .filter((x) => x >= monthStart && x <= cutoffIso)
+        .map((x) => ({ bucket: x, value: curBy.get(x) ?? 0 }));
 
     if (!curInRange.length) {
         return { series: [], xDomain: undefined, showEndGlyph: false };
@@ -202,7 +203,7 @@ export function buildComparisonVisxSeriesForCalendarMonthView(
               .slice(-1)[0]
         : null;
 
-    const cur = curInRange.map((r) => ({ x: r.bucket, y: r.value }));
+    const cur = curInRange.map((r) => ({ x: r.bucket, y: Number(r.value) || 0 }));
 
     const buildPrevAcrossFullMonth = () =>
         fullDomain

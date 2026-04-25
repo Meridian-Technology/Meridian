@@ -34,6 +34,7 @@ const SUGGESTED_COMMUNITY_DEFAULTS = {
 
 /** User must type this exactly (trimmed) to confirm a tenant mode switch. */
 const CONFIRM_TYPE_PHRASE = 'UPDATE TENANT MODE';
+const ADMIN_PAGE_CACHE_TTL_MS = 60 * 1000;
 
 /**
  * @param {'community_with_defaults' | 'community_layout' | 'classic'} variant
@@ -161,7 +162,9 @@ function OperatorHubMode() {
     const [confirmVariant, setConfirmVariant] = useState(null);
     const [typedPhrase, setTypedPhrase] = useState('');
     const [phraseError, setPhraseError] = useState('');
-    const { data: configData, refetch, loading } = useFetch('/org-management/config');
+    const { data: configData, refetch, loading } = useFetch('/org-management/config', {
+        cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
+    });
     const config = configData?.data;
     const current = config?.operatorDashboardMode === 'engagement_hub' ? 'engagement_hub' : 'classic';
 

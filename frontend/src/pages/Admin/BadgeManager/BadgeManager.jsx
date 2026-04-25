@@ -7,8 +7,12 @@ import Popup from '../../../components/Popup/Popup';
 import { useNotification } from '../../../NotificationContext';
 import postRequest from '../../../utils/postRequest';
 
+const BADGE_MANAGER_CACHE_TTL_MS = 60 * 1000;
+
 const BadgeManager = ({}) => {
-    const badgeGrants = useFetch('/get-badge-grants');
+    const badgeGrants = useFetch('/get-badge-grants', {
+        cache: { enabled: true, ttlMs: BADGE_MANAGER_CACHE_TTL_MS }
+    });
     const { addNotification } = useNotification();
     const [createPopup, setCreatePopup] = useState(false);
     const [newBadge, setNewBadge] = useState({

@@ -5,6 +5,8 @@ import { useNotification } from '../../../NotificationContext';
 import { Icon } from '@iconify-icon/react';
 import './WebSocketConnections.scss';
 
+const WEBSOCKET_CACHE_TTL_MS = 5000;
+
 function formatDuration(ms) {
   if (!ms) return '—';
   const s = Math.floor((Date.now() - ms) / 1000);
@@ -18,7 +20,9 @@ const WebSocketConnections = () => {
   const [disconnecting, setDisconnecting] = useState(null);
   const [disconnectAllConfirm, setDisconnectAllConfirm] = useState(false);
 
-  const { data, loading, error, refetch } = useFetch('/websocket-connections');
+  const { data, loading, error, refetch } = useFetch('/websocket-connections', {
+    cache: { enabled: true, ttlMs: WEBSOCKET_CACHE_TTL_MS }
+  });
 
   const handleDisconnect = async (socketId) => {
     setDisconnecting(socketId);
