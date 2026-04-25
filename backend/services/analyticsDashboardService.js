@@ -189,6 +189,13 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d', platform) {
             $group: {
                 _id: null,
                 avgDuration: { $avg: '$duration' },
+                durationPercentiles: {
+                    $percentile: {
+                        input: '$duration',
+                        p: [0.5],
+                        method: 'approximate'
+                    }
+                },
                 sessionCount: { $sum: 1 }
             }
         },
@@ -197,12 +204,24 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d', platform) {
                 avgDurationMs: '$avgDuration',
                 avgDurationSeconds: {
                     $divide: ['$avgDuration', 1000]
+                },
+                medianDurationSeconds: {
+                    $divide: [
+                        {
+                            $ifNull: [
+                                { $arrayElemAt: [{ $ifNull: ['$durationPercentiles', []] }, 0] },
+                                0
+                            ]
+                        },
+                        1000
+                    ]
                 }
             }
         }
     ]);
     
     const avgSessionDurationSeconds = sessionDurationResult[0]?.avgDurationSeconds || 0;
+    const medianSessionDurationSeconds = sessionDurationResult[0]?.medianDurationSeconds || 0;
     
     // Web vs Mobile breakdown
     // Unique users by platform type
@@ -304,7 +323,8 @@ async function getOverviewMetrics(AnalyticsEvent, timeRange = '30d', platform) {
         sessions,
         pageViews,
         bounceRate: Math.round(bounceRate * 100) / 100, // Round to 2 decimals
-        avgSessionDuration: Math.round(avgSessionDurationSeconds)
+        avgSessionDuration: Math.round(avgSessionDurationSeconds),
+        medianSessionDuration: Math.round(medianSessionDurationSeconds)
     };
     // Only include web/mobile breakdown when not filtering by platform
     if (!platform) {

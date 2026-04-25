@@ -15,9 +15,11 @@ jest.mock('../../events/backendRoot', () => {
   const backendPath = path.resolve(__dirname, '../..');
   const schema = require(path.join(backendPath, 'events/schemas/analyticsEvent'));
   const { getOrCreateModel } = require(path.join(backendPath, 'tests/helpers/mongoMemory'));
+  const userSchema = new (require('mongoose').Schema)({ createdAt: Date }, { collection: 'users' });
   const getModels = (req, ...names) => {
     const models = {
       AnalyticsEvent: getOrCreateModel(req.db, 'AnalyticsEvent', schema, 'analytics_events'),
+      User: getOrCreateModel(req.db, 'User', userSchema, 'users'),
     };
     return names.reduce((acc, name) => {
       if (models[name]) acc[name] = models[name];
@@ -89,5 +91,28 @@ describe('analytics dashboard route outcome tests (multi-tenant)', () => {
     expect(response.body.success).toBe(true);
     expect(response.body.data.screens).toEqual(expect.any(Array));
     expect(response.body.data.events).toEqual(expect.any(Array));
+  });
+
+  test('GET /dashboard/general-snapshot returns kpi, timeseries, mobile', async () => {
+    const response = await request(app).get('/dashboard/general-snapshot?timeRange=7d&platform=web');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.kpiSummary).toBeDefined();
+    expect(response.body.data.kpiSummary.current.uniqueDevices).toBeDefined();
+    expect(response.body.data.kpiSummary.previous.uniqueDevices).toBeDefined();
+    expect(response.body.data.kpiSummary.deltas.uniqueDevices).toBeDefined();
+    expect(response.body.data.timeseries).toBeDefined();
+    expect(response.body.data.mobileSummary).toBeDefined();
+  });
+
+  test('GET /dashboard/overview with custom startDate/endDate returns custom timeRange', async () => {
+    const response = await request(app).get(
+      '/dashboard/overview?timeRange=30d&startDate=2025-01-01T00:00:00.000Z&endDate=2025-01-31T23:59:59.999Z'
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.timeRange).toBe('custom');
+    expect(response.body.data.startDate).toBeDefined();
   });
 });
