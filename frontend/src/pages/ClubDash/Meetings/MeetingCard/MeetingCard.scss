@@ -1,0 +1,116 @@
+.meeting-card {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+
+    &:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        transform: translateY(-1px);
+        border-color: var(--accent-color, #6366f1);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--accent-color, #6366f1);
+        outline-offset: 2px;
+    }
+
+    &__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+    }
+
+    &__title {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: var(--text-primary, #111827);
+        margin-bottom: 6px;
+    }
+
+    &__meta {
+        display: flex;
+        gap: 14px;
+        font-size: 0.8rem;
+        color: var(--text-muted, #6b7280);
+        margin-bottom: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+
+        span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+    }
+
+    &__rsvp {
+        display: flex;
+        gap: 12px;
+        font-size: 0.78rem;
+        flex-wrap: wrap;
+    }
+
+    &__badges {
+        display: flex;
+        gap: 6px;
+    }
+}
+
+.meeting-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    &--gbm {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    &--officer {
+        background: #ede9fe;
+        color: #6d28d9;
+    }
+
+    &--special {
+        background: #fef3c7;
+        color: #92400e;
+    }
+}
+
+.badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+
+    &--completed {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    &--minutes {
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+}
+
+.rsvp {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    &.attending { color: #059669; }
+    &.excused   { color: #d97706; }
+    &.no-response { color: var(--text-muted, #9ca3af); }
+}

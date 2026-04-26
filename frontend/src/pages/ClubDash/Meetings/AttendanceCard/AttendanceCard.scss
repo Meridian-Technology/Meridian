@@ -1,0 +1,105 @@
+.attendance-card {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 10px;
+    padding: 16px;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+
+    &:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        transform: translateY(-1px);
+        border-color: var(--accent-color, #6366f1);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--accent-color, #6366f1);
+        outline-offset: 2px;
+    }
+
+    &--active {
+        border-color: #6366f1;
+        background: #fafafe;
+    }
+
+    h3 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-primary, #111827);
+        margin: 0 0 6px;
+    }
+}
+
+.in-progress-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: #6366f1;
+    font-weight: 500;
+    margin-bottom: 10px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    display: inline-block;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+
+.attendance-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 0.8rem;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+
+    .stat {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .attended  { color: #059669; }
+    .excused   { color: #d97706; }
+    .unexcused { color: #ef4444; }
+}
+
+.attendance-bar {
+    height: 6px;
+    background: #e5e7eb;
+    border-radius: 99px;
+    overflow: hidden;
+    margin-bottom: 6px;
+
+    &__fill {
+        height: 100%;
+        background: linear-gradient(90deg, #6366f1, #818cf8);
+        border-radius: 99px;
+        transition: width 0.5s ease;
+    }
+}
+
+.attendance-rate {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary, #374151);
+    display: block;
+    margin-bottom: 8px;
+}
+
+.view-details {
+    font-size: 0.78rem;
+    color: #6366f1;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:hover { text-decoration: underline; }
+}

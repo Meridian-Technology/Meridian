@@ -1,0 +1,93 @@
+.next-meeting {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+
+    &:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07);
+        border-color: var(--accent-color, #6366f1);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--accent-color, #6366f1);
+        outline-offset: 2px;
+    }
+}
+
+.meeting-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    display: inline-block;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+
+.status-label {
+    font-size: 0.8rem;
+    color: #22c55e;
+    font-weight: 500;
+}
+
+.meeting-info {
+    &-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 4px;
+    }
+}
+
+.meeting-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.take-attendance {
+    font-size: 0.8rem;
+    color: #6366f1;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:hover { text-decoration: underline; }
+}
+
+.meeting-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary, #111827);
+    margin-bottom: 4px;
+}
+
+.meeting-location {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: var(--text-muted, #6b7280);
+}
