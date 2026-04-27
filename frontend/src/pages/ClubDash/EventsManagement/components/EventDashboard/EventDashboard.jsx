@@ -4,6 +4,7 @@ import { useFetch } from '../../../../../hooks/useFetch';
 import { analytics } from '../../../../../services/analytics/analytics';
 import { useNotification } from '../../../../../NotificationContext';
 import useAuth from '../../../../../hooks/useAuth';
+import apiRequest from '../../../../../utils/postRequest';
 import { useDashboardOverlay } from '../../../../../hooks/useDashboardOverlay';
 import { useGradient } from '../../../../../hooks/useGradient';
 import TabbedContainer from '../../../../../components/TabbedContainer';
@@ -75,6 +76,9 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
     const [showAnnouncementSpotlight, setShowAnnouncementSpotlight] = useState(false);
     const [openRegistrationSettingsFromAnnouncement, setOpenRegistrationSettingsFromAnnouncement] = useState(false);
     const [collabAcceptBannerTick, setCollabAcceptBannerTick] = useState(0);
+    const [showCancelEventConfirm, setShowCancelEventConfirm] = useState(false);
+    const [cancelEventConfirmText, setCancelEventConfirmText] = useState('');
+    const [cancelingEvent, setCancelingEvent] = useState(false);
 
     // Fetch dashboard data
     const { data, loading: dataLoading, error, refetch } = useFetch(
@@ -227,6 +231,45 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
         }
     }, [dashboardData, event, orgId, showEventPostMortem]);
 
+    const handleCancelEvent = useCallback(async () => {
+        if (!dashboardData?.event?._id || !orgId || cancelingEvent) return;
+        if (cancelEventConfirmText.trim().toLowerCase() !== 'cancel event') return;
+
+        setCancelingEvent(true);
+        try {
+            // Hard delete for now. Keep endpoint shape ready for future soft-delete switch.
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/events/${dashboardData.event._id}`,
+                {},
+                { method: 'DELETE' }
+            );
+            if (response?.success) {
+                addNotification({
+                    title: 'Event cancelled',
+                    message: 'The event has been permanently deleted.',
+                    type: 'success'
+                });
+                setShowCancelEventConfirm(false);
+                setCancelEventConfirmText('');
+                onClose?.();
+                return;
+            }
+            addNotification({
+                title: 'Cancel failed',
+                message: response?.message || response?.error || 'Unable to cancel this event.',
+                type: 'error'
+            });
+        } catch (err) {
+            addNotification({
+                title: 'Cancel failed',
+                message: err?.message || 'Unable to cancel this event.',
+                type: 'error'
+            });
+        } finally {
+            setCancelingEvent(false);
+        }
+    }, [addNotification, cancelEventConfirmText, cancelingEvent, dashboardData?.event?._id, onClose, orgId]);
+
     if (loading) {
         return (
             <div className={`event-dashboard ${className}`}>
@@ -317,12 +360,38 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
             icon: 'mdi:pencil',
             description: 'Event details and basic information',
             // Date/time + location match CreateEventV3 (DateTimePicker + LocationAutocomplete; see EventEditorTab)
-            content: <EventEditorTab
+            content: (
+                <div className="event-details-tab-content">
+                    <EventEditorTab
                         event={dashboardData.event}
                         agenda={dashboardData.agenda}
                         orgId={orgId}
                         onRefresh={handleRefresh}
                     />
+                    <div className="event-details-danger-zone">
+                        <div className="event-details-danger-zone__content">
+                            <Icon icon="mdi:alert-octagon" className="event-details-danger-zone__icon" />
+                            <div className="event-details-danger-zone__text">
+                                <strong>Cancel event</strong>
+                                <span>
+                                    Permanently deletes this event and associated workspace data.
+                                    This cannot be undone.
+                                </span>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            className="event-details-danger-zone__btn"
+                            onClick={() => {
+                                setShowCancelEventConfirm(true);
+                                setCancelEventConfirmText('');
+                            }}
+                        >
+                            Cancel Event
+                        </button>
+                    </div>
+                </div>
+            )
         },
         {
             id: 'registrations',
@@ -528,6 +597,63 @@ function EventDashboard({ event, orgId, onClose, className = '' }) {
                 onSent={handleAnnouncementSent}
                 onOpenRegistrationSettings={handleOpenRegistrationSettings}
             />
+            <Popup
+                isOpen={showCancelEventConfirm}
+                onClose={() => {
+                    if (cancelingEvent) return;
+                    setShowCancelEventConfirm(false);
+                    setCancelEventConfirmText('');
+                }}
+                customClassName="event-cancel-confirm-popup"
+            >
+                <div className="event-cancel-confirm-popup__content">
+                    <div className="event-cancel-confirm-popup__header">
+                        <Icon icon="mdi:alert-circle" className="event-cancel-confirm-popup__icon" />
+                        <h2>Cancel Event</h2>
+                    </div>
+                    <div className="event-cancel-confirm-popup__warning">
+                        <p><strong>Warning:</strong> this action is destructive and cannot be undone.</p>
+                        <p>
+                            This will permanently delete <strong>{dashboardData?.event?.name || 'this event'}</strong>
+                            {' '}and remove it from organizer and attendee workflows.
+                        </p>
+                    </div>
+                    <div className="event-cancel-confirm-popup__field">
+                        <label htmlFor="eventCancelConfirmInput">
+                            Type <strong>cancel event</strong> to confirm:
+                        </label>
+                        <input
+                            id="eventCancelConfirmInput"
+                            type="text"
+                            value={cancelEventConfirmText}
+                            onChange={(e) => setCancelEventConfirmText(e.target.value)}
+                            placeholder="cancel event"
+                            autoFocus
+                        />
+                    </div>
+                    <div className="event-cancel-confirm-popup__actions">
+                        <button
+                            type="button"
+                            className="btn-cancel"
+                            onClick={() => {
+                                setShowCancelEventConfirm(false);
+                                setCancelEventConfirmText('');
+                            }}
+                            disabled={cancelingEvent}
+                        >
+                            Keep Event
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-delete"
+                            onClick={handleCancelEvent}
+                            disabled={cancelingEvent || cancelEventConfirmText.trim().toLowerCase() !== 'cancel event'}
+                        >
+                            {cancelingEvent ? 'Cancelling...' : 'Cancel Event Permanently'}
+                        </button>
+                    </div>
+                </div>
+            </Popup>
         </>
     );
 }

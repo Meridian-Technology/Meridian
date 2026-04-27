@@ -19,6 +19,143 @@ const { recordMemberJoined, recordMemberRemoved } = require('../services/orgMemb
 
 const router = express.Router();
 
+const SYSTEM_ROLE_NAMES = new Set(['owner', 'member']);
+
+function normalizeRoleShape(role, previousRole = null) {
+    const permissions = Array.isArray(role.permissions) ? [...new Set(role.permissions)] : (previousRole?.permissions || []);
+    return {
+        ...role,
+        permissions,
+        canManageMembers: permissions.includes('manage_members'),
+        canManageRoles: permissions.includes('manage_roles'),
+        canManageEvents: permissions.includes('manage_events'),
+        canViewAnalytics: permissions.includes('view_analytics')
+    };
+}
+
+async function ensureOwnerMembership(OrgMember, orgId, ownerUserId) {
+    const ownerMembership = await OrgMember.findOne({ org_id: orgId, user_id: ownerUserId });
+    if (!ownerMembership) {
+        const createdOwnerMembership = new OrgMember({
+            org_id: orgId,
+            user_id: ownerUserId,
+            role: 'owner',
+            roles: ['owner'],
+            status: 'active',
+            assignedBy: ownerUserId
+        });
+        await createdOwnerMembership.save();
+        return createdOwnerMembership;
+    }
+    if (ownerMembership.role !== 'owner' || !ownerMembership.roles?.includes('owner')) {
+        ownerMembership.role = 'owner';
+        ownerMembership.roles = ['owner', ...(ownerMembership.roles || []).filter((r) => r !== 'owner')];
+        ownerMembership.status = 'active';
+        await ownerMembership.save();
+    }
+    return ownerMembership;
+}
+
+async function renameAssignedRoleAcrossRecords({ OrgMember, OrgInvite, orgId, oldName, newName }) {
+    if (!oldName || !newName || oldName === newName) {
+        return;
+    }
+
+    const memberUpdatePipeline = [
+        {
+            $set: {
+                role: {
+                    $cond: [{ $eq: ['$role', oldName] }, newName, '$role']
+                },
+                roles: {
+                    $let: {
+                        vars: {
+                            safeRoles: {
+                                $cond: [{ $isArray: '$roles' }, '$roles', []]
+                            }
+                        },
+                        in: {
+                            $setUnion: [
+                                {
+                                    $map: {
+                                        input: '$$safeRoles',
+                                        as: 'roleName',
+                                        in: {
+                                            $cond: [
+                                                { $eq: ['$$roleName', oldName] },
+                                                newName,
+                                                '$$roleName'
+                                            ]
+                                        }
+                                    }
+                                },
+                                []
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    ];
+
+    await OrgMember.updateMany(
+        {
+            org_id: orgId,
+            $or: [{ role: oldName }, { roles: oldName }]
+        },
+        memberUpdatePipeline
+    );
+
+    if (!OrgInvite) {
+        return;
+    }
+
+    const inviteUpdatePipeline = [
+        {
+            $set: {
+                role: {
+                    $cond: [{ $eq: ['$role', oldName] }, newName, '$role']
+                },
+                roles: {
+                    $let: {
+                        vars: {
+                            safeRoles: {
+                                $cond: [{ $isArray: '$roles' }, '$roles', []]
+                            }
+                        },
+                        in: {
+                            $setUnion: [
+                                {
+                                    $map: {
+                                        input: '$$safeRoles',
+                                        as: 'roleName',
+                                        in: {
+                                            $cond: [
+                                                { $eq: ['$$roleName', oldName] },
+                                                newName,
+                                                '$$roleName'
+                                            ]
+                                        }
+                                    }
+                                },
+                                []
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    ];
+
+    await OrgInvite.updateMany(
+        {
+            org_id: orgId,
+            $or: [{ role: oldName }, { roles: oldName }]
+        },
+        inviteUpdatePipeline
+    );
+}
+
 /**
  * Check if user can edit/delete a role. Users cannot edit roles more privileged than their own.
  * Organization owners (record owner or membership role "owner") may edit/delete any non-system role.
@@ -42,6 +179,35 @@ function canEditRole(userId, org, orgMember, roleName) {
 // Check if current user can manage roles (for frontend permission display)
 router.get('/:orgId/can-manage-roles', verifyToken, requireRoleManagement(), async (req, res) => {
     res.status(200).json({ success: true, canManageRoles: true });
+});
+
+router.get('/:orgId/me/permissions', verifyToken, requireOrgPermission('view_events'), async (req, res) => {
+    try {
+        const member = req.orgMember;
+        const org = req.org;
+        const assignedRoles = member?.roles?.length ? member.roles : [member?.role || 'member'];
+        const effectivePermissions = new Set();
+        for (const roleName of assignedRoles) {
+            const role = org.getRoleByName(roleName);
+            if (!role) continue;
+            (role.permissions || []).forEach((permission) => effectivePermissions.add(permission));
+        }
+        if (effectivePermissions.has('manage_finances')) {
+            effectivePermissions.add('view_finances');
+        }
+        res.status(200).json({
+            success: true,
+            role: member?.role || 'member',
+            roles: assignedRoles,
+            permissions: Array.from(effectivePermissions)
+        });
+    } catch (error) {
+        console.error('Error getting effective org permissions:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching permissions'
+        });
+    }
 });
 
 // Get all roles for an organization
@@ -158,7 +324,7 @@ router.post('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, r
 
 // Update all roles for an organization
 router.put('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, res) => {
-    const { Org, OrgMember } = getModels(req, 'Org', 'OrgMember');
+    const { Org, OrgMember, OrgInvite } = getModels(req, 'Org', 'OrgMember', 'OrgInvite');
     const { orgId } = req.params;
     const { positions } = req.body;
 
@@ -171,12 +337,13 @@ router.put('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, re
             });
         }
 
-        // Validate that owner role is preserved
+        // Validate that owner and member system roles are preserved
         const hasOwnerRole = positions.some(role => role.name === 'owner');
-        if (!hasOwnerRole) {
+        const hasMemberRole = positions.some(role => role.name === 'member');
+        if (!hasOwnerRole || !hasMemberRole) {
             return res.status(400).json({
                 success: false,
-                message: 'Owner role must be preserved'
+                message: 'Owner and member roles must be preserved'
             });
         }
 
@@ -230,20 +397,33 @@ router.put('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, re
         }
 
         for (const { oldName, newName } of roleNameUpdates) {
-            await OrgMember.updateMany(
-                { org_id: orgId, role: oldName },
-                { $set: { role: newName } }
-            );
+            await renameAssignedRoleAcrossRecords({
+                OrgMember,
+                OrgInvite,
+                orgId,
+                oldName,
+                newName
+            });
         }
 
+        const previousByName = new Map(oldPositions.map((role) => [role.name, role]));
+        const normalizedPositions = positions.map((role) => {
+            if (SYSTEM_ROLE_NAMES.has(role.name)) {
+                const previousRole = previousByName.get(role.name);
+                return previousRole || role;
+            }
+            const previousRole = previousByName.get(role.name);
+            return normalizeRoleShape(role, previousRole);
+        });
+
         // Update all roles
-        org.positions = positions;
+        org.positions = normalizedPositions;
         await org.save();
 
         res.status(200).json({
             success: true,
             message: 'Roles updated successfully',
-            roles: positions
+            roles: normalizedPositions
         });
     } catch (error) {
         console.error('Error updating roles:', error);
@@ -256,7 +436,7 @@ router.put('/:orgId/roles', verifyToken, requireRoleManagement(), async (req, re
 
 // Update an existing role
 router.put('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), async (req, res) => {
-    const { Org, OrgMember } = getModels(req, 'Org', 'OrgMember');
+    const { Org, OrgMember, OrgInvite } = getModels(req, 'Org', 'OrgMember', 'OrgInvite');
     const { orgId, roleName } = req.params;
     const updates = req.body;
 
@@ -287,6 +467,13 @@ router.put('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), asyn
             });
         }
 
+        if (SYSTEM_ROLE_NAMES.has(roleName)) {
+            return res.status(400).json({
+                success: false,
+                message: `${roleName} is an immutable system role`
+            });
+        }
+
         // Validate color format if provided
         if (updates.color && !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(updates.color)) {
             return res.status(400).json({
@@ -298,14 +485,17 @@ router.put('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), asyn
         // If role name is changing, update OrgMember documents first so members keep their role
         const newName = updates.name;
         if (newName && newName !== roleName) {
-            await OrgMember.updateMany(
-                { org_id: orgId, role: roleName },
-                { $set: { role: newName } }
-            );
+            await renameAssignedRoleAcrossRecords({
+                OrgMember,
+                OrgInvite,
+                orgId,
+                oldName: roleName,
+                newName
+            });
         }
 
         // Update role
-        await org.updateRole(roleName, updates);
+        await org.updateRole(roleName, normalizeRoleShape(updates, existingRole));
 
         console.log('PUT /org-roles/', orgId, roleName, updates);
         res.status(200).json({
@@ -370,7 +560,7 @@ router.delete('/:orgId/roles/:roleName', verifyToken, requireRoleManagement(), a
 });
 
 // Get members by role
-router.get('/:orgId/roles/:roleName/members', verifyToken   , async (req, res) => {
+router.get('/:orgId/roles/:roleName/members', verifyToken, requireMemberManagement(), async (req, res) => {
     const { OrgMember } = getModels(req, 'OrgMember');
     const { orgId, roleName } = req.params;
 
@@ -393,10 +583,10 @@ router.get('/:orgId/roles/:roleName/members', verifyToken   , async (req, res) =
 });
 
 // Assign role to a member
-router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
+router.post('/:orgId/members/:userId/role', verifyToken, requireMemberManagement(), async (req, res) => {
     const { Org, OrgMember, User } = getModels(req, 'Org', 'OrgMember', 'User');
     const { orgId, userId } = req.params;
-    const { role, reason } = req.body;
+    const { role, roles, reason } = req.body;
 
     try {
         // Verify organization exists
@@ -408,9 +598,25 @@ router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
             });
         }
 
-        // Verify role exists
-        const roleExists = org.getRoleByName(role);
-        if (!roleExists) {
+        const requestedRoles = Array.isArray(roles) && roles.length > 0 ? roles : [role];
+        const normalizedRoles = [...new Set(requestedRoles.filter(Boolean))];
+        if (normalizedRoles.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least one role is required'
+            });
+        }
+        const includesOwnerRole = normalizedRoles.includes('owner');
+        if (includesOwnerRole && String(org.owner) !== String(userId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Owner role can only be assigned through ownership transfer'
+            });
+        }
+
+        // Verify roles exist
+        const hasMissingRole = normalizedRoles.some((roleName) => !org.getRoleByName(roleName));
+        if (hasMissingRole) {
             return res.status(404).json({
                 success: false,
                 message: 'Role not found'
@@ -426,6 +632,21 @@ router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
             });
         }
 
+        const actorMember = req.orgMember;
+        const actorRole = org.getRoleByName(actorMember?.role);
+        const actorIsRecordOwner = String(org.owner) === String(req.user.userId);
+        const actorMaxPrivilege = actorIsRecordOwner ? -1 : (actorRole?.order ?? Number.MAX_SAFE_INTEGER);
+        const rolesOutOfReach = normalizedRoles.some((roleName) => {
+            const targetRole = org.getRoleByName(roleName);
+            return (targetRole?.order ?? Number.MAX_SAFE_INTEGER) < actorMaxPrivilege;
+        });
+        if (rolesOutOfReach) {
+            return res.status(403).json({
+                success: false,
+                message: 'You cannot assign roles above your own level'
+            });
+        }
+
         // Find or create member record
         let member = await OrgMember.findOne({ org_id: orgId, user_id: userId });
         
@@ -433,14 +654,15 @@ router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
             member = new OrgMember({
                 org_id: orgId,
                 user_id: userId,
-                role: role,
+                role: normalizedRoles[0],
+                roles: normalizedRoles,
                 assignedBy: req.user.userId,
                 status: 'active'
             });
             await member.save();
             await recordMemberJoined(member, req.user.userId, reason || 'role_assigned');
         } else {
-            await member.changeRole(role, req.user.userId, reason, {
+            await member.setRoles(normalizedRoles, req.user.userId, reason, {
                 termStart: req.body.roleTermStart ? new Date(req.body.roleTermStart) : undefined,
                 termEnd: req.body.roleTermEnd ? new Date(req.body.roleTermEnd) : undefined
             });
@@ -459,7 +681,7 @@ router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
 
         await user.save();
 
-        console.log('POST /org-roles/members/:userId/role', orgId, userId, role, reason);
+        console.log('POST /org-roles/members/:userId/role', orgId, userId, normalizedRoles, reason);
 
         res.status(200).json({
             success: true,
@@ -467,6 +689,7 @@ router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
             member: {
                 userId: member.user_id,
                 role: member.role,
+                roles: member.roles,
                 assignedAt: member.assignedAt
             }
         });
@@ -480,7 +703,7 @@ router.post('/:orgId/members/:userId/role', verifyToken, async (req, res) => {
 });
 
 // Get all members of an organization
-router.get('/:orgId/members', verifyToken, async (req, res) => {
+router.get('/:orgId/members', verifyToken, requireMemberManagement(), async (req, res) => {
     const { OrgMember, OrgMemberApplication } = getModels(req, 'OrgMember', 'OrgMemberApplication');
     const { orgId } = req.params;
 
@@ -499,6 +722,60 @@ router.get('/:orgId/members', verifyToken, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching members'
+        });
+    }
+});
+
+router.post('/:orgId/transfer-ownership/:newOwnerUserId', verifyToken, requireOrgOwner(), async (req, res) => {
+    const { Org, OrgMember } = getModels(req, 'Org', 'OrgMember');
+    const { orgId, newOwnerUserId } = req.params;
+
+    try {
+        const org = req.org || await Org.findById(orgId);
+        if (!org) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        if (String(org.owner) === String(newOwnerUserId)) {
+            return res.status(400).json({ success: false, message: 'User is already the organization owner' });
+        }
+
+        const newOwnerMembership = await ensureOwnerMembership(OrgMember, orgId, newOwnerUserId);
+        const previousOwnerUserId = org.owner;
+        org.owner = newOwnerUserId;
+        await org.save();
+
+        const previousOwnerMembership = await OrgMember.findOne({
+            org_id: orgId,
+            user_id: previousOwnerUserId,
+            status: 'active'
+        });
+        if (previousOwnerMembership) {
+            previousOwnerMembership.roles = (previousOwnerMembership.roles || [])
+                .filter((roleName) => roleName !== 'owner');
+            if (previousOwnerMembership.roles.length === 0) {
+                previousOwnerMembership.roles = ['member'];
+            }
+            previousOwnerMembership.role = previousOwnerMembership.roles[0];
+            await previousOwnerMembership.save();
+        }
+
+        await ensureOwnerMembership(OrgMember, orgId, newOwnerUserId);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Organization ownership transferred successfully',
+            newOwnerMembership: {
+                userId: newOwnerMembership.user_id,
+                role: newOwnerMembership.role,
+                roles: newOwnerMembership.roles
+            }
+        });
+    } catch (error) {
+        console.error('Error transferring organization ownership:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to transfer ownership'
         });
     }
 });
@@ -599,7 +876,7 @@ router.get('/:orgId/roles/:roleName/permissions', verifyToken, requireOrgPermiss
 router.post('/:orgId/applications/:applicationId/approve', verifyToken, requireMemberManagement(), async (req, res) => {
     const { OrgMember, OrgMemberApplication, User } = getModels(req, 'OrgMember', 'OrgMemberApplication', 'User');
     const { orgId, applicationId } = req.params;
-    const { role = 'member', reason = '' } = req.body;
+    const { role = 'member', roles = [], reason = '' } = req.body;
     const userId = req.user.userId;
 
     try {
@@ -644,11 +921,16 @@ router.post('/:orgId/applications/:applicationId/approve', verifyToken, requireM
             });
         }
 
+        const requestedRoles = Array.isArray(roles) && roles.length > 0 ? roles : [role];
+        const normalizedRoles = [...new Set(requestedRoles.filter(Boolean))];
+        const safeRoles = normalizedRoles.length > 0 ? normalizedRoles : ['member'];
+
         // Create new member
         const newMember = new OrgMember({
             org_id: orgId,
             user_id: application.user_id._id,
-            role: role,
+            role: safeRoles[0],
+            roles: safeRoles,
             status: 'active',
             assignedBy: userId,
             assignedAt: new Date()

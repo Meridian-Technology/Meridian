@@ -19,6 +19,7 @@ function PlatformAdminsPage() {
   const [tenantDrafts, setTenantDrafts] = useState({});
   const [savingTenants, setSavingTenants] = useState(false);
   const [savingAutoClaim, setSavingAutoClaim] = useState(false);
+  const [runningOwnerRoleMigration, setRunningOwnerRoleMigration] = useState(false);
 
   const { data: listResponse, loading, error: fetchError, refetch } = useFetch('/admin/platform-admins', {
     cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
@@ -141,6 +142,36 @@ function PlatformAdminsPage() {
     }
   }, [refetchTenantConfig, tenantDrafts, tenantRows]);
 
+  const handleOwnerRoleMigration = useCallback(async () => {
+    if (runningOwnerRoleMigration) return;
+    setRunningOwnerRoleMigration(true);
+    try {
+      const response = await apiRequest('/admin/migrate-org-owner-roles', {}, { method: 'POST' });
+      if (response?.success) {
+        const data = response?.data || {};
+        addNotification({
+          title: 'Migration complete',
+          message: `Scanned ${data.orgsScanned || 0} orgs. Created ${data.createdOwnerMemberships || 0}, repaired ${data.repairedOwnerMemberships || 0} owner memberships.`,
+          type: 'success',
+        });
+      } else {
+        addNotification({
+          title: 'Migration failed',
+          message: response?.message || response?.error || 'Unable to run owner role migration',
+          type: 'error',
+        });
+      }
+    } catch (error) {
+      addNotification({
+        title: 'Migration failed',
+        message: error?.message || 'Unable to run owner role migration',
+        type: 'error',
+      });
+    } finally {
+      setRunningOwnerRoleMigration(false);
+    }
+  }, [addNotification, runningOwnerRoleMigration]);
+
   const error = fetchError || tenantConfigFetchError || mutationError;
 
   return (
@@ -168,6 +199,27 @@ function PlatformAdminsPage() {
             <span>Auto-claim registrations when user signs up with matching email</span>
             {savingAutoClaim ? <Icon icon="mdi:loading" className="spin" /> : null}
           </label>
+        </div>
+        <div className="admin-migration-section platform-admins-migrations">
+          <h2>Org role migrations</h2>
+          <p className="admin-migration-hint">
+            Backfills owner memberships so every organization owner also has the immutable <code>owner</code> role.
+          </p>
+          <button
+            type="button"
+            className="admin-migration-btn"
+            onClick={handleOwnerRoleMigration}
+            disabled={runningOwnerRoleMigration}
+          >
+            {runningOwnerRoleMigration ? (
+              <>
+                <Icon icon="mdi:loading" className="spin" />
+                Running owner role migration...
+              </>
+            ) : (
+              'Assign owner role to all org owners'
+            )}
+          </button>
         </div>
         <form onSubmit={handleAdd} className="platform-admins-add">
           <input

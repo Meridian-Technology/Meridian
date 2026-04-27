@@ -493,6 +493,75 @@
         }
     }
 
+    .event-details-tab-content {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .event-details-danger-zone {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        margin: 0 0.5rem 1rem;
+        padding: 0.85rem 1rem;
+        border: 1px solid rgba(220, 53, 69, 0.2);
+        border-radius: 10px;
+        background: linear-gradient(135deg, rgba(220, 53, 69, 0.08) 0%, rgba(220, 53, 69, 0.03) 100%);
+        flex-wrap: wrap;
+
+        &__content {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            flex: 1;
+            min-width: 220px;
+        }
+
+        &__icon {
+            font-size: 1.25rem;
+            color: #c44545;
+            margin-top: 0.05rem;
+            flex-shrink: 0;
+        }
+
+        &__text {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+
+            strong {
+                font-size: 0.9rem;
+                color: #9f2d2d;
+            }
+
+            span {
+                font-size: 0.83rem;
+                color: var(--text);
+                opacity: 0.88;
+                line-height: 1.35;
+            }
+        }
+
+        &__btn {
+            padding: 0.5rem 0.9rem;
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: white;
+            background: #c44545;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+
+            &:hover {
+                background: #a93535;
+            }
+        }
+    }
+
     .event-dashboard-content {
         display: flex;
         flex-direction: column;
@@ -1173,6 +1242,104 @@
                     }
                 }
             }
+        }
+    }
+}
+
+.event-cancel-confirm-popup {
+    .event-cancel-confirm-popup__content {
+        width: 100%;
+        max-width: 500px;
+        padding: 1.4rem;
+        background: var(--background);
+        border-radius: 14px;
+    }
+
+    .event-cancel-confirm-popup__header {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        margin-bottom: 0.95rem;
+        color: #9f2d2d;
+
+        h2 {
+            margin: 0;
+            font-size: 1.15rem;
+        }
+    }
+
+    .event-cancel-confirm-popup__icon {
+        font-size: 1.35rem;
+    }
+
+    .event-cancel-confirm-popup__warning {
+        border: 1px solid rgba(220, 53, 69, 0.2);
+        background: rgba(220, 53, 69, 0.06);
+        border-radius: 10px;
+        padding: 0.85rem;
+        margin-bottom: 0.9rem;
+
+        p {
+            margin: 0 0 0.55rem;
+            font-size: 0.9rem;
+            color: var(--text);
+            line-height: 1.45;
+        }
+
+        p:last-child {
+            margin-bottom: 0;
+        }
+    }
+
+    .event-cancel-confirm-popup__field {
+        margin-bottom: 1rem;
+
+        label {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.45rem;
+            color: var(--text);
+        }
+
+        input {
+            width: 100%;
+            border: 1px solid var(--lighterborder);
+            border-radius: 8px;
+            padding: 0.6rem 0.7rem;
+            font-size: 0.9rem;
+            background: var(--background);
+            color: var(--text);
+        }
+    }
+
+    .event-cancel-confirm-popup__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.6rem;
+
+        button {
+            border: none;
+            border-radius: 8px;
+            padding: 0.55rem 0.9rem;
+            font-size: 0.87rem;
+            cursor: pointer;
+        }
+
+        .btn-cancel {
+            border: 1px solid var(--lighterborder);
+            background: transparent;
+            color: var(--text);
+        }
+
+        .btn-delete {
+            background: #c44545;
+            color: white;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
     }
 }

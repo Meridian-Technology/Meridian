@@ -1,11 +1,11 @@
 import React from 'react';
 import './General.scss';
 import { useGradient } from '../../../hooks/useGradient';
-import SiteHealth from './SiteHealth/SiteHealth';
 import AdminPlatformAnalytics from './AdminPlatformAnalytics/AdminPlatformAnalytics';
 
 function General() {
     const { AdminGrad } = useGradient();
+
     return (
         <div className="general dash">
             <img src={AdminGrad} alt="" className="grad" />

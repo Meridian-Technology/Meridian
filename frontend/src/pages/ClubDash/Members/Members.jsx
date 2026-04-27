@@ -29,6 +29,13 @@ function getMemberInitial(user) {
     return getMemberDisplayName(user).charAt(0).toUpperCase() || 'U';
 }
 
+function getNormalizedMemberRoles(member) {
+    const roleFromLegacyField = member?.role ? [member.role] : [];
+    const roleArray = Array.isArray(member?.roles) ? member.roles.filter(Boolean) : [];
+    const merged = [...new Set([...roleFromLegacyField, ...roleArray])];
+    return merged.length > 0 ? merged : ['member'];
+}
+
 function Members({ expandedClass, org, adminBypass = false }) {
     const { user } = useAuth();
     const { addNotification } = useNotification();
@@ -36,11 +43,14 @@ function Members({ expandedClass, org, adminBypass = false }) {
     const [roles, setRoles] = useState([]);
     const [canManageMembers, setCanManageMembers] = useState(false);
     const [userRole, setUserRole] = useState(null);
+    const [userRoleData, setUserRoleData] = useState(null);
+    const [isOwner, setIsOwner] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [showAddMember, setShowAddMember] = useState(false);
     const [showRoleAssignment, setShowRoleAssignment] = useState(false);
     const [selectedMember, setSelectedMember] = useState(null);
+    const [selectedRoleNames, setSelectedRoleNames] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRole, setFilterRole] = useState('all');
     const [showApplicationsViewer, setShowApplicationsViewer] = useState(false);
@@ -99,45 +109,32 @@ function Members({ expandedClass, org, adminBypass = false }) {
             }
 
             // Check if user is the owner
-            const isOwner = org.owner === user._id;
+            const ownerId = org.owner?._id ?? org.owner;
+            const isOwner = ownerId != null && String(ownerId) === String(user._id);
             
             if (isOwner) {
                 setUserRole('owner');
+                setIsOwner(true);
+                setUserRoleData(org.positions?.find((role) => role.name === 'owner') || null);
                 setCanManageMembers(true);
                 setHasAccess(true);
                 setPermissionsChecked(true);
                 return;
             }
 
-            // Get user's role in this organization
-            const response = await apiRequest(`/org-roles/${org._id}/members`, {}, {
+            // Get effective permissions from backend source of truth
+            const response = await apiRequest(`/org-roles/${org._id}/me/permissions`, {}, {
                 method: 'GET'
             });
 
             if (response.success) {
-                const userMember = response.members.find(member => 
-                    member.user_id._id === user._id
-                );
-
-                if (userMember) {
-                    setUserRole(userMember.role);
-                    
-                    // Check if user's role has permission to manage members
-                    const userRoleData = org.positions.find(role => role.name === userMember.role);
-                    
-                    if (userRoleData) {
-                        const canManage = userRoleData.canManageMembers || userRoleData.permissions.includes('manage_members') || userRoleData.permissions.includes('all');
-                        setCanManageMembers(canManage);
-                        setHasAccess(true);
-                    } else {
-                        setCanManageMembers(false);
-                        setHasAccess(true);
-                    }
-                } else {
-                    // User is not a member of this organization
-                    setHasAccess(false);
-                    setCanManageMembers(false);
-                }
+                const currentRole = response.role || 'member';
+                setUserRole(currentRole);
+                const currentRoleData = org.positions.find((role) => role.name === currentRole) || null;
+                setUserRoleData(currentRoleData);
+                const effectivePermissions = response.permissions || [];
+                setCanManageMembers(effectivePermissions.includes('all') || effectivePermissions.includes('manage_members'));
+                setHasAccess(true);
             } else {
                 console.error('Failed to fetch user membership:', response.message);
                 setHasAccess(false);
@@ -152,7 +149,13 @@ function Members({ expandedClass, org, adminBypass = false }) {
         }
     };
 
-    const handleRoleAssignment = async (memberId, newRole, reason = '') => {
+    const getAssignableRoles = () => {
+        if (isOwner) return roles;
+        const myOrder = userRoleData?.order ?? Number.MAX_SAFE_INTEGER;
+        return roles.filter((role) => (role.order ?? Number.MAX_SAFE_INTEGER) >= myOrder);
+    };
+
+    const handleRoleAssignment = async (memberId, newRoles, reason = '') => {
         if (!canManageMembers) {
             addNotification({
                 title: 'Error',
@@ -164,7 +167,8 @@ function Members({ expandedClass, org, adminBypass = false }) {
 
         try {
             const response = await apiRequest(`/org-roles/${org._id}/members/${memberId}/role`, {
-                role: newRole,
+                role: newRoles?.[0] || 'member',
+                roles: newRoles,
                 reason: reason
             }, {
                 method: 'POST'
@@ -179,6 +183,7 @@ function Members({ expandedClass, org, adminBypass = false }) {
                 refetchMembers(); // Refresh member list using useFetch refetch
                 setShowRoleAssignment(false);
                 setSelectedMember(null);
+                setSelectedRoleNames([]);
             }
         } catch (error) {
             console.error('Error assigning role:', error);
@@ -188,6 +193,14 @@ function Members({ expandedClass, org, adminBypass = false }) {
                 type: 'error'
             });
         }
+    };
+
+    const notifyOwnerTransferRequired = () => {
+        addNotification({
+            title: 'Ownership transfer required',
+            message: 'To assign the owner role, use ownership transfer in Settings.',
+            type: 'info'
+        });
     };
 
     const handleRemoveMember = async (memberId) => {
@@ -396,8 +409,16 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                         )}
                                     </div>
                                     
-                                    <div className="role-badge" style={{ backgroundColor: getOrgRoleColor(member.role, 0.1, roles), color: getOrgRoleColor(member.role, 1, roles) }}>
-                                        {getRoleDisplayName(member.role)}
+                                    <div className="role-badges">
+                                        {getNormalizedMemberRoles(member).map((roleName) => (
+                                            <div
+                                                key={`${member._id}-${roleName}`}
+                                                className="role-badge"
+                                                style={{ backgroundColor: getOrgRoleColor(roleName, 0.1, roles), color: getOrgRoleColor(roleName, 1, roles) }}
+                                            >
+                                                {getRoleDisplayName(roleName)}
+                                            </div>
+                                        ))}
                                     </div>
                                     
                                     {canManageMembers && (
@@ -406,6 +427,7 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                                 className="assign-role-btn"
                                                 onClick={() => {
                                                     setSelectedMember(member);
+                                                    setSelectedRoleNames(getNormalizedMemberRoles(member));
                                                     setShowRoleAssignment(true);
                                                 }}
                                                 title="Assign Role"
@@ -447,7 +469,7 @@ function Members({ expandedClass, org, adminBypass = false }) {
             'applications',
             'Applications',
             'mdi:shield-account',
-            <MemberApplicationsViewer org={org} />
+            <MemberApplicationsViewer org={org} roles={getAssignableRoles()} />
         )
     ];
 
@@ -499,7 +521,7 @@ function Members({ expandedClass, org, adminBypass = false }) {
                 defaultStyling={false}
                 popout={false}
             >
-                <MemberApplicationsViewer org={org} />
+                <MemberApplicationsViewer org={org} roles={getAssignableRoles()} />
             </Popup>
 
             <Popup 
@@ -583,6 +605,7 @@ function Members({ expandedClass, org, adminBypass = false }) {
                     <AddMemberForm 
                         orgId={org._id}
                         roles={roles}
+                        assignableRoles={getAssignableRoles()}
                         existingMembers={members}
                         onMemberAdded={handleMemberAdded}
                         onClose={handleCloseAddMember}
@@ -642,18 +665,32 @@ function Members({ expandedClass, org, adminBypass = false }) {
                             </div>
                             
                             <div className="role-selection">
-                                <h4>Select New Role</h4>
+                                <h4>Select Roles</h4>
                                 <div className="role-options">
-                                    {roles.map(role => {
+                                    {getAssignableRoles().map(role => {
                                         const isCurrentRole = selectedMember.role === role.name;
-                                        const isDisabled = role.name === 'owner' && selectedMember.role !== 'owner';
+                                        const isChecked = selectedRoleNames.includes(role.name);
+                                        const isOwnerRole = role.name === 'owner';
+                                        const isDisabled = isOwnerRole;
                                         
                                         return (
                                             <button
                                                 key={role.name}
-                                                className={`role-option ${isCurrentRole ? 'current' : ''} ${isDisabled ? 'disabled' : ''}`}
-                                                onClick={() => !isDisabled && handleRoleAssignment(selectedMember.user_id._id, role.name)}
-                                                disabled={isDisabled}
+                                                className={`role-option ${isCurrentRole ? 'current' : ''} ${isDisabled ? 'disabled' : ''} ${isChecked ? 'selected' : ''}`}
+                                                onClick={() => {
+                                                    if (isOwnerRole) {
+                                                        notifyOwnerTransferRequired();
+                                                        return;
+                                                    }
+                                                    setSelectedRoleNames((prev) => {
+                                                        if (prev.includes(role.name)) {
+                                                            const removed = prev.filter((r) => r !== role.name);
+                                                            return removed.length > 0 ? removed : ['member'];
+                                                        }
+                                                        return [...prev, role.name];
+                                                    });
+                                                }}
+                                                aria-disabled={isDisabled}
                                             >
                                                 <div className="role-option-content">
                                                     <div 
@@ -669,13 +706,26 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                                         </p>
                                                     </div>
                                                 </div>
-                                                {isCurrentRole && (
+                                                {isChecked && (
                                                     <Icon icon="mdi:check-circle" className="current-indicator" />
                                                 )}
                                             </button>
                                         );
                                     })}
                                 </div>
+                                <button
+                                    className="assign-role-btn-primary"
+                                    onClick={() => {
+                                        if (selectedRoleNames.includes('owner')) {
+                                            notifyOwnerTransferRequired();
+                                            return;
+                                        }
+                                        handleRoleAssignment(selectedMember.user_id._id, selectedRoleNames);
+                                    }}
+                                    disabled={selectedRoleNames.length === 0}
+                                >
+                                    Save Role Assignment
+                                </button>
                             </div>
                         </>
                     )}

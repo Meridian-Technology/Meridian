@@ -1488,6 +1488,51 @@ router.post('/:orgId/events/from-template/:templateId', verifyToken, requireEven
 });
 
 // Update single event
+router.delete('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
+    const { Event, EventAgenda, EventRole, EventRoleAssignment, EventJob } = getModels(
+        req,
+        'Event',
+        'EventAgenda',
+        'EventRole',
+        'EventRoleAssignment',
+        'EventJob'
+    );
+    const { orgId, eventId } = req.params;
+
+    try {
+        const event = await Event.findOne(buildScopedEventQuery(orgId, eventId));
+        if (!event) {
+            return res.status(404).json({
+                success: false,
+                message: 'Event not found'
+            });
+        }
+
+        // Hard delete for now; keep this route as the single transition point for future soft deletion.
+        const cleanupOps = [];
+        if (EventAgenda?.deleteMany) cleanupOps.push(EventAgenda.deleteMany({ eventId: event._id }));
+        if (EventRole?.deleteMany) cleanupOps.push(EventRole.deleteMany({ eventId: event._id }));
+        if (EventRoleAssignment?.deleteMany) cleanupOps.push(EventRoleAssignment.deleteMany({ eventId: event._id }));
+        if (EventJob?.deleteMany) cleanupOps.push(EventJob.deleteMany({ eventId: event._id }));
+
+        await Promise.all(cleanupOps);
+        await Event.deleteOne({ _id: event._id });
+
+        return res.status(200).json({
+            success: true,
+            message: 'Event cancelled and deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error cancelling event:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to cancel event',
+            error: error.message
+        });
+    }
+});
+
+// Update single event
 router.put('/:orgId/events/:eventId', verifyToken, requireEventManagement('orgId'), async (req, res) => {
     const { Event, EventAgenda } = getModels(req, 'Event', 'EventAgenda');
     const { orgId, eventId } = req.params;
@@ -2641,7 +2686,7 @@ router.post('/:orgId/events/:eventId/volunteer-signups', verifyToken, async (req
     const { VolunteerSignup, EventJob } = getModels(req, 'VolunteerSignup', 'EventJob');
     const { orgId, eventId } = req.params;
     const { roleId, shiftStart, shiftEnd, breakRequest, availability } = req.body;
-    const memberId = req.user._id;
+    const memberId = req.user.userId;
 
     try {
         // Check if already signed up
@@ -3049,7 +3094,7 @@ router.post('/:orgId/events/:eventId/equipment/:equipmentId/checkin', verifyToke
 router.post('/:orgId/equipment/:equipmentId/member-checkout', verifyToken, requireOrgPermission('manage_equipment', 'orgId'), async (req, res) => {
     const { OrgEquipment } = getModels(req, 'OrgEquipment');
     const { orgId, equipmentId } = req.params;
-    const memberId = req.user._id;
+    const memberId = req.user.userId;
 
     try {
         const equipment = await OrgEquipment.findOne({
@@ -3095,7 +3140,7 @@ router.post('/:orgId/equipment/:equipmentId/member-checkout', verifyToken, requi
 router.post('/:orgId/equipment/:equipmentId/member-checkin', verifyToken, requireOrgPermission('manage_equipment', 'orgId'), async (req, res) => {
     const { OrgEquipment } = getModels(req, 'OrgEquipment');
     const { orgId, equipmentId } = req.params;
-    const memberId = req.user._id;
+    const memberId = req.user.userId;
 
     try {
         const equipment = await OrgEquipment.findOne({

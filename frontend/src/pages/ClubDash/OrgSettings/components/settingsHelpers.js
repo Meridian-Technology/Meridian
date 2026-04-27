@@ -59,6 +59,26 @@ export const useOrgPermissions = (org, options = {}) => {
 // Generic save function for organization settings
 export const useOrgSave = (org) => {
     const { addNotification } = useNotification();
+
+    const deriveErrorField = (rawMessage = '') => {
+        const message = String(rawMessage || '').toLowerCase();
+        if (message.includes('banner') && (message.includes('image') || message.includes('file type') || message.includes('invalid file'))) {
+            return 'org_banner_image';
+        }
+        if (message.includes('image') || message.includes('file type') || message.includes('invalid file') || message.includes('unsupported file type')) {
+            return 'org_profile_image';
+        }
+        if (message.includes('name') || message.includes('org name')) {
+            return 'org_name';
+        }
+        if (message.includes('description')) {
+            return 'org_description';
+        }
+        if (message.includes('meeting')) {
+            return 'weekly_meeting';
+        }
+        return null;
+    };
     
     const saveOrgSettings = async (formData, selectedFile = null, selectedBannerFile = null) => {
         try {
@@ -70,6 +90,11 @@ export const useOrgSave = (org) => {
             // formDataToSend.append('positions', JSON.stringify(formData.positions));
             formDataToSend.append('orgId', org._id);
             Object.entries(formData).forEach(([key, value]) => {
+                // Roles are managed through /org-roles routes only.
+                if (key === 'positions') {
+                    return;
+                }
+
                 // Skip null, undefined, and empty strings (but allow empty arrays and other falsy values like 0 or false)
                 if(value === null || value === undefined || value === '') {
                     return;
@@ -107,53 +132,28 @@ export const useOrgSave = (org) => {
                 // Return the updated org if available, otherwise return true
                 return response.org || true;
             }
-            
-            // Return error information if available
-            if (response.message) {
-                // Try to determine which field has the error
-                let errorField = null;
-                const message = response.message.toLowerCase();
-                if (message.includes('banner') && (message.includes('image') || message.includes('file type') || message.includes('invalid file'))) {
-                    errorField = 'org_banner_image';
-                } else if (message.includes('image') || message.includes('file type') || message.includes('invalid file')) {
-                    errorField = 'org_profile_image';
-                } else if (message.includes('name') || message.includes('org name')) {
-                    errorField = 'org_name';
-                } else if (message.includes('description')) {
-                    errorField = 'org_description';
-                } else if (message.includes('meeting')) {
-                    errorField = 'weekly_meeting';
-                }
-                
-                return {
-                    error: true,
-                    message: response.message,
-                    field: errorField
-                };
-            }
-            
-            return false;
+
+            const responseMessage = response?.message || response?.error || 'Failed to save settings';
+            const errorField = deriveErrorField(responseMessage);
+            addNotification({
+                title: 'Save failed',
+                message: responseMessage,
+                type: 'error'
+            });
+
+            return {
+                error: true,
+                message: responseMessage,
+                field: errorField,
+                code: response?.code
+            };
         } catch (error) {
             console.error('Error saving settings:', error);
             const errorMessage = error.message || 'Failed to save settings';
-            
-            // Try to determine which field has the error from error message
-            let errorField = null;
-            const message = errorMessage.toLowerCase();
-            if (message.includes('banner') && (message.includes('image') || message.includes('file type') || message.includes('invalid file'))) {
-                errorField = 'org_banner_image';
-            } else if (message.includes('image') || message.includes('file type') || message.includes('invalid file')) {
-                errorField = 'org_profile_image';
-            } else if (message.includes('name') || message.includes('org name')) {
-                errorField = 'org_name';
-            } else if (message.includes('description')) {
-                errorField = 'org_description';
-            } else if (message.includes('meeting')) {
-                errorField = 'weekly_meeting';
-            }
+            const errorField = deriveErrorField(errorMessage);
             
             addNotification({
-                title: 'Error',
+                title: 'Save failed',
                 message: errorMessage,
                 type: 'error'
             });

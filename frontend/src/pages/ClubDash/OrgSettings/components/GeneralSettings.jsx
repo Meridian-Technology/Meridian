@@ -323,8 +323,8 @@ const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
     const hasFormChanges = JSON.stringify(originalData) !== JSON.stringify(formData);
     const hasFileChanges = selectedFile !== null || selectedBannerFile !== null;
     const hasChanges = hasFormChanges || hasFileChanges;
-
     const [saving, setSaving] = useState(false);
+    const isSavingWithImageUpload = saving && hasFileChanges;
 
     const saveChanges = async () => {
         setSaving(true);
@@ -452,8 +452,8 @@ const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
                 <div className="form-group">
                     <div 
                         className={`current-image profile-image-editable ${isInvalidImageType || fieldErrors.org_profile_image ? 'invalid-image' : ''}`}
-                        onClick={() => canManageSettings && setShowImageUploadPopup(true)}
-                        style={{ cursor: canManageSettings ? 'pointer' : 'default' }}
+                        onClick={() => canManageSettings && !saving && setShowImageUploadPopup(true)}
+                        style={{ cursor: canManageSettings && !saving ? 'pointer' : 'default' }}
                     >
                         <div className={`edit-icon-container ${canManageSettings ? '' : 'read-only'}`}>
                             <img 
@@ -485,8 +485,8 @@ const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
                 <div className="form-group">
                     <div 
                         className={`current-image banner-image-editable ${isInvalidBannerImageType || fieldErrors.org_banner_image ? 'invalid-image' : ''}`}
-                        onClick={() => canManageSettings && setShowBannerUploadPopup(true)}
-                        style={{ cursor: canManageSettings ? 'pointer' : 'default' }}
+                        onClick={() => canManageSettings && !saving && setShowBannerUploadPopup(true)}
+                        style={{ cursor: canManageSettings && !saving ? 'pointer' : 'default' }}
                     >
                         <div className={`edit-icon-container banner-container ${canManageSettings ? '' : 'read-only'}`}>
                             <img 
@@ -521,6 +521,7 @@ const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
                 onSave={saveChanges}
                 onDiscard={discardChanges}
                 saving={saving}
+                saveText={isSavingWithImageUpload ? 'Upload & Save Changes' : 'Save Changes'}
             />
             
             <header className="header">
@@ -542,10 +543,13 @@ const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
                     }
                 }}
                 customClassName="image-upload-popup"
-                defaultStyling={false}
+                defaultStyling={true}
             >
                 <div className="image-upload-popup-content">
                     <h2>Upload Profile Picture</h2>
+                    <p className="media-upload-helper">
+                        Use a clear square image (JPEG, PNG, or WebP). Max size: 5MB.
+                    </p>
                     <ImageUpload
                         onFileSelect={handleImageUploadFromPopup}
                         uploadText="Upload new profile picture"
@@ -577,6 +581,9 @@ const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
             >
                 <div className="image-upload-popup-content">
                     <h2>Upload Banner Image</h2>
+                    <p className="media-upload-helper">
+                        Use a wide image for best results (JPEG, PNG, or WebP). Max size: 5MB.
+                    </p>
                     <ImageUpload
                         onFileSelect={handleBannerImageUploadFromPopup}
                         uploadText="Upload new banner image"

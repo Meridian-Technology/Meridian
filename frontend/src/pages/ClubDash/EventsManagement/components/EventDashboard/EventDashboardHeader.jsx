@@ -258,9 +258,7 @@ function EventDashboardHeader({ event, stats, onClose, onRefresh, orgId, onSendA
                         </div>
                         {event?.hostingType === 'Org' && (
                             <div className="header-collaboration-inline">
-                                {collaborationOrgs.length === 0 ? (
-                                    <span className="header-collaboration-inline__empty">with no other organizations yet</span>
-                                ) : (
+                                {collaborationOrgs.length === 0 ? null : (
                                     <>
                                         <span className="header-collaboration-inline__label">with</span>
                                         <ul className="header-collaboration-inline__list">

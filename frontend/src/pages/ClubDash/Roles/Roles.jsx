@@ -5,7 +5,6 @@ import TabbedContainer from '../../../components/TabbedContainer';
 import EventJobs from './EventJobs/EventJobs';
 import { useNotification } from '../../../NotificationContext';
 import useAuth from '../../../hooks/useAuth';
-import axios from 'axios';
 import apiRequest from '../../../utils/postRequest';
 import { useGradient } from '../../../hooks/useGradient';
 import UnsavedChangesBanner from '../../../components/UnsavedChangesBanner/UnsavedChangesBanner';
@@ -29,8 +28,53 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
     const [roleToDelete, setRoleToDelete] = useState(null);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [hasDraftRole, setHasDraftRole] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [members, setMembers] = useState([]);
+    const [memberRoleActionPending, setMemberRoleActionPending] = useState({});
     const {AtlasMain} = useGradient();
     const roleManagerRef = useRef(null);
+
+    const getRoleStableId = (role) => role?._id || role?.id || null;
+
+    const buildRoleRenameMap = (previousRoles = [], nextRoles = []) => {
+        const previousById = new Map();
+        previousRoles.forEach((role) => {
+            const stableId = getRoleStableId(role);
+            if (stableId) previousById.set(String(stableId), role?.name);
+        });
+
+        const renameMap = {};
+        nextRoles.forEach((role) => {
+            const stableId = getRoleStableId(role);
+            if (!stableId) return;
+            const oldName = previousById.get(String(stableId));
+            const newName = role?.name;
+            if (oldName && newName && oldName !== newName) {
+                renameMap[oldName] = newName;
+            }
+        });
+
+        return renameMap;
+    };
+
+    const applyRoleRenameMapToMembers = (memberList = [], renameMap = {}) => {
+        const renameEntries = Object.entries(renameMap);
+        if (renameEntries.length === 0) return memberList;
+
+        return memberList.map((member) => {
+            const currentRole = member?.role;
+            const currentRoles = Array.isArray(member?.roles) ? member.roles.filter(Boolean) : [];
+
+            const nextRole = renameMap[currentRole] || currentRole;
+            const nextRoles = [...new Set(currentRoles.map((roleName) => renameMap[roleName] || roleName))];
+
+            return {
+                ...member,
+                role: nextRole,
+                roles: nextRoles.length > 0 ? nextRoles : (nextRole ? [nextRole] : ['member'])
+            };
+        });
+    };
 
     useEffect(() => {
         if (org && !permissionsChecked) {
@@ -40,6 +84,23 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
             checkUserPermissions();
         }
     }, [org, user, permissionsChecked]);
+
+    useEffect(() => {
+        if (!org?._id || !hasAccess) return;
+        const fetchMembers = async () => {
+            try {
+                const response = await apiRequest(`/org-roles/${org._id}/members`, {}, { method: 'GET' });
+                if (response?.success) {
+                    setMembers(response.members || []);
+                } else {
+                    setMembers([]);
+                }
+            } catch (error) {
+                setMembers([]);
+            }
+        };
+        fetchMembers();
+    }, [org?._id, hasAccess]);
 
     const checkUserPermissions = async () => {
         if (!org || !user || permissionsChecked) return;
@@ -71,8 +132,8 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
                 return;
             }
 
-            // Get user's role in this organization
-            const membersResponse = await apiRequest(`/org-roles/${org._id}/members`, {}, {
+            // Get effective permissions from backend source of truth
+            const membersResponse = await apiRequest(`/org-roles/${org._id}/me/permissions`, {}, {
                 method: 'GET'
             });
 
@@ -83,20 +144,14 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
                 return;
             }
 
-            const userIdStr = String(user._id);
-            const userMember = membersResponse.members.find(member => {
-                const memberId = member.user_id?._id ?? member.user_id;
-                return memberId && String(memberId) === userIdStr;
-            });
-
-            if (!userMember) {
+            if (!membersResponse.role) {
                 setHasAccess(false);
                 setCanManageRoles(false);
                 return;
             }
 
-            setUserRole(userMember.role);
-            const roleData = org.positions?.find(role => role.name === userMember.role);
+            setUserRole(membersResponse.role);
+            const roleData = org.positions?.find(role => role.name === membersResponse.role);
             setUserRoleData(roleData || null);
             setHasAccess(true);
 
@@ -109,11 +164,8 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
             } else if (permResponse?.code === 403) {
                 setCanManageRoles(false);
             } else {
-                // Network error or other - fallback to local check
-                const canManage = roleData && (
-                    roleData.canManageRoles ||
-                    (roleData.permissions && (roleData.permissions.includes('manage_roles') || roleData.permissions.includes('all')))
-                );
+                const effectivePermissions = membersResponse.permissions || [];
+                const canManage = effectivePermissions.includes('all') || effectivePermissions.includes('manage_roles');
                 setCanManageRoles(!!canManage);
             }
         } catch (error) {
@@ -170,13 +222,20 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
             });
 
             if (response.success) {
-                setOriginalRoles(JSON.parse(JSON.stringify(rolesToSave))); // Deep copy
+                const savedRoles = Array.isArray(response?.roles) && response.roles.length > 0
+                    ? response.roles
+                    : rolesToSave;
+                const renameMap = buildRoleRenameMap(originalRoles, savedRoles);
+
+                setRoles(savedRoles);
+                setOriginalRoles(JSON.parse(JSON.stringify(savedRoles))); // Deep copy
+                setMembers((prev) => applyRoleRenameMapToMembers(prev, renameMap));
+                roleManagerRef.current?.setEditMode?.(false);
                 addNotification({
                     title: 'Success',
                     message: 'Roles updated successfully',
                     type: 'success'
                 });
-                refetch();
                 return true;
             } else {
                 addNotification({
@@ -205,6 +264,7 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
         setRoleToDelete(null);
         setDeleteConfirmText('');
         setHasDraftRole(false);
+        roleManagerRef.current?.setEditMode?.(false);
     };
 
     const handleDeleteRequest = (roleName) => {
@@ -297,6 +357,80 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
         }
     };
 
+    const getNormalizedMemberRoles = (member) => {
+        const roleFromLegacy = member?.role ? [member.role] : [];
+        const roleArray = Array.isArray(member?.roles) ? member.roles.filter(Boolean) : [];
+        const merged = [...new Set([...roleFromLegacy, ...roleArray])];
+        return merged.length > 0 ? merged : ['member'];
+    };
+
+    const getMemberId = (member) => {
+        const user = member?.user_id || member?.user || member;
+        return user?._id || member?._id;
+    };
+
+    const handleMemberRolesChange = async ({ member, roleName, action }) => {
+        const memberId = getMemberId(member);
+        if (!memberId) return;
+
+        const currentRoles = getNormalizedMemberRoles(member);
+        let nextRoles = currentRoles;
+        if (action === 'add') {
+            nextRoles = [...new Set([...currentRoles, roleName])];
+        } else {
+            nextRoles = currentRoles.filter((r) => r !== roleName);
+            if (nextRoles.length === 0) nextRoles = ['member'];
+        }
+        if (nextRoles.includes('owner') && roleName !== 'owner') {
+            addNotification({
+                title: 'Not allowed',
+                message: 'Owner role changes must be handled through ownership transfer.',
+                type: 'error'
+            });
+            return;
+        }
+
+        const pendingKey = `${memberId}:${roleName}:${action}`;
+        setMemberRoleActionPending((prev) => ({ ...prev, [pendingKey]: true }));
+        try {
+            const response = await apiRequest(`/org-roles/${org._id}/members/${memberId}/role`, {
+                role: nextRoles[0],
+                roles: nextRoles,
+                reason: action === 'add' ? 'assigned_from_role_overview' : 'removed_from_role_overview'
+            }, { method: 'POST' });
+
+            if (response?.success) {
+                setMembers((prev) => prev.map((entry) => {
+                    const entryId = getMemberId(entry);
+                    if (String(entryId) !== String(memberId)) return entry;
+                    return {
+                        ...entry,
+                        role: nextRoles[0],
+                        roles: nextRoles
+                    };
+                }));
+            } else {
+                addNotification({
+                    title: 'Error',
+                    message: response?.message || response?.error || 'Failed to update member roles',
+                    type: 'error'
+                });
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Error',
+                message: error?.message || 'Failed to update member roles',
+                type: 'error'
+            });
+        } finally {
+            setMemberRoleActionPending((prev) => {
+                const updated = { ...prev };
+                delete updated[pendingKey];
+                return updated;
+            });
+        }
+    };
+
     // Normalize roles for comparison - only compare relevant fields to avoid false positives from
     // structural differences (key order, _id format, etc.)
     const normalizeRoleForComparison = (role) => ({
@@ -375,12 +509,14 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
             icon: 'mdi:shield-account',
             content: (
                 <>
-                    <UnsavedChangesBanner
-                        hasChanges={hasChanges}
-                        onSave={handleSave}
-                        onDiscard={handleDiscard}
-                        saving={saving}
-                    />
+                    {isEditMode ? (
+                        <UnsavedChangesBanner
+                            hasChanges={hasChanges}
+                            onSave={handleSave}
+                            onDiscard={handleDiscard}
+                            saving={saving}
+                        />
+                    ) : null}
 
                     {!canManageRoles && (
                         <div className="permission-warning">
@@ -400,6 +536,11 @@ function Roles({ expandedClass, org, refetch, adminBypass = false }) {
                             onDraftChange={setHasDraftRole}
                             userRoleData={userRoleData}
                             isOwner={isOwner}
+                            members={members}
+                            showHeaderEditToggle={canManageRoles}
+                            onEditModeChange={setIsEditMode}
+                            onMemberRolesChange={handleMemberRolesChange}
+                            memberRoleActionPending={memberRoleActionPending}
                         />
                     </div>
                 </>

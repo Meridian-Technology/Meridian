@@ -1,29 +1,33 @@
+// .image-upload-popup-content{
+//     background-color: var(--background);
+// }
+
 .file-upload.image-upload {
     --text-size: 15px;
     --image-upload-color: var(--dark-blue);
 
     background-color: var(--background);
-    border: 2px dashed var(--lightborder);
-    transition: 0.3s all;
-    border-radius: 15px;
+    border: 1.5px dashed var(--lightborder);
+    transition: 0.25s all ease;
+    border-radius: 14px;
     margin-bottom: 15px;
-    padding: 10px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding-top: 20px;
+    padding-top: 18px;
     position: relative;
     max-width: 100%;
 
     iconify-icon {
-        font-size: 30px;
+        font-size: 28px;
         color: var(--image-upload-color);
         transition: all 0.3s;
-        padding: 15px;
-        background-color: color-mix(in srgb, var(--image-upload-color) 10%, transparent);
-        border-radius: 15px;
-        margin-bottom: 10px;
+        padding: 12px;
+        background-color: rgba(109, 142, 250, 0.1);
+        border-radius: 12px;
+        margin-bottom: 8px;
 
         &.drag-over {
             scale: 1.2;
@@ -117,11 +121,12 @@
         font-family: 'Inter';
         font-weight: 500;
         font-size: var(--text-size);
-        color: #737373;
+        color: var(--text);
         margin: 0;
-        margin-bottom: 10px;
-        margin-top: 10px;
+        margin-bottom: 8px;
+        margin-top: 8px;
         text-align: center;
+        line-height: 1.4;
         label.browse{
             color: var(--image-upload-color);  
             cursor: pointer;
@@ -131,10 +136,10 @@
 
     p.upload-message {
         font-family: 'Inter';
-        font-weight: 500;
-        font-size: calc(var(--text-size) - 1px);
-        color: var(--darkborder);
-        margin: calc(var(--text-size) - 2px);
+        font-weight: 450;
+        font-size: calc(var(--text-size) - 2px);
+        color: var(--light-text);
+        margin: 6px 0 2px;
         text-align: center;
     }
 
@@ -150,8 +155,8 @@
     .upload-button{
         font-family: 'Inter';
         font-weight: 600;
-        border-radius: 5px;
-        padding: 3px 12px;
+        border-radius: 7px;
+        padding: 6px 12px;
         background-color: var(--image-upload-color);
         color: white;
         font-size: 13px;
@@ -170,9 +175,9 @@
     .clear-button{
         font-family: 'Inter';
         font-weight: 600;
-        border-radius: 5px;
-        padding: 3px 12px;
-        background-color: var(--darkborder);
+        border-radius: 7px;
+        padding: 6px 12px;
+        background-color: var(--light-text);
         color: white;
         margin-right: 5px;
         &:hover{
@@ -197,7 +202,7 @@
 
     &.active {
         background-color: var(--background);
-        border: 2px dashed var(--image-upload-color);
+        border: 1.5px dashed var(--image-upload-color);
         
         img.preview {
             outline: 2px solid var(--image-upload-color);
@@ -212,8 +217,8 @@
     &.drag-over,
     &:hover {
         cursor: pointer;
-        background-color: color-mix(in srgb, var(--image-upload-color) 10%, transparent);
-        border: 2px dashed var(--image-upload-color);
+        background-color: rgba(109, 142, 250, 0.08);
+        border: 1.5px dashed var(--image-upload-color);
 
         iconify-icon {
             color: var(--image-upload-color);

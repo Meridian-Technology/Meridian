@@ -34,13 +34,22 @@ function requireOrgPermission(permission, orgParam = 'orgId') {
                 return next();
             }
 
+            const org = await Org.findById(orgId);
+            if (!org) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Organization not found'
+                });
+            }
+
             const member = await OrgMember.findOne({
                 org_id: orgId,
                 user_id: req.user.userId,
                 status: 'active'
             });
 
-            if (!member) {
+            const isRecordOwner = String(org.owner) === String(req.user.userId);
+            if (!member && !isRecordOwner) {
                 console.log('Denied, You are not a member of this organization');
                 return res.status(403).json({
                     success: false,
@@ -48,13 +57,10 @@ function requireOrgPermission(permission, orgParam = 'orgId') {
                 });
             }
 
-            // Get the organization to check permissions
-            const org = await Org.findById(orgId);
-            if (!org) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Organization not found'
-                });
+            if (isRecordOwner) {
+                req.orgMember = member || { role: 'owner', roles: ['owner'] };
+                req.org = org;
+                return next();
             }
 
             const hasPermission = await member.hasPermissionWithOrg(permission, org);
@@ -112,27 +118,31 @@ function requireAnyOrgPermission(permissions, orgParam = 'orgId') {
                 return next();
             }
 
-            const member = await OrgMember.findOne({
-                org_id: orgId,
-                user_id: req.user.userId,
-                status: 'active'
-            });
-
-            if (!member) {
-                console.log('Denied, You are not a member of this organization');
-                return res.status(403).json({
-                    success: false,
-                    message: 'You are not a member of this organization'
-                });
-            }
-
-            // Get the organization to check permissions
             const org = await Org.findById(orgId);
             if (!org) {
                 return res.status(404).json({
                     success: false,
                     message: 'Organization not found'
                 });
+            }
+
+            const member = await OrgMember.findOne({
+                org_id: orgId,
+                user_id: req.user.userId,
+                status: 'active'
+            });
+            const isRecordOwner = String(org.owner) === String(req.user.userId);
+            if (!member && !isRecordOwner) {
+                console.log('Denied, You are not a member of this organization');
+                return res.status(403).json({
+                    success: false,
+                    message: 'You are not a member of this organization'
+                });
+            }
+            if (isRecordOwner) {
+                req.orgMember = member || { role: 'owner', roles: ['owner'] };
+                req.org = org;
+                return next();
             }
 
             // Check if user has any of the required permissions

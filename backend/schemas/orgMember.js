@@ -17,6 +17,10 @@ const memberSchema = new Schema({
         required: true,
         default: 'member'
     },
+    roles: {
+        type: [String],
+        default: ['member']
+    },
     status: {
         type: String,
         enum: ['active', 'inactive', 'pending', 'suspended'],
@@ -108,6 +112,18 @@ memberSchema.methods.hasPermission = async function(permission) {
 };
 
 // Method to check permissions with Org model provided
+memberSchema.methods.getAssignedRoles = function() {
+    if (Array.isArray(this.roles) && this.roles.length > 0) {
+        return [...new Set(this.roles.filter(Boolean))];
+    }
+    return this.role ? [this.role] : ['member'];
+};
+
+memberSchema.methods.getPrimaryRole = function() {
+    const assignedRoles = this.getAssignedRoles();
+    return assignedRoles[0] || 'member';
+};
+
 memberSchema.methods.hasPermissionWithOrg = async function(permission, org) {
     // Check if permission is explicitly denied
     if (this.deniedPermissions.includes(permission)) {
@@ -119,10 +135,10 @@ memberSchema.methods.hasPermissionWithOrg = async function(permission, org) {
         return true;
     }
     
-    // Check role permissions using the provided org
+    // Check role permissions using the provided org (union for multi-role members)
     if (!org) return false;
-    
-    return org.hasPermission(this.role, permission);
+    const assignedRoles = this.getAssignedRoles();
+    return assignedRoles.some((roleName) => org.hasPermission(roleName, permission));
 };
 
 memberSchema.methods.canManageMembers = async function(org) {
@@ -161,6 +177,7 @@ memberSchema.methods.changeRole = async function(newRole, assignedBy, reason = '
         reason: reason || ''
     });
     this.role = newRole;
+    this.roles = [newRole];
     this.assignedBy = assignedBy;
     this.assignedAt = new Date();
     if (termStart !== undefined) {
@@ -172,9 +189,32 @@ memberSchema.methods.changeRole = async function(newRole, assignedBy, reason = '
     return this.save();
 };
 
+memberSchema.methods.setRoles = async function(newRoles, assignedBy, reason = '', options = {}) {
+    const normalizedRoles = [...new Set((newRoles || []).filter(Boolean))];
+    const safeRoles = normalizedRoles.length > 0 ? normalizedRoles : ['member'];
+    const primaryRole = safeRoles[0];
+    return this.changeRole(primaryRole, assignedBy, reason, options).then(async () => {
+        this.roles = safeRoles;
+        return this.save();
+    });
+};
+
+memberSchema.pre('save', function(next) {
+    if (!Array.isArray(this.roles) || this.roles.length === 0) {
+        this.roles = [this.role || 'member'];
+    }
+    this.roles = [...new Set(this.roles.filter(Boolean))];
+    this.role = this.roles[0] || this.role || 'member';
+    next();
+});
+
 // Static method to get members by role
 memberSchema.statics.getMembersByRole = function(orgId, role) {
-    return this.find({ org_id: orgId, role: role, status: 'active' })
+    return this.find({
+        org_id: orgId,
+        status: 'active',
+        $or: [{ role }, { roles: role }]
+    })
         .populate('user_id', 'username name email picture')
         .populate('assignedBy', 'username name');
 };

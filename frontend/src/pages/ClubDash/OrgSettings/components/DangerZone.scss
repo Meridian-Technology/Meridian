@@ -78,6 +78,174 @@
                     opacity: 0.8;
                 }
             }
+
+            .transfer-button {
+                flex-shrink: 0;
+                background: #f59e0b;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                white-space: nowrap;
+
+                &:hover:not(:disabled) {
+                    background: #d97706;
+                    transform: translateY(-1px);
+                }
+
+                &:active:not(:disabled) {
+                    transform: translateY(0);
+                }
+
+                &:disabled {
+                    background: #9ca3af;
+                    cursor: not-allowed;
+                    opacity: 0.8;
+                }
+            }
+        }
+    }
+}
+
+// Transfer Ownership Confirmation Popup Styles
+.transfer-owner-confirm-popup {
+    .transfer-owner-confirm-content {
+        background: var(--background, #fff);
+        border-radius: 16px;
+        padding: 28px;
+        max-width: 480px;
+        width: 100%;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+
+        .transfer-owner-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+
+            .warning-icon {
+                font-size: 28px;
+                color: #f59e0b;
+                flex-shrink: 0;
+            }
+
+            h2 {
+                font-family: 'Inter', 'Satoshi', sans-serif;
+                font-size: 20px;
+                font-weight: 600;
+                color: var(--text, #111827);
+                margin: 0;
+                letter-spacing: -0.02em;
+            }
+        }
+
+        .transfer-owner-warning {
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.18);
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin-bottom: 20px;
+
+            p {
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                color: var(--text, #374151);
+                margin: 0 0 10px 0;
+                line-height: 1.55;
+
+                &:last-of-type {
+                    margin-bottom: 0;
+                }
+
+                strong {
+                    color: #b45309;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        .transfer-owner-form {
+            margin-bottom: 24px;
+
+            label {
+                display: block;
+                font-family: 'Inter', sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                color: var(--text, #374151);
+                margin-bottom: 8px;
+            }
+
+            .owner-select-input {
+                width: 100%;
+                padding: 12px 14px;
+                border: 1px solid var(--lighterborder, #e5e7eb);
+                border-radius: 8px;
+                font-size: 15px;
+                font-family: 'Inter', sans-serif;
+                background: var(--background, #fff);
+                color: var(--text, #111827);
+                box-sizing: border-box;
+
+                &:focus {
+                    outline: none;
+                    border-color: #f59e0b;
+                    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+                }
+            }
+
+            .transfer-owner-loading {
+                margin: 8px 0 0;
+                color: var(--light-text, #6b7280);
+                font-size: 13px;
+            }
+        }
+
+        .transfer-owner-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+
+            button {
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 500;
+                font-family: 'Inter', sans-serif;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                &.cancel-btn {
+                    background: transparent;
+                    border: 1px solid var(--lighterborder, #e5e7eb);
+                    color: var(--text, #374151);
+
+                    &:hover:not(:disabled) {
+                        background: #f9fafb;
+                    }
+                }
+
+                &.confirm-btn {
+                    background: #f59e0b;
+                    border: none;
+                    color: white;
+
+                    &:hover:not(:disabled) {
+                        background: #d97706;
+                    }
+                }
+
+                &:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+            }
         }
     }
 }
