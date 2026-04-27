@@ -35,8 +35,9 @@ const ApplicationCard = ({ application, isSelected, onSelect }) => {
 };
 
 
-const ApplicationViewer = ({ application, onAction, loading, error }) => {
+const ApplicationViewer = ({ application, onAction, loading, error, roles }) => {
     const { status, createdAt, formResponse } = application;
+    const [selectedRole, setSelectedRole] = useState('member');
     
     const handleAction = useCallback(async (action) => {
         await onAction(action);
@@ -59,9 +60,21 @@ const ApplicationViewer = ({ application, onAction, loading, error }) => {
             
             {status === 'pending' && (
                 <div className="action-buttons">
+                    <select
+                        value={selectedRole}
+                        onChange={(e) => setSelectedRole(e.target.value)}
+                        disabled={loading}
+                        className="application-role-select"
+                    >
+                        {(roles?.length ? roles : [{ name: 'member', displayName: 'Member' }]).map((role) => (
+                            <option key={role.name} value={role.name}>
+                                {role.displayName || role.name}
+                            </option>
+                        ))}
+                    </select>
                     <button 
                         className="approve-btn" 
-                        onClick={() => handleAction('approve')} 
+                        onClick={() => handleAction('approve', { role: selectedRole, roles: [selectedRole] })} 
                         disabled={loading}
                     >
                         {loading ? 'Processing...' : 'Approve'}
@@ -127,7 +140,7 @@ ErrorState.propTypes = {
     onRetry: PropTypes.func
 };
 
-function MemberApplicationsViewer({ org }) {
+function MemberApplicationsViewer({ org, roles = [] }) {
     const [selectedApplicationId, setSelectedApplicationId] = useState(null);
     const [actionLoading, setActionLoading] = useState(false);
     const [actionError, setActionError] = useState(null);
@@ -164,7 +177,7 @@ function MemberApplicationsViewer({ org }) {
         setActionError(null); // Clear any previous action errors
     }, []);
 
-    const handleAction = useCallback(async (action) => {
+    const handleAction = useCallback(async (action, payload = {}) => {
         if (!selectedApplication) return;
         
         setActionLoading(true);
@@ -175,7 +188,7 @@ function MemberApplicationsViewer({ org }) {
             const applicationId = selectedApplication._id;
             const url = `/org-roles/${orgId}/applications/${applicationId}/${action}`;
             
-            const response = await apiRequest(url, {}, { method: 'POST' });
+            const response = await apiRequest(url, payload, { method: 'POST' });
             
             if (response.success) {
                 // Refetch applications to get updated data from server
@@ -282,6 +295,7 @@ function MemberApplicationsViewer({ org }) {
                                 onAction={handleAction}
                                 loading={actionLoading}
                                 error={actionError}
+                                roles={roles}
                             />
                         ) }
                     </div>
@@ -293,7 +307,8 @@ function MemberApplicationsViewer({ org }) {
 MemberApplicationsViewer.propTypes = {
     org: PropTypes.shape({
         _id: PropTypes.string.isRequired
-    }).isRequired
+    }).isRequired,
+    roles: PropTypes.array
 };
 
 export default MemberApplicationsViewer;

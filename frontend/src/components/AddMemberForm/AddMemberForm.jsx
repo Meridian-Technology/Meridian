@@ -28,6 +28,7 @@ function validateEmails(emails) {
 function AddMemberForm({
     orgId,
     roles = [],
+    assignableRoles = [],
     existingMembers = [],
     onMemberAdded,
     onClose,
@@ -49,7 +50,7 @@ function AddMemberForm({
     const searchWrapperRef = useRef(null);
     const debounceRef = useRef(null);
 
-    const roleOptions = roles.length ? roles : [{ name: 'member', displayName: 'Member' }];
+    const roleOptions = assignableRoles.length ? assignableRoles : (roles.length ? roles : [{ name: 'member', displayName: 'Member' }]);
     const existingMemberIds = useMemo(
         () => existingMembers.map(m => m.user_id?._id || m.user_id).filter(Boolean),
         [existingMembers]
@@ -144,7 +145,8 @@ function AddMemberForm({
         if (selectedToInvite.length === 0 || !orgId) return;
         const invites = selectedToInvite.map(item => ({
             email: item.email,
-            role: item.role || 'member'
+            role: item.role || 'member',
+            roles: [item.role || 'member']
         }));
         setSending(true);
         try {
@@ -172,7 +174,8 @@ function AddMemberForm({
         if (!batchPreviewData?.toInvite?.length || !orgId) return;
         const invites = batchPreviewData.toInvite.map(item => ({
             email: item.email,
-            role: batchInviteRoles[item.email] || item.role || 'member'
+            role: batchInviteRoles[item.email] || item.role || 'member',
+            roles: [batchInviteRoles[item.email] || item.role || 'member']
         }));
         setSending(true);
         try {

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import RoleManager from '../../../../components/RoleManager';
+import { Icon } from '@iconify-icon/react';
+import apiRequest from '../../../../utils/postRequest';
 import { useOrgPermissions, useOrgSave } from './settingsHelpers';
 
 const RolesSettings = ({ org, expandedClass, adminBypass = false }) => {
@@ -21,6 +23,8 @@ const RolesSettings = ({ org, expandedClass, adminBypass = false }) => {
     const [permissionsChecked, setPermissionsChecked] = useState(false);
     const [canManageSettings, setCanManageSettings] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [members, setMembers] = useState([]);
 
     const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { saveOrgSettings } = useOrgSave(org);
@@ -31,6 +35,22 @@ const RolesSettings = ({ org, expandedClass, adminBypass = false }) => {
             initializeFormData();
         }
     }, [org, permissionsChecked]);
+
+    useEffect(() => {
+        if (!org?._id || !hasAccess) return;
+        const fetchMembers = async () => {
+            try {
+                const response = await apiRequest(`/org-roles/${org._id}/members`, {}, { method: 'GET' });
+                if (response?.success) {
+                    setMembers(response.members || []);
+                }
+            } catch (error) {
+                console.error('Error fetching role members:', error);
+                setMembers([]);
+            }
+        };
+        fetchMembers();
+    }, [org?._id, hasAccess]);
 
     const initializePermissions = async () => {
         const permissions = await checkUserPermissions();
@@ -77,6 +97,19 @@ const RolesSettings = ({ org, expandedClass, adminBypass = false }) => {
         }
     };
 
+    const handleEnterEditMode = () => {
+        if (!canManageSettings) return;
+        setIsEditMode(true);
+    };
+
+    const handleCancelEdit = () => {
+        setFormData(prev => ({
+            ...prev,
+            positions: originalData.positions
+        }));
+        setIsEditMode(false);
+    };
+
     if (!hasAccess) {
         return (
             <div className={`dash ${expandedClass}`}>
@@ -107,19 +140,28 @@ const RolesSettings = ({ org, expandedClass, adminBypass = false }) => {
                 <RoleManager 
                     roles={formData.positions}
                     onRolesChange={handleRolesChange}
-                    isEditable={canManageSettings}
+                    isEditable={canManageSettings && isEditMode}
+                    members={members}
                 />
             </div>
 
-            {canManageSettings && (
-                <button 
-                    className="save-button" 
-                    onClick={handleSave}
-                    disabled={saving}
-                >
-                    {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                {canManageSettings && !isEditMode && (
+                    <button className="save-button" onClick={handleEnterEditMode}>
+                        <Icon icon="mdi:pencil-outline" /> Edit Roles
+                    </button>
+                )}
+                {canManageSettings && isEditMode && (
+                    <>
+                        <button className="save-button" onClick={handleSave} disabled={saving}>
+                            {saving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                        <button className="save-button" onClick={handleCancelEdit} disabled={saving}>
+                            Cancel
+                        </button>
+                    </>
+                )}
+            </div>
         </div>
     );
 };

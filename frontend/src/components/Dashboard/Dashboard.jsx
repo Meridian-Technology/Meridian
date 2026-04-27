@@ -174,14 +174,45 @@ function Dashboard({
         if (sub !== null) {
             // We're in a sub-menu context
             const subIndex = parseInt(sub);
-            if (subIndex >= 0) {
+            const pageItem = menuItems[page];
+            const subItems = pageItem?.subItems;
+
+            // Rehydrate sub-menu state from URL so refresh/direct links preserve submenu context
+            if (
+                page >= 0 &&
+                page < menuItems.length &&
+                Array.isArray(subItems) &&
+                subItems.length > 0 &&
+                subIndex >= 0 &&
+                subIndex < subItems.length
+            ) {
+                setNavigationStack([{
+                    parentIndex: page,
+                    subIndex,
+                    items: subItems,
+                    parentLabel: pageItem.label
+                }]);
+                setCurrentSubItems(subItems);
+                setShowBackButton(true);
                 setCurrentDisplay(subIndex);
+            } else if (page >= 0 && page < menuItems.length) {
+                // Invalid sub param for this page - recover to main page context
+                setNavigationStack([]);
+                setCurrentSubItems(null);
+                setShowBackButton(false);
+                setCurrentDisplay(page);
             }
         } else if (page >= 0 && page < menuItems.length) {
             // We're in the main menu
+            setNavigationStack([]);
+            setCurrentSubItems(null);
+            setShowBackButton(false);
             setCurrentDisplay(page);
         } else if (!hasInitializedRef.current) {
             // Only fallback to default page on initial load if the parsed page is invalid
+            setNavigationStack([]);
+            setCurrentSubItems(null);
+            setShowBackButton(false);
             setCurrentDisplay(defaultPage);
         }
         
@@ -307,11 +338,15 @@ function Dashboard({
         setContentOpacity(0);
         
         setTimeout(() => {
+            setNavigationStack([]);
+            setCurrentSubItems(null);
+            setShowBackButton(false);
             setCurrentDisplay(index);
             // Update URL with the new page number, preserving other search params (e.g. adminView)
             setSearchParams(prev => {
                 const next = new URLSearchParams(prev);
                 next.set('page', index.toString());
+                next.delete('sub');
                 return next;
             }, { replace: true });
             

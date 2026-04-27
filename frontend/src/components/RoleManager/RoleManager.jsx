@@ -3,17 +3,21 @@ import './RoleManager.scss';
 import { Icon } from '@iconify-icon/react';
 import { getOrgRoleColor } from '../../utils/orgUtils';
 import DraggableList from '../DraggableList/DraggableList';
+import RoleMemberManagementPopup from './RoleMemberManagementPopup';
 
-const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEditable = true, roleHighlight = false, saveImmediately = false, onDraftChange, userRoleData = null, isOwner = false }, ref) => {
+const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEditable = true, roleHighlight = false, saveImmediately = false, onDraftChange, userRoleData = null, isOwner = false, members = [], showHeaderEditToggle = false, onEditModeChange, onMemberRolesChange, memberRoleActionPending = {} }, ref) => {
     const [customRoles, setCustomRoles] = useState(roles || []);
     const userHasEditedRef = useRef(false);
     const [selectedRole, setSelectedRole] = useState(null);
+    const [internalEditMode, setInternalEditMode] = useState(false);
+    const [memberManagementRoleName, setMemberManagementRoleName] = useState(null);
     const [formData, setFormData] = useState({
         name: '',
         permissions: [],
         color: '#a855f7',
         useCustomColor: false
     });
+    const effectiveEditable = isEditable && (!showHeaderEditToggle || internalEditMode);
 
     // Plaeholder role color pallete, needs to be updated.
     const colorPalette = [
@@ -348,8 +352,14 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
     };
 
     useImperativeHandle(ref, () => ({
-        createDraftRole
+        createDraftRole,
+        setEditMode: (isEditing) => setInternalEditMode(Boolean(isEditing))
     }));
+
+    useEffect(() => {
+        if (!onEditModeChange) return;
+        onEditModeChange(Boolean(internalEditMode));
+    }, [internalEditMode, onEditModeChange]);
 
     const handleRoleSelect = (role) => {
         userHasEditedRef.current = false; // Reset - we're loading role data, not user edit
@@ -408,6 +418,25 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
         const permission = availablePermissions.find(p => p.key === permissionKey);
         return permission ? permission.label : permissionKey;
     };
+    const getMemberDisplayName = (member) => {
+        const user = member?.user_id || member?.user || member;
+        if (!user) return 'Unknown User';
+        return user.name || user.username || user.email || 'Unknown User';
+    };
+    const getMemberId = (member) => {
+        const user = member?.user_id || member?.user || member;
+        return user?._id || member?._id || `${member?.role || 'member'}-${getMemberDisplayName(member)}`;
+    };
+    const getMemberInitial = (member) => {
+        const label = getMemberDisplayName(member);
+        return label?.charAt(0)?.toUpperCase() || 'U';
+    };
+    const getMemberRoles = (member) => {
+        const roleFromLegacyField = member?.role ? [member.role] : [];
+        const roleArray = Array.isArray(member?.roles) ? member.roles.filter(Boolean) : [];
+        const merged = [...new Set([...roleFromLegacyField, ...roleArray])];
+        return merged.length > 0 ? merged : ['member'];
+    };
 
     // Unless owner: cannot edit roles more privileged than yours. Same privilege level is allowed
     // (e.g. deleting a top custom role you assigned yourself). Lower order = higher privilege.
@@ -416,6 +445,10 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
         const targetOrder = role?.order ?? 999;
         return targetOrder >= (userRoleData?.order ?? -1);
     };
+    const isSystemRole = (role) => role?.name === 'owner' || role?.name === 'member';
+
+    const ownerRole = customRoles.find((role) => role.name === 'owner');
+    const draftRoleLabel = formData.name?.trim() ? formData.name.trim() : 'New Role';
 
     // Get all roles except owner, sorted by order (member always last)
     const editableRoles = customRoles
@@ -428,23 +461,201 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
             return (a.order || 0) - (b.order || 0);
         });
 
+    const orderedRoles = [...customRoles].sort((a, b) => {
+        if (a.name === 'owner') return -1;
+        if (b.name === 'owner') return 1;
+        if (a.name === 'member') return 1;
+        if (b.name === 'member') return -1;
+        return (a.order || 0) - (b.order || 0);
+    });
+
+    const managedRole = memberManagementRoleName
+        ? orderedRoles.find((role) => role.name === memberManagementRoleName)
+        : null;
+    const managedRoleMembers = managedRole
+        ? members.filter((member) => getMemberRoles(member).includes(managedRole.name))
+        : [];
+    const managedRoleAssignableMembers = managedRole
+        ? members.filter((member) => !getMemberRoles(member).includes(managedRole.name))
+        : [];
+
+    if (!effectiveEditable) {
+        return (
+            <div className="role-manager role-manager--view">
+                <div className="role-overview-header">
+                    <div className="role-overview-header__row">
+                        <div>
+                            <h3>Roles Overview</h3>
+                            <p>View permissions and member distribution by role.</p>
+                        </div>
+                        {isEditable && showHeaderEditToggle ? (
+                            <button
+                                type="button"
+                                className="role-overview-header__edit-btn"
+                                onClick={() => setInternalEditMode(true)}
+                            >
+                                <Icon icon="mdi:pencil-outline" />
+                                Edit Roles
+                            </button>
+                        ) : null}
+                    </div>
+                </div>
+                <div className="role-overview-grid">
+                    {orderedRoles.map((role) => {
+                        const roleMembers = members.filter((member) => {
+                            const memberRoles = Array.isArray(member?.roles) && member.roles.length > 0
+                                ? member.roles
+                                : [member?.role || 'member'];
+                            return memberRoles.includes(role.name);
+                        });
+                        const visibleMembers = roleMembers.slice(0, 5);
+                        const hiddenCount = Math.max(roleMembers.length - visibleMembers.length, 0);
+                        const rolePermissions = role.permissions || [];
+                        const assignableMembers = members.filter((member) => {
+                            const memberRoles = getMemberRoles(member);
+                            return !memberRoles.includes(role.name);
+                        });
+                        const canManageAssignments = Boolean(isEditable && onMemberRolesChange);
+                        return (
+                            <div key={role.name} className="role-overview-card">
+                                <div className="role-overview-card__header">
+                                    <div className="role-overview-card__identity">
+                                        <span
+                                            className="role-overview-card__dot"
+                                            style={{ backgroundColor: getOrgRoleColor(role, 1, customRoles) }}
+                                        />
+                                        <div>
+                                            <h4>{role.displayName || role.name}</h4>
+                                            <p>{roleMembers.length} member{roleMembers.length === 1 ? '' : 's'}</p>
+                                        </div>
+                                    </div>
+                                    {(role.name === 'owner' || role.name === 'member') && (
+                                        <span className="role-overview-card__system-badge">System</span>
+                                    )}
+                                    {canManageAssignments && role.name !== 'owner' ? (
+                                        <button
+                                            type="button"
+                                            className="role-overview-card__manage-icon-btn"
+                                            onClick={() => setMemberManagementRoleName(role.name)}
+                                            title={`Manage members for ${role.displayName || role.name}`}
+                                            aria-label={`Manage members for ${role.displayName || role.name}`}
+                                        >
+                                            <Icon icon="mdi:account-cog-outline" />
+                                        </button>
+                                    ) : null}
+                                </div>
+
+                                <div className="role-overview-card__permissions">
+                                    {rolePermissions.length > 0 ? (
+                                        rolePermissions.slice(0, 6).map((permission) => (
+                                            <span key={permission} className="permission-chip">
+                                                {getPermissionLabel(permission)}
+                                            </span>
+                                        ))
+                                    ) : (
+                                        <span className="permission-chip permission-chip--empty">No explicit permissions</span>
+                                    )}
+                                    {rolePermissions.length > 6 && (
+                                        <span className="permission-chip permission-chip--more">
+                                            +{rolePermissions.length - 6} more
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="role-overview-card__members">
+                                    <p className="role-overview-card__members-title">Members</p>
+                                    {visibleMembers.length === 0 ? (
+                                        <p className="role-overview-card__empty-members">No members currently assigned.</p>
+                                    ) : (
+                                        <div className="role-overview-card__member-list">
+                                            {visibleMembers.map((member) => (
+                                                <div key={getMemberId(member)} className="role-overview-card__member-pill">
+                                                    <span className="member-initial">{getMemberInitial(member)}</span>
+                                                    <span className="member-name">{getMemberDisplayName(member)}</span>
+                                                </div>
+                                            ))}
+                                            {hiddenCount > 0 && (
+                                                <div className="role-overview-card__member-pill role-overview-card__member-pill--more">
+                                                    +{hiddenCount} more
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+                <RoleMemberManagementPopup
+                    role={managedRole}
+                    isOpen={Boolean(managedRole)}
+                    onClose={() => setMemberManagementRoleName(null)}
+                    assignedMembers={managedRoleMembers}
+                    assignableMembers={managedRoleAssignableMembers}
+                    getMemberId={getMemberId}
+                    getMemberDisplayName={getMemberDisplayName}
+                    getMemberInitial={getMemberInitial}
+                    memberRoleActionPending={memberRoleActionPending}
+                    onAssignMember={(member) => onMemberRolesChange({
+                        member,
+                        roleName: managedRole.name,
+                        action: 'add'
+                    })}
+                    onRemoveMember={(member) => onMemberRolesChange({
+                        member,
+                        roleName: managedRole.name,
+                        action: 'remove'
+                    })}
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="role-manager">
             <div className="role-manager-layout">
                 {/* Left Column: Role List */}
                 <div className="role-list-column">
                     <div className="role-list-header">
-                        {isEditable && (
-                            <button 
-                                className="add-role-btn"
-                                onClick={handleNewRole}
-                            >
-                                <Icon icon="mdi:plus" />
-                                Add Role
-                            </button>
+                        {effectiveEditable && (
+                            <>
+                                {showHeaderEditToggle && (
+                                    <button
+                                        type="button"
+                                        className="cancel-edit-btn"
+                                        onClick={() => setInternalEditMode(false)}
+                                    >
+                                        Cancel Editing
+                                    </button>
+                                )}
+                                <button
+                                    className="add-role-btn"
+                                    onClick={handleNewRole}
+                                >
+                                    <Icon icon="mdi:plus" />
+                                    Add Role
+                                </button>
+                            </>
                         )}
                     </div>
                     <div className="role-list">
+                        {ownerRole && (
+                            <div
+                                className={`role-list-item system-role ${selectedRole?.name === 'owner' ? 'selected' : ''}`}
+                                onClick={() => handleRoleSelect(ownerRole)}
+                            >
+                                <div className="role-list-item-content">
+                                    <div
+                                        className="role-color-indicator"
+                                        style={{ backgroundColor: getOrgRoleColor(ownerRole, 1, customRoles) }}
+                                    />
+                                    <div className="role-list-item-info">
+                                        <span className="role-list-item-name">{ownerRole.displayName || 'Owner'}</span>
+                                        <small>System role (immutable)</small>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {editableRoles.length === 0 ? (
                             <div className="no-roles">
                                 <Icon icon="mdi:account-group-outline" />
@@ -452,11 +663,28 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                             </div>
                         ) : (
                             <>
+                                {selectedRole?.isNew && (
+                                    <div
+                                        className="role-list-item selected draft-role-item"
+                                        onClick={() => handleRoleSelect({ name: '', displayName: draftRoleLabel, permissions: [], color: formData.color || '#a855f7', isNew: true })}
+                                    >
+                                        <div className="role-list-item-content">
+                                            <div
+                                                className="role-color-indicator"
+                                                style={{ backgroundColor: formData.color || '#a855f7' }}
+                                            />
+                                            <div className="role-list-item-info">
+                                                <span className="role-list-item-name">{draftRoleLabel}</span>
+                                                <small>Draft role</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 <DraggableList
                                     items={editableRoles.filter(role => role.name !== 'member')}
                                     onReorder={handleReorder}
                                     getItemId={(role) => role.name}
-                                    disabled={!isEditable || editableRoles.filter(r => r.name !== 'member').some(r => !canEditRole(r))}
+                                    disabled={!effectiveEditable || editableRoles.filter(r => r.name !== 'member').some(r => !canEditRole(r))}
                                     renderItem={(role, index) => {
                                         const isSelected = selectedRole?.name === role.name;
                                         
@@ -465,7 +693,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                                 className={`role-list-item ${isSelected ? 'selected' : ''}`}
                                                 onClick={() => handleRoleSelect(role)}
                                             >
-                                                {isEditable && canEditRole(role) && (
+                                                {effectiveEditable && canEditRole(role) && (
                                                     <div className="drag-handle" onClick={(e) => e.stopPropagation()}>
                                                         <Icon icon="mdi:drag" />
                                                     </div>
@@ -479,7 +707,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                                         <span className="role-list-item-name">{role.displayName || role.name}</span>
                                                     </div>
                                                 </div>
-                                                {isEditable && canEditRole(role) && (
+                                                {effectiveEditable && canEditRole(role) && (
                                                     <div className="role-list-item-actions" onClick={(e) => e.stopPropagation()}>
                                                         <button 
                                                             className="delete-btn"
@@ -547,7 +775,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                         setFormData(prev => ({ ...prev, name: e.target.value }));
                                     }}
                                     placeholder="e.g., Treasurer, Secretary"
-                                    disabled={selectedRole && (selectedRole.name === 'owner' || !canEditRole(selectedRole))}
+                                    disabled={selectedRole && (isSystemRole(selectedRole) || !canEditRole(selectedRole))}
                                 />
                                 <small>This is what users will see. The internal name will be automatically generated.</small>
                             </div>
@@ -562,9 +790,9 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                                     type="button"
                                                     className={`color-swatch ${formData.color === color && !formData.useCustomColor ? 'selected' : ''}`}
                                                     style={{ backgroundColor: color }}
-                                                    onClick={() => selectedRole && canEditRole(selectedRole) && handleColorSelect(color)}
+                                                    onClick={() => selectedRole && !isSystemRole(selectedRole) && canEditRole(selectedRole) && handleColorSelect(color)}
                                                     title={color}
-                                                    disabled={selectedRole && !canEditRole(selectedRole)}
+                                                    disabled={selectedRole && (isSystemRole(selectedRole) || !canEditRole(selectedRole))}
                                                 />
                                             ))}
                                         </div>
@@ -580,7 +808,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                     onFocus={handleCustomColorFocus}
                                     placeholder="#a855f7"
                                     maxLength={7}
-                                    disabled={selectedRole && !canEditRole(selectedRole)}
+                                    disabled={selectedRole && (isSystemRole(selectedRole) || !canEditRole(selectedRole))}
                                 />
                                                 {formData.useCustomColor && formData.color && (
                                                     <div 
@@ -603,12 +831,12 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                                         return (
                                             <div
                                                 key={permission.key}
-                                                className={`permission-item ${isSelected ? 'selected' : ''} ${isComingSoon ? 'coming-soon' : ''} ${selectedRole && !canEditRole(selectedRole) ? 'disabled' : ''}`}
-                                                onClick={() => !isComingSoon && (!selectedRole || canEditRole(selectedRole)) && handlePermissionToggle(permission.key)}
+                                                className={`permission-item ${isSelected ? 'selected' : ''} ${isComingSoon ? 'coming-soon' : ''} ${selectedRole && (!canEditRole(selectedRole) || isSystemRole(selectedRole)) ? 'disabled' : ''}`}
+                                                onClick={() => !isComingSoon && (!selectedRole || (canEditRole(selectedRole) && !isSystemRole(selectedRole))) && handlePermissionToggle(permission.key)}
                                                 role="button"
-                                                tabIndex={isComingSoon || (selectedRole && !canEditRole(selectedRole)) ? -1 : 0}
+                                                tabIndex={isComingSoon || (selectedRole && (!canEditRole(selectedRole) || isSystemRole(selectedRole))) ? -1 : 0}
                                                 onKeyDown={(e) => {
-                                                    if (!isComingSoon && (!selectedRole || canEditRole(selectedRole)) && (e.key === 'Enter' || e.key === ' ')) {
+                                                    if (!isComingSoon && (!selectedRole || (canEditRole(selectedRole) && !isSystemRole(selectedRole))) && (e.key === 'Enter' || e.key === ' ')) {
                                                         e.preventDefault();
                                                         handlePermissionToggle(permission.key);
                                                     }
@@ -647,7 +875,7 @@ const RoleManager = forwardRef(({ roles, onRolesChange, onDeleteRequest, isEdita
                             <Icon icon="mdi:account-group-outline" />
                             <h3>Select a role to edit</h3>
                             <p>Choose a role from the list on the left to view and edit its permissions</p>
-                            {isEditable && (
+                            {effectiveEditable && (
                                 <button className="add-first-role-btn" onClick={handleNewRole}>
                                     Create Your First Role
                                 </button>

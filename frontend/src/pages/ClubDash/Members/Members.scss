@@ -396,6 +396,12 @@
                 //     align-items: center;
                 //     gap: 1rem;
 
+                    .role-badges {
+                        display: flex;
+                        gap: 6px;
+                        flex-wrap: wrap;
+                    }
+
                     .role-badge {
                         padding: 6px 12px;
                         border-radius: 20px;
@@ -754,6 +760,11 @@
                 box-shadow: 0 0 0 3px rgba(100, 171, 108, 0.2);
             }
 
+            &.selected {
+                border-color: var(--org-primary, #64AB6C);
+                background: var(--org-primary-transparent, rgba(100, 171, 108, 0.15));
+            }
+
             &.disabled {
                 opacity: 0.5;
                 cursor: not-allowed;
@@ -811,6 +822,18 @@
                 margin-left: 12px;
             }
         }
+    }
+
+    .assign-role-btn-primary {
+        width: 100%;
+        margin-top: 12px;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 16px;
+        background: var(--org-primary, #64AB6C);
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
     }
 }
 
