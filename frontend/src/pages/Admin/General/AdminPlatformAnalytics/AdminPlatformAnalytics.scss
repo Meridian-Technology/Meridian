@@ -160,6 +160,27 @@
             border-radius: 6px;
             background: #fff;
             cursor: pointer;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 80ms ease;
+
+            &:hover {
+                border-color: rgba(69, 161, 252, 0.55);
+                background: rgba(69, 161, 252, 0.1);
+                color: #1e40af;
+            }
+
+            &:active {
+                border-color: rgba(30, 64, 175, 0.6);
+                background: rgba(30, 64, 175, 0.16);
+                color: #1e3a8a;
+                transform: translateY(1px) scale(0.98);
+            }
+
+            &.is-key-active {
+                border-color: rgba(30, 64, 175, 0.6);
+                background: rgba(30, 64, 175, 0.16);
+                color: #1e3a8a;
+                transform: translateY(1px) scale(0.98);
+            }
         }
     }
 
@@ -214,6 +235,16 @@
                 color: #1e40af;
                 background: rgba(69, 161, 252, 0.08);
             }
+        }
+    }
+
+    &__kbd-tooltip-button {
+        position: relative;
+        overflow: visible;
+
+        &:hover .keybind-tooltip {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
         }
     }
 
@@ -295,6 +326,12 @@
         }
     }
 
+    &__chart-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+
     &__chart-reset-btn {
         padding: 0.3rem 0.65rem;
         font-size: 0.78rem;
@@ -307,6 +344,97 @@
             opacity: 0.45;
             cursor: not-allowed;
         }
+    }
+
+    &__detailed-popup {
+        max-height: 92vh;
+        max-width: min(1200px, 96vw) !important;
+
+        .close-popup {
+            top: 12px;
+            right: 12px;
+        }
+    }
+
+    &__detailed-popup-body {
+        padding-top: 1.2rem;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(92vh - 40px);
+        overflow: hidden;
+    }
+
+    &__detailed-popup-header {
+        margin-bottom: 0.7rem;
+
+        h3 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        p {
+            margin: 0.25rem 0 0 0;
+            font-size: 0.84rem;
+            color: #64748b;
+        }
+    }
+
+    &__detailed-popup-charts {
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+        border-top: 1px solid var(--lighterborder);
+        padding-top: 0.7rem;
+        overflow-y: auto;
+        min-height: 0;
+        padding-right: 4px;
+    }
+
+    &__detailed-popup-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.6rem;
+        margin-bottom: 0.65rem;
+        padding: 0.55rem;
+        border: 1px solid var(--lighterborder);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--background, #fff) 94%, #94a3b8 6%);
+    }
+
+    &__detailed-popup-bounds {
+        margin-bottom: 0;
+        font-size: 0.8rem;
+        color: #334155;
+        font-weight: 500;
+    }
+
+    &__detailed-popup-bounds--prominent {
+        display: flex;
+        align-items: center;
+        min-height: 34px;
+        padding: 0.42rem 0.65rem;
+        border: 1px solid rgba(37, 99, 235, 0.28);
+        border-radius: 7px;
+        background: rgba(59, 130, 246, 0.1);
+        color: #1e3a8a;
+        font-size: 0.82rem;
+        white-space: nowrap;
+
+        strong {
+            margin-right: 0.3rem;
+            font-weight: 700;
+        }
+    }
+
+    &__detailed-popup-controls-right {
+        margin-left: auto;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.6rem;
     }
 
     &__chart {
@@ -416,86 +544,4 @@
         }
     }
 
-    /* Match legacy `.visit-chart` / AnalyticsChart look (General admin) */
-    .admin-platform-trend-chart.visit-chart {
-        width: 100%;
-        padding: 14px 14px 10px;
-        background: transparent;
-        border-radius: 0;
-        box-shadow: none;
-        border: none;
-        box-sizing: border-box;
-        margin-bottom: 0;
-    }
-
-    .admin-platform-trend-chart .header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 8px;
-        margin-left: 8px;
-    }
-
-    .admin-platform-trend-chart .header h2 {
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: var(--lighter-text);
-        font-family: 'Inter', sans-serif;
-        margin: 0;
-        text-transform: uppercase;
-    }
-
-    .admin-platform-trend-chart__total {
-        margin-right: 10px;
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--text, #111827);
-
-    }
-
-    .admin-platform-trend-chart__loading {
-        font-size: 0.75rem;
-        color: #94a3b8;
-        white-space: nowrap;
-    }
-
-    .chart-empty-visx {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 200px;
-        color: #94a3b8;
-        font-size: 0.875rem;
-    }
-
-    /* Visx tooltip (EventDashboardChart) — EventDashboard.scss may not load here */
-    .rsvp-chart-tooltip {
-        padding: 8px 10px;
-        background: var(--background, #fff);
-        border: 1px solid var(--lighterborder, #e5e7eb);
-        border-radius: 8px;
-        font-size: 12px;
-        box-shadow: var(--shadow, 0 4px 12px rgba(0, 0, 0, 0.08));
-    }
-
-    .rsvp-chart-tooltip-date {
-        font-weight: 600;
-        margin-bottom: 4px;
-        color: var(--text, #111827);
-    }
-
-    .rsvp-chart-tooltip-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 2px;
-        color: var(--lighter-text, #64748b);
-    }
-
-    .rsvp-chart-tooltip-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        flex-shrink: 0;
-    }
 }

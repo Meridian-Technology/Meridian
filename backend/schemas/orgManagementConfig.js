@@ -178,6 +178,40 @@ const orgManagementConfigSchema = new mongoose.Schema({
             }
         }
     },
+
+    // How disabled org beta pages appear in Club Dashboard navigation.
+    betaFeatures: {
+        disabledMenuBehaviorByKey: {
+            type: {
+                org_tasks: {
+                    type: String,
+                    enum: ['coming_soon', 'hide'],
+                    default: 'coming_soon'
+                },
+                org_budgeting: {
+                    type: String,
+                    enum: ['coming_soon', 'hide'],
+                    default: 'coming_soon'
+                },
+                org_governance: {
+                    type: String,
+                    enum: ['coming_soon', 'hide'],
+                    default: 'coming_soon'
+                },
+                org_lifecycle: {
+                    type: String,
+                    enum: ['coming_soon', 'hide'],
+                    default: 'coming_soon'
+                },
+                org_verification_requests: {
+                    type: String,
+                    enum: ['coming_soon', 'hide'],
+                    default: 'coming_soon'
+                }
+            },
+            default: () => ({})
+        }
+    },
     
     // Verification type settings
     enableCustomVerificationTypes: {

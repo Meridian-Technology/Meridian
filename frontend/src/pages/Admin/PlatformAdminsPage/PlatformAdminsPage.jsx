@@ -8,6 +8,8 @@ import apiRequest from '../../../utils/postRequest';
 import '../General/General.scss';
 import './PlatformAdminsPage.scss';
 
+const ADMIN_PAGE_CACHE_TTL_MS = 60 * 1000;
+
 function PlatformAdminsPage() {
   const { addNotification } = useNotification();
   const { AdminGrad } = useGradient();
@@ -18,17 +20,23 @@ function PlatformAdminsPage() {
   const [savingTenants, setSavingTenants] = useState(false);
   const [savingAutoClaim, setSavingAutoClaim] = useState(false);
 
-  const { data: listResponse, loading, error: fetchError, refetch } = useFetch('/admin/platform-admins');
+  const { data: listResponse, loading, error: fetchError, refetch } = useFetch('/admin/platform-admins', {
+    cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
+  });
   const list = listResponse?.success ? (listResponse.data || []) : [];
   const {
     data: tenantConfigResponse,
     loading: tenantConfigLoading,
     error: tenantConfigFetchError,
     refetch: refetchTenantConfig,
-  } = useFetch('/admin/tenant-config');
+  } = useFetch('/admin/tenant-config', {
+    cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
+  });
   const tenantRows = tenantConfigResponse?.success ? (tenantConfigResponse.data?.tenants || []) : [];
 
-  const { data: orgConfigResponse, refetch: refetchOrgConfig } = useFetch('/org-management/config');
+  const { data: orgConfigResponse, refetch: refetchOrgConfig } = useFetch('/org-management/config', {
+    cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
+  });
   const orgConfig = orgConfigResponse?.data;
   const autoClaimEnabled = orgConfig?.autoClaimEnabled ?? false;
 

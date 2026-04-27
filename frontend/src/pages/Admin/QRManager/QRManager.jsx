@@ -12,6 +12,8 @@ import EventDashboardChart from '../../ClubDash/EventsManagement/components/Even
 import DateTimePicker from '../../../components/DateTimePicker/DateTimePicker';
 import './QRManager.scss';
 
+const QR_MANAGER_CACHE_TTL_MS = 90 * 1000;
+
 function SparklinePreview({ data = [], color = '#4DAA57', width = 72, height = 28, id }) {
     if (!data?.length) return null;
     const values = data.map((d) => d.y);
@@ -126,8 +128,12 @@ const QRManager = () => {
         return `${base}?${params}`;
     }, [dateRangeOverride]);
 
-    const { data: qrData, loading: qrLoading, error: qrError, refetch: refetchQRCodes } = useFetch(`/api/qr?${qrParams}`);
-    const { data: analyticsData, refetch: refetchAnalytics } = useFetch(analyticsUrl);
+    const { data: qrData, loading: qrLoading, error: qrError, refetch: refetchQRCodes } = useFetch(`/api/qr?${qrParams}`, {
+        cache: { enabled: true, ttlMs: QR_MANAGER_CACHE_TTL_MS }
+    });
+    const { data: analyticsData, refetch: refetchAnalytics } = useFetch(analyticsUrl, {
+        cache: { enabled: true, ttlMs: QR_MANAGER_CACHE_TTL_MS }
+    });
 
     const qrCodes = qrData?.qrCodes || [];
     const totalPages = qrData?.pagination?.totalPages || 1;

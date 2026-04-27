@@ -5,6 +5,8 @@ import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import PulseDot from '../../../../components/Interface/PulseDot/PulseDot';
 import AnimatedNumber from '../../../../components/Interface/AnimatedNumber/AnimatedNumber';
 
+const SITE_HEALTH_CACHE_TTL_MS = 5000;
+
 function formatUptime(seconds) {
     const d = Math.floor(seconds / (3600 * 24));
     const h = Math.floor((seconds % (3600 * 24)) / 3600);
@@ -20,7 +22,9 @@ function formatUptime(seconds) {
 }
 
 const SiteHealth = ({}) => {
-    const health = useFetch('/health');
+    const health = useFetch('/health', {
+        cache: { enabled: true, ttlMs: SITE_HEALTH_CACHE_TTL_MS }
+    });
 
     const [good, setGood] = useState(true);
     const [showDetailed, setShowDetailed] = useState(false);

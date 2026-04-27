@@ -425,7 +425,7 @@ const GeneralSettings = ({ org, expandedClass, adminBypass = false }) => {
             )
         },
         {
-            title: 'Weekly Meeting Time - NOTE: on reoccuring meeting refactor replace this with a create event button that creates popup for event creation w/ reoccurance embeded.',
+            title: 'Weekly Meeting Time ',
             subtitle: 'The time of your weekly meeting',
             action: (
                 <div className="form-group">

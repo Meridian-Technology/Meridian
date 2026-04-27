@@ -4,9 +4,12 @@ import { useGradient } from '../../../../hooks/useGradient';
 import { useNotification } from '../../../../NotificationContext';
 import apiRequest from '../../../../utils/postRequest';
 import { Icon } from '@iconify-icon/react';
+import Popup from '../../../../components/Popup/Popup';
 import {
     ORG_BETA_FEATURE_KEYS,
-    ORG_BETA_FEATURE_CATALOG
+    ORG_BETA_FEATURE_CATALOG,
+    ORG_BETA_DISABLED_MENU_BEHAVIOR_COMING_SOON,
+    ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE
 } from '../../../../constants/orgBetaFeatures';
 import './OrgBetaFeatures.scss';
 
@@ -33,6 +36,8 @@ function OrgBetaFeatures() {
         page: 1
     });
     const [savingByOrgId, setSavingByOrgId] = useState({});
+    const [savingDisabledBehavior, setSavingDisabledBehavior] = useState(false);
+    const [showDisabledBehaviorPopup, setShowDisabledBehaviorPopup] = useState(false);
 
     useEffect(() => {
         const id = window.setTimeout(() => {
@@ -58,6 +63,18 @@ function OrgBetaFeatures() {
     const { data: orgs, loading, error, refetch } = useFetch(
         `/org-management/organizations?${listQuery}`
     );
+    const { data: configRes, refetch: refetchConfig } = useFetch('/org-management/config');
+    const disabledMenuBehaviorByKey = useMemo(() => {
+        const fromConfig = configRes?.data?.betaFeatures?.disabledMenuBehaviorByKey || {};
+        return ORG_BETA_FEATURE_KEYS.reduce((acc, key) => {
+            const mode = fromConfig[key];
+            acc[key] =
+                mode === ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE
+                    ? ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE
+                    : ORG_BETA_DISABLED_MENU_BEHAVIOR_COMING_SOON;
+            return acc;
+        }, {});
+    }, [configRes]);
 
     const pagination = orgs?.pagination;
     const totalItems = pagination?.total ?? 0;
@@ -129,6 +146,46 @@ function OrgBetaFeatures() {
         [patchOrgBetaFeatures]
     );
 
+    const updateDisabledBehavior = useCallback(
+        async (featureKey, nextMode) => {
+            setSavingDisabledBehavior(true);
+            try {
+                const nextMap = {
+                    ...disabledMenuBehaviorByKey,
+                    [featureKey]: nextMode
+                };
+                const res = await apiRequest(
+                    '/org-management/config',
+                    { betaFeatures: { disabledMenuBehaviorByKey: nextMap } },
+                    { method: 'PUT' }
+                );
+                if (res?.success) {
+                    addNotification({
+                        title: 'Saved',
+                        message: 'Disabled beta menu behavior updated.',
+                        type: 'success'
+                    });
+                    refetchConfig();
+                } else {
+                    addNotification({
+                        title: 'Error',
+                        message: res?.message || 'Could not save disabled menu behavior.',
+                        type: 'error'
+                    });
+                }
+            } catch (e) {
+                addNotification({
+                    title: 'Error',
+                    message: e?.message || 'Could not save disabled menu behavior.',
+                    type: 'error'
+                });
+            } finally {
+                setSavingDisabledBehavior(false);
+            }
+        },
+        [addNotification, disabledMenuBehaviorByKey, refetchConfig]
+    );
+
     const isInitialLoad = loading && orgs == null;
 
     if (isInitialLoad) {
@@ -181,6 +238,14 @@ function OrgBetaFeatures() {
                             <option value="false">Unverified only</option>
                         </select>
                     </div>
+                    <button
+                        type="button"
+                        className="org-beta-features__config-btn"
+                        onClick={() => setShowDisabledBehaviorPopup(true)}
+                    >
+                        <Icon icon="mdi:tune-variant" aria-hidden />
+                        Configure disabled behavior
+                    </button>
                 </div>
 
                 {error && orgs != null && (
@@ -286,6 +351,46 @@ function OrgBetaFeatures() {
                     </div>
                 )}
             </div>
+            <Popup
+                isOpen={showDisabledBehaviorPopup}
+                onClose={() => setShowDisabledBehaviorPopup(false)}
+                customClassName="org-beta-features__config-popup"
+            >
+                <section
+                    className="org-beta-features__disabled-config"
+                    aria-label="Disabled beta menu behavior"
+                >
+                    <h2>Disabled menu behavior</h2>
+                    <p>
+                        Choose what users see when a beta feature is disabled for an organization.
+                    </p>
+                    <div className="org-beta-features__disabled-grid">
+                        {features.map((feature) => (
+                            <label
+                                key={`disabled-mode-${feature.key}`}
+                                className="org-beta-features__disabled-item"
+                            >
+                                <span>{feature.label}</span>
+                                <select
+                                    value={
+                                        disabledMenuBehaviorByKey[feature.key] ||
+                                        ORG_BETA_DISABLED_MENU_BEHAVIOR_COMING_SOON
+                                    }
+                                    onChange={(e) => updateDisabledBehavior(feature.key, e.target.value)}
+                                    disabled={savingDisabledBehavior}
+                                >
+                                    <option value={ORG_BETA_DISABLED_MENU_BEHAVIOR_COMING_SOON}>
+                                        Show "Soon" item
+                                    </option>
+                                    <option value={ORG_BETA_DISABLED_MENU_BEHAVIOR_HIDE}>
+                                        Hide item
+                                    </option>
+                                </select>
+                            </label>
+                        ))}
+                    </div>
+                </section>
+            </Popup>
 
         </div>
     );
