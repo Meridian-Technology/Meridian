@@ -3,6 +3,8 @@ import { useOrgPermissions, useOrgDelete } from './settingsHelpers';
 import Popup from '../../../../components/Popup/Popup';
 import { Icon } from '@iconify-icon/react';
 import { useGradient } from '../../../../hooks/useGradient';
+import { useNotification } from '../../../../NotificationContext';
+import apiRequest from '../../../../utils/postRequest';
 import './DangerZone.scss';
 
 const DangerZone = ({ org, expandedClass, adminBypass = false }) => {
@@ -13,10 +15,16 @@ const DangerZone = ({ org, expandedClass, adminBypass = false }) => {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
+    const [showTransferConfirm, setShowTransferConfirm] = useState(false);
+    const [transferCandidates, setTransferCandidates] = useState([]);
+    const [loadingTransferCandidates, setLoadingTransferCandidates] = useState(false);
+    const [selectedNewOwnerId, setSelectedNewOwnerId] = useState('');
+    const [transferringOwnership, setTransferringOwnership] = useState(false);
 
     const { checkUserPermissions } = useOrgPermissions(org, { adminBypass });
     const { deleteOrganization } = useOrgDelete();
     const { AtlasMain } = useGradient();
+    const { addNotification } = useNotification();
 
     useEffect(() => {
         if (org && !permissionsChecked) {
@@ -60,6 +68,83 @@ const DangerZone = ({ org, expandedClass, adminBypass = false }) => {
         setDeleteConfirmText('');
     };
 
+    const handleOpenTransferOwnership = async () => {
+        if (!isOwner || !org?._id || loadingTransferCandidates) return;
+
+        setShowTransferConfirm(true);
+        setSelectedNewOwnerId('');
+        setLoadingTransferCandidates(true);
+        try {
+            const response = await apiRequest(`/org-roles/${org._id}/members`, {}, { method: 'GET' });
+            if (response?.success) {
+                const currentOwnerId = String(org.owner?._id ?? org.owner ?? '');
+                const candidates = (response.members || []).filter((member) => {
+                    const userId = String(member?.user_id?._id || '');
+                    return userId && userId !== currentOwnerId;
+                });
+                setTransferCandidates(candidates);
+            } else {
+                setTransferCandidates([]);
+                addNotification({
+                    title: 'Unable to load members',
+                    message: response?.message || 'Could not load ownership transfer candidates.',
+                    type: 'error'
+                });
+            }
+        } catch (error) {
+            setTransferCandidates([]);
+            addNotification({
+                title: 'Unable to load members',
+                message: error?.message || 'Could not load ownership transfer candidates.',
+                type: 'error'
+            });
+        } finally {
+            setLoadingTransferCandidates(false);
+        }
+    };
+
+    const handleCloseTransferConfirm = () => {
+        if (transferringOwnership) return;
+        setShowTransferConfirm(false);
+        setSelectedNewOwnerId('');
+    };
+
+    const handleTransferOwnership = async () => {
+        if (!org?._id || !selectedNewOwnerId || transferringOwnership) return;
+        setTransferringOwnership(true);
+        try {
+            const response = await apiRequest(
+                `/org-roles/${org._id}/transfer-ownership/${selectedNewOwnerId}`,
+                {},
+                { method: 'POST' }
+            );
+            if (response?.success) {
+                addNotification({
+                    title: 'Ownership transferred',
+                    message: 'Organization ownership was transferred successfully.',
+                    type: 'success'
+                });
+                setShowTransferConfirm(false);
+                setSelectedNewOwnerId('');
+                setIsOwner(false);
+            } else {
+                addNotification({
+                    title: 'Transfer failed',
+                    message: response?.message || response?.error || 'Unable to transfer ownership.',
+                    type: 'error'
+                });
+            }
+        } catch (error) {
+            addNotification({
+                title: 'Transfer failed',
+                message: error?.message || 'Unable to transfer ownership.',
+                type: 'error'
+            });
+        } finally {
+            setTransferringOwnership(false);
+        }
+    };
+
     if (!hasAccess) {
         return (
             <div className={`dash ${expandedClass}`}>
@@ -87,6 +172,22 @@ const DangerZone = ({ org, expandedClass, adminBypass = false }) => {
                     <div className="danger-item">
                         <div className="danger-content">
                             <h3>
+                                <Icon icon="mdi:account-switch" className="danger-item-icon" />
+                                Transfer Ownership
+                            </h3>
+                            <p>Transfer organization ownership to another member. This moves the immutable <code>owner</code> role to the selected member.</p>
+                        </div>
+                        <button
+                            className="transfer-button"
+                            onClick={handleOpenTransferOwnership}
+                            disabled={!isOwner}
+                        >
+                            Transfer Ownership
+                        </button>
+                    </div>
+                    <div className="danger-item">
+                        <div className="danger-content">
+                            <h3>
                                 <Icon icon="mdi:delete-alert-outline" className="danger-item-icon" />
                                 Delete Organization
                             </h3>
@@ -102,6 +203,61 @@ const DangerZone = ({ org, expandedClass, adminBypass = false }) => {
                     </div>
                 </div>
             </div>
+
+            <Popup
+                isOpen={showTransferConfirm}
+                onClose={handleCloseTransferConfirm}
+                customClassName="transfer-owner-confirm-popup"
+            >
+                <div className="transfer-owner-confirm-content">
+                    <div className="transfer-owner-header">
+                        <Icon icon="mdi:account-switch" className="warning-icon" />
+                        <h2>Transfer Ownership</h2>
+                    </div>
+
+                    <div className="transfer-owner-warning">
+                        <p><strong>Heads up:</strong> this action changes who controls this organization.</p>
+                        <p>The selected member becomes the new owner and receives full owner permissions.</p>
+                    </div>
+
+                    <div className="transfer-owner-form">
+                        <label htmlFor="transferOwnerSelect">Select a new owner</label>
+                        <select
+                            id="transferOwnerSelect"
+                            className="owner-select-input"
+                            value={selectedNewOwnerId}
+                            onChange={(e) => setSelectedNewOwnerId(e.target.value)}
+                            disabled={loadingTransferCandidates || transferringOwnership}
+                        >
+                            <option value="">Choose a member...</option>
+                            {transferCandidates.map((member) => (
+                                <option key={member?._id || member?.user_id?._id} value={member?.user_id?._id}>
+                                    {member?.user_id?.name || member?.user_id?.username || member?.user_id?.email || 'Unknown user'}
+                                    {member?.user_id?.email ? ` (${member.user_id.email})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                        {loadingTransferCandidates ? <p className="transfer-owner-loading">Loading members...</p> : null}
+                    </div>
+
+                    <div className="transfer-owner-actions">
+                        <button
+                            className="cancel-btn"
+                            onClick={handleCloseTransferConfirm}
+                            disabled={transferringOwnership}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            className="confirm-btn"
+                            onClick={handleTransferOwnership}
+                            disabled={transferringOwnership || !selectedNewOwnerId}
+                        >
+                            {transferringOwnership ? 'Transferring...' : 'Transfer Ownership'}
+                        </button>
+                    </div>
+                </div>
+            </Popup>
 
             {/* Delete Confirmation Popup */}
             <Popup

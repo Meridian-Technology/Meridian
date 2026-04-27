@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ImageUpload.scss';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
-import CircleX from '../../assets/Icons/Circle-X.svg';
 
 const ImageUpload = ({ 
     onFileSelect,
