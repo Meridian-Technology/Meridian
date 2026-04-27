@@ -160,6 +160,27 @@
             border-radius: 6px;
             background: #fff;
             cursor: pointer;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 80ms ease;
+
+            &:hover {
+                border-color: rgba(69, 161, 252, 0.55);
+                background: rgba(69, 161, 252, 0.1);
+                color: #1e40af;
+            }
+
+            &:active {
+                border-color: rgba(30, 64, 175, 0.6);
+                background: rgba(30, 64, 175, 0.16);
+                color: #1e3a8a;
+                transform: translateY(1px) scale(0.98);
+            }
+
+            &.is-key-active {
+                border-color: rgba(30, 64, 175, 0.6);
+                background: rgba(30, 64, 175, 0.16);
+                color: #1e3a8a;
+                transform: translateY(1px) scale(0.98);
+            }
         }
     }
 

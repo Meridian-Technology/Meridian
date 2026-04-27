@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { DateRangePicker } from 'rsuite';
 import {
@@ -39,6 +39,7 @@ import 'rsuite/DateRangePicker/styles/index.css';
 const TREND_METRICS_PARAM =
     'screen_views,sessions,unique_visitors,explore_screen_views,new_users';
 const ADMIN_ANALYTICS_CACHE_TTL_MS = 2 * 60 * 1000;
+const ARROW_KEY_NAV_DEBOUNCE_MS = 140;
 const QUICK_RANGE_OPTIONS = [
     { id: 'month', label: 'month', shortcut: 'M' },
     { id: 'week', label: 'week', shortcut: 'W' },
@@ -191,6 +192,9 @@ function AdminPlatformAnalytics() {
     const [showFiltersPopup, setShowFiltersPopup] = useState(false);
     const [showDetailedChartsPopup, setShowDetailedChartsPopup] = useState(false);
     const [isCustomRangePickerOpen, setIsCustomRangePickerOpen] = useState(false);
+    const [keyboardNavActive, setKeyboardNavActive] = useState(null);
+    const arrowKeyDebounceRef = useRef(0);
+    const keyboardActiveTimeoutRef = useRef(null);
     const handleChartHoverSyncChange = useCallback((signal) => {
         if (!signal || signal.type === 'leave') {
             setChartHoverSync(null);
@@ -437,6 +441,24 @@ function AdminPlatformAnalytics() {
         }
     }, [rangeMode, customRange]);
 
+    const flashKeyboardArrowState = useCallback((direction) => {
+        setKeyboardNavActive(direction);
+        if (keyboardActiveTimeoutRef.current) {
+            clearTimeout(keyboardActiveTimeoutRef.current);
+        }
+        keyboardActiveTimeoutRef.current = setTimeout(() => {
+            setKeyboardNavActive(null);
+        }, 120);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (keyboardActiveTimeoutRef.current) {
+                clearTimeout(keyboardActiveTimeoutRef.current);
+            }
+        };
+    }, []);
+
     useEffect(() => {
         const handleKeyDown = (event) => {
             if (rangeMode === 'all' || isTypingTarget(event.target)) return;
@@ -452,16 +474,24 @@ function AdminPlatformAnalytics() {
                 else handleRangeModeChange('day');
             } else if (event.key === 'ArrowLeft') {
                 event.preventDefault();
+                const now = Date.now();
+                if (now - arrowKeyDebounceRef.current < ARROW_KEY_NAV_DEBOUNCE_MS) return;
+                arrowKeyDebounceRef.current = now;
+                flashKeyboardArrowState('left');
                 navPrev();
             } else if (event.key === 'ArrowRight') {
                 event.preventDefault();
+                const now = Date.now();
+                if (now - arrowKeyDebounceRef.current < ARROW_KEY_NAV_DEBOUNCE_MS) return;
+                arrowKeyDebounceRef.current = now;
+                flashKeyboardArrowState('right');
                 navNext();
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [rangeMode, navPrev, navNext, showFiltersPopup, handleRangeModeChange]);
+    }, [rangeMode, navPrev, navNext, showFiltersPopup, handleRangeModeChange, flashKeyboardArrowState]);
 
     if (!isAuthenticated) {
         return null;
@@ -533,7 +563,12 @@ function AdminPlatformAnalytics() {
                     <div className="admin-platform-analytics__toolbar-left">
                         {rangeMode !== 'all' && rangeMode !== 'custom' ? (
                             <div className="admin-platform-analytics__nav admin-platform-analytics__nav--inline">
-                                <button type="button" onClick={navPrev} aria-label="Previous">
+                                <button
+                                    type="button"
+                                    onClick={navPrev}
+                                    aria-label="Previous"
+                                    className={keyboardNavActive === 'left' ? 'is-key-active' : ''}
+                                >
                                     <Icon icon="mdi:chevron-left" />
                                 </button>
                                 <span>
@@ -546,7 +581,12 @@ function AdminPlatformAnalytics() {
                                         )}`}
                                     {rangeMode === 'day' && format(anchorDate, 'MMM d, yyyy')}
                                 </span>
-                                <button type="button" onClick={navNext} aria-label="Next">
+                                <button
+                                    type="button"
+                                    onClick={navNext}
+                                    aria-label="Next"
+                                    className={keyboardNavActive === 'right' ? 'is-key-active' : ''}
+                                >
                                     <Icon icon="mdi:chevron-right" />
                                 </button>
                             </div>
