@@ -716,7 +716,12 @@ function Members({ expandedClass, org, adminBypass = false }) {
                                 <button
                                     className="assign-role-btn-primary"
                                     onClick={() => {
-                                        if (selectedRoleNames.includes('owner')) {
+                                        const originalRoles = getNormalizedMemberRoles(selectedMember);
+                                        const hadOwnerRole = originalRoles.includes('owner');
+                                        const hasOwnerRoleNow = selectedRoleNames.includes('owner');
+                                        const ownerRoleMembershipChanged = hadOwnerRole !== hasOwnerRoleNow;
+
+                                        if (ownerRoleMembershipChanged) {
                                             notifyOwnerTransferRequired();
                                             return;
                                         }
