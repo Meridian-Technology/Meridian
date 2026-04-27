@@ -141,7 +141,7 @@ router.post('/decline-by-token', verifyToken, async (req, res) => {
 router.post('/:orgId/invite', verifyToken, requireMemberManagement('orgId'), async (req, res) => {
     try {
         const { orgId } = req.params;
-        const { email, role = 'member' } = req.body;
+        const { email, role = 'member', roles = [] } = req.body;
 
         if (!email || !String(email).trim()) {
             return res.status(400).json({
@@ -150,7 +150,7 @@ router.post('/:orgId/invite', verifyToken, requireMemberManagement('orgId'), asy
             });
         }
 
-        const result = await orgInviteService.createInvite(req, orgId, email.trim(), role);
+        const result = await orgInviteService.createInvite(req, orgId, email.trim(), roles.length > 0 ? roles : role);
 
         res.status(201).json({
             success: true,

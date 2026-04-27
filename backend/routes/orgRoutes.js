@@ -320,6 +320,7 @@ router.post("/create-org", verifyToken, upload.fields([
             org_id: newOrg._id,
             user_id: userId,
             role: 'owner', // Set the creator as owner
+            roles: ['owner'],
             status: 'active',
             assignedBy: userId
         });
@@ -564,17 +565,10 @@ router.post("/edit-org", verifyToken, upload.fields([
 
         // Update other fields only if they are provided
         if (positions) {
-            try {
-                // Parse positions if it's a JSON string
-                const parsedPositions = typeof positions === 'string' ? JSON.parse(positions) : positions;
-                org.positions = parsedPositions;
-            } catch (error) {
-                console.error('Error parsing positions:', error);
-                return res.status(400).json({
-                    success: false,
-                    message: "Invalid positions data format"
-                });
-            }
+            return res.status(400).json({
+                success: false,
+                message: "Role updates must use /org-roles endpoints"
+            });
         }
         if (requireApprovalForJoin) {
             org.requireApprovalForJoin = requireApprovalForJoin;
@@ -873,6 +867,7 @@ router.post("/:orgId/apply-to-org", verifyToken, async (req, res) => {
                 org_id: orgId,
                 user_id: userId,
                 role: 'member',
+                roles: ['member'],
             });
             await newMember.save();
             // Check auto-approve for org (Atlas: when member count reaches threshold)
@@ -920,7 +915,10 @@ router.post("/:orgId/apply-to-org", verifyToken, async (req, res) => {
         // Send notification to org admins about the new member
         const orgAdmins = await OrgMember.find({ 
             org_id: orgId, 
-            role: { $in: ['owner', 'admin'] } 
+            $or: [
+                { role: { $in: ['owner', 'admin'] } },
+                { roles: { $in: ['owner', 'admin'] } }
+            ]
         });
         console.log('orgAdmins', orgAdmins);
 
@@ -1530,7 +1528,7 @@ router.post('/:orgId/approval-settings', verifyToken, requireMemberManagement(),
     }
 })
 
-router.get('/:orgId/forms', verifyToken, async (req, res) => {
+router.get('/:orgId/forms', verifyToken, requireMemberManagement(), async (req, res) => {
     const { Form } = getModels(req, 'Form');
     const { orgId } = req.params;
     try{

@@ -125,7 +125,15 @@ function getBaseUrl(req) {
  * Create a single invite. Sends notification (if user exists) and email.
  * @returns {{ userExists: boolean, inviteId: string }}
  */
-async function createInvite(req, orgId, email, role) {
+function normalizeAssignedRoles(roleOrRoles) {
+    if (Array.isArray(roleOrRoles)) {
+        const normalized = [...new Set(roleOrRoles.filter(Boolean))];
+        return normalized.length > 0 ? normalized : ['member'];
+    }
+    return [roleOrRoles || 'member'];
+}
+
+async function createInvite(req, orgId, email, roleOrRoles) {
     const { OrgInvite, User, Org, OrgMember } = getModels(req, 'OrgInvite', 'User', 'Org', 'OrgMember');
     const inviterId = req.user.userId;
 
@@ -139,9 +147,13 @@ async function createInvite(req, orgId, email, role) {
         throw new Error('Organization not found');
     }
 
-    const roleExists = org.getRoleByName ? org.getRoleByName(role) : org.positions?.find(p => p.name === role);
-    if (!roleExists) {
+    const normalizedRoles = normalizeAssignedRoles(roleOrRoles);
+    const hasMissingRole = normalizedRoles.some((roleName) => !(org.getRoleByName ? org.getRoleByName(roleName) : org.positions?.find((p) => p.name === roleName)));
+    if (hasMissingRole) {
         throw new Error('Role not found');
+    }
+    if (normalizedRoles.includes('owner')) {
+        throw new Error('Owner role can only be assigned through ownership transfer');
     }
 
     const memberEmails = (await OrgMember.find({ org_id: orgId, status: 'active' })
@@ -172,7 +184,8 @@ async function createInvite(req, orgId, email, role) {
         org_id: orgId,
         email: normalizedEmail,
         user_id: user?._id || null,
-        role,
+        role: normalizedRoles[0],
+        roles: normalizedRoles,
         invited_by: inviterId,
         status: 'pending',
         token,
@@ -183,8 +196,8 @@ async function createInvite(req, orgId, email, role) {
     const inviter = await User.findById(inviterId).select('name username');
     const inviterName = inviter?.name || inviter?.username || 'Someone';
 
-    const roleObj = roleExists;
-    const roleDisplayName = roleObj?.displayName || role;
+    const roleObj = org.getRoleByName ? org.getRoleByName(normalizedRoles[0]) : org.positions?.find((p) => p.name === normalizedRoles[0]);
+    const roleDisplayName = roleObj?.displayName || normalizedRoles[0];
 
     const baseUrl = getBaseUrl(req);
 
@@ -197,7 +210,7 @@ async function createInvite(req, orgId, email, role) {
             'org_invitation',
             {
                 orgName: org.org_name,
-                role,
+                role: normalizedRoles[0],
                 invitationId: invite._id.toString(),
                 metadata: { inviteId: invite._id.toString() }
             }
@@ -207,7 +220,7 @@ async function createInvite(req, orgId, email, role) {
         const emailHTML = buildExistingUserInviteEmail({
             orgName: org.org_name,
             orgDescription: org.org_description,
-            role,
+            role: normalizedRoles[0],
             roleDisplayName,
             inviterName,
             acceptUrl: inviteUrl,
@@ -318,9 +331,9 @@ async function createBatchInvites(req, orgId, invites) {
 
     const result = { sent: 0, skipped: 0, errors: [] };
 
-    for (const { email, role } of invites) {
+    for (const { email, role, roles } of invites) {
         try {
-            await createInvite(req, orgId, email, role || 'member');
+            await createInvite(req, orgId, email, roles || role || 'member');
             result.sent++;
         } catch (err) {
             if (err.message?.includes('already a member') || err.message?.includes('already sent')) {
@@ -374,6 +387,7 @@ async function acceptInvite(req, inviteId) {
         org_id: invite.org_id,
         user_id: userId,
         role: invite.role,
+        roles: invite.roles || [invite.role || 'member'],
         status: 'active',
         assignedBy: invite.invited_by
     });
@@ -469,6 +483,7 @@ async function getPendingForUser(req) {
         _id: inv._id,
         org: inv.org_id,
         role: inv.role,
+        roles: inv.roles || [inv.role || 'member'],
         invitedBy: inv.invited_by
     }));
 }

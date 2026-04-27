@@ -25,6 +25,10 @@ const orgInviteSchema = new Schema({
         required: true,
         default: 'member'
     },
+    roles: {
+        type: [String],
+        default: ['member']
+    },
     invited_by: {
         type: Schema.Types.ObjectId,
         required: true,
@@ -54,6 +58,15 @@ orgInviteSchema.index({ org_id: 1, email: 1 });
 orgInviteSchema.index({ token: 1 });
 orgInviteSchema.index({ user_id: 1, status: 1 });
 orgInviteSchema.index({ org_id: 1, status: 1 });
+
+orgInviteSchema.pre('save', function(next) {
+    if (!Array.isArray(this.roles) || this.roles.length === 0) {
+        this.roles = [this.role || 'member'];
+    }
+    this.roles = [...new Set(this.roles.filter(Boolean))];
+    this.role = this.roles[0] || this.role || 'member';
+    next();
+});
 
 orgInviteSchema.statics.generateToken = function () {
     return crypto.randomBytes(32).toString('hex');

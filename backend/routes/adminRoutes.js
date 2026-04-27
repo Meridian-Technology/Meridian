@@ -359,6 +359,68 @@ router.post('/admin/migrate-classroom-building-refs', verifyToken, requireAdmin,
   }
 });
 
+/**
+ * POST /admin/migrate-org-owner-roles
+ * Ensure every org owner has an active OrgMember record with owner role.
+ * Also repairs existing owner memberships that drifted away from owner role.
+ */
+router.post('/admin/migrate-org-owner-roles', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const getModels = require('../services/getModelService');
+    const { Org, OrgMember } = getModels(req, 'Org', 'OrgMember');
+
+    const orgs = await Org.find({}, { _id: 1, owner: 1 }).lean();
+    let createdOwnerMemberships = 0;
+    let repairedOwnerMemberships = 0;
+
+    for (const org of orgs) {
+      if (!org?.owner) continue;
+      const ownerId = org.owner;
+      const ownerMembership = await OrgMember.findOne({ org_id: org._id, user_id: ownerId });
+
+      if (!ownerMembership) {
+        await OrgMember.create({
+          org_id: org._id,
+          user_id: ownerId,
+          role: 'owner',
+          roles: ['owner'],
+          status: 'active',
+          assignedBy: ownerId
+        });
+        createdOwnerMemberships += 1;
+        continue;
+      }
+
+      const rolesArray = Array.isArray(ownerMembership.roles) ? ownerMembership.roles : [];
+      const hasOwnerRoleField = ownerMembership.role === 'owner';
+      const hasOwnerInRolesArray = rolesArray.includes('owner');
+      const isActive = ownerMembership.status === 'active';
+      if (!hasOwnerRoleField || !hasOwnerInRolesArray || !isActive) {
+        const repairedRoles = [
+          'owner',
+          ...(rolesArray.filter((roleName) => roleName && roleName !== 'owner'))
+        ];
+        ownerMembership.role = 'owner';
+        ownerMembership.roles = repairedRoles;
+        ownerMembership.status = 'active';
+        await ownerMembership.save();
+        repairedOwnerMemberships += 1;
+      }
+    }
+
+    const data = {
+      orgsScanned: orgs.length,
+      createdOwnerMemberships,
+      repairedOwnerMemberships
+    };
+    console.log('POST /admin/migrate-org-owner-roles completed:', data);
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('POST /admin/migrate-org-owner-roles failed:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.get('/admin/tenant-config', verifyToken, requireAdmin, async (req, res) => {
   if (!req.user.platformRoles?.includes('platform_admin')) {
     return res.status(403).json({ success: false, message: 'Platform admin required.' });

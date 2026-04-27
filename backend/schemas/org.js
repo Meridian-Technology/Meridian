@@ -381,6 +381,35 @@ OrgSchema.pre('findOne', function () {
     this.where({ isDeleted: { $ne: true } });
 });
 
+OrgSchema.pre('validate', function(next) {
+    // Normalize legacy/out-of-range values so unrelated saves (e.g. image updates) don't fail.
+    if (this.messageSettings && typeof this.messageSettings.characterLimit === 'number') {
+        this.messageSettings.characterLimit = Math.max(
+            100,
+            Math.min(2000, this.messageSettings.characterLimit)
+        );
+    }
+
+    next();
+});
+
+OrgSchema.pre('save', function(next) {
+    if (Array.isArray(this.positions)) {
+        this.positions = this.positions.map((role) => {
+            const normalizedPermissions = [...new Set((role.permissions || []).filter(Boolean))];
+            return {
+                ...role.toObject?.() || role,
+                permissions: normalizedPermissions,
+                canManageMembers: normalizedPermissions.includes('manage_members'),
+                canManageRoles: normalizedPermissions.includes('manage_roles'),
+                canManageEvents: normalizedPermissions.includes('manage_events'),
+                canViewAnalytics: normalizedPermissions.includes('view_analytics')
+            };
+        });
+    }
+    next();
+});
+
 // Add methods for role management
 OrgSchema.methods.addCustomRole = function(roleData) {
     if (!this.roleManagement.allowCustomRoles) {
@@ -445,12 +474,6 @@ OrgSchema.methods.hasPermission = function(roleName, permission) {
 
     // Finance: managing implies viewing (roles often grant manage_finances only)
     if (permission === 'view_finances' && role.permissions.includes('manage_finances')) return true;
-
-    // Also check boolean flags (roles may have canManageEvents etc. without permissions array)
-    if (permission === 'manage_events' && role.canManageEvents) return true;
-    if (permission === 'manage_members' && role.canManageMembers) return true;
-    if (permission === 'manage_roles' && role.canManageRoles) return true;
-    if (permission === 'view_analytics' && role.canViewAnalytics) return true;
 
     return false;
 };
