@@ -240,3 +240,70 @@
     color: var(--text-muted, #9ca3af);
     font-size: 0.9rem;
 }
+
+// Reminders tab
+.reminders-description {
+    font-size: 0.82rem;
+    color: var(--text-muted, #6b7280);
+    margin-bottom: 16px;
+}
+
+.reminders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.reminder-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 10px;
+    background: var(--card-bg, #fff);
+
+    &__left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    &__title {
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--text-primary, #111827);
+        margin-bottom: 2px;
+    }
+
+    &__sub {
+        font-size: 0.78rem;
+        color: var(--text-muted, #6b7280);
+    }
+}
+
+.reminder-icon {
+    &--email { color: #16a34a; }
+    &--app   { color: #16a34a; }
+}
+
+.reminder-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.reminders-edit {
+    background: none;
+    border: none;
+    font-size: 0.82rem;
+    color: var(--text-muted, #9ca3af);
+    cursor: pointer;
+    padding: 0;
+
+    &:hover { text-decoration: underline; }
+}
