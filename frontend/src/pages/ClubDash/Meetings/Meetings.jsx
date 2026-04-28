@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGradient } from '../../../hooks/useGradient';
 import './Meetings.scss';
 import TabbedContainer from '../../../components/TabbedContainer/TabbedContainer';
@@ -6,6 +6,7 @@ import NextMeetingBanner from './NextMeetingBanner/NextMeetingBanner';
 import OverviewTab from './Tabs/OverviewTab';
 import AttendanceTab from './Tabs/AttendanceTab';
 import MinutesTab from './Tabs/MinutesTab';
+import Meeting from './Meeting/Meeting';
 
 const defaultUpcomingMeetings = [
     {
@@ -74,42 +75,10 @@ const defaultPastMeetings = [
 ];
 
 const defaultAttendanceRecords = [
-    {
-        id: 'gbm-march',
-        title: 'GBM - March (in progress)',
-        active: true,
-        attended: 42,
-        excused: 5,
-        unexcused: 3,
-        rate: 84,
-    },
-    {
-        id: 'gbm-february',
-        title: 'GBM - February',
-        active: false,
-        attended: 35,
-        excused: 5,
-        unexcused: 17,
-        rate: 61,
-    },
-    {
-        id: 'special-planning',
-        title: 'Special Planning Session',
-        active: false,
-        attended: 5,
-        excused: 2,
-        unexcused: 0,
-        rate: 71,
-    },
-    {
-        id: 'officer-mar3',
-        title: 'Officer Meeting - Mar 3',
-        active: false,
-        attended: 8,
-        excused: 0,
-        unexcused: 0,
-        rate: 100,
-    },
+    { id: 'gbm-march',       title: 'GBM - March (in progress)', active: true,  attended: 42, excused: 5, unexcused: 3,  rate: 84  },
+    { id: 'gbm-february',    title: 'GBM - February',            active: false, attended: 35, excused: 5, unexcused: 17, rate: 61  },
+    { id: 'special-planning',title: 'Special Planning Session',   active: false, attended: 5,  excused: 2, unexcused: 0,  rate: 71  },
+    { id: 'officer-mar3',    title: 'Officer Meeting - Mar 3',    active: false, attended: 8,  excused: 0, unexcused: 0,  rate: 100 },
 ];
 
 const defaultActiveMeeting = {
@@ -125,20 +94,15 @@ function Meetings({
     activeMeeting = defaultActiveMeeting,
 }) {
     const { AtlasMain } = useGradient();
+    const [selectedMeeting, setSelectedMeeting] = useState(null);
 
-    const handleMeetingClick = (meeting) => {
-        // TODO: open meeting detail modal/drawer or navigate to /meetings/:id
-        console.log('Meeting clicked:', meeting);
-    };
-
-    const handleAttendanceRecordClick = (record) => {
-        // TODO: open attendance detail
-        console.log('Attendance record clicked:', record);
-    };
+    const handleMeetingClick = (meeting) => setSelectedMeeting(meeting);
+    const handleBack = () => setSelectedMeeting(null);
 
     const handleTakeAttendance = () => {
-        // TODO: open take-attendance flow
-        console.log('Take attendance clicked');
+        // Find the active meeting object and open it
+        const active = [...upcomingMeetings, ...pastMeetings].find(m => !m.completed) || defaultActiveMeeting;
+        setSelectedMeeting(active);
     };
 
     const tabs = [
@@ -158,9 +122,21 @@ function Meetings({
             id: 'attendance-records',
             label: 'Attendance Records',
             icon: 'mdi:calendar-check-outline',
-            content: <AttendanceTab attendanceRecords={attendanceRecords} onRecordClick={handleAttendanceRecordClick} />,
+            content: <AttendanceTab attendanceRecords={attendanceRecords} onRecordClick={handleMeetingClick} />,
         },
     ];
+
+    // Show detail view when a meeting is selected
+    if (selectedMeeting) {
+        return (
+            <div className="meetings dash">
+                <Meeting
+                    meeting={selectedMeeting}
+                    onBack={handleBack}
+                />
+            </div>
+        );
+    }
 
     return (
         <div className="meetings dash">

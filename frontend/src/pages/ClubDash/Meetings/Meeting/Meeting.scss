@@ -1,0 +1,242 @@
+.meeting-detail {
+    padding: 24px 32px;
+    max-width: 960px;
+}
+
+.detail-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    font-size: 0.85rem;
+    color: var(--text-muted, #6b7280);
+    cursor: pointer;
+    padding: 0;
+    margin-bottom: 20px;
+    transition: color 0.15s;
+
+    &:hover { color: var(--text-primary, #111827); }
+}
+
+.detail-header {
+    margin-bottom: 24px;
+
+    &__title-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+
+        h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--text-primary, #111827);
+            margin: 0;
+        }
+    }
+
+    &__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        font-size: 0.82rem;
+        color: var(--text-muted, #6b7280);
+
+        span {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+    }
+}
+
+.in-progress-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f0fdf4;
+    color: #16a34a;
+    border: 1px solid #bbf7d0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+}
+
+.completed-badge {
+    display: inline-flex;
+    align-items: center;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    display: inline-block;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
+}
+
+// Tab content wrapper
+.detail-tab-content {
+    padding: 20px 0;
+}
+
+.attendance-alert {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #16a34a;
+    font-size: 0.83rem;
+    font-weight: 500;
+    padding: 8px 14px;
+    border-radius: 6px;
+    margin-bottom: 14px;
+}
+
+.attendance-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted, #6b7280);
+    margin-bottom: 16px;
+}
+
+// Table
+.attendance-table-wrap {
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.attendance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+
+    thead tr { background: #f9fafb; }
+
+    th {
+        text-align: left;
+        padding: 10px 16px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-muted, #6b7280);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 1px solid var(--border-color, #e5e7eb);
+    }
+
+    td {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border-color, #f3f4f6);
+        color: var(--text-primary, #111827);
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+
+    .col-name { font-weight: 500; }
+    .col-role  { color: var(--text-muted, #6b7280); }
+}
+
+// RSVP badges
+.rsvp-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+
+    &--yes  { background: #dcfce7; color: #16a34a; }
+    &--no   { background: #f3f4f6; color: #6b7280; }
+    &--none { background: #fef2f2; color: #dc2626; }
+}
+
+// Attendance status (read-only)
+.attendance-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+
+    &.status--present   { color: var(--text-primary, #111827); }
+    &.status--excused   { color: var(--text-muted, #6b7280); }
+    &.status--unexcused { color: #dc2626; }
+}
+
+// Attendance check button
+.attendance-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--text-muted, #9ca3af);
+    transition: background 0.15s;
+
+    &:hover:not(:disabled) {
+        background: #f3f4f6;
+        color: var(--text-primary, #111827);
+    }
+
+    &:disabled {
+        cursor: default;
+        opacity: 0.7;
+    }
+
+    &--checked {
+        color: var(--text-primary, #111827);
+    }
+}
+
+.check-box {
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s;
+    color: #fff;
+
+    .attendance-check--checked & {
+        background: #22c55e;
+        border-color: #22c55e;
+    }
+}
+
+.status--present   { color: var(--text-primary, #111827); }
+.status--unchecked { color: var(--text-muted, #9ca3af); }
+
+// Empty states
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 60px 0;
+    color: var(--text-muted, #9ca3af);
+    font-size: 0.9rem;
+}
