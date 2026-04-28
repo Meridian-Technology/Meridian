@@ -148,7 +148,7 @@ function Meetings({
             </header>
             <div className="meeting-container">
                 <div className="actions-header">
-                    <button className="plan-meeting-button">+ Plan Meeting</button>
+                    <button className="plan-meeting-button">+ Plan a Meeting</button>
                 </div>
                 <NextMeetingBanner
                     meeting={activeMeeting}

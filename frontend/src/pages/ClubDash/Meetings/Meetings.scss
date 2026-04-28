@@ -13,7 +13,9 @@
 
         button {
             border-radius: 7px;
-            width: 100px;
+            white-space: nowrap;
+            width: 130px;
+            height: 30px;
             font-weight: 600;
             font-family: 'Inter';
             padding: 3px 13px;
@@ -102,6 +104,19 @@
                 font-size: 0.85rem;
             }
         }
+    }
+
+    // ── TabbedContainer full-width tab line ───────────────────
+    .tabbed-container--top .tabbed-container__body {
+        padding: 0;
+    }
+
+    .tabbed-container__tabs-wrapper {
+        padding: 0 1.5rem;
+    }
+
+    .tabbed-container__content {
+        padding: 1.5rem;
     }
 }
 
