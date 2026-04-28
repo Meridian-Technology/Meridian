@@ -26,7 +26,7 @@ function AttendanceRow({ attendee, isActive, onToggle }) {
         if (rsvp === 'no')                      return { label: 'Excused',   cls: 'status--excused',   icon: 'mdi:calendar-minus'  };
         if (rsvp === 'no-response' && !present) return { label: 'Unexcused', cls: 'status--unexcused', icon: 'mdi:calendar-remove' };
         if (present)                            return { label: 'Present',   cls: 'status--present',   icon: null };
-        return                                         { label: 'Present',   cls: 'status--unchecked', icon: null };
+        return                                         { label: 'Unexcused', cls: 'status--unexcused', icon: 'mdi:calendar-remove' };
     };
 
     const status = getAttendanceStatus();
@@ -44,7 +44,7 @@ function AttendanceRow({ attendee, isActive, onToggle }) {
                 </span>
             </td>
             <td className="col-attendance">
-                {isCheckable ? (
+                {isCheckable && isActive ? (
                     <button
                         className={`attendance-check ${present ? 'attendance-check--checked' : ''}`}
                         onClick={() => onToggle(attendee.id)}

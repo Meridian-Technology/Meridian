@@ -6,7 +6,7 @@ import NextMeetingBanner from './NextMeetingBanner/NextMeetingBanner';
 import OverviewTab from './Tabs/OverviewTab';
 import AttendanceTab from './Tabs/AttendanceTab';
 import MinutesTab from './Tabs/MinutesTab';
-import Meeting from './Meeting/Meeting';
+import MeetingDetail from './Meeting/Meeting';
 
 const defaultUpcomingMeetings = [
     {
@@ -85,6 +85,7 @@ const defaultActiveMeeting = {
     tag: 'GBM',
     title: 'GBM - March (in progress)',
     location: 'Student Center Room 301',
+    completed: false,
 };
 
 function Meetings({
@@ -130,7 +131,7 @@ function Meetings({
     if (selectedMeeting) {
         return (
             <div className="meetings dash">
-                <Meeting
+                <MeetingDetail
                     meeting={selectedMeeting}
                     onBack={handleBack}
                 />
