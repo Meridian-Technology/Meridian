@@ -52,12 +52,19 @@ const save = async (roomId, userId, operation) => {
 
 const saveUser = async (name, username, email, password, recommendation, classroom) => {
     try{
-        const responseBody = await apiRequest('/update-user', {name, email, username, classroom, recommendation, onboarded :null});
+        const payload = {};
+        if (name !== null && name !== undefined) payload.name = name;
+        if (username !== null && username !== undefined) payload.username = username;
+        if (email !== null && email !== undefined) payload.email = email;
+        if (recommendation !== null && recommendation !== undefined) payload.recommendation = recommendation;
+        if (classroom !== null && classroom !== undefined) payload.classroom = classroom;
+
+        const responseBody = await apiRequest('/update-user', payload);
         if (responseBody.success) {
             console.log("User saved successfully");
-        } else {
-            console.error("User save unsuccessful");
+            return responseBody;
         }
+        throw new Error(responseBody.message || "User save unsuccessful");
     } catch(error){
         console.error("Error saving user");
         throw error;
