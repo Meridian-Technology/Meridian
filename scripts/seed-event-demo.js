@@ -361,20 +361,25 @@ async function main() {
     attendees: [],
   });
 
-  // Populate attendees with realistic check-in data
-  const attendeePool = [...memberUsers];
-  const event1Attendees = [];
-  for (let i = 0; i < 12; i++) {
-    const u = attendeePool[i % attendeePool.length];
-    event1Attendees.push({
-      userId: u._id,
-      registeredAt: new Date(daysAgo(14).getTime() - (30 - i) * 86400000),
-      guestCount: i < 3 ? 1 : 0,
-      checkedIn: i < 10,
-      checkedInAt: i < 10 ? new Date(daysAgo(14).getTime() + (i * 5 + 10) * 60000) : null,
-    });
+  // Helper: generate N attendees with realistic registration spread
+  function generateAttendees(users, count, eventDate, spreadDays, checkedInPct) {
+    const attendees = [];
+    for (let i = 0; i < count; i++) {
+      const u = users[i % users.length];
+      const isCheckedIn = i < Math.floor(count * checkedInPct);
+      attendees.push({
+        userId: u._id,
+        registeredAt: new Date(eventDate.getTime() - (spreadDays - (i / count) * spreadDays) * 86400000),
+        guestCount: i % 7 === 0 ? 1 : 0,
+        checkedIn: isCheckedIn,
+        checkedInAt: isCheckedIn ? new Date(eventDate.getTime() + (i * 2 + 5) * 60000) : null,
+      });
+    }
+    return attendees;
   }
-  await Event.updateOne({ _id: event1._id }, { $set: { attendees: event1Attendees, registrationCount: event1Attendees.length } });
+
+  const event1Attendees = generateAttendees(memberUsers, 178, daysAgo(14), 30, 0.80);
+  await Event.updateOne({ _id: event1._id }, { $set: { attendees: event1Attendees, registrationCount: 178 } });
 
   // Event 2: Past - Tech Talk: Building Scalable Systems
   const event2 = await Event.create({
@@ -397,13 +402,8 @@ async function main() {
     isDeleted: false,
     createdAt: daysAgo(60),
     createdBy: memberUsers[1]._id,
-    attendees: memberUsers.slice(0, 8).map((u, i) => ({
-      userId: u._id,
-      registeredAt: new Date(daysAgo(28).getTime() - (20 - i * 2) * 86400000),
-      checkedIn: i < 7,
-      checkedInAt: i < 7 ? new Date(daysAgo(28).getTime() + i * 3 * 60000) : null,
-    })),
-    registrationCount: 8,
+    attendees: generateAttendees(memberUsers, 62, daysAgo(28), 20, 0.87),
+    registrationCount: 62,
   });
 
   // Event 3: Past - Startup Networking Mixer
@@ -427,13 +427,8 @@ async function main() {
     isDeleted: false,
     createdAt: daysAgo(21),
     createdBy: adminUser._id,
-    attendees: memberUsers.slice(0, 7).map((u, i) => ({
-      userId: u._id,
-      registeredAt: new Date(daysAgo(7).getTime() - (10 - i) * 86400000),
-      checkedIn: true,
-      checkedInAt: new Date(daysAgo(7).getTime() + i * 4 * 60000),
-    })),
-    registrationCount: 7,
+    attendees: generateAttendees(memberUsers, 47, daysAgo(7), 14, 0.91),
+    registrationCount: 47,
   });
 
   // Event 4: Upcoming - HackRPI Kickoff Workshop
@@ -459,11 +454,8 @@ async function main() {
     isDeleted: false,
     createdAt: daysAgo(10),
     createdBy: memberUsers[2]._id,
-    attendees: memberUsers.slice(0, 5).map((u, i) => ({
-      userId: u._id,
-      registeredAt: daysAgo(10 - i),
-    })),
-    registrationCount: 5,
+    attendees: generateAttendees(memberUsers, 34, daysFromNow(5), 10, 0),
+    registrationCount: 34,
   });
 
   // Event 5: Upcoming - Annual Gala
@@ -488,11 +480,8 @@ async function main() {
     isDeleted: false,
     createdAt: daysAgo(3),
     createdBy: adminUser._id,
-    attendees: memberUsers.slice(0, 3).map((u, i) => ({
-      userId: u._id,
-      registeredAt: daysAgo(3 - i),
-    })),
-    registrationCount: 3,
+    attendees: generateAttendees(memberUsers, 18, daysFromNow(21), 5, 0),
+    registrationCount: 18,
   });
 
   // Event 6: Past - weekly study session (shows variety)
@@ -514,13 +503,8 @@ async function main() {
     isDeleted: false,
     createdAt: daysAgo(10),
     createdBy: memberUsers[0]._id,
-    attendees: memberUsers.slice(5, 10).map((u, i) => ({
-      userId: u._id,
-      registeredAt: daysAgo(5 - i),
-      checkedIn: true,
-      checkedInAt: new Date(daysAgo(3).getTime() + i * 2 * 60000),
-    })),
-    registrationCount: 5,
+    attendees: generateAttendees(memberUsers, 15, daysAgo(3), 7, 0.87),
+    registrationCount: 15,
     isStudySession: true,
   });
 
@@ -558,12 +542,12 @@ async function main() {
   }
 
   const analyticsEntries = [
-    { eventId: event1._id, views: 847, uniqueViews: 423, anonymousViews: 312, uniqueAnonymousViews: 198, registrations: 89, uniqueRegistrations: 76, engagementRate: 42, eventDate: daysAgo(14), daysSpread: 30 },
-    { eventId: event2._id, views: 312, uniqueViews: 198, anonymousViews: 87, uniqueAnonymousViews: 64, registrations: 45, uniqueRegistrations: 42, engagementRate: 38, eventDate: daysAgo(28), daysSpread: 20 },
-    { eventId: event3._id, views: 256, uniqueViews: 167, anonymousViews: 64, uniqueAnonymousViews: 42, registrations: 38, uniqueRegistrations: 35, engagementRate: 35, eventDate: daysAgo(7), daysSpread: 14 },
-    { eventId: event4._id, views: 189, uniqueViews: 134, anonymousViews: 45, uniqueAnonymousViews: 31, registrations: 28, uniqueRegistrations: 25, engagementRate: 31, eventDate: daysFromNow(5), daysSpread: 10 },
-    { eventId: event5._id, views: 94, uniqueViews: 78, anonymousViews: 22, uniqueAnonymousViews: 18, registrations: 15, uniqueRegistrations: 14, engagementRate: 28, eventDate: daysFromNow(21), daysSpread: 5 },
-    { eventId: event6._id, views: 67, uniqueViews: 45, anonymousViews: 12, uniqueAnonymousViews: 9, registrations: 8, uniqueRegistrations: 8, engagementRate: 22, eventDate: daysAgo(3), daysSpread: 7 },
+    { eventId: event1._id, views: 2340, uniqueViews: 1180, anonymousViews: 870, uniqueAnonymousViews: 540, registrations: 178, uniqueRegistrations: 178, engagementRate: 45, eventDate: daysAgo(14), daysSpread: 30 },
+    { eventId: event2._id, views: 680, uniqueViews: 410, anonymousViews: 195, uniqueAnonymousViews: 138, registrations: 62, uniqueRegistrations: 62, engagementRate: 38, eventDate: daysAgo(28), daysSpread: 20 },
+    { eventId: event3._id, views: 520, uniqueViews: 320, anonymousViews: 145, uniqueAnonymousViews: 98, registrations: 47, uniqueRegistrations: 47, engagementRate: 35, eventDate: daysAgo(7), daysSpread: 14 },
+    { eventId: event4._id, views: 390, uniqueViews: 268, anonymousViews: 92, uniqueAnonymousViews: 65, registrations: 34, uniqueRegistrations: 34, engagementRate: 31, eventDate: daysFromNow(5), daysSpread: 10 },
+    { eventId: event5._id, views: 156, uniqueViews: 118, anonymousViews: 38, uniqueAnonymousViews: 30, registrations: 18, uniqueRegistrations: 18, engagementRate: 28, eventDate: daysFromNow(21), daysSpread: 5 },
+    { eventId: event6._id, views: 112, uniqueViews: 74, anonymousViews: 22, uniqueAnonymousViews: 16, registrations: 15, uniqueRegistrations: 15, engagementRate: 22, eventDate: daysAgo(3), daysSpread: 7 },
   ];
   for (const a of analyticsEntries) {
     const viewHistory = generateViewHistory(a.eventDate, a.views, a.uniqueViews, a.anonymousViews, memberUsers, a.daysSpread);
@@ -593,58 +577,65 @@ async function main() {
     const evId = String(eventDoc._id);
     const eventStart = eventDoc.start_time || daysAgo(14);
     const entries = [];
-    const viewerUsers = memberUsers.slice(0, Math.min(uniqueViewers, memberUsers.length));
 
-    // event_view entries
+    // Generate synthetic user ObjectIds so unique counts are accurate
+    const syntheticUserIds = [];
+    for (let i = 0; i < Math.max(uniqueViewers, formOpens, registrations, checkins); i++) {
+      if (i < memberUsers.length) {
+        syntheticUserIds.push(memberUsers[i]._id);
+      } else {
+        syntheticUserIds.push(new mongoose.Types.ObjectId());
+      }
+    }
+
+    const sources = ['direct', 'explore', 'org_page', 'direct', 'explore'];
+    const referrers = ['events-dashboard', 'club-dashboard/RPI-Innovators-Hub', ''];
+
+    // event_view entries (one per unique viewer)
     for (let i = 0; i < uniqueViewers; i++) {
-      const u = viewerUsers[i % viewerUsers.length];
-      const sources = ['direct', 'explore', 'org_page', 'direct', 'explore'];
       entries.push({
         ...seedMarker,
         event: 'event_view',
-        user_id: u._id,
+        user_id: syntheticUserIds[i],
         anonymous_id: null,
         ts: new Date(eventStart.getTime() - Math.random() * 20 * 86400000),
         properties: { event_id: evId, source: sources[i % sources.length] },
-        context: { referrer: i % 3 === 0 ? 'events-dashboard' : i % 3 === 1 ? 'club-dashboard/RPI-Innovators-Hub' : '' },
+        context: { referrer: referrers[i % referrers.length] },
       });
     }
 
-    // event_registration_form_open entries
+    // event_registration_form_open entries (one per unique opener)
     for (let i = 0; i < formOpens; i++) {
-      const u = viewerUsers[i % viewerUsers.length];
       entries.push({
         ...seedMarker,
         event: 'event_registration_form_open',
-        user_id: u._id,
+        user_id: syntheticUserIds[i],
         anonymous_id: null,
         ts: new Date(eventStart.getTime() - Math.random() * 15 * 86400000),
         properties: { event_id: evId },
       });
     }
 
-    // event_registration entries
+    // event_registration entries (one per unique registrant)
     for (let i = 0; i < registrations; i++) {
-      const u = viewerUsers[i % viewerUsers.length];
       entries.push({
         ...seedMarker,
         event: 'event_registration',
-        user_id: u._id,
+        user_id: syntheticUserIds[i],
         anonymous_id: null,
         ts: new Date(eventStart.getTime() - Math.random() * 10 * 86400000),
         properties: { event_id: evId },
       });
     }
 
-    // event_checkin entries
+    // event_checkin entries (one per unique check-in)
     for (let i = 0; i < checkins; i++) {
-      const u = viewerUsers[i % viewerUsers.length];
       entries.push({
         ...seedMarker,
         event: 'event_checkin',
-        user_id: u._id,
+        user_id: syntheticUserIds[i],
         anonymous_id: null,
-        ts: new Date(eventStart.getTime() + i * 5 * 60000),
+        ts: new Date(eventStart.getTime() + i * 2 * 60000),
         properties: { event_id: evId },
       });
     }
@@ -654,18 +645,18 @@ async function main() {
     }
   }
 
-  // Showcase: 15 unique viewers → 12 form opens → 12 registrations → 10 check-ins
-  await seedPlatformAnalytics(event1, 15, 12, 12, 10);
-  // Tech Talk: 12 viewers → 10 form opens → 8 registrations → 7 check-ins
-  await seedPlatformAnalytics(event2, 12, 10, 8, 7);
-  // Networking Mixer: 10 viewers → 8 form opens → 7 registrations → 7 check-ins
-  await seedPlatformAnalytics(event3, 10, 8, 7, 7);
-  // HackRPI: 8 viewers → 6 form opens → 5 registrations → 0 check-ins (upcoming)
-  await seedPlatformAnalytics(event4, 8, 6, 5, 0);
-  // Annual Gala: 5 viewers → 4 form opens → 3 registrations → 0 check-ins (upcoming)
-  await seedPlatformAnalytics(event5, 5, 4, 3, 0);
-  // Study Session: 6 viewers → 0 form opens → 5 registrations → 5 check-ins
-  await seedPlatformAnalytics(event6, 6, 0, 5, 5);
+  // Showcase: 312 unique viewers → 245 form opens → 178 registrations → 142 check-ins
+  await seedPlatformAnalytics(event1, 312, 245, 178, 142);
+  // Tech Talk: 156 viewers → 98 form opens → 62 registrations → 54 check-ins
+  await seedPlatformAnalytics(event2, 156, 98, 62, 54);
+  // Networking Mixer: 128 viewers → 82 form opens → 47 registrations → 43 check-ins
+  await seedPlatformAnalytics(event3, 128, 82, 47, 43);
+  // HackRPI: 94 viewers → 58 form opens → 34 registrations → 0 check-ins (upcoming)
+  await seedPlatformAnalytics(event4, 94, 58, 34, 0);
+  // Annual Gala: 52 viewers → 28 form opens → 18 registrations → 0 check-ins (upcoming)
+  await seedPlatformAnalytics(event5, 52, 28, 18, 0);
+  // Study Session: 38 viewers → 0 form opens → 15 registrations → 13 check-ins
+  await seedPlatformAnalytics(event6, 38, 0, 15, 13);
 
   console.log('Created platform analytics events (funnel data)');
 
@@ -696,7 +687,8 @@ async function main() {
     'Exploring new technologies and frameworks',
     'The potential to create something impactful',
   ];
-  for (let i = 0; i < 12; i++) {
+  const formResponseCount = 178;
+  for (let i = 0; i < formResponseCount; i++) {
     const u = memberUsers[i % memberUsers.length];
     await FormResponse.create({
       ...seedMarker,
@@ -713,7 +705,7 @@ async function main() {
       submittedAt: new Date(daysAgo(14).getTime() - (30 - i) * 86400000),
     });
   }
-  console.log('Created registration form + 12 responses');
+  console.log(`Created registration form + ${formResponseCount} responses`);
 
   // ─── Event Agenda (for showcase event) ───
   const showcaseAgenda = await EventAgenda.create({
