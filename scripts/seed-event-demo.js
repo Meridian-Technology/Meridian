@@ -527,19 +527,147 @@ async function main() {
   const allEvents = [event1, event2, event3, event4, event5, event6];
   console.log(`Created ${allEvents.length} events`);
 
-  // ─── Event Analytics ───
+  // ─── Event Analytics (with viewHistory for funnel) ───
+  function generateViewHistory(eventDate, totalViews, uniqueLoggedIn, anonymousViews, users, daysSpread) {
+    const history = [];
+    const seenUsers = new Set();
+    for (let i = 0; i < totalViews - anonymousViews; i++) {
+      const u = users[i % users.length];
+      const isUnique = !seenUsers.has(String(u._id));
+      seenUsers.add(String(u._id));
+      history.push({
+        userId: u._id,
+        isAnonymous: false,
+        anonymousId: null,
+        timestamp: new Date(eventDate.getTime() - Math.random() * daysSpread * 86400000),
+        userAgent: 'Mozilla/5.0 Chrome/125',
+        ipAddress: `10.0.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+      });
+    }
+    for (let i = 0; i < anonymousViews; i++) {
+      history.push({
+        userId: null,
+        isAnonymous: true,
+        anonymousId: `anon-${i}-${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: new Date(eventDate.getTime() - Math.random() * daysSpread * 86400000),
+        userAgent: 'Mozilla/5.0 Chrome/125',
+        ipAddress: `10.0.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+      });
+    }
+    return history;
+  }
+
   const analyticsEntries = [
-    { eventId: event1._id, views: 847, uniqueViews: 423, anonymousViews: 312, registrations: 89, uniqueRegistrations: 76, engagementRate: 42 },
-    { eventId: event2._id, views: 312, uniqueViews: 198, anonymousViews: 87, registrations: 45, uniqueRegistrations: 42, engagementRate: 38 },
-    { eventId: event3._id, views: 256, uniqueViews: 167, anonymousViews: 64, registrations: 38, uniqueRegistrations: 35, engagementRate: 35 },
-    { eventId: event4._id, views: 189, uniqueViews: 134, anonymousViews: 45, registrations: 28, uniqueRegistrations: 25, engagementRate: 31 },
-    { eventId: event5._id, views: 94, uniqueViews: 78, anonymousViews: 22, registrations: 15, uniqueRegistrations: 14, engagementRate: 28 },
-    { eventId: event6._id, views: 67, uniqueViews: 45, anonymousViews: 12, registrations: 8, uniqueRegistrations: 8, engagementRate: 22 },
+    { eventId: event1._id, views: 847, uniqueViews: 423, anonymousViews: 312, uniqueAnonymousViews: 198, registrations: 89, uniqueRegistrations: 76, engagementRate: 42, eventDate: daysAgo(14), daysSpread: 30 },
+    { eventId: event2._id, views: 312, uniqueViews: 198, anonymousViews: 87, uniqueAnonymousViews: 64, registrations: 45, uniqueRegistrations: 42, engagementRate: 38, eventDate: daysAgo(28), daysSpread: 20 },
+    { eventId: event3._id, views: 256, uniqueViews: 167, anonymousViews: 64, uniqueAnonymousViews: 42, registrations: 38, uniqueRegistrations: 35, engagementRate: 35, eventDate: daysAgo(7), daysSpread: 14 },
+    { eventId: event4._id, views: 189, uniqueViews: 134, anonymousViews: 45, uniqueAnonymousViews: 31, registrations: 28, uniqueRegistrations: 25, engagementRate: 31, eventDate: daysFromNow(5), daysSpread: 10 },
+    { eventId: event5._id, views: 94, uniqueViews: 78, anonymousViews: 22, uniqueAnonymousViews: 18, registrations: 15, uniqueRegistrations: 14, engagementRate: 28, eventDate: daysFromNow(21), daysSpread: 5 },
+    { eventId: event6._id, views: 67, uniqueViews: 45, anonymousViews: 12, uniqueAnonymousViews: 9, registrations: 8, uniqueRegistrations: 8, engagementRate: 22, eventDate: daysAgo(3), daysSpread: 7 },
   ];
   for (const a of analyticsEntries) {
-    await EventAnalytics.create({ ...seedMarker, ...a });
+    const viewHistory = generateViewHistory(a.eventDate, a.views, a.uniqueViews, a.anonymousViews, memberUsers, a.daysSpread);
+    await EventAnalytics.create({
+      ...seedMarker,
+      eventId: a.eventId,
+      views: a.views,
+      uniqueViews: a.uniqueViews,
+      anonymousViews: a.anonymousViews,
+      uniqueAnonymousViews: a.uniqueAnonymousViews,
+      registrations: a.registrations,
+      uniqueRegistrations: a.uniqueRegistrations,
+      engagementRate: a.engagementRate,
+      rsvps: a.registrations,
+      uniqueRsvps: a.uniqueRegistrations,
+      viewHistory,
+      rsvpHistory: [],
+    });
   }
-  console.log('Created event analytics');
+  console.log('Created event analytics with viewHistory');
+
+  // ─── Platform Analytics Events (analytics_events collection for funnel) ───
+  const AnalyticsEvent = conn.model('AnalyticsEvent', flexSchemaNoTs, 'analytics_events');
+  await AnalyticsEvent.deleteMany(seedMarker);
+
+  async function seedPlatformAnalytics(eventDoc, uniqueViewers, formOpens, registrations, checkins) {
+    const evId = String(eventDoc._id);
+    const eventStart = eventDoc.start_time || daysAgo(14);
+    const entries = [];
+    const viewerUsers = memberUsers.slice(0, Math.min(uniqueViewers, memberUsers.length));
+
+    // event_view entries
+    for (let i = 0; i < uniqueViewers; i++) {
+      const u = viewerUsers[i % viewerUsers.length];
+      const sources = ['direct', 'explore', 'org_page', 'direct', 'explore'];
+      entries.push({
+        ...seedMarker,
+        event: 'event_view',
+        user_id: u._id,
+        anonymous_id: null,
+        ts: new Date(eventStart.getTime() - Math.random() * 20 * 86400000),
+        properties: { event_id: evId, source: sources[i % sources.length] },
+        context: { referrer: i % 3 === 0 ? 'events-dashboard' : i % 3 === 1 ? 'club-dashboard/RPI-Innovators-Hub' : '' },
+      });
+    }
+
+    // event_registration_form_open entries
+    for (let i = 0; i < formOpens; i++) {
+      const u = viewerUsers[i % viewerUsers.length];
+      entries.push({
+        ...seedMarker,
+        event: 'event_registration_form_open',
+        user_id: u._id,
+        anonymous_id: null,
+        ts: new Date(eventStart.getTime() - Math.random() * 15 * 86400000),
+        properties: { event_id: evId },
+      });
+    }
+
+    // event_registration entries
+    for (let i = 0; i < registrations; i++) {
+      const u = viewerUsers[i % viewerUsers.length];
+      entries.push({
+        ...seedMarker,
+        event: 'event_registration',
+        user_id: u._id,
+        anonymous_id: null,
+        ts: new Date(eventStart.getTime() - Math.random() * 10 * 86400000),
+        properties: { event_id: evId },
+      });
+    }
+
+    // event_checkin entries
+    for (let i = 0; i < checkins; i++) {
+      const u = viewerUsers[i % viewerUsers.length];
+      entries.push({
+        ...seedMarker,
+        event: 'event_checkin',
+        user_id: u._id,
+        anonymous_id: null,
+        ts: new Date(eventStart.getTime() + i * 5 * 60000),
+        properties: { event_id: evId },
+      });
+    }
+
+    if (entries.length > 0) {
+      await AnalyticsEvent.insertMany(entries);
+    }
+  }
+
+  // Showcase: 15 unique viewers → 12 form opens → 12 registrations → 10 check-ins
+  await seedPlatformAnalytics(event1, 15, 12, 12, 10);
+  // Tech Talk: 12 viewers → 10 form opens → 8 registrations → 7 check-ins
+  await seedPlatformAnalytics(event2, 12, 10, 8, 7);
+  // Networking Mixer: 10 viewers → 8 form opens → 7 registrations → 7 check-ins
+  await seedPlatformAnalytics(event3, 10, 8, 7, 7);
+  // HackRPI: 8 viewers → 6 form opens → 5 registrations → 0 check-ins (upcoming)
+  await seedPlatformAnalytics(event4, 8, 6, 5, 0);
+  // Annual Gala: 5 viewers → 4 form opens → 3 registrations → 0 check-ins (upcoming)
+  await seedPlatformAnalytics(event5, 5, 4, 3, 0);
+  // Study Session: 6 viewers → 0 form opens → 5 registrations → 5 check-ins
+  await seedPlatformAnalytics(event6, 6, 0, 5, 5);
+
+  console.log('Created platform analytics events (funnel data)');
 
   // ─── Registration Forms & Responses (for showcase event) ───
   const regForm = await FormModel.create({
