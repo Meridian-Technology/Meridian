@@ -332,9 +332,67 @@ async function main() {
   const daysFromNow = (d) => new Date(now.getTime() + d * 86400000);
   const daysAgo = (d) => new Date(now.getTime() - d * 86400000);
 
+  // Helper: generate N attendees with exponential registration curve + noise
+  // Registrations compound as the event date approaches, with day-to-day variance
+  function generateAttendees(users, count, eventDate, createdDate, checkedInPct) {
+    const attendees = [];
+    const spreadMs = eventDate.getTime() - createdDate.getTime();
+    const cutoff = Math.min(eventDate.getTime(), now.getTime());
+    const spreadDays = Math.max(1, Math.floor((cutoff - createdDate.getTime()) / 86400000));
+
+    // Build exponential distribution: weight each day so later days get more registrations
+    const dayWeights = [];
+    for (let d = 0; d < spreadDays; d++) {
+      const t = d / spreadDays;
+      // Exponential ramp: slow start, accelerating toward event
+      const base = Math.pow(t, 2.2) * 3 + 0.15;
+      // Add noise: ±40% variance, occasional spikes and dips
+      const noise = 0.6 + Math.random() * 0.8;
+      const spike = Math.random() < 0.08 ? 1.8 + Math.random() : 1.0;
+      const dip = Math.random() < 0.06 ? 0.3 : 1.0;
+      dayWeights.push(base * noise * spike * dip);
+    }
+    const totalWeight = dayWeights.reduce((a, b) => a + b, 0);
+
+    // Assign registration counts per day
+    const regsPerDay = dayWeights.map(w => Math.max(0, Math.round((w / totalWeight) * count)));
+    // Adjust to hit exact count
+    let assigned = regsPerDay.reduce((a, b) => a + b, 0);
+    while (assigned < count) { regsPerDay[regsPerDay.length - 1]++; assigned++; }
+    while (assigned > count) {
+      const idx = regsPerDay.findIndex(v => v > 0);
+      if (idx >= 0) { regsPerDay[idx]--; assigned--; }
+    }
+
+    let idx = 0;
+    for (let d = 0; d < spreadDays; d++) {
+      const dayStart = new Date(createdDate.getTime() + d * 86400000);
+      for (let r = 0; r < regsPerDay[d]; r++) {
+        const u = users[idx % users.length];
+        const hourOffset = Math.random() * 86400000;
+        const regTime = new Date(dayStart.getTime() + hourOffset);
+        const isCheckedIn = idx < Math.floor(count * checkedInPct);
+        attendees.push({
+          userId: u._id,
+          registeredAt: regTime,
+          guestCount: idx % 11 === 0 ? 1 : 0,
+          checkedIn: isCheckedIn,
+          checkedInAt: isCheckedIn ? new Date(eventDate.getTime() + (idx * 2 + 5) * 60000) : null,
+        });
+        idx++;
+      }
+    }
+
+    // Sort by registration date
+    attendees.sort((a, b) => a.registeredAt - b.registeredAt);
+    return attendees;
+  }
+
   // ─── EVENTS ───
 
-  // Event 1: Past - Spring Innovation Showcase (flagship event, lots of data)
+  // Event 1: UPCOMING - Spring Innovation Showcase (flagship, 8 days out)
+  const event1Created = daysAgo(28);
+  const event1Start = daysFromNow(8);
   const event1 = await Event.create({
     ...seedMarker,
     name: 'Spring Innovation Showcase 2026',
@@ -342,8 +400,8 @@ async function main() {
     type: 'showcase',
     hostingId: org._id,
     hostingType: 'Org',
-    start_time: daysAgo(14),
-    end_time: new Date(daysAgo(14).getTime() + 5 * 3600000),
+    start_time: event1Start,
+    end_time: new Date(event1Start.getTime() + 5 * 3600000),
     location: 'EMPAC Concert Hall',
     classroom_id: empacRoom._id,
     status: 'approved',
@@ -355,33 +413,18 @@ async function main() {
     checkInEnabled: true,
     checkInToken: 'showcase2026',
     isDeleted: false,
-    createdAt: daysAgo(45),
+    createdAt: event1Created,
     createdBy: adminUser._id,
     contact: 'innovators@rpi.edu',
     attendees: [],
   });
 
-  // Helper: generate N attendees with realistic registration spread
-  function generateAttendees(users, count, eventDate, spreadDays, checkedInPct) {
-    const attendees = [];
-    for (let i = 0; i < count; i++) {
-      const u = users[i % users.length];
-      const isCheckedIn = i < Math.floor(count * checkedInPct);
-      attendees.push({
-        userId: u._id,
-        registeredAt: new Date(eventDate.getTime() - (spreadDays - (i / count) * spreadDays) * 86400000),
-        guestCount: i % 7 === 0 ? 1 : 0,
-        checkedIn: isCheckedIn,
-        checkedInAt: isCheckedIn ? new Date(eventDate.getTime() + (i * 2 + 5) * 60000) : null,
-      });
-    }
-    return attendees;
-  }
-
-  const event1Attendees = generateAttendees(memberUsers, 178, daysAgo(14), 30, 0.80);
+  const event1Attendees = generateAttendees(memberUsers, 178, event1Start, event1Created, 0);
   await Event.updateOne({ _id: event1._id }, { $set: { attendees: event1Attendees, registrationCount: 178 } });
 
   // Event 2: Past - Tech Talk: Building Scalable Systems
+  const event2Created = daysAgo(45);
+  const event2Start = daysAgo(14);
   const event2 = await Event.create({
     ...seedMarker,
     name: 'Tech Talk: Building Scalable Systems',
@@ -389,8 +432,8 @@ async function main() {
     type: 'talk',
     hostingId: org._id,
     hostingType: 'Org',
-    start_time: daysAgo(28),
-    end_time: new Date(daysAgo(28).getTime() + 2 * 3600000),
+    start_time: event2Start,
+    end_time: new Date(event2Start.getTime() + 2 * 3600000),
     location: 'McNeil Room, Rensselaer Union',
     classroom_id: unionRoom._id,
     status: 'approved',
@@ -400,13 +443,15 @@ async function main() {
     rsvpEnabled: true,
     checkInEnabled: true,
     isDeleted: false,
-    createdAt: daysAgo(60),
+    createdAt: event2Created,
     createdBy: memberUsers[1]._id,
-    attendees: generateAttendees(memberUsers, 62, daysAgo(28), 20, 0.87),
+    attendees: generateAttendees(memberUsers, 62, event2Start, event2Created, 0.87),
     registrationCount: 62,
   });
 
   // Event 3: Past - Startup Networking Mixer
+  const event3Created = daysAgo(21);
+  const event3Start = daysAgo(5);
   const event3 = await Event.create({
     ...seedMarker,
     name: 'Startup Networking Mixer',
@@ -414,8 +459,8 @@ async function main() {
     type: 'social',
     hostingId: org._id,
     hostingType: 'Org',
-    start_time: daysAgo(7),
-    end_time: new Date(daysAgo(7).getTime() + 3 * 3600000),
+    start_time: event3Start,
+    end_time: new Date(event3Start.getTime() + 3 * 3600000),
     location: 'McNeil Room, Rensselaer Union',
     classroom_id: unionRoom._id,
     status: 'approved',
@@ -425,13 +470,15 @@ async function main() {
     rsvpEnabled: true,
     checkInEnabled: true,
     isDeleted: false,
-    createdAt: daysAgo(21),
+    createdAt: event3Created,
     createdBy: adminUser._id,
-    attendees: generateAttendees(memberUsers, 47, daysAgo(7), 14, 0.91),
+    attendees: generateAttendees(memberUsers, 47, event3Start, event3Created, 0.91),
     registrationCount: 47,
   });
 
   // Event 4: Upcoming - HackRPI Kickoff Workshop
+  const event4Created = daysAgo(14);
+  const event4Start = daysFromNow(12);
   const event4 = await Event.create({
     ...seedMarker,
     name: 'HackRPI Kickoff: Intro to Full-Stack Development',
@@ -439,8 +486,8 @@ async function main() {
     type: 'workshop',
     hostingId: org._id,
     hostingType: 'Org',
-    start_time: daysFromNow(5),
-    end_time: new Date(daysFromNow(5).getTime() + 3 * 3600000),
+    start_time: event4Start,
+    end_time: new Date(event4Start.getTime() + 3 * 3600000),
     location: 'EMPAC Concert Hall',
     classroom_id: empacRoom._id,
     status: 'approved',
@@ -452,13 +499,15 @@ async function main() {
     maxAttendees: 120,
     checkInEnabled: false,
     isDeleted: false,
-    createdAt: daysAgo(10),
+    createdAt: event4Created,
     createdBy: memberUsers[2]._id,
-    attendees: generateAttendees(memberUsers, 34, daysFromNow(5), 10, 0),
+    attendees: generateAttendees(memberUsers, 34, event4Start, event4Created, 0),
     registrationCount: 34,
   });
 
   // Event 5: Upcoming - Annual Gala
+  const event5Created = daysAgo(7);
+  const event5Start = daysFromNow(28);
   const event5 = await Event.create({
     ...seedMarker,
     name: 'Innovators Hub Annual Gala & Awards',
@@ -466,8 +515,8 @@ async function main() {
     type: 'gala',
     hostingId: org._id,
     hostingType: 'Org',
-    start_time: daysFromNow(21),
-    end_time: new Date(daysFromNow(21).getTime() + 4 * 3600000),
+    start_time: event5Start,
+    end_time: new Date(event5Start.getTime() + 4 * 3600000),
     location: 'EMPAC Concert Hall',
     classroom_id: empacRoom._id,
     status: 'approved',
@@ -478,13 +527,15 @@ async function main() {
     rsvpRequired: true,
     maxAttendees: 200,
     isDeleted: false,
-    createdAt: daysAgo(3),
+    createdAt: event5Created,
     createdBy: adminUser._id,
-    attendees: generateAttendees(memberUsers, 18, daysFromNow(21), 5, 0),
+    attendees: generateAttendees(memberUsers, 18, event5Start, event5Created, 0),
     registrationCount: 18,
   });
 
   // Event 6: Past - weekly study session (shows variety)
+  const event6Created = daysAgo(10);
+  const event6Start = daysAgo(2);
   const event6 = await Event.create({
     ...seedMarker,
     name: 'Weekly Code Review & Study Session',
@@ -492,8 +543,8 @@ async function main() {
     type: 'study',
     hostingId: org._id,
     hostingType: 'Org',
-    start_time: daysAgo(3),
-    end_time: new Date(daysAgo(3).getTime() + 2 * 3600000),
+    start_time: event6Start,
+    end_time: new Date(event6Start.getTime() + 2 * 3600000),
     location: 'McNeil Room, Rensselaer Union',
     classroom_id: unionRoom._id,
     status: 'approved',
@@ -501,9 +552,9 @@ async function main() {
     expectedAttendance: 20,
     going: memberUsers.slice(5, 10).map(u => u._id),
     isDeleted: false,
-    createdAt: daysAgo(10),
+    createdAt: event6Created,
     createdBy: memberUsers[0]._id,
-    attendees: generateAttendees(memberUsers, 15, daysAgo(3), 7, 0.87),
+    attendees: generateAttendees(memberUsers, 15, event6Start, event6Created, 0.87),
     registrationCount: 15,
     isStudySession: true,
   });
@@ -542,12 +593,12 @@ async function main() {
   }
 
   const analyticsEntries = [
-    { eventId: event1._id, views: 2340, uniqueViews: 1180, anonymousViews: 870, uniqueAnonymousViews: 540, registrations: 178, uniqueRegistrations: 178, engagementRate: 45, eventDate: daysAgo(14), daysSpread: 30 },
-    { eventId: event2._id, views: 680, uniqueViews: 410, anonymousViews: 195, uniqueAnonymousViews: 138, registrations: 62, uniqueRegistrations: 62, engagementRate: 38, eventDate: daysAgo(28), daysSpread: 20 },
-    { eventId: event3._id, views: 520, uniqueViews: 320, anonymousViews: 145, uniqueAnonymousViews: 98, registrations: 47, uniqueRegistrations: 47, engagementRate: 35, eventDate: daysAgo(7), daysSpread: 14 },
-    { eventId: event4._id, views: 390, uniqueViews: 268, anonymousViews: 92, uniqueAnonymousViews: 65, registrations: 34, uniqueRegistrations: 34, engagementRate: 31, eventDate: daysFromNow(5), daysSpread: 10 },
-    { eventId: event5._id, views: 156, uniqueViews: 118, anonymousViews: 38, uniqueAnonymousViews: 30, registrations: 18, uniqueRegistrations: 18, engagementRate: 28, eventDate: daysFromNow(21), daysSpread: 5 },
-    { eventId: event6._id, views: 112, uniqueViews: 74, anonymousViews: 22, uniqueAnonymousViews: 16, registrations: 15, uniqueRegistrations: 15, engagementRate: 22, eventDate: daysAgo(3), daysSpread: 7 },
+    { eventId: event1._id, views: 3850, uniqueViews: 1920, anonymousViews: 1430, uniqueAnonymousViews: 890, registrations: 178, uniqueRegistrations: 178, engagementRate: 45, eventDate: event1Start, daysSpread: 28 },
+    { eventId: event2._id, views: 980, uniqueViews: 580, anonymousViews: 310, uniqueAnonymousViews: 215, registrations: 62, uniqueRegistrations: 62, engagementRate: 38, eventDate: event2Start, daysSpread: 30 },
+    { eventId: event3._id, views: 720, uniqueViews: 430, anonymousViews: 210, uniqueAnonymousViews: 145, registrations: 47, uniqueRegistrations: 47, engagementRate: 35, eventDate: event3Start, daysSpread: 16 },
+    { eventId: event4._id, views: 540, uniqueViews: 365, anonymousViews: 128, uniqueAnonymousViews: 90, registrations: 34, uniqueRegistrations: 34, engagementRate: 31, eventDate: event4Start, daysSpread: 14 },
+    { eventId: event5._id, views: 210, uniqueViews: 158, anonymousViews: 52, uniqueAnonymousViews: 40, registrations: 18, uniqueRegistrations: 18, engagementRate: 28, eventDate: event5Start, daysSpread: 7 },
+    { eventId: event6._id, views: 145, uniqueViews: 96, anonymousViews: 34, uniqueAnonymousViews: 24, registrations: 15, uniqueRegistrations: 15, engagementRate: 22, eventDate: event6Start, daysSpread: 8 },
   ];
   for (const a of analyticsEntries) {
     const viewHistory = generateViewHistory(a.eventDate, a.views, a.uniqueViews, a.anonymousViews, memberUsers, a.daysSpread);
@@ -591,14 +642,18 @@ async function main() {
     const sources = ['direct', 'explore', 'org_page', 'direct', 'explore'];
     const referrers = ['events-dashboard', 'club-dashboard/RPI-Innovators-Hub', ''];
 
-    // event_view entries (one per unique viewer)
+    // Cap timestamps to now (analytics events shouldn't be in the future)
+    const tsNow = now.getTime();
+    const cap = (ts) => new Date(Math.min(ts, tsNow - 60000));
+
+    // event_view entries (one per unique viewer) — spread over 25 days leading up to now
     for (let i = 0; i < uniqueViewers; i++) {
       entries.push({
         ...seedMarker,
         event: 'event_view',
         user_id: syntheticUserIds[i],
         anonymous_id: null,
-        ts: new Date(eventStart.getTime() - Math.random() * 20 * 86400000),
+        ts: cap(eventStart.getTime() - Math.random() * 25 * 86400000),
         properties: { event_id: evId, source: sources[i % sources.length] },
         context: { referrer: referrers[i % referrers.length] },
       });
@@ -611,7 +666,7 @@ async function main() {
         event: 'event_registration_form_open',
         user_id: syntheticUserIds[i],
         anonymous_id: null,
-        ts: new Date(eventStart.getTime() - Math.random() * 15 * 86400000),
+        ts: cap(eventStart.getTime() - Math.random() * 20 * 86400000),
         properties: { event_id: evId },
       });
     }
@@ -623,19 +678,19 @@ async function main() {
         event: 'event_registration',
         user_id: syntheticUserIds[i],
         anonymous_id: null,
-        ts: new Date(eventStart.getTime() - Math.random() * 10 * 86400000),
+        ts: cap(eventStart.getTime() - Math.random() * 15 * 86400000),
         properties: { event_id: evId },
       });
     }
 
-    // event_checkin entries (one per unique check-in)
+    // event_checkin entries (one per unique check-in) — only for past events
     for (let i = 0; i < checkins; i++) {
       entries.push({
         ...seedMarker,
         event: 'event_checkin',
         user_id: syntheticUserIds[i],
         anonymous_id: null,
-        ts: new Date(eventStart.getTime() + i * 2 * 60000),
+        ts: cap(eventStart.getTime() + i * 2 * 60000),
         properties: { event_id: evId },
       });
     }
@@ -645,18 +700,18 @@ async function main() {
     }
   }
 
-  // Showcase: 312 unique viewers → 245 form opens → 178 registrations → 142 check-ins
-  await seedPlatformAnalytics(event1, 312, 245, 178, 142);
-  // Tech Talk: 156 viewers → 98 form opens → 62 registrations → 54 check-ins
-  await seedPlatformAnalytics(event2, 156, 98, 62, 54);
-  // Networking Mixer: 128 viewers → 82 form opens → 47 registrations → 43 check-ins
-  await seedPlatformAnalytics(event3, 128, 82, 47, 43);
-  // HackRPI: 94 viewers → 58 form opens → 34 registrations → 0 check-ins (upcoming)
-  await seedPlatformAnalytics(event4, 94, 58, 34, 0);
-  // Annual Gala: 52 viewers → 28 form opens → 18 registrations → 0 check-ins (upcoming)
-  await seedPlatformAnalytics(event5, 52, 28, 18, 0);
-  // Study Session: 38 viewers → 0 form opens → 15 registrations → 13 check-ins
-  await seedPlatformAnalytics(event6, 38, 0, 15, 13);
+  // Showcase (upcoming): 847 viewers → 312 form opens → 178 registrations → 0 check-ins
+  await seedPlatformAnalytics(event1, 847, 312, 178, 0);
+  // Tech Talk (past): 385 viewers → 128 form opens → 62 registrations → 54 check-ins
+  await seedPlatformAnalytics(event2, 385, 128, 62, 54);
+  // Networking Mixer (past): 296 viewers → 105 form opens → 47 registrations → 43 check-ins
+  await seedPlatformAnalytics(event3, 296, 105, 47, 43);
+  // HackRPI (upcoming): 218 viewers → 72 form opens → 34 registrations → 0 check-ins
+  await seedPlatformAnalytics(event4, 218, 72, 34, 0);
+  // Annual Gala (upcoming): 94 viewers → 35 form opens → 18 registrations → 0 check-ins
+  await seedPlatformAnalytics(event5, 94, 35, 18, 0);
+  // Study Session (past): 58 viewers → 0 form opens → 15 registrations → 13 check-ins
+  await seedPlatformAnalytics(event6, 58, 0, 15, 13);
 
   console.log('Created platform analytics events (funnel data)');
 
@@ -702,7 +757,7 @@ async function main() {
         { label: 'Dietary Restrictions', value: i % 4 === 0 ? 'Vegetarian' : '' },
         { label: 'What excites you most about innovation?', value: excitementAnswers[i % excitementAnswers.length] },
       ],
-      submittedAt: new Date(daysAgo(14).getTime() - (30 - i) * 86400000),
+      submittedAt: new Date(event1Start.getTime() - (28 - (i / formResponseCount) * 28) * 86400000),
     });
   }
   console.log(`Created registration form + ${formResponseCount} responses`);
@@ -713,13 +768,13 @@ async function main() {
     eventId: event1._id,
     orgId: org._id,
     items: [
-      { id: 'a1', title: 'Registration & Welcome Coffee', type: 'Setup', startTime: daysAgo(14), endTime: new Date(daysAgo(14).getTime() + 30 * 60000), location: 'Main Lobby', isPublic: true, order: 0 },
-      { id: 'a2', title: 'Opening Remarks', description: 'Welcome by Jordan Rivera, President', type: 'Speaker', startTime: new Date(daysAgo(14).getTime() + 30 * 60000), endTime: new Date(daysAgo(14).getTime() + 45 * 60000), location: 'Main Stage', isPublic: true, order: 1 },
-      { id: 'a3', title: 'Keynote: The Future of AI in Education', description: 'Dr. Sarah Mitchell, Google DeepMind', type: 'Speaker', startTime: new Date(daysAgo(14).getTime() + 45 * 60000), endTime: new Date(daysAgo(14).getTime() + 105 * 60000), location: 'Main Stage', isPublic: true, order: 2 },
-      { id: 'a4', title: 'Coffee Break & Demo Setup', type: 'Break', startTime: new Date(daysAgo(14).getTime() + 105 * 60000), endTime: new Date(daysAgo(14).getTime() + 120 * 60000), isPublic: true, order: 3 },
-      { id: 'a5', title: 'Student Startup Pitches (Round 1)', description: '5 teams, 5 minutes each + Q&A', type: 'Activity', startTime: new Date(daysAgo(14).getTime() + 120 * 60000), endTime: new Date(daysAgo(14).getTime() + 180 * 60000), location: 'Main Stage', isPublic: true, order: 4 },
-      { id: 'a6', title: 'Interactive Demo Fair', description: 'Hands-on demos from 12 student projects', type: 'Activity', startTime: new Date(daysAgo(14).getTime() + 180 * 60000), endTime: new Date(daysAgo(14).getTime() + 240 * 60000), location: 'Exhibition Hall', isPublic: true, order: 5 },
-      { id: 'a7', title: 'Networking Reception & Awards', type: 'Activity', startTime: new Date(daysAgo(14).getTime() + 240 * 60000), endTime: new Date(daysAgo(14).getTime() + 300 * 60000), location: 'Lobby', isPublic: true, order: 6 },
+      { id: 'a1', title: 'Registration & Welcome Coffee', type: 'Setup', startTime: event1Start, endTime: new Date(event1Start.getTime() + 30 * 60000), location: 'Main Lobby', isPublic: true, order: 0 },
+      { id: 'a2', title: 'Opening Remarks', description: 'Welcome by Jordan Rivera, President', type: 'Speaker', startTime: new Date(event1Start.getTime() + 30 * 60000), endTime: new Date(event1Start.getTime() + 45 * 60000), location: 'Main Stage', isPublic: true, order: 1 },
+      { id: 'a3', title: 'Keynote: The Future of AI in Education', description: 'Dr. Sarah Mitchell, Google DeepMind', type: 'Speaker', startTime: new Date(event1Start.getTime() + 45 * 60000), endTime: new Date(event1Start.getTime() + 105 * 60000), location: 'Main Stage', isPublic: true, order: 2 },
+      { id: 'a4', title: 'Coffee Break & Demo Setup', type: 'Break', startTime: new Date(event1Start.getTime() + 105 * 60000), endTime: new Date(event1Start.getTime() + 120 * 60000), isPublic: true, order: 3 },
+      { id: 'a5', title: 'Student Startup Pitches (Round 1)', description: '5 teams, 5 minutes each + Q&A', type: 'Activity', startTime: new Date(event1Start.getTime() + 120 * 60000), endTime: new Date(event1Start.getTime() + 180 * 60000), location: 'Main Stage', isPublic: true, order: 4 },
+      { id: 'a6', title: 'Interactive Demo Fair', description: 'Hands-on demos from 12 student projects', type: 'Activity', startTime: new Date(event1Start.getTime() + 180 * 60000), endTime: new Date(event1Start.getTime() + 240 * 60000), location: 'Exhibition Hall', isPublic: true, order: 5 },
+      { id: 'a7', title: 'Networking Reception & Awards', type: 'Activity', startTime: new Date(event1Start.getTime() + 240 * 60000), endTime: new Date(event1Start.getTime() + 300 * 60000), location: 'Lobby', isPublic: true, order: 6 },
     ],
     publicNotes: 'All attendees welcome. Refreshments provided.',
     internalNotes: 'AV setup must be complete by 8:30am. Catering arrives at 8:00am.',
@@ -736,11 +791,11 @@ async function main() {
     name: 'Stage Manager',
     description: 'Coordinate speaker transitions, manage timing, and oversee AV cues',
     requiredCount: 2,
-    shiftStart: daysAgo(14),
-    shiftEnd: new Date(daysAgo(14).getTime() + 5 * 3600000),
+    shiftStart: event1Start,
+    shiftEnd: new Date(event1Start.getTime() + 5 * 3600000),
     assignments: [
-      { memberId: memberUsers[0]._id, status: 'confirmed', assignedAt: daysAgo(20), confirmedAt: daysAgo(18) },
-      { memberId: memberUsers[1]._id, status: 'confirmed', assignedAt: daysAgo(20), confirmedAt: daysAgo(17) },
+      { memberId: memberUsers[0]._id, status: 'confirmed', assignedAt: daysAgo(10), confirmedAt: daysAgo(8) },
+      { memberId: memberUsers[1]._id, status: 'confirmed', assignedAt: daysAgo(10), confirmedAt: daysAgo(7) },
     ],
   });
 
@@ -752,10 +807,10 @@ async function main() {
     name: 'AV Technician',
     description: 'Set up projectors, microphones, and manage livestream',
     requiredCount: 2,
-    shiftStart: new Date(daysAgo(14).getTime() - 1 * 3600000),
-    shiftEnd: new Date(daysAgo(14).getTime() + 5 * 3600000),
+    shiftStart: new Date(event1Start.getTime() - 1 * 3600000),
+    shiftEnd: new Date(event1Start.getTime() + 5 * 3600000),
     assignments: [
-      { memberId: memberUsers[6]._id, status: 'confirmed', assignedAt: daysAgo(19), confirmedAt: daysAgo(16) },
+      { memberId: memberUsers[6]._id, status: 'confirmed', assignedAt: daysAgo(9), confirmedAt: daysAgo(6) },
     ],
   });
 
@@ -767,23 +822,23 @@ async function main() {
     name: 'Registration Desk',
     description: 'Welcome attendees, manage check-in process, hand out name badges',
     requiredCount: 3,
-    shiftStart: daysAgo(14),
-    shiftEnd: new Date(daysAgo(14).getTime() + 2 * 3600000),
+    shiftStart: event1Start,
+    shiftEnd: new Date(event1Start.getTime() + 2 * 3600000),
     assignments: [
-      { memberId: memberUsers[3]._id, status: 'confirmed', assignedAt: daysAgo(18), confirmedAt: daysAgo(15) },
-      { memberId: memberUsers[4]._id, status: 'confirmed', assignedAt: daysAgo(18), confirmedAt: daysAgo(14) },
-      { memberId: memberUsers[7]._id, status: 'assigned', assignedAt: daysAgo(16) },
+      { memberId: memberUsers[3]._id, status: 'confirmed', assignedAt: daysAgo(8), confirmedAt: daysAgo(5) },
+      { memberId: memberUsers[4]._id, status: 'confirmed', assignedAt: daysAgo(8), confirmedAt: daysAgo(4) },
+      { memberId: memberUsers[7]._id, status: 'assigned', assignedAt: daysAgo(6) },
     ],
   });
   console.log('Created event jobs (roles + assignments)');
 
   // ─── Volunteer Signups ───
   const volunteerData = [
-    { memberId: memberUsers[0]._id, roleId: jobStageManager._id, checkedIn: true, checkedOut: true },
-    { memberId: memberUsers[1]._id, roleId: jobStageManager._id, checkedIn: true, checkedOut: true },
-    { memberId: memberUsers[6]._id, roleId: jobAV._id, checkedIn: true, checkedOut: true },
-    { memberId: memberUsers[3]._id, roleId: jobGreeter._id, checkedIn: true, checkedOut: false },
-    { memberId: memberUsers[4]._id, roleId: jobGreeter._id, checkedIn: true, checkedOut: false },
+    { memberId: memberUsers[0]._id, roleId: jobStageManager._id, checkedIn: false, checkedOut: false },
+    { memberId: memberUsers[1]._id, roleId: jobStageManager._id, checkedIn: false, checkedOut: false },
+    { memberId: memberUsers[6]._id, roleId: jobAV._id, checkedIn: false, checkedOut: false },
+    { memberId: memberUsers[3]._id, roleId: jobGreeter._id, checkedIn: false, checkedOut: false },
+    { memberId: memberUsers[4]._id, roleId: jobGreeter._id, checkedIn: false, checkedOut: false },
   ];
   for (const v of volunteerData) {
     await VolunteerSignup.create({
@@ -791,13 +846,13 @@ async function main() {
       eventId: event1._id,
       memberId: v.memberId,
       roleId: v.roleId,
-      shiftStart: daysAgo(14),
-      shiftEnd: new Date(daysAgo(14).getTime() + 5 * 3600000),
+      shiftStart: event1Start,
+      shiftEnd: new Date(event1Start.getTime() + 5 * 3600000),
       status: 'approved',
       checkedIn: v.checkedIn,
-      checkedInAt: v.checkedIn ? daysAgo(14) : null,
+      checkedInAt: null,
       checkedOut: v.checkedOut,
-      checkedOutAt: v.checkedOut ? new Date(daysAgo(14).getTime() + 5 * 3600000) : null,
+      checkedOutAt: null,
     });
   }
   console.log('Created volunteer signups');
