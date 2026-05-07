@@ -1,0 +1,762 @@
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Icon } from '@iconify-icon/react';
+import { useFetch } from '../../../../../hooks/useFetch';
+import { analytics } from '../../../../../services/analytics/analytics';
+import { useNotification } from '../../../../../NotificationContext';
+import useAuth from '../../../../../hooks/useAuth';
+import apiRequest from '../../../../../utils/postRequest';
+import { useDashboardOverlay } from '../../../../../hooks/useDashboardOverlay';
+import EventAnnouncementCompose from './EventAnnouncementCompose';
+import EventDashboardOnboarding from './EventDashboardOnboarding/EventDashboardOnboarding';
+import EventOverview from './EventOverview';
+import EventEditorTab from './EventEditorTab/EventEditorTab';
+import AgendaBuilder from './EventAgendaBuilder/AgendaBuilder';
+import JobsManager from './EventJobsManager/JobsManager';
+import EventAnalyticsDetail from './EventAnalyticsDetail';
+import EventCheckInTab from './EventCheckInTab/EventCheckInTab';
+import EventQRTab from './EventQRTab/EventQRTab';
+import RegistrationsTab from './RegistrationsTab/RegistrationsTab';
+import CommunicationsTab from './CommunicationsTab/CommunicationsTab';
+import ComingSoon from './ComingSoon';
+import EventTasksTab from './EventTasksTab';
+import Popup from '../../../../../components/Popup/Popup';
+import EventDashboardFocusedHeader from './EventDashboardFocusedHeader';
+import './EventDashboardFocused.scss';
+
+const FORCE_EVENT_DASHBOARD_ONBOARDING = false;
+const COLLAB_ACCEPT_BANNER_KEY = 'meridian_event_dash_collab_accept_v1';
+/** Scroll past this (px) in the main content area to animate the header into condensed mode */
+const HEADER_CONDENSE_SCROLL_THRESHOLD = 56;
+
+function readCollabAcceptDismissStore() {
+    try {
+        const raw = localStorage.getItem(COLLAB_ACCEPT_BANNER_KEY);
+        if (!raw) return {};
+        return JSON.parse(raw);
+    } catch {
+        return {};
+    }
+}
+
+function getDismissedCollabOrgIdsForEvent(eventId) {
+    const store = readCollabAcceptDismissStore();
+    return store[eventId]?.dismissedCollabOrgIds || [];
+}
+
+function dismissCollabAcceptsForEvent(eventId, collabOrgIds) {
+    const store = readCollabAcceptDismissStore();
+    const prev = new Set(store[eventId]?.dismissedCollabOrgIds || []);
+    collabOrgIds.forEach((id) => prev.add(String(id)));
+    store[eventId] = { dismissedCollabOrgIds: [...prev] };
+    localStorage.setItem(COLLAB_ACCEPT_BANNER_KEY, JSON.stringify(store));
+}
+
+function formatCollaboratorNames(names) {
+    if (!names || names.length === 0) return '';
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+function formatTime(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function getEventStatus(event) {
+    if (!event?.start_time) return null;
+    const now = new Date();
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time || event.start_time);
+    if (start > now) return 'upcoming';
+    if (end < now) return 'passed';
+    return 'live';
+}
+
+function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
+    const { addNotification } = useNotification();
+    const { user } = useAuth();
+    const { showEventPostMortem } = useDashboardOverlay();
+    const [dashboardData, setDashboardData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const hasNotifiedErrorRef = useRef(false);
+    const [activeTab, setActiveTab] = useState('overview');
+    const [showOnboarding, setShowOnboarding] = useState(false);
+    const [showAnnouncementSpotlight, setShowAnnouncementSpotlight] = useState(false);
+    const [openRegistrationSettingsFromAnnouncement, setOpenRegistrationSettingsFromAnnouncement] = useState(false);
+    const [collabAcceptBannerTick, setCollabAcceptBannerTick] = useState(0);
+    const [showCancelEventConfirm, setShowCancelEventConfirm] = useState(false);
+    const [cancelEventConfirmText, setCancelEventConfirmText] = useState('');
+    const [cancelingEvent, setCancelingEvent] = useState(false);
+    const [showMobileMenu, setShowMobileMenu] = useState(false);
+    const [isMobileView, setIsMobileView] = useState(window.innerWidth <= 768);
+    const [isClosing, setIsClosing] = useState(false);
+    const [headerCondensed, setHeaderCondensed] = useState(false);
+    const closeTimerRef = useRef(null);
+
+    const { data, loading: dataLoading, error, refetch } = useFetch(
+        event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/dashboard` : null
+    );
+
+    useEffect(() => {
+        if (data?.success) {
+            setDashboardData(data.data);
+            setLoading(false);
+        } else if (error || (data && !data.success)) {
+            if (!hasNotifiedErrorRef.current) {
+                hasNotifiedErrorRef.current = true;
+                addNotification({
+                    title: 'Error',
+                    message: error || data?.message || 'Failed to load event dashboard',
+                    type: 'error'
+                });
+            }
+            setLoading(false);
+        } else if (dataLoading) {
+            setLoading(true);
+        }
+    }, [data, error, dataLoading, addNotification]);
+
+    useEffect(() => {
+        if (refreshTrigger > 0) refetch();
+    }, [refreshTrigger, refetch]);
+
+    useEffect(() => {
+        const handleResize = () => {
+            const mobile = window.innerWidth <= 768;
+            setIsMobileView(mobile);
+            if (!mobile) setShowMobileMenu(false);
+        };
+
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    useEffect(() => () => {
+        if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    }, []);
+
+    const handleDashboardClose = useCallback(() => {
+        if (isClosing) return;
+        setIsClosing(true);
+        closeTimerRef.current = setTimeout(() => {
+            onClose?.();
+        }, 220);
+    }, [isClosing, onClose]);
+
+    const handleMainContentScroll = useCallback((e) => {
+        if (activeTab !== 'overview') return;
+        const y = e.currentTarget.scrollTop;
+        const condensed = y > HEADER_CONDENSE_SCROLL_THRESHOLD;
+        setHeaderCondensed((prev) => (prev === condensed ? prev : condensed));
+    }, [activeTab]);
+
+    const handleRefresh = () => setRefreshTrigger((prev) => prev + 1);
+
+    const handleTabChange = useCallback((tabId) => {
+        setActiveTab(tabId);
+        if (isMobileView) setShowMobileMenu(false);
+        if (event?._id && orgId) {
+            analytics.track('event_workspace_tab_view', {
+                event_id: event._id,
+                org_id: orgId,
+                tab: tabId
+            });
+        }
+    }, [event?._id, isMobileView, orgId]);
+
+    useEffect(() => {
+        if (event?._id && orgId && dashboardData && !loading) {
+            analytics.screen('Event Workspace Focused', { event_id: event._id, org_id: orgId });
+            analytics.track('event_workspace_view', { event_id: event._id, org_id: orgId, variant: 'focused' });
+            analytics.track('event_workspace_tab_view', {
+                event_id: event._id,
+                org_id: orgId,
+                tab: activeTab
+            });
+        }
+    }, [event?._id, orgId, dashboardData, loading, activeTab]);
+
+    useEffect(() => {
+        if (loading || !dashboardData) return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const isTestMode = urlParams.get('test-event-onboarding') === 'true';
+        const hasSeen = localStorage.getItem('eventDashboardOnboardingSeen');
+        if (FORCE_EVENT_DASHBOARD_ONBOARDING || isTestMode || !hasSeen) {
+            setShowOnboarding(true);
+        }
+    }, [loading, dashboardData]);
+
+    const handleOnboardingClose = useCallback(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const isTestMode = urlParams.get('test-event-onboarding') === 'true';
+        if (!FORCE_EVENT_DASHBOARD_ONBOARDING && !isTestMode) {
+            localStorage.setItem('eventDashboardOnboardingSeen', 'true');
+        }
+        setShowOnboarding(false);
+    }, []);
+
+    const handleOpenRegistrationSettings = useCallback(() => {
+        setActiveTab('registrations');
+        setOpenRegistrationSettingsFromAnnouncement(true);
+    }, []);
+
+    const handleAnnouncementSent = useCallback(() => {
+        addNotification({
+            title: 'Announcement sent',
+            message: 'Event attendees have been notified.',
+            type: 'success'
+        });
+        handleRefresh();
+    }, [addNotification]);
+
+    const isEventCompleted = dashboardData?.stats?.operationalStatus === 'completed';
+    const approvalStatus = dashboardData?.event?.status || '';
+    const eventStatus = getEventStatus(dashboardData?.event);
+
+    const approvalStatusConfig = useMemo(() => {
+        if (approvalStatus === 'pending') {
+            return { tone: 'pending', title: 'Pending review', message: 'This event is currently in an approval or acknowledgement workflow.' };
+        }
+        if (approvalStatus === 'rejected') {
+            return { tone: 'rejected', title: 'Needs changes', message: 'This event was rejected. Update details and re-submit for review.' };
+        }
+        if (approvalStatus === 'approved') {
+            return { tone: 'approved', title: 'Approved for publishing', message: 'This event is clear to publish and appear in public experiences.' };
+        }
+        return null;
+    }, [approvalStatus]);
+
+    const collaborationAcceptBanner = useMemo(() => {
+        if (!dashboardData?.event || !orgId) return null;
+        const ev = dashboardData.event;
+        if (ev.hostingType !== 'Org') return null;
+        const hostId = String(ev.hostingId?._id || ev.hostingId);
+        if (String(orgId) !== hostId) return null;
+
+        const eventKey = String(ev._id);
+        const dismissed = getDismissedCollabOrgIdsForEvent(eventKey);
+        const unseen = (ev.collaboratorOrgs || []).filter((entry) => {
+            const cid = String(entry.orgId?._id || entry.orgId);
+            return entry.status === 'active' && entry.acceptedAt && !dismissed.includes(cid);
+        });
+        if (unseen.length === 0) return null;
+        return {
+            names: unseen.map((entry) => entry.orgId?.org_name || 'An organization'),
+            collabIds: unseen.map((entry) => String(entry.orgId?._id || entry.orgId)),
+            eventKey
+        };
+    }, [dashboardData, orgId, collabAcceptBannerTick]);
+
+    const handlePostMortem = useCallback(() => {
+        const eventToShow = dashboardData?.event || event;
+        if (eventToShow?._id && orgId) {
+            showEventPostMortem(eventToShow, orgId, { returnToEventDashboard: true });
+        }
+    }, [dashboardData, event, orgId, showEventPostMortem]);
+
+    const handleCancelEvent = useCallback(async () => {
+        if (!dashboardData?.event?._id || !orgId || cancelingEvent) return;
+        if (cancelEventConfirmText.trim().toLowerCase() !== 'cancel event') return;
+
+        setCancelingEvent(true);
+        try {
+            const response = await apiRequest(
+                `/org-event-management/${orgId}/events/${dashboardData.event._id}`,
+                {},
+                { method: 'DELETE' }
+            );
+            if (response?.success) {
+                addNotification({
+                    title: 'Event cancelled',
+                    message: 'The event has been permanently deleted.',
+                    type: 'success'
+                });
+                setShowCancelEventConfirm(false);
+                setCancelEventConfirmText('');
+                onClose?.();
+                return;
+            }
+            addNotification({
+                title: 'Cancel failed',
+                message: response?.message || response?.error || 'Unable to cancel this event.',
+                type: 'error'
+            });
+        } catch (err) {
+            addNotification({
+                title: 'Cancel failed',
+                message: err?.message || 'Unable to cancel this event.',
+                type: 'error'
+            });
+        } finally {
+            setCancelingEvent(false);
+        }
+    }, [addNotification, cancelEventConfirmText, cancelingEvent, dashboardData?.event?._id, onClose, orgId, dashboardData?.event?._id]);
+
+    if (loading) {
+        return (
+            <div className={`event-dashboard-focused ${className}${isClosing ? ' event-dashboard-focused--closing' : ''}`}>
+                <div className="loading-container">
+                    <Icon icon="mdi:loading" className="spinner" />
+                    <p>Loading focused dashboard...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!dashboardData) {
+        return (
+            <div className={`event-dashboard-focused ${className}${isClosing ? ' event-dashboard-focused--closing' : ''}`}>
+                <div className="error-container">
+                    <Icon icon="mdi:alert-circle" />
+                    <p>Failed to load focused dashboard</p>
+                    <button onClick={onClose}>Close</button>
+                </div>
+            </div>
+        );
+    }
+
+    const tabs = [
+        {
+            id: 'overview',
+            label: 'Overview',
+            icon: 'mingcute:chart-bar-fill',
+            content: (
+                <div className="event-dashboard">
+                    <EventOverview
+                        event={dashboardData.event}
+                        stats={dashboardData.stats}
+                        agenda={dashboardData.agenda}
+                        orgId={orgId}
+                        onRefresh={handleRefresh}
+                        onTabChange={handleTabChange}
+                    />
+                </div>
+            )
+        },
+        {
+            id: 'agenda',
+            label: 'Agenda',
+            icon: 'mdi:calendar-clock',
+            content: (
+                <AgendaBuilder
+                    event={dashboardData.event}
+                    orgId={orgId}
+                    onRefresh={handleRefresh}
+                    isTabActive={activeTab === 'agenda'}
+                />
+            )
+        },
+        {
+            id: 'jobs',
+            label: 'Jobs',
+            icon: 'mdi:briefcase',
+            content: <JobsManager event={dashboardData.event} orgId={orgId} onRefresh={handleRefresh} />
+        },
+        {
+            id: 'tasks',
+            label: 'Tasks',
+            icon: 'mdi:check-circle-outline',
+            content: <EventTasksTab event={dashboardData.event} orgId={orgId} onRefresh={handleRefresh} />
+        },
+        {
+            id: 'analytics',
+            label: 'Analytics',
+            icon: 'mingcute:chart-line-fill',
+            content: (
+                <EventAnalyticsDetail
+                    event={dashboardData.event}
+                    stats={dashboardData.stats}
+                    orgId={orgId}
+                    onRefresh={handleRefresh}
+                />
+            )
+        },
+        {
+            id: 'edit',
+            label: 'Details',
+            icon: 'mdi:pencil',
+            content: (
+                <div className="event-details-tab-content">
+                    <EventEditorTab
+                        event={dashboardData.event}
+                        agenda={dashboardData.agenda}
+                        orgId={orgId}
+                        onRefresh={handleRefresh}
+                    />
+                    <div className="event-details-danger-zone">
+                        <div className="event-details-danger-zone__content">
+                            <Icon icon="mdi:alert-octagon" className="event-details-danger-zone__icon" />
+                            <div className="event-details-danger-zone__text">
+                                <strong>Cancel event</strong>
+                                <span>Permanently deletes this event and associated workspace data. This cannot be undone.</span>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            className="event-details-danger-zone__btn"
+                            onClick={() => {
+                                setShowCancelEventConfirm(true);
+                                setCancelEventConfirmText('');
+                            }}
+                        >
+                            Cancel Event
+                        </button>
+                    </div>
+                </div>
+            )
+        },
+        {
+            id: 'registrations',
+            label: 'Registrations',
+            icon: 'mdi:clipboard-list-outline',
+            content: (
+                <RegistrationsTab
+                    event={dashboardData.event}
+                    orgId={orgId}
+                    onRefresh={handleRefresh}
+                    color="var(--primary-color)"
+                    openRegistrationSettingsFromAnnouncement={openRegistrationSettingsFromAnnouncement}
+                    onConsumeOpenRegistrationSettings={() => setOpenRegistrationSettingsFromAnnouncement(false)}
+                />
+            )
+        },
+        {
+            id: 'communications',
+            label: 'Communications',
+            icon: 'mdi:message-text',
+            content: (
+                <CommunicationsTab
+                    event={dashboardData.event}
+                    orgId={orgId}
+                    onRefresh={handleRefresh}
+                    onSendAnnouncement={() => setShowAnnouncementSpotlight(true)}
+                    onOpenRegistrationSettings={handleOpenRegistrationSettings}
+                    onNavigateToAnalytics={() => handleTabChange('analytics')}
+                />
+            )
+        },
+        {
+            id: 'checkin',
+            label: 'Check-In',
+            icon: 'uil:qrcode-scan',
+            content: (
+                <EventCheckInTab
+                    event={dashboardData.event}
+                    orgId={orgId}
+                    onRefresh={handleRefresh}
+                    isTabActive={activeTab === 'checkin'}
+                    color="var(--primary-color)"
+                />
+            )
+        },
+        {
+            id: 'qr',
+            label: 'QR Codes',
+            icon: 'mdi:qrcode',
+            content: <EventQRTab event={dashboardData.event} orgId={orgId} onRefresh={handleRefresh} />
+        },
+        {
+            id: 'equipment',
+            label: 'Equipment',
+            icon: 'mdi:package-variant',
+            content: <ComingSoon feature="Equipment" />
+        }
+    ];
+
+    const sidebarSections = [
+        {
+            id: 'planning',
+            label: 'Planning',
+            tabIds: ['overview', 'agenda', 'jobs', 'tasks', 'edit']
+        },
+        {
+            id: 'audience',
+            label: 'Audience',
+            tabIds: ['registrations', 'communications', 'checkin', 'qr']
+        },
+        {
+            id: 'insights',
+            label: 'Insights',
+            tabIds: ['analytics']
+        },
+        {
+            id: 'resources',
+            label: 'Resources',
+            tabIds: ['equipment']
+        }
+    ];
+
+    const tabsById = {};
+    tabs.forEach((tab) => {
+        tabsById[tab.id] = tab;
+    });
+
+    const resolvedSidebarSections = sidebarSections
+        .map((section) => ({
+            ...section,
+            tabs: section.tabIds.map((tabId) => tabsById[tabId]).filter(Boolean)
+        }))
+        .filter((section) => section.tabs.length > 0);
+
+    const activeTabConfig = tabs.find((tab) => tab.id === activeTab) || tabs[0];
+
+    return (
+        <>
+            <div className={`event-dashboard-focused ${className}${isClosing ? ' event-dashboard-focused--closing' : ''}`}>
+                <EventDashboardFocusedHeader
+                    condensed={activeTab !== 'overview' || headerCondensed}
+                    event={dashboardData.event}
+                    stats={dashboardData.stats}
+                    onClose={handleDashboardClose}
+                    onRefresh={handleRefresh}
+                    orgId={orgId}
+                    onSendAnnouncement={() => setShowAnnouncementSpotlight(true)}
+                    onPostMortem={handlePostMortem}
+                    showPostMortem={isEventCompleted}
+                />
+
+                <div className="event-dashboard-focused__body">
+                <aside className="event-dashboard-focused__sidebar">
+                    {/* <div className="event-dashboard-focused__event-card">
+                        <div className="event-dashboard-focused__event-name-row">
+                            <h1>{dashboardData.event?.name || 'Event'}</h1>
+                            {dashboardData.event?.status === 'draft' && <span className="event-status-bubble draft">Draft</span>}
+                            {dashboardData.event?.status === 'pending' && <span className="event-status-bubble upcoming">Pending</span>}
+                            {dashboardData.event?.status === 'rejected' && <span className="event-status-bubble passed">Rejected</span>}
+                            {eventStatus && !['draft', 'pending', 'rejected'].includes(dashboardData.event?.status) && (
+                                <span className={`event-status-bubble ${eventStatus}`}>
+                                    {eventStatus === 'upcoming' && 'Upcoming'}
+                                    {eventStatus === 'live' && 'Live'}
+                                    {eventStatus === 'passed' && 'Passed'}
+                                </span>
+                            )}
+                        </div>
+                        <div className="event-dashboard-focused__event-meta">
+                            <p><Icon icon="mdi:calendar" /> {formatDate(dashboardData.event?.start_time)}</p>
+                            <p><Icon icon="mdi:clock-outline" /> {formatTime(dashboardData.event?.start_time)} - {formatTime(dashboardData.event?.end_time)}</p>
+                            <p><Icon icon="fluent:location-28-filled" /> {dashboardData.event?.location || 'TBD'}</p>
+                        </div>
+                    </div> */}
+
+                    <nav className="event-dashboard-focused__nav" aria-label="Event workspace sections">
+                        {resolvedSidebarSections.map((section) => (
+                            <div key={section.id} className="event-dashboard-focused__nav-section">
+                                <p className="event-dashboard-focused__nav-section-title">{section.label}</p>
+                                <div className="event-dashboard-focused__nav-section-items">
+                                    {section.tabs.map((tab) => (
+                                        <button
+                                            key={tab.id}
+                                            type="button"
+                                            className={`event-dashboard-focused__nav-item${activeTab === tab.id ? ' is-active' : ''}`}
+                                            onClick={() => handleTabChange(tab.id)}
+                                        >
+                                            <Icon icon={tab.icon} />
+                                            <span>{tab.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </nav>
+                </aside>
+
+                <section className="event-dashboard-focused__main">
+                    <div className="event-dashboard-focused__main-content">
+                        {isMobileView && (
+                            <div className="event-dashboard-focused__mobile-nav-bar">
+                                <button
+                                    type="button"
+                                    className="event-dashboard-focused__mobile-menu-trigger"
+                                    onClick={() => setShowMobileMenu((prev) => !prev)}
+                                    aria-expanded={showMobileMenu}
+                                    aria-label={showMobileMenu ? 'Close section menu' : 'Open section menu'}
+                                >
+                                    <span>{activeTabConfig?.label || 'Overview'}</span>
+                                    <Icon icon={showMobileMenu ? 'mdi:chevron-up' : 'mdi:chevron-down'} />
+                                </button>
+                            </div>
+                        )}
+
+                        {collaborationAcceptBanner && (
+                            <div className="event-dashboard-focused__banner" role="status">
+                                <p>
+                                    <strong>{formatCollaboratorNames(collaborationAcceptBanner.names)}</strong> accepted your collaboration invite.
+                                </p>
+                                <div className="event-dashboard-focused__banner-actions">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            dismissCollabAcceptsForEvent(collaborationAcceptBanner.eventKey, collaborationAcceptBanner.collabIds);
+                                            setCollabAcceptBannerTick((tick) => tick + 1);
+                                            handleTabChange('edit');
+                                        }}
+                                    >
+                                        View Details
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="dismiss"
+                                        onClick={() => {
+                                            dismissCollabAcceptsForEvent(collaborationAcceptBanner.eventKey, collaborationAcceptBanner.collabIds);
+                                            setCollabAcceptBannerTick((tick) => tick + 1);
+                                        }}
+                                    >
+                                        Dismiss
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {approvalStatusConfig && (
+                            <div className={`event-dashboard-focused__approval-banner ${approvalStatusConfig.tone}`}>
+                                <strong>{approvalStatusConfig.title}</strong>
+                                <span>{approvalStatusConfig.message}</span>
+                            </div>
+                        )}
+
+                        <div className="event-dashboard-focused__content" onScroll={handleMainContentScroll}>
+                            {tabs.map((tab) => (
+                                <div
+                                    key={tab.id}
+                                    className={`event-dashboard-focused__tab-panel${activeTab === tab.id ? ' is-active' : ''}`}
+                                    style={{ display: activeTab === tab.id ? 'block' : 'none' }}
+                                >
+                                    {tab.content}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+                </div>
+
+                {isMobileView && showMobileMenu && (
+                    <div
+                        className="event-dashboard-focused__mobile-menu-overlay"
+                        onClick={() => setShowMobileMenu(false)}
+                        role="presentation"
+                    >
+                        <div
+                            className="event-dashboard-focused__mobile-menu-sheet"
+                            role="dialog"
+                            aria-label="Event sections menu"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {resolvedSidebarSections.map((section) => (
+                                <div key={section.id} className="event-dashboard-focused__mobile-menu-section">
+                                    <p className="event-dashboard-focused__mobile-menu-section-title">{section.label}</p>
+                                    <div className="event-dashboard-focused__mobile-menu-items">
+                                        {section.tabs.map((tab) => (
+                                            <button
+                                                key={tab.id}
+                                                type="button"
+                                                className={`event-dashboard-focused__mobile-menu-item${activeTab === tab.id ? ' is-active' : ''}`}
+                                                onClick={() => handleTabChange(tab.id)}
+                                            >
+                                                <Icon icon={tab.icon} />
+                                                <span>{tab.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <Popup isOpen={showOnboarding} onClose={handleOnboardingClose} customClassName="event-dashboard-onboarding-popup">
+                <EventDashboardOnboarding onClose={handleOnboardingClose} />
+            </Popup>
+
+            <EventAnnouncementCompose
+                isOpen={showAnnouncementSpotlight}
+                onClose={() => setShowAnnouncementSpotlight(false)}
+                orgId={orgId}
+                eventId={event?._id}
+                eventName={dashboardData?.event?.name}
+                eventStartTime={dashboardData?.event?.start_time}
+                orgName={dashboardData?.event?.hostingId?.org_name}
+                orgProfileImage={dashboardData?.event?.hostingId?.org_profile_image}
+                organizerName={user?.name || user?.username}
+                organizerPicture={user?.picture}
+                onSent={handleAnnouncementSent}
+                onOpenRegistrationSettings={handleOpenRegistrationSettings}
+            />
+
+            <Popup
+                isOpen={showCancelEventConfirm}
+                onClose={() => {
+                    if (cancelingEvent) return;
+                    setShowCancelEventConfirm(false);
+                    setCancelEventConfirmText('');
+                }}
+                customClassName="event-cancel-confirm-popup"
+            >
+                <div className="event-cancel-confirm-popup__content">
+                    <div className="event-cancel-confirm-popup__header">
+                        <Icon icon="mdi:alert-circle" className="event-cancel-confirm-popup__icon" />
+                        <h2>Cancel Event</h2>
+                    </div>
+                    <div className="event-cancel-confirm-popup__warning">
+                        <p><strong>Warning:</strong> this action is destructive and cannot be undone.</p>
+                        <p>This will permanently delete <strong>{dashboardData?.event?.name || 'this event'}</strong>.</p>
+                    </div>
+                    <div className="event-cancel-confirm-popup__field">
+                        <label htmlFor="eventCancelConfirmInputFocused">
+                            Type <strong>cancel event</strong> to confirm:
+                        </label>
+                        <input
+                            id="eventCancelConfirmInputFocused"
+                            type="text"
+                            value={cancelEventConfirmText}
+                            onChange={(e) => setCancelEventConfirmText(e.target.value)}
+                            placeholder="cancel event"
+                            autoFocus
+                        />
+                    </div>
+                    <div className="event-cancel-confirm-popup__actions">
+                        <button
+                            type="button"
+                            className="btn-cancel"
+                            onClick={() => {
+                                setShowCancelEventConfirm(false);
+                                setCancelEventConfirmText('');
+                            }}
+                            disabled={cancelingEvent}
+                        >
+                            Keep Event
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-delete"
+                            onClick={handleCancelEvent}
+                            disabled={cancelingEvent || cancelEventConfirmText.trim().toLowerCase() !== 'cancel event'}
+                        >
+                            {cancelingEvent ? 'Cancelling...' : 'Cancel Event Permanently'}
+                        </button>
+                    </div>
+                </div>
+            </Popup>
+        </>
+    );
+}
+
+export default EventDashboardFocused;

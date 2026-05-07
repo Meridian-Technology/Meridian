@@ -9,6 +9,11 @@ const OVERLAY_URL_PARAM = 'overlay';
  * Add keys here when you register a new persistable overlay.
  */
 export const OVERLAY_PARAM_KEYS = [OVERLAY_URL_PARAM];
+/**
+ * Debug/testing switch for which dashboard 'event-dashboard' restores to.
+ * Flip to 'classic' to make URL restore open the legacy dashboard.
+ */
+const DEFAULT_EVENT_DASHBOARD_VARIANT = 'focused';
 
 /**
  * Register a persistable overlay type so it can be restored from the URL.
@@ -98,29 +103,81 @@ export function clearOverlaySearchParams(currentParams) {
     return next;
 }
 
-// --- Built-in registration: event-dashboard ---
-registerPersistableOverlay('event-dashboard', {
-    paramKeys: ['eventId', 'orgId'],
-    async restore(params, { onClose, setOverlayContent }) {
-        const { eventId, orgId } = params;
-        if (!eventId || !orgId) return;
-        try {
-            const response = await axios.get(`/get-event/${eventId}`, { withCredentials: true });
-            const event = response?.data?.event ?? response?.data;
-            if (!event) return;
+const EVENT_DASHBOARD_OVERLAY_VARIANTS = {
+    default: 'event-dashboard',
+    focused: 'event-dashboard-focused',
+    classic: 'event-dashboard-classic'
+};
+
+function registerEventDashboardOverlayVariant(variantKey, loadComponent, className) {
+    registerPersistableOverlay(variantKey, {
+        paramKeys: ['eventId', 'orgId'],
+        async restore(params, { onClose, setOverlayContent }) {
+            const { eventId, orgId } = params;
+            if (!eventId || !orgId) return;
+            try {
+                const response = await axios.get(`/get-event/${eventId}`, { withCredentials: true });
+                const event = response?.data?.event ?? response?.data;
+                if (!event) return;
+                const EventDashboardComponent = await loadComponent();
+                setOverlayContent(
+                    React.createElement(EventDashboardComponent, {
+                        event,
+                        orgId,
+                        onClose,
+                        className,
+                    })
+                );
+            } catch (err) {
+                console.error(`Failed to restore ${variantKey} overlay:`, err);
+            }
+        },
+    });
+}
+
+// --- Built-in registration: event-dashboard variants ---
+if (DEFAULT_EVENT_DASHBOARD_VARIANT === 'classic') {
+    registerEventDashboardOverlayVariant(
+        EVENT_DASHBOARD_OVERLAY_VARIANTS.default,
+        async () => {
             const { default: EventDashboard } = await import(
                 '../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboard'
             );
-            setOverlayContent(
-                React.createElement(EventDashboard, {
-                    event,
-                    orgId,
-                    onClose,
-                    className: 'full-width-event-dashboard',
-                })
+            return EventDashboard;
+        },
+        'full-width-event-dashboard'
+    );
+} else {
+    registerEventDashboardOverlayVariant(
+        EVENT_DASHBOARD_OVERLAY_VARIANTS.default,
+        async () => {
+            const { default: EventDashboardFocused } = await import(
+                '../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboardFocused'
             );
-        } catch (err) {
-            console.error('Failed to restore event dashboard overlay:', err);
-        }
+            return EventDashboardFocused;
+        },
+        'full-width-event-dashboard-focused'
+    );
+}
+
+registerEventDashboardOverlayVariant(
+    EVENT_DASHBOARD_OVERLAY_VARIANTS.focused,
+    async () => {
+        const { default: EventDashboardFocused } = await import(
+            '../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboardFocused'
+        );
+        return EventDashboardFocused;
     },
-});
+    'full-width-event-dashboard-focused'
+);
+
+registerEventDashboardOverlayVariant(
+    EVENT_DASHBOARD_OVERLAY_VARIANTS.classic,
+    async () => {
+        const { default: EventDashboard } = await import(
+            '../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboard'
+        );
+        return EventDashboard;
+    },
+    'full-width-event-dashboard'
+);

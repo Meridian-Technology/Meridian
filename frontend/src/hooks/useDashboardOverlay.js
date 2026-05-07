@@ -3,6 +3,16 @@ import { useDashboardOptional } from '../contexts/DashboardContext';
 import { buildOverlaySearchParams } from '../utils/overlayRegistry';
 
 const EVENT_DASHBOARD_OVERLAY_KEY = 'event-dashboard';
+/**
+ * Debug/testing switch for which dashboard opens when callers use the default API.
+ * Flip to 'classic' to open the legacy dashboard by default.
+ */
+const DEFAULT_EVENT_DASHBOARD_VARIANT = 'focused';
+const EVENT_DASHBOARD_VARIANT_OVERLAY_KEYS = {
+    default: EVENT_DASHBOARD_OVERLAY_KEY,
+    focused: 'event-dashboard-focused',
+    classic: 'event-dashboard-classic'
+};
 
 /**
  * Custom hook for easy overlay management in Dashboard components.
@@ -80,7 +90,9 @@ export const useDashboardOverlay = () => {
     const showEventDashboard = (event, orgId, options = {}) => {
         if (!hasOverlay || !showOverlay) return;
         const {
-            className = 'full-width-event-dashboard',
+            className = DEFAULT_EVENT_DASHBOARD_VARIANT === 'classic'
+                ? 'full-width-event-dashboard'
+                : 'full-width-event-dashboard-focused',
             persistInUrl = false
         } = options;
 
@@ -92,9 +104,13 @@ export const useDashboardOverlay = () => {
             setSearchParams(next, { replace: false });
         }
 
-        import('../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboard').then(({ default: EventDashboard }) => {
+        const loadDashboard = DEFAULT_EVENT_DASHBOARD_VARIANT === 'classic'
+            ? import('../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboard')
+            : import('../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboardFocused');
+
+        loadDashboard.then(({ default: EventDashboardComponent }) => {
             showOverlay(
-                <EventDashboard 
+                <EventDashboardComponent
                     event={event}
                     orgId={orgId}
                     onClose={hide}
@@ -102,6 +118,86 @@ export const useDashboardOverlay = () => {
                 />
             );
         });
+    };
+
+    /**
+     * Show an EventDashboard overlay variant.
+     * @param {Object} event
+     * @param {string} orgId
+     * @param {Object} options
+     * @param {'default'|'focused'|'classic'} options.variant
+     * @param {boolean} options.persistInUrl
+     * @param {string} options.className
+     */
+    const showEventDashboardVariant = (event, orgId, options = {}) => {
+        if (!hasOverlay || !showOverlay) return;
+        const { variant = 'default', persistInUrl = false } = options;
+        if (variant === 'default') {
+            showEventDashboard(event, orgId, options);
+            return;
+        }
+
+        if (variant === 'focused') {
+            const className = options.className || 'full-width-event-dashboard-focused';
+            if (persistInUrl && event?._id && orgId) {
+                const next = buildOverlaySearchParams(
+                    searchParams,
+                    EVENT_DASHBOARD_VARIANT_OVERLAY_KEYS.focused,
+                    { eventId: event._id, orgId }
+                );
+                setSearchParams(next, { replace: false });
+            }
+            import('../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboardFocused').then(({ default: EventDashboardFocused }) => {
+                showOverlay(
+                    <EventDashboardFocused
+                        event={event}
+                        orgId={orgId}
+                        onClose={hide}
+                        className={className}
+                    />
+                );
+            });
+            return;
+        }
+
+        const overlayKey = EVENT_DASHBOARD_VARIANT_OVERLAY_KEYS[variant] || EVENT_DASHBOARD_OVERLAY_KEY;
+        const className = options.className || (
+            variant === 'classic' ? 'full-width-event-dashboard' : `full-width-event-dashboard-${variant}`
+        );
+
+        if (persistInUrl && event?._id && orgId) {
+            const next = buildOverlaySearchParams(searchParams, overlayKey, {
+                eventId: event._id,
+                orgId,
+            });
+            setSearchParams(next, { replace: false });
+        }
+
+        if (variant === 'classic') {
+            import('../pages/ClubDash/EventsManagement/components/EventDashboard/EventDashboard').then(({ default: EventDashboard }) => {
+                showOverlay(
+                    <EventDashboard
+                        event={event}
+                        orgId={orgId}
+                        onClose={hide}
+                        className={className}
+                    />
+                );
+            });
+            return;
+        }
+
+        showEventDashboard(event, orgId, options);
+    };
+
+    /**
+     * Convenience wrapper for the focused dashboard variant.
+     * @param {Object} event
+     * @param {string} orgId
+     * @param {Object} options
+     */
+    const showEventDashboardFocused = (event, orgId, options = {}) => {
+        showEventDashboardVariant(event, orgId, { ...options, variant: 'focused' });
     };
 
     /**
@@ -150,6 +246,8 @@ export const useDashboardOverlay = () => {
         showEventViewer,
         showEventWorkspace,
         showEventDashboard,
+        showEventDashboardVariant,
+        showEventDashboardFocused,
         showEventPostMortem,
         showAdminEventOperator,
     };
