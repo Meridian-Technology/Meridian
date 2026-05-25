@@ -12,6 +12,20 @@ const tenantEntrySchema = new mongoose.Schema(
       default: 'active',
     },
     statusMessage: { type: String, default: '', trim: true, maxlength: 240 },
+    tenantType: {
+      type: String,
+      enum: ['campus', 'pivot'],
+      default: 'campus',
+    },
+    pivotPilot: { type: Boolean, default: false },
+    mongoUri: { type: String, default: null, trim: true },
+    mongoDatabaseName: { type: String, default: null, trim: true, lowercase: true },
+    pivotCatalogOrgId: { type: String, default: null, trim: true },
+    provisioningConfirmations: {
+      dns: { type: Boolean, default: false },
+      cors: { type: Boolean, default: false },
+      pickerVerified: { type: Boolean, default: false },
+    },
   },
   { _id: false }
 );
