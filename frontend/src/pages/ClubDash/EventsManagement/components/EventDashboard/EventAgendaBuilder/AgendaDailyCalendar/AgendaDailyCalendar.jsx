@@ -1,11 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import AgendaItemCalendarEvent from '../AgendaItemCalendarEvent/AgendaItemCalendarEvent';
 import '../../../../../../OIEDash/EventsCalendar/Week/WeeklyCalendar/WeeklyCalendar.scss';
+import {
+    computeDayRange,
+    computeColumns,
+    getSegmentLayout,
+    groupIntoClusters,
+    MINUTES_PER_DAY,
+    splitItemIntoDaySegments,
+    toCalendarEvent
+} from './agendaCalendarUtils';
 import './AgendaDailyCalendar.scss';
 
 const DEFAULT_MINUTE_HEIGHT = 4;
-const MINUTES_PER_DAY = 24 * 60;
-const RANGE_PADDING_MINUTES = 30;
 
 function AgendaDailyCalendar({
     agendaItems = [],
@@ -15,265 +22,183 @@ function AgendaDailyCalendar({
     minuteHeight = DEFAULT_MINUTE_HEIGHT,
     onEditItem
 }) {
-    const [width, setWidth] = useState(0);
-    const ref = React.useRef(null);
+    const { days, minutesInRange, perDayBounds } = useMemo(
+        () => computeDayRange(agendaItems, event, dayStart, dayEnd),
+        [agendaItems, event, dayStart, dayEnd]
+    );
 
-    const { days, totalHeight, rangeStartMinutes, rangeEndMinutes, minutesInRange } = useMemo(() => {
-        const eventStart = event?.start_time ? new Date(event.start_time) : new Date();
-        const eventEnd = event?.end_time ? new Date(event.end_time) : new Date(eventStart);
-        eventEnd.setDate(eventEnd.getDate() + 1);
+    const columnHeight = minutesInRange * minuteHeight;
+    const isMultiDay = days.length > 1;
 
-        let first = dayStart ? new Date(dayStart) : eventStart;
-        let last = dayEnd ? new Date(dayEnd) : eventEnd;
-
-        if (agendaItems.length > 0) {
-            const firstStart = agendaItems.reduce((earliest, item) => {
-                const itemStart = item.startTime ? new Date(item.startTime) : null;
-                if (!itemStart) return earliest;
-                return !earliest || itemStart < earliest ? itemStart : earliest;
-            }, null);
-            const lastEnd = agendaItems.reduce((latest, item) => {
-                const itemEnd = item.endTime ? new Date(item.endTime) : null;
-                if (!itemEnd) return latest;
-                return !latest || itemEnd > latest ? itemEnd : latest;
-            }, null);
-            if (firstStart) first = firstStart < first ? firstStart : first;
-            if (lastEnd) last = lastEnd > last ? lastEnd : last;
-        }
-
-        const firstDay = new Date(first);
-        firstDay.setHours(0, 0, 0, 0);
-        const lastDay = new Date(last);
-        lastDay.setHours(0, 0, 0, 0);
-
-        const days = [];
-        for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
-            days.push(new Date(d));
-        }
-
-        // Only show event hours, not full 24h - use min start and max end across all items
-        const allStarts = [first];
-        const allEnds = [last];
-        agendaItems.forEach((item) => {
-            if (item.startTime) allStarts.push(new Date(item.startTime));
-            if (item.endTime) allEnds.push(new Date(item.endTime));
-        });
-        let rangeStartMinutes = Math.min(...allStarts.map((d) => d.getHours() * 60 + d.getMinutes()));
-        let rangeEndMinutes = Math.max(...allEnds.map((d) => d.getHours() * 60 + d.getMinutes()));
-
-        if (rangeEndMinutes <= rangeStartMinutes) {
-            rangeEndMinutes = rangeStartMinutes + 60; // fallback: 1 hour
-        }
-
-        // Add padding and round to 30-min boundaries
-        rangeStartMinutes = Math.floor((rangeStartMinutes - RANGE_PADDING_MINUTES) / 30) * 30;
-        rangeEndMinutes = Math.ceil((rangeEndMinutes + RANGE_PADDING_MINUTES) / 30) * 30;
-        rangeStartMinutes = Math.max(0, rangeStartMinutes);
-        rangeEndMinutes = Math.min(MINUTES_PER_DAY, rangeEndMinutes);
-
-        const minutesInRange = rangeEndMinutes - rangeStartMinutes;
-        const totalHeight = days.length * minutesInRange * minuteHeight;
-
-        return {
-            days,
-            totalHeight: Math.max(totalHeight, minutesInRange * minuteHeight),
-            rangeStartMinutes,
-            rangeEndMinutes,
-            minutesInRange
-        };
-    }, [agendaItems, event, dayStart, dayEnd, minuteHeight]);
-
-    const calendarEvents = useMemo(() => {
-        return agendaItems
+    const segmentsByDay = useMemo(() => {
+        const calendarEvents = agendaItems
             .filter((item) => item.startTime && item.endTime)
-            .map((item) => ({
-                ...item,
-                start_time: typeof item.startTime === 'string' ? item.startTime : item.startTime?.toISOString?.() ?? new Date(item.startTime).toISOString(),
-                end_time: typeof item.endTime === 'string' ? item.endTime : item.endTime?.toISOString?.() ?? new Date(item.endTime).toISOString()
-            }));
-    }, [agendaItems]);
+            .map(toCalendarEvent);
 
-    useEffect(() => {
-        if (ref.current) {
-            setWidth(ref.current.clientWidth);
-        }
-    }, [ref, agendaItems]);
-
-    const getMinutesFromStart = (date) => {
-        const base = new Date(days[0]);
-        base.setHours(0, 0, 0, 0);
-        const d = new Date(date);
-        const dayOffset = Math.floor((d - base) / (1000 * 60 * 60 * 24));
-        const minutesInDay = d.getHours() * 60 + d.getMinutes();
-        const minutesFromRangeStart = minutesInDay - rangeStartMinutes;
-        return dayOffset * minutesInRange + minutesFromRangeStart;
-    };
-
-    const groupIntoClusters = (events) => {
-        if (events.length === 0) return [];
-        const sortedEvents = [...events].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-        const clusters = [];
-        let currentCluster = [sortedEvents[0]];
-        let maxEnd = new Date(sortedEvents[0].end_time);
-
-        for (let i = 1; i < sortedEvents.length; i++) {
-            const ev = sortedEvents[i];
-            const evStart = new Date(ev.start_time);
-            if (evStart < maxEnd) {
-                currentCluster.push(ev);
-                const evEnd = new Date(ev.end_time);
-                maxEnd = evEnd > maxEnd ? evEnd : maxEnd;
-            } else {
-                clusters.push(currentCluster);
-                currentCluster = [ev];
-                maxEnd = new Date(ev.end_time);
-            }
-        }
-        clusters.push(currentCluster);
-        return clusters;
-    };
-
-    const computeColumns = (cluster) => {
-        const sortedCluster = [...cluster].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-        const columns = [];
-        const eventsWithColumns = [];
-
-        for (const ev of sortedCluster) {
-            const evStart = new Date(ev.start_time);
-            const evEnd = new Date(ev.end_time);
-            let columnIndex = -1;
-
-            for (let i = 0; i < columns.length; i++) {
-                if (evStart >= columns[i]) {
-                    columnIndex = i;
-                    break;
-                }
-            }
-
-            if (columnIndex === -1) {
-                columnIndex = columns.length;
-                columns.push(evEnd);
-            } else {
-                columns[columnIndex] = evEnd;
-            }
-
-            eventsWithColumns.push({ ...ev, column: columnIndex });
-        }
-
-        const columnsInCluster = columns.length;
-        eventsWithColumns.forEach((ev) => {
-            ev.columnsInCluster = columnsInCluster;
+        const byDay = days.map(() => []);
+        calendarEvents.forEach((item) => {
+            const segments = splitItemIntoDaySegments(item, days);
+            segments.forEach((seg) => {
+                byDay[seg.dayIndex].push(seg);
+            });
         });
+        return byDay;
+    }, [agendaItems, days]);
 
-        return eventsWithColumns;
+    const renderTimeGrid = () => {
+        const lines = [];
+        for (let m = 0; m < MINUTES_PER_DAY; m += 30) {
+            const isHour = m % 60 === 0;
+            lines.push(
+                <div
+                    key={m}
+                    className={`time-grid-line ${isHour ? 'hour-line' : 'half-hour-line'}`}
+                    style={{ top: `${m * minuteHeight}px` }}
+                />
+            );
+        }
+        return lines;
     };
 
-    const renderEvents = () => {
-        const clusters = groupIntoClusters(calendarEvents);
+    const renderTimeLabels = () => {
+        const labels = [];
+        for (let hour = 0; hour < 24; hour++) {
+            const hourMinutes = hour * 60;
+            labels.push(
+                <div
+                    key={hour}
+                    className="time-label"
+                    style={{ top: `${hourMinutes * minuteHeight}px` }}
+                >
+                    {new Date(0, 0, 0, hour).toLocaleTimeString([], { hour: '2-digit' })}
+                </div>
+            );
+        }
+        return labels;
+    };
+
+    const renderInactiveRegions = (dayIndex) => {
+        const { activeStartMinutes, activeEndMinutes } =
+            perDayBounds[dayIndex] ?? { activeStartMinutes: 0, activeEndMinutes: MINUTES_PER_DAY };
+
+        const regions = [];
+        if (activeStartMinutes > 0) {
+            regions.push(
+                <div
+                    key="before"
+                    className="inactive-region before"
+                    style={{
+                        top: 0,
+                        height: `${activeStartMinutes * minuteHeight}px`
+                    }}
+                    aria-hidden
+                />
+            );
+        }
+        if (activeEndMinutes < MINUTES_PER_DAY) {
+            regions.push(
+                <div
+                    key="after"
+                    className="inactive-region after"
+                    style={{
+                        top: `${activeEndMinutes * minuteHeight}px`,
+                        height: `${(MINUTES_PER_DAY - activeEndMinutes) * minuteHeight}px`
+                    }}
+                    aria-hidden
+                />
+            );
+        }
+        return regions;
+    };
+
+    const renderDayEvents = (dayIndex) => {
+        const daySegments = segmentsByDay[dayIndex] || [];
+        const clusters = groupIntoClusters(daySegments);
         const processedEvents = [];
         for (const cluster of clusters) {
-            const eventsWithColumns = computeColumns(cluster);
-            processedEvents.push(...eventsWithColumns);
+            processedEvents.push(...computeColumns(cluster));
         }
 
-        return processedEvents.map((ev, index) => {
-            const start = new Date(ev.start_time);
-            const end = new Date(ev.end_time);
-            const topMinutes = getMinutesFromStart(start);
-            const durationMinutes = (end - start) / (1000 * 60);
-            const eventHeight = Math.max(durationMinutes * minuteHeight, 24);
+        return processedEvents.map((seg) => {
+            const layout = getSegmentLayout(seg.segmentStart, seg.segmentEnd, minuteHeight);
+            if (!layout) return null;
+
+            const spanClass = [
+                seg.continuesFromPrev ? 'continues-from-prev' : '',
+                seg.continuesToNext ? 'continues-to-next' : '',
+                isMultiDay && (seg.continuesFromPrev || seg.continuesToNext) ? 'multi-day-span' : ''
+            ]
+                .filter(Boolean)
+                .join(' ');
 
             return (
                 <div
-                    key={ev.id || index}
-                    className="event agenda-event"
+                    key={seg.segmentKey}
+                    className={`event agenda-event ${spanClass}`}
                     style={{
-                        top: `${topMinutes * minuteHeight}px`,
-                        height: `${eventHeight}px`,
-                        left: `calc(${(ev.column / ev.columnsInCluster) * 100}% + 2px)`,
-                        width: `calc(${100 / ev.columnsInCluster}% - 4px)`
+                        top: `${layout.top}px`,
+                        height: `${layout.height}px`,
+                        left: `calc(${(seg.column / seg.columnsInCluster) * 100}% + 2px)`,
+                        width: `calc(${100 / seg.columnsInCluster}% - 4px)`
                     }}
+                    title={
+                        seg.continuesFromPrev || seg.continuesToNext
+                            ? `${seg.title || 'Untitled'} (spans multiple days)`
+                            : undefined
+                    }
                 >
                     <AgendaItemCalendarEvent
-                        item={ev}
+                        item={{
+                            ...seg,
+                            startTime: layout.displayStart,
+                            endTime: layout.displayEnd
+                        }}
                         onEdit={onEditItem}
                         event={event}
+                        showContinuationHint={seg.continuesFromPrev || seg.continuesToNext}
                     />
                 </div>
             );
         });
     };
 
-    const renderTimeGrid = () => {
-        const lines = [];
-        days.forEach((day, dayIndex) => {
-            for (let m = rangeStartMinutes; m < rangeEndMinutes; m += 30) {
-                const isHour = m % 60 === 0;
-                const top = (dayIndex * minutesInRange + (m - rangeStartMinutes)) * minuteHeight;
-                lines.push(
-                    <div
-                        key={`${dayIndex}-${m}`}
-                        className={`time-grid-line ${isHour ? 'hour-line' : 'half-hour-line'}`}
-                        style={{ top: `${top}px` }}
-                    />
-                );
-            }
-        });
-        return lines;
-    };
-
-    const renderDayLines = () => {
-        return days.map((day, index) => (
-            <div
-                key={index}
-                className="day-line"
-                style={{ top: `${index * minutesInRange * minuteHeight}px` }}
-            >
-                <span className="day-line-label">
-                    {day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                </span>
-            </div>
-        ));
-    };
-
-    const renderTimeLabels = () => {
-        const labels = [];
-        const startHour = Math.floor(rangeStartMinutes / 60);
-        const endHour = Math.ceil(rangeEndMinutes / 60);
-        days.forEach((day, dayIndex) => {
-            for (let hour = startHour; hour < endHour; hour++) {
-                const hourMinutes = hour * 60;
-                if (hourMinutes >= rangeEndMinutes) break;
-                const top = (dayIndex * minutesInRange + (hourMinutes - rangeStartMinutes)) * minuteHeight;
-                labels.push(
-                    <div
-                        key={`${dayIndex}-${hour}`}
-                        className="time-label"
-                        style={{ top: `${top}px` }}
-                    >
-                        {new Date(0, 0, 0, hour).toLocaleTimeString([], { hour: '2-digit' })}
-                    </div>
-                );
-            }
-        });
-        return labels;
-    };
-
     return (
         <div
-            className="agenda-daily-calendar oie-weekly-calendar-container multi-day"
-            style={{ minHeight: totalHeight }}
-            ref={ref}
+            className={`agenda-daily-calendar oie-weekly-calendar-container ${isMultiDay ? 'multi-day-columns' : 'single-day'}`}
+            style={{ '--day-count': days.length }}
         >
-            <div className="calendar-body" style={{ minHeight: `${totalHeight}px` }}>
-                <div className="time-column">
-                    {renderTimeLabels()}
+            <div className="calendar-header">
+                <div className="time-header" />
+                <div className="days-header">
+                    {days.map((day, index) => (
+                        <div key={index} className="day-header">
+                            <span className="day-name">
+                                {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                            </span>
+                            <span className="day-date">
+                                {day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                        </div>
+                    ))}
                 </div>
+            </div>
 
-                <div className="day-column">
-                    {renderDayLines()}
-                    {renderTimeGrid()}
-                    {renderEvents()}
+            <div className="calendar-body" style={{ minHeight: `${columnHeight}px` }}>
+                <div className="time-column">{renderTimeLabels()}</div>
+
+                <div className="days-container">
+                    {days.map((day, index) => (
+                        <div
+                            key={day.toISOString()}
+                            className="day-column"
+                            data-day-index={index}
+                            style={{ minHeight: `${columnHeight}px` }}
+                        >
+                            {renderInactiveRegions(index)}
+                            {renderTimeGrid()}
+                            {renderDayEvents(index)}
+                        </div>
+                    ))}
                 </div>
             </div>
         </div>

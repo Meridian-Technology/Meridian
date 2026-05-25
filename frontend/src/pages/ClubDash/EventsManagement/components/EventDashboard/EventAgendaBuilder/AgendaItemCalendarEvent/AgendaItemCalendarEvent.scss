@@ -32,6 +32,15 @@
             margin-bottom: 4px;
         }
 
+        .continuation-hint {
+            display: block;
+            font-size: 0.7em;
+            font-style: italic;
+            color: var(--event-accent, var(--red));
+            margin-bottom: 4px;
+            opacity: 0.85;
+        }
+
         .event-details {
             display: flex;
             flex-direction: column;
