@@ -9,58 +9,17 @@ const { connectToDatabase } = require('../connectionsManager');
 const { getConnections, disconnectSocket, disconnectAll } = require('../socket');
 const { createSession } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
+const getGlobalModels = require('../services/getGlobalModelService');
+const {
+  DEFAULT_TENANTS,
+  normalizeTenantRows,
+  mergeTenantRows,
+} = require('../constants/defaultTenants');
 
 const ACCESS_TOKEN_EXPIRY = '1m';
 const REFRESH_TOKEN_EXPIRY = '30d';
 const ACCESS_TOKEN_EXPIRY_MS = 60 * 1000;
 const REFRESH_TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
-const TENANT_STATUSES = new Set(['active', 'coming_soon', 'maintenance', 'hidden']);
-const DEFAULT_TENANTS = [
-  {
-    tenantKey: 'rpi',
-    name: 'Rensselaer Polytechnic Institute',
-    subdomain: 'rpi',
-    location: 'Troy, NY',
-    status: 'active',
-    statusMessage: '',
-  },
-  {
-    tenantKey: 'tvcog',
-    name: 'Center of Gravity',
-    subdomain: 'tvcog',
-    location: 'Troy, NY',
-    status: 'active',
-    statusMessage: '',
-  },
-];
-
-function normalizeTenantRows(rows = []) {
-  return rows
-    .map((row) => {
-      const tenantKey = String(row?.tenantKey || '').trim().toLowerCase();
-      if (!tenantKey) return null;
-      const status = TENANT_STATUSES.has(row?.status) ? row.status : 'active';
-      return {
-        tenantKey,
-        name: String(row?.name || tenantKey).trim(),
-        subdomain: String(row?.subdomain || tenantKey).trim().toLowerCase(),
-        location: String(row?.location || '').trim(),
-        status,
-        statusMessage: String(row?.statusMessage || '').trim().slice(0, 240),
-      };
-    })
-    .filter(Boolean);
-}
-
-function mergeTenantRows(baseRows = [], overrideRows = []) {
-  const merged = new Map();
-  normalizeTenantRows(baseRows).forEach((row) => merged.set(row.tenantKey, row));
-  normalizeTenantRows(overrideRows).forEach((row) => {
-    const base = merged.get(row.tenantKey) || {};
-    merged.set(row.tenantKey, { ...base, ...row });
-  });
-  return Array.from(merged.values());
-}
 
 router.get('/health', async (req, res) => {
   try {
@@ -281,8 +240,6 @@ router.get('/admin/user/:userId/analytics', verifyToken, requireAdmin, async (re
   }
 });
 
-const getGlobalModels = require('../services/getGlobalModelService');
-
 /**
  * GET /admin/platform-admins – list platform admins (GlobalUsers with platform_admin role)
  */
@@ -452,18 +409,23 @@ router.put('/admin/tenant-config', verifyToken, requireAdmin, async (req, res) =
     }
     const incoming = normalizeTenantRows(req.body.tenants);
     const incomingByKey = new Map(incoming.map((row) => [row.tenantKey, row]));
-    const nextTenants = mergeTenantRows(
-      DEFAULT_TENANTS,
-      DEFAULT_TENANTS.map((row) => {
-        const update = incomingByKey.get(row.tenantKey);
-        if (!update) return row;
-        return {
-          ...row,
-          status: update.status || row.status,
-          statusMessage: update.statusMessage || '',
-        };
-      })
+    const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
+    const existingDoc = await TenantConfig.findOne({ configKey: 'default' }).lean();
+    const storedRows = existingDoc?.tenants || [];
+    const storedDynamic = storedRows.filter(
+      (row) => !DEFAULT_TENANTS.some((base) => base.tenantKey === row.tenantKey)
     );
+    const defaultOverrides = DEFAULT_TENANTS.map((row) => {
+      const update = incomingByKey.get(row.tenantKey);
+      if (!update) return null;
+      return {
+        tenantKey: row.tenantKey,
+        status: update.status || row.status,
+        statusMessage: update.statusMessage || '',
+      };
+    }).filter(Boolean);
+    const nextStored = [...storedDynamic, ...defaultOverrides];
+    const nextTenants = mergeTenantRows(DEFAULT_TENANTS, nextStored);
     const activeCount = nextTenants.filter((tenant) => tenant.status === 'active').length;
     if (activeCount < 1) {
       return res.status(400).json({
@@ -473,11 +435,10 @@ router.put('/admin/tenant-config', verifyToken, requireAdmin, async (req, res) =
       });
     }
 
-    const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
     const updatedBy = req.user.globalUserId || req.user.userId || null;
     const doc = await TenantConfig.findOneAndUpdate(
       { configKey: 'default' },
-      { $set: { tenants: nextTenants, updatedBy } },
+      { $set: { tenants: nextStored, updatedBy } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
 
