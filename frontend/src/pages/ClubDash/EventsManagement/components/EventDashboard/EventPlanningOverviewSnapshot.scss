@@ -1,0 +1,230 @@
+.event-planning-overview-snapshot {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    border: 1px solid var(--lighterborder);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    overflow: hidden;
+    margin: 0 0 14px;
+}
+
+.event-planning-overview-snapshot__countdown{
+    padding: 18px 20px;
+}
+.event-planning-overview-snapshot__tasks {
+    padding: 14px 20px;
+}
+
+.event-planning-overview-snapshot__tasks {
+    border-left: 1px solid var(--lighterborder);
+}
+
+.event-planning-overview-snapshot__eyebrow {
+    margin: 0 0 10px;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--light-text);
+    font-weight: 700;
+}
+
+.event-planning-overview-snapshot__clock {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-bottom: 14px;
+
+    strong {
+        font-size: clamp(3rem, 5vw, 4.5rem);
+        line-height: 0.85;
+        // font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'Times New Roman', serif;
+        font-weight: 600;
+        color: var(--text);
+    }
+
+    span {
+        display: block;
+        font-size: 2rem;
+        line-height: 1;
+        color: var(--text);
+        // font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'Times New Roman', serif;
+    }
+
+    small {
+        display: block;
+        margin-top: 6px;
+        color: var(--light-text);
+        font-size: 0.95rem;
+    }
+}
+
+.event-planning-overview-snapshot__timeline-dots {
+    display: grid;
+    align-items: center;
+    margin: 0 0 8px;
+    min-height: 10px;
+    width: 100%;
+    gap: 2px;
+}
+
+.event-planning-overview-snapshot__day-segment {
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(77, 170, 87, 0.16);
+
+    &.is-past {
+        background: rgba(77, 170, 87, 0.46);
+    }
+
+    &.is-today {
+        background: #4DAA57;
+        height: 6px;
+    }
+
+    &.is-live {
+        background: rgba(45, 126, 214, 0.55);
+    }
+
+    &.is-live.is-past {
+        background: rgba(45, 126, 214, 0.35);
+    }
+
+    &.is-live.is-today {
+        background: #2d7ed6;
+    }
+}
+
+.event-planning-overview-snapshot__timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+
+    span {
+        color: var(--light-text);
+        font-size: 0.78rem;
+        text-transform: lowercase;
+    }
+}
+
+.event-planning-overview-snapshot__timeline-label-live {
+    color: #2d7ed6;
+    font-weight: 600;
+}
+
+.event-planning-overview-snapshot__tasks-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+
+    p {
+        margin: 0;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--light-text);
+        font-weight: 700;
+    }
+
+    button {
+        border: 1px solid var(--lighterborder);
+        background: var(--background);
+        color: var(--text);
+        border-radius: 8px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        padding: 4px 8px;
+        cursor: pointer;
+    }
+}
+
+.event-planning-overview-snapshot__tasks ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+}
+
+.event-planning-overview-snapshot__tasks li {
+    border-bottom: 1px solid var(--lighterborder);
+    padding: 4px 0;
+
+    &:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+    }
+
+    p {
+        margin: 0;
+        color: var(--text);
+        font-weight: 600;
+        font-size: 1rem;
+    }
+
+    small {
+        color: #9a7a3a;
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+}
+
+.event-planning-overview-snapshot__task-button {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 24px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    border: 0;
+    background: transparent;
+    padding: 8px 4px;
+    margin: 0;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+
+    &:hover {
+        background:var(--lightest)
+    }
+}
+
+.event-planning-overview-snapshot__task-chip {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    // background: rgba(154, 122, 58, 0.1);
+    // color: #9a7a3a;
+    background: var(--background);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.68rem;
+    font-weight: 700;
+    overflow:hidden;
+
+    img{
+        width:100%;
+        height:100%;
+    }
+}
+
+.event-planning-overview-snapshot__empty {
+    grid-template-columns: 1fr !important;
+
+    p {
+        color: var(--light-text);
+        font-weight: 500;
+    }
+}
+
+@media (max-width: 960px) {
+    .event-planning-overview-snapshot {
+        grid-template-columns: 1fr;
+    }
+
+    .event-planning-overview-snapshot__tasks {
+        border-left: 0;
+        border-top: 1px solid var(--lighterborder);
+    }
+}

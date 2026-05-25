@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useGradient } from '../../../../../hooks/useGradient';
 import { useNotification } from '../../../../../NotificationContext';
@@ -22,7 +22,6 @@ function EventDashboardFocusedHeader({
     showPostMortem
 }) {
     const [publishing, setPublishing] = useState(false);
-    const [eventImageMainColor, setEventImageMainColor] = useState(null);
     const { AtlasMain } = useGradient();
     const { addNotification } = useNotification();
 
@@ -151,77 +150,6 @@ function EventDashboardFocusedHeader({
     const eventStatus = getEventStatus();
     const eventImageUrl = event?.image || event?.previewImage;
 
-    useEffect(() => {
-        let isActive = true;
-        if (!eventImageUrl) {
-            setEventImageMainColor(null);
-            return () => {
-                isActive = false;
-            };
-        }
-
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.decoding = 'async';
-
-        const onReady = () => {
-            try {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                if (!ctx) {
-                    if (isActive) setEventImageMainColor(null);
-                    return;
-                }
-
-                const sampleSize = 24;
-                canvas.width = sampleSize;
-                canvas.height = sampleSize;
-                ctx.drawImage(img, 0, 0, sampleSize, sampleSize);
-
-                const pixels = ctx.getImageData(0, 0, sampleSize, sampleSize).data;
-                let r = 0;
-                let g = 0;
-                let b = 0;
-                let count = 0;
-
-                for (let i = 0; i < pixels.length; i += 4) {
-                    const alpha = pixels[i + 3];
-                    if (alpha < 80) continue;
-                    r += pixels[i];
-                    g += pixels[i + 1];
-                    b += pixels[i + 2];
-                    count += 1;
-                }
-
-                if (!count) {
-                    if (isActive) setEventImageMainColor(null);
-                    return;
-                }
-
-                const avgR = Math.round(r / count);
-                const avgG = Math.round(g / count);
-                const avgB = Math.round(b / count);
-                if (isActive) setEventImageMainColor(`${avgR}, ${avgG}, ${avgB}`);
-            } catch {
-                if (isActive) setEventImageMainColor(null);
-            }
-        };
-
-        const onError = () => {
-            if (isActive) setEventImageMainColor(null);
-        };
-
-        img.onload = onReady;
-        img.onerror = onError;
-        img.src = eventImageUrl;
-
-        return () => {
-            isActive = false;
-            img.onload = null;
-            img.onerror = null;
-        };
-    }, [eventImageUrl]);
-
     const collaborationOrgs = useMemo(() => {
         if (event?.hostingType !== 'Org') return [];
 
@@ -256,19 +184,12 @@ function EventDashboardFocusedHeader({
         return Array.from(map.values());
     }, [event, orgId]);
 
-    const imageDerivedGradient = eventImageMainColor
-        ? `radial-gradient(ellipse 56% 72% at 0% 0%, rgba(${eventImageMainColor}, 0.9) 0%, rgba(${eventImageMainColor}, 0.72) 16%, rgba(${eventImageMainColor}, 0.46) 32%, rgba(${eventImageMainColor}, 0.22) 48%, rgba(${eventImageMainColor}, 0.1) 58%, transparent 68%)`
-        : null;
-
     return (
         <div
             className={`event-dashboard-focused-header${condensed ? ' event-dashboard-focused-header--condensed' : ''}`}
         >
-            <div
-                className="event-dashboard-focused-header__background"
-                style={imageDerivedGradient ? { backgroundImage: imageDerivedGradient, opacity: 0.3 } : undefined}
-            >
-                {!imageDerivedGradient && <img src={AtlasMain} alt="" />}
+            <div className="event-dashboard-focused-header__background">
+                <img src={AtlasMain} alt="" />
             </div>
             <div className="event-dashboard-focused-header__content">
                 <div className="event-dashboard-focused-header__top">

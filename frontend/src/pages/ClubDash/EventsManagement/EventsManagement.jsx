@@ -37,7 +37,7 @@ function truncatePreviewDescription(text, max = 450) {
 
 function EventsManagement({ orgId, expandedClass, orgData: orgDataProp }) {
     const { addNotification } = useNotification();
-    const { showEventDashboard, hideOverlay } = useDashboardOverlay();
+    const { showEventDashboardFocused } = useDashboardOverlay();
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [collaborationInvites, setCollaborationInvites] = useState([]);
     const [loadingInvites, setLoadingInvites] = useState(false);
@@ -99,8 +99,8 @@ function EventsManagement({ orgId, expandedClass, orgData: orgDataProp }) {
     const handleViewEvent = (event) => {
         const orgIdForDashboard = orgData?.org?.overview?._id;
         if (orgIdForDashboard) {
-            showEventDashboard(event, orgIdForDashboard, {
-                className: 'full-width-event-dashboard',
+            showEventDashboardFocused(event, orgIdForDashboard, {
+                className: 'full-width-event-dashboard-focused',
                 persistInUrl: true,
             });
         }
