@@ -132,34 +132,38 @@ function AccountSettings({ userInfo }) {
         setEmail(e.target.value);
     };
 
-    const saveUsername = () => {
+    const saveUsername = async () => {
         if (editUsername){
             try{
-                saveUser(null, username, null, null, null, null);
+                await saveUser(null, username, null, null, null, null);
                 setInitialUsername(username);
+                await validateToken();
                 addNotification({title: 'Username saved', message: 'Your username has been changed successfully', type: 'success'});
             } catch (error) {
                 addNotification({title: 'Error saving user', message: error.message, type: 'error'});
+                return;
             }
         }
         setEditUsername(!editUsername);
     };
 
-    const saveName = () => {
+    const saveName = async () => {
         try{
-            saveUser(name, null, null, null, null, null);
+            await saveUser(name, null, null, null, null, null);
             setInitialName(name);
             setEditName(false);
+            await validateToken();
             addNotification({title: 'Name saved', message: 'Your name has been changed successfully', type: 'success'});
         } catch (error) {
             addNotification({title: 'Error saving user', message: error.message, type: 'error'});
         }
     };
 
-    const saveEmail = () => {
+    const saveEmail = async () => {
         try{
-            saveUser(null, null, email, null, null, null);
+            await saveUser(null, null, email, null, null, null);
             setEditEmail(false);
+            await validateToken();
             addNotification({title: 'Email saved', message: 'Your email has been changed successfully', type: 'success'});
         } catch (error) {
             addNotification({title: 'Error saving user', message: error.message, type: 'error'});
