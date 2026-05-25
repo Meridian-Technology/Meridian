@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>EventDashboard — Lifecycle Redesigns</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --bg: #faf8f3; --bg-card: #ffffff; --bg-soft: #f5f1e8; --bg-tint: #eef7f0;
+    --ink: #1c2520; --ink-2: #3d463f; --ink-3: #6b7570; --ink-4: #9ca59f;
+    --line: #e6e2d6; --line-2: #efece2;
+    --primary: #2a8c5f; --primary-soft: #d6ecdd; --primary-tint: #ecf6ee;
+    --warn: #c47a1a; --warn-soft: #f6ebd4;
+    --danger: #b04a3a; --info: #4a6fa5; --info-soft: #e1ebf6;
+  }
+  html, body { margin: 0; padding: 0; background: #2a2a26; font-family: 'Inter', system-ui, sans-serif; color: var(--ink); }
+  * { box-sizing: border-box; }
+  .ink-1 { color: var(--ink); } .ink-2 { color: var(--ink-2); } .ink-3 { color: var(--ink-3); } .ink-4 { color: var(--ink-4); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .display { font-family: 'Fraunces', Georgia, serif; letter-spacing: -0.01em; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="diagnosis.jsx"></script>
+<script type="text/babel" src="v1-focus.jsx"></script>
+<script type="text/babel" src="v2-cockpit.jsx"></script>
+<script type="text/babel" src="v3-retrospective.jsx"></script>
+<script type="text/babel" src="v4-live.jsx"></script>
+<script type="text/babel" src="v5-concluded.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</body>
+</html>
