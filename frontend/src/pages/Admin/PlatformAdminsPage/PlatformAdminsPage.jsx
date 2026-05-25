@@ -1,7 +1,6 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
-import { setTenantConfigCache } from '../../../config/tenantRedirect';
 import { useNotification } from '../../../NotificationContext';
 import { useGradient } from '../../../hooks/useGradient';
 import apiRequest from '../../../utils/postRequest';
@@ -16,8 +15,6 @@ function PlatformAdminsPage() {
   const [addEmail, setAddEmail] = useState('');
   const [adding, setAdding] = useState(false);
   const [mutationError, setMutationError] = useState(null);
-  const [tenantDrafts, setTenantDrafts] = useState({});
-  const [savingTenants, setSavingTenants] = useState(false);
   const [savingAutoClaim, setSavingAutoClaim] = useState(false);
   const [runningOwnerRoleMigration, setRunningOwnerRoleMigration] = useState(false);
 
@@ -25,15 +22,6 @@ function PlatformAdminsPage() {
     cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
   });
   const list = listResponse?.success ? (listResponse.data || []) : [];
-  const {
-    data: tenantConfigResponse,
-    loading: tenantConfigLoading,
-    error: tenantConfigFetchError,
-    refetch: refetchTenantConfig,
-  } = useFetch('/admin/tenant-config', {
-    cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
-  });
-  const tenantRows = tenantConfigResponse?.success ? (tenantConfigResponse.data?.tenants || []) : [];
 
   const { data: orgConfigResponse, refetch: refetchOrgConfig } = useFetch('/org-management/config', {
     cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
@@ -57,17 +45,6 @@ function PlatformAdminsPage() {
       setSavingAutoClaim(false);
     }
   }, [addNotification, refetchOrgConfig]);
-
-  useEffect(() => {
-    const nextDrafts = {};
-    tenantRows.forEach((tenant) => {
-      nextDrafts[tenant.tenantKey] = {
-        status: tenant.status || 'active',
-        statusMessage: tenant.statusMessage || '',
-      };
-    });
-    setTenantDrafts(nextDrafts);
-  }, [tenantConfigResponse]);
 
   const handleAdd = useCallback(async (e) => {
     e.preventDefault();
@@ -105,43 +82,6 @@ function PlatformAdminsPage() {
     else setMutationError(data?.message || 'Failed to remove');
   }, [refetch]);
 
-  const handleTenantDraftChange = useCallback((tenantKey, patch) => {
-    setTenantDrafts((prev) => ({
-      ...prev,
-      [tenantKey]: {
-        ...(prev[tenantKey] || {}),
-        ...patch,
-      },
-    }));
-  }, []);
-
-  const handleTenantConfigSave = useCallback(async () => {
-    if (tenantRows.length === 0) return;
-    setSavingTenants(true);
-    setMutationError(null);
-    const tenants = tenantRows.map((tenant) => ({
-      tenantKey: tenant.tenantKey,
-      status: tenantDrafts[tenant.tenantKey]?.status || tenant.status || 'active',
-      statusMessage: tenantDrafts[tenant.tenantKey]?.statusMessage || '',
-    }));
-    const { data, error } = await authenticatedRequest('/admin/tenant-config', {
-      method: 'PUT',
-      data: { tenants },
-      headers: { 'Content-Type': 'application/json' },
-    });
-    setSavingTenants(false);
-    if (error) {
-      setMutationError(data?.message || error);
-      return;
-    }
-    if (data?.success) {
-      setTenantConfigCache(data?.data?.tenants || []);
-      refetchTenantConfig();
-    } else {
-      setMutationError(data?.message || 'Failed to save tenant settings');
-    }
-  }, [refetchTenantConfig, tenantDrafts, tenantRows]);
-
   const handleOwnerRoleMigration = useCallback(async () => {
     if (runningOwnerRoleMigration) return;
     setRunningOwnerRoleMigration(true);
@@ -172,7 +112,7 @@ function PlatformAdminsPage() {
     }
   }, [addNotification, runningOwnerRoleMigration]);
 
-  const error = fetchError || tenantConfigFetchError || mutationError;
+  const error = fetchError || mutationError;
 
   return (
     <div className="platform-admins-page general dash">
@@ -231,50 +171,6 @@ function PlatformAdminsPage() {
           />
           <button type="submit" disabled={adding || !addEmail.trim()}>Add</button>
         </form>
-        <div className="platform-admins-tenants">
-          <div className="platform-admins-tenants-header">
-            <h2>Tenant visibility</h2>
-            <p>
-              Control how tenants appear on the school picker:
-              <strong> active</strong>, <strong>coming soon</strong>, <strong>under maintenance</strong>, or <strong>hidden</strong>.
-            </p>
-          </div>
-          {tenantConfigLoading ? (
-            <p>Loading tenant settings…</p>
-          ) : (
-            <>
-              <div className="platform-admins-tenants-list">
-                {tenantRows.map((tenant) => (
-                  <div key={tenant.tenantKey} className="platform-admins-tenant-row">
-                    <div className="platform-admins-tenant-meta">
-                      <p className="name">{tenant.name}</p>
-                      <p className="domain">{tenant.subdomain}.meridian.study</p>
-                    </div>
-                    <select
-                      value={tenantDrafts[tenant.tenantKey]?.status || tenant.status || 'active'}
-                      onChange={(e) => handleTenantDraftChange(tenant.tenantKey, { status: e.target.value })}
-                    >
-                      <option value="active">Active</option>
-                      <option value="coming_soon">Coming soon</option>
-                      <option value="maintenance">Under maintenance</option>
-                      <option value="hidden">Hidden</option>
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Optional status message"
-                      value={tenantDrafts[tenant.tenantKey]?.statusMessage || ''}
-                      onChange={(e) => handleTenantDraftChange(tenant.tenantKey, { statusMessage: e.target.value })}
-                      maxLength={240}
-                    />
-                  </div>
-                ))}
-              </div>
-              <button type="button" onClick={handleTenantConfigSave} disabled={savingTenants}>
-                {savingTenants ? 'Saving…' : 'Save tenant settings'}
-              </button>
-            </>
-          )}
-        </div>
         {loading ? (
           <p>Loading…</p>
         ) : (
