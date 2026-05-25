@@ -10,9 +10,10 @@ import {
     GlyphSeries,
     buildChartTheme,
     Tooltip,
+    DataContext,
 } from '@visx/xychart';
 import { curveMonotoneX } from '@visx/curve';
-import './EventDashboard.scss';
+import './RSVPGrowthChart.scss';
 
 const accessors = {
     xAccessor: (d) => d.x,
@@ -107,6 +108,44 @@ function getSparseTickValues(values, maxTicks = MAX_X_TICKS) {
     return result;
 }
 
+function SnapshotGoalGuide({ goalValue, label }) {
+    const { xScale, yScale } = React.useContext(DataContext) || {};
+    if (!xScale || !yScale || !Number.isFinite(goalValue) || goalValue <= 0) return null;
+    const xRange = xScale.range?.() || [];
+    const yRange = yScale.range?.() || [];
+    if (xRange.length < 2 || yRange.length < 2) return null;
+    const xLeft = Math.min(...xRange);
+    const xRight = Math.max(...xRange);
+    const y = Number(yScale(goalValue));
+    const yTop = Math.min(...yRange);
+    const yBottom = Math.max(...yRange);
+    if (!Number.isFinite(y) || y < yTop || y > yBottom) return null;
+    return (
+        <g style={{ pointerEvents: 'none' }}>
+            <line
+                x1={xLeft}
+                x2={xRight}
+                y1={y}
+                y2={y}
+                stroke="rgba(39, 48, 42, 0.38)"
+                strokeWidth={1}
+                strokeDasharray="3 4"
+            />
+            <text
+                x={xRight}
+                y={Math.max(yTop + 11, y - 6)}
+                textAnchor="end"
+                fontSize="11"
+                fontWeight="700"
+                fill="rgba(38, 49, 43, 0.62)"
+                letterSpacing="0.08em"
+            >
+                {label}
+            </text>
+        </g>
+    );
+}
+
 function RSVPGrowthChart({
     eventId,
     orgId,
@@ -114,6 +153,7 @@ function RSVPGrowthChart({
     registrationCount,
     rsvpGrowth: rsvpGrowthProp,
     report = false,
+    variant = 'default',
     /** Full path to RSVP growth API (e.g. tenant-operator route); timezone query appended when absent */
     rsvpGrowthUrlOverride,
 }) {
@@ -265,6 +305,7 @@ function RSVPGrowthChart({
               ? 100
               : 0;
     const hasChartData = dailyData && dailyData.length > 0;
+    const isSnapshotVariant = variant === 'snapshot';
 
     if (!hasChartData) {
         return (
@@ -322,6 +363,120 @@ function RSVPGrowthChart({
         const cap = displayExpected > 0 ? displayExpected : Math.max(actualMax, requiredMax);
         return Math.ceil(Math.max(actualMax, requiredMax, cap) * 1.1) || 10;
     })();
+    const registrationPct = displayExpected > 0 ? Math.round((currentRSVPs / displayExpected) * 100) : 0;
+    const last7DaysGain = dailyData.slice(-7).reduce((sum, day) => sum + (day?.dailyRSVPs || 0), 0);
+    const isOnTrack = displayExpected > 0 ? currentRSVPs >= displayExpected * 0.6 : currentRSVPs > 0;
+    const snapshotSeries = (() => {
+        const base = actualData.length > 0 ? actualData : [{ x: todayStr, y: 0 }];
+        const withIndex = base.map((point, idx) => ({ ...point, ix: idx }));
+        if (withIndex.length === 1) {
+            return [
+                withIndex[0],
+                {
+                    ...withIndex[0],
+                    ix: 1
+                }
+            ];
+        }
+        return withIndex;
+    })();
+
+    if (isSnapshotVariant) {
+        const chartRangeDays = dailyData.length;
+        return (
+            <div className="rsvp-growth-chart rsvp-growth-chart-visx rsvp-growth-chart--snapshot">
+                <div className="rsvp-growth-chart__snapshot-header">
+                    <div className="rsvp-growth-chart__snapshot-head">
+                        <h4>Registration pace</h4>
+                        <span>{chartRangeDays} days</span>
+                    </div>
+
+                    <div className="rsvp-growth-chart__snapshot-kpi">
+                        <strong>{currentRSVPs}</strong>
+                        <p>
+                            of {displayExpected || 0} expected · {registrationPct}%
+                        </p>
+                    </div>
+
+                    <p className="rsvp-growth-chart__snapshot-delta">
+                        {last7DaysGain >= 0 ? `+${last7DaysGain}` : last7DaysGain} this week ·{' '}
+                        {isOnTrack ? 'on track to hit goal' : 'behind pace'}
+                    </p>
+                </div>
+
+                <div className="chart-container chart-container-visx">
+                    <XYChart
+                        theme={chartTheme}
+                        xScale={{ type: 'linear', domain: [0, Math.max(1, snapshotSeries.length - 1)] }}
+                        yScale={{ type: 'linear', domain: [-1, yMax] }}
+                        height={220}
+                        margin={{ top: 6, right: 0, bottom: 0, left: 0 }}
+                    >
+                        <defs>
+                            <linearGradient id="actual-gradient-snapshot" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#4DAA57" stopOpacity={0.2} />
+                                <stop offset="100%" stopColor="#4DAA57" stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <AreaSeries
+                            dataKey="actual-snapshot-area"
+                            data={snapshotSeries}
+                            xAccessor={(d) => d.ix}
+                            yAccessor={accessors.yAccessor}
+                            curve={curveMonotoneX}
+                            fillOpacity={0.9}
+                            fill="url(#actual-gradient-snapshot)"
+                        />
+                        <LineSeries
+                            dataKey="actual-snapshot-line"
+                            data={snapshotSeries}
+                            xAccessor={(d) => d.ix}
+                            yAccessor={accessors.yAccessor}
+                            curve={curveMonotoneX}
+                            stroke="#2f8f4a"
+                            strokeWidth={3}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                        <SnapshotGoalGuide
+                            goalValue={displayExpected}
+                            label={`goal · ${displayExpected || 0}`}
+                        />
+                        <Tooltip
+                            className="rsvp-chart-tooltip-wrapper"
+                            snapTooltipToDatumX={false}
+                            snapTooltipToDatumY={false}
+                            showVerticalCrosshair
+                            showSeriesGlyphs={false}
+                            showDatumGlyph={false}
+                            renderTooltip={({ tooltipData }) => {
+                                if (!tooltipData?.datumByKey) return null;
+                                const actualDatum =
+                                    tooltipData.datumByKey?.['actual-snapshot-line']?.datum
+                                    || tooltipData.datumByKey?.['actual-snapshot-area']?.datum
+                                    || tooltipData?.nearestDatum?.datum;
+                                if (!actualDatum) return null;
+                                const dateLabel = actualDatum?.x ? formatSemanticDate(actualDatum.x) : 'Current';
+                                return (
+                                    <div className="rsvp-chart-tooltip">
+                                        <div className="rsvp-chart-tooltip-date">{dateLabel}</div>
+                                        <div className="rsvp-chart-tooltip-row">
+                                            <span className="rsvp-chart-tooltip-dot rsvp-chart-tooltip-dot-actual" />
+                                            Registrations: {Math.round(actualDatum?.y || 0)}
+                                        </div>
+                                        <div className="rsvp-chart-tooltip-row">
+                                            <span className="rsvp-chart-tooltip-dot rsvp-chart-tooltip-dot-required" />
+                                            Goal: {displayExpected || 0}
+                                        </div>
+                                    </div>
+                                );
+                            }}
+                        />
+                    </XYChart>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="rsvp-growth-chart rsvp-growth-chart-visx">
