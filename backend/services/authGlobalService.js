@@ -4,10 +4,13 @@
  */
 const jwt = require('jsonwebtoken');
 const { randomUUID } = require('crypto');
-const getModels = require('./getModelService');
 const getGlobalModels = require('./getGlobalModelService');
 const { createGlobalSession } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
+
+function getModels(req, ...names) {
+    return require('./getModelService')(req, ...names);
+}
 
 const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRY || '15m';
 const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY || '30d';

@@ -489,12 +489,22 @@ router.get('/validate-token', verifyToken, async (req, res) => {
         // On www we only return communities (no tenant DB); frontend uses this to redirect to tenant.
         if (req.school === 'www') {
             if (!req.user || !req.user.globalUserId) {
-                return res.json({ success: true, message: 'Token is valid', data: { user: null, communities: [] } });
+                return res.json({ success: true, message: 'Token is valid', data: { user: null, communities: [], platformRoles: req.user?.platformRoles || [] } });
             }
             const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
             const memberships = await TenantMembership.find({ globalUserId: req.user.globalUserId, status: 'active' }).lean();
             const communities = memberships.map(m => m.tenantKey);
-            return res.json({ success: true, message: 'Token is valid', data: { user: null, communities } });
+            let platformRoles = req.user.platformRoles || [];
+            if (!platformRoles.length) {
+              const { PlatformRole } = getGlobalModels(req, 'PlatformRole');
+              const pr = await PlatformRole.findOne({ globalUserId: req.user.globalUserId }).lean();
+              platformRoles = pr?.roles || [];
+            }
+            return res.json({
+              success: true,
+              message: 'Token is valid',
+              data: { user: null, communities, platformRoles },
+            });
         }
 
         const { User, Friendship } = getModels(req, 'User', 'Friendship');
@@ -565,12 +575,17 @@ router.get('/validate-token', verifyToken, async (req, res) => {
         const data = {
             user: user,
             friendRequests: friendRequests,
-            pendingOrgInvites: pendingOrgInvites
+            pendingOrgInvites: pendingOrgInvites,
+            platformRoles: req.user.platformRoles || [],
         };
         if (req.user.globalUserId) {
-            const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
+            const { TenantMembership, PlatformRole } = getGlobalModels(req, 'TenantMembership', 'PlatformRole');
             const memberships = await TenantMembership.find({ globalUserId: req.user.globalUserId, status: 'active' }).lean();
             data.communities = memberships.map(m => m.tenantKey);
+            if (!data.platformRoles.length) {
+              const pr = await PlatformRole.findOne({ globalUserId: req.user.globalUserId }).lean();
+              data.platformRoles = pr?.roles || [];
+            }
         }
         res.json({
             success: true,
