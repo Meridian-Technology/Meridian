@@ -116,6 +116,8 @@ const WWW_ALLOWED_PATHS = [
   '/error',
   '/select-school',
   '/tenant-status',
+  '/platform-admin',
+  '/login',
 ];
 
 export function isPathAllowedOnWww(pathname) {

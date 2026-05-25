@@ -127,7 +127,13 @@ export const AuthProvider = ({ children }) => {
                     window.location.href = `/select-school${next}`;
                     return;
                 }
-                setUser(response.data.user);
+                setUser(
+                  response.data.user
+                    ? { ...response.data.user, platformRoles: response.data.platformRoles || [] }
+                    : (response.data.platformRoles?.length
+                      ? { platformRoles: response.data.platformRoles, roles: [] }
+                      : null)
+                );
                 // Set friend requests if provided
                 if (response.data.friendRequests) {
                     setFriendRequests({
@@ -145,6 +151,10 @@ export const AuthProvider = ({ children }) => {
                 }
                 // Determine auth method from user data (only when user exists)
                 const u = response.data.user;
+                const platformRoles = response.data.platformRoles || [];
+                if (u || platformRoles.length) {
+                    setIsAuthenticated(true);
+                }
                 if (u) {
                     if (u.samlProvider) {
                         setAuthMethod('saml');
@@ -176,7 +186,6 @@ export const AuthProvider = ({ children }) => {
                             // non-fatal: leave anonymous regs in storage to retry next time
                         }
                     }
-                    setIsAuthenticated(true);
                     getCheckedIn();
 
                     // Root-configurable onboarding gate for all users missing newly required/unseen steps.
