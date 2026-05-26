@@ -11,8 +11,11 @@ const { verifyToken } = require('../middlewares/verifyToken.js');
 
 const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser, authenticateWithGoogleIdToken } = require('../services/userServices.js');
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
-const getModels = require('../services/getModelService.js');
 const getGlobalModels = require('../services/getGlobalModelService.js');
+
+function getModels(req, ...names) {
+    return require('../services/getModelService.js')(req, ...names);
+}
 const { getFriendRequests } = require('../utilities/friendUtils');
 const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, getUserSessionsForGlobalUser, deleteSessionById, deleteSessionByIdForGlobalUser, revokeAllOtherSessionsForGlobalUser } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');

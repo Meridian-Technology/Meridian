@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
-const getModels = require('../services/getModelService');
 const getGlobalModels = require('../services/getGlobalModelService');
+
+function getModels(req, ...names) {
+    return require('../services/getModelService')(req, ...names);
+}
 const authGlobalService = require('../services/authGlobalService');
 const { isAdminLevelAccount } = require('../services/adminMfaService');
 
