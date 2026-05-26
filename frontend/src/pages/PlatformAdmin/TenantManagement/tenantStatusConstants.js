@@ -19,13 +19,10 @@ export function getSoftWarnings(tenant, nextStatus) {
     warnings.push('Setup checklist is not complete. You can still go live, but users may hit incomplete configuration.');
   }
   if (nextStatus === 'active' && tenant.status === 'coming_soon' && checklistComplete) {
-    warnings.push('DNS and CORS should be in place before traffic hits this subdomain.');
+    warnings.push('DNS should be in place before traffic hits this subdomain.');
   }
   if (nextStatus === 'hidden' && tenant.status === 'active') {
     warnings.push('Hidden tenants are removed from the school picker but remain reachable by direct URL.');
-  }
-  if (nextStatus === 'maintenance' && !tenant.statusMessage) {
-    warnings.push('Consider adding a status message so users know why access is limited.');
   }
   return warnings;
 }
