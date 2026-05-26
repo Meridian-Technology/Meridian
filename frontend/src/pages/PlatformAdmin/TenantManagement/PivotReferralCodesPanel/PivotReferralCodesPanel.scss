@@ -1,0 +1,138 @@
+.pivot-referral {
+  margin-top: 8px;
+  padding-top: 24px;
+  border-top: 1px solid var(--la-border-subtle);
+
+  &__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  &__hint {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--la-text-secondary);
+  }
+
+  &__error {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--la-error);
+  }
+
+  &__empty {
+    margin: 0;
+    font-size: 13px;
+    color: var(--la-text-tertiary);
+  }
+
+  &__editor {
+    margin-bottom: 20px;
+    padding: 16px;
+    border-radius: var(--la-radius);
+    background: var(--la-surface);
+    border: 1px solid var(--la-border-subtle);
+  }
+
+  &__editor-title {
+    margin: 0 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  &__redemption-field {
+    margin-top: 12px;
+    max-width: 240px;
+  }
+
+  &__table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--la-border-subtle);
+    border-radius: var(--la-radius);
+    background: var(--la-surface);
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+
+    th,
+    td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--la-border-subtle);
+    }
+
+    th {
+      font-weight: 600;
+      color: var(--la-text-secondary);
+      background: #fafafa;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr.is-editing td {
+      background: var(--la-accent-soft);
+    }
+  }
+
+  &__actions-col {
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  &__delete {
+    color: var(--la-error);
+  }
+
+  &__status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: var(--la-row-hover);
+    color: var(--la-text-secondary);
+
+    &--ok {
+      background: #ecfdf5;
+      color: #0d9488;
+    }
+
+    &--inactive {
+      background: #f4f4f5;
+      color: var(--la-text-tertiary);
+    }
+
+    &--expired,
+    &--maxed {
+      background: #fef2f2;
+      color: var(--la-error);
+    }
+  }
+}
+
+.linear-field--checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+
+  .linear-field__label {
+    margin: 0;
+  }
+
+  input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+  }
+}

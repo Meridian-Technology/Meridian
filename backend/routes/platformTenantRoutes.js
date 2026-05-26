@@ -8,10 +8,17 @@ const {
   provisionPivotCatalogOrg,
   serializeTenantForAdmin,
   validateNewTenantPayload,
+  validateTenantMetadataUpdate,
   upsertStoredTenantRow,
   syncTenantUriCache,
 } = require('../services/tenantConfigService');
 const { invalidateTenantConnection } = require('../connectionsManager');
+const {
+  listReferralCodesForTenant,
+  createReferralCode,
+  updateReferralCode,
+  deleteReferralCode,
+} = require('../services/pivotReferralCodeService');
 
 const router = express.Router();
 
@@ -103,6 +110,11 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
     const existing = await getTenantByKey(req, tenantKey);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Tenant not found.' });
+    }
+
+    const metadataValidation = validateTenantMetadataUpdate(req.body);
+    if (metadataValidation.error) {
+      return res.status(400).json({ success: false, message: metadataValidation.error });
     }
 
     const confirmations = {
@@ -200,6 +212,84 @@ router.post('/admin/platform/tenants/:tenantKey/provision-pivot-catalog', verify
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/pivot-referral-codes',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const result = await listReferralCodesForTenant(req, tenantKey);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.json({ success: true, data: result });
+    } catch (err) {
+      console.error('GET pivot-referral-codes failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.post(
+  '/admin/platform/tenants/:tenantKey/pivot-referral-codes',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const result = await createReferralCode(req, tenantKey, req.body);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.status(201).json({ success: true, data: result });
+    } catch (err) {
+      console.error('POST pivot-referral-codes failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.put(
+  '/admin/platform/tenants/:tenantKey/pivot-referral-codes/:codeId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const codeId = String(req.params.codeId || '').trim();
+      const result = await updateReferralCode(req, tenantKey, codeId, req.body);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.json({ success: true, data: result });
+    } catch (err) {
+      console.error('PUT pivot-referral-codes failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.delete(
+  '/admin/platform/tenants/:tenantKey/pivot-referral-codes/:codeId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const codeId = String(req.params.codeId || '').trim();
+      const result = await deleteReferralCode(req, tenantKey, codeId);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.json({ success: true, data: result });
+    } catch (err) {
+      console.error('DELETE pivot-referral-codes failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
 
 router.post('/admin/platform/tenants/sync-cache', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {

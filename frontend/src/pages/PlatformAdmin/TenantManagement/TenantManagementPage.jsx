@@ -3,9 +3,12 @@ import { Icon } from '@iconify-icon/react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { setTenantConfigCache } from '../../../config/tenantRedirect';
 import { useNotification } from '../../../NotificationContext';
-import TenantLifecycleModal from './TenantLifecycleModal/TenantLifecycleModal';
+import TenantModals from './TenantModals/TenantModals';
 import TenantStatusDropdown from './TenantStatusDropdown/TenantStatusDropdown';
 import { formatTenantHealthMessage, isTenantHealthOk } from './tenantHealthUtils';
+import { isPivotTenant } from './tenantPivotUtils';
+import PivotReferralCodesPanel from './PivotReferralCodesPanel/PivotReferralCodesPanel';
+import { useGradient } from '../../../hooks/useGradient';
 import './TenantManagementPage.scss';
 
 const EMPTY_FORM = {
@@ -43,7 +46,7 @@ function ManualStepsPanel({ tenant, onConfirmStep, savingStepId }) {
           <li key={step.id} className={`linear-checklist__item ${step.completed ? 'is-done' : ''}`}>
             <div className="linear-checklist__row">
               <span className={`linear-checklist__icon ${step.completed ? 'is-done' : ''}`}>
-                <Icon icon={step.completed ? 'mdi:check' : step.automated ? 'mdi:cog-outline' : 'mdi:circle-outline'} />
+                <Icon icon={step.completed ? 'mdi:check' : step.automated ? 'mdi:cog-outline' : 'mdi:circle-outline'} onClick={!step.completed? () => onConfirmStep(tenant, step.id) : null}/>
               </span>
               <div className="linear-checklist__body">
                 <div className="linear-checklist__head">
@@ -181,12 +184,13 @@ function TenantDetail({
   onHealthCheck,
   onProvisionCatalog,
   onConfirmStep,
-  onSaveVisibility,
+  onOpenLifecycle,
+  onOpenMetadata,
   savingVisibility,
+  savingMetadata,
   savingStepId,
 }) {
   const savedStatus = tenant.status || 'coming_soon';
-  const [lifecycleRequest, setLifecycleRequest] = useState(null);
 
   const checklistComplete = tenant.provisioningComplete === true;
   const showActivateCta = checklistComplete && savedStatus !== 'active';
@@ -194,7 +198,7 @@ function TenantDetail({
 
   const openStatusDialog = (nextStatus, mode = 'status') => {
     if (nextStatus === savedStatus && mode !== 'message') return;
-    setLifecycleRequest({
+    onOpenLifecycle({
       mode: mode === 'activate' ? 'activate' : 'status',
       targetStatus: nextStatus,
       initialMessage: tenant.statusMessage || '',
@@ -202,7 +206,7 @@ function TenantDetail({
   };
 
   const openMessageDialog = () => {
-    setLifecycleRequest({
+    onOpenLifecycle({
       mode: 'message',
       targetStatus: savedStatus,
       initialMessage: tenant.statusMessage || '',
@@ -229,6 +233,17 @@ function TenantDetail({
               value={savedStatus}
               disabled={savingVisibility}
               onSelect={(next) => openStatusDialog(next)}
+              actionElement={showActivateCta ? (
+                <button
+                  type="button"
+                  className="linear-btn linear-btn--primary tenant-detail__activate"
+                  disabled={savingVisibility}
+                  onClick={() => openStatusDialog('active', 'activate')}
+                >
+                  <Icon icon="mdi:rocket-launch-outline" />
+                  Activate
+                </button>
+              ) : null}
             />
             <button
               type="button"
@@ -240,8 +255,18 @@ function TenantDetail({
             >
               <Icon icon="mdi:message-text-outline" />
             </button>
+            <button
+              type="button"
+              className="tenant-detail__message-btn linear-btn linear-btn--ghost linear-btn--icon"
+              aria-label="Edit tenant details"
+              title="Edit tenant details"
+              disabled={savingMetadata}
+              onClick={onOpenMetadata}
+            >
+              <Icon icon="mdi:pencil-outline" />
+            </button>
           </div>
-          {showActivateCta ? (
+          {/* {showActivateCta ? (
             <button
               type="button"
               className="linear-btn linear-btn--primary tenant-detail__activate"
@@ -251,12 +276,12 @@ function TenantDetail({
               <Icon icon="mdi:rocket-launch-outline" />
               Activate subdomain
             </button>
-          ) : null}
+          ) : null} */}
         </div>
       </header>
 
       <section className="tenant-detail__section tenant-detail__tags" aria-label="Tenant labels">
-        {tenant.pivotPilot ? <span className="linear-tag linear-tag--pivot">Pivot pilot</span> : null}
+        {isPivotTenant(tenant) ? <span className="linear-tag linear-tag--pivot">Pivot pilot</span> : null}
         {!checklistComplete ? (
           <span className="tenant-detail__soft-tag">Setup in progress</span>
         ) : savedStatus !== 'active' ? (
@@ -298,7 +323,7 @@ function TenantDetail({
             <Icon icon="mdi:database-check-outline" />
             Health check
           </button>
-          {tenant.pivotPilot ? (
+          {isPivotTenant(tenant) ? (
             <button
               type="button"
               className="linear-btn linear-btn--secondary"
@@ -314,13 +339,9 @@ function TenantDetail({
 
       <ManualStepsPanel tenant={tenant} onConfirmStep={onConfirmStep} savingStepId={savingStepId} />
 
-      <TenantLifecycleModal
-        request={lifecycleRequest}
-        tenant={tenant}
-        saving={savingVisibility}
-        onClose={() => setLifecycleRequest(null)}
-        onConfirm={(payload) => onSaveVisibility(tenant.tenantKey, payload)}
-      />
+      {isPivotTenant(tenant) ? (
+        <PivotReferralCodesPanel tenantKey={tenant.tenantKey} />
+      ) : null}
     </article>
   );
 }
@@ -333,8 +354,28 @@ function TenantManagementPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [savingStepId, setSavingStepId] = useState(null);
   const [savingVisibilityKey, setSavingVisibilityKey] = useState(null);
+  const [savingMetadataKey, setSavingMetadataKey] = useState(null);
+  const [lifecycleRequest, setLifecycleRequest] = useState(null);
+  const [metadataOpen, setMetadataOpen] = useState(false);
   const [actionKey, setActionKey] = useState(null);
   const [search, setSearch] = useState('');
+
+  const closeTenantModals = useCallback(() => {
+    setLifecycleRequest(null);
+    setMetadataOpen(false);
+  }, []);
+
+  const openLifecycleModal = useCallback((request) => {
+    setMetadataOpen(false);
+    setLifecycleRequest(request);
+  }, []);
+
+  const openMetadataModal = useCallback(() => {
+    setLifecycleRequest(null);
+    setMetadataOpen(true);
+  }, []);
+
+  const {AdminGrad} = useGradient('Admin');
 
   const { data, loading, error, refetch } = useFetch('/admin/platform/tenants', {
     cache: { enabled: true, ttlMs: 15000 },
@@ -454,6 +495,32 @@ function TenantManagementPage() {
     }
   }, [addNotification, refetch]);
 
+  const saveMetadata = useCallback(async (tenantKey, payload) => {
+    setSavingMetadataKey(tenantKey);
+    const { data: res, error: reqError } = await authenticatedRequest(`/admin/platform/tenants/${tenantKey}`, {
+      method: 'PUT',
+      data: payload,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    setSavingMetadataKey(null);
+    if (reqError || !res?.success) {
+      addNotification({
+        title: 'Save failed',
+        message: res?.message || reqError || 'Unable to update tenant details',
+        type: 'error',
+      });
+      return false;
+    }
+    addNotification({ title: 'Saved', message: `${tenantKey} details updated`, type: 'success' });
+    try {
+      const cfgRes = await fetch('/api/tenant-config', { credentials: 'include' });
+      const cfgPayload = await cfgRes.json();
+      if (cfgPayload?.success) setTenantConfigCache(cfgPayload.data?.tenants || []);
+    } catch (_) {}
+    refetch();
+    return true;
+  }, [addNotification, refetch]);
+
   const saveVisibility = useCallback(async (tenantKey, { status, statusMessage }) => {
     setSavingVisibilityKey(tenantKey);
     const { data: res, error: reqError } = await authenticatedRequest(`/admin/platform/tenants/${tenantKey}`, {
@@ -481,7 +548,7 @@ function TenantManagementPage() {
   }, [addNotification, refetch]);
 
   const confirmManualStep = useCallback(async (tenant, stepId) => {
-    const fieldMap = { dns: 'dns', cors: 'cors', verify_picker: 'pickerVerified' };
+    const fieldMap = { dns: 'dns', verify_picker: 'pickerVerified' };
     const field = fieldMap[stepId];
     if (!field) {
       addNotification({
@@ -521,38 +588,34 @@ function TenantManagementPage() {
   }, [addNotification, refetch]);
 
   const openCreate = () => {
+    closeTenantModals();
     setShowCreate(true);
     setSelectedKey(null);
   };
 
   const selectTenant = (tenantKey) => {
+    closeTenantModals();
     setSelectedKey(tenantKey);
     setShowCreate(false);
   };
 
   return (
-    <div className="linear-admin">
-      <header className="linear-admin__toolbar">
-        <div>
-          <h1 className="linear-admin__title">Tenants</h1>
-          <p className="linear-admin__subtitle">Provision cities, run setup checklists, and control subdomain visibility</p>
-        </div>
-        <div className="linear-admin__toolbar-actions">
-          <button type="button" className="linear-btn linear-btn--ghost" onClick={() => refetch()} disabled={loading}>
-            <Icon icon="mdi:refresh" />
-            {loading ? 'Refreshing…' : 'Refresh'}
-          </button>
-          <button type="button" className="linear-btn linear-btn--primary" onClick={openCreate}>
-            <Icon icon="mdi:plus" />
-            New tenant
-          </button>
-        </div>
-      </header>
-
+    <div className="linear-admin dash">
+        <header className="header">
+            <h1>Tenant Management</h1>
+            <p>Centralized tenant concern management</p>
+            <img src={AdminGrad} alt="" />
+        </header>
       {error ? <div className="linear-admin__error">{error}</div> : null}
 
       <div className="linear-admin__split">
         <aside className="linear-admin__sidebar">
+          <div className="linear-admin__sidebar-actions">
+            <button type="button" className="linear-btn linear-btn--primary" onClick={openCreate}>
+              <Icon icon="mdi:plus" />
+              New tenant
+            </button>
+          </div>
           <div className="linear-admin__search">
             <Icon icon="mdi:magnify" className="linear-admin__search-icon" />
             <input
@@ -597,16 +660,30 @@ function TenantManagementPage() {
               onCancel={() => setShowCreate(false)}
             />
           ) : selected ? (
-            <TenantDetail
-              tenant={selected}
-              actionKey={actionKey}
-              onHealthCheck={runHealthCheck}
-              onProvisionCatalog={provisionCatalog}
-              onConfirmStep={confirmManualStep}
-              onSaveVisibility={saveVisibility}
-              savingVisibility={savingVisibilityKey === selected.tenantKey}
-              savingStepId={savingStepId}
-            />
+            <>
+              <TenantDetail
+                tenant={selected}
+                actionKey={actionKey}
+                onHealthCheck={runHealthCheck}
+                onProvisionCatalog={provisionCatalog}
+                onConfirmStep={confirmManualStep}
+                onOpenLifecycle={openLifecycleModal}
+                onOpenMetadata={openMetadataModal}
+                savingVisibility={savingVisibilityKey === selected.tenantKey}
+                savingMetadata={savingMetadataKey === selected.tenantKey}
+                savingStepId={savingStepId}
+              />
+              <TenantModals
+                tenant={selected}
+                lifecycleRequest={lifecycleRequest}
+                metadataOpen={metadataOpen}
+                savingVisibility={savingVisibilityKey === selected.tenantKey}
+                savingMetadata={savingMetadataKey === selected.tenantKey}
+                onClose={closeTenantModals}
+                onSaveVisibility={saveVisibility}
+                onSaveMetadata={saveMetadata}
+              />
+            </>
           ) : (
             <div className="linear-empty">
               <Icon icon="mdi:city-variant-outline" className="linear-empty__icon" />
