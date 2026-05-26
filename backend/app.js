@@ -12,17 +12,20 @@ const enforce = require('express-sslify');
 const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
+const { BASE_DOMAIN } = require('./services/tenantConfigService');
 
 const s3 = require('./aws-config');
 
 function createApp() {
+  // Eager-load before route modules so circular requires never cache a partial export.
+  require('./services/getModelService');
+
   const app = express();
   const server = createServer(app);
   let tenantConfigCache = null;
   let tenantConfigLastFetchedAt = 0;
   let tenantKeysCache = ['rpi', 'tvcog'];
   let tenantKeysLastFetchedAt = 0;
-  let dynamicCorsOrigins = [];
   let tenantBootstrapComplete = false;
 
   const staticProductionOrigins = [
@@ -54,7 +57,17 @@ function createApp() {
   };
 
   initSocket(server, {
-    origin: process.env.NODE_ENV === 'production' ? staticProductionOrigins : 'http://localhost:3000',
+    origin: (origin, callback) => {
+      try {
+        if (isAllowedCorsOrigin(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+      } catch (err) {
+        callback(err);
+      }
+    },
   });
 
   app.set('trust proxy', true);
@@ -107,16 +120,13 @@ function createApp() {
         req.globalDb = await connectToGlobalDatabase();
 
         const tenantConfigService = require('./services/tenantConfigService');
-        const { syncTenantUriCache, getMergedTenants, BASE_DOMAIN } = tenantConfigService;
+        const { syncTenantUriCache, getMergedTenants } = tenantConfigService;
 
         if (!tenantBootstrapComplete) {
           await syncTenantUriCache(req);
           const tenants = await getMergedTenants(req);
           tenantKeysCache = tenants.map((tenant) => tenant.tenantKey);
           tenantKeysLastFetchedAt = Date.now();
-          dynamicCorsOrigins = tenants.map(
-            (tenant) => `https://${tenant.subdomain || tenant.tenantKey}.${BASE_DOMAIN}`
-          );
           tenantBootstrapComplete = true;
         }
 
