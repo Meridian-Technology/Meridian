@@ -24,6 +24,8 @@ function PlatformAdmin() {
       logo={AdminLogo}
       onBack={() => navigate('/select-school')}
       enableSubSidebar={false}
+      primaryColor={'black'}
+      secondaryColor={'rgba(185, 185, 185, 0.2)'}
     />
   );
 }
