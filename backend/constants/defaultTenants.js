@@ -55,12 +55,97 @@ function normalizeTenantRows(rows = []) {
   return rows.map(normalizeTenantRow).filter(Boolean);
 }
 
+/** Persisted overrides may be sparse (only changed fields). Do not fill missing keys. */
+function normalizeTenantOverride(row = {}) {
+  const tenantKey = String(row?.tenantKey || '').trim().toLowerCase();
+  if (!tenantKey || tenantKey === 'www') return null;
+
+  const out = { tenantKey };
+
+  if (row.name !== undefined && row.name !== null) {
+    out.name = String(row.name).trim();
+  }
+  if (row.subdomain !== undefined && row.subdomain !== null) {
+    out.subdomain = String(row.subdomain).trim().toLowerCase();
+  }
+  if (row.location !== undefined && row.location !== null) {
+    out.location = String(row.location).trim();
+  }
+  if (row.status !== undefined && TENANT_STATUSES.has(row.status)) {
+    out.status = row.status;
+  }
+  if (row.statusMessage !== undefined && row.statusMessage !== null) {
+    out.statusMessage = String(row.statusMessage).trim().slice(0, 240);
+  }
+  if (row.tenantType !== undefined && TENANT_TYPES.has(row.tenantType)) {
+    out.tenantType = row.tenantType;
+  }
+  if (row.pivotPilot !== undefined) {
+    out.pivotPilot = row.pivotPilot === true;
+  }
+  if (row.mongoUri !== undefined && row.mongoUri !== null) {
+    const uri = String(row.mongoUri).trim();
+    if (uri) out.mongoUri = uri;
+  }
+  if (row.mongoDatabaseName !== undefined && row.mongoDatabaseName !== null) {
+    const dbName = String(row.mongoDatabaseName).trim();
+    if (dbName) out.mongoDatabaseName = dbName.toLowerCase();
+  }
+  if (row.pivotCatalogOrgId !== undefined && row.pivotCatalogOrgId !== null) {
+    const orgId = String(row.pivotCatalogOrgId).trim();
+    if (orgId) out.pivotCatalogOrgId = orgId;
+  }
+  if (row.provisioningConfirmations && typeof row.provisioningConfirmations === 'object') {
+    const pc = {};
+    if (row.provisioningConfirmations.dns !== undefined) {
+      pc.dns = row.provisioningConfirmations.dns === true;
+    }
+    if (row.provisioningConfirmations.cors !== undefined) {
+      pc.cors = row.provisioningConfirmations.cors === true;
+    }
+    if (row.provisioningConfirmations.pickerVerified !== undefined) {
+      pc.pickerVerified = row.provisioningConfirmations.pickerVerified === true;
+    }
+    if (Object.keys(pc).length > 0) {
+      out.provisioningConfirmations = pc;
+    }
+  }
+
+  return Object.keys(out).length > 1 ? out : null;
+}
+
+function normalizeTenantOverrides(rows = []) {
+  return rows.map(normalizeTenantOverride).filter(Boolean);
+}
+
+function mergeSparseTenantOverrides(existing = {}, delta = {}) {
+  const merged = { ...existing, ...delta, tenantKey: delta.tenantKey || existing.tenantKey };
+  if (existing.provisioningConfirmations || delta.provisioningConfirmations) {
+    merged.provisioningConfirmations = {
+      ...(existing.provisioningConfirmations || {}),
+      ...(delta.provisioningConfirmations || {}),
+    };
+  }
+  return merged;
+}
+
 function mergeTenantRows(baseRows = [], overrideRows = []) {
   const merged = new Map();
   normalizeTenantRows(baseRows).forEach((row) => merged.set(row.tenantKey, row));
-  normalizeTenantRows(overrideRows).forEach((row) => {
+  normalizeTenantOverrides(overrideRows).forEach((row) => {
     const base = merged.get(row.tenantKey) || {};
-    merged.set(row.tenantKey, { ...base, ...row });
+    const { provisioningConfirmations: pcPatch, ...rest } = row;
+    const next = { ...base, ...rest };
+    if (pcPatch) {
+      next.provisioningConfirmations = {
+        dns: false,
+        cors: false,
+        pickerVerified: false,
+        ...(base.provisioningConfirmations || {}),
+        ...pcPatch,
+      };
+    }
+    merged.set(row.tenantKey, next);
   });
   return Array.from(merged.values());
 }
@@ -71,5 +156,8 @@ module.exports = {
   DEFAULT_TENANTS,
   normalizeTenantRow,
   normalizeTenantRows,
+  normalizeTenantOverride,
+  normalizeTenantOverrides,
+  mergeSparseTenantOverrides,
   mergeTenantRows,
 };

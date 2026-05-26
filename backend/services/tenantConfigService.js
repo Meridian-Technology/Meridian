@@ -5,6 +5,8 @@ const {
   DEFAULT_TENANTS,
   normalizeTenantRow,
   normalizeTenantRows,
+  normalizeTenantOverrides,
+  mergeSparseTenantOverrides,
   mergeTenantRows,
 } = require('../constants/defaultTenants');
 const {
@@ -18,7 +20,6 @@ const BASE_DOMAIN = process.env.MERIDIAN_BASE_DOMAIN || 'meridian.study';
 
 const MANUAL_STEP_IDS = {
   DNS: 'dns',
-  CORS: 'cors',
   MONGO_ENV: 'mongo_env',
   PIVOT_CATALOG: 'pivot_catalog',
   VERIFY_PICKER: 'verify_picker',
@@ -26,7 +27,6 @@ const MANUAL_STEP_IDS = {
 
 function buildManualSteps(tenant, context = {}) {
   const subdomain = tenant.subdomain || tenant.tenantKey;
-  const origin = `https://${subdomain}.${BASE_DOMAIN}`;
   const isPivot = tenant.pivotPilot === true || tenant.tenantType === 'pivot';
   const envVarName = `MONGO_URI_${tenant.tenantKey.toUpperCase()}`;
   const confirmations = tenant.provisioningConfirmations || {};
@@ -39,14 +39,6 @@ function buildManualSteps(tenant, context = {}) {
       automated: false,
       completed: confirmations.dns === true,
       command: `CNAME ${subdomain}.${BASE_DOMAIN} → <your-app-host>`,
-    },
-    {
-      id: MANUAL_STEP_IDS.CORS,
-      title: 'Production CORS allowlist',
-      description: `Add ${origin} to backend CORS origins in deployment config (app.js or env). Required for browser API calls from the new subdomain.`,
-      automated: false,
-      completed: confirmations.cors === true,
-      command: origin,
     },
     {
       id: MANUAL_STEP_IDS.MONGO_ENV,
@@ -97,9 +89,17 @@ function toStoredTenantRow(tenant) {
   };
   if (isDefault) {
     const base = DEFAULT_TENANTS.find((row) => row.tenantKey === tenant.tenantKey);
+    const defaultConfirmations = { dns: false, cors: false, pickerVerified: false };
     const override = { tenantKey: tenant.tenantKey };
     Object.keys(payload).forEach((key) => {
       if (key === 'tenantKey') return;
+      if (key === 'provisioningConfirmations') {
+        const payloadPc = payload.provisioningConfirmations || defaultConfirmations;
+        if (JSON.stringify(payloadPc) !== JSON.stringify(defaultConfirmations)) {
+          override.provisioningConfirmations = payload.provisioningConfirmations;
+        }
+        return;
+      }
       if (JSON.stringify(payload[key]) !== JSON.stringify(base?.[key])) {
         override[key] = payload[key];
       }
@@ -115,10 +115,19 @@ async function getStoredTenantRows(req) {
 }
 
 async function upsertStoredTenantRow(req, tenant, updatedBy = null) {
-  const storedRow = toStoredTenantRow(tenant);
+  const delta = toStoredTenantRow(tenant);
   const stored = await getStoredTenantRows(req);
+  const existingStored = stored.find((row) => row.tenantKey === tenant.tenantKey);
   const without = stored.filter((row) => row.tenantKey !== tenant.tenantKey);
-  const next = storedRow ? [...without, storedRow] : without;
+
+  let nextRow = null;
+  if (delta && existingStored) {
+    nextRow = mergeSparseTenantOverrides(existingStored, delta);
+  } else {
+    nextRow = delta;
+  }
+
+  const next = nextRow ? [...without, nextRow] : without;
   await saveTenantRows(req, next, updatedBy);
   return getTenantByKey(req, tenant.tenantKey);
 }
@@ -151,7 +160,7 @@ async function syncTenantUriCache(req) {
 
 async function saveTenantRows(req, rows, updatedBy = null) {
   const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
-  const normalized = normalizeTenantRows(rows);
+  const normalized = normalizeTenantOverrides(rows);
   const doc = await TenantConfig.findOneAndUpdate(
     { configKey: CONFIG_KEY },
     { $set: { tenants: normalized, updatedBy } },
@@ -289,6 +298,26 @@ function serializeTenantForAdmin(tenant, extras = {}) {
   };
 }
 
+function validateTenantMetadataUpdate(body = {}) {
+  if (body.name !== undefined && !String(body.name).trim()) {
+    return { error: 'name cannot be empty.' };
+  }
+  if (body.location !== undefined && !String(body.location).trim()) {
+    return { error: 'location cannot be empty.' };
+  }
+  if (body.subdomain !== undefined) {
+    const subdomain = String(body.subdomain).trim().toLowerCase();
+    if (subdomain === 'www') return { error: 'subdomain "www" is reserved.' };
+    if (!/^[a-z][a-z0-9_-]{0,31}$/.test(subdomain)) {
+      return { error: 'subdomain must start with a letter and use lowercase alphanumeric, underscore, or hyphen.' };
+    }
+  }
+  if (body.tenantType !== undefined && !['campus', 'pivot'].includes(body.tenantType)) {
+    return { error: 'tenantType must be campus or pivot.' };
+  }
+  return { ok: true };
+}
+
 function validateNewTenantPayload(body = {}) {
   const tenantKey = String(body.tenantKey || '').trim().toLowerCase();
   if (!/^[a-z][a-z0-9_-]{1,31}$/.test(tenantKey)) {
@@ -336,6 +365,7 @@ module.exports = {
   provisionPivotCatalogOrg,
   serializeTenantForAdmin,
   validateNewTenantPayload,
+  validateTenantMetadataUpdate,
   upsertStoredTenantRow,
   DEFAULT_TENANTS,
   mergeTenantRows,

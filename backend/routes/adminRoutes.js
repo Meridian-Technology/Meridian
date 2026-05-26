@@ -13,6 +13,7 @@ const getGlobalModels = require('../services/getGlobalModelService');
 const {
   DEFAULT_TENANTS,
   normalizeTenantRows,
+  normalizeTenantOverride,
   mergeTenantRows,
 } = require('../constants/defaultTenants');
 
@@ -418,11 +419,11 @@ router.put('/admin/tenant-config', verifyToken, requireAdmin, async (req, res) =
     const defaultOverrides = DEFAULT_TENANTS.map((row) => {
       const update = incomingByKey.get(row.tenantKey);
       if (!update) return null;
-      return {
+      return normalizeTenantOverride({
         tenantKey: row.tenantKey,
         status: update.status || row.status,
         statusMessage: update.statusMessage || '',
-      };
+      });
     }).filter(Boolean);
     const nextStored = [...storedDynamic, ...defaultOverrides];
     const nextTenants = mergeTenantRows(DEFAULT_TENANTS, nextStored);
