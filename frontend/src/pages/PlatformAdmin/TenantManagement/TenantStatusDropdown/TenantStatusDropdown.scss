@@ -2,9 +2,32 @@
   &.org-dropdown {
     width: auto;
     min-width: 200px;
-    max-width: 260px;
+    max-width: none;
     margin-top: 0;
     z-index: 20;
+    cursor: default;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+  }
+
+  &__trigger {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1 1 auto;
+    min-width: 0;
+    cursor: pointer;
+  }
+
+  &__action {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
   }
 
   &.is-disabled {
@@ -16,6 +39,9 @@
   .tenant-status-dropdown__leading-icon {
     flex-shrink: 0;
     color: #6b6f76;
+    iconify-icon{
+        font-size:16px;
+    }
   }
 
   .tenant-status-dropdown__titles {
@@ -33,7 +59,7 @@
     max-width: 100%;
     min-width: 0;
     margin: 0;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
     color: #171717;
     overflow: hidden;
@@ -81,6 +107,9 @@
   .tenant-status-dropdown__row-icon {
     flex-shrink: 0;
     color: #6b6f76;
+    iconify-icon{
+        font-size:18px;
+    }
   }
 
   .dropdown .org-list {
