@@ -4,8 +4,10 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const appleSignin = require('apple-signin-auth');
 const { sendDiscordMessage } = require('./discordWebookService');
-const getModels = require('./getModelService');
-const { get } = require('../schemas/badgeGrant');
+
+function getModels(req, ...names) {
+    return require('./getModelService')(req, ...names);
+}
 
 const login = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
