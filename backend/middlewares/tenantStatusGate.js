@@ -24,6 +24,7 @@ const PUBLIC_DURING_TENANT_OUTAGE_PREFIXES = [
   '/mfa/',
   '/health',
   '/api/tenant-config',
+  '/pivot',
   '/static',
   '/assets',
   '/favicon',

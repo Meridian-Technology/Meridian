@@ -190,6 +190,7 @@ function createApp() {
     '/api/event-system-config/analytics-config',
     '/api/android-tester',
     '/api/tenant-config',
+    '/pivot',
     '/validate-token',
     '/refresh-token',
     '/admin/platform',
@@ -309,6 +310,7 @@ function createApp() {
   const resourcesRoutes = require('./routes/resourcesRoutes.js');
   const shuttleConfigRoutes = require('./routes/shuttleConfigRoutes.js');
   const noticeRoutes = require('./routes/noticeRoutes.js');
+  const pivotRoutes = require('./routes/pivotRoutes.js');
 
   app.use(authRoutes);
   app.use('/auth/saml', samlRoutes);
@@ -345,6 +347,7 @@ function createApp() {
   app.use('/api/resources', resourcesRoutes);
   app.use('/api/shuttle-config', shuttleConfigRoutes);
   app.use('/api/notice', noticeRoutes);
+  app.use('/pivot', pivotRoutes);
   app.use('/verify-affiliated-email', affiliatedEmailRoutes);
   app.use('/proxy-image', require('./routes/proxyImageRoutes.js'));
 

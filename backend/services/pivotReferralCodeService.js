@@ -247,11 +247,90 @@ async function deleteReferralCode(req, tenantKey, codeId) {
   return { deleted: true, code: deleted.code };
 }
 
+function normalizeReferralCodeInput(code) {
+  return String(code || '').trim().toUpperCase();
+}
+
+async function validateReferralCode(req, rawCode) {
+  const code = normalizeReferralCodeInput(rawCode);
+  if (!code) {
+    return {
+      error: 'Referral code is required.',
+      status: 400,
+      code: 'REFERRAL_CODE_REQUIRED',
+    };
+  }
+
+  const { PivotReferralCode } = getGlobalModels(req, 'PivotReferralCode');
+  const referral = await PivotReferralCode.findOne({ code }).lean();
+
+  if (!referral) {
+    return {
+      error: 'Invalid referral code.',
+      status: 404,
+      code: 'REFERRAL_CODE_NOT_FOUND',
+    };
+  }
+
+  if (!referral.active) {
+    return {
+      error: 'This referral code is no longer active.',
+      status: 403,
+      code: 'REFERRAL_CODE_INACTIVE',
+    };
+  }
+
+  if (referral.expiresAt && new Date(referral.expiresAt) < new Date()) {
+    return {
+      error: 'This referral code has expired.',
+      status: 403,
+      code: 'REFERRAL_CODE_EXPIRED',
+    };
+  }
+
+  if (referral.redemptionCount >= referral.maxRedemptions) {
+    return {
+      error: 'This referral code has reached its redemption limit.',
+      status: 403,
+      code: 'REFERRAL_CODE_MAXED',
+    };
+  }
+
+  const tenant = await getTenantByKey(req, referral.tenantKey);
+  if (!tenant) {
+    return {
+      error: 'City tenant for this code is not configured.',
+      status: 503,
+      code: 'TENANT_NOT_FOUND',
+    };
+  }
+
+  if (!isPivotTenant(tenant)) {
+    return {
+      error: 'Referral code is not valid for Pivot.',
+      status: 403,
+      code: 'NOT_PIVOT_TENANT',
+    };
+  }
+
+  return {
+    data: {
+      tenantKey: tenant.tenantKey,
+      subdomain: tenant.subdomain || tenant.tenantKey,
+      cohortId: referral.cohortId,
+      cityDisplayName: tenant.location || tenant.name,
+      batchWeek: referral.batchWeek || null,
+    },
+  };
+}
+
 module.exports = {
   isPivotTenant,
+  normalizeReferralCodeInput,
   serializePivotReferralCode,
   validateCreatePayload,
   validateUpdatePayload,
+  validateReferralCode,
   listReferralCodesForTenant,
   createReferralCode,
   updateReferralCode,
