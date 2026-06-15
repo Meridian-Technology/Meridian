@@ -4,6 +4,7 @@ const tenantMembershipSchema = require('../schemas/tenantMembership');
 const globalSessionSchema = require('../schemas/globalSession');
 const tenantConfigSchema = require('../schemas/tenantConfig');
 const pivotReferralCodeSchema = require('../schemas/pivotReferralCode');
+const pivotReferralRedemptionSchema = require('../schemas/pivotReferralRedemption');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -11,7 +12,7 @@ const pivotReferralCodeSchema = require('../schemas/pivotReferralCode');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig', 'PivotReferralCode'
+ * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig', 'PivotReferralCode', 'PivotReferralRedemption'
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -27,6 +28,11 @@ const getGlobalModels = (req, ...names) => {
         Session: db.model('Session', globalSessionSchema, 'sessions'),
         TenantConfig: db.model('TenantConfig', tenantConfigSchema, 'tenant_config'),
         PivotReferralCode: db.model('PivotReferralCode', pivotReferralCodeSchema, 'pivot_referral_codes'),
+        PivotReferralRedemption: db.model(
+            'PivotReferralRedemption',
+            pivotReferralRedemptionSchema,
+            'pivot_referral_redemptions'
+        ),
     };
 
     return names.reduce((acc, name) => {

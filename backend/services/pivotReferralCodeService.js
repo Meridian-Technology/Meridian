@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isValidIsoWeek, toIsoWeek } = require('../utilities/pivotIsoWeek');
@@ -324,6 +325,155 @@ async function validateReferralCode(req, rawCode) {
   };
 }
 
+/**
+ * Persist a redemption for authenticated global users only; increments PivotReferralCode.redemptionCount
+ * once per (globalUserId, code). Idempotent when the user retries.
+ *
+ * Requires req.school to match the code's tenant (city).
+ */
+async function redeemReferralCode(req, rawCode) {
+  const gid = req.user?.globalUserId;
+  if (!gid) {
+    return {
+      error: 'Pivot referral redemption requires signing in with a Meridian account.',
+      status: 403,
+      code: 'GLOBAL_USER_REQUIRED',
+    };
+  }
+
+  const code = normalizeReferralCodeInput(rawCode);
+  if (!code) {
+    return {
+      error: 'Referral code is required.',
+      status: 400,
+      code: 'REFERRAL_CODE_REQUIRED',
+    };
+  }
+
+  const tenantKeyReq = typeof req.school === 'string' ? req.school.trim().toLowerCase() : '';
+
+  const { PivotReferralCode, PivotReferralRedemption } = getGlobalModels(
+    req,
+    'PivotReferralCode',
+    'PivotReferralRedemption',
+  );
+
+  const globalUserObjectId = mongoose.Types.ObjectId.isValid(gid)
+    ? new mongoose.Types.ObjectId(String(gid))
+    : null;
+  if (!globalUserObjectId) {
+    return {
+      error: 'Invalid identity for redemption.',
+      status: 403,
+      code: 'INVALID_GLOBAL_USER_ID',
+    };
+  }
+
+  const existingRedemption = await PivotReferralRedemption.findOne({
+    globalUserId: globalUserObjectId,
+    code,
+  }).lean();
+  if (existingRedemption) {
+    const refRow = await PivotReferralCode.findOne({ code }).select('redemptionCount maxRedemptions').lean();
+    return {
+      data: {
+        alreadyRedeemed: true,
+        redemptionCount: refRow?.redemptionCount ?? null,
+        maxRedemptions: refRow?.maxRedemptions ?? null,
+      },
+    };
+  }
+
+  const referralLean = await PivotReferralCode.findOne({ code }).lean();
+  if (!referralLean) {
+    return {
+      error: 'Invalid referral code.',
+      status: 404,
+      code: 'REFERRAL_CODE_NOT_FOUND',
+    };
+  }
+
+  const referralTenantKey = String(referralLean.tenantKey || '').toLowerCase();
+  if (!tenantKeyReq || referralTenantKey !== tenantKeyReq) {
+    return {
+      error: `Sign in against the pilot city (${referralTenantKey}) before redeeming this code.`,
+      status: 403,
+      code: 'TENANT_MISMATCH',
+    };
+  }
+
+  if (!referralLean.active) {
+    return {
+      error: 'This referral code is no longer active.',
+      status: 403,
+      code: 'REFERRAL_CODE_INACTIVE',
+    };
+  }
+  if (referralLean.expiresAt && new Date(referralLean.expiresAt) < new Date()) {
+    return {
+      error: 'This referral code has expired.',
+      status: 403,
+      code: 'REFERRAL_CODE_EXPIRED',
+    };
+  }
+  if (referralLean.redemptionCount >= referralLean.maxRedemptions) {
+    return {
+      error: 'This referral code has reached its redemption limit.',
+      status: 403,
+      code: 'REFERRAL_CODE_MAXED',
+    };
+  }
+
+  const updated = await PivotReferralCode.findOneAndUpdate(
+    {
+      _id: referralLean._id,
+      active: true,
+      $or: [{ expiresAt: null }, { expiresAt: { $gte: new Date() } }],
+      $expr: { $lt: ['$redemptionCount', '$maxRedemptions'] },
+    },
+    { $inc: { redemptionCount: 1 } },
+    { new: true }
+  ).lean();
+
+  if (!updated) {
+    return {
+      error: 'This referral code has reached its redemption limit.',
+      status: 403,
+      code: 'REFERRAL_CODE_MAXED',
+    };
+  }
+
+  try {
+    await PivotReferralRedemption.create({
+      globalUserId: globalUserObjectId,
+      code,
+      pivotReferralCodeId: updated._id,
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      await PivotReferralCode.updateOne({ _id: updated._id }, { $inc: { redemptionCount: -1 } });
+      const refRow = await PivotReferralCode.findOne({ code }).select('redemptionCount maxRedemptions').lean();
+      return {
+        data: {
+          alreadyRedeemed: true,
+          redemptionCount: refRow?.redemptionCount ?? null,
+          maxRedemptions: refRow?.maxRedemptions ?? null,
+        },
+      };
+    }
+    throw err;
+  }
+
+  return {
+    data: {
+      redeemed: true,
+      alreadyRedeemed: false,
+      redemptionCount: updated.redemptionCount,
+      maxRedemptions: updated.maxRedemptions,
+    },
+  };
+}
+
 module.exports = {
   isPivotTenant,
   normalizeReferralCodeInput,
@@ -331,6 +481,7 @@ module.exports = {
   validateCreatePayload,
   validateUpdatePayload,
   validateReferralCode,
+  redeemReferralCode,
   listReferralCodesForTenant,
   createReferralCode,
   updateReferralCode,
