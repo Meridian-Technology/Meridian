@@ -14,7 +14,7 @@ import { extractResourceId, buildResourcePreflightPayload } from '../../../../..
 import ReservationOpsPanel from '../../../../../CreateEvent/shared/ReservationOpsPanel';
 import './EventEditorTab.scss';
 
-function EventEditorTab({ event, agenda, orgId, onRefresh }) {
+function EventEditorTab({ event, agenda, orgId, onRefresh, readOnly = false }) {
     const { addNotification } = useNotification();
 
     const formConfigData = useFetch('/api/event-system-config/form-config');
@@ -313,6 +313,7 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
 
     return (
         <div className="event-editor-tab">
+            {!readOnly ? (
             <UnsavedChangesBanner
                 hasChanges={hasChanges}
                 onSave={performSave}
@@ -321,12 +322,13 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
                 saveText="Save"
                 discardText="Discard"
             />
-            {eventWithAgenda && <EventPreview event={eventWithAgenda} onRefetch={onRefresh} />}
+            ) : null}
+            {eventWithAgenda && <EventPreview event={eventWithAgenda} onRefetch={readOnly ? undefined : onRefresh} />}
             <div className="editor-header">
                 <h2>Details</h2>
             </div>
 
-            <div className="editor-content create-event-v3-form">
+            <fieldset className="editor-content create-event-v3-form" disabled={readOnly}>
                 <div className="form-section">
                     <DynamicFormField
                         field={{
@@ -489,9 +491,9 @@ function EventEditorTab({ event, agenda, orgId, onRefresh }) {
                         ))}
                     </div>
                 )}
-            </div>
+            </fieldset>
 
-            <EventCollaborationSection event={event} orgId={orgId} onRefresh={onRefresh} />
+            <EventCollaborationSection event={event} orgId={orgId} onRefresh={readOnly ? undefined : onRefresh} />
         </div>
     );
 }

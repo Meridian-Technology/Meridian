@@ -19,7 +19,8 @@ function EventDashboardFocusedHeader({
     orgId,
     onSendAnnouncement,
     onPostMortem,
-    showPostMortem
+    showPostMortem,
+    readOnly = false,
 }) {
     const [publishing, setPublishing] = useState(false);
     const { AtlasMain } = useGradient();
@@ -193,11 +194,13 @@ function EventDashboardFocusedHeader({
             </div>
             <div className="event-dashboard-focused-header__content">
                 <div className="event-dashboard-focused-header__top">
+                    {onClose ? (
                     <button type="button" className="event-dashboard-focused-header__close" onClick={onClose}>
                         <Icon icon="mdi:close" />
                     </button>
+                    ) : <span className="event-dashboard-focused-header__close-spacer" aria-hidden="true" />}
                     <div className="event-dashboard-focused-header__actions">
-                        {event?.status === 'draft' && (
+                        {!readOnly && event?.status === 'draft' && (
                             <button
                                 type="button"
                                 className="event-dashboard-focused-header__btn event-dashboard-focused-header__btn--publish"
@@ -209,6 +212,7 @@ function EventDashboardFocusedHeader({
                                 <span>{publishing ? 'Publishing...' : 'Publish'}</span>
                             </button>
                         )}
+                        {!readOnly && onRefresh ? (
                         <button
                             type="button"
                             className="event-dashboard-focused-header__btn event-dashboard-focused-header__btn--icon-only"
@@ -217,6 +221,8 @@ function EventDashboardFocusedHeader({
                         >
                             <Icon icon="mdi:refresh" />
                         </button>
+                        ) : null}
+                        {!readOnly ? (
                         <button
                             type="button"
                             className="event-dashboard-focused-header__btn event-dashboard-focused-header__btn--icon-only"
@@ -226,6 +232,7 @@ function EventDashboardFocusedHeader({
                         >
                             <Icon icon="mdi:share-variant" />
                         </button>
+                        ) : null}
                         {onSendAnnouncement && event?._id && orgId && (
                             <button
                                 type="button"

@@ -40,7 +40,7 @@ function withCurrentTenantSubdomain(rawUrl) {
     }
 }
 
-function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }) {
+function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color, readOnly = false }) {
     const { addNotification } = useNotification();
     const [refreshing, setRefreshing] = useState(false);
     const [qrCodeData, setQrCodeData] = useState(null);
@@ -394,7 +394,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                                 icon="mingcute:user-follow-fill"
                                 title="No attendees have checked in yet"
                                 description="Checked-in attendees will appear here. You can manually check in someone from the list of registrations."
-                                actions={
+                                actions={readOnly ? [] : (
                                     <button
                                         type="button"
                                         className="manual-checkin-button"
@@ -403,14 +403,14 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                                         <Icon icon="mingcute:user-add-fill" />
                                         Manually check in attendee
                                     </button>
-                                }
+                                )}
                             />
                         ) : (
                             <CheckInList 
                                 attendees={attendees}
                                 onManualCheckIn={() => {}}
-                                onRemoveCheckIn={handleRemoveCheckIn}
-                                onOpenManualCheckInModal={() => setShowManualCheckInModal(true)}
+                                onRemoveCheckIn={readOnly ? undefined : handleRemoveCheckIn}
+                                onOpenManualCheckInModal={readOnly ? undefined : () => setShowManualCheckInModal(true)}
                             />
                         )}
                     </div>
@@ -426,6 +426,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                 onSaved={() => onRefresh?.()}
             />
 
+            {!readOnly ? (
             <Popup
                 isOpen={showManualCheckInModal}
                 onClose={() => setShowManualCheckInModal(false)}
@@ -444,6 +445,7 @@ function EventCheckInTab({ event, orgId, onRefresh, isTabActive = false, color }
                     onOpenSettings={() => setShowSettingsModal(true)}
                 />
             </Popup>
+            ) : null}
         </div>
     );
 }

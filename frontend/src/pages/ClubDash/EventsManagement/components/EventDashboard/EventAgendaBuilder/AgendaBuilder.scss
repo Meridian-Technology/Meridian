@@ -61,6 +61,33 @@
     padding: 1.5rem 0;
     position: relative;
 
+    .agenda-live-banner {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        padding: 0.7rem 0.9rem;
+        border-radius: 0.75rem;
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        color: #312e81;
+        font-weight: 600;
+    }
+
+    .agenda-live-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        background: #4f46e5;
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+
     &.loading {
         display: flex;
         flex-direction: column;
@@ -403,6 +430,16 @@
         border: 1px solid var(--lighterborder);
         border-radius: 12px;
         transition: all 0.2s ease;
+
+        &.is-live {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.25);
+            background: linear-gradient(180deg, rgba(238, 242, 255, 0.95), var(--lightbackground));
+        }
+
+        &.is-past {
+            opacity: 0.72;
+        }
 
         &:hover {
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);

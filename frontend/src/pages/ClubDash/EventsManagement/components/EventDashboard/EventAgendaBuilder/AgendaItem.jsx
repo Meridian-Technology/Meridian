@@ -57,7 +57,7 @@ function AgendaItem({ item, onEdit, onDelete, readOnly = false, onClick }) {
 
     return (
         <div
-            className={`agenda-item ${onClick ? 'clickable' : ''}`}
+            className={`agenda-item ${item.isLive ? 'is-live' : ''}${item.isPast ? ' is-past' : ''}${onClick ? ' clickable' : ''}`}
             onClick={onClick}
             role={onClick ? 'button' : undefined}
         >
@@ -67,6 +67,12 @@ function AgendaItem({ item, onEdit, onDelete, readOnly = false, onClick }) {
                         <Icon icon={getTypeIcon(item.type)} />
                         <span>{getDisplayType(item.type, item.customTag)}</span>
                     </div>
+                    {item.isLive ? (
+                        <span className="agenda-live-pill">
+                            <Icon icon="mdi:record-circle" />
+                            Live now
+                        </span>
+                    ) : null}
                     {!item.isPublic && (
                         <span className="item-visibility">
                             <Icon icon="mdi:lock" />

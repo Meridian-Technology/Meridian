@@ -58,6 +58,7 @@ function CommunicationsTab({
                         Reach registrants and attendees by email and in-app notification. Choose who receives each announcement and preview the email before sending.
                     </p>
                     <div className="communications-tab-hero__actions">
+                        {typeof onSendAnnouncement === 'function' ? (
                         <button
                             type="button"
                             className="communications-tab-hero__cta"
@@ -66,6 +67,7 @@ function CommunicationsTab({
                             <Icon icon="mdi:email-send-outline" />
                             Send announcement
                         </button>
+                        ) : null}
                     </div>
                 </div>
             </HeaderContainer>

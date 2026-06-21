@@ -21,7 +21,7 @@ const MINUTE_HEIGHT_PRESETS = [
 
 const AGENDA_VIEW_STORAGE_KEY = 'meridian-agenda-view';
 
-function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
+function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true, readOnly = false, agendaFetchUrl = null }) {
     const { addNotification } = useNotification();
     const [items, setItems] = useState([]);
     const [editingItem, setEditingItem] = useState(null);
@@ -45,7 +45,7 @@ function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
     const headerRef = useRef(null);
 
     const { data: agendaData, loading, refetch } = useFetch(
-        event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/agenda` : null
+        agendaFetchUrl || (event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/agenda` : null)
     );
 
     useEffect(() => {
@@ -383,9 +383,18 @@ function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
     }
 
     const timeDiff = calculateTimeDifference();
+    const liveItem = items.find((item) => item.isLive);
 
     return (
         <div className="agenda-builder">
+            {liveItem ? (
+                <div className="agenda-live-banner" role="status">
+                    <Icon icon="mdi:record-circle" />
+                    <span>
+                        Live now: <strong>{liveItem.title}</strong>
+                    </span>
+                </div>
+            ) : null}
             <div ref={headerRef} className="agenda-header">
                 <div className="header-left">
                     <h3>
@@ -441,6 +450,8 @@ function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
                             <span>Calendar</span>
                         </button>
                     </div>
+                    {!readOnly ? (
+                    <>
                     <button className="btn-primary" onClick={handleAddItem}>
                         <Icon icon="mdi:plus" />
                         <span>Add Item</span>
@@ -459,8 +470,10 @@ function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
                             <span>{publishing ? 'Publishing...' : 'Publish'}</span>
                         </button>
                     )}
+                    </>
+                    ) : null}
 
-                    {saving && (
+                    {!readOnly && saving && (
                         <span className="saving-indicator">
                             <Icon icon="mdi:loading" className="spinner" />
                             Saving...
@@ -520,7 +533,7 @@ function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
                     icon="mdi:calendar-blank"
                     title="No agenda items yet"
                     description="Start building your event agenda by adding items."
-                    actions={[{ label: 'Add first item', onClick: handleAddItem, primary: true }]}
+                    actions={readOnly ? [] : [{ label: 'Add first item', onClick: handleAddItem, primary: true }]}
                 />
             ) : (
                 <div className="agenda-items-container">
@@ -530,14 +543,15 @@ function AgendaBuilder({ event, orgId, onRefresh, isTabActive = true }) {
                             <AgendaItem
                                 key={item.id}
                                 item={item}
-                                onEdit={() => handleEditItem(item)}
-                                onDelete={() => handleDeleteItem(item.id)}
+                                readOnly={readOnly}
+                                onEdit={readOnly ? undefined : () => handleEditItem(item)}
+                                onDelete={readOnly ? undefined : () => handleDeleteItem(item.id)}
                             />
                             ))}
                 </div>
             )}
 
-            {editingItem && (
+            {!readOnly && editingItem && (
                 <AgendaItemEditor
                     item={editingItem}
                     event={event}

@@ -67,15 +67,15 @@ function getTaskOwnerId(task) {
     return String(ownerRaw);
 }
 
-function EventPlanningOverviewSnapshot({ event, orgId, userId, onOpenTasks }) {
+function EventPlanningOverviewSnapshot({ event, orgId, userId, onOpenTasks, tasksFetchUrl = null }) {
     const [detailMode, setDetailMode] = useState('closed');
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [taskDraft, setTaskDraft] = useState(() => buildTaskDraft({ title: '', status: 'todo' }, () => 'todo'));
     const [detailSaving, setDetailSaving] = useState(false);
     const [detailError, setDetailError] = useState('');
-    const tasksUrl = event?._id && orgId
+    const tasksUrl = tasksFetchUrl || (event?._id && orgId
         ? `/org-event-management/${orgId}/events/${event._id}/tasks?status=all&priority=all`
-        : null;
+        : null);
 
     const { data: tasksData, refetch: refetchTasks } = useFetch(tasksUrl);
     const tasks = tasksData?.data?.tasks || [];

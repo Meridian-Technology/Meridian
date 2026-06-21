@@ -105,8 +105,27 @@ function writeDebugPhaseOverrideStore(nextStore) {
     }
 }
 
-function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
+function EventDashboardFocused({
+    event,
+    orgId,
+    onClose,
+    className = '',
+    readOnly = false,
+    demoMode = false,
+    demoCredentialId = '',
+    workflowPhaseOverride = '',
+    dashboardFetchUrl = null,
+    hideCloseButton = false,
+}) {
     const isDevEnv = process.env.NODE_ENV === 'development';
+    const isWorkspaceReadOnly = readOnly || demoMode;
+    const demoPhaseParam = encodeURIComponent(workflowPhaseOverride || 'planning');
+    const demoTasksFetchUrl = demoMode && event?._id
+        ? `/events-demo/tasks?phase=${demoPhaseParam}`
+        : null;
+    const demoAgendaFetchUrl = demoMode && event?._id
+        ? `/events-demo/agenda?phase=${demoPhaseParam}`
+        : null;
     const { addNotification } = useNotification();
     const { user } = useAuth();
     const [dashboardData, setDashboardData] = useState(null);
@@ -131,7 +150,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
     const closeTimerRef = useRef(null);
 
     const { data, loading: dataLoading, error, refetch } = useFetch(
-        event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/dashboard` : null
+        dashboardFetchUrl || (event?._id && orgId ? `/org-event-management/${orgId}/events/${event._id}/dashboard` : null)
     );
 
     useEffect(() => {
@@ -205,6 +224,14 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
     const handleTabChange = useCallback((tabId) => {
         setActiveTab(tabId);
         if (isMobileView) setShowMobileMenu(false);
+        if (demoMode) {
+            analytics.track('demo_tab_view', {
+                tab: tabId,
+                phase: workflowPhaseOverride || 'planning',
+                credentialId: demoCredentialId || undefined,
+            });
+            return;
+        }
         if (event?._id && orgId) {
             analytics.track('event_workspace_tab_view', {
                 event_id: event._id,
@@ -212,22 +239,21 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                 tab: tabId
             });
         }
-    }, [event?._id, isMobileView, orgId]);
+    }, [demoCredentialId, demoMode, event?._id, isMobileView, orgId, workflowPhaseOverride]);
 
     useEffect(() => {
-        if (event?._id && orgId && dashboardData && !loading) {
-            analytics.screen('Event Workspace Focused', { event_id: event._id, org_id: orgId });
-            analytics.track('event_workspace_view', { event_id: event._id, org_id: orgId, variant: 'focused' });
-            analytics.track('event_workspace_tab_view', {
-                event_id: event._id,
-                org_id: orgId,
-                tab: activeTab
-            });
-        }
-    }, [event?._id, orgId, dashboardData, loading, activeTab]);
+        if (demoMode || !event?._id || !orgId || !dashboardData || loading) return;
+        analytics.screen('Event Workspace Focused', { event_id: event._id, org_id: orgId });
+        analytics.track('event_workspace_view', { event_id: event._id, org_id: orgId, variant: 'focused' });
+        analytics.track('event_workspace_tab_view', {
+            event_id: event._id,
+            org_id: orgId,
+            tab: activeTab
+        });
+    }, [activeTab, dashboardData, demoMode, event?._id, loading, orgId]);
 
     useEffect(() => {
-        if (loading || !dashboardData) return;
+        if (loading || !dashboardData || demoMode) return;
         const urlParams = new URLSearchParams(window.location.search);
         const isTestMode = urlParams.get('test-event-onboarding') === 'true';
         const hasSeen = localStorage.getItem('eventDashboardOnboardingSeen');
@@ -266,7 +292,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
     const isEventCompleted = dashboardData?.stats?.operationalStatus === 'completed';
     const approvalStatus = dashboardData?.event?.status || '';
     const inferredWorkflowPhase = inferWorkflowPhase(eventForPhase, dashboardData?.stats);
-    const activeWorkflowPhase = debugPhaseOverride || inferredWorkflowPhase;
+    const activeWorkflowPhase = workflowPhaseOverride || (!demoMode && debugPhaseOverride) || inferredWorkflowPhase;
     const isPostMortemMode = forcePostMortemView || activeWorkflowPhase === EVENT_WORKFLOW_PHASES.POST_MORTEM;
 
     const approvalStatusConfig = useMemo(() => {
@@ -405,6 +431,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                             orgId={orgId}
                             userId={user?._id || user?.id}
                             onOpenTasks={() => handleTabChange('tasks')}
+                            tasksFetchUrl={demoTasksFetchUrl}
                         />
                     )}
                     <EventOverview
@@ -412,7 +439,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                         stats={workspaceStats}
                         agenda={workspaceAgenda}
                         orgId={orgId}
-                        onRefresh={handleRefresh}
+                        onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
                         onTabChange={handleTabChange}
                     />
                 </div>
@@ -431,8 +458,10 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                 <AgendaBuilder
                     event={workspaceEvent}
                     orgId={orgId}
-                    onRefresh={handleRefresh}
+                    onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
                     isTabActive={activeTab === 'agenda'}
+                    readOnly={isWorkspaceReadOnly}
+                    agendaFetchUrl={demoAgendaFetchUrl}
                 />
             )
         },
@@ -445,7 +474,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                 EVENT_WORKFLOW_PHASES.PLANNING,
                 EVENT_WORKFLOW_PHASES.RUN_OF_SHOW
             ],
-            content: <JobsManager event={workspaceEvent} orgId={orgId} onRefresh={handleRefresh} />
+            content: <JobsManager event={workspaceEvent} orgId={orgId} onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh} />
         },
         {
             id: 'tasks',
@@ -456,7 +485,15 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                 EVENT_WORKFLOW_PHASES.PLANNING,
                 EVENT_WORKFLOW_PHASES.RUN_OF_SHOW
             ],
-            content: <EventTasksTab event={workspaceEvent} orgId={orgId} onRefresh={handleRefresh} />
+            content: (
+                <EventTasksTab
+                    event={workspaceEvent}
+                    orgId={orgId}
+                    onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
+                    readOnly={isWorkspaceReadOnly}
+                    tasksFetchUrl={demoTasksFetchUrl}
+                />
+            )
         },
         {
             id: 'analytics',
@@ -472,7 +509,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                     event={workspaceEvent}
                     stats={workspaceStats}
                     orgId={orgId}
-                    onRefresh={handleRefresh}
+                    onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
                 />
             )
         },
@@ -487,7 +524,8 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                         event={workspaceEvent}
                         agenda={workspaceAgenda}
                         orgId={orgId}
-                        onRefresh={handleRefresh}
+                        onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
+                        readOnly={isWorkspaceReadOnly}
                     />
                     <div className="event-details-danger-zone">
                         <div className="event-details-danger-zone__content">
@@ -497,6 +535,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                                 <span>Permanently deletes this event and associated workspace data. This cannot be undone.</span>
                             </div>
                         </div>
+                        {!isWorkspaceReadOnly ? (
                         <button
                             type="button"
                             className="event-details-danger-zone__btn"
@@ -507,6 +546,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                         >
                             Cancel Event
                         </button>
+                        ) : null}
                     </div>
                 </div>
             )
@@ -524,6 +564,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                     color="var(--primary-color)"
                     openRegistrationSettingsFromAnnouncement={openRegistrationSettingsFromAnnouncement}
                     onConsumeOpenRegistrationSettings={() => setOpenRegistrationSettingsFromAnnouncement(false)}
+                    readOnly={isWorkspaceReadOnly}
                 />
             )
         },
@@ -536,8 +577,8 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                 <CommunicationsTab
                     event={workspaceEvent}
                     orgId={orgId}
-                    onRefresh={handleRefresh}
-                    onSendAnnouncement={() => setShowAnnouncementSpotlight(true)}
+                    onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
+                    onSendAnnouncement={isWorkspaceReadOnly ? undefined : () => setShowAnnouncementSpotlight(true)}
                     onOpenRegistrationSettings={handleOpenRegistrationSettings}
                     onNavigateToAnalytics={() => handleTabChange('analytics')}
                 />
@@ -552,9 +593,10 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                 <EventCheckInTab
                     event={workspaceEvent}
                     orgId={orgId}
-                    onRefresh={handleRefresh}
+                    onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
                     isTabActive={activeTab === 'checkin'}
                     color="var(--primary-color)"
+                    readOnly={isWorkspaceReadOnly}
                 />
             )
         },
@@ -563,7 +605,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
             label: 'QR Codes',
             icon: 'mdi:qrcode',
             phases: [EVENT_WORKFLOW_PHASES.PLANNING, EVENT_WORKFLOW_PHASES.RUN_OF_SHOW],
-            content: <EventQRTab event={workspaceEvent} orgId={orgId} onRefresh={handleRefresh} />
+            content: <EventQRTab event={workspaceEvent} orgId={orgId} onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh} />
         },
         {
             id: 'equipment',
@@ -573,6 +615,8 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
             content: <ComingSoon feature="Equipment" />
         }
     ];
+
+    const workspaceReadOnlyClass = demoMode ? ' event-dashboard-focused--demo-readonly' : '';
 
     const sidebarSectionsByPhase = {
         [EVENT_WORKFLOW_PHASES.DRAFTING]: [
@@ -661,14 +705,14 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
 
     return (
         <>
-            <div className={`event-dashboard-focused ${className}${isClosing ? ' event-dashboard-focused--closing' : ''}`}>
+            <div className={`event-dashboard-focused ${className}${isClosing ? ' event-dashboard-focused--closing' : ''}${workspaceReadOnlyClass}`}>
                 {isPostMortemMode ? (
                     <EventDashboardFocusedPostMortem
                         dashboardData={dashboardData}
                         fallbackEvent={event}
                         orgId={orgId}
-                        onClose={handleDashboardClose}
-                        onRefresh={handleRefresh}
+                        onClose={hideCloseButton ? undefined : handleDashboardClose}
+                        onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
                         isDashboardLoading={loading}
                         dashboardLoadError={!loading && !dashboardData}
                     />
@@ -678,12 +722,13 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                             condensed={effectiveActiveTab !== 'overview' || headerCondensed}
                             event={workspaceEvent}
                             stats={workspaceStats}
-                            onClose={handleDashboardClose}
-                            onRefresh={handleRefresh}
+                            onClose={hideCloseButton ? undefined : handleDashboardClose}
+                            onRefresh={isWorkspaceReadOnly ? undefined : handleRefresh}
                             orgId={orgId}
-                            onSendAnnouncement={() => setShowAnnouncementSpotlight(true)}
+                            onSendAnnouncement={isWorkspaceReadOnly ? undefined : () => setShowAnnouncementSpotlight(true)}
                             onPostMortem={handlePostMortem}
                             showPostMortem={isEventCompleted}
+                            readOnly={isWorkspaceReadOnly}
                         />
 
                         <div className="event-dashboard-focused__body">
@@ -727,7 +772,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                                         </div>
                                     )}
 
-                                    {collaborationAcceptBanner && (
+                                    {!demoMode && collaborationAcceptBanner && (
                                         <div className="event-dashboard-focused__banner" role="status">
                                             <p>
                                                 <strong>{formatCollaboratorNames(collaborationAcceptBanner.names)}</strong> accepted your collaboration invite.
@@ -781,7 +826,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                     </>
                 )}
 
-                {isDevEnv && event?._id && (
+                {isDevEnv && !demoMode && event?._id && (
                     <div className="event-dashboard-focused__debug-panel" role="complementary" aria-label="Dashboard state debugger">
                         <button
                             type="button"
@@ -851,10 +896,11 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                 )}
             </div>
 
-            <Popup isOpen={showOnboarding} onClose={handleOnboardingClose} customClassName="event-dashboard-onboarding-popup">
+            <Popup isOpen={!demoMode && showOnboarding} onClose={handleOnboardingClose} customClassName="event-dashboard-onboarding-popup">
                 <EventDashboardOnboarding onClose={handleOnboardingClose} />
             </Popup>
 
+            {!isWorkspaceReadOnly ? (
             <EventAnnouncementCompose
                 isOpen={showAnnouncementSpotlight}
                 onClose={() => setShowAnnouncementSpotlight(false)}
@@ -869,7 +915,9 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                 onSent={handleAnnouncementSent}
                 onOpenRegistrationSettings={handleOpenRegistrationSettings}
             />
+            ) : null}
 
+            {!isWorkspaceReadOnly ? (
             <Popup
                 isOpen={showCancelEventConfirm}
                 onClose={() => {
@@ -924,6 +972,7 @@ function EventDashboardFocused({ event, orgId, onClose, className = '' }) {
                     </div>
                 </div>
             </Popup>
+            ) : null}
         </>
     );
 }

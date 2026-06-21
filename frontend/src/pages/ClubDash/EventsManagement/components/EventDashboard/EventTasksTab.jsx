@@ -54,7 +54,7 @@ function readStoredViewMode() {
     return stored === 'kanban' || stored === 'list' ? stored : 'list';
 }
 
-function EventTasksTab({ event, orgId, onRefresh }) {
+function EventTasksTab({ event, orgId, onRefresh, readOnly = false, tasksFetchUrl = null }) {
     const { addNotification } = useNotification();
     const [newTask, setNewTask] = useState(createDefaultTaskForm);
     const [submitting, setSubmitting] = useState(false);
@@ -101,11 +101,18 @@ function EventTasksTab({ event, orgId, onRefresh }) {
         return params.toString();
     }, [statusFilter, priorityFilter, search]);
 
-    const { data, loading, error, refetch } = useFetch(
-        event?._id && orgId
-            ? `/org-event-management/${orgId}/events/${event._id}/tasks?${query}`
-            : null
-    );
+    const tasksRequestUrl = useMemo(() => {
+        if (tasksFetchUrl) {
+            const joiner = tasksFetchUrl.includes('?') ? '&' : '?';
+            return `${tasksFetchUrl}${joiner}${query}`;
+        }
+        if (event?._id && orgId) {
+            return `/org-event-management/${orgId}/events/${event._id}/tasks?${query}`;
+        }
+        return null;
+    }, [event?._id, orgId, query, tasksFetchUrl]);
+
+    const { data, loading, error, refetch } = useFetch(tasksRequestUrl);
     const detailTaskUrl =
         event?._id && orgId && selectedTaskId && detailMode !== 'closed'
             ? `/org-event-management/${orgId}/events/${event._id}/tasks/${selectedTaskId}`
@@ -931,6 +938,8 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                             <p>Plan and execute this event with guided, user-controlled tasks.</p>
                         </div>
                         <div className="event-tasks-tab__header-actions">
+                            {!readOnly ? (
+                            <>
                             <button
                                 type="button"
                                 className="event-tasks-tab__columns-btn"
@@ -965,6 +974,8 @@ function EventTasksTab({ event, orgId, onRefresh }) {
                             >
                                 {loadingSuggestions ? 'Loading suggestions…' : 'Suggest tasks'}
                             </button>
+                            </>
+                            ) : null}
                             <div className="event-tasks-tab__view-toggle">
                                 <button
                                     type="button"

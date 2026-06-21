@@ -52,7 +52,7 @@ function AgendaItemCalendarEvent({ item, onEdit, event, showContinuationHint = f
 
     return (
         <div
-            className={`agenda-item-calendar-event ${onEdit ? 'editable' : ''}`}
+            className={`agenda-item-calendar-event${item.isLive ? ' is-live' : ''}${item.isPast ? ' is-past' : ''}${onEdit ? ' editable' : ''}`}
             style={{
                 backgroundColor: colors.background,
                 border: `1px solid ${colors.border}`,
@@ -67,7 +67,10 @@ function AgendaItemCalendarEvent({ item, onEdit, event, showContinuationHint = f
                     : ''}
             </div>
             <div className="event-content">
-                <div className="event-name">{item.title || 'Untitled'}</div>
+                <div className="event-name">
+                    {item.isLive ? <span className="agenda-live-pill">Live</span> : null}
+                    {item.title || 'Untitled'}
+                </div>
                 {showContinuationHint && (
                     <span className="continuation-hint">Spans multiple days</span>
                 )}
