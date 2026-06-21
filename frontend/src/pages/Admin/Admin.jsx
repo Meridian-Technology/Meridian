@@ -16,6 +16,8 @@ import UserJourneyAnalytics from '../FeatureAdmin/UserJourneyAnalytics/UserJourn
 import IndividualUserJourney from '../FeatureAdmin/IndividualUserJourney/IndividualUserJourney';
 import OrgBetaFeatures from '../FeatureAdmin/OrgManagement/OrgBetaFeatures/OrgBetaFeatures';
 import AdminTenantDropdown from './AdminTenantDropdown/AdminTenantDropdown';
+import DemoCredentialsAdmin from './DemoCredentials/DemoCredentialsAdmin';
+import { isDemoTenantClient } from '../../utils/demoTenant';
 
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 
@@ -34,7 +36,20 @@ function Admin(){
         );
     }
 
-    const menuItems = [
+    const menuItems = isDemoTenantClient()
+        ? [
+            {
+                label: 'Demo credentials',
+                icon: 'mdi:key-chain',
+                element: <DemoCredentialsAdmin />,
+            },
+            {
+                label: 'General',
+                icon: 'ic:round-dashboard',
+                element: <General />,
+            },
+        ]
+        : [
         { 
             label: 'General', 
             icon: 'ic:round-dashboard',
@@ -101,7 +116,7 @@ function Admin(){
             icon: 'bx:stats',
             element: <BadgeManager/>
         }
-    ]
+    ];
 
     return(
         <Dashboard 
@@ -109,7 +124,7 @@ function Admin(){
             additionalClass='admin' 
             logo={AdminLogo} 
             middleItem={<AdminTenantDropdown />}
-            onBack={()=>navigate('/events-dashboard')}
+            onBack={() => navigate(isDemoTenantClient() ? '/events-demo' : '/events-dashboard')}
             enableSubSidebar={true}
         >
         </Dashboard>
