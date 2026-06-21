@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { getTenantKeys } from '../../config/tenantRedirect';
+import { getTenantKeys, DEMO_TENANT_KEY } from '../../config/tenantRedirect';
 import './DevTenantSelector.scss';
 
 const STORAGE_KEY = 'devTenantOverride';
 
+const DEV_TENANT_LABELS = {
+  [DEMO_TENANT_KEY]: 'demo (events-demo)',
+};
+
 /**
- * Dev-only tenant selector. Allows switching between rpi and tvcog for local testing
+ * Dev-only tenant selector. Allows switching between rpi, tvcog, and demo for local testing
  * without subdomains. Only renders when NODE_ENV !== 'production'.
  */
 function DevTenantSelector() {
@@ -20,7 +24,7 @@ function DevTenantSelector() {
     return null;
   }
 
-  const tenantKeys = getTenantKeys();
+  const tenantKeys = getTenantKeys({ includeDemo: true });
 
   const handleSelect = (value) => {
     if (value === '') {
@@ -34,7 +38,9 @@ function DevTenantSelector() {
     window.location.reload();
   };
 
-  const displayLabel = override ? override : 'default (rpi)';
+  const displayLabel = override
+    ? (DEV_TENANT_LABELS[override] || override)
+    : 'default (rpi)';
 
   return (
     <div className="DevTenantSelector">
@@ -63,7 +69,7 @@ function DevTenantSelector() {
               onClick={() => handleSelect(key)}
               className={`DevTenantSelector__option ${override === key ? 'DevTenantSelector__option--active' : ''}`}
             >
-              {key}
+              {DEV_TENANT_LABELS[key] || key}
             </button>
           ))}
         </div>

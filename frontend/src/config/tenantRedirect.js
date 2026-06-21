@@ -5,6 +5,8 @@
 
 const ROOT_HOSTS = ['www.meridian.study', 'meridian.study'];
 const TENANT_CONFIG_CACHE_KEY = 'tenantConfigCache';
+/** Not listed in the public school picker; available in the dev tenant selector only. */
+export const DEMO_TENANT_KEY = 'demo';
 const DEFAULT_TENANTS = [
   {
     tenantKey: 'rpi',
@@ -84,12 +86,35 @@ export function setTenantConfigCache(tenants = []) {
   } catch (_) {}
 }
 
+export function isSelectableTenant(tenantKey) {
+  return String(tenantKey || '').trim().toLowerCase() !== DEMO_TENANT_KEY;
+}
+
 export function getTenantDefinitions(options = {}) {
   const includeHidden = !!options.includeHidden;
+  const includeDemo = !!options.includeDemo;
   const cached = getCachedTenantConfig();
   const merged = mergeTenantRows(DEFAULT_TENANTS, cached?.tenants || []);
-  if (includeHidden) return merged;
-  return merged.filter((tenant) => VISIBLE_STATUSES.has(tenant.status));
+  let rows = merged;
+  if (!includeHidden) {
+    rows = rows.filter((tenant) => VISIBLE_STATUSES.has(tenant.status));
+  }
+  if (!includeDemo) {
+    rows = rows.filter((tenant) => isSelectableTenant(tenant.tenantKey));
+  } else if (!rows.some((tenant) => tenant.tenantKey === DEMO_TENANT_KEY)) {
+    rows = [
+      ...rows,
+      {
+        tenantKey: DEMO_TENANT_KEY,
+        name: 'Meridian Demo',
+        subdomain: DEMO_TENANT_KEY,
+        location: '',
+        status: 'active',
+        statusMessage: '',
+      },
+    ];
+  }
+  return rows;
 }
 
 export function isWww() {
@@ -162,6 +187,7 @@ export function getTenantKeys(options = {}) {
 }
 
 export function setLastTenant(tenantKey) {
+  if (!isSelectableTenant(tenantKey)) return;
   try {
     localStorage.setItem('lastTenant', tenantKey);
   } catch (_) {}
@@ -206,7 +232,8 @@ export function getCurrentTenantKey() {
 /** Get display name for current tenant. */
 export function getCurrentTenantDisplayName() {
   const key = getCurrentTenantKey();
-  const tenantMap = getTenantDefinitions({ includeHidden: true }).reduce((acc, tenant) => {
+  if (key === DEMO_TENANT_KEY) return 'Meridian Demo';
+  const tenantMap = getTenantDefinitions({ includeHidden: true, includeDemo: true }).reduce((acc, tenant) => {
     acc[tenant.tenantKey] = tenant.name;
     return acc;
   }, {});

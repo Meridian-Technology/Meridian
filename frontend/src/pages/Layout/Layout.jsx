@@ -6,6 +6,7 @@ import OrgInviteModal from '../../components/OrgInviteModal/OrgInviteModal';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import { isWww, isPathAllowedOnWww, hasDevTenantOverride, getLastTenant, getTenantKeys, getTenantRedirectUrl } from '../../config/tenantRedirect';
+import { isDemoTenantClient, isDemoTenantAllowedPath, isDemoAllowedPath } from '../../utils/demoTenant';
 
 function Layout() {
   const [visible, setVisible] = useState(false);
@@ -59,16 +60,27 @@ function Layout() {
 
   // On tenant subdomain, / goes straight to events dashboard (no landing)
   if (!isWww() && location.pathname === '/') {
+    if (isDemoTenantClient()) {
+      return <Navigate to="/events-demo" replace />;
+    }
     return <Navigate to="/events-dashboard" replace />;
   }
+
+  // Demo tenant is sandbox-only — not a normal school site
+  if (isDemoTenantClient() && !isDemoTenantAllowedPath(location.pathname)) {
+    return <Navigate to="/events-demo" replace />;
+  }
+
+  const isDemoSandboxRoute = isDemoTenantClient() && isDemoAllowedPath(location.pathname);
   
   return (
     <div style={{minHeight: viewport, position: 'relative', overflowX: 'clip', width: '100%'}}>
-      {/* The Banner is rendered here and will appear across all pages */}
-      <Banner visible={visible} setVisible={setVisible} bannerType="default" />
+      {!isDemoSandboxRoute ? (
+        <Banner visible={visible} setVisible={setVisible} bannerType="default" />
+      ) : null}
       
       {/* Org invite modal - shown when user has pending invites */}
-      {showOrgInviteModal && pendingOrgInvites?.length > 0 && (
+      {!isDemoSandboxRoute && showOrgInviteModal && pendingOrgInvites?.length > 0 ? (
         <OrgInviteModal
           invites={pendingOrgInvites}
           onAccept={handleOrgInviteAccept}
@@ -76,7 +88,7 @@ function Layout() {
           onClose={dismissOrgInviteModal}
           addNotification={addNotification}
         />
-      )}
+      ) : null}
       
       {/* This will render the content of the page (children) */}
       <main style={{minHeight: viewport, overflowX: 'clip', width: '100%'}}>

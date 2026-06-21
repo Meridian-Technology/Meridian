@@ -1,0 +1,234 @@
+.demo-events {
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at top left, rgba(99, 102, 241, 0.12), transparent 28%),
+        linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    color: #0f172a;
+}
+
+.demo-events--state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem;
+    text-align: center;
+}
+
+.demo-events__spin {
+    animation: demo-spin 1s linear infinite;
+    font-size: 1.5rem;
+}
+
+@keyframes demo-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.demo-events__login-card {
+    width: min(100%, 28rem);
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 2rem;
+}
+
+.demo-events__brand h1 {
+    margin: 0.35rem 0 0.75rem;
+    font-size: clamp(1.75rem, 4vw, 2.25rem);
+    line-height: 1.1;
+}
+
+.demo-events__brand p,
+.demo-events__footer-note {
+    color: #475569;
+    line-height: 1.5;
+}
+
+.demo-events__eyebrow,
+.demo-events__badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #4f46e5;
+    font-weight: 700;
+}
+
+.demo-events__form {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 1.5rem;
+}
+
+.demo-events__form label {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.demo-events__form input {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.75rem;
+    padding: 0.8rem 0.9rem;
+    font: inherit;
+    background: #fff;
+}
+
+.demo-events__submit {
+    margin-top: 0.5rem;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.85rem 1rem;
+    background: #4f46e5;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.demo-events__submit:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+.demo-events__error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.75rem;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 0.92rem;
+}
+
+.demo-events__footer-note {
+    margin-top: 1.25rem;
+    font-size: 0.9rem;
+}
+
+.demo-events--sandbox {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.demo-events__topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem 0.5rem;
+}
+
+.demo-events__topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.demo-events__event-name {
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+
+.demo-events__logout {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    border-radius: 999px;
+    padding: 0.55rem 0.95rem;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.demo-events__phase-rail {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.75rem 1rem 1rem;
+    flex-wrap: wrap;
+}
+
+.demo-events__phase-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border: 1px solid #cbd5e1;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 999px;
+    padding: 0.55rem 0.95rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.demo-events__phase-btn.is-active {
+    border-color: #4f46e5;
+    background: #eef2ff;
+    color: #312e81;
+}
+
+.demo-events__phase-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: #94a3b8;
+}
+
+.demo-events__phase-btn.is-active .demo-events__phase-dot {
+    background: #4f46e5;
+    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.18);
+}
+
+.demo-events__phase-connector {
+    width: 1.5rem;
+    height: 2px;
+    background: #cbd5e1;
+}
+
+.demo-events__workspace {
+    flex: 1;
+    min-height: 0;
+    animation: demo-fade-in 220ms ease;
+}
+
+.demo-events__dashboard {
+    min-height: calc(100vh - 11rem);
+}
+
+.demo-events__dashboard.event-dashboard-focused--demo-readonly {
+    border-radius: 1rem;
+    overflow: hidden;
+    margin: 0 0.75rem 0.5rem;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+}
+
+.event-dashboard-focused--demo-readonly .event-dashboard-focused__debug-panel {
+    display: none;
+}
+
+
+.demo-events__sandbox-footer {
+    padding: 0.75rem 1rem 1rem;
+    text-align: center;
+    color: #64748b;
+    font-size: 0.88rem;
+}
+
+@keyframes demo-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .demo-events__workspace {
+        animation: none;
+    }
+}

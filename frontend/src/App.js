@@ -4,6 +4,8 @@ import './assets/fonts.css';
 import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper, { StaticFullBleedPage } from './components/AnimatedPageWrapper/AnimatedPageWrapper';
+import DemoEventsPage from './pages/Demo/DemoEventsPage';
+import { isDemoTenantClient } from './utils/demoTenant';
 import { analytics } from './services/analytics/analytics';
 import { isWww, setLastTenant, setTenantConfigCache } from './config/tenantRedirect';
 
@@ -275,6 +277,9 @@ function App() {
                                             <Route path="/events-dashboard" element={<AnimatedPageWrapper><EventsHub/></AnimatedPageWrapper>}/>
                                             <Route path="/events" element={<AnimatedPageWrapper><EventsHub/></AnimatedPageWrapper>}/>
                                             <Route path="/event/:eventId" element={<AnimatedPageWrapper><EventPage/></AnimatedPageWrapper>}/>
+                                            {isDemoTenantClient() ? (
+                                                <Route path="/events-demo" element={<StaticFullBleedPage><DemoEventsPage /></StaticFullBleedPage>} />
+                                            ) : null}
                                             <Route path="/study-session-callback" element={<AnimatedPageWrapper><StudySessionCallback/></AnimatedPageWrapper>}/>
                                             <Route path="/study-session/:sessionId/responses" element={<AnimatedPageWrapper><StudySessionResponses/></AnimatedPageWrapper>}/>
                                             {/* oie routes */}
