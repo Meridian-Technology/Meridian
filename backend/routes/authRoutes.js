@@ -158,14 +158,30 @@ function validateUsername(username) { //keeping logic external, for easier testi
 
 // Registration endpoint
 router.post('/register', async (req, res) => {
+    const { isDemoTenant } = require('../constants/demoTenant');
     // When on www, require school in body so we use the correct tenant DB (landing is www-only; app is tenant-only)
     if (req.school === 'www') {
         const school = (req.body && req.body.school) ? String(req.body.school).trim().toLowerCase() : null;
         if (!school) {
             return res.status(400).json({ success: false, message: 'Please select your school or use your school’s login page (e.g. rpi.meridian.study).', code: 'SCHOOL_REQUIRED' });
         }
+        if (isDemoTenant(school)) {
+            return res.status(400).json({
+                success: false,
+                message: 'The demo is available at demo.meridian.study/events-demo.',
+                code: 'DEMO_TENANT_LOGIN_FORBIDDEN',
+            });
+        }
         req.school = school;
         req.db = await require('../connectionsManager').connectToDatabase(school);
+    }
+
+    if (isDemoTenant(req.school)) {
+        return res.status(403).json({
+            success: false,
+            message: 'Registration is not available on the demo site.',
+            code: 'DEMO_TENANT_LOGIN_FORBIDDEN',
+        });
     }
 
     // Extract user details from request body
@@ -300,10 +316,18 @@ router.post('/register', async (req, res) => {
 
 // Login endpoint
 router.post('/login', async (req, res) => {
+    const { isDemoTenant } = require('../constants/demoTenant');
     if (req.school === 'www') {
         const school = (req.body && req.body.school) ? String(req.body.school).trim().toLowerCase() : null;
         if (!school) {
             return res.status(400).json({ success: false, message: 'Please select your school or use your school’s login page (e.g. rpi.meridian.study).', code: 'SCHOOL_REQUIRED' });
+        }
+        if (isDemoTenant(school)) {
+            return res.status(400).json({
+                success: false,
+                message: 'The demo is available at demo.meridian.study/events-demo.',
+                code: 'DEMO_TENANT_LOGIN_FORBIDDEN',
+            });
         }
         req.school = school;
         req.db = await require('../connectionsManager').connectToDatabase(school);
@@ -314,6 +338,14 @@ router.post('/login', async (req, res) => {
     try {
         //check if it is an email or username, case insensitive for email
         const { user } = await loginUser({ email, password, req });
+
+        if (isDemoTenant(req.school) && !(user?.roles?.includes('admin') || user?.admin)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Use /events-demo to explore the demo. Admin login is for managing demo credentials only.',
+                code: 'DEMO_TENANT_LOGIN_FORBIDDEN',
+            });
+        }
 
         const globalUser = await authGlobalService.getOrCreateGlobalUser(req, user);
         await authGlobalService.getOrCreateTenantMembership(req, globalUser._id, user);

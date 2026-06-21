@@ -48,7 +48,9 @@
     "test:routes": "NODE_ENV=test jest --runInBand --testPathPatterns=tests/route-outcomes",
     "test:coverage": "NODE_ENV=test jest --runInBand --coverage",
     "setup-saml": "node scripts/setupSAML.js",
-    "migrate:org-member-roles": "node scripts/backfillOrgMemberRoles.js"
+    "migrate:org-member-roles": "node scripts/backfillOrgMemberRoles.js",
+    "seed:demo-tenant": "node --preserve-symlinks scripts/seed-demo-tenant.js",
+    "expire:demo-credentials": "node --preserve-symlinks scripts/expire-demo-credentials.js"
   },
   "devDependencies": {
     "jest": "^30.3.0",

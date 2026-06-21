@@ -12,6 +12,7 @@ const enforce = require('express-sslify');
 const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
+const { attachDemoUserFromToken, blockDemoWrites } = require('./middlewares/blockDemoWrites.js');
 
 const s3 = require('./aws-config');
 
@@ -22,13 +23,13 @@ function createApp() {
   let tenantConfigLastFetchedAt = 0;
 
   const corsOrigin = process.env.NODE_ENV === 'production'
-    ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
+    ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study', 'https://demo.meridian.study']
     : 'http://localhost:3000';
   initSocket(server, { origin: corsOrigin });
 
   const corsOptions = {
     origin: process.env.NODE_ENV === 'production'
-      ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
+      ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study', 'https://demo.meridian.study']
       : 'http://localhost:3000',
     credentials: true,
     optionsSuccessStatus: 200
@@ -103,7 +104,7 @@ function createApp() {
         // Development only: allow X-Tenant header or ?school= to override tenant (for local testing)
         if (process.env.NODE_ENV !== 'production') {
             const override = req.headers['x-tenant'] || req.query.school;
-            const validTenants = ['rpi', 'tvcog']; // keep in sync with connectionsManager
+            const validTenants = ['rpi', 'tvcog', 'demo']; // keep in sync with connectionsManager
             if (override && validTenants.includes(override.toLowerCase())) {
                 subdomain = override.toLowerCase();
             }
@@ -118,6 +119,9 @@ function createApp() {
         res.status(500).send('Database connection error');
     }
   });
+
+  app.use(attachDemoUserFromToken);
+  app.use(blockDemoWrites);
 
   // When on www, allow landing pages + APIs. Block tenant-only routes (auth, events, etc.).
   // Page paths: SPA routes (/, /landing, etc.) and static assets
@@ -249,6 +253,7 @@ function createApp() {
   const taskManagementRoutes = require('./routes/taskManagementRoutes.js');
   const roomRoutes = require('./routes/roomRoutes.js');
   const adminRoutes = require('./routes/adminRoutes.js');
+  const demoRoutes = require('./routes/demoRoutes.js');
   const eventsRoutes = require('./events/index.js');
   const notificationRoutes = require('./routes/notificationRoutes.js');
   const qrRoutes = require('./routes/qrRoutes.js');
@@ -287,6 +292,7 @@ function createApp() {
   app.use('/org-event-management', taskManagementRoutes);
   app.use('/admin', roomRoutes);
   app.use(adminRoutes);
+  app.use(demoRoutes);
   app.use(formRoutes);
   app.use('/notifications', notificationRoutes);
   app.use('/api/qr', qrRoutes);

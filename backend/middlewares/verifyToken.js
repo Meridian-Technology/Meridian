@@ -24,6 +24,9 @@ async function resolveRequestUser(req, decodedToken) {
             platformRoles: decodedToken.platformRoles || [],
             mfaConfigured: Boolean(decodedToken.mfaConfigured),
             mfaVerified: Boolean(decodedToken.mfaVerified),
+            isDemoSession: Boolean(decodedToken.isDemoSession),
+            demoCredentialId: decodedToken.demoCredentialId || null,
+            demoCredentialLabel: decodedToken.demoCredentialLabel || '',
         };
         return;
     }
@@ -31,10 +34,17 @@ async function resolveRequestUser(req, decodedToken) {
     req.user = {
         userId: decodedToken.userId,
         roles: decodedToken.roles || ['user'],
+        isDemoSession: Boolean(decodedToken.isDemoSession),
+        demoCredentialId: decodedToken.demoCredentialId || null,
+        demoCredentialLabel: decodedToken.demoCredentialLabel || '',
     };
 }
 
 const verifyToken = async (req, res, next) => {
+    if (req.user?.isDemoSession && req.user?.userId) {
+        return next();
+    }
+
     const token = req.cookies.accessToken ||
         (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
 
