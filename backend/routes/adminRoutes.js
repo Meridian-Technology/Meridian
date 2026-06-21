@@ -10,6 +10,9 @@ const { getConnections, disconnectSocket, disconnectAll } = require('../socket')
 const { createSession } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
 
+const { isDemoTenant } = require('../constants/demoTenant');
+const { demoAdminGate } = require('../middlewares/demoBootstrapAccess');
+
 const ACCESS_TOKEN_EXPIRY = '1m';
 const REFRESH_TOKEN_EXPIRY = '30d';
 const ACCESS_TOKEN_EXPIRY_MS = 60 * 1000;
@@ -96,11 +99,15 @@ router.get('/health', async (req, res) => {
   }
 });
 
+function filterPublicTenants(tenants = []) {
+  return tenants.filter((tenant) => !isDemoTenant(tenant.tenantKey));
+}
+
 router.get('/api/tenant-config', async (req, res) => {
   try {
     const { TenantConfig } = getGlobalModels(req, 'TenantConfig');
     const doc = await TenantConfig.findOne({ configKey: 'default' }).lean();
-    const tenants = mergeTenantRows(DEFAULT_TENANTS, doc?.tenants || []);
+    const tenants = filterPublicTenants(mergeTenantRows(DEFAULT_TENANTS, doc?.tenants || []));
     res.json({
       success: true,
       data: {
@@ -491,6 +498,61 @@ router.put('/admin/tenant-config', verifyToken, requireAdmin, async (req, res) =
   } catch (err) {
     console.error('PUT /admin/tenant-config failed:', err);
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * GET /admin/demo-seed-status – demo tenant only: whether events-demo seed exists
+ */
+router.get('/admin/demo-seed-status', demoAdminGate, async (req, res) => {
+  try {
+    const { isDemoTenant } = require('../constants/demoTenant');
+    if (!isDemoTenant(req.school)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Demo seed endpoints are only available on the demo tenant',
+        code: 'DEMO_TENANT_ONLY',
+      });
+    }
+    const { getDemoSeedStatus } = require('../services/seedDemoTenantService');
+    const data = await getDemoSeedStatus(req.db, req.school);
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('GET /admin/demo-seed-status failed:', err);
+    const status = err.code === 'DEMO_TENANT_ONLY' ? 404 : 500;
+    res.status(status).json({ success: false, message: err.message, code: err.code });
+  }
+});
+
+/**
+ * POST /admin/seed-demo-tenant – demo tenant only: seed events-demo fake data
+ * Body: { reset?: boolean } — pass reset=true to remove prior seed and re-seed
+ */
+router.post('/admin/seed-demo-tenant', demoAdminGate, async (req, res) => {
+  try {
+    const { isDemoTenant } = require('../constants/demoTenant');
+    if (!isDemoTenant(req.school)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Demo seed endpoints are only available on the demo tenant',
+        code: 'DEMO_TENANT_ONLY',
+      });
+    }
+    const { runSeedDemoTenant } = require('../services/seedDemoTenantService');
+    const reset = Boolean(req.body?.reset);
+    const data = await runSeedDemoTenant(req.db, { reset, tenantKey: req.school });
+    console.log('POST /admin/seed-demo-tenant completed:', {
+      tenant: req.school,
+      reset,
+      alreadySeeded: data.alreadySeeded,
+      orgId: data.manifest?.orgId,
+      eventId: data.manifest?.eventId,
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('POST /admin/seed-demo-tenant failed:', err);
+    const status = err.code === 'DEMO_TENANT_ONLY' ? 404 : 500;
+    res.status(status).json({ success: false, message: err.message, code: err.code });
   }
 });
 

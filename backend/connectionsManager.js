@@ -55,6 +55,7 @@ const getDbUriForSchool = (school) => {
     const schoolDbMap = {
         rpi: process.env.MONGO_URI_RPI,
         tvcog: process.env.MONGO_URI_TVCOG,
+        demo: process.env.MONGO_URI_DEMO,
     };
     return schoolDbMap[school] || process.env.MONGODB_URI || process.env.DEFAULT_MONGO_URI;
 };
