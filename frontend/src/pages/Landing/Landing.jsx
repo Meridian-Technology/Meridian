@@ -9,6 +9,7 @@ import WorkflowGraph from './WorkflowGraph';
 import RPI from "../../assets/Schools/RPI.svg";
 import useAuth from "../../hooks/useAuth";
 import { getLastTenant, getTenantKeys, getTenantRedirectUrl, isWww } from "../../config/tenantRedirect";
+import { getDemoEventsPortalUrl } from "../../utils/demoTenant";
 
 function Landing() {
     const navigate = useNavigate();
@@ -195,7 +196,7 @@ function Landing() {
                             <p className="hero__subtitle hero__subtitle--animated">Meridian unifies student life — organizations, events, and spaces — into one connected, data‑informed experience.</p>
                             <div className="hero__cta">
                                 <button className="btn btn--primary" onClick={() => navigate('/events-dashboard')}>Get started</button>
-                                <button className="btn btn--secondary" onClick={() => navigate('/contact')}>Explore demo</button>
+                                <button className="btn btn--secondary" onClick={() => { window.location.href = getDemoEventsPortalUrl(); }}>Explore demo</button>
                             </div>
                             {/* <div className="statbar">
                                 <div className="stat"><span className="stat__num">8,000+</span><span className="stat__label">unique visitors</span></div>
@@ -971,7 +972,7 @@ function Landing() {
                         </div>
                         <div className="footer__col">
                             <h6>Product</h6>
-                            <a href="/contact">Demo</a>
+                            <a href={getDemoEventsPortalUrl()}>Demo</a>
                             <a href="/documentation">Docs</a>
                             <a href="/mobile">Mobile app</a>
                         </div>
