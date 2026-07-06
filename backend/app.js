@@ -194,6 +194,7 @@ function createApp() {
     '/validate-token',
     '/refresh-token',
     '/admin/platform',
+    '/admin/pivot',
   ];
   app.use((req, res, next) => {
     if (req.school !== 'www') return next();
@@ -293,6 +294,7 @@ function createApp() {
   const roomRoutes = require('./routes/roomRoutes.js');
   const adminRoutes = require('./routes/adminRoutes.js');
   const platformTenantRoutes = require('./routes/platformTenantRoutes.js');
+  const pivotWeeklyDropRoutes = require('./routes/pivotWeeklyDropRoutes.js');
   const eventsRoutes = require('./events/index.js');
   const notificationRoutes = require('./routes/notificationRoutes.js');
   const qrRoutes = require('./routes/qrRoutes.js');
@@ -311,6 +313,7 @@ function createApp() {
   const shuttleConfigRoutes = require('./routes/shuttleConfigRoutes.js');
   const noticeRoutes = require('./routes/noticeRoutes.js');
   const pivotRoutes = require('./routes/pivotRoutes.js');
+  const pivotAdminRoutes = require('./routes/pivotAdminRoutes.js');
 
   app.use(authRoutes);
   app.use('/auth/saml', samlRoutes);
@@ -333,6 +336,7 @@ function createApp() {
   app.use('/admin', roomRoutes);
   app.use(adminRoutes);
   app.use(platformTenantRoutes);
+  app.use(pivotWeeklyDropRoutes);
   app.use(formRoutes);
   app.use('/notifications', notificationRoutes);
   app.use('/api/qr', qrRoutes);
@@ -348,6 +352,7 @@ function createApp() {
   app.use('/api/shuttle-config', shuttleConfigRoutes);
   app.use('/api/notice', noticeRoutes);
   app.use('/pivot', pivotRoutes);
+  app.use('/admin/pivot', pivotAdminRoutes);
   app.use('/verify-affiliated-email', affiliatedEmailRoutes);
   app.use('/proxy-image', require('./routes/proxyImageRoutes.js'));
 

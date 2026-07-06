@@ -182,4 +182,30 @@ describe('user route outcome tests', () => {
     expect(response.body.code).toBe('USERNAME_INVALID');
     expect(response.body.field).toBe('username');
   });
+
+  test('POST /register-push-token stores pushAppEdition', async () => {
+    const alice = await new User({
+      username: 'pushtest',
+      email: 'pushtest@example.com',
+      password: 'password123',
+    }).save();
+
+    const accessToken = jwt.sign(
+      {userId: alice._id.toString(), roles: ['user']},
+      process.env.JWT_SECRET,
+      {expiresIn: '1h'},
+    );
+
+    const response = await request(app)
+      .post('/register-push-token')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({pushToken: 'ExponentPushToken[test]', appEdition: 'pivot'});
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.appEdition).toBe('pivot');
+
+    const updated = await User.findById(alice._id).lean();
+    expect(updated.pushToken).toBe('ExponentPushToken[test]');
+    expect(updated.pushAppEdition).toBe('pivot');
+  });
 });

@@ -49,7 +49,12 @@
     "test:coverage": "NODE_ENV=test jest --runInBand --coverage",
     "setup-saml": "node scripts/setupSAML.js",
     "migrate:org-member-roles": "node scripts/backfillOrgMemberRoles.js",
-    "seed:pivot-referral-codes": "node migrations/seedPivotReferralCodes.js"
+    "seed:pivot-referral-codes": "node migrations/seedPivotReferralCodes.js",
+    "seed:pivot-feed-events": "node migrations/seedPivotFeedEvents.js",
+    "seed:pivot-feedback-config": "node migrations/seedPivotFeedbackConfig.js",
+    "seed:pivot-tag-catalog": "node migrations/seedPivotTagCatalog.js",
+    "rebuild:pivot-weekly-snapshot": "node migrations/rebuildPivotWeeklySnapshot.js",
+    "send:pivot-weekly-push": "node migrations/sendPivotWeeklyPush.js"
   },
   "devDependencies": {
     "jest": "^30.3.0",
