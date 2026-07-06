@@ -9,41 +9,22 @@ require('dotenv').config();
 
 const mongoose = require('mongoose');
 const { connectToGlobalDatabase } = require('../connectionsManager');
-const pivotTagCatalogSchema = require('../schemas/pivotTagCatalog');
-const { getPivotTagCatalogSeedRows } = require('../constants/pivotTagCatalogSeed');
-
-const COLLECTION = 'pivot_tag_catalog';
+const { seedPivotTagCatalog } = require('../services/pivotTagCatalogService');
 
 async function run() {
-  const rows = getPivotTagCatalogSeedRows();
-  const seedSlugs = new Set(rows.map((row) => row.slug));
-
   const globalDb = await connectToGlobalDatabase();
-  const PivotTagCatalog =
-    globalDb.models.PivotTagCatalog ||
-    globalDb.model('PivotTagCatalog', pivotTagCatalogSchema, COLLECTION);
+  const result = await seedPivotTagCatalog({ globalDb });
 
-  let upserted = 0;
-  for (const row of rows) {
-    await PivotTagCatalog.findOneAndUpdate(
-      { slug: row.slug },
-      { $set: row },
-      { upsert: true, new: true, runValidators: true }
-    );
-    upserted += 1;
+  if (result.error) {
+    throw new Error(result.error);
   }
 
-  const activeCount = await PivotTagCatalog.countDocuments({ active: true });
-  const totalCount = await PivotTagCatalog.countDocuments({});
-  const staleCount = await PivotTagCatalog.countDocuments({
-    slug: { $nin: [...seedSlugs] },
-  });
-
+  const { upserted, activeCount, totalCount, legacyNotInSeed } = result.data;
   console.log(
-    `[seed:pivot-tag-catalog] upserted=${upserted} active=${activeCount} total=${totalCount} legacy_not_in_seed=${staleCount}`
+    `[seed:pivot-tag-catalog] upserted=${upserted} active=${activeCount} total=${totalCount} legacy_not_in_seed=${legacyNotInSeed}`,
   );
   console.log(
-    '[seed:pivot-tag-catalog] Inactive catalog slugs remain valid on legacy events but are hidden from GET /pivot/tags'
+    '[seed:pivot-tag-catalog] Inactive catalog slugs remain valid on legacy events but are hidden from GET /pivot/tags',
   );
 }
 

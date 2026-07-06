@@ -18,7 +18,7 @@ const {
   updateIngestEvent,
 } = require('../services/pivotIngestPublishService');
 const { purgePivotCatalog } = require('../services/pivotCatalogPurgeService');
-const { listPivotTags } = require('../services/pivotTagCatalogService');
+const { listPivotTags, seedPivotTagCatalog } = require('../services/pivotTagCatalogService');
 const {
   suggestPivotEventTags,
   suggestPivotEventTagsBatch,
@@ -46,6 +46,30 @@ router.get('/tags', verifyToken, requirePlatformAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot tag catalog.',
+    });
+  }
+});
+
+router.post('/tags/seed', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await seedPivotTagCatalog(req);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    console.error('POST /admin/pivot/tags/seed failed:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to seed pivot tag catalog.',
     });
   }
 });

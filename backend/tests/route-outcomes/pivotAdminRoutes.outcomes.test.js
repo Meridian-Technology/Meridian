@@ -53,6 +53,7 @@ jest.mock('../../services/pivotCatalogPurgeService', () => ({
 
 jest.mock('../../services/pivotTagCatalogService', () => ({
   listPivotTags: jest.fn(),
+  seedPivotTagCatalog: jest.fn(),
 }));
 
 const { requirePlatformAdmin } = require('../../middlewares/requirePlatformAdmin');
@@ -76,7 +77,7 @@ const {
   suggestPivotEventTagsBatch,
 } = require('../../services/pivotTagSuggestService');
 const { purgePivotCatalog } = require('../../services/pivotCatalogPurgeService');
-const { listPivotTags } = require('../../services/pivotTagCatalogService');
+const { listPivotTags, seedPivotTagCatalog } = require('../../services/pivotTagCatalogService');
 const pivotAdminRoutes = require('../../routes/pivotAdminRoutes');
 
 function buildApp() {
@@ -384,6 +385,31 @@ describe('pivotAdminRoutes GET /admin/pivot/tags', () => {
     expect(response.status).toBe(200);
     expect(response.body.data.tags).toHaveLength(2);
     expect(listPivotTags).toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes POST /admin/pivot/tags/seed', () => {
+  beforeEach(() => {
+    seedPivotTagCatalog.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('seeds catalog tags for platform admin', async () => {
+    seedPivotTagCatalog.mockResolvedValue({
+      data: {
+        upserted: 18,
+        activeCount: 18,
+        totalCount: 18,
+        legacyNotInSeed: 0,
+        tags: [{ slug: 'live-music', label: 'live music' }],
+      },
+    });
+
+    const response = await request(buildApp()).post('/admin/pivot/tags/seed').send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.upserted).toBe(18);
+    expect(seedPivotTagCatalog).toHaveBeenCalled();
   });
 });
 
