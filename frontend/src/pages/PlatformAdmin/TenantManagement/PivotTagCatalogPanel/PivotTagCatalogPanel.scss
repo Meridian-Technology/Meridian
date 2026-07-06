@@ -1,0 +1,33 @@
+.pivot-tag-catalog {
+  &__empty {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #6b6f76;
+  }
+
+  &__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border: 1px solid #e6e6e6;
+    border-radius: 999px;
+    background: #fafafa;
+    font-size: 12px;
+  }
+
+  &__label {
+    color: #171717;
+    font-weight: 500;
+  }
+}

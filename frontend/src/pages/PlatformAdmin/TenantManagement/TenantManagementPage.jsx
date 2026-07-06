@@ -8,6 +8,7 @@ import TenantStatusDropdown from './TenantStatusDropdown/TenantStatusDropdown';
 import { formatTenantHealthMessage, isTenantHealthOk } from './tenantHealthUtils';
 import { isPivotTenant } from './tenantPivotUtils';
 import PivotReferralCodesPanel from './PivotReferralCodesPanel/PivotReferralCodesPanel';
+import PivotTagCatalogPanel from './PivotTagCatalogPanel/PivotTagCatalogPanel';
 import { useGradient } from '../../../hooks/useGradient';
 import './TenantManagementPage.scss';
 
@@ -340,7 +341,10 @@ function TenantDetail({
       <ManualStepsPanel tenant={tenant} onConfirmStep={onConfirmStep} savingStepId={savingStepId} />
 
       {isPivotTenant(tenant) ? (
-        <PivotReferralCodesPanel tenantKey={tenant.tenantKey} />
+        <>
+          <PivotTagCatalogPanel />
+          <PivotReferralCodesPanel tenantKey={tenant.tenantKey} />
+        </>
       ) : null}
 
       {isPivotTenant(tenant) && tenant.dropSchedule ? (

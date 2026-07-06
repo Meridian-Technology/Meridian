@@ -1,5 +1,6 @@
 const getGlobalModels = require('./getGlobalModelService');
 const { PIVOT_TAG_SLUG_PATTERN } = require('../schemas/pivotTagCatalog');
+const { getPivotTagCatalogSeedRows } = require('../constants/pivotTagCatalogSeed');
 
 const MAX_PIVOT_INTEREST_TAGS = 8;
 
@@ -140,8 +141,45 @@ async function listPivotTags(req, options = {}) {
   };
 }
 
+async function seedPivotTagCatalog(req) {
+  if (!req.globalDb) {
+    return { error: 'Global database context required.', status: 500 };
+  }
+
+  const rows = getPivotTagCatalogSeedRows();
+  const seedSlugs = new Set(rows.map((row) => row.slug));
+  const { PivotTagCatalog } = getGlobalModels(req, 'PivotTagCatalog');
+
+  let upserted = 0;
+  for (const row of rows) {
+    await PivotTagCatalog.findOneAndUpdate(
+      { slug: row.slug },
+      { $set: row },
+      { upsert: true, new: true, runValidators: true },
+    );
+    upserted += 1;
+  }
+
+  const [activeCount, totalCount, legacyNotInSeed] = await Promise.all([
+    PivotTagCatalog.countDocuments({ active: true }),
+    PivotTagCatalog.countDocuments({}),
+    PivotTagCatalog.countDocuments({ slug: { $nin: [...seedSlugs] } }),
+  ]);
+
+  return {
+    data: {
+      upserted,
+      activeCount,
+      totalCount,
+      legacyNotInSeed,
+      tags: rows.map((row) => ({ slug: row.slug, label: row.label })),
+    },
+  };
+}
+
 module.exports = {
   listPivotTags,
+  seedPivotTagCatalog,
   normalizePivotTagSlugs,
   validatePivotEventTags,
   validatePivotInterestTags,

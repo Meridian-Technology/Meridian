@@ -181,6 +181,7 @@ function PivotLabPage() {
   const [importSourceTags, setImportSourceTags] = useState([]);
   const [batchApplyTags, setBatchApplyTags] = useState([]);
   const [tagSuggestLoadingKey, setTagSuggestLoadingKey] = useState(null);
+  const [tagSeeding, setTagSeeding] = useState(false);
   const [importName, setImportName] = useState('');
   const [importLocation, setImportLocation] = useState('');
   const [importStartTime, setImportStartTime] = useState('');
@@ -235,11 +236,39 @@ function PivotLabPage() {
   const {
     data: tagsResponse,
     loading: tagsLoading,
+    refetch: refetchTags,
   } = useFetch('/admin/pivot/tags', {
     cache: NO_FETCH_CACHE,
   });
 
   const catalogTags = tagsResponse?.success ? (tagsResponse.data?.tags ?? EMPTY_LIST) : EMPTY_LIST;
+
+  const handleSeedTagCatalog = useCallback(async () => {
+    setTagSeeding(true);
+    const { data, error } = await authenticatedRequest('/admin/pivot/tags/seed', {
+      method: 'POST',
+      data: {},
+      headers: { 'Content-Type': 'application/json' },
+    });
+    setTagSeeding(false);
+
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Seed failed',
+        message: error || data?.message || 'Unable to seed tag catalog',
+        type: 'error',
+      });
+      return;
+    }
+
+    const { upserted, activeCount } = data.data || {};
+    addNotification({
+      title: 'Tag catalog seeded',
+      message: `Upserted ${upserted} tags (${activeCount} active).`,
+      type: 'success',
+    });
+    refetchTags();
+  }, [addNotification, refetchTags]);
 
   const buildTagSuggestPayload = useCallback((fields) => ({
     name: fields.name?.trim() || undefined,
@@ -970,6 +999,22 @@ function PivotLabPage() {
           </button>
         </div>
       </header>
+
+      {!tagsLoading && !catalogTags.length ? (
+        <div className="pivot-lab__tag-seed-banner" role="status">
+          <p>
+            The global tag catalog is empty. Seed it before publishing events or using tag pickers in Lab.
+          </p>
+          <button
+            type="button"
+            className="linear-btn linear-btn--primary linear-btn--sm"
+            onClick={handleSeedTagCatalog}
+            disabled={tagSeeding}
+          >
+            {tagSeeding ? 'Seeding…' : 'Seed tag catalog'}
+          </button>
+        </div>
+      ) : null}
 
       {snapshotLabel ? (
         <p className="pivot-lab__snapshot-meta">

@@ -3,6 +3,7 @@ jest.mock('../../services/getGlobalModelService', () => jest.fn());
 const getGlobalModels = require('../../services/getGlobalModelService');
 const {
   listPivotTags,
+  seedPivotTagCatalog,
   validatePivotInterestTags,
 } = require('../../services/pivotTagCatalogService');
 
@@ -40,6 +41,24 @@ describe('pivotTagCatalogService', () => {
 
     expect(result.error).toMatch(/Global database context required/);
     expect(result.status).toBe(500);
+  });
+
+  it('upserts seed rows and returns counts', async () => {
+    const findOneAndUpdate = jest.fn().mockResolvedValue({});
+    const countDocuments = jest
+      .fn()
+      .mockResolvedValueOnce(18)
+      .mockResolvedValueOnce(18)
+      .mockResolvedValueOnce(0);
+    PivotTagCatalog = { findOneAndUpdate, countDocuments };
+    getGlobalModels.mockReturnValue({ PivotTagCatalog });
+
+    const result = await seedPivotTagCatalog({ globalDb: {} });
+
+    expect(findOneAndUpdate).toHaveBeenCalled();
+    expect(result.data.upserted).toBeGreaterThan(0);
+    expect(result.data.activeCount).toBe(18);
+    expect(result.data.tags.some((tag) => tag.slug === 'live-music')).toBe(true);
   });
 });
 
