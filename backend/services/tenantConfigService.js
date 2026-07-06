@@ -150,9 +150,18 @@ async function getMergedTenants(req) {
   return mergeTenantRows(DEFAULT_TENANTS, doc?.tenants || []);
 }
 
-async function getTenantByKey(req, tenantKey) {
+async function getTenantByKey(req, tenantKeyOrSubdomain, options = {}) {
+  const key = String(tenantKeyOrSubdomain || '').trim().toLowerCase();
+  if (!key) return null;
   const tenants = await getMergedTenants(req);
-  return tenants.find((row) => row.tenantKey === tenantKey) || null;
+  if (options.exact) {
+    return tenants.find((row) => row.tenantKey === key) || null;
+  }
+  return (
+    tenants.find((row) => row.tenantKey === key) ||
+    tenants.find((row) => (row.subdomain || row.tenantKey) === key) ||
+    null
+  );
 }
 
 async function syncTenantUriCache(req) {
@@ -160,7 +169,12 @@ async function syncTenantUriCache(req) {
   const cache = {};
   tenants.forEach((tenant) => {
     const uri = deriveMongoUriForTenant(tenant.tenantKey, tenant);
-    if (uri) cache[tenant.tenantKey] = uri;
+    if (!uri) return;
+    cache[tenant.tenantKey] = uri;
+    const subdomain = String(tenant.subdomain || tenant.tenantKey).trim().toLowerCase();
+    if (subdomain && subdomain !== tenant.tenantKey) {
+      cache[subdomain] = uri;
+    }
   });
   setTenantUriCache(cache);
   return cache;
@@ -381,6 +395,8 @@ module.exports = {
   validateNewTenantPayload,
   validateTenantMetadataUpdate,
   upsertStoredTenantRow,
+  toStoredTenantRow,
+  getStoredTenantRows,
   DEFAULT_TENANTS,
   mergeTenantRows,
   normalizeTenantRows,

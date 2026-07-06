@@ -531,7 +531,18 @@ function TenantManagementPage() {
       });
       return false;
     }
-    addNotification({ title: 'Saved', message: `${tenantKey} details updated`, type: 'success' });
+    const savedKey = res.data?.tenantKey || tenantKey;
+    const renameNote = res.renamedFrom
+      ? ` Renamed from ${res.renamedFrom}.`
+      : '';
+    addNotification({
+      title: 'Saved',
+      message: `${savedKey} details updated.${renameNote}`,
+      type: 'success',
+    });
+    if (res.renamedFrom && savedKey !== selectedKey) {
+      setSelectedKey(savedKey);
+    }
     try {
       const cfgRes = await fetch('/api/tenant-config', { credentials: 'include' });
       const cfgPayload = await cfgRes.json();
@@ -539,7 +550,7 @@ function TenantManagementPage() {
     } catch (_) {}
     refetch();
     return true;
-  }, [addNotification, refetch]);
+  }, [addNotification, refetch, selectedKey]);
 
   const saveVisibility = useCallback(async (tenantKey, { status, statusMessage }) => {
     setSavingVisibilityKey(tenantKey);

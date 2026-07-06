@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import PivotDropScheduleFields from '../../shared/PivotDropScheduleFields';
 import { tenantToDropFormFields, mergeTenantMetadataPayload } from '../../shared/pivotDropScheduleForm';
+import { isDefaultTenantKey } from '../tenantPivotUtils';
 import './TenantMetadataModal.scss';
 import '../../shared/PivotDropScheduleFields.scss';
 
 function tenantToForm(tenant) {
   const isPivot = tenant.pivotPilot === true || tenant.tenantType === 'pivot';
   return {
+    tenantKey: tenant.tenantKey || '',
     name: tenant.name || '',
     location: tenant.location || '',
     subdomain: tenant.subdomain || tenant.tenantKey || '',
@@ -20,6 +22,10 @@ function tenantToForm(tenant) {
 
 function TenantMetadataModalContent({ tenant, saving, onSave, handleClose = () => {} }) {
   const [form, setForm] = useState(() => tenantToForm(tenant));
+  const tenantKeyLocked = isDefaultTenantKey(tenant.tenantKey);
+  const tenantKeyChanged =
+    !tenantKeyLocked &&
+    form.tenantKey.trim().toLowerCase() !== String(tenant.tenantKey || '').trim().toLowerCase();
 
   useEffect(() => {
     setForm(tenantToForm(tenant));
@@ -71,6 +77,10 @@ function TenantMetadataModalContent({ tenant, saving, onSave, handleClose = () =
       includeDropConfig: form.tenantType === 'pivot',
     });
 
+    if (tenantKeyChanged) {
+      payload.newTenantKey = form.tenantKey.trim().toLowerCase();
+    }
+
     const ok = await onSave(payload);
     if (ok !== false) handleClose();
   };
@@ -81,9 +91,34 @@ function TenantMetadataModalContent({ tenant, saving, onSave, handleClose = () =
       <p className="tenant-metadata-modal__lead">
         Update display and infrastructure metadata for <strong>{tenant.tenantKey}</strong>.
         Status and lifecycle controls are unchanged.
+        {tenantKeyChanged ? (
+          <>
+            {' '}
+            Renaming the tenant key updates referral codes, memberships, and Pivot snapshots that reference it.
+          </>
+        ) : null}
       </p>
 
       <div className="tenant-metadata-modal__grid">
+        <label className="tenant-metadata-modal__field">
+          <span className="tenant-metadata-modal__label">Tenant key</span>
+          <input
+            className="tenant-metadata-modal__input"
+            value={form.tenantKey}
+            onChange={(e) => handleChange('tenantKey', e.target.value.toLowerCase())}
+            required
+            pattern="[a-z][a-z0-9_-]{1,31}"
+            disabled={tenantKeyLocked}
+            aria-readonly={tenantKeyLocked}
+          />
+          {tenantKeyLocked ? (
+            <span className="tenant-metadata-modal__hint">Built-in tenants cannot be renamed.</span>
+          ) : (
+            <span className="tenant-metadata-modal__hint">
+              Internal id used by auth and APIs. Subdomain can differ (e.g. key <code>ic</code>, subdomain <code>ic</code>).
+            </span>
+          )}
+        </label>
         <label className="tenant-metadata-modal__field">
           <span className="tenant-metadata-modal__label">Display name</span>
           <input
