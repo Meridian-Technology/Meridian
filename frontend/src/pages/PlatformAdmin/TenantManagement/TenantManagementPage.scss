@@ -661,6 +661,20 @@ select.linear-input {
       color: #047857;
     }
   }
+
+  &__drop-meta {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--la-text-tertiary);
+  }
+
+  &__drop-hint {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--la-text-tertiary);
+  }
 }
 
 .linear-checklist {

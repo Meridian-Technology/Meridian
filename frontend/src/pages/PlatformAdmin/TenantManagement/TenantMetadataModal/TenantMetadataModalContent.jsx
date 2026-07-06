@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import PivotDropScheduleFields from '../../shared/PivotDropScheduleFields';
+import { tenantToDropFormFields, mergeTenantMetadataPayload } from '../../shared/pivotDropScheduleForm';
 import './TenantMetadataModal.scss';
+import '../../shared/PivotDropScheduleFields.scss';
 
 function tenantToForm(tenant) {
   const isPivot = tenant.pivotPilot === true || tenant.tenantType === 'pivot';
@@ -10,6 +13,8 @@ function tenantToForm(tenant) {
     tenantType: isPivot ? 'pivot' : 'campus',
     mongoDatabaseName: tenant.mongoDatabaseName || tenant.tenantKey || '',
     mongoUri: '',
+    isPivot,
+    ...(isPivot ? tenantToDropFormFields(tenant) : {}),
   };
 }
 
@@ -24,9 +29,34 @@ function TenantMetadataModalContent({ tenant, saving, onSave, handleClose = () =
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleOverrideChange = (index, field, value) => {
+    setForm((prev) => {
+      const nextOverrides = [...(prev.pivotDropOverrides || [])];
+      nextOverrides[index] = { ...nextOverrides[index], [field]: value };
+      return { ...prev, pivotDropOverrides: nextOverrides };
+    });
+  };
+
+  const handleAddOverride = () => {
+    setForm((prev) => ({
+      ...prev,
+      pivotDropOverrides: [
+        ...(prev.pivotDropOverrides || []),
+        { batchWeek: '', dayOfWeek: '4', hour: '18', minute: '0' },
+      ],
+    }));
+  };
+
+  const handleRemoveOverride = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      pivotDropOverrides: (prev.pivotDropOverrides || []).filter((_, rowIndex) => rowIndex !== index),
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const payload = {
+    const basePayload = {
       name: form.name.trim(),
       location: form.location.trim(),
       subdomain: form.subdomain.trim().toLowerCase(),
@@ -35,7 +65,11 @@ function TenantMetadataModalContent({ tenant, saving, onSave, handleClose = () =
       mongoDatabaseName: form.mongoDatabaseName.trim().toLowerCase() || tenant.tenantKey,
     };
     const uri = form.mongoUri.trim();
-    if (uri) payload.mongoUri = uri;
+    if (uri) basePayload.mongoUri = uri;
+
+    const payload = mergeTenantMetadataPayload(basePayload, form, {
+      includeDropConfig: form.tenantType === 'pivot',
+    });
 
     const ok = await onSave(payload);
     if (ok !== false) handleClose();
@@ -106,6 +140,16 @@ function TenantMetadataModalContent({ tenant, saving, onSave, handleClose = () =
             placeholder={tenant.mongoUriConfigured ? 'Leave blank to keep current URI' : 'Set connection URI'}
           />
         </label>
+
+        {form.tenantType === 'pivot' ? (
+          <PivotDropScheduleFields
+            form={form}
+            onChange={handleChange}
+            onOverrideChange={handleOverrideChange}
+            onAddOverride={handleAddOverride}
+            onRemoveOverride={handleRemoveOverride}
+          />
+        ) : null}
       </div>
 
       <footer className="tenant-metadata-modal__footer">

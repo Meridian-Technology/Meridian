@@ -342,6 +342,26 @@ function TenantDetail({
       {isPivotTenant(tenant) ? (
         <PivotReferralCodesPanel tenantKey={tenant.tenantKey} />
       ) : null}
+
+      {isPivotTenant(tenant) && tenant.dropSchedule ? (
+        <section className="tenant-detail__section" aria-label="Weekly drop schedule">
+          <h3 className="linear-section__title">Weekly drop</h3>
+          <div className="linear-detail__stats">
+            <div className="linear-stat linear-stat--wide">
+              <span className="linear-stat__label">Next drop</span>
+              <span className="linear-stat__value">{tenant.dropSchedule.nextDropFormatted}</span>
+              <span className="tenant-detail__drop-meta">
+                {tenant.dropSchedule.localSchedule}
+                {' · '}
+                {tenant.dropSchedule.source === 'override' ? 'override week' : 'default schedule'}
+              </span>
+            </div>
+          </div>
+          <p className="tenant-detail__drop-hint">
+            Edit in tenant details or Platform Admin → Weekly drop.
+          </p>
+        </section>
+      ) : null}
     </article>
   );
 }

@@ -8,7 +8,10 @@ const {
   normalizeTenantOverrides,
   mergeSparseTenantOverrides,
   mergeTenantRows,
+  normalizePivotDropFields,
+  normalizePivotDropOverrides,
 } = require('../constants/defaultTenants');
+const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
 const {
   connectToDatabase,
   setTenantUriCache,
@@ -85,6 +88,11 @@ function toStoredTenantRow(tenant) {
     mongoUri: tenant.mongoUri,
     mongoDatabaseName: tenant.mongoDatabaseName,
     pivotCatalogOrgId: tenant.pivotCatalogOrgId,
+    pivotDropTimezone: tenant.pivotDropTimezone,
+    pivotDropDayOfWeek: tenant.pivotDropDayOfWeek,
+    pivotDropHour: tenant.pivotDropHour,
+    pivotDropMinute: tenant.pivotDropMinute,
+    pivotDropOverrides: tenant.pivotDropOverrides,
     provisioningConfirmations: tenant.provisioningConfirmations,
   };
   if (isDefault) {
@@ -315,6 +323,11 @@ function validateTenantMetadataUpdate(body = {}) {
   if (body.tenantType !== undefined && !['campus', 'pivot'].includes(body.tenantType)) {
     return { error: 'tenantType must be campus or pivot.' };
   }
+
+  if (body.pivotDropTimezone !== undefined && !String(body.pivotDropTimezone).trim()) {
+    return { error: 'pivotDropTimezone cannot be empty.' };
+  }
+
   return { ok: true };
 }
 
@@ -347,6 +360,7 @@ function validateNewTenantPayload(body = {}) {
       pivotPilot: tenantType === 'pivot' || body.pivotPilot === true,
       mongoUri,
       mongoDatabaseName,
+      ...(tenantType === 'pivot' ? { ...PIVOT_DROP_PILOT_DEFAULTS } : {}),
     }),
   };
 }

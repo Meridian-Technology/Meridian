@@ -12,6 +12,13 @@ const {
   upsertStoredTenantRow,
   syncTenantUriCache,
 } = require('../services/tenantConfigService');
+const { buildDropSchedulePayload } = require('../services/pivotConfigService');
+const { toIsoWeek } = require('../utilities/pivotIsoWeek');
+const { isPivotTenant } = require('../utilities/pivotDropSchedule');
+const {
+  normalizePivotDropFields,
+  normalizePivotDropOverrides,
+} = require('../constants/defaultTenants');
 const { invalidateTenantConnection } = require('../connectionsManager');
 const {
   listReferralCodesForTenant,
@@ -22,12 +29,21 @@ const {
 
 const router = express.Router();
 
+function enrichTenantForAdmin(tenant, extras = {}) {
+  const serialized = serializeTenantForAdmin(tenant, extras);
+  if (isPivotTenant(tenant)) {
+    const batchWeek = extras.batchWeek || toIsoWeek();
+    serialized.dropSchedule = buildDropSchedulePayload(tenant, batchWeek);
+  }
+  return serialized;
+}
+
 async function listTenantsWithHealth(req) {
   const tenants = await getMergedTenants(req);
   return Promise.all(
     tenants.map(async (tenant) => {
       const health = await pingTenantDatabase(tenant.tenantKey, tenant);
-      return serializeTenantForAdmin(tenant, { health });
+      return enrichTenantForAdmin(tenant, { health });
     })
   );
 }
@@ -50,7 +66,7 @@ router.get('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       return res.status(404).json({ success: false, message: 'Tenant not found.' });
     }
     const health = await pingTenantDatabase(tenantKey, tenant);
-    res.json({ success: true, data: serializeTenantForAdmin(tenant, { health }) });
+    res.json({ success: true, data: enrichTenantForAdmin(tenant, { health }) });
   } catch (err) {
     console.error('GET /admin/platform/tenants/:tenantKey failed:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -96,7 +112,7 @@ router.post('/admin/platform/tenants', verifyToken, requirePlatformAdmin, async 
     health = await pingTenantDatabase(saved.tenantKey, saved);
     res.status(201).json({
       success: true,
-      data: serializeTenantForAdmin(saved, { health, pivotCatalog }),
+      data: enrichTenantForAdmin(saved, { health, pivotCatalog }),
     });
   } catch (err) {
     console.error('POST /admin/platform/tenants failed:', err);
@@ -136,6 +152,13 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       provisioningConfirmations: confirmations,
     };
 
+    const dropPatch = {};
+    normalizePivotDropFields(req.body, dropPatch);
+    if (req.body.pivotDropOverrides !== undefined) {
+      dropPatch.pivotDropOverrides = normalizePivotDropOverrides(req.body.pivotDropOverrides) || [];
+    }
+    Object.assign(updated, dropPatch);
+
     const mergedPreview = (await getMergedTenants(req)).map((row) =>
       row.tenantKey === tenantKey ? updated : row
     );
@@ -153,7 +176,7 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
     const saved = await upsertStoredTenantRow(req, updated, updatedBy);
     const health = await pingTenantDatabase(tenantKey, saved);
 
-    res.json({ success: true, data: serializeTenantForAdmin(saved, { health }) });
+    res.json({ success: true, data: enrichTenantForAdmin(saved, { health }) });
   } catch (err) {
     console.error('PUT /admin/platform/tenants/:tenantKey failed:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -168,7 +191,7 @@ router.post('/admin/platform/tenants/:tenantKey/health-check', verifyToken, requ
       return res.status(404).json({ success: false, message: 'Tenant not found.' });
     }
     const health = await pingTenantDatabase(tenantKey, tenant);
-    res.json({ success: true, data: serializeTenantForAdmin(tenant, { health }) });
+    res.json({ success: true, data: enrichTenantForAdmin(tenant, { health }) });
   } catch (err) {
     console.error('POST health-check failed:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -203,7 +226,7 @@ router.post('/admin/platform/tenants/:tenantKey/provision-pivot-catalog', verify
     res.json({
       success: true,
       data: {
-        ...serializeTenantForAdmin(saved, { health }),
+        ...enrichTenantForAdmin(saved, { health }),
         pivotCatalog,
       },
     });

@@ -1,6 +1,60 @@
 const TENANT_STATUSES = new Set(['active', 'coming_soon', 'maintenance', 'hidden']);
 const TENANT_TYPES = new Set(['campus', 'pivot']);
 
+function normalizePivotDropOverrides(rows = []) {
+  if (!Array.isArray(rows)) return undefined;
+
+  const normalized = rows
+    .map((row) => {
+      const batchWeek = String(row?.batchWeek || '').trim();
+      if (!/^\d{4}-W\d{2}$/.test(batchWeek)) return null;
+      const dayOfWeek = Number(row?.dayOfWeek);
+      const hour = Number(row?.hour);
+      if (!Number.isFinite(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) return null;
+      if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+      const minuteRaw = row?.minute;
+      const minute =
+        minuteRaw === undefined || minuteRaw === null
+          ? 0
+          : Number(minuteRaw);
+      if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+      return { batchWeek, dayOfWeek, hour, minute };
+    })
+    .filter(Boolean);
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizePivotDropFields(row = {}, target = {}) {
+  if (row.pivotDropTimezone !== undefined && row.pivotDropTimezone !== null) {
+    const timezone = String(row.pivotDropTimezone).trim();
+    if (timezone) target.pivotDropTimezone = timezone;
+  }
+  if (row.pivotDropDayOfWeek !== undefined && row.pivotDropDayOfWeek !== null) {
+    const dayOfWeek = Number(row.pivotDropDayOfWeek);
+    if (Number.isFinite(dayOfWeek) && dayOfWeek >= 0 && dayOfWeek <= 6) {
+      target.pivotDropDayOfWeek = dayOfWeek;
+    }
+  }
+  if (row.pivotDropHour !== undefined && row.pivotDropHour !== null) {
+    const hour = Number(row.pivotDropHour);
+    if (Number.isFinite(hour) && hour >= 0 && hour <= 23) {
+      target.pivotDropHour = hour;
+    }
+  }
+  if (row.pivotDropMinute !== undefined && row.pivotDropMinute !== null) {
+    const minute = Number(row.pivotDropMinute);
+    if (Number.isFinite(minute) && minute >= 0 && minute <= 59) {
+      target.pivotDropMinute = minute;
+    }
+  }
+  const overrides = normalizePivotDropOverrides(row.pivotDropOverrides);
+  if (overrides) {
+    target.pivotDropOverrides = overrides;
+  }
+  return target;
+}
+
 const DEFAULT_TENANTS = [
   {
     tenantKey: 'rpi',
@@ -49,6 +103,8 @@ function normalizeTenantRow(row = {}) {
       pickerVerified: row?.provisioningConfirmations?.pickerVerified === true,
     },
   };
+
+  return normalizePivotDropFields(row, normalized);
 }
 
 function normalizeTenantRows(rows = []) {
@@ -111,6 +167,8 @@ function normalizeTenantOverride(row = {}) {
     }
   }
 
+  normalizePivotDropFields(row, out);
+
   return Object.keys(out).length > 1 ? out : null;
 }
 
@@ -154,6 +212,8 @@ module.exports = {
   TENANT_STATUSES,
   TENANT_TYPES,
   DEFAULT_TENANTS,
+  normalizePivotDropOverrides,
+  normalizePivotDropFields,
   normalizeTenantRow,
   normalizeTenantRows,
   normalizeTenantOverride,

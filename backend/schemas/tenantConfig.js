@@ -1,5 +1,15 @@
 const mongoose = require('mongoose');
 
+const pivotDropOverrideSchema = new mongoose.Schema(
+  {
+    batchWeek: { type: String, required: true, trim: true },
+    dayOfWeek: { type: Number, required: true, min: 0, max: 6 },
+    hour: { type: Number, required: true, min: 0, max: 23 },
+    minute: { type: Number, default: 0, min: 0, max: 59 },
+  },
+  { _id: false }
+);
+
 const tenantEntrySchema = new mongoose.Schema(
   {
     tenantKey: { type: String, required: true, trim: true, lowercase: true },
@@ -21,6 +31,11 @@ const tenantEntrySchema = new mongoose.Schema(
     mongoUri: { type: String, default: null, trim: true },
     mongoDatabaseName: { type: String, default: null, trim: true, lowercase: true },
     pivotCatalogOrgId: { type: String, default: null, trim: true },
+    pivotDropTimezone: { type: String, default: null, trim: true },
+    pivotDropDayOfWeek: { type: Number, default: null, min: 0, max: 6 },
+    pivotDropHour: { type: Number, default: null, min: 0, max: 23 },
+    pivotDropMinute: { type: Number, default: 0, min: 0, max: 59 },
+    pivotDropOverrides: { type: [pivotDropOverrideSchema], default: undefined },
     provisioningConfirmations: {
       dns: { type: Boolean, default: false },
       cors: { type: Boolean, default: false },
