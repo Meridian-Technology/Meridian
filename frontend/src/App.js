@@ -46,7 +46,7 @@ import TermsOfService from './pages/TermsOfService/TermsOfService';
 import ChildSafetyStandards from './pages/ChildSafetyStandards/ChildSafetyStandards';
 import SAMLCallback from './components/SAMLCallback/SAMLCallback';
 import EmailVerification from './pages/EmailVerification';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
 import { CacheProvider } from './CacheContext';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -229,6 +229,7 @@ function App() {
                                             <Route path="/tenant-status" element={<AnimatedPageWrapper><TenantStatus /></AnimatedPageWrapper>}/>
                                             <Route element={<PlatformProtectedRoute />}>
                                                 <Route path="/platform-admin" element={<AnimatedPageWrapper><PlatformAdmin /></AnimatedPageWrapper>} />
+                                                <Route path="/admin/pivot" element={<Navigate to="/platform-admin?page=1" replace />} />
                                             </Route>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>
                                             <Route path="*" element={<Error />}/>

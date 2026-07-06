@@ -2,6 +2,8 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import Dashboard from '../../components/Dashboard/Dashboard';
 import TenantManagementPage from './TenantManagement/TenantManagementPage';
+import PivotLabPage from './PivotLab/PivotLabPage';
+import PivotWeeklyDropPage from './PivotWeeklyDrop/PivotWeeklyDropPage';
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 import '../Admin/Admin.scss';
 import './PlatformAdmin.scss';
@@ -14,6 +16,16 @@ function PlatformAdmin() {
       label: 'Tenants',
       icon: 'mdi:city-variant-outline',
       element: <TenantManagementPage />,
+    },
+    {
+      label: 'Pivot Lab',
+      icon: 'mdi:flask-outline',
+      element: <PivotLabPage />,
+    },
+    {
+      label: 'Weekly drop',
+      icon: 'mdi:bell-ring-outline',
+      element: <PivotWeeklyDropPage />,
     },
   ];
 

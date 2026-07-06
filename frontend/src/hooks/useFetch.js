@@ -68,25 +68,41 @@ export const authenticatedRequest = async (url, options = {}) => {
 };
 
 /**
- * @param options.params For GET requests, pass a stable object (e.g. from useMemo([])). Inline `{ ... }` changes
- *   identity every render and will refetch in a tight loop because params is in the memo dependency array.
+ * @param options.params Query params. Inline `{ ... }` is safe — compared by serialized value, not reference.
+ * @param options.cache Cache config. Inline `{ enabled: false }` is safe — compared by enabled/ttlMs, not reference.
  */
 export const useFetch = (url, options = { method: "GET", data: null }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Memoize the options to prevent unnecessary re-renders
-  const memoizedOptions = useMemo(() => ({
-    method: options.method || "GET",
-    data: options.data || null,
-    headers: options.headers || {},
-    params: options.params || {},
-    cache: options.cache || null,
-  }), [options.method, options.data, options.headers, options.params, options.cache]);
+  const paramsKey = useMemo(() => stableSerialize(options.params || {}), [options.params]);
+  const dataKey = useMemo(() => stableSerialize(options.data ?? null), [options.data]);
+  const headersKey = useMemo(() => stableSerialize(options.headers || {}), [options.headers]);
+  const cacheEnabled = Boolean(options.cache?.enabled);
+  const cacheTtlMs =
+    typeof options.cache?.ttlMs === "number" && options.cache.ttlMs > 0
+      ? options.cache.ttlMs
+      : null;
 
-  const fetchData = useCallback(async (options = {}) => {
-    const { silent = false, bypassCache = false } = options;
+  const memoizedOptions = useMemo(
+    () => ({
+      method: options.method || "GET",
+      data: options.data || null,
+      headers: options.headers || {},
+      params: options.params || {},
+      cache: options.cache
+        ? {
+            enabled: cacheEnabled,
+            ...(cacheTtlMs != null ? { ttlMs: cacheTtlMs } : {}),
+          }
+        : null,
+    }),
+    [options.method, dataKey, headersKey, paramsKey, cacheEnabled, cacheTtlMs],
+  );
+
+  const fetchData = useCallback(async (fetchOpts = {}) => {
+    const { silent = false, bypassCache = false, signal } = fetchOpts;
     // Don't fetch if URL is null or undefined
     if (!url) {
       setLoading(false);
@@ -123,12 +139,16 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
         headers: memoizedOptions.headers,
         withCredentials: true,
         params: memoizedOptions.params,
+        signal,
       });
       setData(response.data);
       if (useCache && cacheKey) {
         fetchResponseCache.set(cacheKey, { data: response.data, timestamp: Date.now() });
       }
     } catch (err) {
+      if (axios.isCancel(err) || err.code === "ERR_CANCELED") {
+        return;
+      }
       if (err.response?.status === 401 && 
           (err.response?.data?.code === 'TOKEN_EXPIRED' || err.response?.data?.code === 'NO_TOKEN')) {
         try {
@@ -141,6 +161,7 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
             headers: memoizedOptions.headers,
             withCredentials: true,
             params: memoizedOptions.params,
+            signal,
           });
           setData(retryResponse.data);
           if (useCache && cacheKey) {
@@ -166,12 +187,14 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
         setError(err.message);
       }
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && !signal?.aborted) setLoading(false);
     }
   }, [url, memoizedOptions]);
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData({ signal: controller.signal });
+    return () => controller.abort();
   }, [fetchData]);
 
   const refetch = useCallback((opts = {}) => fetchData({ bypassCache: true, ...opts }), [fetchData]);

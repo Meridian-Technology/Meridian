@@ -29,12 +29,18 @@ const TENANT_DISPLAY_NAMES = DEFAULT_TENANTS.reduce((acc, tenant) => {
   return acc;
 }, {});
 
+/** Pivot pilot cities use referral/onboarding — not the campus institution picker. */
+export function isPivotTenant(tenant) {
+  return tenant?.pivotPilot === true || tenant?.tenantType === 'pivot';
+}
+
 function normalizeTenantRows(rows = []) {
   return rows
     .map((row) => {
       const tenantKey = String(row?.tenantKey || '').trim().toLowerCase();
       if (!tenantKey) return null;
       const status = String(row?.status || 'active').trim();
+      const tenantType = row?.tenantType === 'pivot' ? 'pivot' : 'campus';
       return {
         tenantKey,
         name: String(row?.name || tenantKey).trim(),
@@ -42,6 +48,8 @@ function normalizeTenantRows(rows = []) {
         location: String(row?.location || '').trim(),
         status: ['active', 'coming_soon', 'maintenance', 'hidden'].includes(status) ? status : 'active',
         statusMessage: String(row?.statusMessage || '').trim(),
+        tenantType,
+        pivotPilot: row?.pivotPilot === true || tenantType === 'pivot',
       };
     })
     .filter(Boolean);
@@ -86,8 +94,12 @@ export function setTenantConfigCache(tenants = []) {
 
 export function getTenantDefinitions(options = {}) {
   const includeHidden = !!options.includeHidden;
+  const includePivot = !!options.includePivot;
   const cached = getCachedTenantConfig();
-  const merged = mergeTenantRows(DEFAULT_TENANTS, cached?.tenants || []);
+  let merged = mergeTenantRows(DEFAULT_TENANTS, cached?.tenants || []);
+  if (!includePivot) {
+    merged = merged.filter((tenant) => !isPivotTenant(tenant));
+  }
   if (includeHidden) return merged;
   return merged.filter((tenant) => VISIBLE_STATUSES.has(tenant.status));
 }
@@ -117,6 +129,7 @@ const WWW_ALLOWED_PATHS = [
   '/select-school',
   '/tenant-status',
   '/platform-admin',
+  '/admin/pivot',
   '/login',
 ];
 
@@ -208,7 +221,7 @@ export function getCurrentTenantKey() {
 /** Get display name for current tenant. */
 export function getCurrentTenantDisplayName() {
   const key = getCurrentTenantKey();
-  const tenantMap = getTenantDefinitions({ includeHidden: true }).reduce((acc, tenant) => {
+  const tenantMap = getTenantDefinitions({ includeHidden: true, includePivot: true }).reduce((acc, tenant) => {
     acc[tenant.tenantKey] = tenant.name;
     return acc;
   }, {});
