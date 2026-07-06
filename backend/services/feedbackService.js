@@ -228,8 +228,72 @@ class FeedbackService {
         if (!existingEvent) {
             results.push(await eventConfig.save());
         }
+
+        const existingPivotEvent = await FeedbackConfig.findOne({
+            feature: 'pivot_event',
+            version: 'v1.0',
+        });
+
+        if (!existingPivotEvent) {
+            results.push(await this.createPivotEventFeedbackConfig(userId, systemVersion));
+        }
         
         return results;
+    }
+
+    /** Idempotent — ensures pivot_event v1.0 exists for POST /pivot/feedback. */
+    async ensurePivotEventFeedbackConfig(userId) {
+        const { FeedbackConfig } = this.models;
+        const existing = await FeedbackConfig.findOne({
+            feature: 'pivot_event',
+            version: 'v1.0',
+        });
+        if (existing) {
+            return existing;
+        }
+
+        const systemVersion = await this.getCurrentSystemVersion();
+        return this.createPivotEventFeedbackConfig(userId, systemVersion);
+    }
+
+    createPivotEventFeedbackConfig(userId, systemVersion) {
+        const { FeedbackConfig } = this.models;
+        const pivotEventConfig = new FeedbackConfig({
+            feature: 'pivot_event',
+            version: 'v1.0',
+            systemVersion,
+            name: 'Pivot Event Feedback',
+            description: 'Quick post-event rating after Just Go events',
+            fields: [
+                {
+                    fieldId: 'rating',
+                    fieldType: 'rating',
+                    label: 'Overall rating',
+                    description: 'Rate this event from 1 to 5',
+                    required: true,
+                    validation: {
+                        min: 1,
+                        max: 5,
+                    },
+                    order: 1,
+                },
+                {
+                    fieldId: 'comment',
+                    fieldType: 'text',
+                    label: 'Optional comment',
+                    required: false,
+                    validation: {
+                        maxLength: 500,
+                    },
+                    order: 2,
+                },
+            ],
+            isActive: true,
+            weight: 100,
+            targetUsers: 'all',
+            createdBy: userId,
+        });
+        return pivotEventConfig.save();
     }
 
     // Get feedback form configuration for frontend
