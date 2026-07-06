@@ -12,27 +12,63 @@ const enforce = require('express-sslify');
 const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
+const { BASE_DOMAIN } = require('./services/tenantConfigService');
 
 const s3 = require('./aws-config');
 
 function createApp() {
+  // Eager-load before route modules so circular requires never cache a partial export.
+  require('./services/getModelService');
+
   const app = express();
   const server = createServer(app);
   let tenantConfigCache = null;
   let tenantConfigLastFetchedAt = 0;
+  let tenantKeysCache = ['rpi', 'tvcog'];
+  let tenantKeysLastFetchedAt = 0;
+  let tenantBootstrapComplete = false;
 
-  const corsOrigin = process.env.NODE_ENV === 'production'
-    ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
-    : 'http://localhost:3000';
-  initSocket(server, { origin: corsOrigin });
+  const staticProductionOrigins = [
+    'https://www.meridian.study',
+    'https://meridian.study',
+    'https://rpi.meridian.study',
+    'https://tvcog.meridian.study',
+  ];
+
+  function isAllowedCorsOrigin(origin) {
+    if (!origin) return true;
+    if (process.env.NODE_ENV !== 'production') {
+      return origin.startsWith('http://localhost');
+    }
+    if (staticProductionOrigins.includes(origin)) return true;
+    return new RegExp(`^https://[a-z0-9_-]+\\.${BASE_DOMAIN.replace('.', '\\.')}$`).test(origin);
+  }
 
   const corsOptions = {
-    origin: process.env.NODE_ENV === 'production'
-      ? ['https://www.meridian.study', 'https://meridian.study', 'https://rpi.meridian.study', 'https://tvcog.meridian.study']
-      : 'http://localhost:3000',
+    origin(origin, callback) {
+      if (isAllowedCorsOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
     credentials: true,
-    optionsSuccessStatus: 200
+    optionsSuccessStatus: 200,
   };
+
+  initSocket(server, {
+    origin: (origin, callback) => {
+      try {
+        if (isAllowedCorsOrigin(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+      } catch (err) {
+        callback(err);
+      }
+    },
+  });
 
   app.set('trust proxy', true);
 
@@ -81,14 +117,19 @@ function createApp() {
 
   app.use(async (req, res, next) => {
     try {
-        // Debug logging to identify polling routes
-        // const timestamp = new Date().toISOString();
-        // const method = req.method;
-        // const path = req.path || req.url;
-        // const userAgent = req.get('user-agent') || 'unknown';
-        
-        // console.log(`[${timestamp}] ${method}: ${path} | School: ${req.headers.host?.split('.')[0] || 'unknown'} | User-Agent: ${userAgent.substring(0, 50)}`);
-        
+        req.globalDb = await connectToGlobalDatabase();
+
+        const tenantConfigService = require('./services/tenantConfigService');
+        const { syncTenantUriCache, getMergedTenants } = tenantConfigService;
+
+        if (!tenantBootstrapComplete) {
+          await syncTenantUriCache(req);
+          const tenants = await getMergedTenants(req);
+          tenantKeysCache = tenants.map((tenant) => tenant.tenantKey);
+          tenantKeysLastFetchedAt = Date.now();
+          tenantBootstrapComplete = true;
+        }
+
         const host = req.headers.host || '';
         // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' -> default tenant
         let subdomain = host.split('.')[0];
@@ -103,15 +144,19 @@ function createApp() {
         // Development only: allow X-Tenant header or ?school= to override tenant (for local testing)
         if (process.env.NODE_ENV !== 'production') {
             const override = req.headers['x-tenant'] || req.query.school;
-            const validTenants = ['rpi', 'tvcog']; // keep in sync with connectionsManager
-            if (override && validTenants.includes(override.toLowerCase())) {
+            const now = Date.now();
+            if (now - tenantKeysLastFetchedAt > 30000) {
+              const tenants = await getMergedTenants(req);
+              tenantKeysCache = tenants.map((tenant) => tenant.tenantKey);
+              tenantKeysLastFetchedAt = now;
+            }
+            if (override && tenantKeysCache.includes(String(override).toLowerCase())) {
                 subdomain = override.toLowerCase();
             }
         }
-        
+
         req.db = await connectToDatabase(subdomain);
         req.school = subdomain;
-        req.globalDb = await connectToGlobalDatabase();
         next();
     } catch (error) {
         console.error('Error establishing database connection:', error);
@@ -135,6 +180,7 @@ function createApp() {
     '/error',
     '/select-school',
     '/tenant-status',
+    '/platform-admin',
     '/static',
     '/health',
     '/validate-token',
@@ -144,6 +190,11 @@ function createApp() {
     '/api/event-system-config/analytics-config',
     '/api/android-tester',
     '/api/tenant-config',
+    '/pivot',
+    '/validate-token',
+    '/refresh-token',
+    '/admin/platform',
+    '/admin/pivot',
   ];
   app.use((req, res, next) => {
     if (req.school !== 'www') return next();
@@ -183,22 +234,15 @@ function createApp() {
     return row?.status || 'active';
   }
 
+  const { shouldBypassTenantStatusGate } = require('./middlewares/tenantStatusGate');
+
   app.use(async (req, res, next) => {
     try {
       if (req.school === 'www') return next();
       const status = await getTenantStatus(req.school, req);
-      if (status === 'active' || status === 'hidden') return next();
+      if (await shouldBypassTenantStatusGate(req, status)) return next();
 
       const path = (req.path || req.url || '').split('?')[0];
-      const allowStatusPage = path === '/tenant-status' || path.startsWith('/tenant-status/');
-      const allowSharedAssets =
-        path.startsWith('/static') ||
-        path.startsWith('/assets') ||
-        path.startsWith('/favicon') ||
-        path === '/manifest.json' ||
-        path === '/health' ||
-        path === '/api/tenant-config';
-      if (allowStatusPage || allowSharedAssets) return next();
 
       const acceptHeader = (req.headers.accept || '').toLowerCase();
       const secFetchDest = (req.headers['sec-fetch-dest'] || '').toLowerCase();
@@ -249,6 +293,8 @@ function createApp() {
   const taskManagementRoutes = require('./routes/taskManagementRoutes.js');
   const roomRoutes = require('./routes/roomRoutes.js');
   const adminRoutes = require('./routes/adminRoutes.js');
+  const platformTenantRoutes = require('./routes/platformTenantRoutes.js');
+  const pivotWeeklyDropRoutes = require('./routes/pivotWeeklyDropRoutes.js');
   const eventsRoutes = require('./events/index.js');
   const notificationRoutes = require('./routes/notificationRoutes.js');
   const qrRoutes = require('./routes/qrRoutes.js');
@@ -266,6 +312,8 @@ function createApp() {
   const resourcesRoutes = require('./routes/resourcesRoutes.js');
   const shuttleConfigRoutes = require('./routes/shuttleConfigRoutes.js');
   const noticeRoutes = require('./routes/noticeRoutes.js');
+  const pivotRoutes = require('./routes/pivotRoutes.js');
+  const pivotAdminRoutes = require('./routes/pivotAdminRoutes.js');
 
   app.use(authRoutes);
   app.use('/auth/saml', samlRoutes);
@@ -287,6 +335,8 @@ function createApp() {
   app.use('/org-event-management', taskManagementRoutes);
   app.use('/admin', roomRoutes);
   app.use(adminRoutes);
+  app.use(platformTenantRoutes);
+  app.use(pivotWeeklyDropRoutes);
   app.use(formRoutes);
   app.use('/notifications', notificationRoutes);
   app.use('/api/qr', qrRoutes);
@@ -301,6 +351,8 @@ function createApp() {
   app.use('/api/resources', resourcesRoutes);
   app.use('/api/shuttle-config', shuttleConfigRoutes);
   app.use('/api/notice', noticeRoutes);
+  app.use('/pivot', pivotRoutes);
+  app.use('/admin/pivot', pivotAdminRoutes);
   app.use('/verify-affiliated-email', affiliatedEmailRoutes);
   app.use('/proxy-image', require('./routes/proxyImageRoutes.js'));
 

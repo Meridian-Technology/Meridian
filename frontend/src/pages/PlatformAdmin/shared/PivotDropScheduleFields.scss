@@ -1,0 +1,68 @@
+.pivot-drop-fields {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid #e6e6e6;
+
+  &__title {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__hint {
+    margin: 0 0 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #6b6f76;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  &__overrides {
+    margin-top: 12px;
+  }
+
+  &__overrides-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  &__add,
+  &__remove {
+    border: none;
+    background: transparent;
+    color: #5e6ad2;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  &__remove {
+    color: #6b6f76;
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  &__empty {
+    margin: 0;
+    font-size: 12px;
+    color: #6b6f76;
+  }
+
+  &__override-row {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 0.7fr 0.7fr auto;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+}

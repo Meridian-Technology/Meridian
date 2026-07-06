@@ -411,6 +411,10 @@
         overflow: hidden;
         z-index: 1;
 
+        &.dash-right--overlay-fullscreen {
+            z-index: 1002;
+        }
+
         &.maximized{
             width:100%;
             max-width: 100%;
@@ -440,6 +444,14 @@
             overflow-y: auto;
             overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
+
+            &.dashboard-overlay--viewport {
+                position: fixed;
+                inset: 0;
+                width: 100vw;
+                height: 100vh;
+                z-index: 1003;
+            }
 
             .full-width-event-viewer {
                 height: 100%;

@@ -77,7 +77,7 @@
     }
 
     .agenda-header {
-        background: var(--background);
+        // background: var(--background);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -347,6 +347,7 @@
 
     .agenda-calendar-wrapper {
         margin-top: 1rem;
+        overflow-x: auto;
 
         .calendar-zoom-controls {
             display: flex;

@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
-const getModels = require('../services/getModelService');
 const authGlobalService = require('../services/authGlobalService');
+
+function getModels(req, ...names) {
+    return require('../services/getModelService')(req, ...names);
+}
 const { validateSession } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
 

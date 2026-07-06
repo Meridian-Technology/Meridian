@@ -50,6 +50,8 @@ function Dashboard({
     const isRestoringOverlayRef = useRef(false);
     const urlHadOverlayParamsRef = useRef(false);
     const overlayContentRef = useRef(overlayContent);
+    const overlayClassName = overlayContent?.props?.className || '';
+    const isViewportOverlay = overlayClassName.includes('full-width-event-dashboard-focused');
 
     // Wrapper so closing the overlay also clears persist overlay params from the URL
     const handleSetOverlayContent = useCallback((content) => {
@@ -758,7 +760,7 @@ function Dashboard({
                     }
                 </div>
             </div>
-            <div className={`dash-right ${expanded ? 'maximized' : 'minimized'}`}>
+            <div className={`dash-right ${expanded ? 'maximized' : 'minimized'}${isViewportOverlay ? ' dash-right--overlay-fullscreen' : ''}`}>
                 <div 
                     className="dash-content"
                     style={{
@@ -771,7 +773,7 @@ function Dashboard({
                 
                 {/* Overlay for full-screen content */}
                 {overlayContent && (
-                    <div className="dashboard-overlay">
+                    <div className={`dashboard-overlay${isViewportOverlay ? ' dashboard-overlay--viewport' : ''}`}>
                         {overlayContent}
                     </div>
                 )}

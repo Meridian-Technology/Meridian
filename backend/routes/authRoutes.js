@@ -11,8 +11,61 @@ const { verifyToken } = require('../middlewares/verifyToken.js');
 
 const { authenticateWithGoogle, authenticateWithApple, loginUser, registerUser, authenticateWithGoogleIdToken } = require('../services/userServices.js');
 const { sendUserRegisteredEvent } = require('../inngest/events.js');
-const getModels = require('../services/getModelService.js');
 const getGlobalModels = require('../services/getGlobalModelService.js');
+
+function getModels(req, ...names) {
+    return require('../services/getModelService.js')(req, ...names);
+}
+
+async function bindAuthTenant(req) {
+    const { connectToDatabase } = require('../connectionsManager');
+    const { getTenantByKey } = require('../services/tenantConfigService');
+
+    let tenantKey = null;
+    if (req.school === 'www') {
+        tenantKey = req.body?.school ? String(req.body.school).trim().toLowerCase() : null;
+        if (!tenantKey) {
+            return {
+                status: 400,
+                body: {
+                    success: false,
+                    message: 'Please select your school or use your school’s login page.',
+                    code: 'SCHOOL_REQUIRED',
+                },
+            };
+        }
+    } else {
+        const override = req.headers['x-tenant'] || req.body?.tenantKey || req.body?.school;
+        tenantKey = override ? String(override).trim().toLowerCase() : req.school;
+    }
+
+    if (!tenantKey || tenantKey === 'www') {
+        return {
+            status: 400,
+            body: {
+                success: false,
+                message: 'Tenant is required for sign-in.',
+                code: 'TENANT_REQUIRED',
+            },
+        };
+    }
+
+    const tenant = await getTenantByKey(req, tenantKey);
+    if (!tenant) {
+        return {
+            status: 404,
+            body: {
+                success: false,
+                message: `Unknown tenant "${tenantKey}".`,
+                code: 'TENANT_NOT_FOUND',
+            },
+        };
+    }
+
+    req.school = tenantKey;
+    req.db = await connectToDatabase(tenantKey);
+    return null;
+}
 const { getFriendRequests } = require('../utilities/friendUtils');
 const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, getUserSessionsForGlobalUser, deleteSessionById, deleteSessionByIdForGlobalUser, revokeAllOtherSessionsForGlobalUser } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
@@ -489,12 +542,22 @@ router.get('/validate-token', verifyToken, async (req, res) => {
         // On www we only return communities (no tenant DB); frontend uses this to redirect to tenant.
         if (req.school === 'www') {
             if (!req.user || !req.user.globalUserId) {
-                return res.json({ success: true, message: 'Token is valid', data: { user: null, communities: [] } });
+                return res.json({ success: true, message: 'Token is valid', data: { user: null, communities: [], platformRoles: req.user?.platformRoles || [] } });
             }
             const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
             const memberships = await TenantMembership.find({ globalUserId: req.user.globalUserId, status: 'active' }).lean();
             const communities = memberships.map(m => m.tenantKey);
-            return res.json({ success: true, message: 'Token is valid', data: { user: null, communities } });
+            let platformRoles = req.user.platformRoles || [];
+            if (!platformRoles.length) {
+              const { PlatformRole } = getGlobalModels(req, 'PlatformRole');
+              const pr = await PlatformRole.findOne({ globalUserId: req.user.globalUserId }).lean();
+              platformRoles = pr?.roles || [];
+            }
+            return res.json({
+              success: true,
+              message: 'Token is valid',
+              data: { user: null, communities, platformRoles },
+            });
         }
 
         const { User, Friendship } = getModels(req, 'User', 'Friendship');
@@ -565,12 +628,17 @@ router.get('/validate-token', verifyToken, async (req, res) => {
         const data = {
             user: user,
             friendRequests: friendRequests,
-            pendingOrgInvites: pendingOrgInvites
+            pendingOrgInvites: pendingOrgInvites,
+            platformRoles: req.user.platformRoles || [],
         };
         if (req.user.globalUserId) {
-            const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
+            const { TenantMembership, PlatformRole } = getGlobalModels(req, 'TenantMembership', 'PlatformRole');
             const memberships = await TenantMembership.find({ globalUserId: req.user.globalUserId, status: 'active' }).lean();
             data.communities = memberships.map(m => m.tenantKey);
+            if (!data.platformRoles.length) {
+              const pr = await PlatformRole.findOne({ globalUserId: req.user.globalUserId }).lean();
+              data.platformRoles = pr?.roles || [];
+            }
         }
         res.json({
             success: true,
@@ -684,13 +752,9 @@ router.post('/verify-email', async (req, res) => {
   });
 
 router.post('/google-login', async (req, res) => {
-    if (req.school === 'www') {
-        const school = (req.body && req.body.school) ? String(req.body.school).trim().toLowerCase() : null;
-        if (!school) {
-            return res.status(400).json({ success: false, message: 'Please select your school or use your school’s login page.', code: 'SCHOOL_REQUIRED' });
-        }
-        req.school = school;
-        req.db = await require('../connectionsManager').connectToDatabase(school);
+    const tenantError = await bindAuthTenant(req);
+    if (tenantError) {
+        return res.status(tenantError.status).json(tenantError.body);
     }
 
     const { code, codeVerifier, isRegister, url, idToken } = req.body;
@@ -743,13 +807,9 @@ router.post('/google-login', async (req, res) => {
 });
 
 router.post('/apple-login', async (req, res) => {
-    if (req.school === 'www') {
-        const school = (req.body && req.body.school) ? String(req.body.school).trim().toLowerCase() : null;
-        if (!school) {
-            return res.status(400).json({ success: false, message: 'Please select your school or use your school’s login page.', code: 'SCHOOL_REQUIRED' });
-        }
-        req.school = school;
-        req.db = await require('../connectionsManager').connectToDatabase(school);
+    const tenantError = await bindAuthTenant(req);
+    if (tenantError) {
+        return res.status(tenantError.status).json(tenantError.body);
     }
 
     const { idToken, user } = req.body;

@@ -817,7 +817,7 @@ router.post('/get-user-by-username', verifyToken, async (req, res) => {
 // Register push notification token
 router.post('/register-push-token', verifyToken, async (req, res) => {
     const { User } = getModels(req, 'User');
-    const { pushToken } = req.body;
+    const { pushToken, appEdition } = req.body;
     
     try {
         if (!pushToken) {
@@ -836,12 +836,16 @@ router.post('/register-push-token', verifyToken, async (req, res) => {
         }
 
         user.pushToken = pushToken;
+        user.pushAppEdition = appEdition === 'pivot' ? 'pivot' : 'campus';
         await user.save();
 
-        console.log(`POST: /register-push-token ${req.user.userId} successful`);
+        console.log(`POST: /register-push-token ${req.user.userId} successful (edition=${user.pushAppEdition})`);
         return res.status(200).json({
             success: true,
-            message: 'Push token registered successfully'
+            message: 'Push token registered successfully',
+            data: {
+                appEdition: user.pushAppEdition,
+            },
         });
     } catch (error) {
         console.log(`POST: /register-push-token ${req.user.userId} failed:`, error);

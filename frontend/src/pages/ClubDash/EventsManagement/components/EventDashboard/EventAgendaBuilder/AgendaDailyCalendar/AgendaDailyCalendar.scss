@@ -1,51 +1,170 @@
 .agenda-daily-calendar {
     height: auto;
     border-top: 1px solid var(--lighterborder);
+    width: 100%;
 
-    &.multi-day {
-        .calendar-header {
-            display: none;
+    &.multi-day-columns {
+        overflow-x: auto;
+
+        .days-header,
+        .days-container {
+            min-width: max(100%, calc(var(--day-count, 2) * 140px));
+        }
+
+        .day-header,
+        .day-column {
+            min-width: 140px;
+        }
+    }
+
+    .calendar-header {
+        display: flex;
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background-color: var(--background);
+    }
+
+    .time-header {
+        width: 60px;
+        flex-shrink: 0;
+        border: 1px solid var(--lighterborder);
+        border-radius: 10px 0 0 0;
+    }
+
+    .days-header {
+        display: flex;
+        flex: 1;
+    }
+
+    .day-header {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        padding: 8px 6px;
+        border: 1px solid var(--lighterborder);
+        border-left: none;
+        background: var(--background);
+
+        .day-name {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--light-text);
+        }
+
+        .day-date {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        &:last-child {
+            border-radius: 0 10px 0 0;
         }
     }
 
     .calendar-body {
+        display: flex;
         position: relative;
-        padding-top: 12px;
+        padding-top: 0;
         overflow: visible;
     }
 
-    .day-column {
+    .time-column {
+        width: 60px;
+        flex-shrink: 0;
         position: relative;
+        border-left: 1px solid var(--lighterborder);
+        border-right: 1px solid var(--lighterborder);
     }
 
-    .day-line {
-        position: absolute;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: linear-gradient(90deg, rgba(77, 170, 87, 0.4), rgba(77, 170, 87, 0.15));
-        z-index: 10;
-        pointer-events: none;
+    .days-container {
+        display: flex;
+        flex: 1;
+        position: relative;
+        min-width: 0;
+    }
 
-        .day-line-label {
-            position: absolute;
-            left: 8px;
-            top: -10px;
-            font-size: 0.8rem;
-            font-weight: 700;
-            color: var(--text);
-            background: var(--background);
-            padding: 2px 8px;
-            border: 1px solid rgba(77, 170, 87, 0.5);
-            border-radius: 4px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-            z-index: 11;
+    .day-column {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+        border-right: 1px solid var(--lighterborder);
+        background-color: var(--bounding-color, #fbfbfb);
+
+        &:last-child {
+            border-right: none;
         }
+
+        .inactive-region {
+            position: absolute;
+            left: 0;
+            right: 0;
+            z-index: 1;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                -45deg,
+                transparent,
+                transparent 4px,
+                rgba(0, 0, 0, 0.03) 4px,
+                rgba(0, 0, 0, 0.03) 8px
+            );
+            background-color: rgba(0, 0, 0, 0.04);
+
+            &.before {
+                border-bottom: 1px dashed var(--lighterborder);
+            }
+
+            &.after {
+                border-top: 1px dashed var(--lighterborder);
+            }
+        }
+    }
+
+    // Legacy vertical multi-day styles (removed stacked day lines)
+    .day-line {
+        display: none;
+    }
+
+    .time-grid-line {
+        z-index: 2;
     }
 
     .event.agenda-event {
         position: absolute;
-        margin:0;
-        min-height: 32px;
+        margin: 0;
+        min-height: 24px;
+        z-index: 4;
+
+        &:hover {
+            z-index: 5;
+        }
+
+        &.multi-day-span {
+            border-left-width: 3px;
+        }
+
+        &.continues-from-prev .agenda-item-calendar-event {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+            border-top-style: dashed;
+        }
+
+        &.continues-to-next .agenda-item-calendar-event {
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            border-bottom-style: dashed;
+        }
+    }
+}
+
+.agenda-calendar-wrapper {
+    .agenda-daily-calendar.multi-day-columns {
+        --day-count: 2;
     }
 }

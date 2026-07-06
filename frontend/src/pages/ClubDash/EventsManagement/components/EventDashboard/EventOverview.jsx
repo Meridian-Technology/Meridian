@@ -149,12 +149,6 @@ function EventOverview({
                     )}
                     {event && (
                         <div className="overview-chart-box">
-                            <div className="overview-chart-box-header">
-                                <h3 className="event-dashboard-card-header">
-                                    <Icon icon="mdi:chart-line" />
-                                    Registration Chart
-                                </h3>
-                            </div>
                             <div className="overview-chart-box-body">
                                 <RSVPGrowthChart
                                     eventId={event._id}
@@ -162,6 +156,7 @@ function EventOverview({
                                     expectedAttendance={expectedAttendance}
                                     registrationCount={registrationCount}
                                     rsvpGrowthUrlOverride={rsvpGrowthUrlOverride}
+                                    variant="snapshot"
                                 />
                             </div>
                         </div>

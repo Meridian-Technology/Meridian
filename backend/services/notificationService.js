@@ -217,9 +217,20 @@ class NotificationService {
             };
 
             // Build navigation instructions from notification
-            const navigationInstructions = this.buildNavigationInstructions(notification);
+            const notificationKind = this.resolveNotificationKind(notification);
+            const navigationInstructions = this.buildNavigationInstructions(notification, {
+                pushAppEdition: recipient.pushAppEdition,
+            });
+            const friendshipId = notification.template?.variables?.friendshipId;
+            const pushNotificationType = ['friend_request', 'friend_accepted', 'friend_activity'].includes(
+                notificationKind,
+            )
+                ? notificationKind
+                : (notification.type || 'system');
             console.log(`📱 [PushNotification] Building navigation for notification ${notification._id}:`, {
                 notificationType: notification.type,
+                notificationKind,
+                pushNotificationType,
                 hasMetadataNavigation: !!(notification.metadata && notification.metadata.navigation),
                 builtNavigation: navigationInstructions,
                 metadata: notification.metadata
@@ -233,8 +244,11 @@ class NotificationService {
                 body: stripHtml(notification.message) || '',
                 data: {
                     notificationId: notification._id?.toString() || notification._id,
-                    type: notification.type || 'system',
+                    type: pushNotificationType,
+                    edition: recipient.pushAppEdition || 'campus',
+                    appEdition: recipient.pushAppEdition || 'campus',
                     navigation: navigationInstructions, // Backend-controlled navigation
+                    ...(friendshipId ? { friendshipId: String(friendshipId) } : {}),
                     ...(notification.metadata || {}),
                     ...(notification.actions ? { actions: notification.actions } : {})
                 },
@@ -276,35 +290,71 @@ class NotificationService {
     }
 
     /**
+     * Resolve the logical notification kind (template name wins over stored type).
+     */
+    resolveNotificationKind(notification) {
+        return notification?.template?.name || notification?.type || 'system';
+    }
+
+    /**
+     * Pivot edition routes for friend notifications (Task 7.6).
+     */
+    applyPivotEditionNavigation(notificationKind, navigation) {
+        switch (notificationKind) {
+            case 'friend_request':
+                return {
+                    type: 'navigate',
+                    route: 'PivotFriendRequests',
+                    params: {},
+                    deepLink: 'meridian://pivot/friends/requests',
+                };
+            case 'friend_accepted':
+                return {
+                    type: 'navigate',
+                    route: 'PivotFriends',
+                    params: {},
+                    deepLink: 'meridian://pivot/friends',
+                };
+            default:
+                return navigation;
+        }
+    }
+
+    /**
      * Build navigation instructions for mobile app from notification
      * This allows the backend to control what happens when a notification is tapped
      */
-    buildNavigationInstructions(notification) {
+    buildNavigationInstructions(notification, { pushAppEdition } = {}) {
         console.log(`🧭 [Backend] buildNavigationInstructions called for notification:`, {
             notificationId: notification._id,
             notificationType: notification.type,
+            notificationKind: this.resolveNotificationKind(notification),
+            pushAppEdition,
             hasMetadata: !!notification.metadata,
             metadataNavigation: notification.metadata?.navigation,
         });
         
+        let navigation;
+
         // If navigation is explicitly set in metadata, use it
         if (notification.metadata && notification.metadata.navigation) {
             console.log(`🧭 [Backend] Using explicit navigation from metadata:`, notification.metadata.navigation);
-            return notification.metadata.navigation;
-        }
-        
-        console.log(`🧭 [Backend] Building navigation from notification type:`, notification.type);
+            navigation = notification.metadata.navigation;
+        } else {
+            console.log(`🧭 [Backend] Building navigation from notification type:`, notification.type);
 
-        // Otherwise, build navigation based on notification type and metadata
-        const navigation = {
-            type: 'navigate', // 'navigate', 'deep_link', 'api_call', or 'none'
-            route: null,
-            params: {},
-            deepLink: null
-        };
+            // Otherwise, build navigation based on notification type and metadata
+            navigation = {
+                type: 'navigate', // 'navigate', 'deep_link', 'api_call', or 'none'
+                route: null,
+                params: {},
+                deepLink: null
+            };
 
-        // Build navigation based on notification type
-        switch (notification.type) {
+            const notificationKind = this.resolveNotificationKind(notification);
+
+            // Build navigation based on notification kind
+            switch (notificationKind) {
             case 'event':
             case 'event_reminder':
             case 'event_update':
@@ -365,6 +415,14 @@ class NotificationService {
                 // Default to home/events screen
                 navigation.route = 'Events';
                 navigation.deepLink = 'meridian://';
+        }
+        }
+
+        if (pushAppEdition === 'pivot') {
+            navigation = this.applyPivotEditionNavigation(
+                this.resolveNotificationKind(notification),
+                navigation,
+            );
         }
 
         return navigation;
@@ -666,6 +724,8 @@ class NotificationService {
                 channels: template.channels || ['in_app'],
                 metadata: {
                     ...(template.navigation ? { navigation: this.interpolateObject(template.navigation, variables) } : {}),
+                    ...(variables.friendshipId ? { friendshipId: String(variables.friendshipId) } : {}),
+                    ...(variables.sender ? { sender: String(variables.sender) } : {}),
                     ...(variables.metadata || {})
                 }
             };
@@ -1105,6 +1165,8 @@ class NotificationService {
                 channels: template.channels || ['in_app'],
                 metadata: {
                     ...(template.navigation ? { navigation: this.interpolateObject(template.navigation, variables) } : {}),
+                    ...(variables.friendshipId ? { friendshipId: String(variables.friendshipId) } : {}),
+                    ...(variables.sender ? { sender: String(variables.sender) } : {}),
                     ...(variables.metadata || {})
                 }
             };

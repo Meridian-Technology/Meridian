@@ -218,6 +218,12 @@ const userSchema = new mongoose.Schema({
         default: null,
         trim: true
     },
+    /** Last registered mobile app edition for push targeting (`campus` | `pivot`). */
+    pushAppEdition: {
+        type: String,
+        enum: ['campus', 'pivot'],
+        default: 'campus',
+    },
     /** When true, password login and API access (verifyToken) are blocked for this tenant user. */
     accessSuspended: {
         type: Boolean,
@@ -226,6 +232,11 @@ const userSchema = new mongoose.Schema({
     accessSuspendedAt: {
         type: Date,
         default: null,
+    },
+    /** Pivot catalog tag slugs selected for feed personalization (max 8). */
+    pivotInterestTags: {
+        type: [String],
+        default: [],
     },
 
     

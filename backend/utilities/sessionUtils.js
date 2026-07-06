@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
-const getModels = require('../services/getModelService');
 const getGlobalModels = require('../services/getGlobalModelService');
+
+function getModels(req, ...names) {
+    return require('../services/getModelService')(req, ...names);
+}
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 const REFRESH_TOKEN_EXPIRY_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
@@ -110,18 +113,14 @@ async function createGlobalSession(globalUserId, refreshToken, req) {
  * Validate a refresh token and return the session (tenant DB - legacy)
  */
 async function validateSession(refreshToken, req) {
-    const { Session, User } = getModels(req, 'Session', 'User');
-
     try {
-        // First verify the JWT token
         const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
 
-        // New tokens use globalUserId; legacy use userId
         if (decoded.globalUserId) {
             return validateGlobalSession(refreshToken, req);
         }
 
-        // Find the session in database (tenant)
+        const { Session, User } = getModels(req, 'Session', 'User');
         const session = await Session.findOne({ refreshToken });
 
         if (!session) {

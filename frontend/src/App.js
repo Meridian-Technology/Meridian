@@ -26,6 +26,8 @@ import DeveloperOnboard from './pages/DeveloperOnboarding/DeveloperOnboarding';
 import QR from './pages/QR/QR';
 import EventQRRedirect from './pages/QR/EventQRRedirect';
 import Admin  from './pages/Admin/Admin';
+import PlatformAdmin from './pages/PlatformAdmin/PlatformAdmin';
+import PlatformProtectedRoute from './components/PlatformProtectedRoute/PlatformProtectedRoute';
 import OIEDash from './pages/OIEDash/OIEDash';
 import NewBadge from './pages/NewBadge/NewBadge';
 import CreateOrg from './pages/CreateOrg/CreateOrg';
@@ -44,7 +46,7 @@ import TermsOfService from './pages/TermsOfService/TermsOfService';
 import ChildSafetyStandards from './pages/ChildSafetyStandards/ChildSafetyStandards';
 import SAMLCallback from './components/SAMLCallback/SAMLCallback';
 import EmailVerification from './pages/EmailVerification';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
 import { CacheProvider } from './CacheContext';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -225,6 +227,10 @@ function App() {
                                             <Route path="/forgot-password" element={<AnimatedPageWrapper><ForgotPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/reset-password" element={<AnimatedPageWrapper><ResetPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/tenant-status" element={<AnimatedPageWrapper><TenantStatus /></AnimatedPageWrapper>}/>
+                                            <Route element={<PlatformProtectedRoute />}>
+                                                <Route path="/platform-admin" element={<AnimatedPageWrapper><PlatformAdmin /></AnimatedPageWrapper>} />
+                                                <Route path="/admin/pivot" element={<Navigate to="/platform-admin?page=1" replace />} />
+                                            </Route>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>
                                             <Route path="*" element={<Error />}/>
                                             <Route path="/error/:errorCode" element={<Error />}/>

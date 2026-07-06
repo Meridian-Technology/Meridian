@@ -33,7 +33,7 @@ function getDisplayType(item) {
     return item?.type || 'Activity';
 }
 
-function AgendaItemCalendarEvent({ item, onEdit, event }) {
+function AgendaItemCalendarEvent({ item, onEdit, event, showContinuationHint = false }) {
     const formatTime = (date) => {
         if (!date) return '';
         const d = date instanceof Date ? date : new Date(date);
@@ -68,6 +68,9 @@ function AgendaItemCalendarEvent({ item, onEdit, event }) {
             </div>
             <div className="event-content">
                 <div className="event-name">{item.title || 'Untitled'}</div>
+                {showContinuationHint && (
+                    <span className="continuation-hint">Spans multiple days</span>
+                )}
                 <div className="event-details">
                     <span className="event-type">{getDisplayType(item)}</span>
                     {item.location && (

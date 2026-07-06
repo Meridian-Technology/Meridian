@@ -162,7 +162,7 @@ function OperatorHubMode() {
     const [confirmVariant, setConfirmVariant] = useState(null);
     const [typedPhrase, setTypedPhrase] = useState('');
     const [phraseError, setPhraseError] = useState('');
-    const { data: configData, refetch, loading } = useFetch('/org-management/config', {
+    const { data: configData, refetch, loading} = useFetch('/org-management/config', {
         cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
     });
     const config = configData?.data;

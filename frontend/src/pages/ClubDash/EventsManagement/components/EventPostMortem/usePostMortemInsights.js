@@ -11,6 +11,7 @@ export const INSIGHT_CATEGORIES = {
     funnelBottleneck: 'funnelBottleneck',
     trafficInvestment: 'trafficInvestment',
     strategic: 'strategic',
+    measurement: 'measurement',
 };
 
 /**
@@ -28,6 +29,7 @@ export function usePostMortemInsights({
     qrReferrerSources,
     formOpens,
     hasForm,
+    hasCheckInTracking = true,
     formatNumber,
     expectedAttendance,
 }) {
@@ -43,6 +45,7 @@ export function usePostMortemInsights({
             [INSIGHT_CATEGORIES.funnelBottleneck]: null,
             [INSIGHT_CATEGORIES.trafficInvestment]: null,
             [INSIGHT_CATEGORIES.strategic]: [],
+            [INSIGHT_CATEGORIES.measurement]: null,
         };
 
         if (expectedAttendance > 0 && registrations > 0) {
@@ -64,7 +67,7 @@ export function usePostMortemInsights({
             byCategory[INSIGHT_CATEGORIES.expectedVsActual] = item;
         }
 
-        if (registrations > 0 && checkIns > 0) {
+        if (hasCheckInTracking && registrations > 0 && checkIns > 0) {
             const rate = ((checkIns / registrations) * 100).toFixed(0);
             const item = {
                 icon: 'mdi:check-circle',
@@ -73,6 +76,16 @@ export function usePostMortemInsights({
             };
             all.push(item);
             byCategory[INSIGHT_CATEGORIES.checkIn] = item;
+        }
+
+        if (!hasCheckInTracking && registrations > 0) {
+            const measurementItem = {
+                icon: 'mdi:clipboard-check-outline',
+                text: 'Attendance was not captured for this event',
+                sub: 'Enable check-ins next time to measure true attendance and improve reminder strategy.',
+            };
+            all.push(measurementItem);
+            byCategory[INSIGHT_CATEGORIES.measurement] = measurementItem;
         }
 
         if (uniqueViewers > 0 && registrations > 0) {
@@ -182,12 +195,14 @@ export function usePostMortemInsights({
         if (uniqueViewers > 0 && (hasForm ? formOpens > 0 : true)) {
             const viewToForm = hasForm && formOpens > 0 ? (formOpens / uniqueViewers) * 100 : 0;
             const formToReg = hasForm && formOpens > 0 && registrations > 0 ? (registrations / formOpens) * 100 : 0;
-            const regToCheckIn = registrations > 0 ? (checkIns / registrations) * 100 : 0;
+            const regToCheckIn = hasCheckInTracking && registrations > 0 ? (checkIns / registrations) * 100 : 0;
 
             const drops = [];
             if (hasForm && formOpens > 0) drops.push({ stage: 'viewer→form', rate: viewToForm, label: 'Viewers opening form' });
             if (hasForm && formOpens > 0 && registrations > 0) drops.push({ stage: 'form→reg', rate: formToReg, label: 'Form opens → registrations' });
-            if (registrations > 0) drops.push({ stage: 'reg→checkin', rate: regToCheckIn, label: 'Registrations → check-ins' });
+            if (hasCheckInTracking && registrations > 0) {
+                drops.push({ stage: 'reg→checkin', rate: regToCheckIn, label: 'Registrations → check-ins' });
+            }
 
             const bottleneck = drops.length > 0 ? drops.reduce((min, d) => (d.rate < min.rate ? d : min)) : null;
             if (bottleneck && bottleneck.rate < 70) {
@@ -364,5 +379,5 @@ export function usePostMortemInsights({
         }
 
         return { all, byCategory };
-    }, [registrations, checkIns, uniqueViewers, rsvpGrowth, referrerSources, referrerRegistrations, qrReferrerSources, formOpens, hasForm, formatNumber, expectedAttendance]);
+    }, [registrations, checkIns, uniqueViewers, rsvpGrowth, referrerSources, referrerRegistrations, qrReferrerSources, formOpens, hasForm, hasCheckInTracking, formatNumber, expectedAttendance]);
 }

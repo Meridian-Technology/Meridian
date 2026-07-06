@@ -26,7 +26,7 @@ function EventAnalyticsDetail({ event, stats, orgId, onRefresh }) {
     const actualRegistrations = stats?.registrationCount ?? analytics?.platform?.registrations ?? analytics?.platform?.uniqueRegistrations ?? analytics?.registrations ?? analytics?.uniqueRegistrations ?? 0;
     const actualCheckIns = stats?.checkIn?.totalCheckedIn ?? analytics?.platform?.checkins ?? analytics?.platform?.uniqueCheckins ?? 0;
     const [exporting, setExporting] = useState(false);
-    const [timeRange, setTimeRange] = useState('30d');
+    const [timeRange, setTimeRange] = useState('90d');
 
     // Fetch detailed analytics using the correct route
     const { data: analyticsData, refetch } = useFetch(

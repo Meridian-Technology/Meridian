@@ -28,6 +28,6 @@ describe('reservationMetricsService', () => {
             conflictRate: 0.333
         });
         expect(csv).toMatch(/totalReservations,3/);
-        expect(csv).toMatch(/conflictRate,0.333/);
+    expect(csv).toMatch(/conflictRate,0.333/);
     });
 });
