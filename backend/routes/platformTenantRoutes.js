@@ -20,6 +20,7 @@ const {
   normalizePivotDropOverrides,
 } = require('../constants/defaultTenants');
 const { invalidateTenantConnection } = require('../connectionsManager');
+const { renameTenantKey } = require('../services/tenantKeyRenameService');
 const {
   listReferralCodesForTenant,
   createReferralCode,
@@ -122,10 +123,29 @@ router.post('/admin/platform/tenants', verifyToken, requirePlatformAdmin, async 
 
 router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
-    const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
-    const existing = await getTenantByKey(req, tenantKey);
+    let tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+    let existing = await getTenantByKey(req, tenantKey);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Tenant not found.' });
+    }
+
+    const updatedBy = req.user.globalUserId || req.user.userId || null;
+    const requestedTenantKey = req.body.newTenantKey ?? req.body.tenantKey;
+    if (requestedTenantKey !== undefined) {
+      const nextTenantKey = String(requestedTenantKey).trim().toLowerCase();
+      if (nextTenantKey !== tenantKey) {
+        const renameResult = await renameTenantKey(req, tenantKey, nextTenantKey, updatedBy);
+        if (renameResult.error) {
+          return res.status(renameResult.status || 400).json({
+            success: false,
+            message: renameResult.error,
+            code: renameResult.code,
+            data: renameResult.updates,
+          });
+        }
+        tenantKey = renameResult.tenantKey;
+        existing = await getTenantByKey(req, tenantKey);
+      }
     }
 
     const metadataValidation = validateTenantMetadataUpdate(req.body);
@@ -171,12 +191,18 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       });
     }
 
-    const updatedBy = req.user.globalUserId || req.user.userId || null;
     invalidateTenantConnection(tenantKey);
+    if (updated.subdomain && updated.subdomain !== tenantKey) {
+      invalidateTenantConnection(updated.subdomain);
+    }
     const saved = await upsertStoredTenantRow(req, updated, updatedBy);
     const health = await pingTenantDatabase(tenantKey, saved);
 
-    res.json({ success: true, data: enrichTenantForAdmin(saved, { health }) });
+    res.json({
+      success: true,
+      data: enrichTenantForAdmin(saved, { health }),
+      renamedFrom: req.params.tenantKey !== tenantKey ? req.params.tenantKey : undefined,
+    });
   } catch (err) {
     console.error('PUT /admin/platform/tenants/:tenantKey failed:', err);
     res.status(500).json({ success: false, message: err.message });

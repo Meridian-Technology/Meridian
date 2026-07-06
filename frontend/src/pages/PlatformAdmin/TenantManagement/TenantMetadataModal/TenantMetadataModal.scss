@@ -51,6 +51,19 @@
     color: #6b6f76;
   }
 
+  &__hint {
+    font-size: 11px;
+    line-height: 1.45;
+    color: #8b8f96;
+
+    code {
+      font-size: 10px;
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: #f3f4f6;
+    }
+  }
+
   &__input {
     width: 100%;
     box-sizing: border-box;

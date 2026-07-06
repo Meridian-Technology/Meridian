@@ -85,7 +85,7 @@ function normalizeTenantRow(row = {}) {
   const status = TENANT_STATUSES.has(row?.status) ? row.status : 'active';
   const tenantType = TENANT_TYPES.has(row?.tenantType) ? row.tenantType : 'campus';
 
-  return {
+  const normalized = {
     tenantKey,
     name: String(row?.name || tenantKey).trim(),
     subdomain: String(row?.subdomain || tenantKey).trim().toLowerCase(),

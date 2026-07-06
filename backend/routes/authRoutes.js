@@ -62,8 +62,9 @@ async function bindAuthTenant(req) {
         };
     }
 
-    req.school = tenantKey;
-    req.db = await connectToDatabase(tenantKey);
+    const dbRouteKey = tenant.subdomain || tenant.tenantKey;
+    req.school = tenant.tenantKey;
+    req.db = await connectToDatabase(dbRouteKey);
     return null;
 }
 const { getFriendRequests } = require('../utilities/friendUtils');
