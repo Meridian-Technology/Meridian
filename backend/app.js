@@ -33,6 +33,10 @@ function createApp() {
     'https://meridian.study',
     'https://rpi.meridian.study',
     'https://tvcog.meridian.study',
+    'https://rpi.pinkpulse.org',
+    'https://tvcog.pinkpulse.org',
+    'https://www.pinkpulse.org',
+    'https://pinkpulse.org',
   ];
 
   function isAllowedCorsOrigin(origin) {
