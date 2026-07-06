@@ -1,0 +1,861 @@
+jest.mock('../../services/getModelService', () => jest.fn());
+jest.mock('../../services/tenantConfigService', () => ({
+  getTenantByKey: jest.fn(),
+}));
+
+const getModels = require('../../services/getModelService');
+const { getTenantByKey } = require('../../services/tenantConfigService');
+const {
+  getPivotFeed,
+  getPivotEventFriends,
+  getPilotWindow,
+  isUpcomingPivotEvent,
+  getUpcomingEventTimeFilter,
+  resolveDisplayHost,
+  serializePivotFeedEvent,
+  normalizeExcludeEventIds,
+  countInterestOverlap,
+  countNegativeTagOverlap,
+  compareByFeedRank,
+  normalizeInterestTagSet,
+  loadNegativeFeedbackTags,
+} = require('../../services/pivotFeedService');
+
+function mockUserModel(pivotInterestTags = [], friendUsers = []) {
+  return {
+    findById: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({ pivotInterestTags }),
+    })),
+    find: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(friendUsers),
+    })),
+  };
+}
+
+function mockUniversalFeedbackModel(rows = []) {
+  return {
+    find: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(rows),
+    })),
+  };
+}
+
+function withFeedModels(partial = {}) {
+  return {
+    UniversalFeedback: mockUniversalFeedbackModel(),
+    ...partial,
+  };
+}
+
+describe('pivotFeedService helpers', () => {
+  it('resolveDisplayHost returns trimmed host fields', () => {
+    expect(
+      resolveDisplayHost({
+        host: {
+          name: ' Brooklyn Board Game Cafe ',
+          imageUrl: 'https://example.com/a.jpg',
+        },
+      }),
+    ).toEqual({
+      name: 'Brooklyn Board Game Cafe',
+      imageUrl: 'https://example.com/a.jpg',
+    });
+  });
+
+  it('resolveDisplayHost rejects missing name', () => {
+    expect(resolveDisplayHost({ host: { imageUrl: 'x' } })).toBeNull();
+  });
+
+  it('getPilotWindow starts tomorrow UTC for seven days', () => {
+    const now = new Date('2026-05-26T15:00:00.000Z');
+    const { windowStart, windowEnd } = getPilotWindow(now);
+    expect(windowStart.toISOString()).toBe('2026-05-27T00:00:00.000Z');
+    expect(windowEnd.toISOString()).toBe('2026-06-03T00:00:00.000Z');
+  });
+
+  it('isUpcomingPivotEvent treats ended events as past', () => {
+    const now = new Date('2026-05-26T12:00:00.000Z');
+    expect(
+      isUpcomingPivotEvent(
+        {
+          start_time: new Date('2026-05-25T19:00:00.000Z'),
+          end_time: new Date('2026-05-25T23:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      isUpcomingPivotEvent(
+        {
+          start_time: new Date('2026-05-28T19:00:00.000Z'),
+          end_time: new Date('2026-05-28T23:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toBe(true);
+  });
+
+  it('isUpcomingPivotEvent uses start_time when end_time is missing', () => {
+    const now = new Date('2026-05-26T12:00:00.000Z');
+    expect(
+      isUpcomingPivotEvent({ start_time: new Date('2026-05-25T19:00:00.000Z') }, now),
+    ).toBe(false);
+    expect(
+      isUpcomingPivotEvent({ start_time: new Date('2026-05-28T19:00:00.000Z') }, now),
+    ).toBe(true);
+  });
+
+  it('normalizeExcludeEventIds parses csv strings and drops invalid ids', () => {
+    expect(
+      normalizeExcludeEventIds(
+        '665a1b2c3d4e5f6789012345, not-an-id ,665a1b2c3d4e5f6789012346',
+      ),
+    ).toEqual(['665a1b2c3d4e5f6789012345', '665a1b2c3d4e5f6789012346']);
+  });
+
+  it('normalizeExcludeEventIds accepts arrays and dedupes', () => {
+    expect(
+      normalizeExcludeEventIds([
+        '665a1b2c3d4e5f6789012345',
+        '665a1b2c3d4e5f6789012345',
+      ]),
+    ).toEqual(['665a1b2c3d4e5f6789012345']);
+  });
+
+  it('normalizeExcludeEventIds returns empty array for falsy input', () => {
+    expect(normalizeExcludeEventIds(undefined)).toEqual([]);
+    expect(normalizeExcludeEventIds('')).toEqual([]);
+  });
+
+  it('serializePivotFeedEvent strips hosting fields and attaches pivot extras', () => {
+    const payload = serializePivotFeedEvent(
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Friday Night Board Games',
+        description: 'BYOB',
+        location: 'Brooklyn',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        end_time: new Date('2026-05-28T23:00:00.000Z'),
+        externalLink: 'https://partiful.com/e/example',
+        type: 'social',
+        registrationCount: 12,
+        hostingId: '665a00000000000000000001',
+        customFields: {
+          pivot: {
+            tags: ['board-games'],
+            host: { name: 'Brooklyn Board Game Cafe' },
+          },
+        },
+      },
+      {
+        displayHost: { name: 'Brooklyn Board Game Cafe' },
+        userIntent: 'interested',
+        friendsInterested: [],
+        friendsGoing: [],
+        friendsInterestedCount: 0,
+        friendsGoingCount: 0,
+      },
+    );
+
+    expect(payload).toMatchObject({
+      _id: '665a1b2c3d4e5f6789012345',
+      name: 'Friday Night Board Games',
+      displayHost: { name: 'Brooklyn Board Game Cafe' },
+      userIntent: 'interested',
+      tags: ['board-games'],
+      friendsInterestedCount: 0,
+      friendsGoingCount: 0,
+    });
+    expect(payload).not.toHaveProperty('hostingId');
+  });
+
+  it('countInterestOverlap uses catalog slug equality only', () => {
+    const interests = normalizeInterestTagSet(['live-music', 'board-games']);
+    expect(
+      countInterestOverlap(
+        { customFields: { pivot: { tags: ['live-music', 'social'] } } },
+        interests,
+      ),
+    ).toBe(1);
+    expect(
+      countInterestOverlap(
+        { customFields: { pivot: { tags: ['Live-Music'] } } },
+        interests,
+      ),
+    ).toBe(1);
+    expect(
+      countInterestOverlap(
+        { customFields: { pivot: { tags: ['nightlife'] } } },
+        interests,
+      ),
+    ).toBe(0);
+    expect(
+      countInterestOverlap(
+        { customFields: { pivot: { tags: [] } } },
+        interests,
+      ),
+    ).toBe(0);
+  });
+
+  it('compareByFeedRank sorts interest overlap before start_time when friend scores tie', () => {
+    const socialByEvent = new Map();
+    const interests = normalizeInterestTagSet(['live-music']);
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { tags: ['live-music'] } },
+      },
+    ];
+
+    events.sort(compareByFeedRank(socialByEvent, interests));
+
+    expect(events.map((event) => event._id)).toEqual(['2', '1']);
+  });
+
+  it('compareByFeedRank downranks shared negative-feedback tags after interest overlap', () => {
+    const socialByEvent = new Map();
+    const interests = normalizeInterestTagSet(['board-games', 'live-music']);
+    const negativeTags = normalizeInterestTagSet(['board-games']);
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { tags: ['board-games'] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { tags: ['live-music'] } },
+      },
+    ];
+
+    events.sort(compareByFeedRank(socialByEvent, interests, negativeTags));
+
+    expect(events.map((event) => event._id)).toEqual(['2', '1']);
+  });
+
+  it('countNegativeTagOverlap returns zero for untagged events', () => {
+    const negativeTags = normalizeInterestTagSet(['board-games']);
+    expect(
+      countNegativeTagOverlap(
+        { customFields: { pivot: { tags: [] } } },
+        negativeTags,
+      ),
+    ).toBe(0);
+    expect(
+      countNegativeTagOverlap({ customFields: { pivot: {} } }, negativeTags),
+    ).toBe(0);
+  });
+});
+
+describe('getPivotFeed', () => {
+  const userId = '507f191e810c19729de860eb';
+  const req = { user: { userId }, school: 'nyc' };
+  const now = new Date('2026-05-26T12:00:00.000Z');
+
+  beforeEach(() => {
+    getModels.mockReset();
+    getTenantByKey.mockReset();
+    getTenantByKey.mockResolvedValue({
+      tenantKey: 'nyc',
+      name: 'New York City Pilot',
+      location: 'New York City',
+    });
+  });
+
+  function mockEventFind(events) {
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(events),
+    };
+    return chain;
+  }
+
+  function mockIntentFind(rows = []) {
+    return {
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(rows),
+    };
+  }
+
+  it('returns published pivot events with displayHost and empty feed fields', async () => {
+    const events = [
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Sunset Listening Party',
+        description: 'Roof records',
+        location: 'Brooklyn',
+        start_time: new Date('2026-05-28T22:00:00.000Z'),
+        end_time: new Date('2026-05-29T02:00:00.000Z'),
+        externalLink: 'https://partiful.com/e/sunset',
+        type: 'social',
+        registrationCount: 4,
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Roof Records' },
+            tags: ['music'],
+          },
+        },
+      },
+    ];
+
+    const eventFind = mockEventFind(events);
+    const Event = { find: jest.fn(() => eventFind) };
+    getModels.mockReturnValue(withFeedModels({
+      Event,
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.batchWeek).toBe('2026-W22');
+    expect(result.data.cityDisplayName).toBe('New York City');
+    expect(result.data.events).toHaveLength(1);
+    expect(result.data.events[0].displayHost).toEqual({ name: 'Roof Records' });
+    expect(result.data.events[0].userIntent).toBeNull();
+    expect(Event.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'customFields.pivot.batchWeek': '2026-W22',
+        'customFields.pivot.ingestStatus': 'published',
+        status: { $in: ['approved', 'not-applicable'] },
+        $and: [getUpcomingEventTimeFilter(now)],
+      }),
+    );
+  });
+
+  it('excludes events that have already ended from the deck feed', async () => {
+    const events = [
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Past Party',
+        start_time: new Date('2026-05-25T19:00:00.000Z'),
+        end_time: new Date('2026-05-25T23:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Past Venue' },
+          },
+        },
+      },
+      {
+        _id: '665a1b2c3d4e5f6789012346',
+        name: 'Upcoming Party',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        end_time: new Date('2026-05-28T23:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Future Venue' },
+          },
+        },
+      },
+    ];
+
+    const eventFind = mockEventFind(events);
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => eventFind) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events).toHaveLength(1);
+    expect(result.data.events[0].name).toBe('Upcoming Party');
+  });
+
+  it('returns empty events array when none match', async () => {
+    const eventFind = mockEventFind([]);
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => eventFind) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+    expect(result.data.events).toEqual([]);
+  });
+
+  it('rejects invalid batchWeek', async () => {
+    const result = await getPivotFeed(req, { batchWeek: '2026-W999', now });
+    expect(result.error).toMatch(/batchWeek/i);
+    expect(result.status).toBe(400);
+  });
+
+  it('boosts events with friend registered above friend interested only', async () => {
+    const friendId = '507f191e810c19729de860ec';
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'No Friends (popular)',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        registrationCount: 50,
+        customFields: { pivot: { host: { name: 'Venue A' } } },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Friend Interested',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        registrationCount: 5,
+        customFields: { pivot: { host: { name: 'Venue B' } } },
+      },
+      {
+        _id: '665a000000000000000000c3',
+        name: 'Friend Registered',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        registrationCount: 1,
+        customFields: { pivot: { host: { name: 'Venue C' } } },
+      },
+    ];
+
+    const eventFind = mockEventFind(events);
+    const Event = { find: jest.fn(() => eventFind) };
+
+    const PivotEventIntent = {
+      find: jest.fn((query) => {
+        const isFriendQuery = query.userId && query.userId.$in;
+        const rows = isFriendQuery
+          ? [
+              {
+                eventId: '665a000000000000000000b2',
+                userId: friendId,
+                status: 'interested',
+              },
+              {
+                eventId: '665a000000000000000000c3',
+                userId: friendId,
+                status: 'registered',
+              },
+            ]
+          : [];
+        return mockIntentFind(rows);
+      }),
+    };
+
+    getModels.mockReturnValue(withFeedModels({
+      Event,
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([
+            { requester: userId, recipient: friendId },
+          ]),
+        })),
+      },
+      PivotEventIntent,
+      User: mockUserModel([], [{ _id: friendId, name: 'Pat', picture: null }]),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Friend Registered',
+      'Friend Interested',
+      'No Friends (popular)',
+    ]);
+    const registered = result.data.events[0];
+    expect(registered.friendsGoing).toHaveLength(1);
+    expect(registered.friendsInterested).toHaveLength(1);
+    expect(registered.friendsGoingCount).toBe(1);
+    expect(registered.friendsInterestedCount).toBe(1);
+    const interested = result.data.events[1];
+    expect(interested.friendsGoing).toHaveLength(0);
+    expect(interested.friendsInterested).toHaveLength(1);
+    expect(interested.friendsGoingCount).toBe(0);
+    expect(interested.friendsInterestedCount).toBe(1);
+  });
+
+  it('boosts interest-matching events above untagged ties when friend scores match', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Untagged Early',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        registrationCount: 10,
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: [] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Live Music Night',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        registrationCount: 1,
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+    ];
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['live-music']),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Live Music Night',
+      'Untagged Early',
+    ]);
+  });
+
+  it('keeps friend-boost-only order when user interests are empty', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Later Untagged',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: ['live-music'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Earlier Untagged',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: [] },
+        },
+      },
+    ];
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel([]),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Earlier Untagged',
+      'Later Untagged',
+    ]);
+  });
+
+  it('downranks events tagged like a low-rated pivot event without hiding them', async () => {
+    const pastEventId = '665a000000000000000099';
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Board Game Night',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: ['board-games'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Live Music Night',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+    ];
+
+    const Event = {
+      find: jest.fn((query) => {
+        if (query._id?.$in) {
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([
+              {
+                _id: pastEventId,
+                customFields: { pivot: { tags: ['board-games'] } },
+              },
+            ]),
+          };
+        }
+        return mockEventFind(events);
+      }),
+    };
+
+    getModels.mockReturnValue(withFeedModels({
+      Event,
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['board-games', 'live-music']),
+      UniversalFeedback: mockUniversalFeedbackModel([{ processId: pastEventId }]),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events).toHaveLength(2);
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Live Music Night',
+      'Board Game Night',
+    ]);
+  });
+
+  it('passes excludeEventIds into the Event query', async () => {
+    const eventFind = mockEventFind([]);
+    const Event = { find: jest.fn(() => eventFind) };
+    getModels.mockReturnValue(withFeedModels({
+      Event,
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    await getPivotFeed(req, {
+      batchWeek: '2026-W22',
+      now,
+      excludeEventIds: '665a000000000000000000a1,bad-id',
+    });
+
+    expect(Event.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: { $nin: ['665a000000000000000000a1'] },
+      }),
+    );
+  });
+
+  it('omits events missing display host name', async () => {
+    const eventFind = mockEventFind([
+      {
+        _id: '1',
+        name: 'Bad Host',
+        customFields: { pivot: { host: { name: '   ' } } },
+      },
+      {
+        _id: '2',
+        name: 'Good Host',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Real Venue' } } },
+      },
+    ]);
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => eventFind) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+    expect(result.data.events).toHaveLength(1);
+    expect(result.data.events[0].name).toBe('Good Host');
+  });
+
+  it('returns passed userIntent so clients can drop swiped-left cards from the deck', async () => {
+    const events = [
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Passed Event',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            host: { name: 'Venue' },
+          },
+        },
+      },
+    ];
+
+    const intentFind = jest
+      .fn()
+      .mockReturnValueOnce(
+        mockIntentFind([
+          { eventId: '665a1b2c3d4e5f6789012345', status: 'passed' },
+        ]),
+      )
+      .mockReturnValueOnce(mockIntentFind());
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: intentFind },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events[0].userIntent).toBe('passed');
+    expect(intentFind.mock.calls[0][0]).toEqual({
+      userId,
+      eventId: { $in: events.map((event) => event._id) },
+      batchWeek: '2026-W22',
+    });
+  });
+
+  it('ignores swipe intents from a different batchWeek on the same event', async () => {
+    const events = [
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Fresh Again',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            host: { name: 'Venue' },
+          },
+        },
+      },
+    ];
+
+    const intentFind = jest.fn().mockReturnValue(mockIntentFind());
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: intentFind },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events[0].userIntent).toBeNull();
+    expect(intentFind.mock.calls[0][0]).toEqual({
+      userId,
+      eventId: { $in: events.map((event) => event._id) },
+      batchWeek: '2026-W22',
+    });
+  });
+});
+
+describe('getPivotEventFriends', () => {
+  const userId = '507f191e810c19729de860eb';
+  const friendId = '507f191e810c19729de860ec';
+  const eventId = '665a1b2c3d4e5f6789012345';
+  const req = { user: { userId }, school: 'nyc' };
+
+  beforeEach(() => {
+    getModels.mockReset();
+  });
+
+  it('returns uncapped friend lists for a published pivot event', async () => {
+    getModels.mockReturnValue({
+      Event: {
+        findOne: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue({ _id: eventId }),
+        })),
+      },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([
+            { requester: userId, recipient: friendId, status: 'accepted' },
+          ]),
+        })),
+      },
+      PivotEventIntent: {
+        find: jest.fn()
+          .mockReturnValueOnce({
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([]),
+          })
+          .mockReturnValueOnce({
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([
+              { eventId, userId: friendId, status: 'registered' },
+            ]),
+          }),
+      },
+      User: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([
+            { _id: friendId, name: 'Pat', picture: null },
+          ]),
+        })),
+      },
+    });
+
+    const result = await getPivotEventFriends(req, eventId);
+
+    expect(result.data.going).toEqual([
+      { id: friendId, name: 'Pat', picture: null },
+    ]);
+    expect(result.data.interested).toEqual([
+      { id: friendId, name: 'Pat', picture: null },
+    ]);
+  });
+
+  it('returns 404 when the event is not a published pivot catalog event', async () => {
+    getModels.mockReturnValue({
+      Event: {
+        findOne: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue(null),
+        })),
+      },
+    });
+
+    const result = await getPivotEventFriends(req, eventId);
+    expect(result.status).toBe(404);
+    expect(result.code).toBe('EVENT_NOT_FOUND');
+  });
+});
