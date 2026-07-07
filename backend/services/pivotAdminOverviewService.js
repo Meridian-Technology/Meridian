@@ -8,6 +8,7 @@ const {
   normalizeBatchWeek,
   PUBLISHED_EVENT_QUERY,
   getWeeklySnapshot,
+  aggregateEngagementMetrics,
 } = require('./pivotWeeklySnapshotService');
 const { buildDropSchedulePayload } = require('./pivotConfigService');
 
@@ -91,6 +92,8 @@ async function aggregateTenantOverview(req, tenant, batchWeek) {
     passedCount,
     activeUserIds,
     externalOpenAgg,
+    externalOpenUserIds,
+    engagement,
     feedback,
     referralCodes,
   ] = await Promise.all([
@@ -102,6 +105,8 @@ async function aggregateTenantOverview(req, tenant, batchWeek) {
       { $match: intentFilter },
       { $group: { _id: null, total: { $sum: { $ifNull: ['$externalOpenCount', 0] } } } },
     ]),
+    PivotEventIntent.distinct('userId', { ...intentFilter, externalOpenAt: { $ne: null } }),
+    aggregateEngagementMetrics(tenantReq, batchWeek),
     aggregateRegisteredFeedback(PivotEventIntent, UniversalFeedback, batchWeek, eventIds),
     loadReferralCodesForTenant(req, tenantKey),
   ]);
@@ -115,6 +120,10 @@ async function aggregateTenantOverview(req, tenant, batchWeek) {
     interestedCount,
     registeredCount,
     externalOpenCount: externalOpenAgg[0]?.total ?? 0,
+    externalOpenUsers: externalOpenUserIds.length,
+    calendarAdds: engagement.calendarAdds,
+    inviteShares: engagement.inviteShares,
+    interestsSaved: engagement.interestsSaved,
     swipeCount,
     feedbackCount: feedback.feedbackCount,
     feedbackAvg: feedback.feedbackAvg,
@@ -149,6 +158,10 @@ async function getPivotOverview(req, options = {}) {
         interestedCount: 0,
         registeredCount: 0,
         externalOpenCount: 0,
+        externalOpenUsers: 0,
+        calendarAdds: 0,
+        inviteShares: 0,
+        interestsSaved: 0,
         swipeCount: 0,
         feedbackCount: 0,
         feedbackAvg: null,

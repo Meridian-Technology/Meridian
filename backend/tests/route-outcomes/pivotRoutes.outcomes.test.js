@@ -356,6 +356,7 @@ describe('pivotRoutes POST /pivot/intent/:eventId/registered', () => {
     expect(confirmRegistered).toHaveBeenCalledWith(
       expect.objectContaining({ school: 'nyc' }),
       '665a1b2c3d4e5f6789012345',
+      {},
     );
   });
 

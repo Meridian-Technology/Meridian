@@ -407,6 +407,24 @@ const DEMO_EVENTS = [
     tags: ['wellness'],
     registrationCount: 21,
   },
+  {
+    slug: 'pivot-seed-indie-film',
+    name: 'Indie Film Night — The Last Garden',
+    description: 'Limited run at Nitehawk. Grab tickets for your showtime.',
+    location: 'Nitehawk Cinema, Williamsburg, Brooklyn, NY',
+    dayOffset: 2,
+    startHour: 18,
+    durationHours: 6,
+    externalLink: 'https://partiful.com/e/pivot-seed-indie-film',
+    host: { name: 'Nitehawk Cinema' },
+    tags: ['movies', 'art-and-culture'],
+    registrationCount: 56,
+    timeSlots: [
+      { id: '6pm', label: '6:00 PM', startHour: 18, durationHours: 2.25 },
+      { id: '8-30pm', label: '8:30 PM', startHour: 20.5, durationHours: 2.25 },
+      { id: '11pm', label: '11:00 PM', startHour: 23, durationHours: 2.25 },
+    ],
+  },
 ];
 
 async function resolveCatalogOrgId(Org) {
@@ -430,18 +448,41 @@ async function resolveCatalogOrgId(Org) {
 }
 
 function buildEventWindow(dayOffset, durationHours, now, startHour = 19) {
+  const wholeHour = Math.floor(startHour);
+  const minutes = Math.round((startHour - wholeHour) * 60);
   const start = new Date(
     Date.UTC(
       now.getUTCFullYear(),
       now.getUTCMonth(),
       now.getUTCDate() + dayOffset,
-      startHour,
-      0,
+      wholeHour,
+      minutes,
       0,
     ),
   );
   const end = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
   return { start, end };
+}
+
+function buildPivotTimeSlots(demo, now) {
+  if (!Array.isArray(demo.timeSlots) || !demo.timeSlots.length) {
+    return null;
+  }
+
+  return demo.timeSlots.map((slot) => {
+    const { start, end } = buildEventWindow(
+      demo.dayOffset,
+      slot.durationHours ?? 2,
+      now,
+      slot.startHour,
+    );
+    return {
+      id: slot.id,
+      label: slot.label,
+      start_time: start,
+      end_time: end,
+    };
+  });
 }
 
 async function run() {
@@ -460,6 +501,19 @@ async function run() {
       now,
       demo.startHour ?? 19,
     );
+
+    const timeSlots = buildPivotTimeSlots(demo, now);
+    const pivotMeta = {
+      batchWeek,
+      source: 'manual',
+      sourceUrl: demo.externalLink,
+      host: demo.host,
+      tags: demo.tags,
+      ingestStatus: 'published',
+      importedAt: now.toISOString(),
+      importedBy: 'seed:pivot-feed-events',
+      ...(timeSlots ? { timeSlots } : {}),
+    };
 
     await Event.findOneAndUpdate(
       { 'customFields.pivot.sourceUrl': demo.externalLink },
@@ -480,16 +534,7 @@ async function run() {
           hostingId: catalogOrgId,
           isDeleted: false,
           customFields: {
-            pivot: {
-              batchWeek,
-              source: 'manual',
-              sourceUrl: demo.externalLink,
-              host: demo.host,
-              tags: demo.tags,
-              ingestStatus: 'published',
-              importedAt: now.toISOString(),
-              importedBy: 'seed:pivot-feed-events',
-            },
+            pivot: pivotMeta,
           },
         },
       },

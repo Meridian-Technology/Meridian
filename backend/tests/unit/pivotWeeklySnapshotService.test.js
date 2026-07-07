@@ -64,8 +64,20 @@ describe('pivotWeeklySnapshotService', () => {
             .mockResolvedValueOnce(3)
             .mockResolvedValueOnce(2)
             .mockResolvedValueOnce(4),
-          distinct: jest.fn().mockResolvedValue(['u1', 'u2', 'u3']),
+          distinct: jest
+            .fn()
+            .mockImplementation((_field, filter) =>
+              Promise.resolve(filter?.externalOpenAt ? ['u1', 'u2'] : ['u1', 'u2', 'u3']),
+            ),
           aggregate: jest.fn().mockResolvedValue([{ total: 7 }]),
+        },
+        AnalyticsEvent: {
+          countDocuments: jest.fn().mockImplementation((filter) => {
+            const names = filter?.event?.$in || [];
+            if (names.includes('pivot_calendar_add')) return Promise.resolve(5);
+            if (names.includes('pivot_invite_share')) return Promise.resolve(2);
+            return Promise.resolve(4);
+          }),
         },
         UniversalFeedback: {
           find: jest.fn().mockReturnValue({
@@ -91,6 +103,10 @@ describe('pivotWeeklySnapshotService', () => {
         interestedCount: 3,
         registeredCount: 2,
         externalOpenCount: 7,
+        externalOpenUsers: 2,
+        calendarAdds: 5,
+        inviteShares: 2,
+        interestsSaved: 4,
         swipeCount: 9,
         feedbackAvg: 4.5,
         activeUsers: 3,
@@ -140,6 +156,9 @@ describe('pivotWeeklySnapshotService', () => {
           countDocuments: jest.fn().mockResolvedValue(0),
           distinct: jest.fn().mockResolvedValue([]),
           aggregate: jest.fn().mockResolvedValue([]),
+        },
+        AnalyticsEvent: {
+          countDocuments: jest.fn().mockResolvedValue(0),
         },
         UniversalFeedback: {
           find: jest.fn().mockReturnValue({

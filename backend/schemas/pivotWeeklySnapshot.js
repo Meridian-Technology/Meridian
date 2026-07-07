@@ -38,6 +38,26 @@ const pivotWeeklySnapshotTenantSchema = new mongoose.Schema(
       min: 0,
       default: 0,
     },
+    externalOpenUsers: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    calendarAdds: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    inviteShares: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    interestsSaved: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
     swipeCount: {
       type: Number,
       required: true,

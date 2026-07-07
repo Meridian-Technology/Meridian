@@ -9,6 +9,7 @@ const {
   getPivotFeed,
   getPivotEventFriends,
   getPilotWindow,
+  getFeedPilotWindowFilter,
   isUpcomingPivotEvent,
   getUpcomingEventTimeFilter,
   resolveDisplayHost,
@@ -69,11 +70,11 @@ describe('pivotFeedService helpers', () => {
     expect(resolveDisplayHost({ host: { imageUrl: 'x' } })).toBeNull();
   });
 
-  it('getPilotWindow starts tomorrow UTC for seven days', () => {
+  it('getPilotWindow starts today UTC for seven days', () => {
     const now = new Date('2026-05-26T15:00:00.000Z');
     const { windowStart, windowEnd } = getPilotWindow(now);
-    expect(windowStart.toISOString()).toBe('2026-05-27T00:00:00.000Z');
-    expect(windowEnd.toISOString()).toBe('2026-06-03T00:00:00.000Z');
+    expect(windowStart.toISOString()).toBe('2026-05-26T00:00:00.000Z');
+    expect(windowEnd.toISOString()).toBe('2026-06-02T00:00:00.000Z');
   });
 
   it('isUpcomingPivotEvent treats ended events as past', () => {
@@ -337,9 +338,59 @@ describe('getPivotFeed', () => {
         'customFields.pivot.batchWeek': '2026-W22',
         'customFields.pivot.ingestStatus': 'published',
         status: { $in: ['approved', 'not-applicable'] },
-        $and: [getUpcomingEventTimeFilter(now)],
+        ...getFeedPilotWindowFilter(now),
       }),
     );
+  });
+
+  it('includes multi-showtime events when a later showtime is in the pilot window', async () => {
+    const events = [
+      {
+        _id: '665a1b2c3d4e5f6789012347',
+        name: 'Film Night',
+        start_time: new Date('2026-05-26T18:00:00.000Z'),
+        end_time: new Date('2026-05-29T05:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Nitehawk Cinema' },
+            tags: ['film-and-tv'],
+            timeSlots: [
+              {
+                id: '6pm',
+                start_time: new Date('2026-05-26T18:00:00.000Z'),
+                end_time: new Date('2026-05-26T20:30:00.000Z'),
+              },
+              {
+                id: '830pm',
+                start_time: new Date('2026-05-28T23:30:00.000Z'),
+                end_time: new Date('2026-05-29T02:00:00.000Z'),
+              },
+            ],
+          },
+        },
+      },
+    ];
+
+    const eventFind = mockEventFind(events);
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => eventFind) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events).toHaveLength(1);
+    expect(result.data.events[0].name).toBe('Film Night');
+    expect(result.data.events[0].timeSlots).toHaveLength(2);
   });
 
   it('excludes events that have already ended from the deck feed', async () => {

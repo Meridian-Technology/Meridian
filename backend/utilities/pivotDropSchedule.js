@@ -1,4 +1,4 @@
-const { isValidIsoWeek } = require('./pivotIsoWeek');
+const { isoWeekToMondayUtc } = require('./pivotIsoWeek');
 
 /** Pilot suggestion when a pivot tenant has no drop config stored yet (not a runtime constant). */
 const PIVOT_DROP_PILOT_DEFAULTS = Object.freeze({
@@ -56,21 +56,6 @@ function resolvePivotDropConfig(tenant = {}) {
     overrides: Array.isArray(tenant.pivotDropOverrides) ? tenant.pivotDropOverrides : [],
     usingPilotDefaults: !hasStoredConfig,
   };
-}
-
-function isoWeekToMondayUtc(batchWeek) {
-  if (!isValidIsoWeek(batchWeek)) {
-    throw new Error(`Invalid batchWeek "${batchWeek}" — expected YYYY-Www`);
-  }
-
-  const [, yearStr, weekStr] = batchWeek.match(/^(\d{4})-W(\d{2})$/);
-  const year = Number(yearStr);
-  const week = Number(weekStr);
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const jan4IsoDay = jan4.getUTCDay() || 7;
-  const monday = new Date(jan4);
-  monday.setUTCDate(jan4.getUTCDate() - jan4IsoDay + 1 + (week - 1) * 7);
-  return monday;
 }
 
 function daysFromIsoMonday(dayOfWeek) {

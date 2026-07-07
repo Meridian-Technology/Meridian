@@ -33,6 +33,12 @@ const pivotEventIntentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    /** Showtime id from `customFields.pivot.timeSlots` when user self-confirms. */
+    timeSlotId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
   },
   { timestamps: true },
 );

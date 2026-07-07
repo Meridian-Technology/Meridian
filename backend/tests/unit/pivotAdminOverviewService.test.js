@@ -20,6 +20,7 @@ jest.mock('../../services/pivotWeeklySnapshotService', () => ({
   normalizeBatchWeek: jest.requireActual('../../services/pivotWeeklySnapshotService').normalizeBatchWeek,
   PUBLISHED_EVENT_QUERY: jest.requireActual('../../services/pivotWeeklySnapshotService').PUBLISHED_EVENT_QUERY,
   getWeeklySnapshot: jest.fn(),
+  aggregateEngagementMetrics: jest.fn(),
 }));
 
 const getModels = require('../../services/getModelService');
@@ -27,7 +28,10 @@ const { connectToDatabase } = require('../../connectionsManager');
 const getGlobalModels = require('../../services/getGlobalModelService');
 const { getMergedTenants } = require('../../services/tenantConfigService');
 const { isPivotTenant } = require('../../services/pivotReferralCodeService');
-const { getWeeklySnapshot } = require('../../services/pivotWeeklySnapshotService');
+const {
+  getWeeklySnapshot,
+  aggregateEngagementMetrics,
+} = require('../../services/pivotWeeklySnapshotService');
 const {
   aggregateRegisteredFeedback,
   getPivotOverview,
@@ -40,6 +44,11 @@ describe('pivotAdminOverviewService', () => {
       (tenant) => tenant?.pivotPilot === true || tenant?.tenantType === 'pivot',
     );
     getWeeklySnapshot.mockResolvedValue({ data: { generatedAt: new Date('2026-06-26T10:00:00.000Z') } });
+    aggregateEngagementMetrics.mockResolvedValue({
+      calendarAdds: 3,
+      inviteShares: 1,
+      interestsSaved: 2,
+    });
   });
 
   describe('aggregateRegisteredFeedback', () => {
@@ -139,6 +148,12 @@ describe('pivotAdminOverviewService', () => {
       expect(result.data.tenants).toHaveLength(2);
       expect(result.data.tenants.map((row) => row.tenantKey)).toEqual(['nyc', 'brooklyn']);
       expect(result.data.tenants[0].referralCodes[0].code).toBe('NYC-PILOT-A');
+      expect(result.data.tenants[0]).toMatchObject({
+        externalOpenUsers: 0,
+        calendarAdds: 3,
+        inviteShares: 1,
+        interestsSaved: 2,
+      });
       expect(result.data.snapshotGeneratedAt).toEqual(new Date('2026-06-26T10:00:00.000Z'));
     });
   });

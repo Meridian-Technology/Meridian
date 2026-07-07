@@ -1,0 +1,41 @@
+.popup-overlay .popup-content.pivot-catalog-edit__shell {
+  max-width: 920px;
+}
+
+.pivot-catalog-edit {
+  &__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  &__form {
+    min-width: 0;
+  }
+
+  &__preview {
+    flex-shrink: 0;
+    padding: 12px;
+    border-left: 1px solid var(--la-border-subtle);
+    background: var(--la-bg);
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 860px) {
+  .popup-overlay .popup-content.pivot-catalog-edit__shell {
+    max-width: 640px;
+  }
+
+  .pivot-catalog-edit__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .pivot-catalog-edit__preview {
+    border-left: none;
+    border-top: 1px solid var(--la-border-subtle);
+  }
+}
