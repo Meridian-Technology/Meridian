@@ -24,23 +24,6 @@
   box-sizing: border-box;
   position: relative;
 
-  &::before {
-    content: 'pilot vibe';
-    position: absolute;
-    top: 4.3rem;
-    left: max(0.6rem, calc(50% - 16rem));
-    padding: 0.2rem 0.4rem 0.16rem;
-    font-size: 0.56rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--jg-light);
-    background: var(--jg-accent);
-    border: 2px solid var(--jg-fg);
-    transform: rotate(-6deg);
-    z-index: 1;
-    pointer-events: none;
-  }
 }
 
 .invite-landing__frame {
