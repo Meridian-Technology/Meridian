@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const getModels = require('./getModelService');
 const {
-  getPilotWindow,
+  getFeedPilotWindowFilter,
   resolveDisplayHost,
   serializePivotFeedEvent,
   loadFriendSocial,
@@ -36,7 +36,7 @@ function unauthorized() {
 async function findPublishedPivotEvent(req, eventId, { now, requireWindow } = {}) {
   const { Event } = getModels(req, 'Event');
 
-  const query = {
+  const baseQuery = {
     _id: eventId,
     'customFields.pivot.ingestStatus': 'published',
     status: { $in: PIVOT_EVENT_STATUSES },
@@ -44,10 +44,10 @@ async function findPublishedPivotEvent(req, eventId, { now, requireWindow } = {}
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
   };
 
-  if (requireWindow) {
-    const { windowStart, windowEnd } = getPilotWindow(now);
-    query.start_time = { $gte: windowStart, $lt: windowEnd };
-  }
+  const effectiveNow = now ? new Date(now) : new Date();
+  const query = requireWindow
+    ? { $and: [baseQuery, getFeedPilotWindowFilter(effectiveNow)] }
+    : baseQuery;
 
   return Event.findOne(query)
     .select('start_time end_time externalLink customFields.pivot')

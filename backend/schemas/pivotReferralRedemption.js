@@ -18,10 +18,17 @@ const pivotReferralRedemptionSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       required: true,
     },
+    /** Pilot user who shared the invite link (global identity). Best-effort attribution. */
+    referredByGlobalUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'GlobalUser',
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
 pivotReferralRedemptionSchema.index({ globalUserId: 1, code: 1 }, { unique: true });
+pivotReferralRedemptionSchema.index({ referredByGlobalUserId: 1, createdAt: -1 });
 
 module.exports = pivotReferralRedemptionSchema;

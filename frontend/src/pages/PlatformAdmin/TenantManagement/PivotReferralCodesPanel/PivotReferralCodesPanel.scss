@@ -121,6 +121,12 @@
   }
 }
 
+.linear-field__hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--la-text-tertiary);
+}
+
 .linear-field--checkbox {
   display: flex;
   flex-direction: row;

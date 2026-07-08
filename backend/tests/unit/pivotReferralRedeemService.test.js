@@ -1,7 +1,12 @@
 jest.mock('../../services/getGlobalModelService', () => jest.fn());
+jest.mock('../../services/getModelService', () => jest.fn());
+jest.mock('../../services/pivotProfileService', () => ({
+  reactivatePivotParticipationByGlobalUserId: jest.fn().mockResolvedValue(undefined),
+}));
 
 const mongoose = require('mongoose');
 const getGlobalModels = require('../../services/getGlobalModelService');
+const getModels = require('../../services/getModelService');
 const { redeemReferralCode } = require('../../services/pivotReferralCodeService');
 
 describe('pivotReferralCodeService.redeemReferralCode', () => {
@@ -36,6 +41,14 @@ describe('pivotReferralCodeService.redeemReferralCode', () => {
       PivotReferralRedemption: {
         findOne: redemptionFindOne,
         create,
+      },
+      TenantMembership: {
+        findOne: jest.fn(),
+      },
+    });
+    getModels.mockReturnValue({
+      User: {
+        findById: jest.fn(),
       },
     });
   });
@@ -104,6 +117,80 @@ describe('pivotReferralCodeService.redeemReferralCode', () => {
       expect.objectContaining({
         code: 'NYC-PILOT-A',
         pivotReferralCodeId: codeId,
+      }),
+    );
+  });
+
+  it('stores referredByGlobalUserId when invite ref resolves to another member', async () => {
+    const inviterTenantId = new mongoose.Types.ObjectId();
+    const inviterGlobalUserId = new mongoose.Types.ObjectId();
+
+    redemptionFindOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    });
+
+    const referralDoc = {
+      _id: codeId,
+      code: 'NYC-PILOT-A',
+      tenantKey: 'nyc',
+      active: true,
+      expiresAt: null,
+      redemptionCount: 0,
+      maxRedemptions: 50,
+    };
+
+    codeFindOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(referralDoc),
+    });
+
+    findOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: codeId,
+        redemptionCount: 1,
+        maxRedemptions: 50,
+      }),
+    });
+
+    getModels.mockReturnValue({
+      User: {
+        findById: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue({ _id: inviterTenantId }),
+          }),
+        }),
+      },
+    });
+
+    const membershipFindOne = jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ globalUserId: inviterGlobalUserId }),
+      }),
+    });
+    getGlobalModels.mockReturnValue({
+      PivotReferralCode: {
+        findOne: codeFindOne,
+        findOneAndUpdate,
+        updateOne,
+      },
+      PivotReferralRedemption: {
+        findOne: redemptionFindOne,
+        create,
+      },
+      TenantMembership: {
+        findOne: membershipFindOne,
+      },
+    });
+
+    create.mockResolvedValue({});
+
+    const result = await redeemReferralCode(makeReq(), 'NYC-PILOT-A', {
+      referredByUserId: String(inviterTenantId),
+    });
+
+    expect(result.data.inviterAttributed).toBe(true);
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referredByGlobalUserId: inviterGlobalUserId,
       }),
     );
   });

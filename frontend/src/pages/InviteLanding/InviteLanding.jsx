@@ -56,13 +56,20 @@ function normalizeInviteCode(raw) {
   return (raw || '').trim().toUpperCase();
 }
 
-function buildDeepLink(code) {
-  return `meridian://invite?code=${encodeURIComponent(normalizeInviteCode(code))}`;
+function buildDeepLink(code, referredByUserId) {
+  const params = new URLSearchParams();
+  params.set('code', normalizeInviteCode(code));
+  const ref = (referredByUserId || '').trim();
+  if (ref) {
+    params.set('ref', ref);
+  }
+  return `meridian://invite?${params.toString()}`;
 }
 
 function InviteLanding() {
   const [searchParams] = useSearchParams();
   const rawCode = searchParams.get('code');
+  const referredByUserId = searchParams.get('ref')?.trim() || null;
   const code = normalizeInviteCode(rawCode);
   const { isAndroid } = useDeviceDetection();
   const { theme, toggleTheme, isNight } = useInviteTheme();
@@ -130,7 +137,7 @@ function InviteLanding() {
     }
   }, [code]);
 
-  const deepLink = code ? buildDeepLink(code) : null;
+  const deepLink = code ? buildDeepLink(code, referredByUserId) : null;
 
   const renderAppStoreBadge = () => (
     <a

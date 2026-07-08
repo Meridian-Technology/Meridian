@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const getGlobalModels = require('./getGlobalModelService');
+const getModels = require('./getModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isValidIsoWeek, toIsoWeek } = require('../utilities/pivotIsoWeek');
 const { reactivatePivotParticipationByGlobalUserId } = require('./pivotProfileService');
@@ -326,13 +327,66 @@ async function validateReferralCode(req, rawCode) {
   };
 }
 
+function toObjectId(value) {
+  if (!value || !mongoose.Types.ObjectId.isValid(value)) {
+    return null;
+  }
+  return new mongoose.Types.ObjectId(String(value));
+}
+
+/**
+ * Resolve a tenant-scoped inviter user id (from invite `ref` param) to global identity.
+ * Returns null when ref is missing, invalid, unknown, or not an active member of this city.
+ */
+async function resolveReferredByGlobalUserId(req, referredByUserId, redeemerGlobalUserId) {
+  const inviterTenantId = toObjectId(referredByUserId);
+  if (!inviterTenantId || !redeemerGlobalUserId) {
+    return null;
+  }
+
+  const tenantKey = typeof req.school === 'string' ? req.school.trim().toLowerCase() : '';
+  if (!tenantKey) {
+    return null;
+  }
+
+  const { TenantMembership } = getGlobalModels(req, 'TenantMembership');
+  const { User } = getModels(req, 'User');
+
+  const inviterUser = await User.findById(inviterTenantId).select('_id').lean();
+  if (!inviterUser) {
+    return null;
+  }
+
+  const membership = await TenantMembership.findOne({
+    tenantKey,
+    tenantUserId: inviterTenantId,
+    status: 'active',
+  })
+    .select('globalUserId')
+    .lean();
+
+  const inviterGlobalUserId = toObjectId(membership?.globalUserId);
+  if (!inviterGlobalUserId) {
+    return null;
+  }
+
+  if (inviterGlobalUserId.equals(redeemerGlobalUserId)) {
+    return null;
+  }
+
+  return inviterGlobalUserId;
+}
+
 /**
  * Persist a redemption for authenticated global users only; increments PivotReferralCode.redemptionCount
  * once per (globalUserId, code). Idempotent when the user retries.
  *
  * Requires req.school to match the code's tenant (city).
+ *
+ * Optional `referredByUserId` (tenant user id from invite link `ref` param) is stored as
+ * `referredByGlobalUserId` on first successful redemption for invite-propagation analytics.
  */
-async function redeemReferralCode(req, rawCode) {
+async function redeemReferralCode(req, rawCode, options = {}) {
   const gid = req.user?.globalUserId;
   if (!gid) {
     return {
@@ -370,6 +424,12 @@ async function redeemReferralCode(req, rawCode) {
     };
   }
 
+  const referredByGlobalUserId = await resolveReferredByGlobalUserId(
+    req,
+    options.referredByUserId,
+    globalUserObjectId,
+  );
+
   const existingRedemption = await PivotReferralRedemption.findOne({
     globalUserId: globalUserObjectId,
     code,
@@ -382,6 +442,7 @@ async function redeemReferralCode(req, rawCode) {
         alreadyRedeemed: true,
         redemptionCount: refRow?.redemptionCount ?? null,
         maxRedemptions: refRow?.maxRedemptions ?? null,
+        inviterAttributed: Boolean(existingRedemption.referredByGlobalUserId),
       },
     };
   }
@@ -446,11 +507,15 @@ async function redeemReferralCode(req, rawCode) {
   }
 
   try {
-    await PivotReferralRedemption.create({
+    const redemptionPayload = {
       globalUserId: globalUserObjectId,
       code,
       pivotReferralCodeId: updated._id,
-    });
+    };
+    if (referredByGlobalUserId) {
+      redemptionPayload.referredByGlobalUserId = referredByGlobalUserId;
+    }
+    await PivotReferralRedemption.create(redemptionPayload);
   } catch (err) {
     if (err?.code === 11000) {
       await PivotReferralCode.updateOne({ _id: updated._id }, { $inc: { redemptionCount: -1 } });
@@ -461,6 +526,7 @@ async function redeemReferralCode(req, rawCode) {
           alreadyRedeemed: true,
           redemptionCount: refRow?.redemptionCount ?? null,
           maxRedemptions: refRow?.maxRedemptions ?? null,
+          inviterAttributed: false,
         },
       };
     }
@@ -475,6 +541,7 @@ async function redeemReferralCode(req, rawCode) {
       alreadyRedeemed: false,
       redemptionCount: updated.redemptionCount,
       maxRedemptions: updated.maxRedemptions,
+      inviterAttributed: Boolean(referredByGlobalUserId),
     },
   };
 }

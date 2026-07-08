@@ -1,6 +1,7 @@
 jest.mock('../../services/getModelService', () => jest.fn());
 
 const getModels = require('../../services/getModelService');
+const { getFeedPilotWindowFilter } = require('../../services/pivotFeedService');
 const {
   recordFeedAction,
   recordExternalOpen,
@@ -28,7 +29,13 @@ function publishedEvent(overrides = {}) {
     _id: eventId,
     start_time: new Date('2026-05-28T19:00:00.000Z'),
     externalLink: 'https://partiful.com/e/example',
-    customFields: { pivot: { batchWeek: '2026-W22', host: { name: 'Venue' } } },
+    customFields: {
+      pivot: {
+        batchWeek: '2026-W22',
+        ingestStatus: 'published',
+        host: { name: 'Venue' },
+      },
+    },
     ...overrides,
   };
 }
@@ -89,6 +96,65 @@ describe('recordFeedAction', () => {
       { $set: { status: 'passed', batchWeek: '2026-W22', timeSlotId: null } },
       expect.objectContaining({ upsert: true }),
     );
+  });
+
+  it('uses the feed pilot-window filter for swipe actions (multi-showtime aware)', async () => {
+    const filmNow = new Date('2026-05-28T12:00:00.000Z');
+    const findOneAndUpdate = jest.fn(() => ({
+      lean: jest
+        .fn()
+        .mockResolvedValue({ eventId, status: 'interested', batchWeek: '2026-W22' }),
+    }));
+    const eventFindOne = jest.fn(() =>
+      mockEventFindOne(
+        publishedEvent({
+          start_time: new Date('2026-05-26T18:00:00.000Z'),
+          end_time: new Date('2026-05-29T05:00:00.000Z'),
+          customFields: {
+            pivot: {
+              batchWeek: '2026-W22',
+              ingestStatus: 'published',
+              host: { name: 'Nitehawk Cinema' },
+              timeSlots: [
+                {
+                  id: '6pm',
+                  start_time: new Date('2026-05-26T18:00:00.000Z'),
+                  end_time: new Date('2026-05-26T20:30:00.000Z'),
+                },
+                {
+                  id: '830pm',
+                  start_time: new Date('2026-05-28T23:30:00.000Z'),
+                  end_time: new Date('2026-05-29T02:00:00.000Z'),
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    );
+    getModels.mockImplementation((_req, ...names) => {
+      if (names.includes('Event')) {
+        return { Event: { findOne: eventFindOne } };
+      }
+      return { PivotEventIntent: { findOneAndUpdate } };
+    });
+
+    const result = await recordFeedAction(req, {
+      eventId,
+      action: 'interested',
+      now: filmNow,
+    });
+
+    expect(result.data?.status).toBe('interested');
+    expect(eventFindOne).toHaveBeenCalledWith({
+      $and: [
+        expect.objectContaining({
+          _id: eventId,
+          'customFields.pivot.ingestStatus': 'published',
+        }),
+        getFeedPilotWindowFilter(filmNow),
+      ],
+    });
   });
 });
 

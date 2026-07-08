@@ -102,7 +102,9 @@ router.post('/referral/validate', pivotReferralValidateRateLimit, async (req, re
 
 router.post('/referral/redeem', verifyToken, async (req, res) => {
   try {
-    const result = await redeemReferralCode(req, req.body?.code);
+    const result = await redeemReferralCode(req, req.body?.code, {
+      referredByUserId: req.body?.referredByUserId,
+    });
     if (result.error) {
       return res.status(result.status || 400).json({
         success: false,

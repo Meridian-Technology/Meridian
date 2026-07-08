@@ -10,7 +10,7 @@ const { toIsoWeek, isValidIsoWeek, isoWeekToUtcRange } = require('../utilities/p
 /** Mobile analytics event names surfaced as Lab engagement metrics. */
 const ENGAGEMENT_EVENTS = {
   calendarAdds: ['pivot_calendar_add'],
-  inviteShares: ['pivot_invite_share'],
+  inviteShares: ['pivot_invite_share', 'pivot_invite_copy'],
   interestsSaved: ['pivot_interests_onboarding_completed', 'pivot_interests_updated'],
 };
 

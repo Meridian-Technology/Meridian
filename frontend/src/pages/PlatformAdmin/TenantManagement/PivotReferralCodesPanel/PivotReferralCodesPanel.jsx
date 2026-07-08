@@ -60,6 +60,12 @@ function ReferralCodeForm({ form, onChange, onSubmit, onCancel, submitLabel, sav
             placeholder="pilot-a"
             required
           />
+          <span className="linear-field__hint">
+            Codes that share a cohort ID surface each other during onboarding
+            (&quot;know any of these people?&quot;) so friend groups can connect
+            before the first deck. Use the same cohort for a club or floor; use
+            distinct cohorts when codes should not cross-suggest.
+          </span>
         </label>
         <label className="linear-field">
           <span className="linear-field__label">Max redemptions</span>
@@ -263,7 +269,11 @@ function PivotReferralCodesPanel({ tenantKey }) {
         <div>
           <h3 id={panelId} className="linear-section__title">Pivot referral codes</h3>
           <p className="pivot-referral__hint">
-            Invite codes gate the Pivot mobile edition for this city. Current ISO week:{' '}
+            Invite codes gate the Pivot mobile edition for this city.{' '}
+            <strong>Cohort ID</strong> groups codes for analytics and onboarding:
+            new users who redeemed codes with the same cohort see each other on the
+            &quot;know any of these people?&quot; step and can send friend requests
+            before their first week deck. Current ISO week:{' '}
             <code className="linear-code linear-code--inline">{currentBatchWeek || '—'}</code>
           </p>
         </div>
