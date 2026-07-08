@@ -89,6 +89,54 @@ function buildBaseApp() {
   return app;
 }
 
+describe('pivotRoutes GET /pivot/referral/preview', () => {
+  beforeEach(() => {
+    validateReferralCode.mockReset();
+  });
+
+  it('returns valid preview for redeemable code', async () => {
+    validateReferralCode.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        subdomain: 'nyc',
+        cohortId: 'pilot-a',
+        cityDisplayName: 'New York City',
+        batchWeek: '2026-W21',
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/referral/preview')
+      .query({ code: 'NYC-PILOT-A' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toEqual({
+      valid: true,
+      cityDisplayName: 'New York City',
+    });
+    expect(validateReferralCode).toHaveBeenCalledWith(expect.any(Object), 'NYC-PILOT-A');
+  });
+
+  it('returns invalid preview without leaking error details', async () => {
+    validateReferralCode.mockResolvedValue({
+      error: 'Invalid referral code.',
+      status: 404,
+      code: 'REFERRAL_CODE_NOT_FOUND',
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/referral/preview')
+      .query({ code: 'BAD-CODE' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data).toEqual({
+      valid: false,
+      cityDisplayName: null,
+    });
+  });
+});
+
 describe('pivotRoutes POST /pivot/referral/validate', () => {
   beforeEach(() => {
     validateReferralCode.mockReset();

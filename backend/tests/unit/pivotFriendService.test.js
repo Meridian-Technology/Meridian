@@ -1,12 +1,15 @@
 jest.mock('../../services/getModelService', () => jest.fn());
+jest.mock('../../services/getGlobalModelService', () => jest.fn());
 jest.mock('../../services/notificationService', () => ({
   withModels: jest.fn(),
 }));
 
 const getModels = require('../../services/getModelService');
+const getGlobalModels = require('../../services/getGlobalModelService');
 const NotificationService = require('../../services/notificationService');
 const {
   searchPivotFriends,
+  getPivotCohortSuggestions,
   sendPivotFriendRequest,
   listPivotFriends,
   listPivotFriendRequests,
@@ -180,6 +183,111 @@ describe('searchPivotFriends', () => {
 
   it('exports the minimum query length constant', () => {
     expect(MIN_QUERY_LENGTH).toBe(2);
+  });
+});
+
+describe('getPivotCohortSuggestions', () => {
+  const globalSelf = '607f191e810c19729de860a0';
+  const aliceGlobal = '607f191e810c19729de860a1';
+  const bobGlobal = '607f191e810c19729de860a2';
+  const cohortReq = { user: { userId, globalUserId: globalSelf }, school: 'nyc' };
+
+  let User;
+  let Friendship;
+  let PivotReferralCode;
+  let PivotReferralRedemption;
+  let TenantMembership;
+
+  function chain(result) {
+    const c = {
+      select: jest.fn(() => c),
+      sort: jest.fn(() => c),
+      lean: jest.fn().mockResolvedValue(result),
+    };
+    return c;
+  }
+
+  beforeEach(() => {
+    User = { find: jest.fn() };
+    Friendship = { find: jest.fn() };
+    PivotReferralCode = { find: jest.fn() };
+    PivotReferralRedemption = { find: jest.fn() };
+    TenantMembership = { find: jest.fn() };
+    getModels.mockReturnValue({ User, Friendship });
+    getGlobalModels.mockReturnValue({
+      PivotReferralCode,
+      PivotReferralRedemption,
+      TenantMembership,
+    });
+  });
+
+  it('requires authentication', async () => {
+    const result = await getPivotCohortSuggestions({});
+    expect(result.status).toBe(401);
+    expect(result.code).toBe('UNAUTHORIZED');
+  });
+
+  it('returns empty when the user has no global identity', async () => {
+    const result = await getPivotCohortSuggestions({ user: { userId }, school: 'nyc' });
+    expect(result.data).toEqual({ users: [] });
+    expect(PivotReferralRedemption.find).not.toHaveBeenCalled();
+  });
+
+  it('returns empty when the redeemed code carries no cohortId', async () => {
+    PivotReferralRedemption.find.mockReturnValueOnce(chain([{ code: 'NYC-SOLO' }]));
+    PivotReferralCode.find.mockReturnValueOnce(chain([{ cohortId: '' }]));
+
+    const result = await getPivotCohortSuggestions(cohortReq);
+
+    expect(result.data).toEqual({ users: [] });
+    expect(TenantMembership.find).not.toHaveBeenCalled();
+  });
+
+  it('suggests same-cohort joiners, excludes self and existing friends, keeps pending status', async () => {
+    // 1. requester redemptions → 2. their cohortId → 3. cohort codes → 4. cohort redemptions
+    PivotReferralRedemption.find
+      .mockReturnValueOnce(chain([{ code: 'NYC-A' }]))
+      .mockReturnValueOnce(
+        chain([{ globalUserId: aliceGlobal }, { globalUserId: bobGlobal }]),
+      );
+    PivotReferralCode.find
+      .mockReturnValueOnce(chain([{ cohortId: 'rpi-club' }]))
+      .mockReturnValueOnce(chain([{ code: 'NYC-A' }, { code: 'NYC-B' }]));
+    TenantMembership.find.mockReturnValueOnce(
+      chain([
+        { globalUserId: aliceGlobal, tenantUserId: aliceId },
+        { globalUserId: bobGlobal, tenantUserId: bobId },
+      ]),
+    );
+    User.find.mockReturnValueOnce(
+      chain([
+        { _id: aliceId, name: 'Alice', picture: null },
+        { _id: bobId, name: 'Bob', picture: null, username: 'bob_z' },
+      ]),
+    );
+    // Alice already accepted (excluded); Bob has an outgoing pending request (kept, disabled)
+    Friendship.find.mockReturnValueOnce(
+      chain([
+        { requester: userId, recipient: aliceId, status: 'accepted' },
+        { requester: userId, recipient: bobId, status: 'pending' },
+      ]),
+    );
+
+    const result = await getPivotCohortSuggestions(cohortReq);
+
+    expect(PivotReferralCode.find).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ cohortId: { $in: ['rpi-club'] }, tenantKey: 'nyc' }),
+    );
+    expect(result.data.users).toEqual([
+      {
+        id: bobId,
+        name: 'Bob',
+        picture: null,
+        username: 'bob_z',
+        friendshipStatus: 'pending_outgoing',
+      },
+    ]);
   });
 });
 

@@ -71,6 +71,7 @@ const { getFriendRequests } = require('../utilities/friendUtils');
 const { createSession, validateSession, deleteSession, deleteAllUserSessions, getUserSessions, getUserSessionsForGlobalUser, deleteSessionById, deleteSessionByIdForGlobalUser, revokeAllOtherSessionsForGlobalUser } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
 const authGlobalService = require('../services/authGlobalService');
+const { normalizePivotLeaveAuthUser } = require('../services/pivotProfileService');
 const {
     isAdminLevelAccount,
     getMfaStatus,
@@ -138,6 +139,12 @@ async function getCurrentTenantAdminUser(req) {
 }
 
 async function completeLoginWithAdminMfa(req, res, globalUser, tenantUser, platformRoles, message) {
+    if (tenantUser?._id) {
+        const normalized = await normalizePivotLeaveAuthUser(req, tenantUser._id, platformRoles);
+        if (normalized) {
+            tenantUser = normalized;
+        }
+    }
     if (tenantUser?.accessSuspended) {
         return {
             status: 403,
@@ -420,7 +427,24 @@ router.post('/refresh-token', async (req, res) => {
         const { user, globalUser } = validation;
         const isMobile = isMobileClient(req);
 
-        if (user?.accessSuspended) {
+        if (user?._id) {
+            const normalized = await normalizePivotLeaveAuthUser(req, user._id);
+            if (normalized) {
+                if (normalized.accessSuspended) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'This account has been suspended.',
+                        code: 'ACCOUNT_SUSPENDED',
+                    });
+                }
+            } else if (user?.accessSuspended) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'This account has been suspended.',
+                    code: 'ACCOUNT_SUSPENDED',
+                });
+            }
+        } else if (user?.accessSuspended) {
             return res.status(403).json({
                 success: false,
                 message: 'This account has been suspended.',

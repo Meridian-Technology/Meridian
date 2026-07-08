@@ -21,6 +21,7 @@ import Org from './pages/Org/Org';
 import Profile from './pages/Profile/Profile';
 import Landing from './pages/Landing/Landing';
 import MobileLanding from './pages/MobileLanding/MobileLanding';
+import InviteLanding from './pages/InviteLanding/InviteLanding';
 import Events from './pages/Events/Events';
 import DeveloperOnboard from './pages/DeveloperOnboarding/DeveloperOnboarding';
 import QR from './pages/QR/QR';
@@ -236,6 +237,7 @@ function App() {
                                             <Route path="/error/:errorCode" element={<Error />}/>
                                             <Route path="/landing" element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>}/>
                                             <Route path="/mobile" element={<AnimatedPageWrapper><MobileLanding /></AnimatedPageWrapper>}/>
+                                            <Route path="/invite" element={<AnimatedPageWrapper><InviteLanding /></AnimatedPageWrapper>}/>
                                             <Route path="/org" element={<AnimatedPageWrapper><Org/></AnimatedPageWrapper>}/>
                                             <Route path="/documentation" element={<Redirect/>}/>
                                             <Route path="/new-badge/:hash" element={<AnimatedPageWrapper><NewBadge/></AnimatedPageWrapper>}/>

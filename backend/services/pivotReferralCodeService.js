@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isValidIsoWeek, toIsoWeek } = require('../utilities/pivotIsoWeek');
+const { reactivatePivotParticipationByGlobalUserId } = require('./pivotProfileService');
 
 function isPivotTenant(tenant) {
   return tenant?.pivotPilot === true || tenant?.tenantType === 'pivot';
@@ -375,6 +376,7 @@ async function redeemReferralCode(req, rawCode) {
   }).lean();
   if (existingRedemption) {
     const refRow = await PivotReferralCode.findOne({ code }).select('redemptionCount maxRedemptions').lean();
+    await reactivatePivotParticipationByGlobalUserId(req, globalUserObjectId);
     return {
       data: {
         alreadyRedeemed: true,
@@ -453,6 +455,7 @@ async function redeemReferralCode(req, rawCode) {
     if (err?.code === 11000) {
       await PivotReferralCode.updateOne({ _id: updated._id }, { $inc: { redemptionCount: -1 } });
       const refRow = await PivotReferralCode.findOne({ code }).select('redemptionCount maxRedemptions').lean();
+      await reactivatePivotParticipationByGlobalUserId(req, globalUserObjectId);
       return {
         data: {
           alreadyRedeemed: true,
@@ -463,6 +466,8 @@ async function redeemReferralCode(req, rawCode) {
     }
     throw err;
   }
+
+  await reactivatePivotParticipationByGlobalUserId(req, globalUserObjectId);
 
   return {
     data: {

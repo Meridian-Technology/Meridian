@@ -174,6 +174,8 @@ function createApp() {
     '/',
     '/landing',
     '/mobile',
+    '/invite',
+    '/.well-known',
     '/contact',
     '/support',
     '/privacy-policy',

@@ -19,9 +19,12 @@ const { listPivotTags } = require('../services/pivotTagCatalogService');
 const {
   getPivotProfileInterests,
   updatePivotProfileInterests,
+  updatePivotProfileAgeVerification,
+  leavePivotPilot,
 } = require('../services/pivotProfileService');
 const {
   searchPivotFriends,
+  getPivotCohortSuggestions,
   sendPivotFriendRequest,
   listPivotFriends,
   listPivotFriendRequests,
@@ -43,6 +46,35 @@ const {
 const router = express.Router();
 
 router.use(pivotRequestLogger);
+
+router.get('/referral/preview', pivotReferralValidateRateLimit, async (req, res) => {
+  try {
+    const result = await validateReferralCode(req, req.query?.code);
+    if (result.error) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          valid: false,
+          cityDisplayName: null,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        valid: true,
+        cityDisplayName: result.data?.cityDisplayName || null,
+      },
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/referral/preview', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to preview referral code.',
+    });
+  }
+});
 
 router.post('/referral/validate', pivotReferralValidateRateLimit, async (req, res) => {
   try {
@@ -160,6 +192,54 @@ router.put('/profile/interests', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to save pivot interests.',
+    });
+  }
+});
+
+router.put('/profile/age-verification', verifyToken, async (req, res) => {
+  try {
+    const result = await updatePivotProfileAgeVerification(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('PUT /pivot/profile/age-verification', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to verify age.',
+    });
+  }
+});
+
+router.post('/leave-pilot', verifyToken, async (req, res) => {
+  try {
+    const result = await leavePivotPilot(req);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/leave-pilot', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to leave pilot.',
     });
   }
 });
@@ -442,6 +522,30 @@ router.get('/friends/search', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to search friends.',
+    });
+  }
+});
+
+router.get('/friends/cohort', verifyToken, async (req, res) => {
+  try {
+    const result = await getPivotCohortSuggestions(req);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/friends/cohort', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load cohort suggestions.',
     });
   }
 });

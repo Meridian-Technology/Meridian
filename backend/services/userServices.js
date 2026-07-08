@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const appleSignin = require('apple-signin-auth');
 const { sendDiscordMessage } = require('./discordWebookService');
+const { normalizePivotLeaveAuthUser } = require('./pivotProfileService');
 
 function getModels(req, ...names) {
     return require('./getModelService')(req, ...names);
@@ -82,6 +83,10 @@ async function loginUser({ email, password, req }) {
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
         throw new Error('Invalid credentials');
+    }
+    const normalized = await normalizePivotLeaveAuthUser(req, user._id);
+    if (normalized) {
+        user = normalized.toObject ? normalized.toObject() : normalized;
     }
     if (user.accessSuspended) {
         throw new Error('This account has been suspended');
