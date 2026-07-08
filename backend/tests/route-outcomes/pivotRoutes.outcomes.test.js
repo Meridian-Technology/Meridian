@@ -207,7 +207,11 @@ describe('pivotRoutes POST /pivot/referral/redeem', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
     expect(response.body.data.redemptionCount).toBe(1);
-    expect(redeemReferralCode).toHaveBeenCalledWith(expect.any(Object), 'NYC-PILOT-A');
+    expect(redeemReferralCode).toHaveBeenCalledWith(
+      expect.any(Object),
+      'NYC-PILOT-A',
+      expect.objectContaining({ referredByUserId: undefined })
+    );
   });
 
   it('returns 403 when service rejects', async () => {
