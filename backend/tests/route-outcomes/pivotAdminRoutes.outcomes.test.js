@@ -24,6 +24,10 @@ jest.mock('../../services/pivotAdminOverviewService', () => ({
   getPivotOverview: jest.fn(),
 }));
 
+jest.mock('../../services/pivotRetentionService', () => ({
+  getPivotRetention: jest.fn(),
+}));
+
 jest.mock('../../services/pivotLabEventsService', () => ({
   listPivotLabEvents: jest.fn(),
 }));
@@ -62,6 +66,7 @@ const {
   getWeeklySnapshot,
 } = require('../../services/pivotWeeklySnapshotService');
 const { getPivotOverview } = require('../../services/pivotAdminOverviewService');
+const { getPivotRetention } = require('../../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../../services/pivotLabEventsService');
 const {
   getInterviewNotes,
@@ -195,6 +200,56 @@ describe('pivotAdminRoutes overview', () => {
     const response = await request(buildApp()).get('/admin/pivot/overview');
     expect(response.status).toBe(403);
     expect(getPivotOverview).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes retention', () => {
+  beforeEach(() => {
+    getPivotRetention.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/retention returns week-over-week rows', async () => {
+    getPivotRetention.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W27',
+        weeks: ['2026-W26', '2026-W27'],
+        tenants: [
+          {
+            tenantKey: 'nyc',
+            cityDisplayName: 'New York City',
+            weeks: [
+              { batchWeek: '2026-W26', activeUsers: 4, returningUsers: null, retentionRate: null },
+              { batchWeek: '2026-W27', activeUsers: 3, returningUsers: 2, retentionRate: 50 },
+            ],
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/retention?batchWeek=2026-W27&weeks=2',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.tenants[0].weeks[1].retentionRate).toBe(50);
+    expect(getPivotRetention).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ batchWeek: '2026-W27', weeks: '2' }),
+    );
+  });
+
+  it('GET /admin/pivot/retention surfaces service errors', async () => {
+    getPivotRetention.mockResolvedValue({
+      error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
+      status: 400,
+      code: 'INVALID_BATCH_WEEK',
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/retention?batchWeek=bad');
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_BATCH_WEEK');
   });
 });
 

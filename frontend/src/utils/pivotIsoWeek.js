@@ -17,6 +17,32 @@ export function isValidIsoWeek(value) {
   return typeof value === 'string' && ISO_WEEK_PATTERN.test(value.trim());
 }
 
+/** UTC Date for the Monday starting the given ISO week. */
+export function isoWeekToMondayUtc(batchWeek) {
+  const match = typeof batchWeek === 'string' && batchWeek.trim().match(/^(\d{4})-W(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4IsoDay = jan4.getUTCDay() || 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - jan4IsoDay + 1 + (week - 1) * 7);
+  return monday;
+}
+
+/** Shift an ISO week string by delta weeks (negative = earlier); null on invalid input. */
+export function shiftIsoWeek(batchWeek, delta) {
+  const monday = isoWeekToMondayUtc(batchWeek);
+  if (!monday) return null;
+  monday.setUTCDate(monday.getUTCDate() + delta * 7);
+  // Thursday of the shifted week pins the ISO year.
+  const thursday = new Date(monday);
+  thursday.setUTCDate(monday.getUTCDate() + 3);
+  const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((thursday - yearStart) / 86400000 + 1) / 7);
+  return `${thursday.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
 export function formatEventWhen(iso) {
   if (!iso) return '—';
   const d = new Date(iso);

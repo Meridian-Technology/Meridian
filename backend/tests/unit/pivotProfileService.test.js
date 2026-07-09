@@ -2,12 +2,23 @@ jest.mock('../../services/getModelService', () => jest.fn());
 jest.mock('../../services/pivotTagCatalogService', () => ({
   validatePivotInterestTags: jest.fn(),
 }));
+jest.mock('../../utilities/sessionUtils', () => ({
+  deleteAllUserSessions: jest.fn(),
+  deleteAllGlobalUserSessions: jest.fn(),
+}));
 
 const getModels = require('../../services/getModelService');
 const { validatePivotInterestTags } = require('../../services/pivotTagCatalogService');
 const {
+  deleteAllUserSessions,
+  deleteAllGlobalUserSessions,
+} = require('../../utilities/sessionUtils');
+const {
   getPivotProfileInterests,
   updatePivotProfileInterests,
+  updatePivotProfileAgeVerification,
+  leavePivotPilot,
+  normalizePivotLeaveAuthUser,
 } = require('../../services/pivotProfileService');
 
 describe('pivotProfileService', () => {
@@ -24,6 +35,8 @@ describe('pivotProfileService', () => {
     };
     getModels.mockReturnValue({ User });
     validatePivotInterestTags.mockReset();
+    deleteAllUserSessions.mockReset();
+    deleteAllGlobalUserSessions.mockReset();
   });
 
   it('returns unauthorized when user id is missing', async () => {
@@ -115,5 +128,83 @@ describe('pivotProfileService', () => {
 
     expect(result.code).toBe('VALIDATION_ERROR');
     expect(validatePivotInterestTags).not.toHaveBeenCalled();
+  });
+
+  it('stores age verification for 18+ users', async () => {
+    const save = jest.fn().mockResolvedValue(undefined);
+    User.findById.mockResolvedValue({
+      pivotBirthYear: null,
+      pivotAgeVerifiedAt: null,
+      save,
+    });
+
+    const result = await updatePivotProfileAgeVerification(req, { birthYear: 2000 });
+
+    expect(save).toHaveBeenCalled();
+    expect(result.data.birthYear).toBe(2000);
+    expect(result.data.pivotAgeVerifiedAt).toBeTruthy();
+  });
+
+  it('rejects underage verification requests', async () => {
+    const birthYear = new Date().getUTCFullYear() - 17;
+    const result = await updatePivotProfileAgeVerification(req, { birthYear });
+
+    expect(result.code).toBe('UNDERAGE');
+    expect(result.status).toBe(403);
+    expect(User.findById).not.toHaveBeenCalled();
+  });
+
+  it('marks pivot participation left and clears sessions when leaving pilot', async () => {
+    const user = {
+      accessSuspended: false,
+      accessSuspendedAt: null,
+      pivotParticipationStatus: 'active',
+      pivotLeftAt: null,
+      refreshToken: 'legacy-refresh',
+      save: jest.fn().mockImplementation(function save() {
+        return Promise.resolve(this);
+      }),
+    };
+    User.findById.mockResolvedValue(user);
+
+    const result = await leavePivotPilot(req);
+
+    expect(user.pivotParticipationStatus).toBe('left');
+    expect(user.pivotLeftAt).toBeTruthy();
+    expect(user.accessSuspended).toBe(false);
+    expect(user.save).toHaveBeenCalled();
+    expect(result.data.deactivated).toBe(true);
+    expect(deleteAllUserSessions).toHaveBeenCalledWith(req.user.userId, req);
+  });
+
+  it('clears mistaken pivot leave suspension for users without onboarding data', async () => {
+    const pivotReq = {
+      ...req,
+      school: 'test-pivot',
+    };
+    const user = {
+      _id: req.user.userId,
+      accessSuspended: true,
+      accessSuspendedAt: new Date('2026-01-01T00:00:00.000Z'),
+      pivotParticipationStatus: 'active',
+      pivotLeftAt: null,
+      roles: ['user'],
+      save: jest.fn().mockImplementation(function save() {
+        return Promise.resolve(this);
+      }),
+    };
+    User.findById.mockResolvedValue(user);
+
+    jest.spyOn(require('../../services/tenantConfigService'), 'getTenantByKey').mockResolvedValue({
+      pivotPilot: true,
+      tenantType: 'pivot',
+    });
+
+    const normalized = await normalizePivotLeaveAuthUser(pivotReq, req.user.userId);
+
+    expect(normalized?.accessSuspended).toBe(false);
+    expect(normalized?.pivotParticipationStatus).toBe('left');
+    expect(normalized?.pivotLeftAt).toBeTruthy();
+    expect(user.save).toHaveBeenCalled();
   });
 });

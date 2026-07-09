@@ -5,7 +5,39 @@ const { isPivotTenant } = require('./pivotReferralCodeService');
 const { connectToDatabase } = require('../connectionsManager');
 const { PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
 const { PIVOT_EVENT_FEATURE } = require('./pivotFeedbackService');
-const { toIsoWeek, isValidIsoWeek } = require('../utilities/pivotIsoWeek');
+const { toIsoWeek, isValidIsoWeek, isoWeekToUtcRange } = require('../utilities/pivotIsoWeek');
+
+/** Mobile analytics event names surfaced as Lab engagement metrics. */
+const ENGAGEMENT_EVENTS = {
+  calendarAdds: ['pivot_calendar_add'],
+  inviteShares: ['pivot_invite_share', 'pivot_invite_copy'],
+  interestsSaved: ['pivot_interests_onboarding_completed', 'pivot_interests_updated'],
+};
+
+/**
+ * Client-only loop counts (calendar adds, invite shares, interests saved) from the
+ * tenant analytics_events collection, bounded to the ISO week's UTC range.
+ * Best-effort: analytics ingestion must never fail a snapshot, so errors return zeros.
+ */
+async function aggregateEngagementMetrics(tenantReq, batchWeek) {
+  const zeros = { calendarAdds: 0, inviteShares: 0, interestsSaved: 0 };
+  try {
+    const { AnalyticsEvent } = getModels(tenantReq, 'AnalyticsEvent');
+    const { start, end } = isoWeekToUtcRange(batchWeek);
+    const tsFilter = { ts: { $gte: start, $lt: end } };
+
+    const entries = await Promise.all(
+      Object.entries(ENGAGEMENT_EVENTS).map(async ([key, eventNames]) => [
+        key,
+        await AnalyticsEvent.countDocuments({ event: { $in: eventNames }, ...tsFilter }),
+      ]),
+    );
+    return Object.fromEntries(entries);
+  } catch (error) {
+    console.error(`[pivotWeeklySnapshot] engagement aggregate failed batchWeek=${batchWeek}:`, error);
+    return zeros;
+  }
+}
 
 const PUBLISHED_EVENT_QUERY = (batchWeek) => ({
   'customFields.pivot.batchWeek': batchWeek,
@@ -42,6 +74,10 @@ function serializeSnapshot(doc) {
       interestedCount: row.interestedCount ?? 0,
       registeredCount: row.registeredCount ?? 0,
       externalOpenCount: row.externalOpenCount ?? 0,
+      externalOpenUsers: row.externalOpenUsers ?? 0,
+      calendarAdds: row.calendarAdds ?? 0,
+      inviteShares: row.inviteShares ?? 0,
+      interestsSaved: row.interestsSaved ?? 0,
       swipeCount: row.swipeCount ?? 0,
       feedbackAvg: row.feedbackAvg ?? null,
       activeUsers: row.activeUsers ?? 0,
@@ -76,6 +112,8 @@ async function aggregateTenantMetrics(tenant, batchWeek) {
     passedCount,
     activeUserIds,
     externalOpenAgg,
+    externalOpenUserIds,
+    engagement,
   ] = await Promise.all([
     PivotEventIntent.countDocuments({ ...intentFilter, status: 'interested' }),
     PivotEventIntent.countDocuments({ ...intentFilter, status: 'registered' }),
@@ -85,6 +123,8 @@ async function aggregateTenantMetrics(tenant, batchWeek) {
       { $match: intentFilter },
       { $group: { _id: null, total: { $sum: { $ifNull: ['$externalOpenCount', 0] } } } },
     ]),
+    PivotEventIntent.distinct('userId', { ...intentFilter, externalOpenAt: { $ne: null } }),
+    aggregateEngagementMetrics(tenantReq, batchWeek),
   ]);
 
   // Card swipes: pass + interested; registered users previously swiped right.
@@ -116,6 +156,10 @@ async function aggregateTenantMetrics(tenant, batchWeek) {
     interestedCount,
     registeredCount,
     externalOpenCount: externalOpenAgg[0]?.total ?? 0,
+    externalOpenUsers: externalOpenUserIds.length,
+    calendarAdds: engagement.calendarAdds,
+    inviteShares: engagement.inviteShares,
+    interestsSaved: engagement.interestsSaved,
     swipeCount,
     feedbackAvg,
     activeUsers: activeUserIds.length,
@@ -148,6 +192,10 @@ async function rebuildWeeklySnapshot(req, options = {}) {
         interestedCount: 0,
         registeredCount: 0,
         externalOpenCount: 0,
+        externalOpenUsers: 0,
+        calendarAdds: 0,
+        inviteShares: 0,
+        interestsSaved: 0,
         swipeCount: 0,
         feedbackAvg: null,
         activeUsers: 0,
@@ -187,9 +235,11 @@ async function getWeeklySnapshot(req, options = {}) {
 
 module.exports = {
   aggregateTenantMetrics,
+  aggregateEngagementMetrics,
   rebuildWeeklySnapshot,
   getWeeklySnapshot,
   normalizeBatchWeek,
   serializeSnapshot,
   PUBLISHED_EVENT_QUERY,
+  ENGAGEMENT_EVENTS,
 };

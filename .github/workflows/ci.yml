@@ -36,10 +36,10 @@ jobs:
         run: chmod +x ./bin/fetch_private_deps && ./bin/fetch_private_deps
 
       - name: Install backend deps
-        run: npm install --prefix backend
+        run: npm ci --prefix backend
 
       - name: Install frontend deps
-        run: npm install --prefix frontend
+        run: npm ci --prefix frontend
 
       - name: Build frontend
         run: CI=false npm --prefix frontend run build
@@ -74,10 +74,10 @@ jobs:
         run: chmod +x ./bin/fetch_private_deps && ./bin/fetch_private_deps
 
       - name: Install backend deps
-        run: npm install --prefix backend
+        run: npm ci --prefix backend
 
       - name: Install frontend deps
-        run: npm install --prefix frontend
+        run: npm ci --prefix frontend
 
       - name: Run backend unit tests
         run: npm --prefix backend run test:unit
@@ -121,10 +121,10 @@ jobs:
         run: chmod +x ./bin/fetch_private_deps && ./bin/fetch_private_deps
 
       - name: Install backend deps
-        run: npm install --prefix backend
+        run: npm ci --prefix backend
 
       - name: Install frontend deps
-        run: npm install --prefix frontend
+        run: npm ci --prefix frontend
 
       - name: Run backend comprehensive test suite with coverage
         run: npm --prefix backend run test:coverage -- --json --outputFile=coverage/test-results.json

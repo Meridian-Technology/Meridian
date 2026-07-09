@@ -1,6 +1,7 @@
 jest.mock('../../services/getModelService', () => jest.fn());
 
 const getModels = require('../../services/getModelService');
+const { getFeedPilotWindowFilter } = require('../../services/pivotFeedService');
 const {
   recordFeedAction,
   recordExternalOpen,
@@ -8,6 +9,7 @@ const {
   getWeekRecap,
   resetWeekActions,
   serializeRecapEvent,
+  resolveRegisteredTimeSlotId,
 } = require('../../services/pivotIntentService');
 
 const userId = '507f191e810c19729de860eb';
@@ -27,7 +29,13 @@ function publishedEvent(overrides = {}) {
     _id: eventId,
     start_time: new Date('2026-05-28T19:00:00.000Z'),
     externalLink: 'https://partiful.com/e/example',
-    customFields: { pivot: { batchWeek: '2026-W22', host: { name: 'Venue' } } },
+    customFields: {
+      pivot: {
+        batchWeek: '2026-W22',
+        ingestStatus: 'published',
+        host: { name: 'Venue' },
+      },
+    },
     ...overrides,
   };
 }
@@ -81,12 +89,72 @@ describe('recordFeedAction', () => {
       eventId,
       status: 'passed',
       batchWeek: '2026-W22',
+      timeSlotId: null,
     });
     expect(findOneAndUpdate).toHaveBeenCalledWith(
       { userId, eventId },
-      { $set: { status: 'passed', batchWeek: '2026-W22' } },
+      { $set: { status: 'passed', batchWeek: '2026-W22', timeSlotId: null } },
       expect.objectContaining({ upsert: true }),
     );
+  });
+
+  it('uses the feed pilot-window filter for swipe actions (multi-showtime aware)', async () => {
+    const filmNow = new Date('2026-05-28T12:00:00.000Z');
+    const findOneAndUpdate = jest.fn(() => ({
+      lean: jest
+        .fn()
+        .mockResolvedValue({ eventId, status: 'interested', batchWeek: '2026-W22' }),
+    }));
+    const eventFindOne = jest.fn(() =>
+      mockEventFindOne(
+        publishedEvent({
+          start_time: new Date('2026-05-26T18:00:00.000Z'),
+          end_time: new Date('2026-05-29T05:00:00.000Z'),
+          customFields: {
+            pivot: {
+              batchWeek: '2026-W22',
+              ingestStatus: 'published',
+              host: { name: 'Nitehawk Cinema' },
+              timeSlots: [
+                {
+                  id: '6pm',
+                  start_time: new Date('2026-05-26T18:00:00.000Z'),
+                  end_time: new Date('2026-05-26T20:30:00.000Z'),
+                },
+                {
+                  id: '830pm',
+                  start_time: new Date('2026-05-28T23:30:00.000Z'),
+                  end_time: new Date('2026-05-29T02:00:00.000Z'),
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    );
+    getModels.mockImplementation((_req, ...names) => {
+      if (names.includes('Event')) {
+        return { Event: { findOne: eventFindOne } };
+      }
+      return { PivotEventIntent: { findOneAndUpdate } };
+    });
+
+    const result = await recordFeedAction(req, {
+      eventId,
+      action: 'interested',
+      now: filmNow,
+    });
+
+    expect(result.data?.status).toBe('interested');
+    expect(eventFindOne).toHaveBeenCalledWith({
+      $and: [
+        expect.objectContaining({
+          _id: eventId,
+          'customFields.pivot.ingestStatus': 'published',
+        }),
+        getFeedPilotWindowFilter(filmNow),
+      ],
+    });
   });
 });
 
@@ -161,7 +229,7 @@ describe('confirmRegistered', () => {
     expect(result.data.status).toBe('registered');
     expect(findOneAndUpdate).toHaveBeenCalledWith(
       { userId, eventId },
-      { $set: { status: 'registered', batchWeek: '2026-W22' } },
+      { $set: { status: 'registered', batchWeek: '2026-W22', timeSlotId: null } },
       expect.objectContaining({ upsert: true }),
     );
   });
@@ -185,8 +253,12 @@ describe('getWeekRecap', () => {
     const intentFind = {
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([
-        { eventId, status: 'interested' },
-        { eventId: '665a1b2c3d4e5f6789012346', status: 'registered' },
+        { eventId, status: 'interested', timeSlotId: null },
+        {
+          eventId: '665a1b2c3d4e5f6789012346',
+          status: 'registered',
+          timeSlotId: '7pm',
+        },
       ]),
     };
     const eventFind = {
@@ -203,10 +275,15 @@ describe('getWeekRecap', () => {
         }),
       ]),
     };
+    const friendshipFind = {
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    };
 
     getModels.mockReturnValue({
       PivotEventIntent: { find: jest.fn(() => intentFind) },
       Event: { find: jest.fn(() => eventFind) },
+      Friendship: { find: jest.fn(() => friendshipFind) },
     });
 
     const result = await getWeekRecap(req, { batchWeek: '2026-W22', now });
@@ -296,5 +373,96 @@ describe('serializeRecapEvent', () => {
       tags: ['music'],
     });
     expect(payload).not.toHaveProperty('hostingId');
+  });
+});
+
+describe('resolveRegisteredTimeSlotId', () => {
+  it('requires a showtime when multiple slots exist', () => {
+    const event = {
+      customFields: {
+        pivot: {
+          timeSlots: [
+            { id: '7pm', start_time: '2026-05-23T23:00:00.000Z' },
+            { id: '930pm', start_time: '2026-05-24T01:30:00.000Z' },
+          ],
+        },
+      },
+    };
+
+    expect(resolveRegisteredTimeSlotId(event, '')).toMatchObject({
+      code: 'TIME_SLOT_REQUIRED',
+    });
+    expect(resolveRegisteredTimeSlotId(event, '930pm')).toEqual({
+      timeSlotId: '930pm',
+    });
+  });
+
+  it('auto-selects the only showtime', () => {
+    const event = {
+      customFields: {
+        pivot: {
+          timeSlots: [{ id: '7pm', start_time: '2026-05-23T23:00:00.000Z' }],
+        },
+      },
+    };
+
+    expect(resolveRegisteredTimeSlotId(event, undefined)).toEqual({
+      timeSlotId: '7pm',
+    });
+  });
+});
+
+describe('confirmRegistered time slots', () => {
+  beforeEach(() => {
+    getModels.mockReset();
+  });
+
+  it('persists timeSlotId when confirming registration', async () => {
+    const findOneAndUpdate = jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue({
+        eventId,
+        status: 'registered',
+        batchWeek: '2026-W22',
+        timeSlotId: '7pm',
+      }),
+    }));
+    getModels.mockImplementation((_req, ...names) => {
+      if (names.includes('Event')) {
+        return {
+          Event: {
+            findOne: jest.fn(() =>
+              mockEventFindOne(
+                publishedEvent({
+                  customFields: {
+                    pivot: {
+                      batchWeek: '2026-W22',
+                      host: { name: 'Venue' },
+                      timeSlots: [
+                        { id: '7pm', start_time: '2026-05-23T23:00:00.000Z' },
+                        { id: '930pm', start_time: '2026-05-24T01:30:00.000Z' },
+                      ],
+                    },
+                  },
+                }),
+              ),
+            ),
+          },
+        };
+      }
+      return { PivotEventIntent: { findOneAndUpdate } };
+    });
+
+    const result = await confirmRegistered(req, eventId, { timeSlotId: '7pm' });
+
+    expect(result.data).toMatchObject({
+      eventId,
+      status: 'registered',
+      timeSlotId: '7pm',
+    });
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      { userId, eventId },
+      { $set: expect.objectContaining({ timeSlotId: '7pm', status: 'registered' }) },
+      expect.objectContaining({ upsert: true }),
+    );
   });
 });

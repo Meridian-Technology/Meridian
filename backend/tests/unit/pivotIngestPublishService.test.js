@@ -11,7 +11,6 @@ jest.mock('../../connectionsManager', () => ({
 }));
 jest.mock('../../services/pivotIngestPreviewService', () => ({
   previewIngestUrl: jest.fn(),
-  normalizeUrl: jest.fn(),
   sanitizeEventPosterImage: (raw) => (typeof raw === 'string' && raw.trim() ? raw.trim() : null),
 }));
 jest.mock('../../services/pivotIngestDuplicateService', () => ({
@@ -35,7 +34,7 @@ jest.mock('../../services/pivotTagCatalogService', () => ({
 const getModels = require('../../services/getModelService');
 const { getMergedTenants, provisionPivotCatalogOrg } = require('../../services/tenantConfigService');
 const { connectToDatabase } = require('../../connectionsManager');
-const { previewIngestUrl, normalizeUrl } = require('../../services/pivotIngestPreviewService');
+const { previewIngestUrl } = require('../../services/pivotIngestPreviewService');
 const { resolveImportDuplicate, isBlockingDuplicate } = require('../../services/pivotIngestDuplicateService');
 const { validatePivotEventTags } = require('../../services/pivotTagCatalogService');
 const {
@@ -75,6 +74,26 @@ describe('pivotIngestPublishService merge helpers', () => {
 
     expect(result.code).toBe('MISSING_REQUIRED_FIELDS');
   });
+
+  it('derives event window from showtimes when start_time is omitted', () => {
+    const merged = mergeDraftWithOverrides(
+      {},
+      {
+        hostName: 'Nitehawk Cinema',
+        name: 'Indie Film Night',
+        location: 'Brooklyn, NY',
+        tags: ['film-and-tv'],
+        timeSlots: [
+          { id: '6pm', start_time: '2026-05-29T22:00:00.000Z' },
+          { id: '830pm', start_time: '2026-05-30T00:30:00.000Z' },
+        ],
+      },
+    );
+
+    const result = validateMergedDraft(merged);
+    expect(result.merged.timeSlots).toHaveLength(2);
+    expect(result.merged.startTime.toISOString()).toBe('2026-05-29T22:00:00.000Z');
+  });
 });
 
 describe('pivotIngestPublishService publishIngestEvent', () => {
@@ -83,6 +102,7 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
   beforeEach(() => {
     Event = {
       findOneAndUpdate: jest.fn(),
+      create: jest.fn(),
     };
     getModels.mockReturnValue({ Event });
     getMergedTenants.mockResolvedValue([TENANT]);
@@ -90,10 +110,6 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
     resolveImportDuplicate.mockResolvedValue({ duplicate: null, catalogIndex: [] });
     isBlockingDuplicate.mockReturnValue(false);
     validatePivotEventTags.mockResolvedValue({ tags: ['live-music'] });
-    normalizeUrl.mockReturnValue({
-      url: 'https://partiful.com/e/sunset-listening',
-      provider: 'partiful',
-    });
     previewIngestUrl.mockResolvedValue({
       data: {
         draft: {
@@ -164,6 +180,69 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
       expect.objectContaining({ upsert: true }),
     );
     expect(provisionPivotCatalogOrg).not.toHaveBeenCalled();
+  });
+
+  it('persists showtimes from overrides when publishing without provider preview', async () => {
+    Event.findOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439012',
+        name: 'Indie Film Night',
+        start_time: new Date('2026-05-29T22:00:00.000Z'),
+        end_time: new Date('2026-05-30T05:15:00.000Z'),
+        location: 'Brooklyn, NY',
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W26',
+            ingestStatus: 'published',
+            host: { name: 'Nitehawk Cinema' },
+            tags: ['film-and-tv'],
+            timeSlots: [
+              { id: '6pm', start_time: new Date('2026-05-29T22:00:00.000Z') },
+              { id: '830pm', start_time: new Date('2026-05-30T00:30:00.000Z') },
+            ],
+          },
+        },
+      }),
+    });
+
+    await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://example.com/events/indie-film-night',
+        batchWeek: '2026-W26',
+        overrides: {
+          hostName: 'Nitehawk Cinema',
+          name: 'Indie Film Night',
+          location: 'Brooklyn, NY',
+          tags: ['film-and-tv'],
+          start_time: '2026-05-29T22:00:00.000Z',
+          end_time: '2026-05-30T05:15:00.000Z',
+          timeSlots: [
+            { id: '6pm', label: '6:00 PM', start_time: '2026-05-29T22:00:00.000Z' },
+            { id: '830pm', label: '8:30 PM', start_time: '2026-05-30T00:30:00.000Z' },
+          ],
+        },
+      },
+    );
+
+    expect(previewIngestUrl).not.toHaveBeenCalled();
+    expect(Event.findOneAndUpdate).toHaveBeenCalledWith(
+      { 'customFields.pivot.sourceUrl': 'https://example.com/events/indie-film-night' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          customFields: expect.objectContaining({
+            pivot: expect.objectContaining({
+              timeSlots: expect.arrayContaining([
+                expect.objectContaining({ id: '6pm' }),
+                expect.objectContaining({ id: '830pm' }),
+              ]),
+            }),
+          }),
+        }),
+      }),
+      expect.any(Object),
+    );
   });
 
   it('provisions catalog org when tenant row lacks pivotCatalogOrgId', async () => {
@@ -249,6 +328,94 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
 
     expect(result.code).toBe('INVALID_TAG');
     expect(Event.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(Event.create).not.toHaveBeenCalled();
+  });
+
+  it('creates manual catalog event without a listing URL', async () => {
+    Event.create.mockResolvedValue({
+      toObject: () => ({
+        _id: '507f1f77bcf86cd799439013',
+        name: 'Neighborhood Potluck',
+        start_time: new Date('2026-07-12T18:00:00.000Z'),
+        end_time: new Date('2026-07-12T20:00:00.000Z'),
+        location: 'Prospect Park',
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W26',
+            ingestStatus: 'published',
+            source: 'manual',
+            host: { name: 'Park Friends' },
+            tags: ['social'],
+          },
+        },
+      }),
+    });
+
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W26',
+        overrides: {
+          hostName: 'Park Friends',
+          name: 'Neighborhood Potluck',
+          location: 'Prospect Park',
+          start_time: '2026-07-12T18:00:00.000Z',
+          tags: ['social'],
+          source: 'manual',
+        },
+      },
+    );
+
+    expect(previewIngestUrl).not.toHaveBeenCalled();
+    expect(Event.create).toHaveBeenCalled();
+    expect(Event.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(result.data.event.name).toBe('Neighborhood Potluck');
+  });
+
+  it('publishes non-Partiful listing URLs from overrides without scraping', async () => {
+    Event.findOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439014',
+        name: 'Jazz on the Roof',
+        externalLink: 'https://eventbrite.com/e/jazz-on-the-roof',
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W26',
+            ingestStatus: 'published',
+            source: 'manual',
+            sourceUrl: 'https://eventbrite.com/e/jazz-on-the-roof',
+            host: { name: 'Rooftop Venue' },
+            tags: ['live-music'],
+          },
+        },
+      }),
+    });
+
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://eventbrite.com/e/jazz-on-the-roof',
+        batchWeek: '2026-W26',
+        overrides: {
+          hostName: 'Rooftop Venue',
+          name: 'Jazz on the Roof',
+          location: 'Downtown Brooklyn',
+          start_time: '2026-07-12T20:00:00.000Z',
+          tags: ['live-music'],
+          source: 'manual',
+        },
+      },
+    );
+
+    expect(previewIngestUrl).not.toHaveBeenCalled();
+    expect(Event.findOneAndUpdate).toHaveBeenCalledWith(
+      { 'customFields.pivot.sourceUrl': 'https://eventbrite.com/e/jazz-on-the-roof' },
+      expect.any(Object),
+      expect.objectContaining({ upsert: true }),
+    );
+    expect(result.data.event.name).toBe('Jazz on the Roof');
   });
 });
 

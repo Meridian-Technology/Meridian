@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { report } = require('../routes/authRoutes');
 const Schema = mongoose.Schema;
 
 const reportSchema = new Schema({

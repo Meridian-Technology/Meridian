@@ -62,10 +62,14 @@ function Layout() {
     return <Navigate to="/events-dashboard" replace />;
   }
   
+  const hideCampusChrome = location.pathname === '/invite' || location.pathname.startsWith('/invite/');
+
   return (
     <div style={{minHeight: viewport, position: 'relative', overflowX: 'clip', width: '100%'}}>
       {/* The Banner is rendered here and will appear across all pages */}
-      <Banner visible={visible} setVisible={setVisible} bannerType="default" />
+      {!hideCampusChrome ? (
+        <Banner visible={visible} setVisible={setVisible} bannerType="default" />
+      ) : null}
       
       {/* Org invite modal - shown when user has pending invites */}
       {showOrgInviteModal && pendingOrgInvites?.length > 0 && (

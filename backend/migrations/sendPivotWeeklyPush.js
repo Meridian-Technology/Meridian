@@ -222,6 +222,21 @@ async function run() {
 
   const { sent, failed } = await sendAllMessages(messages);
   console.log(`[send:pivot-weekly-push] sent=${sent} failed=${failed}`);
+
+  // Freeze this week's Lab metrics now that the drop went out (best-effort).
+  try {
+    const { rebuildWeeklySnapshot } = require('../services/pivotWeeklySnapshotService');
+    const rebuild = await rebuildWeeklySnapshot(req, { batchWeek });
+    if (rebuild.error) {
+      console.warn(`[send:pivot-weekly-push] snapshot rebuild skipped: ${rebuild.error}`);
+    } else {
+      console.log(`[send:pivot-weekly-push] weekly snapshot rebuilt for ${batchWeek}`);
+    }
+  } catch (error) {
+    console.warn(
+      `[send:pivot-weekly-push] snapshot rebuild failed (send already completed): ${error.message}`
+    );
+  }
 }
 
 run()

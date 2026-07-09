@@ -1,11 +1,19 @@
 const mongoose = require('mongoose');
 const getModels = require('./getModelService');
 const {
-  getPilotWindow,
+  getFeedPilotWindowFilter,
   resolveDisplayHost,
+  serializePivotFeedEvent,
+  loadFriendSocial,
   PIVOT_EVENT_STATUSES,
 } = require('./pivotFeedService');
 const { toIsoWeek, isValidIsoWeek } = require('../utilities/pivotIsoWeek');
+const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const {
+  normalizePivotTimeSlots,
+  findTimeSlotById,
+  eventHasTimeSlots,
+} = require('../utilities/pivotTimeSlots');
 
 const FEED_ACTION_TO_STATUS = {
   interested: 'interested',
@@ -28,7 +36,7 @@ function unauthorized() {
 async function findPublishedPivotEvent(req, eventId, { now, requireWindow } = {}) {
   const { Event } = getModels(req, 'Event');
 
-  const query = {
+  const baseQuery = {
     _id: eventId,
     'customFields.pivot.ingestStatus': 'published',
     status: { $in: PIVOT_EVENT_STATUSES },
@@ -36,26 +44,63 @@ async function findPublishedPivotEvent(req, eventId, { now, requireWindow } = {}
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
   };
 
-  if (requireWindow) {
-    const { windowStart, windowEnd } = getPilotWindow(now);
-    query.start_time = { $gte: windowStart, $lt: windowEnd };
-  }
+  const effectiveNow = now ? new Date(now) : new Date();
+  const query = requireWindow
+    ? { $and: [baseQuery, getFeedPilotWindowFilter(effectiveNow)] }
+    : baseQuery;
 
   return Event.findOne(query)
     .select('start_time end_time externalLink customFields.pivot')
     .lean();
 }
 
-async function upsertIntent(req, { userId, eventId, status, batchWeek }) {
+async function upsertIntent(req, { userId, eventId, status, batchWeek, timeSlotId }) {
   const { PivotEventIntent } = getModels(req, 'PivotEventIntent');
+
+  const update = { status, batchWeek };
+  if (timeSlotId !== undefined) {
+    update.timeSlotId = timeSlotId || null;
+  }
 
   const doc = await PivotEventIntent.findOneAndUpdate(
     { userId, eventId },
-    { $set: { status, batchWeek } },
+    { $set: update },
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
   ).lean();
 
   return doc;
+}
+
+function resolveRegisteredTimeSlotId(event, requestedTimeSlotId) {
+  const pivot = event.customFields?.pivot;
+  if (!eventHasTimeSlots(pivot)) {
+    return { timeSlotId: null };
+  }
+
+  const slots = normalizePivotTimeSlots(pivot?.timeSlots);
+  const trimmed = typeof requestedTimeSlotId === 'string' ? requestedTimeSlotId.trim() : '';
+
+  if (slots.length === 1) {
+    return { timeSlotId: trimmed || slots[0].id };
+  }
+
+  if (!trimmed) {
+    return {
+      error: 'A showtime is required for this event.',
+      status: 400,
+      code: 'TIME_SLOT_REQUIRED',
+    };
+  }
+
+  if (!findTimeSlotById(pivot, trimmed)) {
+    return {
+      error: 'Invalid showtime for this event.',
+      status: 400,
+      code: 'INVALID_TIME_SLOT',
+    };
+  }
+
+  return { timeSlotId: trimmed };
 }
 
 async function recordFeedAction(req, body = {}) {
@@ -97,13 +142,28 @@ async function recordFeedAction(req, body = {}) {
   }
 
   const batchWeek = event.customFields?.pivot?.batchWeek || toIsoWeek();
-  const doc = await upsertIntent(req, { userId, eventId, status, batchWeek });
+  const doc = await upsertIntent(req, {
+    userId,
+    eventId,
+    status,
+    batchWeek,
+    timeSlotId: null,
+  });
+
+  logPivot('info', 'feed action recorded', {
+    ...pivotRequestContext(req),
+    eventId,
+    status: doc.status,
+    batchWeek: doc.batchWeek,
+    action,
+  });
 
   return {
     data: {
       eventId: String(doc.eventId),
       status: doc.status,
       batchWeek: doc.batchWeek,
+      timeSlotId: doc.timeSlotId || null,
     },
   };
 }
@@ -152,6 +212,14 @@ async function recordExternalOpen(req, rawEventId, body = {}) {
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
   ).lean();
 
+  logPivot('info', 'external ticket open recorded', {
+    ...pivotRequestContext(req),
+    eventId,
+    status: doc.status,
+    externalOpenCount: doc.externalOpenCount,
+    batchWeek: doc.batchWeek,
+  });
+
   return {
     data: {
       eventId: String(doc.eventId),
@@ -163,7 +231,7 @@ async function recordExternalOpen(req, rawEventId, body = {}) {
   };
 }
 
-async function confirmRegistered(req, rawEventId) {
+async function confirmRegistered(req, rawEventId, body = {}) {
   const userId = req.user?.userId;
   if (!userId) {
     return unauthorized();
@@ -187,12 +255,25 @@ async function confirmRegistered(req, rawEventId) {
     };
   }
 
+  const slotResolution = resolveRegisteredTimeSlotId(event, body.timeSlotId);
+  if (slotResolution.error) {
+    return slotResolution;
+  }
+
   const batchWeek = event.customFields?.pivot?.batchWeek || toIsoWeek();
   const doc = await upsertIntent(req, {
     userId,
     eventId,
     status: 'registered',
     batchWeek,
+    timeSlotId: slotResolution.timeSlotId,
+  });
+
+  logPivot('info', 'registration confirmed', {
+    ...pivotRequestContext(req),
+    eventId,
+    batchWeek: doc.batchWeek,
+    timeSlotId: doc.timeSlotId || null,
   });
 
   return {
@@ -200,29 +281,30 @@ async function confirmRegistered(req, rawEventId) {
       eventId: String(doc.eventId),
       status: doc.status,
       batchWeek: doc.batchWeek,
+      timeSlotId: doc.timeSlotId || null,
     },
   };
 }
 
-function serializeRecapEvent(event, userIntent) {
+function serializeRecapEvent(event, intentRow, extras = {}) {
   const pivot = event.customFields?.pivot || {};
-  const coverImageUrl =
-    typeof event.image === 'string' && event.image.trim() ? event.image.trim() : null;
+  const status =
+    intentRow && typeof intentRow === 'object' ? intentRow.status : intentRow;
+  const userTimeSlotId =
+    (intentRow && typeof intentRow === 'object' ? intentRow.timeSlotId : null) ||
+    extras.userTimeSlotId ||
+    null;
 
-  return {
-    _id: String(event._id),
-    name: event.name,
-    description: event.description,
-    location: event.location,
-    start_time: event.start_time,
-    end_time: event.end_time,
-    externalLink: event.externalLink,
-    type: event.type,
-    tags: Array.isArray(pivot.tags) ? pivot.tags : [],
-    ...(coverImageUrl ? { coverImageUrl } : {}),
+  return serializePivotFeedEvent(event, {
     displayHost: resolveDisplayHost(pivot),
-    userIntent,
-  };
+    userIntent: status || null,
+    userTimeSlotId,
+    socialByTimeSlot: extras.socialByTimeSlot || new Map(),
+    friendsInterested: extras.friendsInterested || [],
+    friendsGoing: extras.friendsGoing || [],
+    friendsInterestedCount: extras.friendsInterestedCount || 0,
+    friendsGoingCount: extras.friendsGoingCount || 0,
+  });
 }
 
 async function getWeekRecap(req, options = {}) {
@@ -248,7 +330,7 @@ async function getWeekRecap(req, options = {}) {
     batchWeek,
     status: { $in: RECAP_STATUSES },
   })
-    .select('eventId status')
+    .select('eventId status timeSlotId')
     .lean();
 
   if (!intents.length) {
@@ -256,7 +338,10 @@ async function getWeekRecap(req, options = {}) {
   }
 
   const intentByEvent = new Map(
-    intents.map((intent) => [String(intent.eventId), intent.status]),
+    intents.map((intent) => [
+      String(intent.eventId),
+      { status: intent.status, timeSlotId: intent.timeSlotId || null },
+    ]),
   );
   const eventIds = [...intentByEvent.keys()];
 
@@ -271,11 +356,48 @@ async function getWeekRecap(req, options = {}) {
     .sort({ start_time: 1 })
     .lean();
 
+  const { socialByEvent, socialByEventAndSlot } = await loadFriendSocial(
+    req,
+    userId,
+    eventIds,
+  );
+
   const recapEvents = events
     .filter((event) => resolveDisplayHost(event.customFields?.pivot))
-    .map((event) =>
-      serializeRecapEvent(event, intentByEvent.get(String(event._id)) || null),
-    );
+    .map((event) => {
+      const id = String(event._id);
+      const social = socialByEvent.get(id) || {
+        friendsInterested: [],
+        friendsGoing: [],
+        friendInterestedCount: 0,
+        friendRegisteredCount: 0,
+      };
+      const normalizedSlots = normalizePivotTimeSlots(
+        event.customFields?.pivot?.timeSlots,
+      );
+      const socialByTimeSlot = new Map();
+      for (const slot of normalizedSlots) {
+        const slotSocial = socialByEventAndSlot.get(`${id}:${slot.id}`);
+        if (slotSocial) {
+          socialByTimeSlot.set(slot.id, slotSocial);
+        }
+      }
+
+      return serializeRecapEvent(event, intentByEvent.get(id), {
+        socialByTimeSlot,
+        friendsInterested: social.friendsInterested,
+        friendsGoing: social.friendsGoing,
+        friendsInterestedCount: social.friendInterestedCount || 0,
+        friendsGoingCount: social.friendRegisteredCount || 0,
+      });
+    });
+
+  logPivot('info', 'week recap built', {
+    ...pivotRequestContext(req),
+    batchWeek,
+    intentCount: intents.length,
+    eventCount: recapEvents.length,
+  });
 
   return { data: { batchWeek, events: recapEvents } };
 }
@@ -321,4 +443,5 @@ module.exports = {
   resetWeekActions,
   findPublishedPivotEvent,
   serializeRecapEvent,
+  resolveRegisteredTimeSlotId,
 };

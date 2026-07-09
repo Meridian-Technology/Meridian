@@ -238,6 +238,27 @@ const userSchema = new mongoose.Schema({
         type: [String],
         default: [],
     },
+    /** Pilot attestation year for 18+ gate during pivot onboarding. */
+    pivotBirthYear: {
+        type: Number,
+        default: null,
+    },
+    /** Audit timestamp set when user passes the pivot 18+ onboarding gate. */
+    pivotAgeVerifiedAt: {
+        type: Date,
+        default: null,
+    },
+    /** Pilot participation lifecycle — `left` opts out without blocking Meridian login. */
+    pivotParticipationStatus: {
+        type: String,
+        enum: ['active', 'left'],
+        default: 'active',
+    },
+    /** Set when the user leaves the pilot via POST /pivot/leave-pilot. */
+    pivotLeftAt: {
+        type: Date,
+        default: null,
+    },
 
     
     // you can add more fields here if needed, like 'createdAt', 'updatedAt', etc.

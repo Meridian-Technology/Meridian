@@ -118,6 +118,7 @@ const WWW_ALLOWED_PATHS = [
   '/',
   '/landing',
   '/mobile',
+  '/invite',
   '/contact',
   '/support',
   '/privacy-policy',

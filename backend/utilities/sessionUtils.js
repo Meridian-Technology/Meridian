@@ -224,6 +224,14 @@ async function deleteAllUserSessions(userId, req) {
 }
 
 /**
+ * Delete all sessions for a global user (global DB / multi-tenant SSO sessions).
+ */
+async function deleteAllGlobalUserSessions(globalUserId, req) {
+    const { Session } = getGlobalModels(req, 'Session');
+    await Session.deleteMany({ globalUserId });
+}
+
+/**
  * Delete a specific session by ID (tenant DB)
  */
 async function deleteSessionById(sessionId, userId, req) {
@@ -307,6 +315,7 @@ module.exports = {
     validateGlobalSession,
     deleteSession,
     deleteAllUserSessions,
+    deleteAllGlobalUserSessions,
     deleteSessionById,
     deleteSessionByIdForGlobalUser,
     getUserSessions,

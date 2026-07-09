@@ -6,6 +6,7 @@ const {
   getWeeklySnapshot,
 } = require('../services/pivotWeeklySnapshotService');
 const { getPivotOverview } = require('../services/pivotAdminOverviewService');
+const { getPivotRetention } = require('../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../services/pivotLabEventsService');
 const {
   getInterviewNotes,
@@ -23,8 +24,20 @@ const {
   suggestPivotEventTags,
   suggestPivotEventTagsBatch,
 } = require('../services/pivotTagSuggestService');
+const {
+  searchTmdbMovies,
+  fetchTmdbMovieDetails,
+} = require('../services/pivotTmdbService');
+const {
+  pivotRequestLogger,
+  logPivotRouteError,
+  logPivotServiceReject,
+  logPivotServiceSuccess,
+} = require('../utilities/pivotLogger');
 
 const router = express.Router();
+
+router.use(pivotRequestLogger);
 
 router.get('/tags', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
@@ -42,7 +55,7 @@ router.get('/tags', verifyToken, requirePlatformAdmin, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /admin/pivot/tags failed:', err);
+    logPivotRouteError('GET /admin/pivot/tags', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot tag catalog.',
@@ -66,7 +79,7 @@ router.post('/tags/seed', verifyToken, requirePlatformAdmin, async (req, res) =>
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /admin/pivot/tags/seed failed:', err);
+    logPivotRouteError('POST /admin/pivot/tags/seed', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to seed pivot tag catalog.',
@@ -93,7 +106,7 @@ router.get('/events', verifyToken, requirePlatformAdmin, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /admin/pivot/events failed:', err);
+    logPivotRouteError('GET /admin/pivot/events', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot catalog events.',
@@ -117,7 +130,7 @@ router.get('/interview-notes', verifyToken, requirePlatformAdmin, async (req, re
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /admin/pivot/interview-notes failed:', err);
+    logPivotRouteError('GET /admin/pivot/interview-notes', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load interview notes.',
@@ -144,7 +157,7 @@ router.put('/interview-notes', verifyToken, requirePlatformAdmin, async (req, re
       data: result.data,
     });
   } catch (err) {
-    console.error('PUT /admin/pivot/interview-notes failed:', err);
+    logPivotRouteError('PUT /admin/pivot/interview-notes', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to save interview notes.',
@@ -168,10 +181,37 @@ router.get('/overview', verifyToken, requirePlatformAdmin, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /admin/pivot/overview failed:', err);
+    logPivotRouteError('GET /admin/pivot/overview', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot overview.',
+    });
+  }
+});
+
+router.get('/retention', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await getPivotRetention(req, {
+      batchWeek: req.query?.batchWeek,
+      weeks: req.query?.weeks,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/retention', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load pivot retention.',
     });
   }
 });
@@ -193,7 +233,7 @@ router.post('/snapshots/rebuild', verifyToken, requirePlatformAdmin, async (req,
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /admin/pivot/snapshots/rebuild failed:', err);
+    logPivotRouteError('POST /admin/pivot/snapshots/rebuild', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to rebuild pivot weekly snapshot.',
@@ -245,10 +285,61 @@ router.post('/ingest/suggest-tags', verifyToken, requirePlatformAdmin, async (re
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /admin/pivot/ingest/suggest-tags failed:', err);
+    logPivotRouteError('POST /admin/pivot/ingest/suggest-tags', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to suggest pivot tags.',
+    });
+  }
+});
+
+router.get('/tmdb/search', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await searchTmdbMovies({
+      query: req.query?.query,
+      year: req.query?.year,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/tmdb/search', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to search TMDB.',
+    });
+  }
+});
+
+router.get('/tmdb/movies/:tmdbId', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await fetchTmdbMovieDetails({ tmdbId: req.params.tmdbId });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/tmdb/movies/:tmdbId', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load TMDB movie.',
     });
   }
 });
@@ -272,7 +363,7 @@ router.post('/ingest/preview', verifyToken, requirePlatformAdmin, async (req, re
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /admin/pivot/ingest/preview failed:', err);
+    logPivotRouteError('POST /admin/pivot/ingest/preview', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to preview event import.',
@@ -289,6 +380,11 @@ router.post('/ingest', verifyToken, requirePlatformAdmin, async (req, res) => {
       overrides: req.body?.overrides,
     });
     if (result.error) {
+      logPivotServiceReject('POST /admin/pivot/ingest', result, req, {
+        tenantKey: req.body?.tenantKey,
+        batchWeek: req.body?.batchWeek,
+        eventName: req.body?.overrides?.name,
+      });
       return res.status(result.status || 400).json({
         success: false,
         message: result.error,
@@ -296,12 +392,19 @@ router.post('/ingest', verifyToken, requirePlatformAdmin, async (req, res) => {
       });
     }
 
+    logPivotServiceSuccess('POST /admin/pivot/ingest', req, {
+      tenantKey: req.body?.tenantKey,
+      batchWeek: req.body?.batchWeek,
+      eventId: result.data?.event?._id,
+      eventName: result.data?.event?.name,
+    });
+
     return res.status(200).json({
       success: true,
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /admin/pivot/ingest failed:', err);
+    logPivotRouteError('POST /admin/pivot/ingest', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to publish pivot catalog event.',
@@ -317,6 +420,11 @@ router.post('/ingest/batch', verifyToken, requirePlatformAdmin, async (req, res)
       events: req.body?.events,
     });
     if (result.error && !result.data?.published?.length) {
+      logPivotServiceReject('POST /admin/pivot/ingest/batch', result, req, {
+        tenantKey: req.body?.tenantKey,
+        batchWeek: req.body?.batchWeek,
+        requestedCount: Array.isArray(req.body?.events) ? req.body.events.length : 0,
+      });
       return res.status(result.status || 400).json({
         success: false,
         message: result.error,
@@ -325,12 +433,19 @@ router.post('/ingest/batch', verifyToken, requirePlatformAdmin, async (req, res)
       });
     }
 
+    logPivotServiceSuccess('POST /admin/pivot/ingest/batch', req, {
+      tenantKey: req.body?.tenantKey,
+      batchWeek: req.body?.batchWeek,
+      publishedCount: result.data?.publishedCount ?? result.data?.published?.length ?? 0,
+      failedCount: result.data?.failedCount ?? result.data?.failures?.length ?? 0,
+    });
+
     return res.status(200).json({
       success: true,
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /admin/pivot/ingest/batch failed:', err);
+    logPivotRouteError('POST /admin/pivot/ingest/batch', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to publish pivot catalog events.',
@@ -358,7 +473,7 @@ router.patch('/ingest/:eventId', verifyToken, requirePlatformAdmin, async (req, 
       data: result.data,
     });
   } catch (err) {
-    console.error('PATCH /admin/pivot/ingest/:eventId failed:', err);
+    logPivotRouteError('PATCH /admin/pivot/ingest/:eventId', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to update pivot catalog event.',
@@ -386,7 +501,7 @@ router.post('/dev/purge-catalog', verifyToken, requirePlatformAdmin, async (req,
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /admin/pivot/dev/purge-catalog failed:', err);
+    logPivotRouteError('POST /admin/pivot/dev/purge-catalog', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to purge pivot catalog data.',
@@ -410,7 +525,7 @@ router.get('/snapshots/:batchWeek', verifyToken, requirePlatformAdmin, async (re
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /admin/pivot/snapshots/:batchWeek failed:', err);
+    logPivotRouteError('GET /admin/pivot/snapshots/:batchWeek', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot weekly snapshot.',

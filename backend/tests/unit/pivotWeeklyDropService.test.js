@@ -10,6 +10,16 @@ jest.mock('../../services/tenantConfigService', () => ({
   serializeTenantForAdmin: jest.fn((tenant) => tenant),
 }));
 
+jest.mock('../../services/pivotWeeklySnapshotService', () => ({
+  rebuildWeeklySnapshot: jest.fn(),
+}));
+
+jest.mock('axios', () => ({
+  post: jest.fn(),
+}));
+
+const axios = require('axios');
+const { rebuildWeeklySnapshot } = require('../../services/pivotWeeklySnapshotService');
 const { connectToDatabase } = require('../../connectionsManager');
 const getModels = require('../../services/getModelService');
 const { getTenantByKey, upsertStoredTenantRow } = require('../../services/tenantConfigService');
@@ -93,5 +103,40 @@ describe('pivotWeeklyDropService', () => {
     expect(result.dryRun).toBe(true);
     expect(result.pivotPushRecipientCount).toBe(2);
     expect(result.sampleMessage?.data?.type).toBe('pivot_week');
+    expect(rebuildWeeklySnapshot).not.toHaveBeenCalled();
+  });
+
+  it('sendWeeklyDropPush rebuilds the weekly snapshot after a real send', async () => {
+    getTenantByKey.mockResolvedValue(nycTenant);
+    axios.post.mockResolvedValue({
+      data: { data: [{ status: 'ok' }, { status: 'ok' }] },
+    });
+    rebuildWeeklySnapshot.mockResolvedValue({ data: { batchWeek: '2026-W23' } });
+
+    const req = {};
+    const result = await sendWeeklyDropPush(req, 'nyc', {
+      batchWeek: '2026-W23',
+      force: true,
+    });
+
+    expect(result.sent).toBe(2);
+    expect(result.snapshotRebuilt).toBe(true);
+    expect(rebuildWeeklySnapshot).toHaveBeenCalledWith(req, { batchWeek: '2026-W23' });
+  });
+
+  it('sendWeeklyDropPush still reports the send when snapshot rebuild fails', async () => {
+    getTenantByKey.mockResolvedValue(nycTenant);
+    axios.post.mockResolvedValue({
+      data: { data: [{ status: 'ok' }, { status: 'ok' }] },
+    });
+    rebuildWeeklySnapshot.mockRejectedValue(new Error('global db down'));
+
+    const result = await sendWeeklyDropPush({}, 'nyc', {
+      batchWeek: '2026-W23',
+      force: true,
+    });
+
+    expect(result.sent).toBe(2);
+    expect(result.snapshotRebuilt).toBe(false);
   });
 });

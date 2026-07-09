@@ -19,9 +19,12 @@ const { listPivotTags } = require('../services/pivotTagCatalogService');
 const {
   getPivotProfileInterests,
   updatePivotProfileInterests,
+  updatePivotProfileAgeVerification,
+  leavePivotPilot,
 } = require('../services/pivotProfileService');
 const {
   searchPivotFriends,
+  getPivotCohortSuggestions,
   sendPivotFriendRequest,
   listPivotFriends,
   listPivotFriendRequests,
@@ -33,8 +36,45 @@ const {
 } = require('../middlewares/pivotReferralValidateRateLimit');
 
 const { verifyToken } = require('../middlewares/verifyToken');
+const {
+  pivotRequestLogger,
+  logPivotRouteError,
+  logPivotServiceReject,
+  logPivotServiceSuccess,
+} = require('../utilities/pivotLogger');
 
 const router = express.Router();
+
+router.use(pivotRequestLogger);
+
+router.get('/referral/preview', pivotReferralValidateRateLimit, async (req, res) => {
+  try {
+    const result = await validateReferralCode(req, req.query?.code);
+    if (result.error) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          valid: false,
+          cityDisplayName: null,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        valid: true,
+        cityDisplayName: result.data?.cityDisplayName || null,
+      },
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/referral/preview', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to preview referral code.',
+    });
+  }
+});
 
 router.post('/referral/validate', pivotReferralValidateRateLimit, async (req, res) => {
   try {
@@ -52,7 +92,7 @@ router.post('/referral/validate', pivotReferralValidateRateLimit, async (req, re
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/referral/validate failed:', err);
+    logPivotRouteError('POST /pivot/referral/validate', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to validate referral code.',
@@ -62,7 +102,9 @@ router.post('/referral/validate', pivotReferralValidateRateLimit, async (req, re
 
 router.post('/referral/redeem', verifyToken, async (req, res) => {
   try {
-    const result = await redeemReferralCode(req, req.body?.code);
+    const result = await redeemReferralCode(req, req.body?.code, {
+      referredByUserId: req.body?.referredByUserId,
+    });
     if (result.error) {
       return res.status(result.status || 400).json({
         success: false,
@@ -76,7 +118,7 @@ router.post('/referral/redeem', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/referral/redeem failed:', err);
+    logPivotRouteError('POST /pivot/referral/redeem', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to redeem referral code.',
@@ -100,7 +142,7 @@ router.get('/tags', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/tags failed:', err);
+    logPivotRouteError('GET /pivot/tags', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot tags.',
@@ -124,7 +166,7 @@ router.get('/profile/interests', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/profile/interests failed:', err);
+    logPivotRouteError('GET /pivot/profile/interests', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot interests.',
@@ -148,10 +190,58 @@ router.put('/profile/interests', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('PUT /pivot/profile/interests failed:', err);
+    logPivotRouteError('PUT /pivot/profile/interests', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to save pivot interests.',
+    });
+  }
+});
+
+router.put('/profile/age-verification', verifyToken, async (req, res) => {
+  try {
+    const result = await updatePivotProfileAgeVerification(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('PUT /pivot/profile/age-verification', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to verify age.',
+    });
+  }
+});
+
+router.post('/leave-pilot', verifyToken, async (req, res) => {
+  try {
+    const result = await leavePivotPilot(req);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/leave-pilot', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to leave pilot.',
     });
   }
 });
@@ -172,7 +262,7 @@ router.get('/config', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/config failed:', err);
+    logPivotRouteError('GET /pivot/config', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot config.',
@@ -187,6 +277,9 @@ router.get('/feed', verifyToken, async (req, res) => {
       excludeEventIds: req.query.excludeEventIds,
     });
     if (result.error) {
+      logPivotServiceReject('GET /pivot/feed', result, req, {
+        batchWeek: req.query.batchWeek,
+      });
       return res.status(result.status || 400).json({
         success: false,
         message: result.error,
@@ -194,12 +287,18 @@ router.get('/feed', verifyToken, async (req, res) => {
       });
     }
 
+    logPivotServiceSuccess('GET /pivot/feed', req, {
+      batchWeek: result.data?.batchWeek,
+      eventCount: result.data?.events?.length ?? 0,
+      excludeEventIds: req.query.excludeEventIds || undefined,
+    });
+
     return res.status(200).json({
       success: true,
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/feed failed:', err);
+    logPivotRouteError('GET /pivot/feed', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot feed.',
@@ -211,6 +310,10 @@ router.post('/feed/action', verifyToken, async (req, res) => {
   try {
     const result = await recordFeedAction(req, req.body);
     if (result.error) {
+      logPivotServiceReject('POST /pivot/feed/action', result, req, {
+        eventId: req.body?.eventId,
+        action: req.body?.action,
+      });
       return res.status(result.status || 400).json({
         success: false,
         message: result.error,
@@ -218,12 +321,18 @@ router.post('/feed/action', verifyToken, async (req, res) => {
       });
     }
 
+    logPivotServiceSuccess('POST /pivot/feed/action', req, {
+      eventId: result.data?.eventId,
+      status: result.data?.status,
+      batchWeek: result.data?.batchWeek,
+    });
+
     return res.status(200).json({
       success: true,
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/feed/action failed:', err);
+    logPivotRouteError('POST /pivot/feed/action', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to record pivot intent.',
@@ -235,6 +344,9 @@ router.post('/intent/:eventId/external-open', verifyToken, async (req, res) => {
   try {
     const result = await recordExternalOpen(req, req.params.eventId, req.body);
     if (result.error) {
+      logPivotServiceReject('POST /pivot/intent/:eventId/external-open', result, req, {
+        eventId: req.params.eventId,
+      });
       return res.status(result.status || 400).json({
         success: false,
         message: result.error,
@@ -242,12 +354,18 @@ router.post('/intent/:eventId/external-open', verifyToken, async (req, res) => {
       });
     }
 
+    logPivotServiceSuccess('POST /pivot/intent/:eventId/external-open', req, {
+      eventId: result.data?.eventId,
+      status: result.data?.status,
+      externalOpenCount: result.data?.externalOpenCount,
+    });
+
     return res.status(200).json({
       success: true,
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/intent/:eventId/external-open failed:', err);
+    logPivotRouteError('POST /pivot/intent/:eventId/external-open', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to record external open.',
@@ -257,8 +375,12 @@ router.post('/intent/:eventId/external-open', verifyToken, async (req, res) => {
 
 router.post('/intent/:eventId/registered', verifyToken, async (req, res) => {
   try {
-    const result = await confirmRegistered(req, req.params.eventId);
+    const result = await confirmRegistered(req, req.params.eventId, req.body);
     if (result.error) {
+      logPivotServiceReject('POST /pivot/intent/:eventId/registered', result, req, {
+        eventId: req.params.eventId,
+        timeSlotId: req.body?.timeSlotId,
+      });
       return res.status(result.status || 400).json({
         success: false,
         message: result.error,
@@ -266,12 +388,19 @@ router.post('/intent/:eventId/registered', verifyToken, async (req, res) => {
       });
     }
 
+    logPivotServiceSuccess('POST /pivot/intent/:eventId/registered', req, {
+      eventId: result.data?.eventId,
+      status: result.data?.status,
+      timeSlotId: result.data?.timeSlotId,
+      batchWeek: result.data?.batchWeek,
+    });
+
     return res.status(200).json({
       success: true,
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/intent/:eventId/registered failed:', err);
+    logPivotRouteError('POST /pivot/intent/:eventId/registered', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to confirm registration.',
@@ -295,7 +424,7 @@ router.get('/friends', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/friends failed:', err);
+    logPivotRouteError('GET /pivot/friends', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load friends.',
@@ -319,7 +448,7 @@ router.get('/friends/requests', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/friends/requests failed:', err);
+    logPivotRouteError('GET /pivot/friends/requests', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load friend requests.',
@@ -343,7 +472,7 @@ router.post('/friends/requests/:friendshipId/accept', verifyToken, async (req, r
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/friends/requests/:friendshipId/accept failed:', err);
+    logPivotRouteError('POST /pivot/friends/requests/:friendshipId/accept', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to accept friend request.',
@@ -367,7 +496,7 @@ router.post('/friends/requests/:friendshipId/decline', verifyToken, async (req, 
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/friends/requests/:friendshipId/decline failed:', err);
+    logPivotRouteError('POST /pivot/friends/requests/:friendshipId/decline', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to decline friend request.',
@@ -391,10 +520,34 @@ router.get('/friends/search', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/friends/search failed:', err);
+    logPivotRouteError('GET /pivot/friends/search', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to search friends.',
+    });
+  }
+});
+
+router.get('/friends/cohort', verifyToken, async (req, res) => {
+  try {
+    const result = await getPivotCohortSuggestions(req);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/friends/cohort', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load cohort suggestions.',
     });
   }
 });
@@ -415,7 +568,7 @@ router.post('/friends/request', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/friends/request failed:', err);
+    logPivotRouteError('POST /pivot/friends/request', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to send friend request.',
@@ -439,7 +592,7 @@ router.get('/events/:eventId/friends', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/events/:eventId/friends failed:', err);
+    logPivotRouteError('GET /pivot/events/:eventId/friends', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load event friends.',
@@ -451,6 +604,9 @@ router.get('/week-recap', verifyToken, async (req, res) => {
   try {
     const result = await getWeekRecap(req, { batchWeek: req.query.batchWeek });
     if (result.error) {
+      logPivotServiceReject('GET /pivot/week-recap', result, req, {
+        batchWeek: req.query.batchWeek,
+      });
       return res.status(result.status || 400).json({
         success: false,
         message: result.error,
@@ -458,12 +614,17 @@ router.get('/week-recap', verifyToken, async (req, res) => {
       });
     }
 
+    logPivotServiceSuccess('GET /pivot/week-recap', req, {
+      batchWeek: result.data?.batchWeek,
+      eventCount: result.data?.events?.length ?? 0,
+    });
+
     return res.status(200).json({
       success: true,
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/week-recap failed:', err);
+    logPivotRouteError('GET /pivot/week-recap', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load week recap.',
@@ -487,7 +648,7 @@ router.get('/feedback/pending', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/feedback/pending failed:', err);
+    logPivotRouteError('GET /pivot/feedback/pending', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pending feedback.',
@@ -526,7 +687,7 @@ router.post('/feedback', [
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/feedback failed:', err);
+    logPivotRouteError('POST /pivot/feedback', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to submit feedback.',
@@ -559,7 +720,7 @@ router.get('/dev/feedback', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('GET /pivot/dev/feedback failed:', err);
+    logPivotRouteError('GET /pivot/dev/feedback', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot feedback.',
@@ -590,7 +751,7 @@ router.post('/dev/reset-week-actions', verifyToken, async (req, res) => {
       data: result.data,
     });
   } catch (err) {
-    console.error('POST /pivot/dev/reset-week-actions failed:', err);
+    logPivotRouteError('POST /pivot/dev/reset-week-actions', err, req);
     return res.status(500).json({
       success: false,
       message: 'Unable to reset week actions.',

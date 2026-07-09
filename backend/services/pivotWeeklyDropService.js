@@ -5,6 +5,7 @@ const { getTenantByKey, upsertStoredTenantRow, serializeTenantForAdmin } = requi
 const { normalizePivotDropFields, normalizePivotDropOverrides } = require('../constants/defaultTenants');
 const { isValidIsoWeek, toIsoWeek } = require('../utilities/pivotIsoWeek');
 const { buildDropSchedulePayload } = require('./pivotConfigService');
+const { rebuildWeeklySnapshot } = require('./pivotWeeklySnapshotService');
 const {
   DAY_NAMES,
   isPivotTenant,
@@ -273,6 +274,19 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
     errors.push(...result.errors);
   }
 
+  // Best-effort: freeze this week's metrics right after the drop so Lab trends
+  // build themselves; a snapshot failure must never mask a successful send.
+  let snapshotRebuilt = false;
+  try {
+    const rebuild = await rebuildWeeklySnapshot(req, { batchWeek });
+    snapshotRebuilt = !rebuild.error;
+  } catch (error) {
+    console.error(
+      `[pivotWeeklyDrop] snapshot rebuild failed after send tenant=${tenantKey} batchWeek=${batchWeek}:`,
+      error,
+    );
+  }
+
   return {
     dryRun: false,
     dropSchedule,
@@ -280,6 +294,7 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
     pivotPushRecipientCount: recipients.length,
     sent,
     failed,
+    snapshotRebuilt,
     warnings,
     errors: errors.slice(0, 5),
   };

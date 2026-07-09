@@ -6,7 +6,7 @@ const {
 const { isPivotTenant } = require('./pivotReferralCodeService');
 const { connectToDatabase } = require('../connectionsManager');
 const { normalizeBatchWeek } = require('./pivotWeeklySnapshotService');
-const { previewIngestUrl, normalizeUrl, sanitizeEventPosterImage } = require('./pivotIngestPreviewService');
+const { previewIngestUrl, sanitizeEventPosterImage } = require('./pivotIngestPreviewService');
 const {
   formatDuplicateWarning,
   isBlockingDuplicate,
@@ -14,6 +14,12 @@ const {
 } = require('./pivotIngestDuplicateService');
 const { serializeLabEvent } = require('./pivotLabEventsService');
 const { validatePivotEventTags } = require('./pivotTagCatalogService');
+const { normalizePivotTimeSlots } = require('../utilities/pivotTimeSlots');
+const {
+  normalizePivotMovie,
+  applyMovieListingDefaults,
+} = require('../utilities/pivotMovieMetadata');
+const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 
@@ -76,7 +82,58 @@ async function resolveCatalogOrgId(req, tenant) {
   return { orgId: provisioned.orgId };
 }
 
+function detectIngestProvider(hostname) {
+  const host = hostname.toLowerCase();
+  if (host.includes('partiful')) return 'partiful';
+  if (host.includes('lu.ma') || host.includes('luma')) return 'luma';
+  return null;
+}
+
+function normalizePublishUrl(rawUrl) {
+  const trimmed = trimString(rawUrl);
+  if (!trimmed) {
+    return { url: null, provider: null };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { error: 'Invalid URL.', status: 400, code: 'INVALID_URL' };
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return { error: 'Only HTTP(S) URLs are supported.', status: 400, code: 'INVALID_URL' };
+  }
+
+  return {
+    url: parsed.toString(),
+    provider: detectIngestProvider(parsed.hostname),
+  };
+}
+
+function normalizeIngestTimeSlots(rawSlots) {
+  if (!Array.isArray(rawSlots) || !rawSlots.length) {
+    return [];
+  }
+
+  return normalizePivotTimeSlots(rawSlots).map((slot) => ({
+    id: slot.id,
+    start_time: slot.start_time,
+    ...(slot.end_time ? { end_time: slot.end_time } : {}),
+    ...(slot.label ? { label: slot.label } : {}),
+  }));
+}
+
 function mergeDraftWithOverrides(draft = {}, overrides = {}) {
+  const timeSlots = normalizeIngestTimeSlots(
+    Array.isArray(overrides.timeSlots)
+      ? overrides.timeSlots
+      : Array.isArray(draft.timeSlots)
+        ? draft.timeSlots
+        : [],
+  );
+
   return {
     name: firstNonEmpty(overrides.name, draft.name),
     description: firstNonEmpty(overrides.description, draft.description) || '',
@@ -87,18 +144,29 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
     hostName: firstNonEmpty(overrides.hostName, draft.hostName),
     hostImageUrl: null,
     hostProfileUrl: firstNonEmpty(overrides.hostProfileUrl, draft.hostProfileUrl),
-    source: draft.source || null,
-    sourceUrl: draft.sourceUrl || null,
-    tags: Array.isArray(overrides.tags) ? overrides.tags : [],
+    source: firstNonEmpty(overrides.source, draft.source),
+    sourceUrl: firstNonEmpty(overrides.sourceUrl, draft.sourceUrl),
+    tags: Array.isArray(overrides.tags)
+      ? overrides.tags
+      : Array.isArray(draft.tags)
+        ? draft.tags
+        : [],
+    timeSlots,
+    movie: normalizePivotMovie(
+      overrides.movie !== undefined ? overrides.movie : draft.movie,
+    ),
   };
 }
 
 function validateMergedDraft(merged) {
+  const withMovieDefaults = applyMovieListingDefaults(merged);
   const missing = [];
-  if (!merged.hostName) missing.push('hostName');
-  if (!merged.name) missing.push('name');
-  if (!merged.location) missing.push('location');
-  if (!merged.start_time) missing.push('start_time');
+  if (!withMovieDefaults.hostName) missing.push('hostName');
+  if (!withMovieDefaults.name) missing.push('name');
+  if (!withMovieDefaults.location) missing.push('location');
+  if (!withMovieDefaults.start_time && !withMovieDefaults.timeSlots?.length) {
+    missing.push('start_time');
+  }
 
   if (missing.length) {
     return {
@@ -108,7 +176,22 @@ function validateMergedDraft(merged) {
     };
   }
 
-  const startTime = parseDateTime(merged.start_time);
+  const slots = normalizePivotTimeSlots(withMovieDefaults.timeSlots);
+  let startTime = parseDateTime(withMovieDefaults.start_time);
+  let endTime = parseDateTime(withMovieDefaults.end_time);
+
+  if (slots.length) {
+    if (!startTime) {
+      startTime = slots[0].start_time;
+    }
+    if (!endTime) {
+      endTime = slots.reduce((latest, slot) => {
+        const candidate = slot.end_time || slot.start_time;
+        return !latest || candidate > latest ? candidate : latest;
+      }, null);
+    }
+  }
+
   if (!startTime) {
     return {
       error: 'start_time must be a valid datetime.',
@@ -117,12 +200,18 @@ function validateMergedDraft(merged) {
     };
   }
 
-  let endTime = parseDateTime(merged.end_time);
   if (!endTime || endTime <= startTime) {
     endTime = new Date(startTime.getTime() + DEFAULT_DURATION_MS);
   }
 
-  return { merged: { ...merged, startTime, endTime } };
+  return {
+    merged: {
+      ...withMovieDefaults,
+      timeSlots: slots,
+      startTime,
+      endTime,
+    },
+  };
 }
 
 function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags }) {
@@ -137,6 +226,8 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags }) 
     sourceUrl,
     host,
     tags: tags || [],
+    ...(merged.timeSlots?.length ? { timeSlots: merged.timeSlots } : {}),
+    ...(merged.movie ? { movie: merged.movie } : {}),
     ingestStatus: 'published',
     importedAt: new Date().toISOString(),
     importedBy,
@@ -144,6 +235,7 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags }) 
 }
 
 function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importedBy, tags }) {
+  const listingUrl = trimString(sourceUrl) || null;
   return {
     name: merged.name,
     description: merged.description || '',
@@ -155,7 +247,7 @@ function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importe
     visibility: 'public',
     registrationEnabled: true,
     expectedAttendance: 0,
-    externalLink: sourceUrl,
+    ...(listingUrl ? { externalLink: listingUrl } : {}),
     hostingType: 'Org',
     hostingId: catalogOrgId,
     isDeleted: false,
@@ -164,6 +256,22 @@ function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importe
       pivot: buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags }),
     },
   };
+}
+
+async function savePublishedCatalogEvent(tenantReq, eventPayload, sourceUrl) {
+  const { Event } = getModels(tenantReq, 'Event');
+  const listingUrl = trimString(sourceUrl);
+
+  if (listingUrl) {
+    return Event.findOneAndUpdate(
+      { 'customFields.pivot.sourceUrl': listingUrl },
+      { $set: eventPayload },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+    ).lean();
+  }
+
+  const created = await Event.create(eventPayload);
+  return typeof created.toObject === 'function' ? created.toObject() : created;
 }
 
 async function publishIngestEvent(req, options = {}) {
@@ -177,32 +285,44 @@ async function publishIngestEvent(req, options = {}) {
     return tenantResult;
   }
 
-  const urlNormalized = normalizeUrl(options.url);
+  const overrides = options.overrides || {};
+  const urlNormalized = normalizePublishUrl(options.url);
   if (urlNormalized.error) {
     return urlNormalized;
   }
 
-  const previewResult = await previewIngestUrl(req, { url: urlNormalized.url });
-  if (previewResult.error) {
-    return previewResult;
-  }
+  let previewDraft = {};
+  if (urlNormalized.url && urlNormalized.provider) {
+    const previewResult = await previewIngestUrl(req, { url: urlNormalized.url });
+    if (previewResult.error) {
+      return previewResult;
+    }
 
-  const previewDraft =
-    previewResult.data?.mode === 'single'
-      ? previewResult.data.draft
-      : previewResult.data?.draft;
+    if (previewResult.data?.mode === 'batch') {
+      return {
+        error: 'Explore links must be published from batch import.',
+        status: 400,
+        code: 'BATCH_URL_REQUIRES_BATCH_PUBLISH',
+      };
+    }
 
-  if (!previewDraft) {
-    return {
-      error: 'Explore links must be published from batch import.',
-      status: 400,
-      code: 'BATCH_URL_REQUIRES_BATCH_PUBLISH',
+    previewDraft = previewResult.data?.draft || {};
+  } else if (urlNormalized.url) {
+    previewDraft = {
+      sourceUrl: urlNormalized.url,
+      source: firstNonEmpty(overrides.source) || 'manual',
+    };
+  } else {
+    previewDraft = {
+      source: firstNonEmpty(overrides.source) || 'manual',
+      sourceUrl: firstNonEmpty(overrides.sourceUrl),
     };
   }
 
-  const mergedInput = mergeDraftWithOverrides(previewDraft, options.overrides || {});
-  mergedInput.sourceUrl = urlNormalized.url;
-  mergedInput.source = previewDraft?.source || urlNormalized.provider;
+  const mergedInput = mergeDraftWithOverrides(previewDraft, overrides);
+  mergedInput.sourceUrl = firstNonEmpty(urlNormalized.url, mergedInput.sourceUrl);
+  mergedInput.source =
+    firstNonEmpty(mergedInput.source, urlNormalized.provider) || 'manual';
 
   const validated = validateMergedDraft(mergedInput);
   if (validated.error) {
@@ -214,13 +334,14 @@ async function publishIngestEvent(req, options = {}) {
     return tagResult;
   }
 
+  const listingUrl = trimString(mergedInput.sourceUrl) || null;
   const { duplicate } = await resolveImportDuplicate(req, {
     tenantKey: tenantResult.tenant.tenantKey,
     candidate: {
       name: validated.merged.name,
       start_time: validated.merged.start_time,
       location: validated.merged.location,
-      sourceUrl: urlNormalized.url,
+      sourceUrl: listingUrl,
     },
   });
 
@@ -237,7 +358,7 @@ async function publishIngestEvent(req, options = {}) {
   const importedBy = resolveImportedBy(req);
   const eventPayload = buildEventPayload(validated.merged, {
     catalogOrgId: catalogResult.orgId,
-    sourceUrl: urlNormalized.url,
+    sourceUrl: listingUrl,
     batchWeek: batchNormalized.batchWeek,
     importedBy,
     tags: tagResult.tags,
@@ -245,13 +366,17 @@ async function publishIngestEvent(req, options = {}) {
 
   const db = await connectToDatabase(tenantResult.tenant.tenantKey);
   const tenantReq = { db };
-  const { Event } = getModels(tenantReq, 'Event');
+  const event = await savePublishedCatalogEvent(tenantReq, eventPayload, listingUrl);
 
-  const event = await Event.findOneAndUpdate(
-    { 'customFields.pivot.sourceUrl': urlNormalized.url },
-    { $set: eventPayload },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-  ).lean();
+  logPivot('info', 'catalog event published', {
+    tenantKey: tenantResult.tenant.tenantKey,
+    batchWeek: batchNormalized.batchWeek,
+    eventId: String(event._id),
+    name: event.name,
+    source: mergedInput.source,
+    timeSlotCount: validated.merged.timeSlots?.length ?? 0,
+    importedBy,
+  });
 
   return {
     data: {
@@ -285,11 +410,7 @@ async function publishBatchIngestEvents(req, options = {}) {
   const failures = [];
 
   for (const entry of events) {
-    const url = trimString(entry?.url);
-    if (!url) {
-      failures.push({ url: null, message: 'Event URL is required.' });
-      continue;
-    }
+    const url = trimString(entry?.url) || undefined;
 
     const result = await publishIngestEvent(req, {
       tenantKey: options.tenantKey,
@@ -300,7 +421,7 @@ async function publishBatchIngestEvents(req, options = {}) {
     });
 
     if (result.error) {
-      failures.push({ url, message: result.error, code: result.code });
+      failures.push({ url: url || null, message: result.error, code: result.code });
       continue;
     }
 
@@ -315,6 +436,13 @@ async function publishBatchIngestEvents(req, options = {}) {
       data: { published, failures },
     };
   }
+
+  logPivot('info', 'batch catalog publish complete', {
+    tenantKey: tenantResult.tenant.tenantKey,
+    batchWeek: batchNormalized.batchWeek,
+    publishedCount: published.length,
+    failedCount: failures.length,
+  });
 
   return {
     data: {
@@ -447,6 +575,58 @@ async function updateIngestEvent(req, options = {}) {
     pivotPatch.tags = tagResult.tags;
   }
 
+  if (overrides.timeSlots !== undefined) {
+    const slots = normalizeIngestTimeSlots(overrides.timeSlots);
+    if (slots.length) {
+      pivotPatch.timeSlots = slots;
+      if (overrides.start_time === undefined) {
+        setPayload.start_time = slots[0].start_time;
+      }
+      if (overrides.end_time === undefined) {
+        const latestEnd = slots.reduce((latest, slot) => {
+          const candidate = slot.end_time || slot.start_time;
+          return !latest || new Date(candidate).getTime() > new Date(latest).getTime()
+            ? candidate
+            : latest;
+        }, null);
+        if (latestEnd) {
+          setPayload.end_time = latestEnd;
+        }
+      }
+    } else {
+      delete pivotPatch.timeSlots;
+    }
+  }
+
+  if (overrides.sourceUrl !== undefined) {
+    const sourceUrl = trimString(overrides.sourceUrl);
+    if (sourceUrl) {
+      pivotPatch.sourceUrl = sourceUrl;
+      setPayload.externalLink = sourceUrl;
+    } else {
+      delete pivotPatch.sourceUrl;
+      setPayload.externalLink = null;
+    }
+  }
+
+  if (overrides.movie !== undefined) {
+    const movie = normalizePivotMovie(overrides.movie);
+    if (movie) {
+      pivotPatch.movie = movie;
+      if (overrides.name === undefined && movie.title) {
+        setPayload.name = movie.title;
+      }
+      if (overrides.description === undefined && movie.synopsis) {
+        setPayload.description = movie.synopsis;
+      }
+      if (overrides.image === undefined && movie.posterUrl) {
+        setPayload.image = movie.posterUrl;
+      }
+    } else {
+      delete pivotPatch.movie;
+    }
+  }
+
   const nextIngestStatus = pivotPatch.ingestStatus ?? pivot.ingestStatus;
   const nextTags = pivotPatch.tags ?? pivot.tags ?? [];
   if (nextIngestStatus === 'published' && nextTags.length === 0) {
@@ -487,4 +667,5 @@ module.exports = {
   mergeDraftWithOverrides,
   validateMergedDraft,
   buildEventPayload,
+  normalizePublishUrl,
 };

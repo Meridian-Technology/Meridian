@@ -3,6 +3,16 @@ const getModels = require('./getModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { toIsoWeek, isValidIsoWeek } = require('../utilities/pivotIsoWeek');
 const { PIVOT_TAG_SLUG_PATTERN } = require('../schemas/pivotTagCatalog');
+const {
+  normalizePivotTimeSlots,
+  serializePivotTimeSlots,
+  isUpcomingWithTimeSlots,
+} = require('../utilities/pivotTimeSlots');
+const {
+  serializePivotMovie,
+  resolvePivotCoverImageUrl,
+} = require('../utilities/pivotMovieMetadata');
+const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
 
 const FRIEND_CAP = 5;
 const PIVOT_EVENT_STATUSES = ['approved', 'not-applicable'];
@@ -12,16 +22,48 @@ const PUBLIC_EVENT_FIELDS =
 
 function getPilotWindow(now = new Date()) {
   const windowStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
   );
   const windowEnd = new Date(windowStart.getTime() + 7 * 24 * 60 * 60 * 1000);
   return { windowStart, windowEnd };
+}
+
+/** Mongo filter: upcoming events with start (or any showtime) inside the 7-day pilot window. */
+function getFeedPilotWindowFilter(now = new Date()) {
+  const { windowStart, windowEnd } = getPilotWindow(now);
+
+  return {
+    $and: [
+      getUpcomingEventTimeFilter(now),
+      {
+        $or: [
+          {
+            'customFields.pivot.timeSlots.0': { $exists: false },
+            start_time: { $gte: windowStart, $lt: windowEnd },
+          },
+          {
+            'customFields.pivot.timeSlots.0': { $exists: true },
+            'customFields.pivot.timeSlots': {
+              $elemMatch: {
+                start_time: { $gte: windowStart, $lt: windowEnd },
+              },
+            },
+          },
+        ],
+      },
+    ],
+  };
 }
 
 /** True when the event has not ended yet — deck should not surface past plans. */
 function isUpcomingPivotEvent(event, now = new Date()) {
   if (!event) {
     return false;
+  }
+
+  const slotUpcoming = isUpcomingWithTimeSlots(event.customFields?.pivot, now);
+  if (slotUpcoming != null) {
+    return slotUpcoming;
   }
 
   const end =
@@ -75,13 +117,17 @@ function resolveDisplayHost(pivotMeta) {
 
 function serializePivotFeedEvent(event, extras) {
   const pivot = event.customFields?.pivot || {};
-  const coverImageUrl =
-    typeof event.image === 'string' && event.image.trim() ? event.image.trim() : null;
+  const coverImageUrl = resolvePivotCoverImageUrl(event);
+  const movie = serializePivotMovie(pivot.movie);
+  const normalizedSlots = normalizePivotTimeSlots(pivot.timeSlots);
+  const timeSlots = normalizedSlots.length
+    ? serializePivotTimeSlots(normalizedSlots, extras.socialByTimeSlot)
+    : undefined;
 
   return {
     _id: String(event._id),
     name: event.name,
-    description: event.description,
+    description: movie?.synopsis || event.description,
     location: event.location,
     start_time: event.start_time,
     end_time: event.end_time,
@@ -90,8 +136,11 @@ function serializePivotFeedEvent(event, extras) {
     registrationCount: event.registrationCount ?? 0,
     tags: Array.isArray(pivot.tags) ? pivot.tags : [],
     ...(coverImageUrl ? { coverImageUrl } : {}),
+    ...(timeSlots ? { timeSlots } : {}),
+    ...(movie ? { movie } : {}),
     displayHost: extras.displayHost,
     userIntent: extras.userIntent,
+    ...(extras.userTimeSlotId ? { userTimeSlotId: extras.userTimeSlotId } : {}),
     friendsInterested: extras.friendsInterested,
     friendsGoing: extras.friendsGoing,
     // Total counts (uncapped) so the client can render "N friends interested"
@@ -141,7 +190,11 @@ async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, 
   const emptySocial = makeEmptySocialMap(eventIds);
 
   if (!eventIds.length) {
-    return { userIntents: new Map(), socialByEvent: emptySocial };
+    return {
+      userIntents: new Map(),
+      socialByEvent: emptySocial,
+      socialByEventAndSlot: new Map(),
+    };
   }
 
   const { Friendship, PivotEventIntent, User } = getModels(
@@ -160,16 +213,26 @@ async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, 
   }
 
   const userIntentRows = await PivotEventIntent.find(userIntentQuery)
-    .select('eventId status')
+    .select('eventId status timeSlotId')
     .lean();
 
   const userIntents = new Map(
-    userIntentRows.map((row) => [String(row.eventId), row.status]),
+    userIntentRows.map((row) => [
+      String(row.eventId),
+      {
+        status: row.status,
+        timeSlotId: row.timeSlotId || null,
+      },
+    ]),
   );
 
   const friendIds = await getAcceptedFriendIds(Friendship, userId);
   if (!friendIds.length) {
-    return { userIntents, socialByEvent: emptySocial };
+    return {
+      userIntents,
+      socialByEvent: emptySocial,
+      socialByEventAndSlot: new Map(),
+    };
   }
 
   const friendIntentRows = await PivotEventIntent.find({
@@ -177,11 +240,15 @@ async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, 
     userId: { $in: friendIds },
     status: { $in: ['interested', 'registered'] },
   })
-    .select('eventId userId status')
+    .select('eventId userId status timeSlotId')
     .lean();
 
   if (!friendIntentRows.length) {
-    return { userIntents, socialByEvent: emptySocial };
+    return {
+      userIntents,
+      socialByEvent: emptySocial,
+      socialByEventAndSlot: new Map(),
+    };
   }
 
   const friendUserIds = [
@@ -193,6 +260,7 @@ async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, 
   const userById = new Map(users.map((user) => [String(user._id), user]));
 
   const socialByEvent = makeEmptySocialMap(eventIds);
+  const socialByEventAndSlot = new Map();
 
   for (const row of friendIntentRows) {
     const eventKey = String(row.eventId);
@@ -212,6 +280,22 @@ async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, 
       if (bucket.friendsInterested.length < previewCap) {
         bucket.friendsInterested.push(preview);
       }
+
+      const slotId = row.timeSlotId ? String(row.timeSlotId).trim() : '';
+      if (slotId) {
+        const slotKey = `${eventKey}:${slotId}`;
+        if (!socialByEventAndSlot.has(slotKey)) {
+          socialByEventAndSlot.set(slotKey, {
+            friendsGoing: [],
+            friendsGoingCount: 0,
+          });
+        }
+        const slotBucket = socialByEventAndSlot.get(slotKey);
+        slotBucket.friendsGoingCount += 1;
+        if (slotBucket.friendsGoing.length < previewCap) {
+          slotBucket.friendsGoing.push(preview);
+        }
+      }
     } else if (row.status === 'interested') {
       bucket.friendInterestedCount += 1;
       if (bucket.friendsInterested.length < previewCap) {
@@ -220,7 +304,7 @@ async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, 
     }
   }
 
-  return { userIntents, socialByEvent };
+  return { userIntents, socialByEvent, socialByEventAndSlot };
 }
 
 function normalizeExcludeEventIds(rawExcludeEventIds) {
@@ -421,7 +505,6 @@ async function getPivotFeed(req, options = {}) {
   }
 
   const { Event } = getModels(req, 'Event');
-  const { windowStart, windowEnd } = getPilotWindow(now);
   const excludeEventIds = normalizeExcludeEventIds(options.excludeEventIds);
 
   const query = {
@@ -429,9 +512,8 @@ async function getPivotFeed(req, options = {}) {
     'customFields.pivot.ingestStatus': 'published',
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
-    start_time: { $gte: windowStart, $lt: windowEnd },
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
-    $and: [getUpcomingEventTimeFilter(now)],
+    ...getFeedPilotWindowFilter(now),
   };
   if (excludeEventIds.length) {
     query._id = { $nin: excludeEventIds };
@@ -448,7 +530,7 @@ async function getPivotFeed(req, options = {}) {
       isUpcomingPivotEvent(event, now),
   );
   const eventIds = validEvents.map((event) => event._id);
-  const { userIntents, socialByEvent } = await loadFriendSocial(
+  const { userIntents, socialByEvent, socialByEventAndSlot } = await loadFriendSocial(
     req,
     userId,
     eventIds,
@@ -465,6 +547,22 @@ async function getPivotFeed(req, options = {}) {
   const tenant = await getTenantByKey(req, req.school);
   const cityDisplayName = tenant?.location || tenant?.name || req.school;
 
+  const multiSlotEventCount = validEvents.filter(
+    (event) => normalizePivotTimeSlots(event.customFields?.pivot?.timeSlots).length > 0,
+  ).length;
+
+  logPivot('info', 'feed built', {
+    ...pivotRequestContext(req),
+    batchWeek,
+    cityDisplayName,
+    candidateCount: events.length,
+    eventCount: validEvents.length,
+    multiSlotEventCount,
+    excludedCount: excludeEventIds.length,
+    interestTagCount: userInterestTags.size,
+    negativeTagPenaltyCount: negativeFeedbackTags.size,
+  });
+
   return {
     data: {
       batchWeek,
@@ -477,10 +575,23 @@ async function getPivotFeed(req, options = {}) {
           friendInterestedCount: 0,
           friendRegisteredCount: 0,
         };
+        const userIntentRow = userIntents.get(id);
+        const normalizedSlots = normalizePivotTimeSlots(
+          event.customFields?.pivot?.timeSlots,
+        );
+        const socialByTimeSlot = new Map();
+        for (const slot of normalizedSlots) {
+          const slotSocial = socialByEventAndSlot.get(`${id}:${slot.id}`);
+          if (slotSocial) {
+            socialByTimeSlot.set(slot.id, slotSocial);
+          }
+        }
 
         return serializePivotFeedEvent(event, {
           displayHost: resolveDisplayHost(event.customFields.pivot),
-          userIntent: userIntents.get(id) || null,
+          userIntent: userIntentRow?.status || null,
+          userTimeSlotId: userIntentRow?.timeSlotId || null,
+          socialByTimeSlot,
           friendsInterested: social.friendsInterested,
           friendsGoing: social.friendsGoing,
           friendsInterestedCount: social.friendInterestedCount || 0,
@@ -552,6 +663,7 @@ module.exports = {
   getPivotFeed,
   getPivotEventFriends,
   getPilotWindow,
+  getFeedPilotWindowFilter,
   isUpcomingPivotEvent,
   getUpcomingEventTimeFilter,
   resolveDisplayHost,

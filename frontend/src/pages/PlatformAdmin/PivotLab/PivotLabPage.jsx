@@ -1,15 +1,30 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import {
   toIsoWeek,
+  isValidIsoWeek,
+  shiftIsoWeek,
   formatEventWhen,
   formatSnapshotAge,
   formatPivotDeckWhen,
 } from '../../../utils/pivotIsoWeek';
 import { PivotDeckPhonePreview, DeckPreviewModal } from './PivotDeckCardPreview';
 import PivotTagMultiSelect from './PivotTagMultiSelect';
+import PivotLabOverview from './PivotLabOverview';
+import PivotManualImportModal, {
+  isTypingTarget,
+  manualDraftToImportEntry,
+  applyMovieMetadataToDraft,
+} from './PivotManualImportModal';
+import PivotCatalogEventEditModal, {
+  catalogEditDraftToOverrides,
+} from './PivotCatalogEventEditModal';
+import {
+  autoMatchTmdbMovieForEvent,
+  autoMatchFilmsForImportEntries,
+  isFilmImportCandidate,
+} from './pivotTmdbClient';
 import '../TenantManagement/TenantManagementPage.scss';
 import './PivotLabPage.scss';
 import './PivotDeckCardPreview.scss';
@@ -19,6 +34,405 @@ const NO_FETCH_CACHE = { enabled: false };
 const IS_DEV = process.env.NODE_ENV !== 'production';
 const PURGE_CONFIRM_TOKEN = 'PURGE';
 
+const PIVOT_JSON_IMPORT_EXAMPLE = `{
+  "label": "Brooklyn week crawl",
+  "events": [
+    {
+      "source": "manual",
+      "name": "Board Game Night",
+      "hostName": "Brooklyn Board Game Cafe",
+      "location": "123 Main St, Brooklyn, NY",
+      "start_time": "2026-05-28T19:00:00.000Z",
+      "description": "Weekly open board game night.",
+      "image": "https://example.com/poster.jpg",
+      "tags": ["board-games", "social"],
+      "sourceUrl": "https://example.com/events/board-game-night"
+    },
+    {
+      "source": "manual",
+      "name": "Indie Film Night — The Last Garden",
+      "hostName": "Nitehawk Cinema",
+      "location": "136 Metropolitan Ave, Brooklyn, NY",
+      "start_time": "2026-05-29T22:00:00.000Z",
+      "end_time": "2026-05-30T05:15:00.000Z",
+      "description": "Limited run — pick your showtime in the app.",
+      "tags": ["film-and-tv", "art-and-culture"],
+      "sourceUrl": "https://example.com/events/indie-film-night",
+      "movie": {
+        "tmdbId": 12345,
+        "title": "The Last Garden",
+        "year": 2026,
+        "synopsis": "A gardener discovers a hidden world beneath the city.",
+        "posterUrl": "https://example.com/film-poster.jpg",
+        "runtimeMinutes": 118,
+        "genres": ["drama", "sci-fi"],
+        "contentRating": "PG-13",
+        "ratings": { "tmdb": { "score": 7.8, "voteCount": 1240 } }
+      },
+      "timeSlots": [
+        {
+          "id": "6pm",
+          "label": "6:00 PM",
+          "start_time": "2026-05-29T22:00:00.000Z",
+          "end_time": "2026-05-30T00:15:00.000Z"
+        },
+        {
+          "id": "830pm",
+          "label": "8:30 PM",
+          "start_time": "2026-05-30T00:30:00.000Z",
+          "end_time": "2026-05-30T02:45:00.000Z"
+        },
+        {
+          "id": "11pm",
+          "label": "11:00 PM",
+          "start_time": "2026-05-30T03:00:00.000Z",
+          "end_time": "2026-05-30T05:15:00.000Z"
+        }
+      ]
+    }
+  ]
+}`;
+
+const PIVOT_JSON_IMPORT_AGENT_PROMPT = `You are preparing events for the Just Go weekly local-events pilot (internal code name Pivot). Output a single JSON object only — no markdown fences, no commentary.
+
+Schema:
+{
+  "label": "optional batch label for ops",
+  "events": [
+    {
+      "source": "optional — manual | partiful | luma (default manual)",
+      "sourceUrl": "optional — original listing or ticket URL (any site)",
+      "name": "required — event title",
+      "hostName": "required — display organizer (venue or host name users see)",
+      "location": "required — venue or neighborhood",
+      "start_time": "required — ISO-8601 datetime, e.g. 2026-05-28T19:00:00.000Z",
+      "end_time": "optional — ISO-8601 datetime",
+      "description": "optional — short listing copy",
+      "image": "optional — poster image URL",
+      "tags": ["required for publish — 1+ catalog slugs, kebab-case"],
+      "sourceTags": ["optional — hints from the listing, not validated"],
+      "timeSlots": [
+        {
+          "id": "required per slot — stable slug, e.g. 6pm or matinee",
+          "label": "optional — display label, e.g. 6:00 PM",
+          "start_time": "required — ISO-8601 datetime for this showtime",
+          "end_time": "optional — ISO-8601 datetime"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Events do not have to come from Partiful or Luma. Use source: "manual" when there is no platform listing.
+- sourceUrl is optional but recommended when a public listing or ticket page exists (Eventbrite, venue site, Instagram, etc.).
+- hostName is the public-facing organizer, not "Meridian" or the city name.
+- tags must use active Pivot catalog slugs only: live-music, board-games, food-and-drink, outdoors, art-and-culture, nightlife, fitness, tech, comedy, film-and-tv, wellness, gaming, dance, volunteering, markets-and-fairs, workshops, family-friendly, social.
+- Use timeSlots for movies, theatre, and other multi-showtime listings. Each slot needs a unique id plus start_time; omit timeSlots for single-start events.
+- When timeSlots is present, set top-level start_time to the earliest showtime and end_time to the latest (used for feed windowing).
+- For film screenings, tag with film-and-tv and use the film title as name — TMDB metadata is matched automatically when you preview or load JSON in Pivot Lab. You can omit the movie object in agent output.
+- Use null or omit fields you cannot verify; do not invent URLs or times.
+- Prefer UTC or include an explicit timezone offset in start_time.
+
+Example:
+${PIVOT_JSON_IMPORT_EXAMPLE}`;
+
+function trimImportString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildImportShowtimeId(label, startTime, index, usedIds) {
+  const fromLabel = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (fromLabel) {
+    let candidate = fromLabel;
+    let suffix = 2;
+    while (usedIds.has(candidate)) {
+      candidate = `${fromLabel}-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
+  }
+
+  if (startTime) {
+    const parsed = new Date(startTime);
+    if (!Number.isNaN(parsed.getTime())) {
+      const hours = String(parsed.getHours()).padStart(2, '0');
+      const minutes = String(parsed.getMinutes()).padStart(2, '0');
+      let candidate = `${hours}${minutes}`;
+      let suffix = 2;
+      while (usedIds.has(candidate)) {
+        candidate = `${hours}${minutes}-${suffix}`;
+        suffix += 1;
+      }
+      return candidate;
+    }
+  }
+
+  let candidate = `slot-${index + 1}`;
+  let suffix = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `slot-${index + 1}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function normalizeImportTimeSlots(rawSlots) {
+  if (!Array.isArray(rawSlots)) {
+    return [];
+  }
+
+  const slots = [];
+  const seenIds = new Set();
+
+  for (const [index, raw] of rawSlots.entries()) {
+    if (!raw || typeof raw !== 'object') {
+      continue;
+    }
+
+    const start_time = trimImportString(raw.start_time || raw.startTime);
+    if (!start_time) {
+      continue;
+    }
+
+    const label = trimImportString(raw.label);
+    let id = trimImportString(raw.id);
+    if (!id || seenIds.has(id)) {
+      id = buildImportShowtimeId(label, start_time, index, seenIds);
+    }
+
+    seenIds.add(id);
+    const end_time = trimImportString(raw.end_time || raw.endTime);
+
+    slots.push({
+      id,
+      start_time,
+      ...(end_time ? { end_time } : {}),
+      ...(label ? { label } : {}),
+    });
+  }
+
+  slots.sort(
+    (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+  );
+
+  return slots;
+}
+
+function deriveImportEventWindowFromTimeSlots(timeSlots) {
+  if (!Array.isArray(timeSlots) || !timeSlots.length) {
+    return { start_time: '', end_time: '' };
+  }
+
+  const start_time = timeSlots[0].start_time;
+  let end_time = timeSlots[0].end_time || timeSlots[0].start_time;
+  for (const slot of timeSlots) {
+    const candidate = slot.end_time || slot.start_time;
+    if (new Date(candidate).getTime() > new Date(end_time).getTime()) {
+      end_time = candidate;
+    }
+  }
+
+  return { start_time, end_time };
+}
+
+function buildBatchPublishOverrides(row) {
+  const timeSlots = Array.isArray(row.timeSlots) ? row.timeSlots : [];
+  const derivedWindow = timeSlots.length ? deriveImportEventWindowFromTimeSlots(timeSlots) : null;
+  const startTime = trimImportString(row.startTime) || derivedWindow?.start_time || '';
+  const endTime = trimImportString(row.endTime) || derivedWindow?.end_time || '';
+
+  return {
+    hostName: row.organizerName.trim(),
+    name: row.name.trim(),
+    location: row.location.trim(),
+    ...(startTime ? { start_time: startTime } : {}),
+    ...(endTime ? { end_time: endTime } : {}),
+    description: row.description.trim() || undefined,
+    image: row.imageUrl.trim() || undefined,
+    source: row.source || 'manual',
+    sourceUrl: row.sourceUrl.trim() || undefined,
+    tags: row.tags,
+    ...(timeSlots.length ? { timeSlots } : {}),
+    ...(row.movie ? { movie: row.movie } : {}),
+  };
+}
+
+function formatEventTimeSlots(timeSlots) {
+  if (!Array.isArray(timeSlots) || !timeSlots.length) {
+    return '—';
+  }
+  if (timeSlots.length === 1) {
+    return formatEventWhen(timeSlots[0].start_time);
+  }
+  return `${timeSlots.length} showtimes`;
+}
+
+function normalizeJsonImportEvent(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+
+  const nestedDraft = raw.draft && typeof raw.draft === 'object' ? raw.draft : null;
+  const host =
+    raw.host && typeof raw.host === 'object'
+      ? raw.host
+      : nestedDraft?.host && typeof nestedDraft.host === 'object'
+        ? nestedDraft.host
+        : null;
+
+  const sourceUrl = trimImportString(
+    raw.sourceUrl || raw.url || raw.externalLink || nestedDraft?.sourceUrl || nestedDraft?.url,
+  );
+  const name = trimImportString(raw.name || nestedDraft?.name);
+  const hostName = trimImportString(
+    raw.hostName || raw.organizerName || host?.name || nestedDraft?.hostName || nestedDraft?.organizerName,
+  );
+  const location = trimImportString(raw.location || nestedDraft?.location);
+  const start_time = trimImportString(raw.start_time || raw.startTime || nestedDraft?.start_time);
+  const end_time = trimImportString(raw.end_time || raw.endTime || nestedDraft?.end_time);
+  const description = trimImportString(raw.description || nestedDraft?.description);
+  const image = trimImportString(raw.image || raw.imageUrl || nestedDraft?.image || nestedDraft?.imageUrl);
+  const source = trimImportString(raw.source || nestedDraft?.source) || 'manual';
+  const tags = Array.isArray(raw.tags)
+    ? raw.tags
+    : Array.isArray(nestedDraft?.tags)
+      ? nestedDraft.tags
+      : [];
+  const sourceTags = Array.isArray(raw.sourceTags)
+    ? raw.sourceTags
+    : Array.isArray(nestedDraft?.sourceTags)
+      ? nestedDraft.sourceTags
+      : [];
+  const timeSlots = normalizeImportTimeSlots(raw.timeSlots ?? nestedDraft?.timeSlots);
+  const movie = raw.movie ?? nestedDraft?.movie ?? null;
+
+  let resolvedStartTime = start_time;
+  let resolvedEndTime = end_time;
+
+  if (timeSlots.length) {
+    const window = deriveImportEventWindowFromTimeSlots(timeSlots);
+    if (!resolvedStartTime) {
+      resolvedStartTime = window.start_time;
+    }
+    if (!resolvedEndTime) {
+      resolvedEndTime = window.end_time;
+    }
+  }
+
+  if (!sourceUrl && !name && !hostName && !location && !resolvedStartTime && !timeSlots.length) {
+    return null;
+  }
+
+  const warnings = [];
+  if (!name) warnings.push('Missing event title (name).');
+  if (!hostName) warnings.push('Missing organizer (hostName).');
+  if (!location) warnings.push('Missing location.');
+  if (!resolvedStartTime && !timeSlots.length) warnings.push('Missing start_time.');
+  if (!tags.length) warnings.push('No catalog tags — pick or suggest tags before publishing.');
+  if (timeSlots.length) {
+    const slotIds = new Set();
+    for (const slot of timeSlots) {
+      if (slotIds.has(slot.id)) {
+        warnings.push(`Duplicate showtime id "${slot.id}".`);
+      }
+      slotIds.add(slot.id);
+    }
+  }
+
+  return {
+    sourceUrl,
+    draft: {
+      name,
+      hostName,
+      location,
+      start_time: resolvedStartTime,
+      end_time: resolvedEndTime || undefined,
+      description,
+      image,
+      sourceUrl,
+      source,
+      sourceTags,
+      tags,
+      ...(timeSlots.length ? { timeSlots } : {}),
+      ...(movie ? { movie } : {}),
+    },
+    warnings: [...(Array.isArray(raw.warnings) ? raw.warnings : []), ...warnings],
+  };
+}
+
+function extractJsonImportEvents(parsed) {
+  if (Array.isArray(parsed)) {
+    return { label: 'JSON import', events: parsed };
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return { label: 'JSON import', events: [] };
+  }
+
+  const label = trimImportString(parsed.label || parsed.listLabel) || 'JSON import';
+  const events = parsed.events || parsed.drafts || parsed.items;
+  if (Array.isArray(events)) {
+    return { label, events };
+  }
+
+  const single = normalizeJsonImportEvent(parsed);
+  if (single) {
+    return { label, events: [single] };
+  }
+
+  return { label, events: [] };
+}
+
+function parsePivotJsonImport(text) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { error: 'Paste JSON from an agent or export.' };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (err) {
+    return { error: `Invalid JSON: ${err.message}` };
+  }
+
+  const { label, events: rawEvents } = extractJsonImportEvents(parsed);
+  const entries = rawEvents
+    .map((raw) => normalizeJsonImportEvent(raw))
+    .filter(Boolean);
+
+  if (!entries.length) {
+    return { error: 'No events found. Use { "events": [ … ] } or a top-level array.' };
+  }
+
+  return { label, entries };
+}
+
+function isJsonImportEntryReady(entry) {
+  const draft = entry?.draft || {};
+  const hasWhen = Boolean(draft.start_time || draft.timeSlots?.length);
+  return Boolean(
+    draft.hostName && draft.name && draft.location && hasWhen && draft.tags?.length,
+  );
+}
+
+function buildJsonImportPreviewDocument(preview) {
+  if (!preview?.entries) return '';
+  return JSON.stringify(
+    {
+      label: preview.label,
+      events: preview.entries.map((entry) => entry.draft),
+    },
+    null,
+    2,
+  );
+}
+
 function buildDeckPreviewProps({
   name,
   organizerName,
@@ -27,8 +441,18 @@ function buildDeckPreviewProps({
   location,
   description,
   imageUrl,
+  timeSlots,
 }) {
-  const whenLabel = formatPivotDeckWhen(startTime, endTime);
+  const derivedWindow =
+    Array.isArray(timeSlots) && timeSlots.length
+      ? deriveImportEventWindowFromTimeSlots(timeSlots)
+      : null;
+  const resolvedStart = startTime || derivedWindow?.start_time || '';
+  const resolvedEnd = endTime || derivedWindow?.end_time || '';
+  const whenLabel =
+    Array.isArray(timeSlots) && timeSlots.length > 1
+      ? `${timeSlots.length} showtimes`
+      : formatPivotDeckWhen(resolvedStart, resolvedEnd);
   return {
     title: name,
     hostName: organizerName,
@@ -57,22 +481,37 @@ function createBatchImportRow(entry, index) {
   const draft = entry?.draft || {};
   const duplicate = entry?.duplicate || null;
   const isBlockingDuplicate = isBlockingImportDuplicate(duplicate);
+  const sourceUrl = entry?.sourceUrl || draft.sourceUrl || '';
+  const tags = Array.isArray(draft.tags) ? draft.tags : [];
+  const timeSlots = Array.isArray(draft.timeSlots) ? draft.timeSlots : [];
+  const movie = draft.movie || null;
+  const derivedWindow = timeSlots.length ? deriveImportEventWindowFromTimeSlots(timeSlots) : null;
+  const startTime = draft.start_time || derivedWindow?.start_time || '';
+  const endTime = draft.end_time || derivedWindow?.end_time || undefined;
   const hasRequiredFields = Boolean(
-    draft.hostName && draft.name && draft.location && draft.start_time,
+    draft.hostName &&
+      draft.name &&
+      draft.location &&
+      (startTime || timeSlots.length) &&
+      tags.length > 0,
   );
 
   return {
-    key: entry?.sourceUrl || draft.sourceUrl || `batch-row-${index}`,
+    key: sourceUrl || `batch-row-${index}`,
     selected: hasRequiredFields && !isBlockingDuplicate,
-    sourceUrl: entry?.sourceUrl || draft.sourceUrl || '',
+    sourceUrl,
+    source: draft.source || 'manual',
     name: draft.name || '',
     organizerName: draft.hostName || '',
     location: draft.location || '',
-    startTime: draft.start_time || '',
+    startTime,
+    endTime,
     description: draft.description || '',
     imageUrl: draft.image || '',
     sourceTags: Array.isArray(draft.sourceTags) ? draft.sourceTags : [],
-    tags: [],
+    tags,
+    timeSlots,
+    movie,
     warnings: entry?.warnings || [],
     duplicate,
     isBlockingDuplicate,
@@ -86,54 +525,37 @@ function formatEventTags(tags) {
   return `${tags[0]} +${tags.length - 1}`;
 }
 
-function MetricCard({ label, value, hint }) {
-  return (
-    <div className="linear-stat pivot-lab__metric">
-      <span className="linear-stat__label">{label}</span>
-      <span className="linear-stat__value">{value}</span>
-      {hint ? <span className="pivot-lab__metric-hint">{hint}</span> : null}
-    </div>
-  );
+function applyMovieMetadataToImportDraft(draft, movie) {
+  const applied = applyMovieMetadataToDraft(movie);
+  return {
+    ...draft,
+    movie: applied.movie,
+    name: applied.name || draft.name,
+    description: applied.description || draft.description,
+    image: applied.imageUrl || draft.image,
+  };
 }
 
-function CitySummaryCard({ tenant }) {
-  const feedback =
-    tenant.feedbackAvg != null
-      ? `${tenant.feedbackAvg} (${tenant.feedbackCount ?? 0})`
-      : tenant.feedbackCount
-        ? `${tenant.feedbackCount} ratings`
-        : '—';
+function applyMovieMetadataToBatchRow(row, movie) {
+  const applied = applyMovieMetadataToDraft(movie);
+  return {
+    ...row,
+    movie: applied.movie,
+    name: applied.name || row.name,
+    description: applied.description || row.description,
+    imageUrl: applied.imageUrl || row.imageUrl,
+  };
+}
 
-  return (
-    <article className="pivot-lab__city-card">
-      <header className="pivot-lab__city-head">
-        <h3>{tenant.cityDisplayName || tenant.tenantKey}</h3>
-        <span className="pivot-lab__city-key">{tenant.tenantKey}</span>
-      </header>
-      {tenant.error ? (
-        <p className="pivot-lab__city-error">Metrics unavailable for this city.</p>
-      ) : (
-        <div className="pivot-lab__city-metrics">
-          <MetricCard label="Events" value={tenant.eventCount ?? 0} />
-          <MetricCard label="Active users" value={tenant.activeUsers ?? 0} />
-          <MetricCard label="Interested" value={tenant.interestedCount ?? 0} />
-          <MetricCard label="Going" value={tenant.registeredCount ?? 0} />
-          <MetricCard label="External opens" value={tenant.externalOpenCount ?? 0} />
-          <MetricCard label="Swipes" value={tenant.swipeCount ?? 0} />
-          <MetricCard label="Feedback avg" value={feedback} />
-          {tenant.dropSchedule ? (
-            <MetricCard
-              label="Next drop"
-              value={tenant.dropSchedule.nextDropFormatted}
-              hint={`${tenant.dropSchedule.localSchedule} · ${
-                tenant.dropSchedule.source === 'override' ? 'override' : 'default'
-              }`}
-            />
-          ) : null}
-        </div>
-      )}
-    </article>
-  );
+function formatEventFilmStatus(draft) {
+  const movie = draft?.movie;
+  if (movie?.title) {
+    return movie.year ? `${movie.title} (${movie.year})` : movie.title;
+  }
+  if (isFilmImportCandidate(draft || {})) {
+    return 'Needs TMDB';
+  }
+  return '—';
 }
 
 function IngestStatusPill({ status }) {
@@ -146,22 +568,16 @@ function IngestStatusPill({ status }) {
   return <span className="pivot-lab__pill">—</span>;
 }
 
-function ReferralStatus({ code }) {
-  if (!code.active) return <span className="pivot-lab__pill pivot-lab__pill--muted">Inactive</span>;
-  if (code.expiresAt && new Date(code.expiresAt) < new Date()) {
-    return <span className="pivot-lab__pill pivot-lab__pill--warn">Expired</span>;
-  }
-  if (code.redemptionCount >= code.maxRedemptions) {
-    return <span className="pivot-lab__pill pivot-lab__pill--warn">Maxed</span>;
-  }
-  if (code.redeemable) {
-    return <span className="pivot-lab__pill pivot-lab__pill--ok">Redeemable</span>;
-  }
-  return <span className="pivot-lab__pill">—</span>;
-}
+const LAB_TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'import', label: 'Import' },
+  { key: 'catalog', label: 'Catalog' },
+  { key: 'notes', label: 'Notes' },
+];
 
 function PivotLabPage() {
   const { addNotification } = useNotification();
+  const [activeTab, setActiveTab] = useState('overview');
   const [batchWeek, setBatchWeek] = useState(() => toIsoWeek());
   const [selectedTenantKey, setSelectedTenantKey] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
@@ -169,6 +585,8 @@ function PivotLabPage() {
   const [savingNotes, setSavingNotes] = useState(false);
   const [rebuildingSnapshot, setRebuildingSnapshot] = useState(false);
   const [importUrl, setImportUrl] = useState('');
+  const [importJsonDraft, setImportJsonDraft] = useState('');
+  const [jsonImportPreview, setJsonImportPreview] = useState(null);
   const [importMode, setImportMode] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
   const [importBatchLabel, setImportBatchLabel] = useState('');
@@ -180,6 +598,7 @@ function PivotLabPage() {
   const [importSelectedTags, setImportSelectedTags] = useState([]);
   const [importSourceTags, setImportSourceTags] = useState([]);
   const [batchApplyTags, setBatchApplyTags] = useState([]);
+  const [tmdbMatchLoadingKey, setTmdbMatchLoadingKey] = useState(null);
   const [tagSuggestLoadingKey, setTagSuggestLoadingKey] = useState(null);
   const [tagSeeding, setTagSeeding] = useState(false);
   const [importName, setImportName] = useState('');
@@ -190,12 +609,22 @@ function PivotLabPage() {
   const [importPublishLoading, setImportPublishLoading] = useState(false);
   const [importError, setImportError] = useState('');
   const [editingEvent, setEditingEvent] = useState(null);
-  const [editDraft, setEditDraft] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
   const [deckPreviewState, setDeckPreviewState] = useState(null);
   const [purgeScope, setPurgeScope] = useState('selected');
   const [purgeConfirm, setPurgeConfirm] = useState('');
   const [purgingCatalog, setPurgingCatalog] = useState(false);
+  const [manualImportOpen, setManualImportOpen] = useState(false);
+  const [manualImportSticky, setManualImportSticky] = useState({
+    organizerName: '',
+    location: '',
+    tags: [],
+    startTimeLocal: '',
+    endTimeLocal: '',
+    scheduleMode: 'single',
+    timeSlots: [],
+  });
+  const [manualImportPublishLoading, setManualImportPublishLoading] = useState(false);
 
   const overviewParams = useMemo(() => ({ batchWeek }), [batchWeek]);
   const {
@@ -205,6 +634,16 @@ function PivotLabPage() {
     refetch: refetchOverview,
   } = useFetch('/admin/pivot/overview', {
     params: overviewParams,
+    cache: NO_FETCH_CACHE,
+  });
+
+  const retentionParams = useMemo(() => ({ batchWeek, weeks: 6 }), [batchWeek]);
+  const {
+    data: retentionResponse,
+    loading: retentionLoading,
+    error: retentionError,
+  } = useFetch('/admin/pivot/retention', {
+    params: retentionParams,
     cache: NO_FETCH_CACHE,
   });
 
@@ -506,11 +945,433 @@ function PivotLabPage() {
     setImportDuplicate(previewData.duplicate || null);
   }, [importUrl, selectedTenantKey]);
 
+  useEffect(() => {
+    if (activeTab !== 'import' || manualImportOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key !== 'm' && event.key !== 'M') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      setManualImportOpen(true);
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, manualImportOpen]);
+
+  const handleAddManualToBatch = useCallback(
+    (entry) => {
+      setImportError('');
+      setImportMode('batch');
+      setImportProvider((current) => current || 'Manual');
+      setImportBatchLabel((current) =>
+        current && !current.startsWith('Manual') ? current : 'Manual queue',
+      );
+      setImportBatchRows((rows) => {
+        const nextRow = createBatchImportRow(entry, rows.length);
+        return [
+          ...rows,
+          {
+            ...nextRow,
+            key: nextRow.sourceUrl || `manual-${Date.now()}-${rows.length}`,
+          },
+        ];
+      });
+      addNotification({
+        title: 'Queued',
+        message: `${entry.draft?.name || 'Event'} added to batch.`,
+        type: 'success',
+      });
+    },
+    [addNotification],
+  );
+
+  const handlePublishManualImport = useCallback(
+    async (draft) => {
+      if (!selectedTenantKey) {
+        addNotification({
+          title: 'Choose a city',
+          message: 'Select a pivot city before publishing.',
+          type: 'warning',
+        });
+        return false;
+      }
+
+      setManualImportPublishLoading(true);
+      const entry = manualDraftToImportEntry(draft);
+      const { data, error } = await authenticatedRequest('/admin/pivot/ingest', {
+        method: 'POST',
+        data: {
+          tenantKey: selectedTenantKey,
+          batchWeek,
+          overrides: {
+            hostName: entry.draft.hostName,
+            name: entry.draft.name,
+            location: entry.draft.location,
+            start_time: entry.draft.start_time,
+            end_time: entry.draft.end_time || undefined,
+            description: entry.draft.description || undefined,
+            image: entry.draft.image || undefined,
+            source: 'manual',
+            sourceUrl: entry.draft.sourceUrl || undefined,
+            tags: entry.draft.tags,
+            ...(entry.draft.timeSlots?.length
+              ? { timeSlots: entry.draft.timeSlots }
+              : {}),
+            ...(entry.draft.movie ? { movie: entry.draft.movie } : {}),
+          },
+        },
+      });
+      setManualImportPublishLoading(false);
+
+      if (error || !data?.success) {
+        addNotification({
+          title: 'Publish failed',
+          message: error || data?.message || 'Could not publish event.',
+          type: 'error',
+        });
+        return false;
+      }
+
+      refetchEvents();
+      refetchOverview();
+      addNotification({
+        title: 'Published',
+        message: `${data.data?.event?.name || entry.draft.name} added to ${selectedTenantKey}.`,
+        type: 'success',
+      });
+      return true;
+    },
+    [addNotification, batchWeek, refetchEvents, refetchOverview, selectedTenantKey],
+  );
+
+  const suggestTagsForManualImport = useCallback(
+    async (draft, patchDraft) => {
+      setTagSuggestLoadingKey('manual-import');
+      const result = await requestSuggestedTags(
+        buildTagSuggestPayload({
+          name: draft.name,
+          description: draft.description,
+          location: draft.location,
+          organizerName: draft.organizerName,
+          sourceTags: [],
+        }),
+      );
+      setTagSuggestLoadingKey(null);
+
+      if (result.error) {
+        addNotification({
+          title: 'Tag suggestion failed',
+          message: result.error,
+          type: result.code === 'LLM_NOT_CONFIGURED' ? 'warning' : 'error',
+        });
+        return;
+      }
+
+      patchDraft({ tags: result.tags });
+      if (!result.tags.length) {
+        addNotification({
+          title: 'No tag matches',
+          message: 'Claude did not return catalog tags for this event.',
+          type: 'warning',
+        });
+      }
+    },
+    [addNotification, buildTagSuggestPayload, requestSuggestedTags],
+  );
+
+  const syncJsonImportDraftFromEntries = useCallback((label, entries) => {
+    setImportJsonDraft(
+      JSON.stringify(
+        {
+          label,
+          events: entries.map((entry) => entry.draft),
+        },
+        null,
+        2,
+      ),
+    );
+  }, []);
+
+  const handlePreviewJsonImport = useCallback(async () => {
+    const result = parsePivotJsonImport(importJsonDraft);
+    if (result.error) {
+      setJsonImportPreview({ error: result.error });
+      return;
+    }
+
+    let entries = result.entries;
+    const pendingFilmCount = entries.filter((entry) =>
+      isFilmImportCandidate(entry.draft || {}),
+    ).length;
+
+    let matched = 0;
+    let failed = 0;
+
+    if (pendingFilmCount) {
+      setTmdbMatchLoadingKey('json-preview');
+      const matchResult = await autoMatchFilmsForImportEntries(entries);
+      setTmdbMatchLoadingKey(null);
+      matched = matchResult.matched;
+      failed = matchResult.failed;
+
+      if (matchResult.moviesByIndex.size) {
+        entries = entries.map((entry, index) =>
+          matchResult.moviesByIndex.has(index)
+            ? {
+                ...entry,
+                draft: applyMovieMetadataToImportDraft(
+                  entry.draft || {},
+                  matchResult.moviesByIndex.get(index),
+                ),
+              }
+            : entry,
+        );
+        syncJsonImportDraftFromEntries(result.label, entries);
+      }
+    }
+
+    setJsonImportPreview({
+      label: result.label,
+      entries,
+      tmdbMatch: { matched, failed, pending: pendingFilmCount },
+    });
+
+    if (pendingFilmCount) {
+      addNotification({
+        title: matched ? 'Films matched from TMDB' : 'TMDB matching finished',
+        message: matched
+          ? `${matched} film(s) matched automatically${failed ? `, ${failed} failed` : ''}.`
+          : failed
+            ? `${failed} film event(s) could not be matched.`
+            : 'No TMDB matches found for film events.',
+        type: matched ? (failed ? 'warning' : 'success') : 'warning',
+      });
+    }
+  }, [addNotification, importJsonDraft, syncJsonImportDraftFromEntries]);
+
+  const handleLoadJsonImport = useCallback(async () => {
+    const result =
+      jsonImportPreview?.entries?.length && !jsonImportPreview.error
+        ? { label: jsonImportPreview.label, entries: jsonImportPreview.entries }
+        : parsePivotJsonImport(importJsonDraft);
+    if (result.error) {
+      setImportError(result.error);
+      setJsonImportPreview({ error: result.error });
+      return;
+    }
+
+    let entries = result.entries;
+    const pendingFilmCount = entries.filter((entry) =>
+      isFilmImportCandidate(entry.draft || {}),
+    ).length;
+
+    let matched = 0;
+    let failed = 0;
+
+    if (pendingFilmCount) {
+      setTmdbMatchLoadingKey('json-load');
+      const matchResult = await autoMatchFilmsForImportEntries(entries);
+      setTmdbMatchLoadingKey(null);
+      matched = matchResult.matched;
+      failed = matchResult.failed;
+
+      if (matchResult.moviesByIndex.size) {
+        entries = entries.map((entry, index) =>
+          matchResult.moviesByIndex.has(index)
+            ? {
+                ...entry,
+                draft: applyMovieMetadataToImportDraft(
+                  entry.draft || {},
+                  matchResult.moviesByIndex.get(index),
+                ),
+              }
+            : entry,
+        );
+        syncJsonImportDraftFromEntries(result.label, entries);
+      }
+    }
+
+    setImportError('');
+    setJsonImportPreview({
+      label: result.label,
+      entries,
+      tmdbMatch: { matched, failed, pending: pendingFilmCount },
+    });
+    setImportMode('batch');
+    setImportUrl('');
+    setImportPreview(null);
+    setImportProvider('JSON');
+    setImportBatchLabel(result.label);
+    setImportBatchRows(entries.map(createBatchImportRow));
+    const missingTagCount = entries.filter((entry) => !entry.draft?.tags?.length).length;
+    const loadWarnings = [];
+    if (missingTagCount) {
+      loadWarnings.push(
+        `${missingTagCount} event(s) have no tags — pick or suggest catalog tags before publishing.`,
+      );
+    }
+    if (failed) {
+      loadWarnings.push(
+        `${failed} film event(s) could not be matched to TMDB — use Retry on those rows.`,
+      );
+    }
+    setImportWarnings(loadWarnings);
+    setImportDuplicate(null);
+    setDeckPreviewState(null);
+    setBatchApplyTags([]);
+
+    addNotification({
+      title: 'JSON loaded',
+      message:
+        matched > 0
+          ? `${entries.length} event(s) loaded · ${matched} film(s) matched from TMDB.`
+          : `${entries.length} event(s) ready for review.`,
+      type: 'success',
+    });
+  }, [addNotification, importJsonDraft, jsonImportPreview, syncJsonImportDraftFromEntries]);
+
+  const handleMatchTmdbForJsonEntry = useCallback(
+    async (index) => {
+      const entry = jsonImportPreview?.entries?.[index];
+      if (!entry) {
+        return;
+      }
+
+      const draft = entry.draft || {};
+      if (draft.movie?.tmdbId) {
+        addNotification({
+          title: 'Already matched',
+          message: `${draft.name || 'Event'} already has TMDB metadata.`,
+          type: 'warning',
+        });
+        return;
+      }
+
+      setTmdbMatchLoadingKey(`json-${index}`);
+      const result = await autoMatchTmdbMovieForEvent({
+        name: draft.name,
+        startTime: draft.start_time || draft.timeSlots?.[0]?.start_time,
+        movie: draft.movie,
+      });
+      setTmdbMatchLoadingKey(null);
+
+      if (result.error) {
+        addNotification({
+          title: 'TMDB match failed',
+          message: `${draft.name || 'Event'}: ${result.error}`,
+          type: 'error',
+        });
+        return;
+      }
+
+      setJsonImportPreview((prev) => {
+        if (!prev?.entries) {
+          return prev;
+        }
+        const entries = prev.entries.map((item, itemIndex) =>
+          itemIndex === index
+            ? {
+                ...item,
+                draft: applyMovieMetadataToImportDraft(item.draft || {}, result.movie),
+              }
+            : item,
+        );
+        syncJsonImportDraftFromEntries(prev.label, entries);
+        return { ...prev, entries };
+      });
+
+      addNotification({
+        title: 'Film matched',
+        message: `${result.movie.title} attached to ${draft.name || 'event'}.`,
+        type: 'success',
+      });
+    },
+    [addNotification, jsonImportPreview, syncJsonImportDraftFromEntries],
+  );
+
+  const jsonImportPreviewDocument = useMemo(
+    () => buildJsonImportPreviewDocument(jsonImportPreview),
+    [jsonImportPreview],
+  );
+
+  const jsonImportReadyCount = useMemo(() => {
+    if (!jsonImportPreview?.entries) return 0;
+    return jsonImportPreview.entries.filter(isJsonImportEntryReady).length;
+  }, [jsonImportPreview]);
+
+  const jsonImportTmdbMatching = Boolean(
+    tmdbMatchLoadingKey === 'json-preview' || tmdbMatchLoadingKey === 'json-load',
+  );
+
+  const handleCopyJsonAgentPrompt = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(PIVOT_JSON_IMPORT_AGENT_PROMPT);
+      addNotification({
+        title: 'Copied',
+        message: 'Agent JSON prompt copied to clipboard.',
+        type: 'success',
+      });
+    } catch {
+      addNotification({
+        title: 'Copy failed',
+        message: 'Could not copy the agent prompt to clipboard.',
+        type: 'error',
+      });
+    }
+  }, [addNotification]);
+
   const updateBatchImportRow = useCallback((key, patch) => {
     setImportBatchRows((rows) =>
       rows.map((row) => (row.key === key ? { ...row, ...patch } : row)),
     );
   }, []);
+
+  const handleMatchTmdbForBatchRow = useCallback(
+    async (rowKey) => {
+      const row = importBatchRows.find((item) => item.key === rowKey);
+      if (!row) {
+        return;
+      }
+
+      if (row.movie?.tmdbId) {
+        addNotification({
+          title: 'Already matched',
+          message: `${row.name || 'Event'} already has TMDB metadata.`,
+          type: 'warning',
+        });
+        return;
+      }
+
+      setTmdbMatchLoadingKey(rowKey);
+      const result = await autoMatchTmdbMovieForEvent({
+        name: row.name,
+        startTime: row.startTime || row.timeSlots?.[0]?.start_time,
+        movie: row.movie,
+      });
+      setTmdbMatchLoadingKey(null);
+
+      if (result.error) {
+        addNotification({
+          title: 'TMDB match failed',
+          message: `${row.name || 'Event'}: ${result.error}`,
+          type: 'error',
+        });
+        return;
+      }
+
+      updateBatchImportRow(rowKey, applyMovieMetadataToBatchRow(row, result.movie));
+      addNotification({
+        title: 'Film matched',
+        message: `${result.movie.title} attached to ${row.name || 'event'}.`,
+        type: 'success',
+      });
+    },
+    [addNotification, importBatchRows, updateBatchImportRow],
+  );
 
   const selectedBatchRows = useMemo(
     () => importBatchRows.filter((row) => row.selected),
@@ -656,31 +1517,32 @@ function PivotLabPage() {
     });
   }, [addNotification, buildTagSuggestPayload, selectedBatchRows]);
 
-  const suggestTagsForEdit = useCallback(async () => {
-    if (!editDraft) return;
+  const suggestTagsForEdit = useCallback(
+    async (draft, patchDraft) => {
+      setTagSuggestLoadingKey('edit');
+      const result = await requestSuggestedTags(
+        buildTagSuggestPayload({
+          name: draft.name,
+          description: draft.description,
+          location: draft.location,
+          organizerName: draft.organizerName,
+        }),
+      );
+      setTagSuggestLoadingKey(null);
 
-    setTagSuggestLoadingKey('edit');
-    const result = await requestSuggestedTags(
-      buildTagSuggestPayload({
-        name: editDraft.name,
-        description: editDraft.description,
-        location: editDraft.location,
-        organizerName: editDraft.organizerName,
-      }),
-    );
-    setTagSuggestLoadingKey(null);
+      if (result.error) {
+        addNotification({
+          title: 'Tag suggestion failed',
+          message: result.error,
+          type: result.code === 'LLM_NOT_CONFIGURED' ? 'warning' : 'error',
+        });
+        return;
+      }
 
-    if (result.error) {
-      addNotification({
-        title: 'Tag suggestion failed',
-        message: result.error,
-        type: result.code === 'LLM_NOT_CONFIGURED' ? 'warning' : 'error',
-      });
-      return;
-    }
-
-    setEditDraft({ ...editDraft, tags: result.tags });
-  }, [addNotification, buildTagSuggestPayload, editDraft, requestSuggestedTags]);
+      patchDraft({ tags: result.tags });
+    },
+    [addNotification, buildTagSuggestPayload, requestSuggestedTags],
+  );
 
   const applyTagsToSelectedBatchRows = useCallback(() => {
     if (!batchApplyTags.length) return;
@@ -697,7 +1559,7 @@ function PivotLabPage() {
           row.organizerName.trim() &&
           row.name.trim() &&
           row.location.trim() &&
-          row.startTime.trim() &&
+          (row.startTime.trim() || row.timeSlots?.length) &&
           row.tags.length > 0,
       ),
     [selectedBatchRows],
@@ -733,20 +1595,6 @@ function PivotLabPage() {
     ],
   );
 
-  const editDeckPreview = useMemo(
-    () =>
-      editingEvent && editDraft
-        ? buildDeckPreviewProps({
-            name: editDraft.name,
-            organizerName: editDraft.organizerName,
-            startTime: editDraft.start_time,
-            location: editDraft.location,
-            description: editingEvent.description,
-          })
-        : null,
-    [editDraft, editingEvent],
-  );
-
   const deckPreviewContent = useMemo(() => {
     if (!deckPreviewState) return null;
 
@@ -758,9 +1606,11 @@ function PivotLabPage() {
           name: row.name,
           organizerName: row.organizerName,
           startTime: row.startTime,
+          endTime: row.endTime,
           location: row.location,
           description: row.description,
           imageUrl: row.imageUrl,
+          timeSlots: row.timeSlots,
         }),
         hint: 'Preview updates as you edit the selected batch row.',
       };
@@ -787,16 +1637,8 @@ function PivotLabPage() {
         tenantKey: selectedTenantKey,
         batchWeek,
         events: publishableBatchRows.map((row) => ({
-          url: row.sourceUrl,
-          overrides: {
-            hostName: row.organizerName.trim(),
-            name: row.name.trim(),
-            location: row.location.trim(),
-            start_time: row.startTime.trim(),
-            description: row.description.trim() || undefined,
-            image: row.imageUrl.trim() || undefined,
-            tags: row.tags,
-          },
+          url: row.sourceUrl.trim() || undefined,
+          overrides: buildBatchPublishOverrides(row),
         })),
       },
     });
@@ -900,66 +1742,61 @@ function PivotLabPage() {
 
   const openEditEvent = useCallback((event) => {
     setEditingEvent(event);
-    setEditDraft({
-      name: event.name || '',
-      organizerName: event.organizerName || '',
-      location: event.location || '',
-      start_time: event.start_time ? new Date(event.start_time).toISOString().slice(0, 16) : '',
-      description: event.description || '',
-      ingestStatus: event.ingestStatus || 'published',
-      tags: Array.isArray(event.tags) ? event.tags : [],
-    });
   }, []);
 
-  const handleSaveEdit = useCallback(async () => {
-    if (!editingEvent || !editDraft || !selectedTenantKey) return;
+  const handleSaveCatalogEdit = useCallback(
+    async (draft) => {
+      if (!editingEvent || !selectedTenantKey) return false;
 
-    setEditSaving(true);
-    const { data, error } = await authenticatedRequest(
-      `/admin/pivot/ingest/${editingEvent._id}`,
-      {
-        method: 'PATCH',
-        data: {
-          tenantKey: selectedTenantKey,
-          overrides: {
-            name: editDraft.name,
-            hostName: editDraft.organizerName,
-            location: editDraft.location,
-            start_time: editDraft.start_time
-              ? new Date(editDraft.start_time).toISOString()
-              : undefined,
-            ingestStatus: editDraft.ingestStatus,
-            tags: editDraft.tags,
+      setEditSaving(true);
+      const overrides = catalogEditDraftToOverrides(draft);
+      const { data, error } = await authenticatedRequest(
+        `/admin/pivot/ingest/${editingEvent._id}`,
+        {
+          method: 'PATCH',
+          data: {
+            tenantKey: selectedTenantKey,
+            overrides,
           },
         },
-      },
-    );
-    setEditSaving(false);
+      );
+      setEditSaving(false);
 
-    if (error || !data?.success) {
+      if (error || !data?.success) {
+        addNotification({
+          title: 'Update failed',
+          message: error || data?.message || 'Could not update event.',
+          type: 'error',
+        });
+        return false;
+      }
+
+      setEditingEvent(null);
+      refetchEvents();
       addNotification({
-        title: 'Update failed',
-        message: error || data?.message || 'Could not update event.',
-        type: 'error',
+        title: 'Updated',
+        message: 'Catalog event saved.',
+        type: 'success',
       });
-      return;
-    }
-
-    setEditingEvent(null);
-    setEditDraft(null);
-    refetchEvents();
-    addNotification({
-      title: 'Updated',
-      message: 'Catalog event saved.',
-      type: 'success',
-    });
-  }, [addNotification, editDraft, editingEvent, refetchEvents, selectedTenantKey]);
+      return true;
+    },
+    [addNotification, editingEvent, refetchEvents, selectedTenantKey],
+  );
 
   const snapshotLabel = formatSnapshotAge(overview?.snapshotGeneratedAt);
   const selectedTenant = useMemo(
     () => tenants.find((row) => row.tenantKey === selectedTenantKey) || null,
     [tenants, selectedTenantKey],
   );
+
+  const stepBatchWeek = useCallback((delta) => {
+    setBatchWeek((current) => {
+      const next = shiftIsoWeek(current, delta);
+      return next || current;
+    });
+  }, []);
+
+  const batchWeekValid = isValidIsoWeek(batchWeek);
 
   return (
     <div className="pivot-lab linear-admin">
@@ -968,18 +1805,53 @@ function PivotLabPage() {
           <p className="pivot-lab__eyebrow">Internal · Just Go pilot</p>
           <h1>Pivot Lab</h1>
           <p className="pivot-lab__subtitle">
-            Cross-city funnel metrics, catalog events, referral redemptions, and interview themes.
+            Curate the weekly catalog, watch the funnel, and decide with data.
           </p>
         </div>
         <div className="pivot-lab__controls">
+          <label className="linear-field pivot-lab__tenant-filter">
+            <span className="linear-field__label">City</span>
+            <select
+              className="linear-input"
+              value={selectedTenantKey}
+              onChange={(e) => setSelectedTenantKey(e.target.value)}
+              disabled={!tenants.length}
+            >
+              {tenants.map((tenant) => (
+                <option key={tenant.tenantKey} value={tenant.tenantKey}>
+                  {tenant.cityDisplayName || tenant.tenantKey}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="linear-field">
             <span className="linear-field__label">Batch week</span>
-            <input
-              className="linear-input"
-              value={batchWeek}
-              onChange={(e) => setBatchWeek(e.target.value.toUpperCase())}
-              placeholder="2026-W26"
-            />
+            <div className="pivot-lab__week-stepper">
+              <button
+                type="button"
+                className="linear-btn linear-btn--ghost pivot-lab__week-step"
+                onClick={() => stepBatchWeek(-1)}
+                disabled={!batchWeekValid}
+                aria-label="Previous week"
+              >
+                ‹
+              </button>
+              <input
+                className="linear-input pivot-lab__week-input"
+                value={batchWeek}
+                onChange={(e) => setBatchWeek(e.target.value.toUpperCase())}
+                placeholder="2026-W26"
+              />
+              <button
+                type="button"
+                className="linear-btn linear-btn--ghost pivot-lab__week-step"
+                onClick={() => stepBatchWeek(1)}
+                disabled={!batchWeekValid}
+                aria-label="Next week"
+              >
+                ›
+              </button>
+            </div>
           </label>
           <button
             type="button"
@@ -1016,37 +1888,56 @@ function PivotLabPage() {
         </div>
       ) : null}
 
-      {snapshotLabel ? (
-        <p className="pivot-lab__snapshot-meta">
-          Snapshot generated {snapshotLabel}
-        </p>
-      ) : (
-        <p className="pivot-lab__snapshot-meta pivot-lab__snapshot-meta--stale">
-          No stored snapshot for this week — live aggregates shown.
-        </p>
-      )}
+      <div className="pivot-lab__context-bar">
+        <span className={`pivot-lab__snapshot-meta${snapshotLabel ? '' : ' pivot-lab__snapshot-meta--stale'}`}>
+          {snapshotLabel
+            ? `Snapshot generated ${snapshotLabel}`
+            : 'No stored snapshot for this week — live aggregates shown.'}
+        </span>
+        {selectedTenant?.dropSchedule ? (
+          <span className="pivot-lab__next-drop">
+            Next drop ({batchWeek}): {selectedTenant.dropSchedule.nextDropFormatted}
+            {' · '}
+            {selectedTenant.dropSchedule.localSchedule}
+          </span>
+        ) : null}
+      </div>
 
       {overviewError ? (
         <p className="pivot-lab__error">{overviewError}</p>
       ) : null}
 
-      <section className="linear-section pivot-lab__section" aria-labelledby="pivot-lab-cities">
-        <h2 id="pivot-lab-cities" className="linear-section__title">
-          City summary
-        </h2>
-        {overviewLoading && !tenants.length ? (
-          <p className="pivot-lab__empty">Loading overview…</p>
-        ) : tenants.length ? (
-          <div className="pivot-lab__city-grid">
-            {tenants.map((tenant) => (
-              <CitySummaryCard key={tenant.tenantKey} tenant={tenant} />
-            ))}
-          </div>
-        ) : (
-          <p className="pivot-lab__empty">No pivot cities configured for this week.</p>
-        )}
-      </section>
+      <nav className="pivot-lab__tabs" aria-label="Pivot Lab sections">
+        {LAB_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`pivot-lab__tab${activeTab === tab.key ? ' pivot-lab__tab--active' : ''}`}
+            aria-current={activeTab === tab.key ? 'page' : undefined}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
+            {tab.key === 'catalog' && events.length ? (
+              <span className="pivot-lab__tab-count"> {events.length}</span>
+            ) : null}
+          </button>
+        ))}
+      </nav>
 
+      {activeTab === 'overview' ? (
+        <PivotLabOverview
+          tenants={tenants}
+          selectedTenant={selectedTenant}
+          batchWeek={batchWeek}
+          retention={retentionResponse?.success ? retentionResponse.data : null}
+          retentionLoading={retentionLoading}
+          retentionError={retentionError}
+          overviewLoading={overviewLoading}
+          referralRows={referralRows}
+        />
+      ) : null}
+
+      {activeTab === 'import' ? (
       <section className="linear-section pivot-lab__section" aria-labelledby="pivot-lab-import">
         <div className="pivot-lab__section-head">
           <div>
@@ -1054,25 +1945,25 @@ function PivotLabPage() {
               Import event
             </h2>
             <p className="pivot-lab__notes-hint">
-              Paste a single event link or a city explore page (Partiful explore or Luma city calendar),
-              review drafts, set organizer names, and publish to the selected city for {batchWeek}.
+              Paste a URL, quick-add manual events (<kbd className="pivot-lab__key-hint">M</kbd>), load
+              agent JSON, then publish to the selected city for {batchWeek}.
             </p>
           </div>
-          <label className="linear-field pivot-lab__tenant-filter">
-            <span className="linear-field__label">City</span>
-            <select
-              className="linear-input"
-              value={selectedTenantKey}
-              onChange={(e) => setSelectedTenantKey(e.target.value)}
-              disabled={!tenants.length}
-            >
-              {tenants.map((tenant) => (
-                <option key={tenant.tenantKey} value={tenant.tenantKey}>
-                  {tenant.cityDisplayName || tenant.tenantKey}
-                </option>
-              ))}
-            </select>
-          </label>
+          <span className="pivot-lab__import-target">
+            Publishing to <strong>{selectedTenant?.cityDisplayName || selectedTenantKey || '—'}</strong>
+          </span>
+        </div>
+        <div className="pivot-lab__import-toolbar">
+          <button
+            type="button"
+            className="linear-btn linear-btn--primary pivot-lab__manual-import-btn"
+            onClick={() => setManualImportOpen(true)}
+          >
+            Manual import
+          </button>
+          <span className="pivot-lab__import-toolbar-hint">
+            Quick entry for ops · press <kbd className="pivot-lab__key-hint">M</kbd>
+          </span>
         </div>
         <div className="pivot-lab__import-row">
           <label className="linear-field pivot-lab__import-url">
@@ -1093,6 +1984,156 @@ function PivotLabPage() {
             {importLoading ? 'Fetching…' : 'Preview import'}
           </button>
         </div>
+        <details className="pivot-lab__json-import">
+          <summary className="pivot-lab__json-import-summary">JSON import (agents)</summary>
+          <div className="pivot-lab__json-import-body">
+            <p className="pivot-lab__json-import-hint">
+              For Just Go weekly ops: give agents the prompt below, paste their JSON here, then review
+              in the batch table. Listing URLs are optional — manual events work without a sourceUrl.
+              Film events tagged <code>film-and-tv</code> auto-match TMDB on preview and load.
+            </p>
+            <div className="pivot-lab__json-import-actions">
+              <button
+                type="button"
+                className="linear-btn linear-btn--ghost"
+                onClick={handleCopyJsonAgentPrompt}
+              >
+                Copy agent prompt
+              </button>
+            </div>
+            <pre className="pivot-lab__json-import-prompt" aria-label="Agent JSON format">
+              {PIVOT_JSON_IMPORT_AGENT_PROMPT}
+            </pre>
+            <label className="linear-field pivot-lab__json-import-field">
+              <span className="linear-field__label">Agent JSON</span>
+              <textarea
+                className="linear-input pivot-lab__json-import-textarea"
+                value={importJsonDraft}
+                onChange={(e) => {
+                  setImportJsonDraft(e.target.value);
+                  setJsonImportPreview(null);
+                }}
+                placeholder={PIVOT_JSON_IMPORT_EXAMPLE}
+                rows={8}
+                spellCheck={false}
+              />
+            </label>
+            <div className="pivot-lab__notes-actions pivot-lab__json-import-buttons">
+              <button
+                type="button"
+                className="linear-btn linear-btn--ghost"
+                onClick={handlePreviewJsonImport}
+                disabled={!importJsonDraft.trim() || jsonImportTmdbMatching}
+              >
+                {tmdbMatchLoadingKey === 'json-preview' ? 'Matching films…' : 'Preview JSON'}
+              </button>
+              <button
+                type="button"
+                className="linear-btn linear-btn--primary"
+                onClick={handleLoadJsonImport}
+                disabled={!importJsonDraft.trim() || jsonImportTmdbMatching}
+              >
+                {tmdbMatchLoadingKey === 'json-load' ? 'Matching films…' : 'Load JSON into batch'}
+              </button>
+            </div>
+            {jsonImportPreview?.error ? (
+              <p className="pivot-lab__json-preview-error">{jsonImportPreview.error}</p>
+            ) : null}
+            {jsonImportPreview?.entries?.length ? (
+              <div className="pivot-lab__json-preview">
+                <p className="pivot-lab__json-preview-summary">
+                  Found {jsonImportPreview.entries.length} event(s) in{' '}
+                  <strong>{jsonImportPreview.label}</strong>. {jsonImportReadyCount} ready to
+                  publish as-is; others need tags or missing fields.
+                  {jsonImportPreview.tmdbMatch?.matched
+                    ? ` ${jsonImportPreview.tmdbMatch.matched} film(s) matched from TMDB.`
+                    : ''}
+                  {jsonImportPreview.tmdbMatch?.failed
+                    ? ` ${jsonImportPreview.tmdbMatch.failed} film match(es) failed.`
+                    : ''}
+                </p>
+                <div className="pivot-lab__table-wrap">
+                  <table className="pivot-lab__table pivot-lab__json-preview-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Event</th>
+                        <th scope="col">Organizer</th>
+                        <th scope="col">When</th>
+                        <th scope="col">Showtimes</th>
+                        <th scope="col">Location</th>
+                        <th scope="col">Tags</th>
+                        <th scope="col">Film</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">TMDB</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {jsonImportPreview.entries.map((entry, index) => {
+                        const draft = entry.draft || {};
+                        const ready = isJsonImportEntryReady(entry);
+                        const rowLoadingKey = `json-${index}`;
+                        return (
+                          <tr
+                            key={`${draft.name || 'event'}-${index}`}
+                            className={ready ? '' : 'pivot-lab__json-preview-row--warn'}
+                          >
+                            <td>{draft.name || '—'}</td>
+                            <td>{draft.hostName || '—'}</td>
+                            <td>{formatEventWhen(draft.start_time || draft.timeSlots?.[0]?.start_time)}</td>
+                            <td>{formatEventTimeSlots(draft.timeSlots)}</td>
+                            <td>{draft.location || '—'}</td>
+                            <td>{formatEventTags(draft.tags)}</td>
+                            <td>{formatEventFilmStatus(draft)}</td>
+                            <td>
+                              {ready ? (
+                                <span className="pivot-lab__pill pivot-lab__pill--ok">Ready</span>
+                              ) : (
+                                <span className="pivot-lab__pill pivot-lab__pill--warn">Needs review</span>
+                              )}
+                            </td>
+                            <td>
+                              {draft.movie?.tmdbId ? (
+                                '—'
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="linear-btn linear-btn--ghost pivot-lab__tmdb-btn"
+                                  onClick={() => handleMatchTmdbForJsonEntry(index)}
+                                  disabled={
+                                    Boolean(tmdbMatchLoadingKey) &&
+                                    tmdbMatchLoadingKey !== rowLoadingKey
+                                  }
+                                >
+                                  {tmdbMatchLoadingKey === rowLoadingKey ? '…' : 'Retry'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {jsonImportPreview.entries.some((entry) => entry.warnings?.length) ? (
+                  <ul className="pivot-lab__import-warnings pivot-lab__json-preview-warnings">
+                    {jsonImportPreview.entries.flatMap((entry, index) =>
+                      (entry.warnings || []).map((warning) => (
+                        <li key={`${entry.draft?.name || 'event'}-${index}-${warning}`}>
+                          {entry.draft?.name ? `${entry.draft.name}: ` : `Event ${index + 1}: `}
+                          {warning}
+                        </li>
+                      )),
+                    )}
+                  </ul>
+                ) : null}
+                <details className="pivot-lab__json-preview-raw">
+                  <summary className="pivot-lab__json-preview-raw-summary">Normalized JSON</summary>
+                  <pre className="pivot-lab__json-preview-code">{jsonImportPreviewDocument}</pre>
+                </details>
+              </div>
+            ) : null}
+          </div>
+        </details>
         {importError ? <p className="pivot-lab__error">{importError}</p> : null}
         {importMode === 'batch' && importBatchRows.length ? (
           <div className="pivot-lab__import-preview">
@@ -1167,10 +2208,13 @@ function PivotLabPage() {
                     <th scope="col">Status</th>
                     <th scope="col">Organizer</th>
                     <th scope="col">When</th>
+                    <th scope="col">Showtimes</th>
                     <th scope="col">Location</th>
                     <th scope="col">Tags</th>
+                    <th scope="col">Film</th>
                     <th scope="col">Source</th>
                     <th scope="col">Deck</th>
+                    <th scope="col">TMDB</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1223,6 +2267,7 @@ function PivotLabPage() {
                         />
                       </td>
                       <td>{formatEventWhen(row.startTime)}</td>
+                      <td>{formatEventTimeSlots(row.timeSlots)}</td>
                       <td>{row.location || '—'}</td>
                       <td className="pivot-lab__batch-tags-cell">
                         <PivotTagMultiSelect
@@ -1242,6 +2287,7 @@ function PivotLabPage() {
                           {tagSuggestLoadingKey === row.key ? '…' : 'AI'}
                         </button>
                       </td>
+                      <td>{formatEventFilmStatus(row)}</td>
                       <td>
                         {row.sourceUrl ? (
                           <a href={row.sourceUrl} target="_blank" rel="noreferrer">
@@ -1261,6 +2307,22 @@ function PivotLabPage() {
                         >
                           Preview
                         </button>
+                      </td>
+                      <td>
+                        {row.movie?.tmdbId ? (
+                          '—'
+                        ) : (
+                          <button
+                            type="button"
+                            className="linear-btn linear-btn--ghost pivot-lab__tmdb-btn"
+                            onClick={() => handleMatchTmdbForBatchRow(row.key)}
+                            disabled={
+                              Boolean(tmdbMatchLoadingKey) && tmdbMatchLoadingKey !== row.key
+                            }
+                          >
+                            {tmdbMatchLoadingKey === row.key ? '…' : 'Retry'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1401,20 +2463,18 @@ function PivotLabPage() {
           </div>
         ) : null}
       </section>
+      ) : null}
 
+      {activeTab === 'catalog' ? (
       <section className="linear-section pivot-lab__section" aria-labelledby="pivot-lab-events">
         <div className="pivot-lab__section-head">
           <div>
             <h2 id="pivot-lab-events" className="linear-section__title">
-              Catalog events
+              Catalog events · {selectedTenant?.cityDisplayName || selectedTenantKey || '—'}
             </h2>
-            {selectedTenant?.dropSchedule ? (
-              <p className="pivot-lab__next-drop">
-                Next drop ({batchWeek}): {selectedTenant.dropSchedule.nextDropFormatted}
-                {' · '}
-                {selectedTenant.dropSchedule.localSchedule}
-              </p>
-            ) : null}
+            <p className="pivot-lab__section-hint">
+              Published and draft events for {batchWeek}, with swipe performance per event.
+            </p>
           </div>
         </div>
         {eventsError ? <p className="pivot-lab__error">{eventsError}</p> : null}
@@ -1432,6 +2492,10 @@ function PivotLabPage() {
                   <th scope="col">Tags</th>
                   <th scope="col">Source</th>
                   <th scope="col">Status</th>
+                  <th scope="col" title="Interested swipes">Int.</th>
+                  <th scope="col" title="Self-confirmed going">Going</th>
+                  <th scope="col" title="Passed swipes">Pass</th>
+                  <th scope="col" title="Ticket-link opens (unique users)">Opens</th>
                   <th scope="col">Tickets</th>
                   <th scope="col">Deck</th>
                   <th scope="col">Edit</th>
@@ -1440,7 +2504,15 @@ function PivotLabPage() {
               <tbody>
                 {events.map((event) => (
                   <tr key={event._id}>
-                    <td>{event.name}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="pivot-lab__event-name-btn"
+                        onClick={() => openEditEvent(event)}
+                      >
+                        {event.name}
+                      </button>
+                    </td>
                     <td>{event.organizerName || '—'}</td>
                     <td>{formatEventWhen(event.start_time)}</td>
                     <td>{event.location || '—'}</td>
@@ -1448,6 +2520,15 @@ function PivotLabPage() {
                     <td>{event.source || '—'}</td>
                     <td>
                       <IngestStatusPill status={event.ingestStatus} />
+                    </td>
+                    <td>{event.intentStats?.interested ?? 0}</td>
+                    <td>{event.intentStats?.registered ?? 0}</td>
+                    <td>{event.intentStats?.passed ?? 0}</td>
+                    <td>
+                      {event.intentStats?.externalOpens ?? 0}
+                      {event.intentStats?.externalOpenUsers
+                        ? ` (${event.intentStats.externalOpenUsers})`
+                        : ''}
                     </td>
                     <td>
                       {event.externalLink ? (
@@ -1495,148 +2576,11 @@ function PivotLabPage() {
         ) : (
           <p className="pivot-lab__empty">No catalog events for this city and week.</p>
         )}
-        {editingEvent && editDraft ? (
-          <div className="pivot-lab__import-preview pivot-lab__edit-panel">
-            <h3 className="pivot-lab__edit-title">Edit catalog event</h3>
-            <div className="pivot-lab__import-layout">
-              <div className="pivot-lab__import-main">
-                <div className="pivot-lab__import-grid">
-                  <label className="linear-field">
-                    <span className="linear-field__label">Event title</span>
-                    <input
-                      className="linear-input"
-                      value={editDraft.name}
-                      onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
-                    />
-                  </label>
-                  <label className="linear-field">
-                    <span className="linear-field__label">Organizer name</span>
-                    <input
-                      className="linear-input"
-                      value={editDraft.organizerName}
-                      onChange={(e) =>
-                        setEditDraft({ ...editDraft, organizerName: e.target.value })
-                      }
-                    />
-                  </label>
-                  <label className="linear-field">
-                    <span className="linear-field__label">Start time</span>
-                    <input
-                      className="linear-input"
-                      type="datetime-local"
-                      value={editDraft.start_time}
-                      onChange={(e) => setEditDraft({ ...editDraft, start_time: e.target.value })}
-                    />
-                  </label>
-                  <label className="linear-field">
-                    <span className="linear-field__label">Location</span>
-                    <input
-                      className="linear-input"
-                      value={editDraft.location}
-                      onChange={(e) => setEditDraft({ ...editDraft, location: e.target.value })}
-                    />
-                  </label>
-                  <label className="linear-field">
-                    <span className="linear-field__label">Ingest status</span>
-                    <select
-                      className="linear-input"
-                      value={editDraft.ingestStatus}
-                      onChange={(e) =>
-                        setEditDraft({ ...editDraft, ingestStatus: e.target.value })
-                      }
-                    >
-                      <option value="published">Published</option>
-                      <option value="draft">Draft</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="pivot-lab__tag-actions">
-                  <PivotTagMultiSelect
-                    catalogTags={catalogTags}
-                    selectedSlugs={editDraft.tags}
-                    onChange={(tags) => setEditDraft({ ...editDraft, tags })}
-                    labelId="pivot-lab-edit-tags"
-                    hint="Select at least one catalog tag for published events."
-                  />
-                  <button
-                    type="button"
-                    className="linear-btn linear-btn--ghost"
-                    onClick={suggestTagsForEdit}
-                    disabled={tagSuggestLoadingKey === 'edit'}
-                  >
-                    {tagSuggestLoadingKey === 'edit' ? 'Suggesting…' : 'Suggest tags with Claude'}
-                  </button>
-                </div>
-                <div className="pivot-lab__notes-actions">
-                  <button
-                    type="button"
-                    className="linear-btn linear-btn--ghost"
-                    onClick={() => {
-                      setEditingEvent(null);
-                      setEditDraft(null);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="linear-btn linear-btn--primary"
-                    onClick={handleSaveEdit}
-                    disabled={editSaving}
-                  >
-                    {editSaving ? 'Saving…' : 'Save changes'}
-                  </button>
-                </div>
-              </div>
-              {editDeckPreview ? (
-                <PivotDeckPhonePreview
-                  {...editDeckPreview}
-                  hint="Live preview of the swipe deck card."
-                />
-              ) : null}
-            </div>
-          </div>
-        ) : null}
       </section>
+      ) : null}
 
-      <section className="linear-section pivot-lab__section" aria-labelledby="pivot-lab-referrals">
-        <h2 id="pivot-lab-referrals" className="linear-section__title">
-          Referral codes
-        </h2>
-        {referralRows.length ? (
-          <div className="pivot-lab__table-wrap">
-            <table className="pivot-lab__table">
-              <thead>
-                <tr>
-                  <th scope="col">Code</th>
-                  <th scope="col">City</th>
-                  <th scope="col">Cohort</th>
-                  <th scope="col">Redemptions</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {referralRows.map((row) => (
-                  <tr key={`${row.tenantKey}-${row.code}`}>
-                    <td>{row.code}</td>
-                    <td>{row.cityDisplayName}</td>
-                    <td>{row.cohortId || '—'}</td>
-                    <td>
-                      {row.redemptionCount ?? 0} / {row.maxRedemptions ?? 0}
-                    </td>
-                    <td>
-                      <ReferralStatus code={row} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="pivot-lab__empty">No referral codes for pivot cities.</p>
-        )}
-      </section>
-
+      {activeTab === 'notes' ? (
+      <>
       <section className="linear-section pivot-lab__section" aria-labelledby="pivot-lab-notes">
         <h2 id="pivot-lab-notes" className="linear-section__title">
           Interview notes
@@ -1718,11 +2662,42 @@ function PivotLabPage() {
           </div>
         </section>
       ) : null}
+      </>
+      ) : null}
 
       <DeckPreviewModal
         previewProps={deckPreviewContent?.props}
         hint={deckPreviewContent?.hint}
         onClose={() => setDeckPreviewState(null)}
+      />
+
+      <PivotCatalogEventEditModal
+        open={Boolean(editingEvent)}
+        event={editingEvent}
+        onClose={() => setEditingEvent(null)}
+        catalogTags={catalogTags}
+        cityLabel={selectedTenant?.cityDisplayName || selectedTenantKey}
+        batchWeek={batchWeek}
+        onSave={handleSaveCatalogEdit}
+        saving={editSaving}
+        onSuggestTags={suggestTagsForEdit}
+        tagSuggestLoading={tagSuggestLoadingKey === 'edit'}
+      />
+
+      <PivotManualImportModal
+        open={manualImportOpen}
+        onClose={() => setManualImportOpen(false)}
+        catalogTags={catalogTags}
+        cityLabel={selectedTenant?.cityDisplayName || selectedTenantKey}
+        batchWeek={batchWeek}
+        selectedTenantKey={selectedTenantKey}
+        stickyDefaults={manualImportSticky}
+        onStickyChange={setManualImportSticky}
+        onAddToBatch={handleAddManualToBatch}
+        onPublish={handlePublishManualImport}
+        publishLoading={manualImportPublishLoading}
+        onSuggestTags={suggestTagsForManualImport}
+        tagSuggestLoading={tagSuggestLoadingKey === 'manual-import'}
       />
     </div>
   );
