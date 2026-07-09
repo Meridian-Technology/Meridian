@@ -191,11 +191,10 @@ function InviteLanding() {
               alt="just go"
             />
           </div>
-          <p className="invite-landing__tagline">your city, one tap at a time</p>
+          <p className="invite-landing__tagline">don't overthink, just go!</p>
           <p className="invite-landing__experiment">
             <strong>just go</strong> is an experiment from Meridian. For this pilot
-            you&apos;ll use <strong>Meridian Go</strong> — our campus app on iPhone —
-            and your invite code unlocks the just go experience inside it. Android
+            you&apos;ll use <strong>Meridian Go</strong> and your invite code unlocks the just go experience inside it. Android
             isn&apos;t supported yet.
           </p>
         </header>
@@ -258,8 +257,7 @@ function InviteLanding() {
                 <div className="invite-landing__step-body">
                   <h2>download Meridian Go (iPhone)</h2>
                   <p>
-                    grab Meridian Go from the App Store — it&apos;s the same Meridian
-                    app students use on campus. your invite code switches you into
+                    grab Meridian Go from the App Store, your invite code switches you into
                     just go after install.
                   </p>
                   {isAndroid ? (
@@ -278,8 +276,7 @@ function InviteLanding() {
                 <div className="invite-landing__step-body">
                   <h2>come back and tap open</h2>
                   <p>
-                    after installing, return here and open just go — your code
-                    carries over.
+                    after installing, click the button below to open just go.
                   </p>
                   {deepLink ? (
                     <a className="invite-landing__cta" href={deepLink}>
@@ -308,6 +305,7 @@ function InviteLanding() {
             </div>
           </div>
         ) : null}
+        <p className="invite-landing__note">contact <a href="mailto:raven@meridian.study">raven@meridian.study</a> to leave feedback or feature requests.</p>
       </div>
     </div>
   );

@@ -487,6 +487,7 @@ router.post('/dev/purge-catalog', verifyToken, requirePlatformAdmin, async (req,
       tenantKey: req.body?.tenantKey,
       confirm: req.body?.confirm,
       clearSnapshots: req.body?.clearSnapshots,
+      batchWeek: req.body?.batchWeek,
     });
     if (result.error) {
       return res.status(result.status || 400).json({

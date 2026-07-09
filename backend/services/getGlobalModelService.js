@@ -8,6 +8,7 @@ const pivotReferralRedemptionSchema = require('../schemas/pivotReferralRedemptio
 const pivotWeeklySnapshotSchema = require('../schemas/pivotWeeklySnapshot');
 const pivotLabNotesSchema = require('../schemas/pivotLabNotes');
 const pivotTagCatalogSchema = require('../schemas/pivotTagCatalog');
+const pivotPosterTemplateSchema = require('../schemas/pivotPosterTemplate');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -15,7 +16,7 @@ const pivotTagCatalogSchema = require('../schemas/pivotTagCatalog');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig', 'PivotReferralCode', 'PivotReferralRedemption', 'PivotWeeklySnapshot', 'PivotLabNotes', 'PivotTagCatalog'
+ * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig', 'PivotReferralCode', 'PivotReferralRedemption', 'PivotWeeklySnapshot', 'PivotLabNotes', 'PivotTagCatalog', 'PivotPosterTemplate'
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -43,6 +44,11 @@ const getGlobalModels = (req, ...names) => {
         ),
         PivotLabNotes: db.model('PivotLabNotes', pivotLabNotesSchema, 'pivot_lab_notes'),
         PivotTagCatalog: db.model('PivotTagCatalog', pivotTagCatalogSchema, 'pivot_tag_catalog'),
+        PivotPosterTemplate: db.model(
+            'PivotPosterTemplate',
+            pivotPosterTemplateSchema,
+            'pivot_poster_templates'
+        ),
     };
 
     return names.reduce((acc, name) => {

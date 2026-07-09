@@ -31,7 +31,6 @@ import './PivotDeckCardPreview.scss';
 
 const EMPTY_LIST = [];
 const NO_FETCH_CACHE = { enabled: false };
-const IS_DEV = process.env.NODE_ENV !== 'production';
 const PURGE_CONFIRM_TOKEN = 'PURGE';
 
 const PIVOT_JSON_IMPORT_EXAMPLE = `{
@@ -612,6 +611,7 @@ function PivotLabPage() {
   const [editSaving, setEditSaving] = useState(false);
   const [deckPreviewState, setDeckPreviewState] = useState(null);
   const [purgeScope, setPurgeScope] = useState('selected');
+  const [purgeWeekScope, setPurgeWeekScope] = useState('week');
   const [purgeConfirm, setPurgeConfirm] = useState('');
   const [purgingCatalog, setPurgingCatalog] = useState(false);
   const [manualImportOpen, setManualImportOpen] = useState(false);
@@ -835,9 +835,11 @@ function PivotLabPage() {
           selectedTenantKey ||
           'this city';
 
+    const weekLabel = purgeWeekScope === 'week' ? batchWeek : 'every batch week';
+
     if (
       !window.confirm(
-        `Permanently delete all pivot catalog events and related intents, feedback, and analytics for ${scopeLabel}? This cannot be undone.`,
+        `Permanently delete pivot catalog events for ${weekLabel} and related intents, feedback, and analytics for ${scopeLabel}? This cannot be undone.`,
       )
     ) {
       return;
@@ -849,6 +851,7 @@ function PivotLabPage() {
       data: {
         confirm: PURGE_CONFIRM_TOKEN,
         tenantKey: purgeScope === 'all' ? undefined : selectedTenantKey || undefined,
+        batchWeek: purgeWeekScope === 'week' ? batchWeek : undefined,
         clearSnapshots: true,
       },
     });
@@ -864,18 +867,21 @@ function PivotLabPage() {
     }
 
     const totals = data.data?.totals || {};
+    const purgedWeekLabel = purgeWeekScope === 'week' ? ` for ${batchWeek}` : ' across all weeks';
     setPurgeConfirm('');
     refetchOverview();
     refetchEvents();
     addNotification({
       title: 'Catalog purged',
-      message: `Removed ${totals.events ?? 0} events, ${totals.intents ?? 0} intents, and ${totals.feedback ?? 0} feedback rows.`,
+      message: `Removed ${totals.events ?? 0} events, ${totals.intents ?? 0} intents, and ${totals.feedback ?? 0} feedback rows${purgedWeekLabel}.`,
       type: 'success',
     });
   }, [
     addNotification,
+    batchWeek,
     purgeConfirm,
     purgeScope,
+    purgeWeekScope,
     refetchEvents,
     refetchOverview,
     selectedTenantKey,
@@ -2611,57 +2617,71 @@ function PivotLabPage() {
         </div>
       </section>
 
-      {IS_DEV ? (
-        <section
-          className="linear-section pivot-lab__section pivot-lab__dev-tools"
-          aria-labelledby="pivot-lab-dev-tools"
-        >
-          <h2 id="pivot-lab-dev-tools" className="linear-section__title">
-            Dev tools
-          </h2>
-          <p className="pivot-lab__notes-hint">
-            Development only. Deletes all pivot catalog events (every batch week), attendee intents,
-            event feedback, and stored weekly snapshots. Referral codes and interview notes are kept.
-          </p>
-          <div className="pivot-lab__dev-tools-grid">
-            <label className="linear-field">
-              <span className="linear-field__label">Scope</span>
-              <select
-                className="linear-input"
-                value={purgeScope}
-                onChange={(e) => setPurgeScope(e.target.value)}
-              >
-                <option value="selected">Selected city only</option>
-                <option value="all">All pivot cities</option>
-              </select>
-            </label>
-            <label className="linear-field">
-              <span className="linear-field__label">Type {PURGE_CONFIRM_TOKEN} to confirm</span>
-              <input
-                className="linear-input"
-                value={purgeConfirm}
-                onChange={(e) => setPurgeConfirm(e.target.value)}
-                placeholder={PURGE_CONFIRM_TOKEN}
-                autoComplete="off"
-              />
-            </label>
-          </div>
-          <div className="pivot-lab__notes-actions">
-            <button
-              type="button"
-              className="linear-btn pivot-lab__purge-btn"
-              onClick={handlePurgeCatalog}
-              disabled={
-                purgingCatalog ||
-                purgeConfirm.trim() !== PURGE_CONFIRM_TOKEN ||
-                (purgeScope === 'selected' && !selectedTenantKey)
-              }
+      <section
+        className="linear-section pivot-lab__section pivot-lab__dev-tools"
+        aria-labelledby="pivot-lab-danger-zone"
+      >
+        <h2 id="pivot-lab-danger-zone" className="linear-section__title">
+          Danger zone
+        </h2>
+        <p className="pivot-lab__notes-hint">
+          Permanently deletes pivot catalog events, attendee intents, event feedback, analytics, and
+          stored weekly snapshots for the chosen scope. Referral codes and interview notes are kept.
+          This runs against production data and cannot be undone — scope carefully.
+        </p>
+        <div className="pivot-lab__dev-tools-grid">
+          <label className="linear-field">
+            <span className="linear-field__label">City scope</span>
+            <select
+              className="linear-input"
+              value={purgeScope}
+              onChange={(e) => setPurgeScope(e.target.value)}
             >
-              {purgingCatalog ? 'Purging…' : 'Purge catalog events'}
-            </button>
-          </div>
-        </section>
-      ) : null}
+              <option value="selected">Selected city only</option>
+              <option value="all">All pivot cities</option>
+            </select>
+          </label>
+          <label className="linear-field">
+            <span className="linear-field__label">Weeks</span>
+            <select
+              className="linear-input"
+              value={purgeWeekScope}
+              onChange={(e) => setPurgeWeekScope(e.target.value)}
+            >
+              <option value="week">Selected week only ({batchWeek})</option>
+              <option value="all">All batch weeks</option>
+            </select>
+          </label>
+          <label className="linear-field">
+            <span className="linear-field__label">Type {PURGE_CONFIRM_TOKEN} to confirm</span>
+            <input
+              className="linear-input"
+              value={purgeConfirm}
+              onChange={(e) => setPurgeConfirm(e.target.value)}
+              placeholder={PURGE_CONFIRM_TOKEN}
+              autoComplete="off"
+            />
+          </label>
+        </div>
+        <div className="pivot-lab__notes-actions">
+          <button
+            type="button"
+            className="linear-btn pivot-lab__purge-btn"
+            onClick={handlePurgeCatalog}
+            disabled={
+              purgingCatalog ||
+              purgeConfirm.trim() !== PURGE_CONFIRM_TOKEN ||
+              (purgeScope === 'selected' && !selectedTenantKey)
+            }
+          >
+            {purgingCatalog
+              ? 'Purging…'
+              : purgeWeekScope === 'week'
+                ? `Purge catalog events (${batchWeek})`
+                : 'Purge catalog events (all weeks)'}
+          </button>
+        </div>
+      </section>
       </>
       ) : null}
 

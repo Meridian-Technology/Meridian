@@ -27,6 +27,14 @@ const {
   updateReferralCode,
   deleteReferralCode,
 } = require('../services/pivotReferralCodeService');
+const {
+  listPosterTemplates,
+  createPosterTemplate,
+  updatePosterTemplate,
+  deletePosterTemplate,
+  renderPoster,
+} = require('../services/pivotPosterTemplateService');
+const { upload } = require('../services/imageUploadService');
 
 const router = express.Router();
 
@@ -335,6 +343,110 @@ router.delete(
       res.json({ success: true, data: result });
     } catch (err) {
       console.error('DELETE pivot-referral-codes failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/pivot-poster-templates',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const result = await listPosterTemplates(req, tenantKey);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.json({ success: true, data: result });
+    } catch (err) {
+      console.error('GET pivot-poster-templates failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.post(
+  '/admin/platform/tenants/:tenantKey/pivot-poster-templates',
+  verifyToken,
+  requirePlatformAdmin,
+  upload.single('poster'),
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const result = await createPosterTemplate(req, tenantKey, req.file, req.body);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.status(201).json({ success: true, data: result });
+    } catch (err) {
+      console.error('POST pivot-poster-templates failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.put(
+  '/admin/platform/tenants/:tenantKey/pivot-poster-templates/:id',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const id = String(req.params.id || '').trim();
+      const result = await updatePosterTemplate(req, tenantKey, id, req.body);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.json({ success: true, data: result });
+    } catch (err) {
+      console.error('PUT pivot-poster-templates failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.delete(
+  '/admin/platform/tenants/:tenantKey/pivot-poster-templates/:id',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const id = String(req.params.id || '').trim();
+      const result = await deletePosterTemplate(req, tenantKey, id);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.json({ success: true, data: result });
+    } catch (err) {
+      console.error('DELETE pivot-poster-templates failed:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/pivot-poster-templates/:id/render',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+      const id = String(req.params.id || '').trim();
+      const code = String(req.query.code || '').trim();
+      const origin = String(req.query.origin || '').trim();
+      const result = await renderPoster(req, tenantKey, id, code, origin);
+      if (result.error) {
+        return res.status(result.status || 400).json({ success: false, message: result.error });
+      }
+      res.set('Content-Type', 'image/png');
+      res.set('Content-Disposition', `attachment; filename="${result.filename}"`);
+      res.set('Cache-Control', 'no-store');
+      res.send(result.buffer);
+    } catch (err) {
+      console.error('GET pivot-poster-templates render failed:', err);
       res.status(500).json({ success: false, message: err.message });
     }
   }

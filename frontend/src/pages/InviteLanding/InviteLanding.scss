@@ -150,6 +150,26 @@
   font-weight: 700;
 }
 
+.invite-landing__note {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--jg-fg-muted);
+  font-weight: 400;
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.invite-landing__note a {
+  color: var(--jg-fg);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.invite-landing__note a:hover {
+  text-decoration: underline;
+}
+
 .invite-landing__title {
   margin: 0 0 1rem;
   font-size: 1.35rem;

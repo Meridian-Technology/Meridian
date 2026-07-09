@@ -18,21 +18,13 @@ const { isPivotTenant } = require('../../services/pivotReferralCodeService');
 const {
   purgePivotCatalog,
   PURGE_CONFIRM_TOKEN,
-  isDevEnvironment,
 } = require('../../services/pivotCatalogPurgeService');
 
 describe('pivotCatalogPurgeService', () => {
-  const originalNodeEnv = process.env.NODE_ENV;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.NODE_ENV = 'development';
     isPivotTenant.mockReturnValue(true);
     connectToDatabase.mockResolvedValue({});
-  });
-
-  afterAll(() => {
-    process.env.NODE_ENV = originalNodeEnv;
   });
 
   function buildTenantModels(eventIds = ['665a1b2c3d4e5f6789012345']) {
@@ -84,13 +76,64 @@ describe('pivotCatalogPurgeService', () => {
     };
   }
 
-  it('blocks purge in production', async () => {
+  it('runs in production (no environment gate)', async () => {
     process.env.NODE_ENV = 'production';
+    getMergedTenants.mockResolvedValue([
+      { tenantKey: 'nyc', tenantType: 'pivot', location: 'New York City' },
+    ]);
+    buildTenantModels();
+    getGlobalModels.mockReturnValue({
+      PivotWeeklySnapshot: {
+        deleteMany: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+      },
+    });
 
-    const result = await purgePivotCatalog({}, { confirm: PURGE_CONFIRM_TOKEN });
+    const result = await purgePivotCatalog(
+      { globalDb: {} },
+      { confirm: PURGE_CONFIRM_TOKEN, tenantKey: 'nyc' },
+    );
 
-    expect(result.code).toBe('NOT_FOUND');
-    expect(isDevEnvironment()).toBe(false);
+    expect(result.code).toBeUndefined();
+    expect(result.data.tenants).toHaveLength(1);
+  });
+
+  it('rejects an invalid batchWeek', async () => {
+    const result = await purgePivotCatalog(
+      {},
+      { confirm: PURGE_CONFIRM_TOKEN, batchWeek: 'not-a-week' },
+    );
+
+    expect(result.code).toBe('INVALID_BATCH_WEEK');
+  });
+
+  it('scopes a weekly purge to the batch week', async () => {
+    getMergedTenants.mockResolvedValue([
+      { tenantKey: 'nyc', tenantType: 'pivot', location: 'New York City' },
+    ]);
+    const models = buildTenantModels();
+    const snapshotDeleteMany = jest.fn().mockResolvedValue({ deletedCount: 1 });
+    getGlobalModels.mockReturnValue({
+      PivotWeeklySnapshot: { deleteMany: snapshotDeleteMany },
+    });
+
+    const result = await purgePivotCatalog(
+      { globalDb: {} },
+      { confirm: PURGE_CONFIRM_TOKEN, tenantKey: 'nyc', batchWeek: '2026-W21' },
+    );
+
+    expect(result.data.batchWeek).toBe('2026-W21');
+    expect(result.data.scope).toBe('week');
+    expect(models.Event.find).toHaveBeenCalledWith(
+      expect.objectContaining({ 'customFields.pivot.batchWeek': '2026-W21' }),
+    );
+    expect(models.PivotEventIntent.deleteMany).toHaveBeenCalledWith({
+      batchWeek: '2026-W21',
+    });
+    expect(models.UniversalFeedback.deleteMany).toHaveBeenCalledWith({
+      feature: 'pivot_event',
+      'metadata.batchWeek': '2026-W21',
+    });
+    expect(snapshotDeleteMany).toHaveBeenCalledWith({ batchWeek: '2026-W21' });
   });
 
   it('requires PURGE confirmation token', async () => {

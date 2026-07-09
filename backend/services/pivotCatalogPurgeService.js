@@ -4,15 +4,13 @@ const { getMergedTenants } = require('./tenantConfigService');
 const { isPivotTenant } = require('./pivotReferralCodeService');
 const { connectToDatabase } = require('../connectionsManager');
 const { PIVOT_EVENT_FEATURE } = require('./pivotFeedbackService');
+const { isValidIsoWeek } = require('../utilities/pivotIsoWeek');
 
 const PURGE_CONFIRM_TOKEN = 'PURGE';
 const PIVOT_CATALOG_EVENT_QUERY = { 'customFields.pivot': { $exists: true } };
 
-function isDevEnvironment() {
-  return process.env.NODE_ENV !== 'production';
-}
-
-async function purgeTenantPivotCatalog(tenantKey) {
+async function purgeTenantPivotCatalog(tenantKey, options = {}) {
+  const batchWeek = options.batchWeek || null;
   const db = await connectToDatabase(tenantKey);
   const tenantReq = { db };
   const {
@@ -34,7 +32,11 @@ async function purgeTenantPivotCatalog(tenantKey) {
     'AnalyticsEvent',
   );
 
-  const events = await Event.find(PIVOT_CATALOG_EVENT_QUERY).select('_id').lean();
+  const eventQuery = batchWeek
+    ? { ...PIVOT_CATALOG_EVENT_QUERY, 'customFields.pivot.batchWeek': batchWeek }
+    : PIVOT_CATALOG_EVENT_QUERY;
+
+  const events = await Event.find(eventQuery).select('_id').lean();
   const eventIds = events.map((event) => event._id);
   const eventIdStrings = eventIds.map(String);
 
@@ -48,14 +50,25 @@ async function purgeTenantPivotCatalog(tenantKey) {
     analyticsEvents: 0,
   };
 
+  // Attendee intents store batchWeek directly, so a weekly purge scopes to that field —
+  // this also cleans up intents whose event was already removed. A full purge falls back
+  // to event membership, and an empty filter sweeps any orphaned intents.
   const intentResult = await PivotEventIntent.deleteMany(
-    eventIds.length ? { eventId: { $in: eventIds } } : {},
+    batchWeek
+      ? { batchWeek }
+      : eventIds.length
+        ? { eventId: { $in: eventIds } }
+        : {},
   );
   deleted.intents = intentResult.deletedCount || 0;
 
   const feedbackResult = await UniversalFeedback.deleteMany({
     feature: PIVOT_EVENT_FEATURE,
-    ...(eventIds.length ? { processId: { $in: eventIds } } : {}),
+    ...(batchWeek
+      ? { 'metadata.batchWeek': batchWeek }
+      : eventIds.length
+        ? { processId: { $in: eventIds } }
+        : {}),
   });
   deleted.feedback = feedbackResult.deletedCount || 0;
 
@@ -81,27 +94,30 @@ async function purgeTenantPivotCatalog(tenantKey) {
   return deleted;
 }
 
-async function purgeGlobalPivotSnapshots(req) {
+async function purgeGlobalPivotSnapshots(req, options = {}) {
   const { PivotWeeklySnapshot } = getGlobalModels(req, 'PivotWeeklySnapshot');
-  const result = await PivotWeeklySnapshot.deleteMany({});
+  const result = await PivotWeeklySnapshot.deleteMany(
+    options.batchWeek ? { batchWeek: options.batchWeek } : {},
+  );
   return { weeklySnapshots: result.deletedCount || 0 };
 }
 
 async function purgePivotCatalog(req, options = {}) {
-  if (!isDevEnvironment()) {
-    return {
-      error: 'Not available in production.',
-      status: 404,
-      code: 'NOT_FOUND',
-    };
-  }
-
   const confirm = options.confirm?.trim();
   if (confirm !== PURGE_CONFIRM_TOKEN) {
     return {
       error: `Type ${PURGE_CONFIRM_TOKEN} to confirm.`,
       status: 400,
       code: 'CONFIRMATION_REQUIRED',
+    };
+  }
+
+  const batchWeek = options.batchWeek?.trim() || null;
+  if (batchWeek && !isValidIsoWeek(batchWeek)) {
+    return {
+      error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
+      status: 400,
+      code: 'INVALID_BATCH_WEEK',
     };
   }
 
@@ -123,7 +139,7 @@ async function purgePivotCatalog(req, options = {}) {
 
   const tenantResults = [];
   for (const tenant of tenantsToPurge) {
-    const counts = await purgeTenantPivotCatalog(tenant.tenantKey);
+    const counts = await purgeTenantPivotCatalog(tenant.tenantKey, { batchWeek });
     tenantResults.push({
       tenantKey: tenant.tenantKey,
       cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
@@ -132,7 +148,7 @@ async function purgePivotCatalog(req, options = {}) {
   }
 
   const globalDeleted =
-    options.clearSnapshots === false ? {} : await purgeGlobalPivotSnapshots(req);
+    options.clearSnapshots === false ? {} : await purgeGlobalPivotSnapshots(req, { batchWeek });
 
   const totals = tenantResults.reduce(
     (acc, row) => {
@@ -146,6 +162,8 @@ async function purgePivotCatalog(req, options = {}) {
 
   return {
     data: {
+      batchWeek,
+      scope: batchWeek ? 'week' : 'all-weeks',
       tenants: tenantResults,
       totals,
     },
@@ -157,5 +175,4 @@ module.exports = {
   purgeTenantPivotCatalog,
   PURGE_CONFIRM_TOKEN,
   PIVOT_CATALOG_EVENT_QUERY,
-  isDevEnvironment,
 };

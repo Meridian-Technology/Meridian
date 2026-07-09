@@ -2,6 +2,9 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Icon } from '@iconify-icon/react';
 import { useFetch, authenticatedRequest } from '../../../../hooks/useFetch';
 import { useNotification } from '../../../../NotificationContext';
+import PivotInviteQRModal, { buildInviteLink } from './PivotInviteQRModal';
+import PivotPosterTemplatesModal from './PivotPosterTemplatesModal';
+import PivotPosterDownloadModal from './PivotPosterDownloadModal';
 import './PivotReferralCodesPanel.scss';
 
 const EMPTY_CREATE = {
@@ -124,11 +127,20 @@ function PivotReferralCodesPanel({ tenantKey }) {
     cache: { enabled: false },
   });
 
+  const posterListUrl = `/admin/platform/tenants/${tenantKey}/pivot-poster-templates`;
+  const { data: posterData, refetch: refetchPosters } = useFetch(posterListUrl, {
+    cache: { enabled: false },
+  });
+  const posterTemplates = posterData?.success ? posterData.data?.templates || [] : [];
+
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState(EMPTY_CREATE);
   const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [qrCode, setQrCode] = useState(null);
+  const [showPosterManager, setShowPosterManager] = useState(false);
+  const [posterCode, setPosterCode] = useState(null);
 
   const codes = data?.success ? data.data?.codes || [] : [];
   const currentBatchWeek = data?.data?.currentBatchWeek;
@@ -261,6 +273,19 @@ function PivotReferralCodesPanel({ tenantKey }) {
     [addNotification, editing, listUrl, refetch]
   );
 
+  const handleCopyLink = useCallback(
+    async (row) => {
+      const link = buildInviteLink(row.code);
+      try {
+        await navigator.clipboard.writeText(link);
+        addNotification({ title: 'Copied', message: 'Invite link copied to clipboard', type: 'success' });
+      } catch {
+        addNotification({ title: 'Copy failed', message: 'Could not copy invite link', type: 'error' });
+      }
+    },
+    [addNotification]
+  );
+
   const panelId = `pivot-referral-${tenantKey}`;
 
   return (
@@ -277,15 +302,25 @@ function PivotReferralCodesPanel({ tenantKey }) {
             <code className="linear-code linear-code--inline">{currentBatchWeek || '—'}</code>
           </p>
         </div>
-        <button
-          type="button"
-          className="linear-btn linear-btn--secondary linear-btn--sm"
-          onClick={openCreate}
-          disabled={showCreate || Boolean(editing)}
-        >
-          <Icon icon="mdi:ticket-confirmation-outline" />
-          New code
-        </button>
+        <div className="pivot-referral__head-actions">
+          <button
+            type="button"
+            className="linear-btn linear-btn--secondary linear-btn--sm"
+            onClick={() => setShowPosterManager(true)}
+          >
+            <Icon icon="mdi:image-multiple-outline" />
+            Posters{posterTemplates.length ? ` (${posterTemplates.length})` : ''}
+          </button>
+          <button
+            type="button"
+            className="linear-btn linear-btn--secondary linear-btn--sm"
+            onClick={openCreate}
+            disabled={showCreate || Boolean(editing)}
+          >
+            <Icon icon="mdi:ticket-confirmation-outline" />
+            New code
+          </button>
+        </div>
       </div>
 
       {error ? <p className="pivot-referral__error">{error}</p> : null}
@@ -368,6 +403,33 @@ function PivotReferralCodesPanel({ tenantKey }) {
                     <button
                       type="button"
                       className="linear-btn linear-btn--ghost linear-btn--sm"
+                      onClick={() => handleCopyLink(row)}
+                      title="Copy invite link"
+                    >
+                      <Icon icon="mdi:link-variant" />
+                      Link
+                    </button>
+                    <button
+                      type="button"
+                      className="linear-btn linear-btn--ghost linear-btn--sm"
+                      onClick={() => setQrCode(row.code)}
+                      title="Show invite QR code"
+                    >
+                      <Icon icon="mdi:qrcode" />
+                      QR
+                    </button>
+                    <button
+                      type="button"
+                      className="linear-btn linear-btn--ghost linear-btn--sm"
+                      onClick={() => setPosterCode(row.code)}
+                      title="Download a poster with this code's QR"
+                    >
+                      <Icon icon="mdi:image-outline" />
+                      Poster
+                    </button>
+                    <button
+                      type="button"
+                      className="linear-btn linear-btn--ghost linear-btn--sm"
                       disabled={saving}
                       onClick={() => startEdit(row)}
                     >
@@ -388,6 +450,35 @@ function PivotReferralCodesPanel({ tenantKey }) {
           </table>
         </div>
       )}
+
+      <PivotInviteQRModal
+        code={qrCode}
+        isOpen={Boolean(qrCode)}
+        onClose={() => setQrCode(null)}
+        onNotify={addNotification}
+      />
+
+      <PivotPosterTemplatesModal
+        tenantKey={tenantKey}
+        templates={posterTemplates}
+        isOpen={showPosterManager}
+        onClose={() => setShowPosterManager(false)}
+        onRefetch={refetchPosters}
+        onNotify={addNotification}
+      />
+
+      <PivotPosterDownloadModal
+        code={posterCode}
+        tenantKey={tenantKey}
+        templates={posterTemplates}
+        isOpen={Boolean(posterCode)}
+        onClose={() => setPosterCode(null)}
+        onNotify={addNotification}
+        onManage={() => {
+          setPosterCode(null);
+          setShowPosterManager(true);
+        }}
+      />
     </section>
   );
 }
