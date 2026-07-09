@@ -11,6 +11,14 @@
     margin-bottom: 16px;
   }
 
+  &__head-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
   &__hint {
     margin: 4px 0 0;
     font-size: 13px;
