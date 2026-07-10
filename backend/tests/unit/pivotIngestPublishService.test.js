@@ -102,6 +102,7 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
   beforeEach(() => {
     Event = {
       findOneAndUpdate: jest.fn(),
+      findByIdAndUpdate: jest.fn(),
       create: jest.fn(),
     };
     getModels.mockReturnValue({ Event });
@@ -263,11 +264,11 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
     expect(Event.findOneAndUpdate.mock.calls[0][1].$set.hostingId).toBe('507f1f77bcf86cd799439099');
   });
 
-  it('rejects publish when a blocking duplicate is detected', async () => {
+  it('rejects publish when a blocking (batch-internal) duplicate is detected', async () => {
     isBlockingDuplicate.mockReturnValue(true);
     resolveImportDuplicate.mockResolvedValue({
       duplicate: {
-        matchType: 'fingerprint',
+        matchType: 'batchFingerprint',
         existingName: 'Sunset Listening Party',
       },
       catalogIndex: [],
@@ -286,6 +287,58 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
     expect(result.code).toBe('DUPLICATE_EVENT');
     expect(result.status).toBe(409);
     expect(Event.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('updates the existing event in place on a fuzzy (fingerprint) duplicate', async () => {
+    resolveImportDuplicate.mockResolvedValue({
+      duplicate: {
+        matchType: 'fingerprint',
+        willUpdate: true,
+        existingEventId: '507f1f77bcf86cd799439055',
+        existingName: 'Sunset Listening Party',
+      },
+      catalogIndex: [],
+    });
+    Event.findByIdAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439055',
+        name: 'Sunset Listening Party',
+        start_time: new Date('2026-07-12T22:00:00.000Z'),
+        end_time: new Date('2026-07-13T00:00:00.000Z'),
+        location: 'Brooklyn Bridge Park',
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W26',
+            ingestStatus: 'published',
+            host: { name: 'Brooklyn Board Game Cafe' },
+          },
+        },
+      }),
+    });
+
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W26',
+        overrides: {
+          hostName: 'Brooklyn Board Game Cafe',
+          name: 'Sunset Listening Party',
+          location: 'Brooklyn Bridge Park',
+          start_time: '2026-07-12T18:00:00-04:00',
+          tags: ['live-music'],
+        },
+      },
+    );
+
+    expect(result.data.updated).toBe(true);
+    expect(result.data.created).toBe(false);
+    expect(Event.findByIdAndUpdate).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439055',
+      expect.objectContaining({ $set: expect.any(Object) }),
+      expect.objectContaining({ new: true }),
+    );
+    expect(Event.create).not.toHaveBeenCalled();
   });
 
   it('rejects publish when tags are missing', async () => {

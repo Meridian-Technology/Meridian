@@ -258,10 +258,23 @@ function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importe
   };
 }
 
-async function savePublishedCatalogEvent(tenantReq, eventPayload, sourceUrl) {
+async function savePublishedCatalogEvent(tenantReq, eventPayload, sourceUrl, updateEventId) {
   const { Event } = getModels(tenantReq, 'Event');
-  const listingUrl = trimString(sourceUrl);
 
+  // A fuzzy (fingerprint) duplicate resolves to a specific existing event that may have a
+  // different or no source URL, so update it by id rather than upserting on sourceUrl.
+  if (updateEventId) {
+    const updated = await Event.findByIdAndUpdate(
+      updateEventId,
+      { $set: eventPayload },
+      { new: true, runValidators: true },
+    ).lean();
+    if (updated) {
+      return updated;
+    }
+  }
+
+  const listingUrl = trimString(sourceUrl);
   if (listingUrl) {
     return Event.findOneAndUpdate(
       { 'customFields.pivot.sourceUrl': listingUrl },
@@ -345,6 +358,7 @@ async function publishIngestEvent(req, options = {}) {
     },
   });
 
+  // Batch-internal collisions (two rows of the same import) have nothing to update against.
   if (isBlockingDuplicate(duplicate)) {
     return {
       error: formatDuplicateWarning(duplicate, validated.merged.name),
@@ -353,6 +367,10 @@ async function publishIngestEvent(req, options = {}) {
       data: { duplicate },
     };
   }
+
+  // sourceUrl and fingerprint matches resolve to an existing catalog event — update it.
+  const updateEventId =
+    duplicate?.willUpdate && duplicate?.existingEventId ? duplicate.existingEventId : null;
 
   const catalogResult = await resolveCatalogOrgId(req, tenantResult.tenant);
   const importedBy = resolveImportedBy(req);
@@ -366,22 +384,25 @@ async function publishIngestEvent(req, options = {}) {
 
   const db = await connectToDatabase(tenantResult.tenant.tenantKey);
   const tenantReq = { db };
-  const event = await savePublishedCatalogEvent(tenantReq, eventPayload, listingUrl);
+  const event = await savePublishedCatalogEvent(tenantReq, eventPayload, listingUrl, updateEventId);
+  const updatedExisting = Boolean(updateEventId);
 
-  logPivot('info', 'catalog event published', {
+  logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event published', {
     tenantKey: tenantResult.tenant.tenantKey,
     batchWeek: batchNormalized.batchWeek,
     eventId: String(event._id),
     name: event.name,
     source: mergedInput.source,
     timeSlotCount: validated.merged.timeSlots?.length ?? 0,
+    duplicateMatch: duplicate?.matchType || null,
     importedBy,
   });
 
   return {
     data: {
       event: serializeLabEvent(event),
-      created: true,
+      created: !updatedExisting,
+      updated: updatedExisting,
     },
   };
 }
@@ -408,6 +429,7 @@ async function publishBatchIngestEvents(req, options = {}) {
 
   const published = [];
   const failures = [];
+  let updatedCount = 0;
 
   for (const entry of events) {
     const url = trimString(entry?.url) || undefined;
@@ -425,6 +447,9 @@ async function publishBatchIngestEvents(req, options = {}) {
       continue;
     }
 
+    if (result.data.updated) {
+      updatedCount += 1;
+    }
     published.push(result.data.event);
   }
 
@@ -441,6 +466,7 @@ async function publishBatchIngestEvents(req, options = {}) {
     tenantKey: tenantResult.tenant.tenantKey,
     batchWeek: batchNormalized.batchWeek,
     publishedCount: published.length,
+    updatedCount,
     failedCount: failures.length,
   });
 
@@ -449,6 +475,7 @@ async function publishBatchIngestEvents(req, options = {}) {
       published,
       failures,
       publishedCount: published.length,
+      updatedCount,
       failedCount: failures.length,
     },
   };

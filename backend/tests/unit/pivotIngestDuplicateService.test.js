@@ -73,7 +73,7 @@ describe('pivotIngestDuplicateService', () => {
       expect(isBlockingDuplicate(duplicate)).toBe(false);
     });
 
-    it('flags fingerprint matches as blocking duplicates', () => {
+    it('treats fingerprint matches as fuzzy updates, not blockers', () => {
       const duplicate = findCatalogDuplicate(catalogIndex, {
         sourceUrl: 'https://partiful.com/e/different-slug',
         name: 'Sunset Listening Party',
@@ -82,9 +82,11 @@ describe('pivotIngestDuplicateService', () => {
       });
 
       expect(duplicate.matchType).toBe('fingerprint');
-      expect(isBlockingDuplicate(duplicate)).toBe(true);
+      expect(duplicate.willUpdate).toBe(true);
+      expect(duplicate.existingEventId).toBe('existing-1');
+      expect(isBlockingDuplicate(duplicate)).toBe(false);
       expect(formatDuplicateWarning(duplicate, 'Sunset Listening Party')).toMatch(
-        /duplicate of "Sunset Listening Party"/,
+        /will update it/,
       );
     });
   });

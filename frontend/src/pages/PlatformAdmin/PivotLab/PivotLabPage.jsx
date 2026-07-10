@@ -32,6 +32,10 @@ import './PivotDeckCardPreview.scss';
 const EMPTY_LIST = [];
 const NO_FETCH_CACHE = { enabled: false };
 const PURGE_CONFIRM_TOKEN = 'PURGE';
+// Batch tag suggestion runs one Claude call per event server-side; sending the whole
+// selection in a single request can exceed the production gateway timeout (bare 503).
+// Split it into small chunks so each request stays short and results save incrementally.
+const AI_TAG_CHUNK_SIZE = 4;
 
 const PIVOT_JSON_IMPORT_EXAMPLE = `{
   "label": "Brooklyn week crawl",
@@ -464,16 +468,18 @@ function buildDeckPreviewProps({
 
 function isBlockingImportDuplicate(duplicate) {
   if (!duplicate) return false;
-  return duplicate.matchType !== 'sourceUrl';
+  // sourceUrl and fingerprint matches update an existing catalog event; only collisions
+  // between two rows of the same import batch have nothing to update against.
+  return duplicate.matchType === 'batchSourceUrl' || duplicate.matchType === 'batchFingerprint';
 }
 
 function duplicateBadgeLabel(duplicate) {
   if (!duplicate) return null;
-  if (duplicate.matchType === 'sourceUrl') return 'Will update';
   if (duplicate.matchType === 'batchSourceUrl' || duplicate.matchType === 'batchFingerprint') {
     return 'Batch duplicate';
   }
-  return 'Duplicate';
+  // sourceUrl (exact) or fingerprint (fuzzy) → publishing updates the existing row.
+  return 'Will update';
 }
 
 function createBatchImportRow(entry, index) {
@@ -511,6 +517,7 @@ function createBatchImportRow(entry, index) {
     tags,
     timeSlots,
     movie,
+    aiTagged: false,
     warnings: entry?.warnings || [],
     duplicate,
     isBlockingDuplicate,
@@ -557,6 +564,41 @@ function formatEventFilmStatus(draft) {
   return '—';
 }
 
+function PivotImportThumb({ src, alt }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
+    return (
+      <span
+        className="pivot-lab__thumb pivot-lab__thumb--empty"
+        title={failed ? 'Image failed to load' : 'No cover image'}
+        aria-hidden="true"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <circle cx="8.5" cy="9.5" r="1.6" />
+          <path d="M21 15l-4.5-4.5L6 21" />
+        </svg>
+      </span>
+    );
+  }
+
+  return (
+    <img
+      className="pivot-lab__thumb"
+      src={src}
+      alt={alt ? `${alt} cover` : 'Event cover'}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function IngestStatusPill({ status }) {
   if (status === 'published') {
     return <span className="pivot-lab__pill pivot-lab__pill--ok">Published</span>;
@@ -599,6 +641,7 @@ function PivotLabPage() {
   const [batchApplyTags, setBatchApplyTags] = useState([]);
   const [tmdbMatchLoadingKey, setTmdbMatchLoadingKey] = useState(null);
   const [tagSuggestLoadingKey, setTagSuggestLoadingKey] = useState(null);
+  const [batchTagProgress, setBatchTagProgress] = useState(null);
   const [tagSeeding, setTagSeeding] = useState(false);
   const [importName, setImportName] = useState('');
   const [importLocation, setImportLocation] = useState('');
@@ -1102,6 +1145,34 @@ function PivotLabPage() {
     );
   }, []);
 
+  // Fuzzy/exact duplicate detection for JSON entries, matched against the selected city's
+  // catalog so publishing updates existing rows instead of creating duplicates.
+  const annotateJsonEntriesWithDuplicates = useCallback(
+    async (entries) => {
+      if (!selectedTenantKey || !entries.length) {
+        return { entries, duplicateWarnings: [] };
+      }
+
+      const { data, error } = await authenticatedRequest(
+        '/admin/pivot/ingest/annotate-duplicates',
+        {
+          method: 'POST',
+          data: { tenantKey: selectedTenantKey, drafts: entries },
+        },
+      );
+
+      if (error || !data?.success) {
+        return { entries, duplicateWarnings: [] };
+      }
+
+      return {
+        entries: data.data?.drafts || entries,
+        duplicateWarnings: data.data?.duplicateWarnings || [],
+      };
+    },
+    [selectedTenantKey],
+  );
+
   const handlePreviewJsonImport = useCallback(async () => {
     const result = parsePivotJsonImport(importJsonDraft);
     if (result.error) {
@@ -1140,10 +1211,15 @@ function PivotLabPage() {
       }
     }
 
+    const { entries: annotatedEntries, duplicateWarnings } =
+      await annotateJsonEntriesWithDuplicates(entries);
+    entries = annotatedEntries;
+
     setJsonImportPreview({
       label: result.label,
       entries,
       tmdbMatch: { matched, failed, pending: pendingFilmCount },
+      duplicateWarnings,
     });
 
     if (pendingFilmCount) {
@@ -1157,7 +1233,12 @@ function PivotLabPage() {
         type: matched ? (failed ? 'warning' : 'success') : 'warning',
       });
     }
-  }, [addNotification, importJsonDraft, syncJsonImportDraftFromEntries]);
+  }, [
+    addNotification,
+    annotateJsonEntriesWithDuplicates,
+    importJsonDraft,
+    syncJsonImportDraftFromEntries,
+  ]);
 
   const handleLoadJsonImport = useCallback(async () => {
     const result =
@@ -1201,11 +1282,17 @@ function PivotLabPage() {
       }
     }
 
+    const { entries: annotatedEntries, duplicateWarnings } =
+      await annotateJsonEntriesWithDuplicates(entries);
+    entries = annotatedEntries;
+    const updateCount = entries.filter((entry) => entry.duplicate?.willUpdate).length;
+
     setImportError('');
     setJsonImportPreview({
       label: result.label,
       entries,
       tmdbMatch: { matched, failed, pending: pendingFilmCount },
+      duplicateWarnings,
     });
     setImportMode('batch');
     setImportUrl('');
@@ -1225,6 +1312,11 @@ function PivotLabPage() {
         `${failed} film event(s) could not be matched to TMDB — use Retry on those rows.`,
       );
     }
+    if (updateCount) {
+      loadWarnings.push(
+        `${updateCount} event(s) match existing catalog rows and will update them on publish.`,
+      );
+    }
     setImportWarnings(loadWarnings);
     setImportDuplicate(null);
     setDeckPreviewState(null);
@@ -1235,10 +1327,18 @@ function PivotLabPage() {
       message:
         matched > 0
           ? `${entries.length} event(s) loaded · ${matched} film(s) matched from TMDB.`
-          : `${entries.length} event(s) ready for review.`,
+          : `${entries.length} event(s) ready for review${
+              updateCount ? ` · ${updateCount} will update existing rows` : ''
+            }.`,
       type: 'success',
     });
-  }, [addNotification, importJsonDraft, jsonImportPreview, syncJsonImportDraftFromEntries]);
+  }, [
+    addNotification,
+    annotateJsonEntriesWithDuplicates,
+    importJsonDraft,
+    jsonImportPreview,
+    syncJsonImportDraftFromEntries,
+  ]);
 
   const handleMatchTmdbForJsonEntry = useCallback(
     async (index) => {
@@ -1460,7 +1560,7 @@ function PivotLabPage() {
         return;
       }
 
-      updateBatchImportRow(rowKey, { tags: result.tags });
+      updateBatchImportRow(rowKey, { tags: result.tags, aiTagged: true });
     },
     [addNotification, buildTagSuggestPayload, importBatchRows, requestSuggestedTags, updateBatchImportRow],
   );
@@ -1468,58 +1568,105 @@ function PivotLabPage() {
   const suggestTagsForSelectedBatchRows = useCallback(async () => {
     if (!selectedBatchRows.length) return;
 
-    setTagSuggestLoadingKey('batch-all');
-    const { data, error } = await authenticatedRequest('/admin/pivot/ingest/suggest-tags', {
-      method: 'POST',
-      data: {
-        events: selectedBatchRows.map((row) =>
-          buildTagSuggestPayload({
-            name: row.name,
-            description: row.description,
-            location: row.location,
-            organizerName: row.organizerName,
-            sourceTags: row.sourceTags,
-          }),
-        ),
-      },
-    });
-    setTagSuggestLoadingKey(null);
+    // Resume-friendly: target selected rows that haven't been through Claude yet. If every
+    // selected row is already AI-tagged, treat the click as a deliberate re-run of all of them.
+    const pending = selectedBatchRows.filter((row) => !row.aiTagged);
+    const targetRows = pending.length ? pending : selectedBatchRows;
+    const total = targetRows.length;
 
-    if (error || !data?.success) {
+    setTagSuggestLoadingKey('batch-all');
+    setBatchTagProgress({ done: 0, total });
+
+    let suggestedTotal = 0;
+    let failedTotal = 0;
+    let stoppedError = null;
+
+    // Chunk the selection into several short requests so one slow/large call can't trip the
+    // production gateway timeout, and each chunk's tags are saved as soon as it returns.
+    for (let start = 0; start < targetRows.length; start += AI_TAG_CHUNK_SIZE) {
+      const chunk = targetRows.slice(start, start + AI_TAG_CHUNK_SIZE);
+
+      const { data, error } = await authenticatedRequest('/admin/pivot/ingest/suggest-tags', {
+        method: 'POST',
+        data: {
+          events: chunk.map((row) =>
+            buildTagSuggestPayload({
+              name: row.name,
+              description: row.description,
+              location: row.location,
+              organizerName: row.organizerName,
+              sourceTags: row.sourceTags,
+            }),
+          ),
+        },
+      });
+
+      if (error || !data?.success) {
+        // A transport-level failure (gateway 503/timeout) carries no structured body. Stop
+        // here so already-processed chunks stay saved and the user can click again to resume.
+        stoppedError = {
+          message: error || data?.message || 'Could not reach the tag suggestion service.',
+          type: data?.code === 'LLM_NOT_CONFIGURED' ? 'warning' : 'error',
+        };
+        break;
+      }
+
+      const suggestions = data.data?.suggestions || [];
+      failedTotal += data.data?.failedCount ?? 0;
+
+      const tagsByKey = new Map();
+      for (let i = 0; i < chunk.length; i += 1) {
+        const tags = suggestions[i]?.tags || [];
+        if (tags.length) suggestedTotal += 1;
+        tagsByKey.set(chunk[i].key, tags);
+      }
+
+      setImportBatchRows((rows) =>
+        rows.map((row) =>
+          tagsByKey.has(row.key)
+            ? {
+                ...row,
+                tags: tagsByKey.get(row.key).length ? tagsByKey.get(row.key) : row.tags || [],
+                aiTagged: true,
+              }
+            : row,
+        ),
+      );
+
+      setBatchTagProgress({ done: Math.min(start + chunk.length, total), total });
+    }
+
+    setTagSuggestLoadingKey(null);
+    setBatchTagProgress(null);
+
+    if (stoppedError) {
       addNotification({
-        title: 'Batch tag suggestion failed',
-        message: error || data?.message || 'Could not suggest tags.',
-        type: data?.code === 'LLM_NOT_CONFIGURED' ? 'warning' : 'error',
+        title: suggestedTotal
+          ? 'Tagging interrupted — partial results saved'
+          : 'Batch tag suggestion failed',
+        message: suggestedTotal
+          ? `${suggestedTotal} row(s) tagged before the error — click again to resume the rest. (${stoppedError.message})`
+          : stoppedError.message,
+        type: suggestedTotal ? 'warning' : stoppedError.type,
       });
       return;
     }
 
-    const suggestions = data.data?.suggestions || [];
-    const failedCount = data.data?.failedCount ?? 0;
-    const suggestedCount = data.data?.suggestedCount ?? 0;
-    setImportBatchRows((rows) =>
-      rows.map((row) => {
-        const selectedIndex = selectedBatchRows.findIndex((entry) => entry.key === row.key);
-        if (selectedIndex === -1) return row;
-        return { ...row, tags: suggestions[selectedIndex]?.tags || row.tags || [] };
-      }),
-    );
-
-    if (suggestedCount === 0) {
+    if (suggestedTotal === 0) {
       addNotification({
         title: 'No tags suggested',
-        message: data.data?.failures?.[0]?.message || 'Claude did not return valid catalog tags.',
+        message: 'Claude did not return valid catalog tags for the selected rows.',
         type: 'warning',
       });
       return;
     }
 
     addNotification({
-      title: failedCount ? 'Batch partially tagged' : 'Batch tags suggested',
-      message: failedCount
-        ? `${suggestedCount} row(s) tagged, ${failedCount} failed.`
-        : `${suggestedCount} row(s) tagged via Claude.`,
-      type: failedCount ? 'warning' : 'success',
+      title: failedTotal ? 'Batch partially tagged' : 'Batch tags suggested',
+      message: failedTotal
+        ? `${suggestedTotal} row(s) tagged, ${failedTotal} failed.`
+        : `${suggestedTotal} row(s) tagged via Claude.`,
+      type: failedTotal ? 'warning' : 'success',
     });
   }, [addNotification, buildTagSuggestPayload, selectedBatchRows]);
 
@@ -1657,14 +1804,17 @@ function PivotLabPage() {
 
     const publishedCount = data.data?.publishedCount ?? data.data?.published?.length ?? 0;
     const failedCount = data.data?.failedCount ?? data.data?.failures?.length ?? 0;
+    const updatedCount = data.data?.updatedCount ?? 0;
+    const createdCount = Math.max(publishedCount - updatedCount, 0);
+    const updatedSuffix = updatedCount ? ` (${updatedCount} updated existing)` : '';
 
     refetchEvents();
     refetchOverview();
     addNotification({
       title: failedCount ? 'Batch partially published' : 'Batch published',
       message: failedCount
-        ? `${publishedCount} event(s) published, ${failedCount} failed.`
-        : `${publishedCount} event(s) added to ${selectedTenantKey}.`,
+        ? `${createdCount} added, ${updatedCount} updated, ${failedCount} failed.`
+        : `${publishedCount} event(s) added to ${selectedTenantKey}${updatedSuffix}.`,
       type: failedCount ? 'warning' : 'success',
     });
   }, [
@@ -1722,9 +1872,12 @@ function PivotLabPage() {
 
     refetchEvents();
     refetchOverview();
+    const wasUpdated = data.data?.updated;
     addNotification({
-      title: 'Published',
-      message: `${data.data?.event?.name || 'Event'} added to ${selectedTenantKey}.`,
+      title: wasUpdated ? 'Updated' : 'Published',
+      message: `${data.data?.event?.name || 'Event'} ${
+        wasUpdated ? 'updated in' : 'added to'
+      } ${selectedTenantKey}.`,
       type: 'success',
     });
   }, [
@@ -2062,6 +2215,7 @@ function PivotLabPage() {
                   <table className="pivot-lab__table pivot-lab__json-preview-table">
                     <thead>
                       <tr>
+                        <th scope="col">Image</th>
                         <th scope="col">Event</th>
                         <th scope="col">Organizer</th>
                         <th scope="col">When</th>
@@ -2070,6 +2224,7 @@ function PivotLabPage() {
                         <th scope="col">Tags</th>
                         <th scope="col">Film</th>
                         <th scope="col">Status</th>
+                        <th scope="col">Catalog</th>
                         <th scope="col">TMDB</th>
                       </tr>
                     </thead>
@@ -2083,6 +2238,9 @@ function PivotLabPage() {
                             key={`${draft.name || 'event'}-${index}`}
                             className={ready ? '' : 'pivot-lab__json-preview-row--warn'}
                           >
+                            <td className="pivot-lab__thumb-cell">
+                              <PivotImportThumb src={draft.image} alt={draft.name} />
+                            </td>
                             <td>{draft.name || '—'}</td>
                             <td>{draft.hostName || '—'}</td>
                             <td>{formatEventWhen(draft.start_time || draft.timeSlots?.[0]?.start_time)}</td>
@@ -2095,6 +2253,26 @@ function PivotLabPage() {
                                 <span className="pivot-lab__pill pivot-lab__pill--ok">Ready</span>
                               ) : (
                                 <span className="pivot-lab__pill pivot-lab__pill--warn">Needs review</span>
+                              )}
+                            </td>
+                            <td>
+                              {entry.duplicate ? (
+                                <span
+                                  className={`pivot-lab__duplicate-pill${
+                                    isBlockingImportDuplicate(entry.duplicate)
+                                      ? ' pivot-lab__duplicate-pill--blocking'
+                                      : ' pivot-lab__duplicate-pill--update'
+                                  }`}
+                                  title={
+                                    entry.duplicate.existingName
+                                      ? `Matches "${entry.duplicate.existingName}"`
+                                      : undefined
+                                  }
+                                >
+                                  {duplicateBadgeLabel(entry.duplicate)}
+                                </span>
+                              ) : (
+                                '—'
                               )}
                             </td>
                             <td>
@@ -2120,6 +2298,13 @@ function PivotLabPage() {
                     </tbody>
                   </table>
                 </div>
+                {jsonImportPreview.duplicateWarnings?.length ? (
+                  <ul className="pivot-lab__import-warnings pivot-lab__json-preview-warnings">
+                    {jsonImportPreview.duplicateWarnings.map((warning) => (
+                      <li key={`dup-${warning}`}>{warning}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 {jsonImportPreview.entries.some((entry) => entry.warnings?.length) ? (
                   <ul className="pivot-lab__import-warnings pivot-lab__json-preview-warnings">
                     {jsonImportPreview.entries.flatMap((entry, index) =>
@@ -2182,7 +2367,9 @@ function PivotLabPage() {
                   disabled={!selectedBatchRows.length || tagSuggestLoadingKey === 'batch-all'}
                 >
                   {tagSuggestLoadingKey === 'batch-all'
-                    ? 'Suggesting…'
+                    ? batchTagProgress
+                      ? `Suggesting ${batchTagProgress.done}/${batchTagProgress.total}…`
+                      : 'Suggesting…'
                     : 'Suggest tags for selected (Claude)'}
                 </button>
               </div>
@@ -2210,6 +2397,7 @@ function PivotLabPage() {
                         }}
                       />
                     </th>
+                    <th scope="col">Image</th>
                     <th scope="col">Event</th>
                     <th scope="col">Status</th>
                     <th scope="col">Organizer</th>
@@ -2245,6 +2433,9 @@ function PivotLabPage() {
                           }
                           aria-label={`Select ${row.name || 'event'}`}
                         />
+                      </td>
+                      <td className="pivot-lab__thumb-cell">
+                        <PivotImportThumb src={row.imageUrl} alt={row.name} />
                       </td>
                       <td>{row.name || '—'}</td>
                       <td>
@@ -2288,10 +2479,25 @@ function PivotLabPage() {
                           type="button"
                           className="linear-btn linear-btn--ghost pivot-lab__tag-ai-btn"
                           onClick={() => suggestTagsForBatchRow(row.key)}
-                          disabled={tagSuggestLoadingKey === row.key}
+                          disabled={
+                            tagSuggestLoadingKey === row.key ||
+                            tagSuggestLoadingKey === 'batch-all'
+                          }
                         >
-                          {tagSuggestLoadingKey === row.key ? '…' : 'AI'}
+                          {tagSuggestLoadingKey === row.key
+                            ? '…'
+                            : row.aiTagged
+                              ? 'Redo'
+                              : 'AI'}
                         </button>
+                        {row.aiTagged ? (
+                          <span
+                            className="pivot-lab__ai-done"
+                            title="Tags suggested by Claude"
+                          >
+                            ✓ AI
+                          </span>
+                        ) : null}
                       </td>
                       <td>{formatEventFilmStatus(row)}</td>
                       <td>
@@ -2427,12 +2633,17 @@ function PivotLabPage() {
                   />
                 </label>
                 {importPreview.image ? (
-                  <p className="pivot-lab__import-image">
-                    Cover image:{' '}
-                    <a href={importPreview.image} target="_blank" rel="noreferrer">
-                      preview
+                  <div className="pivot-lab__import-image">
+                    <span className="pivot-lab__import-image-label">Cover image</span>
+                    <a
+                      href={importPreview.image}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="pivot-lab__thumb-link"
+                    >
+                      <PivotImportThumb src={importPreview.image} alt={importName} />
                     </a>
-                  </p>
+                  </div>
                 ) : null}
                 {importWarnings.length ? (
                   <ul className="pivot-lab__import-warnings">

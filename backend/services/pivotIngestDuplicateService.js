@@ -106,7 +106,7 @@ function findCatalogDuplicate(index, candidate) {
   if (fingerprint) {
     const byFingerprint = index.find((row) => row.fingerprint && row.fingerprint === fingerprint);
     if (byFingerprint) {
-      return duplicateSummary(byFingerprint, 'fingerprint');
+      return duplicateSummary(byFingerprint, 'fingerprint', { willUpdate: true });
     }
   }
 
@@ -178,7 +178,7 @@ function formatDuplicateWarning(duplicate, candidateName) {
     return `${label} already exists in catalog and will update the existing row.`;
   }
   if (duplicate.matchType === 'fingerprint') {
-    return `${label} looks like a duplicate of "${duplicate.existingName}" (same title, time, and location).`;
+    return `${label} matches existing "${duplicate.existingName}" (same title, time, and location) — publishing will update it.`;
   }
   if (duplicate.matchType === 'batchSourceUrl') {
     return `${label} duplicates another row in this import batch (same source URL).`;
@@ -191,8 +191,23 @@ function formatDuplicateWarning(duplicate, candidateName) {
 
 function isBlockingDuplicate(duplicate) {
   if (!duplicate) return false;
-  if (duplicate.matchType === 'sourceUrl') return false;
-  return true;
+  // sourceUrl and fingerprint matches resolve against an existing catalog event, so
+  // publishing updates it in place. Only collisions between two rows of the same import
+  // batch have nothing to update against and must block.
+  return (
+    duplicate.matchType === 'batchSourceUrl' || duplicate.matchType === 'batchFingerprint'
+  );
+}
+
+async function annotateImportDuplicates(req, options = {}) {
+  const tenantKey = options.tenantKey?.trim()?.toLowerCase();
+  const drafts = Array.isArray(options.drafts) ? options.drafts : [];
+  if (!tenantKey || !drafts.length) {
+    return { drafts, duplicateWarnings: [] };
+  }
+
+  const catalogIndex = await loadCatalogDuplicateIndex(tenantKey);
+  return annotateImportDrafts(drafts, catalogIndex);
 }
 
 async function resolveImportDuplicate(req, { tenantKey, candidate }) {
@@ -212,6 +227,7 @@ module.exports = {
   loadCatalogDuplicateIndex,
   findCatalogDuplicate,
   annotateImportDrafts,
+  annotateImportDuplicates,
   formatDuplicateWarning,
   isBlockingDuplicate,
   resolveImportDuplicate,

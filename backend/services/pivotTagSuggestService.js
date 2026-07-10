@@ -318,7 +318,6 @@ async function suggestPivotEventTagsBatch(req, rawEvents = []) {
   });
 
   if (suggestedCount === 0 && failures.length > 0) {
-    console.log('failures', failures);
     return {
       error: failures[0].message,
       status: failures[0].code === 'LLM_NOT_CONFIGURED' ? 503 : 400,

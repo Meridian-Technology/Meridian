@@ -13,6 +13,7 @@ const {
   saveInterviewNotes,
 } = require('../services/pivotLabNotesService');
 const { previewIngestUrl } = require('../services/pivotIngestPreviewService');
+const { annotateImportDuplicates } = require('../services/pivotIngestDuplicateService');
 const {
   publishIngestEvent,
   publishBatchIngestEvents,
@@ -367,6 +368,26 @@ router.post('/ingest/preview', verifyToken, requirePlatformAdmin, async (req, re
     return res.status(500).json({
       success: false,
       message: 'Unable to preview event import.',
+    });
+  }
+});
+
+router.post('/ingest/annotate-duplicates', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await annotateImportDuplicates(req, {
+      tenantKey: req.body?.tenantKey,
+      drafts: req.body?.drafts,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /admin/pivot/ingest/annotate-duplicates', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to check for duplicate events.',
     });
   }
 });
