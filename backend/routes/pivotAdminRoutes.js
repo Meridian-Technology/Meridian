@@ -5,7 +5,36 @@ const {
   rebuildWeeklySnapshot,
   getWeeklySnapshot,
 } = require('../services/pivotWeeklySnapshotService');
-const { getPivotOverview } = require('../services/pivotAdminOverviewService');
+const {
+  getPivotOverview,
+  getTenantOverview,
+  getTenantEventPerformance,
+} = require('../services/pivotAdminOverviewService');
+const { getTenantInsights } = require('../services/pivotTenantInsightsService');
+const {
+  releaseBatch,
+  unreleaseBatch,
+} = require('../services/pivotBatchReleaseService');
+const { getBatchReadiness } = require('../services/pivotBatchReadinessService');
+const {
+  listCurationJobs,
+  createCurationJob,
+  updateCurationJob,
+  deleteCurationJob,
+} = require('../services/pivotCurationJobService');
+const {
+  startCurationJobRun,
+  getCurationRun,
+} = require('../services/pivotCurationRunService');
+const {
+  getJourneyOverview,
+  getJourneyFunnel,
+  getJourneyPath,
+  searchJourneyUsers,
+  getUserJourneyHistory,
+  wipeUserWeekIntents,
+} = require('../services/pivotTenantJourneyService');
+const { getTenantOpsBundle } = require('../services/pivotTenantOpsService');
 const { getPivotRetention } = require('../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../services/pivotLabEventsService');
 const {
@@ -189,6 +218,696 @@ router.get('/overview', verifyToken, requirePlatformAdmin, async (req, res) => {
     });
   }
 });
+
+router.get(
+  '/tenants/:tenantKey/overview',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantOverview(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/overview', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant pivot overview.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/ops',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantOpsBundle(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+        include: req.query?.include,
+        performanceLimit: req.query?.performanceLimit ?? req.query?.limit,
+        retentionWeeks: req.query?.retentionWeeks ?? req.query?.weeks,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/ops', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant ops bundle.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/events/performance',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantEventPerformance(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+        limit: req.query?.limit,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/events/performance', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant event performance.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/insights',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantInsights(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/insights', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant pivot insights.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/batches/:batchWeek/release',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await releaseBatch(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.params.batchWeek,
+        eventIds: req.body?.eventIds,
+        rebuildSnapshot: req.body?.rebuildSnapshot,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/batches/:batchWeek/release',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to release pivot batch.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/batches/:batchWeek/unrelease',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await unreleaseBatch(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.params.batchWeek,
+        confirm: req.body?.confirm,
+        eventIds: req.body?.eventIds,
+        rebuildSnapshot: req.body?.rebuildSnapshot,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/batches/:batchWeek/unrelease',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to unrelease pivot batch.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/batches/:batchWeek/readiness',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getBatchReadiness(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.params.batchWeek,
+        benchmarkWeeks: req.query?.benchmarkWeeks,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/batches/:batchWeek/readiness',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load batch readiness.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/curation-jobs',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listCurationJobs(req, {
+        tenantKey: req.params.tenantKey,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/curation-jobs', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to list curation jobs.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/curation-jobs',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await createCurationJob(req, {
+        tenantKey: req.params.tenantKey,
+        label: req.body?.label,
+        url: req.body?.url,
+        provider: req.body?.provider,
+        defaultBatchWeekStrategy: req.body?.defaultBatchWeekStrategy,
+        defaultTags: req.body?.defaultTags,
+        enabled: req.body?.enabled,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/curation-jobs', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to create curation job.',
+      });
+    }
+  },
+);
+
+router.patch(
+  '/tenants/:tenantKey/curation-jobs/:jobId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateCurationJob(req, {
+        tenantKey: req.params.tenantKey,
+        jobId: req.params.jobId,
+        label: req.body?.label,
+        url: req.body?.url,
+        provider: req.body?.provider,
+        defaultBatchWeekStrategy: req.body?.defaultBatchWeekStrategy,
+        defaultTags: req.body?.defaultTags,
+        enabled: req.body?.enabled,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'PATCH /admin/pivot/tenants/:tenantKey/curation-jobs/:jobId',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to update curation job.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/tenants/:tenantKey/curation-jobs/:jobId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await deleteCurationJob(req, {
+        tenantKey: req.params.tenantKey,
+        jobId: req.params.jobId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'DELETE /admin/pivot/tenants/:tenantKey/curation-jobs/:jobId',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to delete curation job.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/curation-jobs/:jobId/run',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await startCurationJobRun(req, {
+        tenantKey: req.params.tenantKey,
+        jobId: req.params.jobId,
+        batchWeek: req.body?.batchWeek,
+        forceBatchWeek: req.body?.forceBatchWeek,
+        maxEvents: req.body?.maxEvents,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/curation-jobs/:jobId/run',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to start curation job run.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/curation-runs/:runId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getCurationRun(req, {
+        tenantKey: req.params.tenantKey,
+        runId: req.params.runId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/curation-runs/:runId',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load curation run.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/journeys/overview',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getJourneyOverview(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+        range: req.query?.range,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/journeys/overview',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load journey overview.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/journeys/funnel',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getJourneyFunnel(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+        steps: req.query?.steps,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/journeys/funnel',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load journey funnel.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/journeys/path',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getJourneyPath(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+        startingPoint: req.query?.startingPoint,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/journeys/path',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load journey path.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/journeys/users',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await searchJourneyUsers(req, {
+        tenantKey: req.params.tenantKey,
+        query: req.query?.query ?? req.query?.q,
+        batchWeek: req.query?.batchWeek,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/journeys/users',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to search journey users.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/journeys/users/:userId/history',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getUserJourneyHistory(req, {
+        tenantKey: req.params.tenantKey,
+        userId: req.params.userId,
+        batchWeek: req.query?.batchWeek,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/journeys/users/:userId/history',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load user journey history.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/users/:userId/wipe-week',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await wipeUserWeekIntents(req, {
+        tenantKey: req.params.tenantKey,
+        userId: req.params.userId,
+        batchWeek: req.body?.batchWeek,
+        confirm: req.body?.confirm,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/users/:userId/wipe-week',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to wipe user week intents.',
+      });
+    }
+  },
+);
 
 router.get('/retention', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
@@ -398,7 +1117,10 @@ router.post('/ingest', verifyToken, requirePlatformAdmin, async (req, res) => {
       tenantKey: req.body?.tenantKey,
       url: req.body?.url,
       batchWeek: req.body?.batchWeek,
+      forceBatchWeek: req.body?.forceBatchWeek,
       overrides: req.body?.overrides,
+      releaseNow: req.body?.releaseNow,
+      confirm: req.body?.confirm,
     });
     if (result.error) {
       logPivotServiceReject('POST /admin/pivot/ingest', result, req, {
@@ -415,9 +1137,11 @@ router.post('/ingest', verifyToken, requirePlatformAdmin, async (req, res) => {
 
     logPivotServiceSuccess('POST /admin/pivot/ingest', req, {
       tenantKey: req.body?.tenantKey,
-      batchWeek: req.body?.batchWeek,
+      batchWeek: result.data?.batchWeek || req.body?.batchWeek,
+      batchWeekSource: result.data?.batchWeekSource,
       eventId: result.data?.event?._id,
       eventName: result.data?.event?.name,
+      ingestStatus: result.data?.ingestStatus,
     });
 
     return res.status(200).json({
@@ -428,7 +1152,7 @@ router.post('/ingest', verifyToken, requirePlatformAdmin, async (req, res) => {
     logPivotRouteError('POST /admin/pivot/ingest', err, req);
     return res.status(500).json({
       success: false,
-      message: 'Unable to publish pivot catalog event.',
+      message: 'Unable to stage pivot catalog event.',
     });
   }
 });
@@ -438,7 +1162,10 @@ router.post('/ingest/batch', verifyToken, requirePlatformAdmin, async (req, res)
     const result = await publishBatchIngestEvents(req, {
       tenantKey: req.body?.tenantKey,
       batchWeek: req.body?.batchWeek,
+      forceBatchWeek: req.body?.forceBatchWeek,
       events: req.body?.events,
+      releaseNow: req.body?.releaseNow,
+      confirm: req.body?.confirm,
     });
     if (result.error && !result.data?.published?.length) {
       logPivotServiceReject('POST /admin/pivot/ingest/batch', result, req, {
@@ -457,8 +1184,11 @@ router.post('/ingest/batch', verifyToken, requirePlatformAdmin, async (req, res)
     logPivotServiceSuccess('POST /admin/pivot/ingest/batch', req, {
       tenantKey: req.body?.tenantKey,
       batchWeek: req.body?.batchWeek,
+      batchWeekCounts: result.data?.batchWeekCounts,
+      forceBatchWeek: result.data?.forceBatchWeek,
       publishedCount: result.data?.publishedCount ?? result.data?.published?.length ?? 0,
       failedCount: result.data?.failedCount ?? result.data?.failures?.length ?? 0,
+      ingestStatus: result.data?.ingestStatus,
     });
 
     return res.status(200).json({
@@ -469,7 +1199,7 @@ router.post('/ingest/batch', verifyToken, requirePlatformAdmin, async (req, res)
     logPivotRouteError('POST /admin/pivot/ingest/batch', err, req);
     return res.status(500).json({
       success: false,
-      message: 'Unable to publish pivot catalog events.',
+      message: 'Unable to stage pivot catalog events.',
     });
   }
 });

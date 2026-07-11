@@ -9,6 +9,8 @@ const pivotWeeklySnapshotSchema = require('../schemas/pivotWeeklySnapshot');
 const pivotLabNotesSchema = require('../schemas/pivotLabNotes');
 const pivotTagCatalogSchema = require('../schemas/pivotTagCatalog');
 const pivotPosterTemplateSchema = require('../schemas/pivotPosterTemplate');
+const pivotCurationJobSchema = require('../schemas/pivotCurationJob');
+const pivotCurationRunSchema = require('../schemas/pivotCurationRun');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -16,7 +18,7 @@ const pivotPosterTemplateSchema = require('../schemas/pivotPosterTemplate');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig', 'PivotReferralCode', 'PivotReferralRedemption', 'PivotWeeklySnapshot', 'PivotLabNotes', 'PivotTagCatalog', 'PivotPosterTemplate'
+ * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig', 'PivotReferralCode', 'PivotReferralRedemption', 'PivotWeeklySnapshot', 'PivotLabNotes', 'PivotTagCatalog', 'PivotPosterTemplate', 'PivotCurationJob', 'PivotCurationRun'
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -48,6 +50,16 @@ const getGlobalModels = (req, ...names) => {
             'PivotPosterTemplate',
             pivotPosterTemplateSchema,
             'pivot_poster_templates'
+        ),
+        PivotCurationJob: db.model(
+            'PivotCurationJob',
+            pivotCurationJobSchema,
+            'pivot_curation_jobs'
+        ),
+        PivotCurationRun: db.model(
+            'PivotCurationRun',
+            pivotCurationRunSchema,
+            'pivot_curation_runs'
         ),
     };
 

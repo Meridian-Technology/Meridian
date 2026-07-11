@@ -15,8 +15,11 @@ const {
   classifyIngestUrl,
   parsePartifulExploreBatch,
   parseLumaDiscoverBatch,
+  extractLumaDiscoverSlug,
+  fetchLumaDiscoverApiBatch,
   extractMetaContent,
   extractJsonLdBlocks,
+  LUMA_DISCOVER_API_URL,
 } = require('../../services/pivotIngestPreviewService');
 
 const PARTIFUL_HTML = `<!DOCTYPE html>
@@ -361,6 +364,40 @@ describe('pivotIngestPreviewService batch parsing', () => {
     );
   });
 
+  it('takes all discovered events by default (no 50 cap)', () => {
+    const manyEvents = Array.from({ length: 60 }, (_, i) => ({
+      id: `event-${i}`,
+      title: `Event ${i}`,
+      description: 'desc',
+      startDate: '2026-07-10T20:00:00.000Z',
+      endDate: '2026-07-10T22:00:00.000Z',
+      hostName: 'Host',
+      locationInfo: { name: 'NYC' },
+    }));
+    const html = `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: { pageProps: { events: manyEvents.map((event) => ({ event })) } },
+    })}</script></html>`;
+
+    const uncapped = parsePartifulExploreBatch(html, 'https://partiful.com/explore/sf');
+    expect(uncapped.drafts).toHaveLength(60);
+    expect(uncapped.truncated).toBe(false);
+    expect(uncapped.limit).toBeNull();
+    expect(uncapped.discoveredTotal).toBe(60);
+
+    const capped = parsePartifulExploreBatch(html, 'https://partiful.com/explore/sf', {
+      maxEvents: 50,
+    });
+    expect(capped.drafts).toHaveLength(50);
+    expect(capped.truncated).toBe(true);
+    expect(capped.discoveredTotal).toBe(60);
+
+    const raised = parsePartifulExploreBatch(html, 'https://partiful.com/explore/sf', {
+      maxEvents: 120,
+    });
+    expect(raised.drafts).toHaveLength(60);
+    expect(raised.truncated).toBe(false);
+  });
+
   it('parses Luma discover events from NEXT_DATA with cover images', () => {
     const result = parseLumaDiscoverBatch(LUMA_DISCOVER_NEXT_DATA_HTML, 'https://luma.com/sf');
 
@@ -369,6 +406,122 @@ describe('pivotIngestPreviewService batch parsing', () => {
     expect(result.drafts[0].draft.hostName).toBe('Vivian Cai & Adrian Yumul');
     expect(result.drafts[0].draft.image).toBe('https://images.lumacdn.com/uploads/xr/dc792c6b.jpg');
     expect(result.drafts[0].sourceUrl).toBe('https://luma.com/yg5x8n8b');
+  });
+
+  it('extracts Luma city slugs from discover URLs', () => {
+    expect(extractLumaDiscoverSlug('https://luma.com/sf')).toBe('sf');
+    expect(extractLumaDiscoverSlug('https://lu.ma/nyc/')).toBe('nyc');
+    expect(extractLumaDiscoverSlug('https://luma.com/discover')).toBeNull();
+    expect(extractLumaDiscoverSlug('https://luma.com/e/abc')).toBeNull();
+  });
+
+  it('paginates Luma discover API until exhausted', async () => {
+    axios.get
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          entries: [
+            {
+              event: {
+                name: 'Event One',
+                url: 'one',
+                start_at: '2026-07-11T20:00:00.000Z',
+                cover_url: 'https://images.lumacdn.com/one.jpg',
+                geo_address_info: { city_state: 'San Francisco, CA' },
+              },
+              hosts: [{ name: 'Host A' }],
+            },
+          ],
+          has_more: true,
+          next_cursor: 'cursor-1',
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          entries: [
+            {
+              event: {
+                name: 'Event Two',
+                url: 'two',
+                start_at: '2026-07-12T20:00:00.000Z',
+                cover_url: 'https://images.lumacdn.com/two.jpg',
+                geo_address_info: { full_address: 'SF' },
+              },
+              hosts: [{ name: 'Host B' }],
+              calendar: { name: 'Community Cal' },
+            },
+          ],
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+
+    const result = await fetchLumaDiscoverApiBatch({ slug: 'sf' });
+
+    expect(result.error).toBeUndefined();
+    expect(result.source).toBe('luma-discover-api');
+    expect(result.pages).toBe(2);
+    expect(result.drafts).toHaveLength(2);
+    expect(result.drafts[0].draft.name).toBe('Event One');
+    expect(result.drafts[1].draft.hostName).toBe('Host B');
+    expect(axios.get).toHaveBeenNthCalledWith(
+      1,
+      LUMA_DISCOVER_API_URL,
+      expect.objectContaining({
+        params: expect.objectContaining({ slug: 'sf', pagination_limit: 20 }),
+      }),
+    );
+    expect(axios.get).toHaveBeenNthCalledWith(
+      2,
+      LUMA_DISCOVER_API_URL,
+      expect.objectContaining({
+        params: expect.objectContaining({
+          slug: 'sf',
+          pagination_cursor: 'cursor-1',
+        }),
+      }),
+    );
+  });
+
+  it('honors maxEvents across Luma discover pages', async () => {
+    axios.get
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          entries: Array.from({ length: 20 }, (_, i) => ({
+            event: {
+              name: `Event ${i}`,
+              url: `evt-${i}`,
+              start_at: '2026-07-11T20:00:00.000Z',
+            },
+            hosts: [{ name: 'Host' }],
+          })),
+          has_more: true,
+          next_cursor: 'more',
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          entries: Array.from({ length: 20 }, (_, i) => ({
+            event: {
+              name: `Event ${i + 20}`,
+              url: `evt-${i + 20}`,
+              start_at: '2026-07-11T20:00:00.000Z',
+            },
+            hosts: [{ name: 'Host' }],
+          })),
+          has_more: true,
+          next_cursor: 'more-2',
+        },
+      });
+
+    const result = await fetchLumaDiscoverApiBatch({ slug: 'nyc', maxEvents: 25 });
+
+    expect(result.drafts).toHaveLength(25);
+    expect(result.truncated).toBe(true);
+    expect(result.pages).toBe(2);
   });
 
   it('parses Luma discover ItemList events', () => {
@@ -380,12 +533,52 @@ describe('pivotIngestPreviewService batch parsing', () => {
     expect(result.drafts[0].sourceUrl).toBe('https://luma.com/yg5x8n8b');
   });
 
-  it('returns batch preview for Luma discover pages', async () => {
-    axios.get.mockResolvedValue({ data: LUMA_DISCOVER_HTML });
+  it('returns batch preview for Luma discover pages via API', async () => {
+    axios.get.mockResolvedValue({
+      status: 200,
+      data: {
+        entries: [
+          {
+            event: {
+              name: 'Founders Cowork',
+              url: 'yg5x8n8b',
+              start_at: '2026-06-28T21:00:00.000Z',
+              cover_url: 'https://images.lumacdn.com/uploads/xr/dc792c6b.jpg',
+              geo_address_info: { full_address: 'Corgi Cafe, San Francisco, CA' },
+            },
+            hosts: [{ name: 'Vivian Cai' }, { name: 'Adrian Yumul' }],
+          },
+        ],
+        has_more: false,
+      },
+    });
 
     const result = await previewIngestUrl({}, { url: 'https://luma.com/sf' });
 
     expect(result.data.mode).toBe('batch');
+    expect(result.data.discoverSource).toBe('luma-discover-api');
+    expect(result.data.drafts).toHaveLength(1);
+    expect(result.data.drafts[0].draft.name).toBe('Founders Cowork');
+    expect(axios.get).toHaveBeenCalledWith(
+      LUMA_DISCOVER_API_URL,
+      expect.objectContaining({
+        params: expect.objectContaining({ slug: 'sf' }),
+      }),
+    );
+  });
+
+  it('falls back to HTML when Luma discover API misses', async () => {
+    axios.get
+      .mockResolvedValueOnce({
+        status: 404,
+        data: { message: 'Sorry, we could not find what you were looking for.', code: null },
+      })
+      .mockResolvedValueOnce({ data: LUMA_DISCOVER_NEXT_DATA_HTML });
+
+    const result = await previewIngestUrl({}, { url: 'https://luma.com/sf' });
+
+    expect(result.data.mode).toBe('batch');
+    expect(result.data.discoverSource).toBe('luma-html');
     expect(result.data.drafts).toHaveLength(1);
   });
 });
