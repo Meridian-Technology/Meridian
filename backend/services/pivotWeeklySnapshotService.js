@@ -6,6 +6,7 @@ const { connectToDatabase } = require('../connectionsManager');
 const { PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
 const { PIVOT_EVENT_FEATURE } = require('./pivotFeedbackService');
 const { toIsoWeek, isValidIsoWeek, isoWeekToUtcRange } = require('../utilities/pivotIsoWeek');
+const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 
 /** Mobile analytics event names surfaced as Lab engagement metrics. */
 const ENGAGEMENT_EVENTS = {
@@ -41,7 +42,7 @@ async function aggregateEngagementMetrics(tenantReq, batchWeek) {
 
 const PUBLISHED_EVENT_QUERY = (batchWeek) => ({
   'customFields.pivot.batchWeek': batchWeek,
-  'customFields.pivot.ingestStatus': 'published',
+  'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
   status: { $in: PIVOT_EVENT_STATUSES },
   isDeleted: { $ne: true },
   'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },

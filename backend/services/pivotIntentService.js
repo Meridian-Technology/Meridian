@@ -14,6 +14,7 @@ const {
   findTimeSlotById,
   eventHasTimeSlots,
 } = require('../utilities/pivotTimeSlots');
+const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 
 const FEED_ACTION_TO_STATUS = {
   interested: 'interested',
@@ -38,7 +39,7 @@ async function findPublishedPivotEvent(req, eventId, { now, requireWindow } = {}
 
   const baseQuery = {
     _id: eventId,
-    'customFields.pivot.ingestStatus': 'published',
+    'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
@@ -347,7 +348,7 @@ async function getWeekRecap(req, options = {}) {
 
   const events = await Event.find({
     _id: { $in: eventIds },
-    'customFields.pivot.ingestStatus': 'published',
+    'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },

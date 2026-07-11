@@ -6,6 +6,7 @@ const {
   serializeRecapEvent,
 } = require('./pivotIntentService');
 const { resolveDisplayHost, PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
+const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 
 const PIVOT_EVENT_FEATURE = 'pivot_event';
 const RECAP_EVENT_FIELDS =
@@ -56,7 +57,7 @@ async function getPendingEventFeedback(req, options = {}) {
   const events = await Event.find({
     _id: { $in: eventIds },
     end_time: { $lt: now },
-    'customFields.pivot.ingestStatus': 'published',
+    'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },

@@ -22,6 +22,7 @@ const {
   isPivotTenant,
   resolvePivotDropInstant,
 } = require('../utilities/pivotDropSchedule');
+const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 
 const CONFIG_KEY = 'default';
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -66,7 +67,7 @@ async function countPublishedEvents(req, batchWeek) {
   const { Event } = getModels(req, 'Event');
   return Event.countDocuments({
     'customFields.pivot.batchWeek': batchWeek,
-    'customFields.pivot.ingestStatus': 'published',
+    'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
   });
 }
 
