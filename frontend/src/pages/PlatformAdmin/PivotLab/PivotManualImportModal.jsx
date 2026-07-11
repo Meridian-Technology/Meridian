@@ -911,7 +911,7 @@ function PivotManualImportModal({
               onClick={handlePublish}
               disabled={!canSubmit || !selectedTenantKey || publishLoading}
             >
-              {publishLoading ? 'Publishing…' : 'Publish now'}
+              {publishLoading ? 'Staging…' : 'Stage now'}
               <kbd className="pivot-manual-import__kbd">⌘⇧↵</kbd>
             </button>
             {onSuggestTags ? (
@@ -930,7 +930,7 @@ function PivotManualImportModal({
           </div>
           <p className="pivot-manual-import__shortcuts">
             <kbd>M</kbd> open · <kbd>1</kbd>–<kbd>9</kbd> tags · <kbd>⌘↵</kbd> queue next ·{' '}
-            <kbd>⌘⇧↵</kbd> publish
+            <kbd>⌘⇧↵</kbd> stage
           </p>
         </footer>
       </div>

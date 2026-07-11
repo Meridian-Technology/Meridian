@@ -103,6 +103,14 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
     Event = {
       findOneAndUpdate: jest.fn(),
       findByIdAndUpdate: jest.fn(),
+      findById: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(null),
+      })),
+      findOne: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(null),
+      })),
       create: jest.fn(),
     };
     getModels.mockReturnValue({ Event });
@@ -134,7 +142,7 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
         customFields: {
           pivot: {
             batchWeek: '2026-W26',
-            ingestStatus: 'published',
+            ingestStatus: 'staged',
             host: { name: 'Brooklyn Board Game Cafe' },
             source: 'partiful',
           },
@@ -143,7 +151,7 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
     });
   });
 
-  it('creates published catalog event with display host from overrides', async () => {
+  it('creates staged catalog event with display host from overrides', async () => {
     const result = await publishIngestEvent(
       { user: { email: 'ops@meridian.study' }, globalDb: {} },
       {
@@ -155,6 +163,10 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
     );
 
     expect(result.data.event.organizerName).toBe('Brooklyn Board Game Cafe');
+    expect(result.data.ingestStatus).toBe('staged');
+    // Event start 2026-07-12 → ISO week 2026-W28 (not the fallback body week).
+    expect(result.data.batchWeek).toBe('2026-W28');
+    expect(result.data.batchWeekSource).toBe('event-date');
     expect(validatePivotEventTags).toHaveBeenCalledWith(
       expect.any(Object),
       ['board-games'],
@@ -171,7 +183,8 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
           hostingId: TENANT.pivotCatalogOrgId,
           customFields: expect.objectContaining({
             pivot: expect.objectContaining({
-              ingestStatus: 'published',
+              batchWeek: '2026-W28',
+              ingestStatus: 'staged',
               tags: ['live-music'],
               host: expect.objectContaining({ name: 'Brooklyn Board Game Cafe' }),
             }),
@@ -181,6 +194,129 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
       expect.objectContaining({ upsert: true }),
     );
     expect(provisionPivotCatalogOrg).not.toHaveBeenCalled();
+  });
+
+  it('forceBatchWeek pins the event into the provided week', async () => {
+    Event.findOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439012',
+        name: 'Sunset Listening Party',
+        start_time: new Date('2026-07-12T22:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W26',
+            ingestStatus: 'staged',
+            host: { name: 'Brooklyn Board Game Cafe' },
+            source: 'partiful',
+          },
+        },
+      }),
+    });
+
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        batchWeek: '2026-W26',
+        forceBatchWeek: true,
+        overrides: { hostName: 'Brooklyn Board Game Cafe', tags: ['board-games'] },
+      },
+    );
+
+    expect(result.data.batchWeek).toBe('2026-W26');
+    expect(result.data.batchWeekSource).toBe('forced');
+    expect(Event.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          customFields: expect.objectContaining({
+            pivot: expect.objectContaining({ batchWeek: '2026-W26' }),
+          }),
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('rejects published override without releaseNow confirm', async () => {
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        batchWeek: '2026-W26',
+        overrides: {
+          hostName: 'Brooklyn Board Game Cafe',
+          tags: ['board-games'],
+          ingestStatus: 'published',
+        },
+      },
+    );
+
+    expect(result.status).toBe(400);
+    expect(result.code).toBe('RELEASE_CONFIRM_REQUIRED');
+    expect(Event.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('publishes immediately when releaseNow + RELEASE_NOW confirm', async () => {
+    Event.findOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439012',
+        name: 'Sunset Listening Party',
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W26',
+            ingestStatus: 'published',
+            host: { name: 'Brooklyn Board Game Cafe' },
+            tags: ['live-music'],
+          },
+        },
+      }),
+    });
+
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        batchWeek: '2026-W26',
+        overrides: { hostName: 'Brooklyn Board Game Cafe', tags: ['board-games'] },
+        releaseNow: true,
+        confirm: 'RELEASE_NOW',
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.data.ingestStatus).toBe('published');
+    expect(Event.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          customFields: expect.objectContaining({
+            pivot: expect.objectContaining({ ingestStatus: 'published' }),
+          }),
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('requires RELEASE_NOW confirm when releaseNow is set', async () => {
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        batchWeek: '2026-W26',
+        overrides: { hostName: 'Brooklyn Board Game Cafe', tags: ['board-games'] },
+        releaseNow: true,
+        confirm: 'yes',
+      },
+    );
+
+    expect(result.code).toBe('CONFIRMATION_REQUIRED');
+    expect(Event.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('persists showtimes from overrides when publishing without provider preview', async () => {
@@ -540,6 +676,59 @@ describe('pivotIngestPublishService updateIngestEvent', () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it('accepts staged ingestStatus', async () => {
+    Event.findByIdAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439012',
+        name: 'Staged Event',
+        customFields: {
+          pivot: {
+            ingestStatus: 'staged',
+            host: { name: 'New Host' },
+            tags: ['live-music'],
+          },
+        },
+      }),
+    });
+
+    const result = await updateIngestEvent(
+      { globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        eventId: '507f1f77bcf86cd799439012',
+        overrides: { ingestStatus: 'staged' },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(Event.findByIdAndUpdate).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439012',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'customFields.pivot': expect.objectContaining({
+            ingestStatus: 'staged',
+          }),
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('rejects invalid ingestStatus', async () => {
+    const result = await updateIngestEvent(
+      { globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        eventId: '507f1f77bcf86cd799439012',
+        overrides: { ingestStatus: 'live' },
+      },
+    );
+
+    expect(result.status).toBe(400);
+    expect(result.code).toBe('INVALID_INGEST_STATUS');
+    expect(Event.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   it('updates tags on existing event', async () => {

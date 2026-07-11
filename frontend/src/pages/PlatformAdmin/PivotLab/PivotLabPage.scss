@@ -1,5 +1,4 @@
 .pivot-lab {
-  padding: 28px 32px 48px;
   max-width: 1200px;
   height: 100%;
   overflow-y: auto;
@@ -62,6 +61,20 @@
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 10px;
+  }
+
+  &__check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+    font-size: 13px;
+    color: var(--la-text-secondary);
+    cursor: pointer;
+
+    input {
+      margin: 0;
+    }
   }
 
   &__context-bar {
@@ -385,6 +398,11 @@
     &--ok {
       background: #ecfdf5;
       color: #047857;
+    }
+
+    &--info {
+      background: #eff6ff;
+      color: #1d4ed8;
     }
 
     &--warn {
@@ -716,6 +734,16 @@
   &__thumb-link {
     display: inline-flex;
     line-height: 0;
+  }
+
+  &__batch-pill {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    color: var(--la-text-secondary);
+    white-space: nowrap;
   }
 
   &__import-warnings {

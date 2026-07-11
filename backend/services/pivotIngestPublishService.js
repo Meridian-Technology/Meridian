@@ -6,6 +6,7 @@ const {
 const { isPivotTenant } = require('./pivotReferralCodeService');
 const { connectToDatabase } = require('../connectionsManager');
 const { normalizeBatchWeek } = require('./pivotWeeklySnapshotService');
+const { resolveEventBatchWeek } = require('../utilities/pivotIsoWeek');
 const { previewIngestUrl, sanitizeEventPosterImage } = require('./pivotIngestPreviewService');
 const {
   formatDuplicateWarning,
@@ -20,8 +21,16 @@ const {
   applyMovieListingDefaults,
 } = require('../utilities/pivotMovieMetadata');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const {
+  normalizeIngestStatus,
+  PIVOT_FEED_INGEST_STATUS,
+} = require('../utilities/pivotIngestStatus');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
+/** Default for new Lab / URL / JSON ingest — not live until Release (Task 3.2). */
+const DEFAULT_INGEST_STATUS = 'staged';
+/** Typed confirm for emergency ingest that writes `published` immediately. */
+const RELEASE_NOW_CONFIRM_TOKEN = 'RELEASE_NOW';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -214,7 +223,7 @@ function validateMergedDraft(merged) {
   };
 }
 
-function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags }) {
+function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, ingestStatus }) {
   const host = {
     name: merged.hostName,
     ...(merged.hostProfileUrl ? { profileUrl: merged.hostProfileUrl } : {}),
@@ -228,13 +237,51 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags }) 
     tags: tags || [],
     ...(merged.timeSlots?.length ? { timeSlots: merged.timeSlots } : {}),
     ...(merged.movie ? { movie: merged.movie } : {}),
-    ingestStatus: 'published',
+    ingestStatus: ingestStatus || DEFAULT_INGEST_STATUS,
     importedAt: new Date().toISOString(),
     importedBy,
   };
 }
 
-function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importedBy, tags }) {
+/**
+ * Resolve ingestStatus for a new catalog write.
+ * Default: staged (hidden from feed until Release).
+ * Emergency: releaseNow + confirm RELEASE_NOW → published.
+ * Overrides may set draft|staged only (not published without releaseNow).
+ */
+function resolveCreateIngestStatus(options = {}, overrides = {}) {
+  if (options.releaseNow) {
+    const confirm = String(options.confirm || '').trim();
+    if (confirm !== RELEASE_NOW_CONFIRM_TOKEN) {
+      return {
+        error: `Type ${RELEASE_NOW_CONFIRM_TOKEN} to confirm stage & release now. This puts the event in the live feed immediately.`,
+        status: 400,
+        code: 'CONFIRMATION_REQUIRED',
+      };
+    }
+    return { ingestStatus: PIVOT_FEED_INGEST_STATUS };
+  }
+
+  if (overrides.ingestStatus !== undefined) {
+    const statusResult = normalizeIngestStatus(overrides.ingestStatus);
+    if (statusResult.error) {
+      return statusResult;
+    }
+    if (statusResult.ingestStatus === PIVOT_FEED_INGEST_STATUS) {
+      return {
+        error:
+          'New ingest cannot set ingestStatus to published. Stage the event, then use Release — or pass releaseNow with confirm RELEASE_NOW.',
+        status: 400,
+        code: 'RELEASE_CONFIRM_REQUIRED',
+      };
+    }
+    return statusResult;
+  }
+
+  return { ingestStatus: DEFAULT_INGEST_STATUS };
+}
+
+function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importedBy, tags, ingestStatus }) {
   const listingUrl = trimString(sourceUrl) || null;
   return {
     name: merged.name,
@@ -253,7 +300,13 @@ function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importe
     isDeleted: false,
     ...(merged.image ? { image: merged.image } : {}),
     customFields: {
-      pivot: buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags }),
+      pivot: buildPivotMetadata(merged, {
+        batchWeek,
+        sourceUrl,
+        importedBy,
+        tags,
+        ingestStatus,
+      }),
     },
   };
 }
@@ -288,11 +341,6 @@ async function savePublishedCatalogEvent(tenantReq, eventPayload, sourceUrl, upd
 }
 
 async function publishIngestEvent(req, options = {}) {
-  const batchNormalized = normalizeBatchWeek(options.batchWeek, options.now);
-  if (batchNormalized.error) {
-    return batchNormalized;
-  }
-
   const tenantResult = await resolvePivotTenant(req, options.tenantKey);
   if (tenantResult.error) {
     return tenantResult;
@@ -305,7 +353,10 @@ async function publishIngestEvent(req, options = {}) {
   }
 
   let previewDraft = {};
-  if (urlNormalized.url && urlNormalized.provider) {
+  if (options.draft && typeof options.draft === 'object') {
+    // Crawler / batch path: reuse already-parsed explore drafts (skip per-URL refetch).
+    previewDraft = options.draft;
+  } else if (urlNormalized.url && urlNormalized.provider) {
     const previewResult = await previewIngestUrl(req, { url: urlNormalized.url });
     if (previewResult.error) {
       return previewResult;
@@ -342,7 +393,21 @@ async function publishIngestEvent(req, options = {}) {
     return validated;
   }
 
-  const tagResult = await validatePivotEventTags(req, mergedInput.tags, { required: true });
+  // Default: batchWeek from the event's actual start date. Override with forceBatchWeek.
+  const weekResolved = resolveEventBatchWeek({
+    forceBatchWeek: options.forceBatchWeek,
+    batchWeek: options.batchWeek,
+    startTime: validated.merged.startTime || validated.merged.start_time,
+    timeSlots: validated.merged.timeSlots,
+    now: options.now,
+  });
+  if (weekResolved.error) {
+    return weekResolved;
+  }
+  const resolvedBatchWeek = weekResolved.batchWeek;
+
+  const tagsRequired = options.tagsRequired !== false;
+  const tagResult = await validatePivotEventTags(req, mergedInput.tags, { required: tagsRequired });
   if (tagResult.error) {
     return tagResult;
   }
@@ -372,27 +437,71 @@ async function publishIngestEvent(req, options = {}) {
   const updateEventId =
     duplicate?.willUpdate && duplicate?.existingEventId ? duplicate.existingEventId : null;
 
+  const ingestStatusResult = resolveCreateIngestStatus(options, overrides);
+  if (ingestStatusResult.error) {
+    return ingestStatusResult;
+  }
+
   const catalogResult = await resolveCatalogOrgId(req, tenantResult.tenant);
   const importedBy = resolveImportedBy(req);
-  const eventPayload = buildEventPayload(validated.merged, {
-    catalogOrgId: catalogResult.orgId,
-    sourceUrl: listingUrl,
-    batchWeek: batchNormalized.batchWeek,
-    importedBy,
-    tags: tagResult.tags,
-  });
 
   const db = await connectToDatabase(tenantResult.tenant.tenantKey);
   const tenantReq = { db };
+  const { Event } = getModels(tenantReq, 'Event');
+
+  // Re-import must not demote a live published event back to staged unless ops
+  // explicitly asked for draft/staged or emergency releaseNow.
+  let ingestStatus = ingestStatusResult.ingestStatus;
+  if (
+    updateEventId &&
+    !options.releaseNow &&
+    overrides.ingestStatus === undefined
+  ) {
+    const existing = await Event.findById(updateEventId)
+      .select('customFields.pivot.ingestStatus')
+      .lean();
+    const existingStatus = existing?.customFields?.pivot?.ingestStatus;
+    if (existingStatus === PIVOT_FEED_INGEST_STATUS || existingStatus === 'draft' || existingStatus === 'staged') {
+      ingestStatus = existingStatus;
+    }
+  } else if (
+    !updateEventId &&
+    listingUrl &&
+    !options.releaseNow &&
+    overrides.ingestStatus === undefined
+  ) {
+    const existingByUrl = await Event.findOne({
+      'customFields.pivot.sourceUrl': listingUrl,
+    })
+      .select('customFields.pivot.ingestStatus')
+      .lean();
+    const existingStatus = existingByUrl?.customFields?.pivot?.ingestStatus;
+    if (existingStatus === PIVOT_FEED_INGEST_STATUS || existingStatus === 'draft' || existingStatus === 'staged') {
+      ingestStatus = existingStatus;
+    }
+  }
+
+  const eventPayload = buildEventPayload(validated.merged, {
+    catalogOrgId: catalogResult.orgId,
+    sourceUrl: listingUrl,
+    batchWeek: resolvedBatchWeek,
+    importedBy,
+    tags: tagResult.tags,
+    ingestStatus,
+  });
+
   const event = await savePublishedCatalogEvent(tenantReq, eventPayload, listingUrl, updateEventId);
   const updatedExisting = Boolean(updateEventId);
 
-  logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event published', {
+  logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event staged', {
     tenantKey: tenantResult.tenant.tenantKey,
-    batchWeek: batchNormalized.batchWeek,
+    batchWeek: resolvedBatchWeek,
+    batchWeekSource: weekResolved.source,
     eventId: String(event._id),
     name: event.name,
     source: mergedInput.source,
+    ingestStatus,
+    releaseNow: Boolean(options.releaseNow),
     timeSlotCount: validated.merged.timeSlots?.length ?? 0,
     duplicateMatch: duplicate?.matchType || null,
     importedBy,
@@ -403,14 +512,26 @@ async function publishIngestEvent(req, options = {}) {
       event: serializeLabEvent(event),
       created: !updatedExisting,
       updated: updatedExisting,
+      ingestStatus,
+      batchWeek: resolvedBatchWeek,
+      batchWeekSource: weekResolved.source,
     },
   };
 }
 
 async function publishBatchIngestEvents(req, options = {}) {
-  const batchNormalized = normalizeBatchWeek(options.batchWeek, options.now);
-  if (batchNormalized.error) {
-    return batchNormalized;
+  const forceBatchWeek = Boolean(options.forceBatchWeek);
+  if (forceBatchWeek) {
+    const batchNormalized = normalizeBatchWeek(options.batchWeek, options.now);
+    if (batchNormalized.error) {
+      return batchNormalized;
+    }
+  } else if (options.batchWeek != null && String(options.batchWeek).trim()) {
+    // Optional fallback week when an event has no start date.
+    const batchNormalized = normalizeBatchWeek(options.batchWeek, options.now);
+    if (batchNormalized.error) {
+      return batchNormalized;
+    }
   }
 
   const tenantResult = await resolvePivotTenant(req, options.tenantKey);
@@ -430,16 +551,26 @@ async function publishBatchIngestEvents(req, options = {}) {
   const published = [];
   const failures = [];
   let updatedCount = 0;
+  const batchWeekCounts = {};
 
   for (const entry of events) {
     const url = trimString(entry?.url) || undefined;
+    const entryForce =
+      entry?.forceBatchWeek !== undefined
+        ? Boolean(entry.forceBatchWeek)
+        : forceBatchWeek;
+    const entryWeek =
+      entry?.batchWeek !== undefined ? entry.batchWeek : options.batchWeek;
 
     const result = await publishIngestEvent(req, {
       tenantKey: options.tenantKey,
-      batchWeek: batchNormalized.batchWeek,
+      batchWeek: entryWeek,
+      forceBatchWeek: entryForce,
       url,
       overrides: entry.overrides || {},
       now: options.now,
+      releaseNow: options.releaseNow,
+      confirm: options.confirm,
     });
 
     if (result.error) {
@@ -451,23 +582,29 @@ async function publishBatchIngestEvents(req, options = {}) {
       updatedCount += 1;
     }
     published.push(result.data.event);
+    const week = result.data.batchWeek || result.data.event?.batchWeek;
+    if (week) {
+      batchWeekCounts[week] = (batchWeekCounts[week] || 0) + 1;
+    }
   }
 
   if (!published.length) {
     return {
-      error: failures[0]?.message || 'Unable to publish any events.',
+      error: failures[0]?.message || 'Unable to stage any events.',
       status: 400,
       code: failures[0]?.code || 'BATCH_PUBLISH_FAILED',
       data: { published, failures },
     };
   }
 
-  logPivot('info', 'batch catalog publish complete', {
+  logPivot('info', 'batch catalog stage complete', {
     tenantKey: tenantResult.tenant.tenantKey,
-    batchWeek: batchNormalized.batchWeek,
+    forceBatchWeek,
+    batchWeekCounts,
     publishedCount: published.length,
     updatedCount,
     failedCount: failures.length,
+    releaseNow: Boolean(options.releaseNow),
   });
 
   return {
@@ -475,8 +612,12 @@ async function publishBatchIngestEvents(req, options = {}) {
       published,
       failures,
       publishedCount: published.length,
+      stagedCount: published.length,
       updatedCount,
       failedCount: failures.length,
+      batchWeekCounts,
+      forceBatchWeek,
+      ingestStatus: options.releaseNow ? PIVOT_FEED_INGEST_STATUS : DEFAULT_INGEST_STATUS,
     },
   };
 }
@@ -575,15 +716,11 @@ async function updateIngestEvent(req, options = {}) {
 
   const pivotPatch = { ...pivot, host };
   if (overrides.ingestStatus !== undefined) {
-    const ingestStatus = trimString(overrides.ingestStatus);
-    if (!['draft', 'published'].includes(ingestStatus)) {
-      return {
-        error: 'ingestStatus must be draft or published.',
-        status: 400,
-        code: 'INVALID_INGEST_STATUS',
-      };
+    const statusResult = normalizeIngestStatus(overrides.ingestStatus);
+    if (statusResult.error) {
+      return statusResult;
     }
-    pivotPatch.ingestStatus = ingestStatus;
+    pivotPatch.ingestStatus = statusResult.ingestStatus;
   }
 
   if (overrides.batchWeek !== undefined) {
@@ -695,4 +832,8 @@ module.exports = {
   validateMergedDraft,
   buildEventPayload,
   normalizePublishUrl,
+  resolvePivotTenant,
+  resolveCreateIngestStatus,
+  DEFAULT_INGEST_STATUS,
+  RELEASE_NOW_CONFIRM_TOKEN,
 };
