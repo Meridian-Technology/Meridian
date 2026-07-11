@@ -1,0 +1,89 @@
+@font-face {
+  font-family: 'Les Flos Sans';
+  src: url('../../../assets/pivot/fonts/LesFlosSans.otf') format('opentype');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+.pivot-scrapbook-title {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: flex-start;
+  gap: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  /* Reset page h1 defaults */
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1;
+  color: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  transition: margin 0.28s ease;
+
+  &--sm {
+    margin: 12px 0 0;
+  }
+}
+
+.pivot-scrapbook-title__burst {
+  position: absolute;
+  top: -12px;
+  left: -10px;
+  width: 44px;
+  height: auto;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  transform: rotate(12deg);
+  opacity: 0.92;
+}
+
+.pivot-scrapbook-title__line {
+  position: relative;
+  align-self: flex-start;
+}
+
+.pivot-scrapbook-title__strip {
+  align-self: flex-start;
+  filter: drop-shadow(2px 3px 0 rgba(26, 23, 20, 0.22));
+}
+
+.pivot-scrapbook-title__strip-body {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  overflow: visible;
+}
+
+.pivot-scrapbook-title__shape {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.pivot-scrapbook-title__text {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  font-family: 'Les Flos Sans', 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
+  font-weight: 700;
+  text-transform: lowercase;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transform-origin: center center;
+}
+
+.pivot-scrapbook-title--sm .pivot-scrapbook-title__text {
+  font-family: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0;
+}

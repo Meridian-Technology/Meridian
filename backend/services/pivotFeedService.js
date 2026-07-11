@@ -13,6 +13,7 @@ const {
   resolvePivotCoverImageUrl,
 } = require('../utilities/pivotMovieMetadata');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 
 const FRIEND_CAP = 5;
 const PIVOT_EVENT_STATUSES = ['approved', 'not-applicable'];
@@ -507,9 +508,10 @@ async function getPivotFeed(req, options = {}) {
   const { Event } = getModels(req, 'Event');
   const excludeEventIds = normalizeExcludeEventIds(options.excludeEventIds);
 
+  // Choice A: draft/staged never appear; only published after explicit Release.
   const query = {
     'customFields.pivot.batchWeek': batchWeek,
-    'customFields.pivot.ingestStatus': 'published',
+    'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
@@ -624,7 +626,7 @@ async function getPivotEventFriends(req, eventId) {
   const { Event } = getModels(req, 'Event');
   const event = await Event.findOne({
     _id: eventKey,
-    'customFields.pivot.ingestStatus': 'published',
+    'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },

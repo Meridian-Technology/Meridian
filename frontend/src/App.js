@@ -28,6 +28,7 @@ import QR from './pages/QR/QR';
 import EventQRRedirect from './pages/QR/EventQRRedirect';
 import Admin  from './pages/Admin/Admin';
 import PlatformAdmin from './pages/PlatformAdmin/PlatformAdmin';
+import PivotTenantDashboard from './pages/PlatformAdmin/PivotTenantDashboard/PivotTenantDashboard';
 import PlatformProtectedRoute from './components/PlatformProtectedRoute/PlatformProtectedRoute';
 import OIEDash from './pages/OIEDash/OIEDash';
 import NewBadge from './pages/NewBadge/NewBadge';
@@ -230,6 +231,7 @@ function App() {
                                             <Route path="/tenant-status" element={<AnimatedPageWrapper><TenantStatus /></AnimatedPageWrapper>}/>
                                             <Route element={<PlatformProtectedRoute />}>
                                                 <Route path="/platform-admin" element={<AnimatedPageWrapper><PlatformAdmin /></AnimatedPageWrapper>} />
+                                                <Route path="/platform-admin/pivot/:tenantKey" element={<AnimatedPageWrapper><PivotTenantDashboard /></AnimatedPageWrapper>} />
                                                 <Route path="/admin/pivot" element={<Navigate to="/platform-admin?page=1" replace />} />
                                             </Route>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>

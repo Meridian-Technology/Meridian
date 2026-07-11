@@ -69,11 +69,85 @@ function shiftIsoWeek(batchWeek, delta) {
   return toIsoWeekUtc(monday);
 }
 
+/**
+ * Derive batchWeek (YYYY-Www) from an event's actual start datetime.
+ * Uses the event's local calendar date via Date getters (same as toIsoWeek).
+ * @param {Date|string|number|null|undefined} value
+ * @returns {string|null}
+ */
+function batchWeekFromEventDate(value) {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return toIsoWeek(date);
+}
+
+/**
+ * Resolve which batch week an ingest should land in.
+ *
+ * Default: ISO week of the event start (or first time-slot start).
+ * Override: pass forceBatchWeek + batchWeek to pin every write to a week.
+ * Fallback: batchWeek (when no event date) → current ISO week.
+ *
+ * @param {{
+ *   forceBatchWeek?: boolean,
+ *   batchWeek?: string|null,
+ *   startTime?: Date|string|null,
+ *   timeSlots?: Array<{ start_time?: Date|string }>,
+ *   now?: Date,
+ * }} options
+ * @returns {{ batchWeek: string, source: 'forced'|'event-date'|'fallback'|'current' } | { error, status, code }}
+ */
+function resolveEventBatchWeek(options = {}) {
+  const now = options.now || new Date();
+  const forced = Boolean(options.forceBatchWeek);
+  const explicit = typeof options.batchWeek === 'string' ? options.batchWeek.trim() : '';
+
+  if (forced) {
+    if (!explicit || !isValidIsoWeek(explicit)) {
+      return {
+        error: 'batchWeek is required when forceBatchWeek is set (YYYY-Www).',
+        status: 400,
+        code: 'BATCH_WEEK_REQUIRED',
+      };
+    }
+    return { batchWeek: explicit, source: 'forced' };
+  }
+
+  const fromStart = batchWeekFromEventDate(options.startTime);
+  if (fromStart) {
+    return { batchWeek: fromStart, source: 'event-date' };
+  }
+
+  const slots = Array.isArray(options.timeSlots) ? options.timeSlots : [];
+  for (const slot of slots) {
+    const fromSlot = batchWeekFromEventDate(slot?.start_time);
+    if (fromSlot) {
+      return { batchWeek: fromSlot, source: 'event-date' };
+    }
+  }
+
+  if (explicit) {
+    if (!isValidIsoWeek(explicit)) {
+      return {
+        error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
+        status: 400,
+        code: 'INVALID_BATCH_WEEK',
+      };
+    }
+    return { batchWeek: explicit, source: 'fallback' };
+  }
+
+  return { batchWeek: toIsoWeek(now), source: 'current' };
+}
+
 module.exports = {
   toIsoWeek,
   isValidIsoWeek,
   isoWeekToMondayUtc,
   isoWeekToUtcRange,
   shiftIsoWeek,
+  batchWeekFromEventDate,
+  resolveEventBatchWeek,
   ISO_WEEK_PATTERN,
 };

@@ -43,6 +43,14 @@ export function shiftIsoWeek(batchWeek, delta) {
   return `${thursday.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
+/** Derive YYYY-Www from an event start datetime; null if unparseable. */
+export function batchWeekFromEventDate(value) {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return toIsoWeek(date);
+}
+
 export function formatEventWhen(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -96,3 +104,100 @@ export function formatSnapshotAge(iso) {
     minute: '2-digit',
   });
 }
+
+/**
+ * [start, end) UTC range for an ISO week (Monday 00:00 → next Monday 00:00).
+ * @returns {{ start: Date, end: Date } | null}
+ */
+export function isoWeekToUtcRange(batchWeek) {
+  const start = isoWeekToMondayUtc(batchWeek);
+  if (!start) return null;
+  const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
+/**
+ * Human-readable Mon–Sun range for a batch week, e.g. "Jun 29 – Jul 5, 2026".
+ */
+export function formatIsoWeekRange(batchWeek, options = {}) {
+  const range = isoWeekToUtcRange(batchWeek);
+  if (!range) return '—';
+  const { start, end } = range;
+  const lastDay = new Date(end.getTime() - 1);
+  const sameYear = start.getUTCFullYear() === lastDay.getUTCFullYear();
+  const startLabel = start.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    timeZone: options.timeZone || 'UTC',
+  });
+  const endLabel = lastDay.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: options.timeZone || 'UTC',
+  });
+  return `${startLabel} – ${endLabel}`;
+}
+
+/**
+ * Derive live / curate / post-mortem anchor weeks from "now" and the current ISO week's drop instant.
+ * Mirrors backend resolveRunBatchWeek next-drop logic.
+ *
+ * @param {Date} [now]
+ * @param {string|Date|null} currentWeekDropAt - drop instant for the current ISO week
+ */
+export function resolveCurationStageWeeks(now = new Date(), currentWeekDropAt = null) {
+  const currentWeek = toIsoWeek(now);
+  const dropMs = currentWeekDropAt ? new Date(currentWeekDropAt).getTime() : NaN;
+  const dropPending = Number.isFinite(dropMs) && dropMs > now.getTime();
+
+  const liveWeek = dropPending ? shiftIsoWeek(currentWeek, -1) : currentWeek;
+  const curateWeek = dropPending ? currentWeek : shiftIsoWeek(currentWeek, 1);
+  const postMortemWeek = shiftIsoWeek(liveWeek, -1);
+
+  return {
+    currentWeek,
+    liveWeek,
+    curateWeek,
+    postMortemWeek,
+    dropPending,
+  };
+}
+
+/**
+ * Which curation mode a batch week should use, based on its date vs the live week.
+ * - past of live → post-mortem
+ * - equal to live → live monitoring
+ * - after live → curate (upcoming)
+ *
+ * @param {string} batchWeek
+ * @param {{ liveWeek: string }} stageWeeks
+ * @returns {'post-mortem'|'live'|'curate'}
+ */
+export function resolveCurationStageForWeek(batchWeek, stageWeeks) {
+  if (!isValidIsoWeek(batchWeek) || !stageWeeks?.liveWeek) {
+    return 'curate';
+  }
+  if (batchWeek === stageWeeks.liveWeek) return 'live';
+  if (batchWeek > stageWeeks.liveWeek) return 'curate';
+  return 'post-mortem';
+}
+
+export const CURATION_STAGE_META = {
+  'post-mortem': {
+    id: 'post-mortem',
+    label: 'Post-mortem',
+    description: 'This batch already dropped — review how it performed.',
+  },
+  live: {
+    id: 'live',
+    label: 'Live batch',
+    description: 'This batch is in the feed — monitor interest rates and reach.',
+  },
+  curate: {
+    id: 'curate',
+    label: 'Curate',
+    description: 'This batch is upcoming — crawl, tag, stage, and release.',
+  },
+};

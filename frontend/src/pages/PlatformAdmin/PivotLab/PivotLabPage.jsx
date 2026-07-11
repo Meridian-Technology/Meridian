@@ -20,6 +20,8 @@ import PivotManualImportModal, {
 import PivotCatalogEventEditModal, {
   catalogEditDraftToOverrides,
 } from './PivotCatalogEventEditModal';
+import IngestStatusPill from './IngestStatusPill';
+import PivotImportThumb from './PivotImportThumb';
 import {
   autoMatchTmdbMovieForEvent,
   autoMatchFilmsForImportEntries,
@@ -32,6 +34,10 @@ import './PivotDeckCardPreview.scss';
 const EMPTY_LIST = [];
 const NO_FETCH_CACHE = { enabled: false };
 const PURGE_CONFIRM_TOKEN = 'PURGE';
+// Batch tag suggestion runs one Claude call per event server-side; sending the whole
+// selection in a single request can exceed the production gateway timeout (bare 503).
+// Split it into small chunks so each request stays short and results save incrementally.
+const AI_TAG_CHUNK_SIZE = 4;
 
 const PIVOT_JSON_IMPORT_EXAMPLE = `{
   "label": "Brooklyn week crawl",
@@ -464,16 +470,18 @@ function buildDeckPreviewProps({
 
 function isBlockingImportDuplicate(duplicate) {
   if (!duplicate) return false;
-  return duplicate.matchType !== 'sourceUrl';
+  // sourceUrl and fingerprint matches update an existing catalog event; only collisions
+  // between two rows of the same import batch have nothing to update against.
+  return duplicate.matchType === 'batchSourceUrl' || duplicate.matchType === 'batchFingerprint';
 }
 
 function duplicateBadgeLabel(duplicate) {
   if (!duplicate) return null;
-  if (duplicate.matchType === 'sourceUrl') return 'Will update';
   if (duplicate.matchType === 'batchSourceUrl' || duplicate.matchType === 'batchFingerprint') {
     return 'Batch duplicate';
   }
-  return 'Duplicate';
+  // sourceUrl (exact) or fingerprint (fuzzy) → publishing updates the existing row.
+  return 'Will update';
 }
 
 function createBatchImportRow(entry, index) {
@@ -511,6 +519,7 @@ function createBatchImportRow(entry, index) {
     tags,
     timeSlots,
     movie,
+    aiTagged: false,
     warnings: entry?.warnings || [],
     duplicate,
     isBlockingDuplicate,
@@ -557,16 +566,6 @@ function formatEventFilmStatus(draft) {
   return '—';
 }
 
-function IngestStatusPill({ status }) {
-  if (status === 'published') {
-    return <span className="pivot-lab__pill pivot-lab__pill--ok">Published</span>;
-  }
-  if (status === 'draft') {
-    return <span className="pivot-lab__pill pivot-lab__pill--warn">Draft</span>;
-  }
-  return <span className="pivot-lab__pill">—</span>;
-}
-
 const LAB_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'import', label: 'Import' },
@@ -578,6 +577,7 @@ function PivotLabPage() {
   const { addNotification } = useNotification();
   const [activeTab, setActiveTab] = useState('overview');
   const [batchWeek, setBatchWeek] = useState(() => toIsoWeek());
+  const [forceBatchWeek, setForceBatchWeek] = useState(false);
   const [selectedTenantKey, setSelectedTenantKey] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
   const [notesDirty, setNotesDirty] = useState(false);
@@ -599,6 +599,7 @@ function PivotLabPage() {
   const [batchApplyTags, setBatchApplyTags] = useState([]);
   const [tmdbMatchLoadingKey, setTmdbMatchLoadingKey] = useState(null);
   const [tagSuggestLoadingKey, setTagSuggestLoadingKey] = useState(null);
+  const [batchTagProgress, setBatchTagProgress] = useState(null);
   const [tagSeeding, setTagSeeding] = useState(false);
   const [importName, setImportName] = useState('');
   const [importLocation, setImportLocation] = useState('');
@@ -1000,7 +1001,7 @@ function PivotLabPage() {
       if (!selectedTenantKey) {
         addNotification({
           title: 'Choose a city',
-          message: 'Select a pivot city before publishing.',
+          message: 'Select a pivot city before staging.',
           type: 'warning',
         });
         return false;
@@ -1013,6 +1014,7 @@ function PivotLabPage() {
         data: {
           tenantKey: selectedTenantKey,
           batchWeek,
+          forceBatchWeek,
           overrides: {
             hostName: entry.draft.hostName,
             name: entry.draft.name,
@@ -1035,23 +1037,31 @@ function PivotLabPage() {
 
       if (error || !data?.success) {
         addNotification({
-          title: 'Publish failed',
-          message: error || data?.message || 'Could not publish event.',
+          title: 'Stage failed',
+          message: error || data?.message || 'Could not stage event.',
           type: 'error',
         });
         return false;
       }
 
+      const assignedWeek = data.data?.batchWeek || batchWeek;
       refetchEvents();
       refetchOverview();
       addNotification({
-        title: 'Published',
-        message: `${data.data?.event?.name || entry.draft.name} added to ${selectedTenantKey}.`,
+        title: 'Staged',
+        message: `${data.data?.event?.name || entry.draft.name} added to ${selectedTenantKey} for ${assignedWeek} (not live until Release).`,
         type: 'success',
       });
       return true;
     },
-    [addNotification, batchWeek, refetchEvents, refetchOverview, selectedTenantKey],
+    [
+      addNotification,
+      batchWeek,
+      forceBatchWeek,
+      refetchEvents,
+      refetchOverview,
+      selectedTenantKey,
+    ],
   );
 
   const suggestTagsForManualImport = useCallback(
@@ -1102,6 +1112,34 @@ function PivotLabPage() {
     );
   }, []);
 
+  // Fuzzy/exact duplicate detection for JSON entries, matched against the selected city's
+  // catalog so publishing updates existing rows instead of creating duplicates.
+  const annotateJsonEntriesWithDuplicates = useCallback(
+    async (entries) => {
+      if (!selectedTenantKey || !entries.length) {
+        return { entries, duplicateWarnings: [] };
+      }
+
+      const { data, error } = await authenticatedRequest(
+        '/admin/pivot/ingest/annotate-duplicates',
+        {
+          method: 'POST',
+          data: { tenantKey: selectedTenantKey, drafts: entries },
+        },
+      );
+
+      if (error || !data?.success) {
+        return { entries, duplicateWarnings: [] };
+      }
+
+      return {
+        entries: data.data?.drafts || entries,
+        duplicateWarnings: data.data?.duplicateWarnings || [],
+      };
+    },
+    [selectedTenantKey],
+  );
+
   const handlePreviewJsonImport = useCallback(async () => {
     const result = parsePivotJsonImport(importJsonDraft);
     if (result.error) {
@@ -1140,10 +1178,15 @@ function PivotLabPage() {
       }
     }
 
+    const { entries: annotatedEntries, duplicateWarnings } =
+      await annotateJsonEntriesWithDuplicates(entries);
+    entries = annotatedEntries;
+
     setJsonImportPreview({
       label: result.label,
       entries,
       tmdbMatch: { matched, failed, pending: pendingFilmCount },
+      duplicateWarnings,
     });
 
     if (pendingFilmCount) {
@@ -1157,7 +1200,12 @@ function PivotLabPage() {
         type: matched ? (failed ? 'warning' : 'success') : 'warning',
       });
     }
-  }, [addNotification, importJsonDraft, syncJsonImportDraftFromEntries]);
+  }, [
+    addNotification,
+    annotateJsonEntriesWithDuplicates,
+    importJsonDraft,
+    syncJsonImportDraftFromEntries,
+  ]);
 
   const handleLoadJsonImport = useCallback(async () => {
     const result =
@@ -1201,11 +1249,17 @@ function PivotLabPage() {
       }
     }
 
+    const { entries: annotatedEntries, duplicateWarnings } =
+      await annotateJsonEntriesWithDuplicates(entries);
+    entries = annotatedEntries;
+    const updateCount = entries.filter((entry) => entry.duplicate?.willUpdate).length;
+
     setImportError('');
     setJsonImportPreview({
       label: result.label,
       entries,
       tmdbMatch: { matched, failed, pending: pendingFilmCount },
+      duplicateWarnings,
     });
     setImportMode('batch');
     setImportUrl('');
@@ -1225,6 +1279,11 @@ function PivotLabPage() {
         `${failed} film event(s) could not be matched to TMDB — use Retry on those rows.`,
       );
     }
+    if (updateCount) {
+      loadWarnings.push(
+        `${updateCount} event(s) match existing catalog rows and will update them on publish.`,
+      );
+    }
     setImportWarnings(loadWarnings);
     setImportDuplicate(null);
     setDeckPreviewState(null);
@@ -1235,10 +1294,18 @@ function PivotLabPage() {
       message:
         matched > 0
           ? `${entries.length} event(s) loaded · ${matched} film(s) matched from TMDB.`
-          : `${entries.length} event(s) ready for review.`,
+          : `${entries.length} event(s) ready for review${
+              updateCount ? ` · ${updateCount} will update existing rows` : ''
+            }.`,
       type: 'success',
     });
-  }, [addNotification, importJsonDraft, jsonImportPreview, syncJsonImportDraftFromEntries]);
+  }, [
+    addNotification,
+    annotateJsonEntriesWithDuplicates,
+    importJsonDraft,
+    jsonImportPreview,
+    syncJsonImportDraftFromEntries,
+  ]);
 
   const handleMatchTmdbForJsonEntry = useCallback(
     async (index) => {
@@ -1460,7 +1527,7 @@ function PivotLabPage() {
         return;
       }
 
-      updateBatchImportRow(rowKey, { tags: result.tags });
+      updateBatchImportRow(rowKey, { tags: result.tags, aiTagged: true });
     },
     [addNotification, buildTagSuggestPayload, importBatchRows, requestSuggestedTags, updateBatchImportRow],
   );
@@ -1468,58 +1535,105 @@ function PivotLabPage() {
   const suggestTagsForSelectedBatchRows = useCallback(async () => {
     if (!selectedBatchRows.length) return;
 
-    setTagSuggestLoadingKey('batch-all');
-    const { data, error } = await authenticatedRequest('/admin/pivot/ingest/suggest-tags', {
-      method: 'POST',
-      data: {
-        events: selectedBatchRows.map((row) =>
-          buildTagSuggestPayload({
-            name: row.name,
-            description: row.description,
-            location: row.location,
-            organizerName: row.organizerName,
-            sourceTags: row.sourceTags,
-          }),
-        ),
-      },
-    });
-    setTagSuggestLoadingKey(null);
+    // Resume-friendly: target selected rows that haven't been through Claude yet. If every
+    // selected row is already AI-tagged, treat the click as a deliberate re-run of all of them.
+    const pending = selectedBatchRows.filter((row) => !row.aiTagged);
+    const targetRows = pending.length ? pending : selectedBatchRows;
+    const total = targetRows.length;
 
-    if (error || !data?.success) {
+    setTagSuggestLoadingKey('batch-all');
+    setBatchTagProgress({ done: 0, total });
+
+    let suggestedTotal = 0;
+    let failedTotal = 0;
+    let stoppedError = null;
+
+    // Chunk the selection into several short requests so one slow/large call can't trip the
+    // production gateway timeout, and each chunk's tags are saved as soon as it returns.
+    for (let start = 0; start < targetRows.length; start += AI_TAG_CHUNK_SIZE) {
+      const chunk = targetRows.slice(start, start + AI_TAG_CHUNK_SIZE);
+
+      const { data, error } = await authenticatedRequest('/admin/pivot/ingest/suggest-tags', {
+        method: 'POST',
+        data: {
+          events: chunk.map((row) =>
+            buildTagSuggestPayload({
+              name: row.name,
+              description: row.description,
+              location: row.location,
+              organizerName: row.organizerName,
+              sourceTags: row.sourceTags,
+            }),
+          ),
+        },
+      });
+
+      if (error || !data?.success) {
+        // A transport-level failure (gateway 503/timeout) carries no structured body. Stop
+        // here so already-processed chunks stay saved and the user can click again to resume.
+        stoppedError = {
+          message: error || data?.message || 'Could not reach the tag suggestion service.',
+          type: data?.code === 'LLM_NOT_CONFIGURED' ? 'warning' : 'error',
+        };
+        break;
+      }
+
+      const suggestions = data.data?.suggestions || [];
+      failedTotal += data.data?.failedCount ?? 0;
+
+      const tagsByKey = new Map();
+      for (let i = 0; i < chunk.length; i += 1) {
+        const tags = suggestions[i]?.tags || [];
+        if (tags.length) suggestedTotal += 1;
+        tagsByKey.set(chunk[i].key, tags);
+      }
+
+      setImportBatchRows((rows) =>
+        rows.map((row) =>
+          tagsByKey.has(row.key)
+            ? {
+                ...row,
+                tags: tagsByKey.get(row.key).length ? tagsByKey.get(row.key) : row.tags || [],
+                aiTagged: true,
+              }
+            : row,
+        ),
+      );
+
+      setBatchTagProgress({ done: Math.min(start + chunk.length, total), total });
+    }
+
+    setTagSuggestLoadingKey(null);
+    setBatchTagProgress(null);
+
+    if (stoppedError) {
       addNotification({
-        title: 'Batch tag suggestion failed',
-        message: error || data?.message || 'Could not suggest tags.',
-        type: data?.code === 'LLM_NOT_CONFIGURED' ? 'warning' : 'error',
+        title: suggestedTotal
+          ? 'Tagging interrupted — partial results saved'
+          : 'Batch tag suggestion failed',
+        message: suggestedTotal
+          ? `${suggestedTotal} row(s) tagged before the error — click again to resume the rest. (${stoppedError.message})`
+          : stoppedError.message,
+        type: suggestedTotal ? 'warning' : stoppedError.type,
       });
       return;
     }
 
-    const suggestions = data.data?.suggestions || [];
-    const failedCount = data.data?.failedCount ?? 0;
-    const suggestedCount = data.data?.suggestedCount ?? 0;
-    setImportBatchRows((rows) =>
-      rows.map((row) => {
-        const selectedIndex = selectedBatchRows.findIndex((entry) => entry.key === row.key);
-        if (selectedIndex === -1) return row;
-        return { ...row, tags: suggestions[selectedIndex]?.tags || row.tags || [] };
-      }),
-    );
-
-    if (suggestedCount === 0) {
+    if (suggestedTotal === 0) {
       addNotification({
         title: 'No tags suggested',
-        message: data.data?.failures?.[0]?.message || 'Claude did not return valid catalog tags.',
+        message: 'Claude did not return valid catalog tags for the selected rows.',
         type: 'warning',
       });
       return;
     }
 
     addNotification({
-      title: failedCount ? 'Batch partially tagged' : 'Batch tags suggested',
-      message: failedCount
-        ? `${suggestedCount} row(s) tagged, ${failedCount} failed.`
-        : `${suggestedCount} row(s) tagged via Claude.`,
-      type: failedCount ? 'warning' : 'success',
+      title: failedTotal ? 'Batch partially tagged' : 'Batch tags suggested',
+      message: failedTotal
+        ? `${suggestedTotal} row(s) tagged, ${failedTotal} failed.`
+        : `${suggestedTotal} row(s) tagged via Claude.`,
+      type: failedTotal ? 'warning' : 'success',
     });
   }, [addNotification, buildTagSuggestPayload, selectedBatchRows]);
 
@@ -1642,6 +1756,7 @@ function PivotLabPage() {
       data: {
         tenantKey: selectedTenantKey,
         batchWeek,
+        forceBatchWeek,
         events: publishableBatchRows.map((row) => ({
           url: row.sourceUrl.trim() || undefined,
           overrides: buildBatchPublishOverrides(row),
@@ -1651,25 +1766,171 @@ function PivotLabPage() {
     setImportPublishLoading(false);
 
     if (error || !data?.success) {
-      setImportError(error || data?.message || 'Could not publish selected events.');
+      setImportError(error || data?.message || 'Could not stage selected events.');
       return;
     }
 
     const publishedCount = data.data?.publishedCount ?? data.data?.published?.length ?? 0;
     const failedCount = data.data?.failedCount ?? data.data?.failures?.length ?? 0;
+    const updatedCount = data.data?.updatedCount ?? 0;
+    const createdCount = Math.max(publishedCount - updatedCount, 0);
+    const updatedSuffix = updatedCount ? ` (${updatedCount} updated existing)` : '';
+    const weekCounts = data.data?.batchWeekCounts || {};
+    const weekKeys = Object.keys(weekCounts).sort();
+    const weekSuffix =
+      weekKeys.length > 1
+        ? ` Weeks: ${weekKeys.map((w) => `${w} (${weekCounts[w]})`).join(', ')}.`
+        : weekKeys.length === 1
+          ? ` Week ${weekKeys[0]}.`
+          : '';
 
     refetchEvents();
     refetchOverview();
     addNotification({
-      title: failedCount ? 'Batch partially published' : 'Batch published',
+      title: failedCount ? 'Batch partially staged' : 'Batch staged',
       message: failedCount
-        ? `${publishedCount} event(s) published, ${failedCount} failed.`
-        : `${publishedCount} event(s) added to ${selectedTenantKey}.`,
+        ? `${createdCount} staged, ${updatedCount} updated, ${failedCount} failed.${weekSuffix} Release separately to go live.`
+        : `${publishedCount} event(s) staged for ${selectedTenantKey}${updatedSuffix}.${weekSuffix} Not live until Release.`,
       type: failedCount ? 'warning' : 'success',
     });
   }, [
     addNotification,
     batchWeek,
+    forceBatchWeek,
+    publishableBatchRows,
+    refetchEvents,
+    refetchOverview,
+    selectedTenantKey,
+  ]);
+
+  const handleStageAndReleaseNow = useCallback(async () => {
+    if (importMode === 'batch') {
+      if (!publishableBatchRows.length || !selectedTenantKey) {
+        setImportError('Select events with title, organizer, location, start time, and at least one tag.');
+        return;
+      }
+      const typed = window.prompt(
+        'Emergency: stage & release now puts events in the live feed immediately.\n\nType RELEASE_NOW to confirm:',
+      );
+      if (typed !== 'RELEASE_NOW') {
+        if (typed != null) {
+          setImportError('Release cancelled — type RELEASE_NOW exactly to confirm.');
+        }
+        return;
+      }
+
+      setImportPublishLoading(true);
+      setImportError('');
+      const { data, error } = await authenticatedRequest('/admin/pivot/ingest/batch', {
+        method: 'POST',
+        data: {
+          tenantKey: selectedTenantKey,
+          batchWeek,
+          forceBatchWeek,
+          releaseNow: true,
+          confirm: 'RELEASE_NOW',
+          events: publishableBatchRows.map((row) => ({
+            url: row.sourceUrl.trim() || undefined,
+            overrides: buildBatchPublishOverrides(row),
+          })),
+        },
+      });
+      setImportPublishLoading(false);
+
+      if (error || !data?.success) {
+        setImportError(error || data?.message || 'Could not release selected events.');
+        return;
+      }
+
+      const publishedCount = data.data?.publishedCount ?? data.data?.published?.length ?? 0;
+      const weekCounts = data.data?.batchWeekCounts || {};
+      const weekKeys = Object.keys(weekCounts).sort();
+      const weekLabel =
+        weekKeys.length > 1
+          ? weekKeys.map((w) => `${w} (${weekCounts[w]})`).join(', ')
+          : weekKeys[0] || batchWeek;
+      refetchEvents();
+      refetchOverview();
+      addNotification({
+        title: 'Released to deck',
+        message: `${publishedCount} event(s) live in ${selectedTenantKey} for ${weekLabel}.`,
+        type: 'success',
+      });
+      return;
+    }
+
+    if (!importPreview || !selectedTenantKey) {
+      setImportError('Preview an event and choose a city before releasing.');
+      return;
+    }
+    if (!importOrganizerName.trim()) {
+      setImportError('Organizer name is required.');
+      return;
+    }
+    if (!importSelectedTags.length) {
+      setImportError('Select at least one catalog tag.');
+      return;
+    }
+
+    const typed = window.prompt(
+      'Emergency: stage & release now puts this event in the live feed immediately.\n\nType RELEASE_NOW to confirm:',
+    );
+    if (typed !== 'RELEASE_NOW') {
+      if (typed != null) {
+        setImportError('Release cancelled — type RELEASE_NOW exactly to confirm.');
+      }
+      return;
+    }
+
+    setImportPublishLoading(true);
+    setImportError('');
+    const { data, error } = await authenticatedRequest('/admin/pivot/ingest', {
+      method: 'POST',
+      data: {
+        tenantKey: selectedTenantKey,
+        url: importUrl.trim(),
+        batchWeek,
+        forceBatchWeek,
+        releaseNow: true,
+        confirm: 'RELEASE_NOW',
+        overrides: {
+          hostName: importOrganizerName.trim(),
+          name: importName.trim() || undefined,
+          location: importLocation.trim() || undefined,
+          start_time: importStartTime.trim() || undefined,
+          description: importDescription.trim() || undefined,
+          tags: importSelectedTags,
+        },
+      },
+    });
+    setImportPublishLoading(false);
+
+    if (error || !data?.success) {
+      setImportError(error || data?.message || 'Could not release event.');
+      return;
+    }
+
+    const assignedWeek = data.data?.batchWeek || batchWeek;
+    refetchEvents();
+    refetchOverview();
+    addNotification({
+      title: 'Released to deck',
+      message: `${data.data?.event?.name || 'Event'} is live in ${selectedTenantKey} for ${assignedWeek}.`,
+      type: 'success',
+    });
+  }, [
+    addNotification,
+    batchWeek,
+    forceBatchWeek,
+    importDescription,
+    importLocation,
+    importMode,
+    importName,
+    importOrganizerName,
+    importPreview,
+    importSelectedTags,
+    importStartTime,
+    importUrl,
     publishableBatchRows,
     refetchEvents,
     refetchOverview,
@@ -1682,7 +1943,7 @@ function PivotLabPage() {
     }
 
     if (!importPreview || !selectedTenantKey) {
-      setImportError('Preview an event and choose a city before publishing.');
+      setImportError('Preview an event and choose a city before staging.');
       return;
     }
     if (!importOrganizerName.trim()) {
@@ -1703,6 +1964,7 @@ function PivotLabPage() {
         tenantKey: selectedTenantKey,
         url: importUrl.trim(),
         batchWeek,
+        forceBatchWeek,
         overrides: {
           hostName: importOrganizerName.trim(),
           name: importName.trim() || undefined,
@@ -1716,20 +1978,25 @@ function PivotLabPage() {
     setImportPublishLoading(false);
 
     if (error || !data?.success) {
-      setImportError(error || data?.message || 'Could not publish event.');
+      setImportError(error || data?.message || 'Could not stage event.');
       return;
     }
 
     refetchEvents();
     refetchOverview();
+    const wasUpdated = data.data?.updated;
+    const assignedWeek = data.data?.batchWeek || batchWeek;
     addNotification({
-      title: 'Published',
-      message: `${data.data?.event?.name || 'Event'} added to ${selectedTenantKey}.`,
+      title: wasUpdated ? 'Updated' : 'Staged',
+      message: `${data.data?.event?.name || 'Event'} ${
+        wasUpdated ? 'updated in' : 'staged for'
+      } ${selectedTenantKey} (${assignedWeek}). Not live until Release.`,
       type: 'success',
     });
   }, [
     addNotification,
     batchWeek,
+    forceBatchWeek,
     handlePublishBatchImport,
     importDescription,
     importLocation,
@@ -1859,6 +2126,17 @@ function PivotLabPage() {
               </button>
             </div>
           </label>
+          <label
+            className="pivot-lab__check"
+            title="When off, ingest assigns each event to the ISO week of its start date. When on, every event is pinned to the selected batch week."
+          >
+            <input
+              type="checkbox"
+              checked={forceBatchWeek}
+              onChange={(e) => setForceBatchWeek(e.target.checked)}
+            />
+            <span>Force into batch week</span>
+          </label>
           <button
             type="button"
             className="linear-btn linear-btn--ghost"
@@ -1952,11 +2230,13 @@ function PivotLabPage() {
             </h2>
             <p className="pivot-lab__notes-hint">
               Paste a URL, quick-add manual events (<kbd className="pivot-lab__key-hint">M</kbd>), load
-              agent JSON, then publish to the selected city for {batchWeek}.
+              agent JSON, then stage into the ISO week of each event’s start date (or force the
+              selected batch week). Release separately to go
+              live.
             </p>
           </div>
           <span className="pivot-lab__import-target">
-            Publishing to <strong>{selectedTenant?.cityDisplayName || selectedTenantKey || '—'}</strong>
+            Staging for <strong>{selectedTenant?.cityDisplayName || selectedTenantKey || '—'}</strong>
           </span>
         </div>
         <div className="pivot-lab__import-toolbar">
@@ -2050,7 +2330,7 @@ function PivotLabPage() {
                 <p className="pivot-lab__json-preview-summary">
                   Found {jsonImportPreview.entries.length} event(s) in{' '}
                   <strong>{jsonImportPreview.label}</strong>. {jsonImportReadyCount} ready to
-                  publish as-is; others need tags or missing fields.
+                  stage as-is; others need tags or missing fields.
                   {jsonImportPreview.tmdbMatch?.matched
                     ? ` ${jsonImportPreview.tmdbMatch.matched} film(s) matched from TMDB.`
                     : ''}
@@ -2062,6 +2342,7 @@ function PivotLabPage() {
                   <table className="pivot-lab__table pivot-lab__json-preview-table">
                     <thead>
                       <tr>
+                        <th scope="col">Image</th>
                         <th scope="col">Event</th>
                         <th scope="col">Organizer</th>
                         <th scope="col">When</th>
@@ -2070,6 +2351,7 @@ function PivotLabPage() {
                         <th scope="col">Tags</th>
                         <th scope="col">Film</th>
                         <th scope="col">Status</th>
+                        <th scope="col">Catalog</th>
                         <th scope="col">TMDB</th>
                       </tr>
                     </thead>
@@ -2083,6 +2365,9 @@ function PivotLabPage() {
                             key={`${draft.name || 'event'}-${index}`}
                             className={ready ? '' : 'pivot-lab__json-preview-row--warn'}
                           >
+                            <td className="pivot-lab__thumb-cell">
+                              <PivotImportThumb src={draft.image} alt={draft.name} />
+                            </td>
                             <td>{draft.name || '—'}</td>
                             <td>{draft.hostName || '—'}</td>
                             <td>{formatEventWhen(draft.start_time || draft.timeSlots?.[0]?.start_time)}</td>
@@ -2095,6 +2380,26 @@ function PivotLabPage() {
                                 <span className="pivot-lab__pill pivot-lab__pill--ok">Ready</span>
                               ) : (
                                 <span className="pivot-lab__pill pivot-lab__pill--warn">Needs review</span>
+                              )}
+                            </td>
+                            <td>
+                              {entry.duplicate ? (
+                                <span
+                                  className={`pivot-lab__duplicate-pill${
+                                    isBlockingImportDuplicate(entry.duplicate)
+                                      ? ' pivot-lab__duplicate-pill--blocking'
+                                      : ' pivot-lab__duplicate-pill--update'
+                                  }`}
+                                  title={
+                                    entry.duplicate.existingName
+                                      ? `Matches "${entry.duplicate.existingName}"`
+                                      : undefined
+                                  }
+                                >
+                                  {duplicateBadgeLabel(entry.duplicate)}
+                                </span>
+                              ) : (
+                                '—'
                               )}
                             </td>
                             <td>
@@ -2120,6 +2425,13 @@ function PivotLabPage() {
                     </tbody>
                   </table>
                 </div>
+                {jsonImportPreview.duplicateWarnings?.length ? (
+                  <ul className="pivot-lab__import-warnings pivot-lab__json-preview-warnings">
+                    {jsonImportPreview.duplicateWarnings.map((warning) => (
+                      <li key={`dup-${warning}`}>{warning}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 {jsonImportPreview.entries.some((entry) => entry.warnings?.length) ? (
                   <ul className="pivot-lab__import-warnings pivot-lab__json-preview-warnings">
                     {jsonImportPreview.entries.flatMap((entry, index) =>
@@ -2147,7 +2459,7 @@ function PivotLabPage() {
               <p className="pivot-lab__import-provider">Detected provider: {importProvider}</p>
             ) : null}
             <p className="pivot-lab__batch-summary">
-              Found {importBatchRows.length} event(s) from {importBatchLabel}. Select rows to publish
+              Found {importBatchRows.length} event(s) from {importBatchLabel}. Select rows to stage
               and fill any missing organizer names.
             </p>
             {importWarnings.length ? (
@@ -2182,7 +2494,9 @@ function PivotLabPage() {
                   disabled={!selectedBatchRows.length || tagSuggestLoadingKey === 'batch-all'}
                 >
                   {tagSuggestLoadingKey === 'batch-all'
-                    ? 'Suggesting…'
+                    ? batchTagProgress
+                      ? `Suggesting ${batchTagProgress.done}/${batchTagProgress.total}…`
+                      : 'Suggesting…'
                     : 'Suggest tags for selected (Claude)'}
                 </button>
               </div>
@@ -2210,6 +2524,7 @@ function PivotLabPage() {
                         }}
                       />
                     </th>
+                    <th scope="col">Image</th>
                     <th scope="col">Event</th>
                     <th scope="col">Status</th>
                     <th scope="col">Organizer</th>
@@ -2245,6 +2560,9 @@ function PivotLabPage() {
                           }
                           aria-label={`Select ${row.name || 'event'}`}
                         />
+                      </td>
+                      <td className="pivot-lab__thumb-cell">
+                        <PivotImportThumb src={row.imageUrl} alt={row.name} />
                       </td>
                       <td>{row.name || '—'}</td>
                       <td>
@@ -2288,10 +2606,25 @@ function PivotLabPage() {
                           type="button"
                           className="linear-btn linear-btn--ghost pivot-lab__tag-ai-btn"
                           onClick={() => suggestTagsForBatchRow(row.key)}
-                          disabled={tagSuggestLoadingKey === row.key}
+                          disabled={
+                            tagSuggestLoadingKey === row.key ||
+                            tagSuggestLoadingKey === 'batch-all'
+                          }
                         >
-                          {tagSuggestLoadingKey === row.key ? '…' : 'AI'}
+                          {tagSuggestLoadingKey === row.key
+                            ? '…'
+                            : row.aiTagged
+                              ? 'Redo'
+                              : 'AI'}
                         </button>
+                        {row.aiTagged ? (
+                          <span
+                            className="pivot-lab__ai-done"
+                            title="Tags suggested by Claude"
+                          >
+                            ✓ AI
+                          </span>
+                        ) : null}
                       </td>
                       <td>{formatEventFilmStatus(row)}</td>
                       <td>
@@ -2345,8 +2678,18 @@ function PivotLabPage() {
                 }
               >
                 {importPublishLoading
-                  ? 'Publishing…'
-                  : `Publish ${publishableBatchRows.length} selected to ${selectedTenantKey || 'city'}`}
+                  ? 'Staging…'
+                  : `Stage ${publishableBatchRows.length} selected for ${selectedTenantKey || 'city'}`}
+              </button>
+              <button
+                type="button"
+                className="linear-btn linear-btn--ghost"
+                onClick={handleStageAndReleaseNow}
+                disabled={
+                  importPublishLoading || !selectedTenantKey || !publishableBatchRows.length
+                }
+              >
+                Stage &amp; release now…
               </button>
             </div>
           </div>
@@ -2373,7 +2716,7 @@ function PivotLabPage() {
                       className="linear-input"
                       value={importOrganizerName}
                       onChange={(e) => setImportOrganizerName(e.target.value)}
-                      placeholder="Required before publish"
+                      placeholder="Required before stage"
                     />
                   </label>
                   <label className="linear-field">
@@ -2427,12 +2770,17 @@ function PivotLabPage() {
                   />
                 </label>
                 {importPreview.image ? (
-                  <p className="pivot-lab__import-image">
-                    Cover image:{' '}
-                    <a href={importPreview.image} target="_blank" rel="noreferrer">
-                      preview
+                  <div className="pivot-lab__import-image">
+                    <span className="pivot-lab__import-image-label">Cover image</span>
+                    <a
+                      href={importPreview.image}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="pivot-lab__thumb-link"
+                    >
+                      <PivotImportThumb src={importPreview.image} alt={importName} />
                     </a>
-                  </p>
+                  </div>
                 ) : null}
                 {importWarnings.length ? (
                   <ul className="pivot-lab__import-warnings">
@@ -2454,8 +2802,21 @@ function PivotLabPage() {
                     }
                   >
                     {importPublishLoading
-                      ? 'Publishing…'
-                      : `Publish to ${selectedTenantKey || 'city'}`}
+                      ? 'Staging…'
+                      : `Stage for ${selectedTenantKey || 'city'}`}
+                  </button>
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--ghost"
+                    onClick={handleStageAndReleaseNow}
+                    disabled={
+                      importPublishLoading ||
+                      !selectedTenantKey ||
+                      importBlockingDuplicate ||
+                      !importSelectedTags.length
+                    }
+                  >
+                    Stage &amp; release now…
                   </button>
                 </div>
               </div>
@@ -2479,7 +2840,8 @@ function PivotLabPage() {
               Catalog events · {selectedTenant?.cityDisplayName || selectedTenantKey || '—'}
             </h2>
             <p className="pivot-lab__section-hint">
-              Published and draft events for {batchWeek}, with swipe performance per event.
+              Draft, staged, and published events for {batchWeek}. Staged events stay off the
+              mobile feed until Release.
             </p>
           </div>
         </div>
@@ -2491,7 +2853,11 @@ function PivotLabPage() {
             <table className="pivot-lab__table">
               <thead>
                 <tr>
+                  <th scope="col">
+                    <span className="visually-hidden">Image</span>
+                  </th>
                   <th scope="col">Event</th>
+                  <th scope="col">Batch</th>
                   <th scope="col">Organizer</th>
                   <th scope="col">When</th>
                   <th scope="col">Location</th>
@@ -2510,6 +2876,21 @@ function PivotLabPage() {
               <tbody>
                 {events.map((event) => (
                   <tr key={event._id}>
+                    <td className="pivot-lab__thumb-cell">
+                      {event.externalLink || event.sourceUrl ? (
+                        <a
+                          className="pivot-lab__thumb-link"
+                          href={event.externalLink || event.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Open source listing"
+                        >
+                          <PivotImportThumb src={event.image} alt={event.name} />
+                        </a>
+                      ) : (
+                        <PivotImportThumb src={event.image} alt={event.name} />
+                      )}
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -2518,6 +2899,9 @@ function PivotLabPage() {
                       >
                         {event.name}
                       </button>
+                    </td>
+                    <td>
+                      <span className="pivot-lab__batch-pill">{event.batchWeek || '—'}</span>
                     </td>
                     <td>{event.organizerName || '—'}</td>
                     <td>{formatEventWhen(event.start_time)}</td>

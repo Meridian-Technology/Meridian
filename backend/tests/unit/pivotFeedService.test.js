@@ -460,6 +460,94 @@ describe('getPivotFeed', () => {
     expect(result.data.events).toEqual([]);
   });
 
+  it('queries only published ingestStatus (Choice A: staged/draft excluded at DB filter)', async () => {
+    const eventFind = mockEventFind([]);
+    const Event = { find: jest.fn(() => eventFind) };
+    getModels.mockReturnValue(withFeedModels({
+      Event,
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(Event.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'customFields.pivot.batchWeek': '2026-W22',
+        'customFields.pivot.ingestStatus': 'published',
+      }),
+    );
+    expect(Event.find.mock.calls[0][0]['customFields.pivot.ingestStatus']).not.toBe('staged');
+    expect(Event.find.mock.calls[0][0]['customFields.pivot.ingestStatus']).not.toBe('draft');
+  });
+
+  it('includes published events for the requested batchWeek after release', async () => {
+    const events = [
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Released Party',
+        start_time: new Date('2026-05-28T22:00:00.000Z'),
+        end_time: new Date('2026-05-29T02:00:00.000Z'),
+        registrationCount: 2,
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Roof Records' },
+          },
+        },
+      },
+    ];
+
+    const eventFind = mockEventFind(events);
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => eventFind) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events).toHaveLength(1);
+    expect(result.data.events[0].name).toBe('Released Party');
+  });
+
+  it('scopes feed to the requested batchWeek (wrong week excluded by query)', async () => {
+    const eventFind = mockEventFind([]);
+    const Event = { find: jest.fn(() => eventFind) };
+    getModels.mockReturnValue(withFeedModels({
+      Event,
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(Event.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'customFields.pivot.batchWeek': '2026-W22',
+      }),
+    );
+  });
+
   it('rejects invalid batchWeek', async () => {
     const result = await getPivotFeed(req, { batchWeek: '2026-W999', now });
     expect(result.error).toMatch(/batchWeek/i);

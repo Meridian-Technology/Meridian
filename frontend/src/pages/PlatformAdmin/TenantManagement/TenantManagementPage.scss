@@ -639,6 +639,13 @@ select.linear-input {
     }
   }
 
+  &__pivot-ops-copy {
+    margin: -4px 0 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--la-text-secondary);
+  }
+
   &__tags {
     display: flex;
     flex-wrap: wrap;

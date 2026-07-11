@@ -594,7 +594,11 @@ function Dashboard({
                 <div className="dash-left">
                     <div className="top">
                         <div className="logo">
-                            <img src={logo} alt="Logo" />
+                            {typeof logo === 'string' || logo == null ? (
+                                <img src={logo} alt="Logo" />
+                            ) : (
+                                logo
+                            )}
                         </div>
                     </div>
                 </div>
@@ -632,7 +636,11 @@ function Dashboard({
                         <div className="mobile-hamburger" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
                             <Icon icon="material-symbols:menu-rounded" />
                         </div>
-                        <img src={logo} alt="Logo" />
+                        {typeof logo === 'string' || logo == null ? (
+                            <img src={logo} alt="Logo" />
+                        ) : (
+                            logo
+                        )}
                         {user ? 
                             <div className="mobile-justifier">
                                 {/* just to balance the space-between */}
@@ -672,7 +680,11 @@ function Dashboard({
                 )}
                 <div className="top">
                     <div className="logo">
-                        <img src={logo} alt="Logo" />
+                        {typeof logo === 'string' || logo == null ? (
+                            <img src={logo} alt="Logo" />
+                        ) : (
+                            logo
+                        )}
                     </div>
                     {middleItem && middleItem}
                     

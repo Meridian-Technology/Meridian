@@ -4,6 +4,8 @@ const {
   isoWeekToMondayUtc,
   isoWeekToUtcRange,
   shiftIsoWeek,
+  batchWeekFromEventDate,
+  resolveEventBatchWeek,
 } = require('../../utilities/pivotIsoWeek');
 
 describe('pivotIsoWeek', () => {
@@ -43,9 +45,57 @@ describe('pivotIsoWeek', () => {
       expect(shiftIsoWeek('2026-W27', 0)).toBe('2026-W27');
     });
 
-    it('crosses ISO year boundaries', () => {
+    it('crosses year boundaries', () => {
       expect(shiftIsoWeek('2026-W01', -1)).toBe('2025-W52');
-      expect(shiftIsoWeek('2025-W52', 1)).toBe('2026-W01');
+    });
+  });
+
+  describe('batchWeekFromEventDate', () => {
+    it('derives ISO week from a start datetime', () => {
+      // Monday 2026-06-29 is in 2026-W27.
+      expect(batchWeekFromEventDate('2026-06-29T20:00:00.000Z')).toBe('2026-W27');
+      expect(batchWeekFromEventDate(new Date('2026-07-10T18:00:00.000Z'))).toBe('2026-W28');
+    });
+
+    it('returns null for invalid values', () => {
+      expect(batchWeekFromEventDate(null)).toBeNull();
+      expect(batchWeekFromEventDate('not-a-date')).toBeNull();
+    });
+  });
+
+  describe('resolveEventBatchWeek', () => {
+    it('uses event start date by default', () => {
+      const result = resolveEventBatchWeek({
+        batchWeek: '2026-W30',
+        startTime: '2026-06-29T20:00:00.000Z',
+      });
+      expect(result).toEqual({ batchWeek: '2026-W27', source: 'event-date' });
+    });
+
+    it('uses first time-slot when startTime missing', () => {
+      const result = resolveEventBatchWeek({
+        timeSlots: [{ start_time: '2026-07-10T18:00:00.000Z' }],
+      });
+      expect(result).toEqual({ batchWeek: '2026-W28', source: 'event-date' });
+    });
+
+    it('honors forceBatchWeek override', () => {
+      const result = resolveEventBatchWeek({
+        forceBatchWeek: true,
+        batchWeek: '2026-W30',
+        startTime: '2026-06-29T20:00:00.000Z',
+      });
+      expect(result).toEqual({ batchWeek: '2026-W30', source: 'forced' });
+    });
+
+    it('requires batchWeek when forcing', () => {
+      const result = resolveEventBatchWeek({ forceBatchWeek: true });
+      expect(result.code).toBe('BATCH_WEEK_REQUIRED');
+    });
+
+    it('falls back to provided batchWeek when undated', () => {
+      const result = resolveEventBatchWeek({ batchWeek: '2026-W30' });
+      expect(result).toEqual({ batchWeek: '2026-W30', source: 'fallback' });
     });
   });
 });

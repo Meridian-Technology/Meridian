@@ -52,7 +52,7 @@ export function catalogEventToEditDraft(event) {
     startTimeLocal: isoToDatetimeLocal(event.start_time),
     endTimeLocal: isoToDatetimeLocal(event.end_time),
     timeSlots: hasShowtimes ? timeSlots : [],
-    ingestStatus: event.ingestStatus || 'published',
+    ingestStatus: event.ingestStatus || 'staged',
     tags: Array.isArray(event.tags) ? [...event.tags] : [],
     movie: event.movie || null,
   };
@@ -455,6 +455,7 @@ function PivotCatalogEventEditModal({
                     onChange={(e) => patchDraft({ ingestStatus: e.target.value })}
                   >
                     <option value="published">Published</option>
+                    <option value="staged">Staged</option>
                     <option value="draft">Draft</option>
                   </select>
                 </label>

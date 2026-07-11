@@ -123,7 +123,7 @@ function PivotInviteQRModal({ code, isOpen, onClose, onNotify }) {
                 title={swatch.label}
                 aria-label={swatch.label}
               >
-                {selected ? <Icon icon="mdi:check" /> : null}
+            {selected ? <Icon icon="mdi:check" /> : null}
               </button>
             );
           })}

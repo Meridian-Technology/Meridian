@@ -1,0 +1,21 @@
+.pivot-tenant-dropdown {
+  &.org-dropdown {
+    cursor: pointer;
+  }
+
+  .pivot-tenant-dropdown__lead-icon {
+    flex-shrink: 0;
+    color: var(--light-text, #64748b);
+  }
+
+  .pivot-tenant-dropdown__empty {
+    cursor: default;
+    opacity: 0.7;
+
+    p {
+      margin: 0;
+      font-size: 13px;
+      text-transform: none;
+    }
+  }
+}

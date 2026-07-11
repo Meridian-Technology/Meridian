@@ -58,14 +58,22 @@ function serializeLabEvent(event, intentStatsByEventId) {
   };
 }
 
-/** Per-event intent counts so Lab can see which catalog events earned the swipes. */
-async function loadIntentStatsByEventId(PivotEventIntent, eventIds) {
+/**
+ * Per-event intent counts so Lab / tenant ops can see which catalog events earned the swipes.
+ * Optional `batchWeek` scopes intents to that ISO week (preferred for performance rankings).
+ */
+async function loadIntentStatsByEventId(PivotEventIntent, eventIds, options = {}) {
   if (!eventIds.length) {
     return new Map();
   }
 
+  const match = { eventId: { $in: eventIds } };
+  if (options.batchWeek) {
+    match.batchWeek = options.batchWeek;
+  }
+
   const rows = await PivotEventIntent.aggregate([
-    { $match: { eventId: { $in: eventIds } } },
+    { $match: match },
     {
       $group: {
         _id: '$eventId',

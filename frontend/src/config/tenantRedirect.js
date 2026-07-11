@@ -134,6 +134,8 @@ const WWW_ALLOWED_PATHS = [
   '/login',
 ];
 
+// /platform-admin/pivot/:tenantKey is covered by the '/platform-admin' prefix check in isPathAllowedOnWww.
+
 export function isPathAllowedOnWww(pathname) {
   const path = (pathname || '/').split('?')[0] || '/';
   return WWW_ALLOWED_PATHS.some(allowed => {
