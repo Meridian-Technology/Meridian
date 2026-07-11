@@ -1,0 +1,241 @@
+.pivot-tenant-journeys {
+  max-width: none;
+  /* Horizontal/vertical padding owned by PivotTenantPage shell. */
+  padding: 0;
+
+  .pivot-tenant-page__body {
+    max-width: 1100px;
+  }
+
+  &__muted {
+    font-size: 12px;
+    color: var(--la-text-tertiary, inherit);
+  }
+
+  &__link {
+    font-size: 13px;
+    color: var(--la-accent, #5e6ad2);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &__funnel-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+
+    @media (min-width: 900px) {
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+  }
+
+  &__analytics-funnel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__analytics-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+    gap: 8px 12px;
+    align-items: center;
+  }
+
+  &__analytics-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__analytics-key {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--la-text, inherit);
+  }
+
+  &__analytics-conv {
+    font-size: 11px;
+    color: var(--la-text-tertiary, inherit);
+    white-space: nowrap;
+  }
+
+  &__inspector {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+
+    @media (min-width: 800px) {
+      grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+  }
+
+  &__search {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__list-label {
+    margin: 4px 0 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--la-text-tertiary, inherit);
+  }
+
+  &__user-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  &__user-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    text-align: left;
+    border: 1px solid transparent;
+    border-radius: var(--la-radius, 8px);
+    background: transparent;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+
+    &:hover {
+      background: var(--la-surface, rgba(0, 0, 0, 0.03));
+    }
+
+    &--selected {
+      background: var(--la-surface, rgba(0, 0, 0, 0.04));
+      border-color: var(--la-border-subtle, rgba(0, 0, 0, 0.1));
+    }
+  }
+
+  &__user-name {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 0;
+  }
+
+  &__user-handle {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--la-text-tertiary, inherit);
+  }
+
+  &__history {
+    min-width: 0;
+  }
+
+  &__history-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  &__history-name {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--la-text, inherit);
+
+    .pivot-tenant-journeys__user-handle {
+      margin-left: 6px;
+    }
+  }
+
+  &__history-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &__timeline {
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__timeline-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px 14px;
+    padding: 8px 10px;
+    border: 1px solid var(--la-border-subtle, rgba(0, 0, 0, 0.08));
+    border-radius: var(--la-radius, 8px);
+    background: transparent;
+  }
+
+  &__timeline-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  &__timeline-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+
+  &__event-name {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--la-text, inherit);
+  }
+
+  &__event-meta {
+    margin: 2px 0 0;
+    font-size: 11px;
+    color: var(--la-text-tertiary, inherit);
+  }
+
+  &__analytics-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    li {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+    }
+  }
+}
