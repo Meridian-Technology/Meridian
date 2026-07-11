@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify-icon/react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { setTenantConfigCache } from '../../../config/tenantRedirect';
@@ -191,11 +192,14 @@ function TenantDetail({
   savingMetadata,
   savingStepId,
 }) {
+  const navigate = useNavigate();
   const savedStatus = tenant.status || 'coming_soon';
+  const isPivot = isPivotTenant(tenant);
 
   const checklistComplete = tenant.provisioningComplete === true;
   const showActivateCta = checklistComplete && savedStatus !== 'active';
   const infraHeadingId = `tenant-infra-${tenant.tenantKey}`;
+  const pivotDashPath = `/platform-admin/pivot/${tenant.tenantKey}`;
 
   const openStatusDialog = (nextStatus, mode = 'status') => {
     if (nextStatus === savedStatus && mode !== 'message') return;
@@ -282,13 +286,40 @@ function TenantDetail({
       </header>
 
       <section className="tenant-detail__section tenant-detail__tags" aria-label="Tenant labels">
-        {isPivotTenant(tenant) ? <span className="linear-tag linear-tag--pivot">Pivot pilot</span> : null}
+        {isPivot ? <span className="linear-tag linear-tag--pivot">Pivot pilot</span> : null}
         {!checklistComplete ? (
           <span className="tenant-detail__soft-tag">Setup in progress</span>
         ) : savedStatus !== 'active' ? (
           <span className="tenant-detail__soft-tag tenant-detail__soft-tag--ready">Ready to activate</span>
         ) : null}
       </section>
+
+      {isPivot ? (
+        <section className="tenant-detail__section tenant-detail__pivot-ops" aria-label="Just Go ops">
+          <h3 className="linear-section__title">Just Go ops</h3>
+          <p className="tenant-detail__pivot-ops-copy">
+            City overview, curation, and user journeys for this pilot.
+          </p>
+          <div className="linear-detail__actions">
+            <button
+              type="button"
+              className="linear-btn linear-btn--primary"
+              onClick={() => navigate(pivotDashPath)}
+            >
+              <Icon icon="mdi:flask-outline" />
+              Open Pivot dashboard
+            </button>
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary"
+              onClick={() => navigate(`${pivotDashPath}?page=1`)}
+            >
+              <Icon icon="mdi:clipboard-edit-outline" />
+              Curation
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="tenant-detail__section" aria-labelledby={infraHeadingId}>
         <h3 id={infraHeadingId} className="linear-section__title">Infrastructure</h3>
@@ -324,7 +355,7 @@ function TenantDetail({
             <Icon icon="mdi:database-check-outline" />
             Health check
           </button>
-          {isPivotTenant(tenant) ? (
+          {isPivot ? (
             <button
               type="button"
               className="linear-btn linear-btn--secondary"
@@ -340,14 +371,14 @@ function TenantDetail({
 
       <ManualStepsPanel tenant={tenant} onConfirmStep={onConfirmStep} savingStepId={savingStepId} />
 
-      {isPivotTenant(tenant) ? (
+      {isPivot ? (
         <>
           <PivotTagCatalogPanel />
           <PivotReferralCodesPanel tenantKey={tenant.tenantKey} />
         </>
       ) : null}
 
-      {isPivotTenant(tenant) && tenant.dropSchedule ? (
+      {isPivot && tenant.dropSchedule ? (
         <section className="tenant-detail__section" aria-label="Weekly drop schedule">
           <h3 className="linear-section__title">Weekly drop</h3>
           <div className="linear-detail__stats">

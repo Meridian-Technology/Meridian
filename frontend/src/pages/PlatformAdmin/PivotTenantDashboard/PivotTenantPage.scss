@@ -1,0 +1,217 @@
+.pivot-tenant-page {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+
+  /* Body above the corner burst. Do NOT set position on the sticky header. */
+  > .pivot-tenant-page__body {
+    position: relative;
+    z-index: 1;
+  }
+
+  &.is-collapsed {
+    .pivot-dash-burst {
+      transform: scale(0.5);
+    }
+
+    .pivot-tenant-page__header {
+      background: var(--la-bg, #fff);
+      box-shadow: 0 1px 0 var(--la-border-subtle, rgba(0, 0, 0, 0.08));
+    }
+
+    .pivot-tenant-page__header-inner {
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+
+    .pivot-tenant-page__titles {
+      flex-direction: row;
+      align-items: center;
+      transform: scale(0.82);
+    }
+
+    .pivot-scrapbook-title {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .pivot-scrapbook-title--sm {
+      margin: 0;
+    }
+
+    .pivot-tenant-page__subtitle {
+      max-height: 0;
+      margin: 0;
+      opacity: 0;
+      overflow: hidden;
+    }
+  }
+
+  &__header {
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 40;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: visible;
+    /* Transparent at rest so the burst isn't boxed; solid only after scroll. */
+    background: transparent;
+    transition:
+      background-color 0.28s ease,
+      box-shadow 0.28s ease;
+  }
+
+  /* Padding on content, not the sticky shell. */
+  &__header-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px 20px;
+    padding: 28px 32px 14px;
+    box-sizing: border-box;
+    transition: padding 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  &__heading {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  /* Stacked at rest (original); row after scroll. */
+  &__titles {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0;
+    transform: scale(1);
+    transform-origin: left top;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  &__subtitle {
+    margin: 8px 0 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--la-text-secondary, inherit);
+    opacity: 0.9;
+    max-height: 4.5em;
+    transition:
+      opacity 0.22s ease,
+      max-height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      margin 0.28s ease;
+  }
+
+  &__body {
+    position: relative;
+    z-index: 1;
+    padding: 4px 32px 48px;
+    box-sizing: border-box;
+  }
+
+  .pivot-lab__controls {
+    position: relative;
+    z-index: 2;
+    overflow: visible;
+    flex: 0 1 auto;
+  }
+
+  .pivot-lab__week-stepper {
+    overflow: visible;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-tenant-page__header,
+  .pivot-tenant-page__header-inner,
+  .pivot-tenant-page__titles,
+  .pivot-tenant-page__subtitle,
+  .pivot-dash-burst {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .pivot-tenant-page__header-inner {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .pivot-tenant-page__body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+/* Host for KeybindTooltip — position + hover/focus reveal. */
+.pivot-tenant-kbd-btn {
+  position: relative;
+  overflow: visible;
+
+  &:hover .keybind-tooltip,
+  &:focus-visible .keybind-tooltip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  &.is-key-active {
+    border-color: var(--la-accent, #5e6ad2);
+    background: rgba(94, 106, 210, 0.12);
+    transform: translateY(1px) scale(0.98);
+  }
+}
+
+/*
+ * Corner burst — page-level, same placement as the original shell.
+ * Not clipped by the header; header only gains a solid backdrop after scroll.
+ */
+.pivot-dash-burst {
+  position: absolute;
+  top: -110px;
+  left: -120px;
+  width: 380px;
+  aspect-ratio: 64 / 48;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  transform: scale(1);
+  transform-origin: 120px 110px;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pivot-dash-burst__ink,
+.pivot-dash-burst__orange {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.pivot-dash-burst__ink {
+  width: 114%;
+  height: 114%;
+  left: -10%;
+  top: -5%;
+  transform: rotate(-6deg);
+}
+
+.pivot-dash-burst__orange {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: rotate(-12deg);
+}
