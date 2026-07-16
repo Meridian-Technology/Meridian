@@ -1,7 +1,13 @@
 jest.mock('../../services/getModelService', () => jest.fn());
+jest.mock('../../services/pivotInteractionService', () => ({
+  recordPivotInteraction: jest.fn(),
+  pickInteractionContext: jest.requireActual('../../services/pivotInteractionService')
+    .pickInteractionContext,
+}));
 
 const getModels = require('../../services/getModelService');
 const { getFeedPilotWindowFilter } = require('../../services/pivotFeedService');
+const { recordPivotInteraction } = require('../../services/pivotInteractionService');
 const {
   recordFeedAction,
   recordExternalOpen,
@@ -43,6 +49,7 @@ function publishedEvent(overrides = {}) {
 describe('recordFeedAction', () => {
   beforeEach(() => {
     getModels.mockReset();
+    recordPivotInteraction.mockClear();
   });
 
   it('rejects an invalid eventId', async () => {
@@ -95,6 +102,88 @@ describe('recordFeedAction', () => {
       { userId, eventId },
       { $set: { status: 'passed', batchWeek: '2026-W22', timeSlotId: null } },
       expect.objectContaining({ upsert: true }),
+    );
+    expect(recordPivotInteraction).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        userId,
+        eventId,
+        batchWeek: '2026-W22',
+        type: 'pass',
+        surface: 'deck',
+        retrieval: 'weekly_batch',
+      }),
+    );
+  });
+
+  it('defaults surface to deck and accepts surface explore without failing intent', async () => {
+    const findOneAndUpdate = jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue({
+        eventId,
+        status: 'interested',
+        batchWeek: '2026-W22',
+        timeSlotId: null,
+      }),
+    }));
+    getModels.mockImplementation((_req, ...names) => {
+      if (names.includes('Event')) {
+        return { Event: { findOne: jest.fn(() => mockEventFindOne(publishedEvent())) } };
+      }
+      return { PivotEventIntent: { findOneAndUpdate } };
+    });
+
+    const result = await recordFeedAction(req, {
+      eventId,
+      action: 'interested',
+      now,
+      surface: 'explore',
+      retrieval: 'filter',
+      rankInFeed: 4,
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.data.status).toBe('interested');
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      { userId, eventId },
+      { $set: { status: 'interested', batchWeek: '2026-W22', timeSlotId: null } },
+      expect.objectContaining({ upsert: true }),
+    );
+    expect(recordPivotInteraction).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        type: 'interested',
+        surface: 'explore',
+        retrieval: 'filter',
+        rankInFeed: 4,
+      }),
+    );
+  });
+
+  it('still upserts intent when surface is omitted (defaults on interaction)', async () => {
+    const findOneAndUpdate = jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue({
+        eventId,
+        status: 'interested',
+        batchWeek: '2026-W22',
+        timeSlotId: null,
+      }),
+    }));
+    getModels.mockImplementation((_req, ...names) => {
+      if (names.includes('Event')) {
+        return { Event: { findOne: jest.fn(() => mockEventFindOne(publishedEvent())) } };
+      }
+      return { PivotEventIntent: { findOneAndUpdate } };
+    });
+
+    await recordFeedAction(req, { eventId, action: 'interested', now });
+
+    expect(recordPivotInteraction).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        type: 'interested',
+        surface: 'deck',
+        retrieval: 'weekly_batch',
+      }),
     );
   });
 
@@ -161,6 +250,7 @@ describe('recordFeedAction', () => {
 describe('recordExternalOpen', () => {
   beforeEach(() => {
     getModels.mockReset();
+    recordPivotInteraction.mockClear();
   });
 
   it('increments externalOpenCount and defaults a new row to interested', async () => {
@@ -188,6 +278,14 @@ describe('recordExternalOpen', () => {
     expect(update.$setOnInsert).toEqual({ status: 'interested', batchWeek: '2026-W22' });
     expect(update.$set).toHaveProperty('externalOpenAt');
     expect(opts).toEqual(expect.objectContaining({ upsert: true }));
+    expect(recordPivotInteraction).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        type: 'external_open',
+        surface: 'deck',
+        batchWeek: '2026-W22',
+      }),
+    );
   });
 
   it('returns 404 for non-pivot events', async () => {
@@ -209,6 +307,7 @@ describe('recordExternalOpen', () => {
 describe('confirmRegistered', () => {
   beforeEach(() => {
     getModels.mockReset();
+    recordPivotInteraction.mockClear();
   });
 
   it('sets status registered idempotently', async () => {
@@ -231,6 +330,14 @@ describe('confirmRegistered', () => {
       { userId, eventId },
       { $set: { status: 'registered', batchWeek: '2026-W22', timeSlotId: null } },
       expect.objectContaining({ upsert: true }),
+    );
+    expect(recordPivotInteraction).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        type: 'registered',
+        surface: 'deck',
+        batchWeek: '2026-W22',
+      }),
     );
   });
 

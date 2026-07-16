@@ -4,9 +4,15 @@ jest.mock('../../services/feedbackService', () => {
     submitFeedback: jest.fn(),
   }));
 });
+jest.mock('../../services/pivotInteractionService', () => ({
+  recordPivotInteraction: jest.fn(),
+  pickInteractionContext: jest.requireActual('../../services/pivotInteractionService')
+    .pickInteractionContext,
+}));
 
 const getModels = require('../../services/getModelService');
 const FeedbackService = require('../../services/feedbackService');
+const { recordPivotInteraction } = require('../../services/pivotInteractionService');
 const {
   getPendingEventFeedback,
   submitEventFeedback,
@@ -109,6 +115,7 @@ describe('submitEventFeedback', () => {
   beforeEach(() => {
     getModels.mockReset();
     FeedbackService.mockClear();
+    recordPivotInteraction.mockClear();
   });
 
   it('rejects invalid rating', async () => {
@@ -199,6 +206,15 @@ describe('submitEventFeedback', () => {
       expect.objectContaining({ batchWeek: '2026-W26' }),
     );
     expect(ensurePivotEventFeedbackConfig).toHaveBeenCalledWith(userId);
+    expect(recordPivotInteraction).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        type: 'rating',
+        rating: 4,
+        surface: 'deck',
+        batchWeek: '2026-W26',
+      }),
+    );
   });
 });
 
