@@ -23,6 +23,17 @@
     background: var(--la-bg);
     overflow-y: auto;
   }
+
+  &__enrichment-warn {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--la-border-subtle);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--la-warning, #c47f17) 10%, transparent);
+    color: var(--la-text-secondary);
+    font-size: 13px;
+    line-height: 1.4;
+  }
 }
 
 @media (max-width: 860px) {
