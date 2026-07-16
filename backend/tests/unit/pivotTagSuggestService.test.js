@@ -12,6 +12,8 @@ const {
   parseTagsFromClaudeText,
   buildTagSuggestionPrompt,
   resolveAnthropicApiKey,
+  mapWithConcurrency,
+  resolveBatchConcurrency,
 } = require('../../services/pivotTagSuggestService');
 
 describe('pivotTagSuggestService', () => {
@@ -113,6 +115,58 @@ describe('pivotTagSuggestService', () => {
 
     expect(result.data.suggestions).toHaveLength(2);
     expect(result.data.suggestedCount).toBe(2);
+    expect(result.data.concurrency).toBe(4);
+    // Shared catalog — one listPivotTags for the batch, not per event.
+    expect(listPivotTags).toHaveBeenCalledTimes(1);
+  });
+
+  it('batch suggestion runs Claude calls concurrently (capped)', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    axios.post.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          setTimeout(() => {
+            inFlight -= 1;
+            resolve({
+              data: {
+                content: [{ type: 'text', text: '{"tags":["live-music"]}' }],
+              },
+            });
+          }, 30);
+        }),
+    );
+
+    const events = Array.from({ length: 6 }, (_, i) => ({ name: `Event ${i}` }));
+    const result = await suggestPivotEventTagsBatch(
+      { globalDb: {} },
+      events,
+      { concurrency: 3 },
+    );
+
+    expect(result.data.suggestedCount).toBe(6);
+    expect(result.data.concurrency).toBe(3);
+    expect(maxInFlight).toBe(3);
+    expect(axios.post).toHaveBeenCalledTimes(6);
+  });
+
+  it('mapWithConcurrency preserves order with a worker pool', async () => {
+    const seen = [];
+    const results = await mapWithConcurrency([1, 2, 3, 4], 2, async (value) => {
+      seen.push(value);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return value * 10;
+    });
+    expect(results).toEqual([10, 20, 30, 40]);
+    expect(seen).toHaveLength(4);
+  });
+
+  it('resolveBatchConcurrency caps and falls back', () => {
+    expect(resolveBatchConcurrency(3)).toBe(3);
+    expect(resolveBatchConcurrency(99)).toBe(8);
+    expect(resolveBatchConcurrency(0)).toBe(4);
   });
 
   it('batch suggestion returns error when every event fails', async () => {
@@ -134,5 +188,22 @@ describe('pivotTagSuggestService', () => {
     delete process.env.ANTHROPIC_API_KEY;
     process.env.CLAUDE_API_KEY = 'alias-key';
     expect(resolveAnthropicApiKey()).toBe('alias-key');
+  });
+
+  it('suggestAndApplyPivotEventTags requires tenantKey and eventIds', async () => {
+    const {
+      suggestAndApplyPivotEventTags,
+    } = require('../../services/pivotTagSuggestService');
+
+    await expect(
+      suggestAndApplyPivotEventTags({ globalDb: {} }, { eventIds: ['x'] }),
+    ).resolves.toMatchObject({ code: 'TENANT_KEY_REQUIRED' });
+
+    await expect(
+      suggestAndApplyPivotEventTags(
+        { globalDb: {} },
+        { tenantKey: 'nyc', eventIds: [] },
+      ),
+    ).resolves.toMatchObject({ code: 'EVENT_IDS_REQUIRED' });
   });
 });

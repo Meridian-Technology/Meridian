@@ -14,6 +14,7 @@ const { resolvePivotDropInstant } = require('../utilities/pivotDropSchedule');
 const { logPivot } = require('../utilities/pivotLogger');
 
 const MAX_FAILURES_STORED = 50;
+const MAX_EVENTS_STORED = 100;
 
 function actorFromReq(req) {
   return req?.user?.email || req?.user?.globalUserId || req?.user?.userId || null;
@@ -33,6 +34,17 @@ function parseRunId(runId) {
     return { error: 'Invalid curation run id.', status: 400, code: 'INVALID_RUN_ID' };
   }
   return { runId: id };
+}
+
+function serializeRunEvent(row) {
+  return {
+    eventId: row?.eventId ? String(row.eventId) : null,
+    name: row?.name || null,
+    batchWeek: row?.batchWeek || null,
+    sourceUrl: row?.sourceUrl || null,
+    ingestStatus: row?.ingestStatus || null,
+    updated: Boolean(row?.updated),
+  };
 }
 
 function serializeCurationRun(doc) {
@@ -66,6 +78,7 @@ function serializeCurationRun(doc) {
           code: f.code || null,
         }))
       : [],
+    events: Array.isArray(row.events) ? row.events.map(serializeRunEvent) : [],
     error: row.error || null,
     errorCode: row.errorCode || null,
     createdBy: row.createdBy || null,
@@ -158,7 +171,7 @@ async function updateRunDoc(reqLike, runId, patch) {
   ).lean();
 }
 
-async function syncJobLastRun(reqLike, jobId, { status, stats, finishedAt }) {
+async function syncJobLastRun(reqLike, jobId, { status, stats, finishedAt, events }) {
   const { PivotCurationJob } = getGlobalModels(reqLike, 'PivotCurationJob');
   await PivotCurationJob.findByIdAndUpdate(jobId, {
     $set: {
@@ -170,7 +183,11 @@ async function syncJobLastRun(reqLike, jobId, { status, stats, finishedAt }) {
         skipped: stats.skipped || 0,
         failed: stats.failed || 0,
         message: stats.message || null,
+        byBatchWeek: stats.byBatchWeek || null,
       },
+      lastRunEvents: Array.isArray(events)
+        ? events.slice(0, MAX_EVENTS_STORED).map(serializeRunEvent)
+        : [],
     },
   });
 }
@@ -253,8 +270,13 @@ async function upsertDiscoveredEntry(
     upserted: true,
     updated: Boolean(result.data?.updated),
     eventId: result.data?.event?._id || result.data?.event?.id || null,
+    name: draft.name || result.data?.event?.name || null,
     batchWeek: result.data?.batchWeek || result.data?.event?.batchWeek || null,
     batchWeekSource: result.data?.batchWeekSource || null,
+    ingestStatus:
+      result.data?.event?.customFields?.pivot?.ingestStatus ||
+      ingestStatus ||
+      null,
     sourceUrl,
   };
 }
@@ -321,6 +343,7 @@ async function executeCurationRun(runId) {
         status: 'failed',
         stats,
         finishedAt,
+        events: [],
       });
       return;
     }
@@ -339,6 +362,7 @@ async function executeCurationRun(runId) {
         status: 'failed',
         stats,
         finishedAt,
+        events: [],
       });
       return;
     }
@@ -364,6 +388,7 @@ async function executeCurationRun(runId) {
         status: 'failed',
         stats,
         finishedAt,
+        events: [],
       });
       return;
     }
@@ -408,6 +433,7 @@ async function executeCurationRun(runId) {
     }
 
     const failures = [];
+    const events = [];
     const defaultTags = Array.isArray(job.defaultTags) ? job.defaultTags : [];
     const ensuredWeeks = new Set(forceBatchWeek ? [run.batchWeek] : []);
 
@@ -434,6 +460,16 @@ async function executeCurationRun(runId) {
               });
               ensuredWeeks.add(week);
             }
+          }
+          if (events.length < MAX_EVENTS_STORED) {
+            events.push({
+              eventId: outcome.eventId ? String(outcome.eventId) : null,
+              name: outcome.name || null,
+              batchWeek: week || null,
+              sourceUrl: outcome.sourceUrl || null,
+              ingestStatus: outcome.ingestStatus || null,
+              updated: Boolean(outcome.updated),
+            });
           }
         } else if (outcome.skipped) {
           stats.skipped += 1;
@@ -476,7 +512,7 @@ async function executeCurationRun(runId) {
 
       // Persist progress periodically so UI polling sees movement.
       if ((stats.upserted + stats.skipped + stats.failed) % 10 === 0) {
-        await updateRunDoc(workerReq, runId, { stats, failures });
+        await updateRunDoc(workerReq, runId, { stats, failures, events });
       }
     }
 
@@ -497,10 +533,16 @@ async function executeCurationRun(runId) {
       finishedAt,
       stats,
       failures,
+      events,
       error: null,
       errorCode: null,
     });
-    await syncJobLastRun(workerReq, jobId, { status, stats, finishedAt });
+    await syncJobLastRun(workerReq, jobId, {
+      status,
+      stats,
+      finishedAt,
+      events,
+    });
 
     logPivot('info', 'curation run completed', {
       runId: String(runId),
@@ -534,6 +576,7 @@ async function executeCurationRun(runId) {
           status: 'failed',
           stats,
           finishedAt,
+          events: [],
         });
       }
     } catch (persistErr) {
@@ -616,6 +659,7 @@ async function startCurationJobRun(req, options = {}) {
         : 'Events assigned to the ISO week of their start date.',
     ),
     failures: [],
+    events: [],
   });
 
   await PivotCurationJob.findByIdAndUpdate(job._id, {
@@ -623,6 +667,7 @@ async function startCurationJobRun(req, options = {}) {
       lastRunAt: new Date(),
       lastRunStatus: 'queued',
       lastRunStats: emptyStats(),
+      lastRunEvents: [],
     },
   });
 
