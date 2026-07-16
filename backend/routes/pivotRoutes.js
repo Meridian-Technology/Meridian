@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { validateReferralCode, redeemReferralCode } = require('../services/pivotReferralCodeService');
 const { getPivotFeed, getPivotEventFriends } = require('../services/pivotFeedService');
+const { getPivotExplore } = require('../services/pivotExploreService');
 const {
   recordFeedAction,
   recordExternalOpen,
@@ -9,6 +10,7 @@ const {
   getWeekRecap,
   resetWeekActions,
 } = require('../services/pivotIntentService');
+const { recordPivotImpressions, recordPivotMicroInteractions } = require('../services/pivotInteractionService');
 const {
   getPendingEventFeedback,
   submitEventFeedback,
@@ -270,11 +272,65 @@ router.get('/config', verifyToken, async (req, res) => {
   }
 });
 
+router.get('/explore', verifyToken, async (req, res) => {
+  try {
+    const result = await getPivotExplore(req, {
+      batchWeek: req.query.batchWeek,
+      limit: req.query.limit,
+      offset: req.query.offset,
+      tags: req.query.tags,
+      night: req.query.night,
+      friendsOnly: req.query.friendsOnly,
+      excludePassed: req.query.excludePassed,
+      q: req.query.q,
+      sort: req.query.sort,
+    });
+    if (result.error) {
+      logPivotServiceReject('GET /pivot/explore', result, req, {
+        batchWeek: req.query.batchWeek,
+        limit: req.query.limit,
+        offset: req.query.offset,
+        tags: req.query.tags,
+        night: req.query.night,
+        friendsOnly: req.query.friendsOnly,
+        excludePassed: req.query.excludePassed,
+        q: req.query.q,
+        sort: req.query.sort,
+      });
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    logPivotServiceSuccess('GET /pivot/explore', req, {
+      batchWeek: result.data?.batchWeek,
+      total: result.data?.total,
+      eventCount: result.data?.events?.length ?? 0,
+      limit: result.data?.limit,
+      offset: result.data?.offset,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/explore', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load pivot explore.',
+    });
+  }
+});
+
 router.get('/feed', verifyToken, async (req, res) => {
   try {
     const result = await getPivotFeed(req, {
       batchWeek: req.query.batchWeek,
       excludeEventIds: req.query.excludeEventIds,
+      refresh: req.query.refresh,
     });
     if (result.error) {
       logPivotServiceReject('GET /pivot/feed', result, req, {
@@ -339,6 +395,123 @@ router.post('/feed/action', verifyToken, async (req, res) => {
     });
   }
 });
+
+/**
+ * Batch durable card impressions (Task 1.2). Fire-and-forget writes —
+ * always returns quickly; failures are logged server-side and never block swipe.
+ */
+router.post(
+  '/interactions/impressions',
+  [
+    verifyToken,
+    body('impressions').isArray().withMessage('impressions must be an array'),
+    body('batchWeek').optional().isString().trim(),
+    body('sessionId').optional().isString().trim(),
+    body('requestId').optional().isString().trim(),
+    body('rankerVersion').optional().isString().trim(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation errors',
+          errors: errors.array(),
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      const result = recordPivotImpressions(req, req.body);
+      if (result.error) {
+        logPivotServiceReject('POST /pivot/interactions/impressions', result, req, {
+          received: Array.isArray(req.body?.impressions)
+            ? req.body.impressions.length
+            : 0,
+        });
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      logPivotServiceSuccess('POST /pivot/interactions/impressions', req, {
+        accepted: result.data?.accepted,
+        skipped: result.data?.skipped,
+        received: result.data?.received,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /pivot/interactions/impressions', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to record impressions.',
+      });
+    }
+  },
+);
+
+/**
+ * Batch dwell / detail_open micro-intent rows (Task 4.3).
+ */
+router.post(
+  '/interactions/micro',
+  [
+    verifyToken,
+    body('interactions').isArray().withMessage('interactions must be an array'),
+    body('batchWeek').optional().isString().trim(),
+    body('rankerVersion').optional().isString().trim(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation errors',
+          errors: errors.array(),
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      const result = recordPivotMicroInteractions(req, req.body);
+      if (result.error) {
+        logPivotServiceReject('POST /pivot/interactions/micro', result, req, {
+          received: Array.isArray(req.body?.interactions)
+            ? req.body.interactions.length
+            : 0,
+        });
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      logPivotServiceSuccess('POST /pivot/interactions/micro', req, {
+        accepted: result.data?.accepted,
+        skipped: result.data?.skipped,
+        received: result.data?.received,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /pivot/interactions/micro', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to record micro interactions.',
+      });
+    }
+  },
+);
 
 router.post('/intent/:eventId/external-open', verifyToken, async (req, res) => {
   try {

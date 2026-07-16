@@ -18,6 +18,11 @@ jest.mock('../../services/pivotReferralCodeService', () => ({
 
 jest.mock('../../services/pivotFeedService', () => ({
   getPivotFeed: jest.fn(),
+  getPivotEventFriends: jest.fn(),
+}));
+
+jest.mock('../../services/pivotExploreService', () => ({
+  getPivotExplore: jest.fn(),
 }));
 
 jest.mock('../../services/pivotIntentService', () => ({
@@ -26,6 +31,10 @@ jest.mock('../../services/pivotIntentService', () => ({
   confirmRegistered: jest.fn(),
   getWeekRecap: jest.fn(),
   resetWeekActions: jest.fn(),
+}));
+
+jest.mock('../../services/pivotInteractionService', () => ({
+  recordPivotImpressions: jest.fn(),
 }));
 
 jest.mock('../../services/pivotFeedbackService', () => ({
@@ -57,6 +66,7 @@ jest.mock('../../services/pivotFriendService', () => ({
 
 const { validateReferralCode, redeemReferralCode } = require('../../services/pivotReferralCodeService');
 const { getPivotFeed } = require('../../services/pivotFeedService');
+const { getPivotExplore } = require('../../services/pivotExploreService');
 const {
   recordFeedAction,
   recordExternalOpen,
@@ -64,6 +74,7 @@ const {
   getWeekRecap,
   resetWeekActions,
 } = require('../../services/pivotIntentService');
+const { recordPivotImpressions } = require('../../services/pivotInteractionService');
 const {
   getPendingEventFeedback,
   submitEventFeedback,
@@ -231,6 +242,85 @@ describe('pivotRoutes POST /pivot/referral/redeem', () => {
   });
 });
 
+describe('pivotRoutes GET /pivot/explore', () => {
+  beforeEach(() => {
+    getPivotExplore.mockReset();
+  });
+
+  it('returns 200 with explore payload', async () => {
+    getPivotExplore.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W22',
+        cityDisplayName: 'Brooklyn',
+        total: 24,
+        limit: 40,
+        offset: 0,
+        filters: {
+          tags: [],
+          night: null,
+          friendsOnly: false,
+          excludePassed: true,
+          q: null,
+        },
+        rails: [
+          { id: 'friends', title: 'friends going', retrieval: 'friends_rail' },
+          { id: 'tonight', title: 'tonight', retrieval: 'filter' },
+        ],
+        events: [
+          {
+            _id: '665a1b2c3d4e5f6789012345',
+            name: 'Friday Night Board Games',
+            displayHost: { name: 'Brooklyn Board Game Cafe' },
+            userIntent: null,
+            friendsInterested: [],
+            friendsGoing: [],
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/explore?batchWeek=2026-W22&limit=40&offset=0')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.total).toBe(24);
+    expect(response.body.data.filters.excludePassed).toBe(true);
+    expect(response.body.data.rails).toHaveLength(2);
+    expect(response.body.data.events).toHaveLength(1);
+    expect(getPivotExplore).toHaveBeenCalledWith(
+      expect.objectContaining({ user: expect.any(Object) }),
+      expect.objectContaining({
+        batchWeek: '2026-W22',
+        limit: '40',
+        offset: '0',
+        tags: undefined,
+        night: undefined,
+        friendsOnly: undefined,
+        excludePassed: undefined,
+        q: undefined,
+      }),
+    );
+  });
+
+  it('returns service error status when explore rejects', async () => {
+    getPivotExplore.mockResolvedValue({
+      error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
+      status: 400,
+      code: 'INVALID_BATCH_WEEK',
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/explore?batchWeek=bad-week')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('INVALID_BATCH_WEEK');
+  });
+});
+
 describe('pivotRoutes GET /pivot/feed', () => {
   beforeEach(() => {
     getPivotFeed.mockReset();
@@ -317,6 +407,75 @@ describe('pivotRoutes GET /pivot/feed', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body.code).toBe('INVALID_BATCH_WEEK');
+  });
+});
+
+describe('pivotRoutes POST /pivot/interactions/impressions', () => {
+  beforeEach(() => {
+    recordPivotImpressions.mockReset();
+  });
+
+  it('returns 200 with accepted count', async () => {
+    recordPivotImpressions.mockReturnValue({
+      data: { accepted: 2, skipped: 0, received: 2 },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/interactions/impressions')
+      .set('Authorization', 'Bearer test-token')
+      .send({
+        batchWeek: '2026-W28',
+        impressions: [
+          { eventId: '665a1b2c3d4e5f6789012345', rankInFeed: 0 },
+          { eventId: '665a1b2c3d4e5f6789012346', rankInFeed: 1 },
+        ],
+      });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toEqual({
+      accepted: 2,
+      skipped: 0,
+      received: 2,
+    });
+    expect(recordPivotImpressions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: expect.objectContaining({ userId: '507f191e810c19729de860eb' }),
+      }),
+      expect.objectContaining({
+        batchWeek: '2026-W28',
+        impressions: expect.any(Array),
+      }),
+    );
+  });
+
+  it('returns 400 when impressions is missing', async () => {
+    const response = await request(buildBaseApp())
+      .post('/pivot/interactions/impressions')
+      .set('Authorization', 'Bearer test-token')
+      .send({ batchWeek: '2026-W28' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+    expect(recordPivotImpressions).not.toHaveBeenCalled();
+  });
+
+  it('returns service error status', async () => {
+    recordPivotImpressions.mockReturnValue({
+      error: 'At most 50 impressions per request.',
+      status: 400,
+      code: 'IMPRESSION_BATCH_TOO_LARGE',
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/interactions/impressions')
+      .set('Authorization', 'Bearer test-token')
+      .send({
+        impressions: [{ eventId: '665a1b2c3d4e5f6789012345', rankInFeed: 0 }],
+      });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('IMPRESSION_BATCH_TOO_LARGE');
   });
 });
 
