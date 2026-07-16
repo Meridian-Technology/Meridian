@@ -16,6 +16,24 @@
             height: 180px;
         }
 
+        .funnel-chart-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 180px;
+
+            .spinner {
+                font-size: 1.5rem;
+                animation: spin 1s linear infinite;
+                color: var(--org-primary, #64AB6C);
+            }
+        }
+
+        .funnel-subtitle-range {
+            color: var(--light-text);
+        }
+
         .funnel-chart-svg {
             display: block;
 
