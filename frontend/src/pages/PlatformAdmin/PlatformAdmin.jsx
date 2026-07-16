@@ -4,6 +4,7 @@ import Dashboard from '../../components/Dashboard/Dashboard';
 import TenantManagementPage from './TenantManagement/TenantManagementPage';
 import PivotLabPage from './PivotLab/PivotLabPage';
 import PivotWeeklyDropPage from './PivotWeeklyDrop/PivotWeeklyDropPage';
+import PlatformAdminsPage from './PlatformAdmins/PlatformAdminsPage';
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 import '../Admin/Admin.scss';
 import './PlatformAdmin.scss';
@@ -26,6 +27,11 @@ function PlatformAdmin() {
       label: 'Weekly drop',
       icon: 'mdi:bell-ring-outline',
       element: <PivotWeeklyDropPage />,
+    },
+    {
+      label: 'Platform admins',
+      icon: 'mdi:shield-account-outline',
+      element: <PlatformAdminsPage />,
     },
   ];
 

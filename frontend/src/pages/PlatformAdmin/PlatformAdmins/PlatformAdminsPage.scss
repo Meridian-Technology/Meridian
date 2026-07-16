@@ -1,0 +1,105 @@
+.platform-admin-admins {
+  padding: 1.25rem 1.5rem 2.5rem;
+  max-width: 720px;
+
+  &__header {
+    margin-bottom: 1.5rem;
+  }
+
+  &__title {
+    margin: 0 0 0.4rem;
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
+
+  &__lede {
+    margin: 0;
+    color: rgba(0, 0, 0, 0.62);
+    line-height: 1.45;
+    max-width: 42rem;
+  }
+
+  &__error {
+    color: #b42318;
+    margin-bottom: 1rem;
+  }
+
+  &__hint,
+  &__muted {
+    margin: 0 0 0.75rem;
+    color: rgba(0, 0, 0, 0.55);
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+
+  &__form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: flex-end;
+  }
+
+  &__field {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  &__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  &__identity {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  &__email {
+    font-weight: 560;
+    word-break: break-all;
+  }
+
+  &__name {
+    color: rgba(0, 0, 0, 0.55);
+    font-size: 0.9rem;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .spin {
+    animation: platform-admin-admins-spin 0.8s linear infinite;
+  }
+}
+
+@keyframes platform-admin-admins-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.platform-admin-admins .linear-section {
+  margin-bottom: 1.75rem;
+}
