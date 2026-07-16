@@ -36,9 +36,13 @@ jest.mock('../../services/pivotConfigService', () => ({
     nextDropFormatted: 'Thu Jul 9, 6:00 PM EDT',
   })),
 }));
-jest.mock('../../utilities/pivotDropSchedule', () => ({
-  resolvePivotDropInstant: jest.fn(),
-}));
+jest.mock('../../utilities/pivotDropSchedule', () => {
+  const actual = jest.requireActual('../../utilities/pivotDropSchedule');
+  return {
+    ...actual,
+    resolvePivotDropInstant: jest.fn(),
+  };
+});
 
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
 const {
@@ -116,6 +120,9 @@ describe('pivotTenantOpsService', () => {
         'overview',
         'performance',
         'journey',
+        'readiness',
+        'catalog',
+        'jobs',
       ]);
       expect(parseInclude('curation', { stage: 'curate' }).sections).toEqual([
         'overview',
@@ -131,18 +138,37 @@ describe('pivotTenantOpsService', () => {
   });
 
   describe('resolveStageForWeek', () => {
-    it('classifies past / live / future', () => {
-      const anchors = { liveWeek: '2026-W28' };
-      expect(resolveStageForWeek('2026-W27', anchors)).toBe('post-mortem');
-      expect(resolveStageForWeek('2026-W28', anchors)).toBe('live');
-      expect(resolveStageForWeek('2026-W29', anchors)).toBe('curate');
+    it('classifies past / live / future relative to drop-cycle live week', () => {
+      expect(resolveStageForWeek('2026-W27', TENANT, new Date('2026-07-13T22:00:00.000Z'))).toBe(
+        'post-mortem',
+      );
+      expect(resolveStageForWeek('2026-W28', TENANT, new Date('2026-07-13T22:00:00.000Z'))).toBe(
+        'live',
+      );
+      expect(resolveStageForWeek('2026-W29', TENANT, new Date('2026-07-13T22:00:00.000Z'))).toBe(
+        'curate',
+      );
+    });
+
+    it('treats the drop-cycle live week as live after the drop instant', () => {
+      expect(
+        resolveStageForWeek('2026-W29', TENANT, new Date('2026-07-17T23:00:00.000Z')),
+      ).toBe('live');
     });
   });
 
   describe('curationSectionsForStage', () => {
-    it('returns monitor vs curate sections', () => {
-      expect(curationSectionsForStage('post-mortem')).toContain('performance');
-      expect(curationSectionsForStage('curate')).toContain('catalog');
+    it('returns monitor-only sections for post-mortem', () => {
+      expect(curationSectionsForStage('post-mortem')).toEqual([
+        'overview',
+        'performance',
+        'journey',
+      ]);
+    });
+
+    it('returns monitor plus publish sections for live', () => {
+      expect(curationSectionsForStage('live')).toContain('catalog');
+      expect(curationSectionsForStage('live')).toContain('performance');
     });
   });
 
@@ -161,12 +187,36 @@ describe('pivotTenantOpsService', () => {
       expect(result.data.tenantKey).toBe('nyc');
       expect(result.data.batchWeek).toBe('2026-W28');
       expect(result.data.stage).toBeTruthy();
-      expect(result.data.anchors.liveWeek).toBeTruthy();
+      expect(result.data.anchors.liveWeek).toBe('2026-W28');
+      expect(result.data.anchors.curateWeek).toBe('2026-W29');
       expect(result.data.overview.kpis.activeUsers).toBe(3);
       expect(result.data.performance.events).toHaveLength(1);
       expect(result.data.retention.tenant.tenantKey).toBe('nyc');
       expect(getJourneyOverview).not.toHaveBeenCalled();
       expect(listCurationJobs).not.toHaveBeenCalled();
+    });
+
+    it('defaults omitted batchWeek to drop-gated live week before the drop instant', async () => {
+      resolvePivotDropInstant.mockImplementation((_tenant, batchWeek) => ({
+        dropAt:
+          batchWeek === '2026-W29'
+            ? new Date('2099-01-01T00:00:00.000Z')
+            : new Date('2020-01-01T00:00:00.000Z'),
+      }));
+
+      const result = await getTenantOpsBundle(
+        { globalDb: {} },
+        {
+          tenantKey: 'nyc',
+          include: 'overview',
+          now: new Date('2026-07-13T16:00:00.000Z'),
+        },
+      );
+
+      expect(result.data.batchWeek).toBe('2026-W28');
+      expect(result.data.anchors.liveWeek).toBe('2026-W28');
+      expect(result.data.anchors.curateWeek).toBe('2026-W29');
+      expect(result.data.anchors.dropPending).toBe(true);
     });
 
     it('loads journeys preset', async () => {
@@ -185,8 +235,29 @@ describe('pivotTenantOpsService', () => {
       expect(getTenantOverview).not.toHaveBeenCalled();
     });
 
-    it('curation preset for future week loads catalog + jobs', async () => {
-      // Force live = W27 so W28 is curate
+    it('curation preset during release window loads catalog for the upcoming batch', async () => {
+      resolvePivotDropInstant.mockReturnValue({
+        dropAt: new Date('2099-01-01T00:00:00.000Z'),
+      });
+
+      const result = await getTenantOpsBundle(
+        { globalDb: {} },
+        {
+          tenantKey: 'nyc',
+          batchWeek: '2026-W29',
+          include: 'curation',
+          now: new Date('2026-07-13T22:00:00.000Z'),
+        },
+      );
+
+      expect(result.data.stage).toBe('curate');
+      expect(result.data.releaseWindow).toBe(true);
+      expect(result.data.catalog).toEqual({ events: [] });
+      expect(result.data.jobs).toEqual({ jobs: [] });
+      expect(getTenantEventPerformance).not.toHaveBeenCalled();
+    });
+
+    it('curation preset for the live drop-cycle week loads monitor and publish sections', async () => {
       resolvePivotDropInstant.mockReturnValue({
         dropAt: new Date('2099-01-01T00:00:00.000Z'),
       });
@@ -197,7 +268,30 @@ describe('pivotTenantOpsService', () => {
           tenantKey: 'nyc',
           batchWeek: '2026-W28',
           include: 'curation',
-          now: new Date('2026-07-06T12:00:00.000Z'), // Monday of W28, drop still pending
+          now: new Date('2026-07-13T22:00:00.000Z'),
+        },
+      );
+
+      expect(result.data.stage).toBe('live');
+      expect(result.data.releaseWindow).toBe(false);
+      expect(result.data.catalog).toEqual({ events: [] });
+      expect(result.data.performance.events).toHaveLength(1);
+      expect(getBatchReadiness).toHaveBeenCalled();
+      expect(listCurationJobs).toHaveBeenCalled();
+    });
+
+    it('curation preset for a future week loads catalog + jobs', async () => {
+      resolvePivotDropInstant.mockReturnValue({
+        dropAt: new Date('2099-01-01T00:00:00.000Z'),
+      });
+
+      const result = await getTenantOpsBundle(
+        { globalDb: {} },
+        {
+          tenantKey: 'nyc',
+          batchWeek: '2026-W29',
+          include: 'curation',
+          now: new Date('2026-07-06T12:00:00.000Z'),
         },
       );
 

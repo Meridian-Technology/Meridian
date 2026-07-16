@@ -4,6 +4,10 @@ const {
   formatPivotDropInstant,
   resolvePivotDropConfig,
   resolvePivotDropInstant,
+  resolvePivotLiveBatchWeek,
+  resolvePivotOpsLiveWeek,
+  resolvePivotStageAnchors,
+  resolveStageForBatchWeek,
   zonedLocalToUtc,
 } = require('../../utilities/pivotDropSchedule');
 
@@ -76,5 +80,53 @@ describe('pivotDropSchedule', () => {
       timeZone: 'America/New_York',
     });
     expect(dropAt.toISOString()).toBe('2026-03-08T22:00:00.000Z');
+  });
+
+  it('resolvePivotLiveBatchWeek stays on previous week before the drop instant', () => {
+    const tenant = {...nycTenant, pivotPilot: true};
+    const now = new Date('2026-07-13T16:00:00.000Z');
+    expect(resolvePivotLiveBatchWeek(tenant, now)).toBe('2026-W28');
+  });
+
+  it('resolvePivotLiveBatchWeek advances after the drop instant', () => {
+    const tenant = {...nycTenant, pivotPilot: true};
+    const now = new Date('2026-07-17T23:00:00.000Z');
+    expect(resolvePivotLiveBatchWeek(tenant, now)).toBe('2026-W29');
+  });
+
+  it('resolvePivotOpsLiveWeek keeps previous ISO week live before the drop instant', () => {
+    const tenant = {...nycTenant, pivotPilot: true};
+    const now = new Date('2026-07-13T16:00:00.000Z');
+    expect(resolvePivotOpsLiveWeek(tenant, now)).toBe('2026-W28');
+  });
+
+  it('resolvePivotOpsLiveWeek switches to current week after the drop instant', () => {
+    const tenant = {...nycTenant, pivotPilot: true};
+    const now = new Date('2026-07-17T23:00:00.000Z');
+    expect(resolvePivotOpsLiveWeek(tenant, now)).toBe('2026-W29');
+  });
+
+  it('resolvePivotStageAnchors uses drop-cycle live week before the next drop', () => {
+    const tenant = {...nycTenant, pivotPilot: true};
+    const now = new Date('2026-07-13T16:00:00.000Z');
+    const anchors = resolvePivotStageAnchors(tenant, now);
+    expect(anchors.currentWeek).toBe('2026-W29');
+    expect(anchors.liveWeek).toBe('2026-W28');
+    expect(anchors.curateWeek).toBe('2026-W29');
+    expect(anchors.postMortemWeek).toBe('2026-W27');
+    expect(anchors.dropPending).toBe(true);
+    expect(resolveStageForBatchWeek('2026-W28', tenant, now)).toBe('live');
+    expect(resolveStageForBatchWeek('2026-W29', tenant, now)).toBe('curate');
+    expect(resolveStageForBatchWeek('2026-W27', tenant, now)).toBe('post-mortem');
+  });
+
+  it('resolvePivotStageAnchors advances curate week after the drop', () => {
+    const tenant = {...nycTenant, pivotPilot: true};
+    const now = new Date('2026-07-17T23:00:00.000Z');
+    const anchors = resolvePivotStageAnchors(tenant, now);
+    expect(anchors.liveWeek).toBe('2026-W29');
+    expect(anchors.curateWeek).toBe('2026-W30');
+    expect(anchors.dropPending).toBe(false);
+    expect(resolveStageForBatchWeek('2026-W29', tenant, now)).toBe('live');
   });
 });

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useFetch } from '../../../hooks/useFetch';
 import AdminPlatformMetricChart from '../../Admin/General/AdminPlatformAnalytics/AdminPlatformMetricChart';
@@ -124,6 +124,7 @@ function deltaFor(vsPrevWeek, key) {
  * top events, and actionable insights.
  */
 function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
+  const initializedWeekRef = useRef(false);
   const {
     batchWeek,
     committedWeek,
@@ -157,8 +158,18 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
   });
 
   const ops = opsResponse?.success ? opsResponse.data : null;
+
+  useEffect(() => {
+    if (initializedWeekRef.current) return;
+    if (!ops?.anchors?.liveWeek) return;
+    initializedWeekRef.current = true;
+    setBatchWeek(ops.anchors.liveWeek, { immediate: true });
+  }, [ops?.anchors?.liveWeek, setBatchWeek]);
+
   const overview = ops?.overview && !ops.overview.error ? ops.overview : null;
   const drop = overview?.dropSchedule || ops?.dropSchedule;
+  const dropDayOfWeek = ops?.weekRange?.dropDayOfWeek ?? drop?.dayOfWeek ?? 4;
+  const dropTimeZone = ops?.weekRange?.timeZone ?? drop?.timezone ?? 'UTC';
   const readiness = ops?.readiness && !ops.readiness.error ? ops.readiness : null;
   const overviewMessage =
     opsError ||
@@ -233,6 +244,8 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
             onChange={setBatchWeek}
             keyboardNavActive={keyboardNavActive}
             anchors={ops?.anchors}
+            dropDayOfWeek={dropDayOfWeek}
+            timeZone={dropTimeZone}
             pending={batchWeek !== committedWeek}
           />
           <button
