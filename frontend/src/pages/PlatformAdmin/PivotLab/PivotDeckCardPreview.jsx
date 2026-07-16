@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import IphoneDeviceFrame from '../../../components/IphoneDeviceFrame';
 import './PivotDeckCardPreview.scss';
 
 const STACK_BEHIND = [
@@ -60,36 +61,37 @@ export function PivotDeckPhonePreview({
   hint = 'Matches the swipe deck card in the Pivot app.',
 }) {
   return (
-    <div className="pivot-deck-phone">
-      <div className="pivot-deck-phone__label-row">
-        <p className="pivot-deck-phone__label">{label}</p>
-        {hint ? <p className="pivot-deck-phone__hint">{hint}</p> : null}
-      </div>
-      <div className="pivot-deck-phone__device" aria-hidden="true">
-        <div className="pivot-deck-phone__notch" />
-        <div className="pivot-deck-phone__stage">
-          {STACK_BEHIND.map((layer) => (
-            <div
-              key={layer.depth}
-              className="pivot-deck-card pivot-deck-card--ghost"
-              style={{
-                transform: `translate(${layer.offsetX}px, ${layer.offsetY}px) rotate(${layer.rotate}deg) scale(${layer.scale})`,
-              }}
-            />
-          ))}
-          <PivotDeckCardPreview
-            title={title}
-            hostName={hostName}
-            whenLabel={whenLabel}
-            locationLabel={locationLabel}
-            description={description}
-            imageUrl={imageUrl}
-            tagLabel={tagLabel}
-            className="pivot-deck-card--focus"
+    <IphoneDeviceFrame
+      label={label}
+      hint={hint}
+      ariaLabel={label}
+      width={320}
+      className="pivot-deck-phone"
+      screenClassName="pivot-deck-phone__screen"
+      statusBarTheme="dark"
+    >
+      <div className="pivot-deck-phone__stage">
+        {STACK_BEHIND.map((layer) => (
+          <div
+            key={layer.depth}
+            className="pivot-deck-card pivot-deck-card--ghost"
+            style={{
+              transform: `translate(${layer.offsetX}px, ${layer.offsetY}px) rotate(${layer.rotate}deg) scale(${layer.scale})`,
+            }}
           />
-        </div>
+        ))}
+        <PivotDeckCardPreview
+          title={title}
+          hostName={hostName}
+          whenLabel={whenLabel}
+          locationLabel={locationLabel}
+          description={description}
+          imageUrl={imageUrl}
+          tagLabel={tagLabel}
+          className="pivot-deck-card--focus"
+        />
       </div>
-    </div>
+    </IphoneDeviceFrame>
   );
 }
 

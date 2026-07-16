@@ -35,6 +35,7 @@ const {
   wipeUserWeekIntents,
 } = require('../services/pivotTenantJourneyService');
 const { getTenantOpsBundle } = require('../services/pivotTenantOpsService');
+const { getPivotExplorePreview } = require('../services/pivotExploreService');
 const { getPivotRetention } = require('../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../services/pivotLabEventsService');
 const {
@@ -53,6 +54,7 @@ const { listPivotTags, seedPivotTagCatalog } = require('../services/pivotTagCata
 const {
   suggestPivotEventTags,
   suggestPivotEventTagsBatch,
+  suggestAndApplyPivotEventTags,
 } = require('../services/pivotTagSuggestService');
 const {
   searchTmdbMovies,
@@ -281,6 +283,46 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load tenant ops bundle.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/explore',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getPivotExplorePreview(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+        limit: req.query?.limit,
+        offset: req.query?.offset,
+        tags: req.query?.tags,
+        night: req.query?.night,
+        friendsOnly: req.query?.friendsOnly,
+        excludePassed: req.query?.excludePassed,
+        q: req.query?.q,
+        sort: req.query?.sort,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/explore', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load explore preview.',
       });
     }
   },
@@ -1012,6 +1054,41 @@ router.post('/ingest/suggest-tags', verifyToken, requirePlatformAdmin, async (re
     });
   }
 });
+
+router.post(
+  '/ingest/suggest-and-apply-tags',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await suggestAndApplyPivotEventTags(req, {
+        tenantKey: req.body?.tenantKey,
+        eventIds: req.body?.eventIds,
+        onlyTagless: req.body?.onlyTagless,
+        concurrency: req.body?.concurrency,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+          data: result.data,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/ingest/suggest-and-apply-tags', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to suggest and apply pivot tags.',
+      });
+    }
+  },
+);
 
 router.get('/tmdb/search', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {

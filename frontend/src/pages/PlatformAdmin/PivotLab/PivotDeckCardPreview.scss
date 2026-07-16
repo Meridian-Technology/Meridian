@@ -9,48 +9,14 @@
   --pivot-placeholder: #2a2119;
   --deck-card-width: 252px;
 
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-
-  &__label-row {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  &__screen {
+    background: var(--pivot-cream);
   }
 
-  &__label {
-    margin: 0;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--la-text-tertiary, #6b7280);
-  }
-
-  &__hint {
-    margin: 0;
-    font-size: 12px;
-    color: var(--la-text-secondary, #4b5563);
-  }
-
-  &__device {
-    position: relative;
-    width: min(100%, 320px);
-    margin: 0 auto;
-    padding: 14px 12px 22px;
-    border: 2px solid var(--la-border, #d1d5db);
-    border-radius: 28px;
-    background: #111;
-    box-shadow: 0 16px 40px rgba(17, 17, 17, 0.18);
-  }
-
-  &__notch {
-    width: 96px;
-    height: 22px;
-    margin: 0 auto 12px;
-    border-radius: 0 0 14px 14px;
-    background: #000;
+  .iphone-device-frame__content {
+    padding-top: 48px;
+    padding-bottom: 16px;
+    justify-content: center;
   }
 
   &__stage {
@@ -59,7 +25,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 18px 0 8px;
+    padding: 12px 0 4px;
   }
 }
 
