@@ -19,6 +19,7 @@ import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import PivotManualImportModal, {
   manualDraftToImportEntry,
 } from '../PivotLab/PivotManualImportModal';
+import PivotJsonImportPanel from '../PivotLab/PivotJsonImportPanel';
 import PivotCatalogEventEditModal, {
   catalogEditDraftToOverrides,
 } from '../PivotLab/PivotCatalogEventEditModal';
@@ -1372,12 +1373,13 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         <div className="pivot-lab__section-head">
           <div>
             <h2 id="curation-jobs" className="linear-section__title">
-              Saved jobs
+              Saved jobs · {committedWeek}
             </h2>
             <p className="pivot-lab__section-hint">
-              Persist Partiful/Luma explore URLs. By default each discovered event lands in the
-              ISO week of its start date (one crawl can fill many weeks). Enable “Force into
-              review week” to pin everything to the week above.
+              Persist Partiful/Luma explore URLs for this tenant. “Run for week” targets{' '}
+              <strong>{committedWeek}</strong> (the batch week in the header). By default each
+              discovered event lands in the ISO week of its start date (one crawl can fill many
+              weeks). Enable “Force into review week” to pin everything to {committedWeek}.
             </p>
           </div>
           <button type="button" className="linear-btn linear-btn--secondary" onClick={openCreateJob}>
@@ -1450,7 +1452,9 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                           }
                           onClick={() => handleRunJob(job)}
                         >
-                          {busyKey === `job-run-${job._id}` ? 'Starting…' : 'Run for week'}
+                          {busyKey === `job-run-${job._id}`
+                            ? 'Starting…'
+                            : `Run for ${committedWeek}`}
                         </button>
                         <button
                           type="button"
@@ -1607,10 +1611,12 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         <div className="pivot-lab__section-head">
           <div>
             <h2 id="curation-manual" className="linear-section__title">
-              Manual add
+              Manual add · {committedWeek}
             </h2>
             <p className="pivot-lab__section-hint">
-              Paste a single event URL, or open the manual form for JSON-free entry.
+              Import tools for the current batch week: paste a single event URL, import agent JSON,
+              or open the manual form for JSON-free entry. Unless “Force into review week” is on,
+              events land in the week of their start date.
             </p>
           </div>
           <button
@@ -1638,6 +1644,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             {urlImportLoading ? 'Working…' : 'Import URL'}
           </button>
         </div>
+        <PivotJsonImportPanel
+          tenantKey={tenantKey}
+          batchWeek={committedWeek}
+          forceBatchWeek={forceBatchWeek}
+          disabled={!committedWeekValid || !weekSettled || !tenantKey}
+          mode="stage"
+          onBeforeStage={() => setBatchWeek(committedWeek, { immediate: true })}
+          onStaged={refreshAll}
+        />
       </section>
 
       <section className="linear-section pivot-lab__section" aria-labelledby="curation-queue">
