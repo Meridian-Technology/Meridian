@@ -1,7 +1,13 @@
 const mongoose = require('mongoose');
 const getModels = require('./getModelService');
 const { getTenantByKey } = require('./tenantConfigService');
-const { toIsoWeek, isValidIsoWeek } = require('../utilities/pivotIsoWeek');
+const { isValidIsoWeek, shiftIsoWeek } = require('../utilities/pivotIsoWeek');
+const {
+  resolvePivotLiveBatchWeek,
+  resolvePivotDropPendingForCalendarWeek,
+  resolvePivotUpcomingDropBatchWeek,
+  describePivotBatchWeekResolution,
+} = require('../utilities/pivotDropSchedule');
 const { PIVOT_TAG_SLUG_PATTERN } = require('../schemas/pivotTagCatalog');
 const {
   normalizePivotTimeSlots,
@@ -12,14 +18,104 @@ const {
   serializePivotMovie,
   resolvePivotCoverImageUrl,
 } = require('../utilities/pivotMovieMetadata');
+const { serializePivotEnrichment } = require('../utilities/pivotEnrichment');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const {
+  normalizeDeckSnapshotRefresh,
+  recordPivotDeckSnapshot,
+} = require('./pivotDeckSnapshotService');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 
 const FRIEND_CAP = 5;
 const PIVOT_EVENT_STATUSES = ['approved', 'not-applicable'];
 const LOW_FEEDBACK_RATING_THRESHOLD = 3;
+/** Ranker id stamped on feed payloads + deck impressions (Task 1.2). */
+const PIVOT_FEED_RANKER_VERSION = 'rules_v0';
 const PUBLIC_EVENT_FIELDS =
   'name description location start_time end_time externalLink type registrationCount image customFields.pivot';
+const CATALOG_PROBE_FIELDS = 'start_time end_time customFields.pivot';
+
+const PUBLISHED_CATALOG_BASE_QUERY = {
+  'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
+  status: { $in: PIVOT_EVENT_STATUSES },
+  isDeleted: { $ne: true },
+  'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
+};
+
+function buildPublishedCatalogQuery(batchWeek, now) {
+  return {
+    'customFields.pivot.batchWeek': batchWeek,
+    ...PUBLISHED_CATALOG_BASE_QUERY,
+    ...getFeedPilotWindowFilter(now),
+  };
+}
+
+function countUpcomingCatalogEvents(events, now) {
+  return events.filter(
+    (event) =>
+      resolveDisplayHost(event.customFields?.pivot) &&
+      isUpcomingPivotEvent(event, now),
+  ).length;
+}
+
+async function countUpcomingCatalogEventsForBatchWeek(req, batchWeek, now) {
+  const { Event } = getModels(req, 'Event');
+  const events = await Event.find(buildPublishedCatalogQuery(batchWeek, now))
+    .select(CATALOG_PROBE_FIELDS)
+    .lean();
+  return countUpcomingCatalogEvents(events, now);
+}
+
+/**
+ * Pick the batchWeek for feed/explore when the client did not pass ?batchWeek.
+ * Prefer the current consumer week; if that catalog has no upcoming published
+ * events, probe adjacent ISO weeks (handles event-date vs drop-week skew).
+ */
+async function resolvePivotFeedBatchWeek(req, { tenant, now, requestedBatchWeek }) {
+  const trimmedRequest =
+    typeof requestedBatchWeek === 'string' ? requestedBatchWeek.trim() : '';
+
+  if (trimmedRequest) {
+    return {
+      batchWeek: trimmedRequest,
+      batchWeekSource: 'query',
+      catalogProbeWeeks: [trimmedRequest],
+    };
+  }
+
+  const preferred = resolvePivotLiveBatchWeek(tenant, now);
+  const dropPending = resolvePivotDropPendingForCalendarWeek(tenant, now);
+  const probeOrder = dropPending
+    ? [preferred, shiftIsoWeek(preferred, -1)]
+    : [preferred, shiftIsoWeek(preferred, 1), shiftIsoWeek(preferred, -1)];
+  const seen = new Set();
+  const catalogProbeWeeks = [];
+
+  for (const week of probeOrder) {
+    if (seen.has(week)) {
+      continue;
+    }
+    seen.add(week);
+    catalogProbeWeeks.push(week);
+
+    const matchCount = await countUpcomingCatalogEventsForBatchWeek(req, week, now);
+    if (matchCount > 0) {
+      return {
+        batchWeek: week,
+        batchWeekSource: week === preferred ? 'consumer_week' : 'catalog_fallback',
+        catalogProbeWeeks,
+        catalogMatchCount: matchCount,
+      };
+    }
+  }
+
+  return {
+    batchWeek: preferred,
+    batchWeekSource: 'consumer_week',
+    catalogProbeWeeks,
+    catalogMatchCount: 0,
+  };
+}
 
 function getPilotWindow(now = new Date()) {
   const windowStart = new Date(
@@ -120,6 +216,7 @@ function serializePivotFeedEvent(event, extras) {
   const pivot = event.customFields?.pivot || {};
   const coverImageUrl = resolvePivotCoverImageUrl(event);
   const movie = serializePivotMovie(pivot.movie);
+  const enrichment = serializePivotEnrichment(pivot);
   const normalizedSlots = normalizePivotTimeSlots(pivot.timeSlots);
   const timeSlots = normalizedSlots.length
     ? serializePivotTimeSlots(normalizedSlots, extras.socialByTimeSlot)
@@ -139,6 +236,7 @@ function serializePivotFeedEvent(event, extras) {
     ...(coverImageUrl ? { coverImageUrl } : {}),
     ...(timeSlots ? { timeSlots } : {}),
     ...(movie ? { movie } : {}),
+    ...(enrichment ? { enrichment } : {}),
     displayHost: extras.displayHost,
     userIntent: extras.userIntent,
     ...(extras.userTimeSlotId ? { userTimeSlotId: extras.userTimeSlotId } : {}),
@@ -148,6 +246,8 @@ function serializePivotFeedEvent(event, extras) {
     // even when the preview arrays above are capped at FRIEND_CAP.
     friendsInterestedCount: extras.friendsInterestedCount,
     friendsGoingCount: extras.friendsGoingCount,
+    /** 0-based position in the ranked feed (exposure bias / training). */
+    ...(typeof extras.rankInFeed === 'number' ? { rankInFeed: extras.rankInFeed } : {}),
   };
 }
 
@@ -496,8 +596,9 @@ async function getPivotFeed(req, options = {}) {
   }
 
   const now = options.now || new Date();
-  const batchWeek = options.batchWeek?.trim() || toIsoWeek(now);
-  if (options.batchWeek && !isValidIsoWeek(batchWeek)) {
+  const tenant = await getTenantByKey(req, req.school);
+
+  if (options.batchWeek?.trim() && !isValidIsoWeek(options.batchWeek.trim())) {
     return {
       error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
       status: 400,
@@ -505,10 +606,23 @@ async function getPivotFeed(req, options = {}) {
     };
   }
 
+  const batchWeekPick = await resolvePivotFeedBatchWeek(req, {
+    tenant,
+    now,
+    requestedBatchWeek: options.batchWeek,
+  });
+  const batchWeek = batchWeekPick.batchWeek;
+  const batchWeekResolution = {
+    ...describePivotBatchWeekResolution(tenant, now, options.batchWeek),
+    ...batchWeekPick,
+    resolvedBatchWeek: batchWeekPick.batchWeek,
+  };
+
   const { Event } = getModels(req, 'Event');
   const excludeEventIds = normalizeExcludeEventIds(options.excludeEventIds);
 
   // Choice A: draft/staged never appear; only published after explicit Release.
+  // Covered by Event index `pivot_batchWeek_ingestStatus_start_time` (Task 1.4).
   const query = {
     'customFields.pivot.batchWeek': batchWeek,
     'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
@@ -546,7 +660,6 @@ async function getPivotFeed(req, options = {}) {
     compareByFeedRank(socialByEvent, userInterestTags, negativeFeedbackTags),
   );
 
-  const tenant = await getTenantByKey(req, req.school);
   const cityDisplayName = tenant?.location || tenant?.name || req.school;
 
   const multiSlotEventCount = validEvents.filter(
@@ -555,21 +668,43 @@ async function getPivotFeed(req, options = {}) {
 
   logPivot('info', 'feed built', {
     ...pivotRequestContext(req),
+    ...batchWeekResolution,
     batchWeek,
     cityDisplayName,
     candidateCount: events.length,
     eventCount: validEvents.length,
+    droppedBeforeCatalog: events.length - validEvents.length,
     multiSlotEventCount,
     excludedCount: excludeEventIds.length,
     interestTagCount: userInterestTags.size,
     negativeTagPenaltyCount: negativeFeedbackTags.size,
   });
 
+  if (validEvents.length === 0 && typeof Event.distinct === 'function') {
+    const publishedBatchWeeks = await Event.distinct('customFields.pivot.batchWeek', {
+      ...PUBLISHED_CATALOG_BASE_QUERY,
+    });
+    logPivot('warn', 'feed empty catalog — published batchWeeks in tenant', {
+      ...pivotRequestContext(req),
+      batchWeek,
+      publishedBatchWeeks: publishedBatchWeeks.filter(Boolean).map(String).sort(),
+    });
+  }
+
+  await recordPivotDeckSnapshot(req, {
+    userId,
+    batchWeek,
+    orderedEventIds: validEvents.map((event) => event._id),
+    rankerVersion: PIVOT_FEED_RANKER_VERSION,
+    forceRefresh: normalizeDeckSnapshotRefresh(options.refresh, req.user?.roles),
+  });
+
   return {
     data: {
       batchWeek,
       cityDisplayName,
-      events: validEvents.map((event) => {
+      rankerVersion: PIVOT_FEED_RANKER_VERSION,
+      events: validEvents.map((event, rankInFeed) => {
         const id = String(event._id);
         const social = socialByEvent.get(id) || {
           friendsInterested: [],
@@ -598,6 +733,7 @@ async function getPivotFeed(req, options = {}) {
           friendsGoing: social.friendsGoing,
           friendsInterestedCount: social.friendInterestedCount || 0,
           friendsGoingCount: social.friendRegisteredCount || 0,
+          rankInFeed,
         });
       }),
     },
@@ -680,6 +816,12 @@ module.exports = {
   loadNegativeFeedbackTags,
   collectCatalogTagsFromEvents,
   mapFriendPreview,
+  resolvePivotFeedBatchWeek,
+  countUpcomingCatalogEventsForBatchWeek,
+  buildPublishedCatalogQuery,
+  countUpcomingCatalogEvents,
   LOW_FEEDBACK_RATING_THRESHOLD,
+  FRIEND_CAP,
   PIVOT_EVENT_STATUSES,
+  PIVOT_FEED_RANKER_VERSION,
 };

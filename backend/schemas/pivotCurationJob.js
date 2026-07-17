@@ -11,6 +11,19 @@ const lastRunStatsSchema = new mongoose.Schema(
     skipped: { type: Number, default: 0 },
     failed: { type: Number, default: 0 },
     message: { type: String, default: null, trim: true },
+    byBatchWeek: { type: mongoose.Schema.Types.Mixed, default: null },
+  },
+  { _id: false },
+);
+
+const lastRunEventSchema = new mongoose.Schema(
+  {
+    eventId: { type: String, default: null, trim: true },
+    name: { type: String, default: null, trim: true },
+    batchWeek: { type: String, default: null, trim: true },
+    sourceUrl: { type: String, default: null, trim: true },
+    ingestStatus: { type: String, default: null, trim: true },
+    updated: { type: Boolean, default: false },
   },
   { _id: false },
 );
@@ -63,6 +76,11 @@ const pivotCurationJobSchema = new mongoose.Schema(
     lastRunStats: {
       type: lastRunStatsSchema,
       default: null,
+    },
+    /** Upserted events from the most recent completed/failed crawl (capped). */
+    lastRunEvents: {
+      type: [lastRunEventSchema],
+      default: [],
     },
     createdBy: {
       type: String,

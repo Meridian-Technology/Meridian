@@ -15,6 +15,52 @@ import PivotTmdbLookup from './PivotTmdbLookup';
 import './PivotManualImportModal.scss';
 import './PivotCatalogEventEditModal.scss';
 
+const EMPTY_ENRICHMENT_DRAFT = Object.freeze({
+  vibeText: '',
+  priceBand: '',
+  neighborhood: '',
+  audience: '',
+});
+
+export function enrichmentToDraft(enrichment) {
+  if (!enrichment) {
+    return { ...EMPTY_ENRICHMENT_DRAFT };
+  }
+
+  return {
+    vibeText: Array.isArray(enrichment.vibe) ? enrichment.vibe.join(', ') : '',
+    priceBand: enrichment.priceBand || '',
+    neighborhood: enrichment.neighborhood || '',
+    audience: enrichment.audience || '',
+  };
+}
+
+export function draftEnrichmentToPayload(draftEnrichment) {
+  if (!draftEnrichment) {
+    return {};
+  }
+
+  return {
+    vibe: draftEnrichment.vibeText,
+    priceBand: draftEnrichment.priceBand || undefined,
+    neighborhood: draftEnrichment.neighborhood,
+    audience: draftEnrichment.audience,
+  };
+}
+
+export function hasEnrichmentDraftContent(draftEnrichment) {
+  if (!draftEnrichment) {
+    return false;
+  }
+
+  return Boolean(
+    draftEnrichment.vibeText?.trim() ||
+      draftEnrichment.priceBand ||
+      draftEnrichment.neighborhood?.trim() ||
+      draftEnrichment.audience?.trim(),
+  );
+}
+
 function isoToDatetimeLocal(iso) {
   if (!iso) return '';
   const parsed = new Date(iso);
@@ -55,6 +101,7 @@ export function catalogEventToEditDraft(event) {
     ingestStatus: event.ingestStatus || 'staged',
     tags: Array.isArray(event.tags) ? [...event.tags] : [],
     movie: event.movie || null,
+    enrichment: enrichmentToDraft(event.enrichment),
   };
 }
 
@@ -81,6 +128,7 @@ export function catalogEditDraftToOverrides(draft) {
     tags: Array.isArray(draft.tags) ? draft.tags : [],
     ...(useShowtimes ? { timeSlots: normalizedSlots } : { timeSlots: [] }),
     ...(draft.movie ? { movie: draft.movie } : {}),
+    enrichment: draftEnrichmentToPayload(draft.enrichment),
   };
 }
 
@@ -454,11 +502,16 @@ function PivotCatalogEventEditModal({
                     value={draft.ingestStatus}
                     onChange={(e) => patchDraft({ ingestStatus: e.target.value })}
                   >
-                    <option value="published">Published</option>
-                    <option value="staged">Staged</option>
                     <option value="draft">Draft</option>
+                    <option value="staged">Staged</option>
+                    <option value="published">Published (live feed)</option>
                   </select>
                 </label>
+                {event?.ingestStatus === 'staged' && draft.ingestStatus === 'published' ? (
+                  <p className="pivot-manual-import__hint" role="status">
+                    Saving as Published runs the release step so the event appears in the app feed.
+                  </p>
+                ) : null}
                 <label className="pivot-manual-import__field">
                   <span className="pivot-manual-import__label">Listing URL</span>
                   <input
@@ -470,6 +523,92 @@ function PivotCatalogEventEditModal({
                   />
                 </label>
               </div>
+            </section>
+
+            <section className="pivot-manual-import__section" aria-label="Enrichment">
+              <h3 className="pivot-manual-import__section-title">Enrichment</h3>
+              <p className="pivot-manual-import__hint">
+                Optional metadata for Explore search and future embeddings. Empty fields are allowed.
+              </p>
+              {draft.ingestStatus === 'published' && !hasEnrichmentDraftContent(draft.enrichment) ? (
+                <p className="pivot-catalog-edit__enrichment-warn" role="status">
+                  No enrichment yet — publish is allowed, but search and personalization work better with vibe, price, neighborhood, or audience.
+                </p>
+              ) : null}
+              <label className="pivot-manual-import__field pivot-manual-import__field--wide">
+                <span className="pivot-manual-import__label">Vibe (comma-separated)</span>
+                <input
+                  className="linear-input pivot-manual-import__input"
+                  value={draft.enrichment?.vibeText || ''}
+                  onChange={(e) =>
+                    patchDraft({
+                      enrichment: {
+                        ...draft.enrichment,
+                        vibeText: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="intimate, dancey, outdoors"
+                  autoComplete="off"
+                />
+              </label>
+              <div className="pivot-manual-import__row">
+                <label className="pivot-manual-import__field">
+                  <span className="pivot-manual-import__label">Price band</span>
+                  <select
+                    className="linear-input pivot-manual-import__input"
+                    value={draft.enrichment?.priceBand || ''}
+                    onChange={(e) =>
+                      patchDraft({
+                        enrichment: {
+                          ...draft.enrichment,
+                          priceBand: e.target.value,
+                        },
+                      })
+                    }
+                  >
+                    <option value="">Not set</option>
+                    <option value="free">Free</option>
+                    <option value="low">Low</option>
+                    <option value="mid">Mid</option>
+                    <option value="high">High</option>
+                  </select>
+                </label>
+                <label className="pivot-manual-import__field">
+                  <span className="pivot-manual-import__label">Neighborhood</span>
+                  <input
+                    className="linear-input pivot-manual-import__input"
+                    value={draft.enrichment?.neighborhood || ''}
+                    onChange={(e) =>
+                      patchDraft({
+                        enrichment: {
+                          ...draft.enrichment,
+                          neighborhood: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="williamsburg"
+                    autoComplete="off"
+                  />
+                </label>
+              </div>
+              <label className="pivot-manual-import__field pivot-manual-import__field--wide">
+                <span className="pivot-manual-import__label">Audience</span>
+                <input
+                  className="linear-input pivot-manual-import__input"
+                  value={draft.enrichment?.audience || ''}
+                  onChange={(e) =>
+                    patchDraft({
+                      enrichment: {
+                        ...draft.enrichment,
+                        audience: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="21+, queer-friendly, families"
+                  autoComplete="off"
+                />
+              </label>
             </section>
 
             <section className="pivot-manual-import__section" aria-label="Tags">

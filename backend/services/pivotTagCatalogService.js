@@ -54,7 +54,10 @@ async function validatePivotEventTags(req, rawTags, options = {}) {
     }
   }
 
-  const slugSet = await loadCatalogSlugSet(req, { includeInactive: !activeOnly });
+  const slugSet =
+    options.catalogSlugSet instanceof Set
+      ? options.catalogSlugSet
+      : await loadCatalogSlugSet(req, { includeInactive: !activeOnly });
   const unknown = tags.filter((slug) => !slugSet.has(slug));
   if (unknown.length) {
     return {

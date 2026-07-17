@@ -20,6 +20,7 @@ const {
   normalizePivotMovie,
   applyMovieListingDefaults,
 } = require('../utilities/pivotMovieMetadata');
+const { normalizePivotEnrichment } = require('../utilities/pivotEnrichment');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
 const {
   normalizeIngestStatus,
@@ -164,6 +165,10 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
     movie: normalizePivotMovie(
       overrides.movie !== undefined ? overrides.movie : draft.movie,
     ),
+    enrichment:
+      overrides.enrichment !== undefined
+        ? overrides.enrichment
+        : draft.enrichment,
   };
 }
 
@@ -213,12 +218,22 @@ function validateMergedDraft(merged) {
     endTime = new Date(startTime.getTime() + DEFAULT_DURATION_MS);
   }
 
+  const enrichmentResult = normalizePivotEnrichment(withMovieDefaults.enrichment);
+  if (enrichmentResult?.error) {
+    return {
+      error: enrichmentResult.error,
+      status: 400,
+      code: enrichmentResult.code,
+    };
+  }
+
   return {
     merged: {
       ...withMovieDefaults,
       timeSlots: slots,
       startTime,
       endTime,
+      ...(enrichmentResult ? { enrichment: enrichmentResult } : {}),
     },
   };
 }
@@ -237,6 +252,7 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
     tags: tags || [],
     ...(merged.timeSlots?.length ? { timeSlots: merged.timeSlots } : {}),
     ...(merged.movie ? { movie: merged.movie } : {}),
+    ...(merged.enrichment ? { enrichment: merged.enrichment } : {}),
     ingestStatus: ingestStatus || DEFAULT_INGEST_STATUS,
     importedAt: new Date().toISOString(),
     importedBy,
@@ -788,6 +804,22 @@ async function updateIngestEvent(req, options = {}) {
       }
     } else {
       delete pivotPatch.movie;
+    }
+  }
+
+  if (overrides.enrichment !== undefined) {
+    const enrichmentResult = normalizePivotEnrichment(overrides.enrichment);
+    if (enrichmentResult?.error) {
+      return {
+        error: enrichmentResult.error,
+        status: 400,
+        code: enrichmentResult.code,
+      };
+    }
+    if (enrichmentResult) {
+      pivotPatch.enrichment = enrichmentResult;
+    } else {
+      delete pivotPatch.enrichment;
     }
   }
 

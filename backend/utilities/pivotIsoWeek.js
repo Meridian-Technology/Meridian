@@ -48,6 +48,78 @@ function isoWeekToUtcRange(batchWeek) {
   return { start, end };
 }
 
+function daysFromIsoMonday(dayOfWeek) {
+  return dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+}
+
+function normalizeDropDayOfWeek(value, fallback = 4) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(6, Math.max(0, Math.trunc(parsed)));
+}
+
+/**
+ * Drop-aligned batch window: drop weekday through the following Wednesday
+ * (day before the next week's drop). E.g. Thu Jul 9 – Wed Jul 15 for W28.
+ */
+function batchWeekToEventWindowUtcRange(batchWeek, dropDayOfWeek = 4) {
+  const monday = isoWeekToMondayUtc(batchWeek);
+  const day = normalizeDropDayOfWeek(dropDayOfWeek);
+  const dropDate = new Date(monday);
+  dropDate.setUTCDate(monday.getUTCDate() + daysFromIsoMonday(day));
+  const lastDay = new Date(dropDate);
+  lastDay.setUTCDate(dropDate.getUTCDate() + 6);
+  const start = new Date(
+    Date.UTC(dropDate.getUTCFullYear(), dropDate.getUTCMonth(), dropDate.getUTCDate(), 12),
+  );
+  const end = new Date(
+    Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate(), 12),
+  );
+  return { start, end };
+}
+
+/** [dropDay 00:00 UTC, next dropDay 00:00 UTC) — used for interval queries. */
+function batchWeekToDropCycleUtcRange(batchWeek, dropDayOfWeek = 4) {
+  const monday = isoWeekToMondayUtc(batchWeek);
+  const day = normalizeDropDayOfWeek(dropDayOfWeek);
+  const start = new Date(monday);
+  start.setUTCDate(monday.getUTCDate() + daysFromIsoMonday(day));
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 7);
+  return { start, end };
+}
+
+function formatZonedCalendarDate(date, timeZone, options = {}) {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...options,
+    timeZone,
+  });
+}
+
+/**
+ * Human-readable drop-cycle range, e.g. "Jul 9 – Jul 15, 2026" (Thu → Wed).
+ */
+function formatBatchWeekRangeLabel(batchWeek, options = {}) {
+  const dropDayOfWeek = normalizeDropDayOfWeek(options.dropDayOfWeek, 4);
+  let range;
+  try {
+    range = batchWeekToEventWindowUtcRange(batchWeek, dropDayOfWeek);
+  } catch {
+    return null;
+  }
+
+  const timeZone = options.timeZone || 'UTC';
+  const { start, end } = range;
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+  const startLabel = formatZonedCalendarDate(start, timeZone, {
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+  const endLabel = formatZonedCalendarDate(end, timeZone, { year: 'numeric' });
+  return `${startLabel} – ${endLabel}`;
+}
+
 /** ISO week string from UTC calendar components (avoids local-timezone getters). */
 function toIsoWeekUtc(date) {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -55,6 +127,27 @@ function toIsoWeekUtc(date) {
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+/**
+ * ISO week for a calendar date in an IANA timezone (Pivot city local date).
+ * @param {Date} [date]
+ * @param {string} [timeZone='UTC']
+ */
+function toIsoWeekInTimeZone(date = new Date(), timeZone = 'UTC') {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  const localDate = new Date(
+    Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)),
+  );
+  return toIsoWeekUtc(localDate);
 }
 
 /**
@@ -143,9 +236,15 @@ function resolveEventBatchWeek(options = {}) {
 
 module.exports = {
   toIsoWeek,
+  toIsoWeekInTimeZone,
   isValidIsoWeek,
   isoWeekToMondayUtc,
   isoWeekToUtcRange,
+  batchWeekToEventWindowUtcRange,
+  batchWeekToDropCycleUtcRange,
+  formatBatchWeekRangeLabel,
+  daysFromIsoMonday,
+  normalizeDropDayOfWeek,
   shiftIsoWeek,
   batchWeekFromEventDate,
   resolveEventBatchWeek,

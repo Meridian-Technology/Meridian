@@ -34,6 +34,24 @@ function globalUserFromSource(source) {
     return doc;
 }
 
+async function syncPlatformAdminInviteReadiness(req, globalUser) {
+    if (!globalUser?._id || !globalUser?.email) return;
+    try {
+        const {
+            markPlatformAdminInvitesReadyForEmail,
+        } = require('./platformAdminInviteService');
+        await markPlatformAdminInvitesReadyForEmail(req, {
+            email: globalUser.email,
+            globalUserId: globalUser._id,
+        });
+    } catch (inviteErr) {
+        console.warn(
+            '[authGlobal] markPlatformAdminInvitesReadyForEmail failed:',
+            inviteErr?.message || inviteErr,
+        );
+    }
+}
+
 /**
  * Get or create GlobalUser by email and optional provider ids.
  * @param {object} req - request with req.globalDb
@@ -58,6 +76,7 @@ async function getOrCreateGlobalUser(req, source) {
             Object.assign(globalUser, updates);
             await globalUser.save();
         }
+        await syncPlatformAdminInviteReadiness(req, globalUser);
         return globalUser;
     }
 
@@ -79,11 +98,13 @@ async function getOrCreateGlobalUser(req, source) {
             Object.assign(globalUser, updates);
             await globalUser.save();
         }
+        await syncPlatformAdminInviteReadiness(req, globalUser);
         return globalUser;
     }
 
     globalUser = new GlobalUser(globalUserFromSource(source));
     await globalUser.save();
+    await syncPlatformAdminInviteReadiness(req, globalUser);
     return globalUser;
 }
 

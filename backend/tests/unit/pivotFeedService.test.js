@@ -2,9 +2,15 @@ jest.mock('../../services/getModelService', () => jest.fn());
 jest.mock('../../services/tenantConfigService', () => ({
   getTenantByKey: jest.fn(),
 }));
+jest.mock('../../services/pivotDeckSnapshotService', () => ({
+  normalizeDeckSnapshotRefresh: jest.requireActual('../../services/pivotDeckSnapshotService')
+    .normalizeDeckSnapshotRefresh,
+  recordPivotDeckSnapshot: jest.fn().mockResolvedValue({ skipped: false }),
+}));
 
 const getModels = require('../../services/getModelService');
 const { getTenantByKey } = require('../../services/tenantConfigService');
+const { recordPivotDeckSnapshot } = require('../../services/pivotDeckSnapshotService');
 const {
   getPivotFeed,
   getPivotEventFriends,
@@ -20,6 +26,7 @@ const {
   compareByFeedRank,
   normalizeInterestTagSet,
   loadNegativeFeedbackTags,
+  resolvePivotFeedBatchWeek,
 } = require('../../services/pivotFeedService');
 
 function mockUserModel(pivotInterestTags = [], friendUsers = []) {
@@ -148,6 +155,11 @@ describe('pivotFeedService helpers', () => {
           pivot: {
             tags: ['board-games'],
             host: { name: 'Brooklyn Board Game Cafe' },
+            enrichment: {
+              vibe: ['cozy'],
+              priceBand: 'low',
+              neighborhood: 'park slope',
+            },
           },
         },
       },
@@ -167,6 +179,11 @@ describe('pivotFeedService helpers', () => {
       displayHost: { name: 'Brooklyn Board Game Cafe' },
       userIntent: 'interested',
       tags: ['board-games'],
+      enrichment: {
+        vibe: ['cozy'],
+        priceBand: 'low',
+        neighborhood: 'park slope',
+      },
       friendsInterestedCount: 0,
       friendsGoingCount: 0,
     });
@@ -266,10 +283,12 @@ describe('getPivotFeed', () => {
   beforeEach(() => {
     getModels.mockReset();
     getTenantByKey.mockReset();
+    recordPivotDeckSnapshot.mockClear();
     getTenantByKey.mockResolvedValue({
       tenantKey: 'nyc',
       name: 'New York City Pilot',
       location: 'New York City',
+      pivotPilot: true,
     });
   });
 
@@ -330,9 +349,11 @@ describe('getPivotFeed', () => {
 
     expect(result.data.batchWeek).toBe('2026-W22');
     expect(result.data.cityDisplayName).toBe('New York City');
+    expect(result.data.rankerVersion).toBe('rules_v0');
     expect(result.data.events).toHaveLength(1);
     expect(result.data.events[0].displayHost).toEqual({ name: 'Roof Records' });
     expect(result.data.events[0].userIntent).toBeNull();
+    expect(result.data.events[0].rankInFeed).toBe(0);
     expect(Event.find).toHaveBeenCalledWith(
       expect.objectContaining({
         'customFields.pivot.batchWeek': '2026-W22',
@@ -625,6 +646,8 @@ describe('getPivotFeed', () => {
       'Friend Interested',
       'No Friends (popular)',
     ]);
+    expect(result.data.events.map((event) => event.rankInFeed)).toEqual([0, 1, 2]);
+    expect(result.data.rankerVersion).toBe('rules_v0');
     const registered = result.data.events[0];
     expect(registered.friendsGoing).toHaveLength(1);
     expect(registered.friendsInterested).toHaveLength(1);
@@ -922,6 +945,105 @@ describe('getPivotFeed', () => {
       batchWeek: '2026-W22',
     });
   });
+
+  it('records a deck snapshot matching the ranked feed order', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Earlier Generic',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Venue A' },
+            tags: ['food'],
+          },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Later Match',
+        start_time: new Date('2026-05-29T23:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Venue B' },
+            tags: ['live-music'],
+          },
+        },
+      },
+    ];
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['live-music']),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event._id)).toEqual([
+      '665a000000000000000000b2',
+      '665a000000000000000000a1',
+    ]);
+    expect(recordPivotDeckSnapshot).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        userId,
+        batchWeek: '2026-W22',
+        orderedEventIds: [
+          events[1]._id,
+          events[0]._id,
+        ],
+        rankerVersion: 'rules_v0',
+        forceRefresh: false,
+      }),
+    );
+  });
+
+  it('ignores refresh=1 for non-admin users', async () => {
+    const events = [
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Sunset Listening Party',
+        start_time: new Date('2026-05-28T22:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Roof Records' },
+          },
+        },
+      },
+    ];
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    await getPivotFeed(req, { batchWeek: '2026-W22', now, refresh: '1' });
+
+    expect(recordPivotDeckSnapshot).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({ forceRefresh: false }),
+    );
+  });
 });
 
 describe('getPivotEventFriends', () => {
@@ -996,5 +1118,135 @@ describe('getPivotEventFriends', () => {
     const result = await getPivotEventFriends(req, eventId);
     expect(result.status).toBe(404);
     expect(result.code).toBe('EVENT_NOT_FOUND');
+  });
+});
+
+describe('resolvePivotFeedBatchWeek', () => {
+  const now = new Date('2026-07-13T16:00:00.000Z');
+  const nycTenant = {
+    tenantKey: 'nyc',
+    tenantType: 'pivot',
+    pivotPilot: true,
+    pivotDropTimezone: 'America/New_York',
+    pivotDropDayOfWeek: 4,
+    pivotDropHour: 18,
+    pivotDropMinute: 0,
+  };
+
+  function mockCatalogProbe(eventsByWeek) {
+    getModels.mockReturnValue({
+      Event: {
+        find: jest.fn((query) => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue(
+            eventsByWeek[query['customFields.pivot.batchWeek']] || [],
+          ),
+        })),
+      },
+    });
+  }
+
+  it('returns requested batchWeek without probing adjacent weeks', async () => {
+    const Event = { find: jest.fn() };
+    getModels.mockReturnValue({ Event });
+    const req = { school: 'nyc' };
+
+    const result = await resolvePivotFeedBatchWeek(req, {
+      tenant: nycTenant,
+      now,
+      requestedBatchWeek: '2026-W22',
+    });
+
+    expect(result).toEqual({
+      batchWeek: '2026-W22',
+      batchWeekSource: 'query',
+      catalogProbeWeeks: ['2026-W22'],
+    });
+    expect(Event.find).not.toHaveBeenCalled();
+  });
+
+  it('keeps the live consumer week Mon–Wed before the Thursday drop', async () => {
+    mockCatalogProbe({
+      '2026-W28': [
+        {
+          start_time: new Date('2026-07-14T23:00:00.000Z'),
+          end_time: new Date('2026-07-15T03:00:00.000Z'),
+          customFields: {
+            pivot: { host: { name: 'Venue' } },
+          },
+        },
+      ],
+      '2026-W29': [
+        {
+          start_time: new Date('2026-07-16T23:00:00.000Z'),
+          end_time: new Date('2026-07-17T03:00:00.000Z'),
+          customFields: {
+            pivot: { host: { name: 'Venue' } },
+          },
+        },
+      ],
+    });
+    const req = { school: 'nyc' };
+
+    const result = await resolvePivotFeedBatchWeek(req, {
+      tenant: nycTenant,
+      now,
+    });
+
+    expect(result.batchWeek).toBe('2026-W28');
+    expect(result.batchWeekSource).toBe('consumer_week');
+    expect(result.catalogMatchCount).toBe(1);
+  });
+
+  it('does not probe the next week before the drop instant', async () => {
+    mockCatalogProbe({
+      '2026-W28': [],
+      '2026-W29': [],
+      '2026-W30': [
+        {
+          start_time: new Date('2026-07-23T23:00:00.000Z'),
+          end_time: new Date('2026-07-24T03:00:00.000Z'),
+          customFields: {
+            pivot: { host: { name: 'Venue' } },
+          },
+        },
+      ],
+    });
+    const req = { school: 'nyc' };
+
+    const result = await resolvePivotFeedBatchWeek(req, {
+      tenant: nycTenant,
+      now,
+    });
+
+    expect(result.batchWeek).toBe('2026-W28');
+    expect(result.batchWeekSource).toBe('consumer_week');
+    expect(result.catalogMatchCount).toBe(0);
+    expect(result.catalogProbeWeeks).toEqual(['2026-W28', '2026-W27']);
+  });
+
+  it('falls back to the next week after the drop instant when the live week is exhausted', async () => {
+    const afterDrop = new Date('2026-07-17T23:00:00.000Z');
+    mockCatalogProbe({
+      '2026-W29': [],
+      '2026-W30': [
+        {
+          start_time: new Date('2026-07-23T23:00:00.000Z'),
+          end_time: new Date('2026-07-24T03:00:00.000Z'),
+          customFields: {
+            pivot: { host: { name: 'Venue' } },
+          },
+        },
+      ],
+    });
+    const req = { school: 'nyc' };
+
+    const result = await resolvePivotFeedBatchWeek(req, {
+      tenant: nycTenant,
+      now: afterDrop,
+    });
+
+    expect(result.batchWeek).toBe('2026-W30');
+    expect(result.batchWeekSource).toBe('catalog_fallback');
   });
 });

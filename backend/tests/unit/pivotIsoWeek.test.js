@@ -3,6 +3,9 @@ const {
   isValidIsoWeek,
   isoWeekToMondayUtc,
   isoWeekToUtcRange,
+  batchWeekToDropCycleUtcRange,
+  batchWeekToEventWindowUtcRange,
+  formatBatchWeekRangeLabel,
   shiftIsoWeek,
   batchWeekFromEventDate,
   resolveEventBatchWeek,
@@ -35,6 +38,34 @@ describe('pivotIsoWeek', () => {
       const { start, end } = isoWeekToUtcRange('2026-W27');
       expect(start.toISOString()).toBe('2026-06-29T00:00:00.000Z');
       expect(end.toISOString()).toBe('2026-07-06T00:00:00.000Z');
+    });
+  });
+
+  describe('batchWeekToEventWindowUtcRange', () => {
+    it('covers drop day through the Wednesday before the next drop', () => {
+      const { start, end } = batchWeekToEventWindowUtcRange('2026-W28', 4);
+      expect(start.toISOString()).toBe('2026-07-09T12:00:00.000Z');
+      expect(end.toISOString()).toBe('2026-07-15T12:00:00.000Z');
+    });
+  });
+
+  describe('formatBatchWeekRangeLabel', () => {
+    it('formats Thu–Wed drop cycle labels in tenant timezone', () => {
+      expect(formatBatchWeekRangeLabel('2026-W28', { dropDayOfWeek: 4, timeZone: 'UTC' })).toBe(
+        'Jul 9 – Jul 15, 2026',
+      );
+      expect(
+        formatBatchWeekRangeLabel('2026-W28', {
+          dropDayOfWeek: 4,
+          timeZone: 'America/New_York',
+        }),
+      ).toBe('Jul 9 – Jul 15, 2026');
+      expect(
+        formatBatchWeekRangeLabel('2026-W29', {
+          dropDayOfWeek: 4,
+          timeZone: 'America/New_York',
+        }),
+      ).toBe('Jul 16 – Jul 22, 2026');
     });
   });
 

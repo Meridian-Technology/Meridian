@@ -28,6 +28,19 @@ const runFailureSchema = new mongoose.Schema(
   { _id: false },
 );
 
+/** Upserted catalog rows from a crawl — capped for UI polling payloads. */
+const runEventSchema = new mongoose.Schema(
+  {
+    eventId: { type: String, default: null, trim: true },
+    name: { type: String, default: null, trim: true },
+    batchWeek: { type: String, default: null, trim: true },
+    sourceUrl: { type: String, default: null, trim: true },
+    ingestStatus: { type: String, default: null, trim: true },
+    updated: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const pivotCurationRunSchema = new mongoose.Schema(
   {
     tenantKey: {
@@ -100,6 +113,10 @@ const pivotCurationRunSchema = new mongoose.Schema(
     },
     failures: {
       type: [runFailureSchema],
+      default: [],
+    },
+    events: {
+      type: [runEventSchema],
       default: [],
     },
     error: {

@@ -15,10 +15,20 @@ const {
   eventHasTimeSlots,
 } = require('../utilities/pivotTimeSlots');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
+const {
+  recordPivotInteraction,
+  pickInteractionContext,
+} = require('./pivotInteractionService');
 
 const FEED_ACTION_TO_STATUS = {
   interested: 'interested',
   pass: 'passed',
+};
+
+/** Map feed action → PivotInteraction.type (pass stays `pass`, not `passed`). */
+const FEED_ACTION_TO_INTERACTION_TYPE = {
+  interested: 'interested',
+  pass: 'pass',
 };
 
 const RECAP_STATUSES = ['interested', 'registered'];
@@ -151,6 +161,15 @@ async function recordFeedAction(req, body = {}) {
     timeSlotId: null,
   });
 
+  const interactionType = FEED_ACTION_TO_INTERACTION_TYPE[action];
+  recordPivotInteraction(req, {
+    userId,
+    eventId,
+    batchWeek: doc.batchWeek,
+    type: interactionType,
+    ...pickInteractionContext(body),
+  });
+
   logPivot('info', 'feed action recorded', {
     ...pivotRequestContext(req),
     eventId,
@@ -213,6 +232,14 @@ async function recordExternalOpen(req, rawEventId, body = {}) {
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
   ).lean();
 
+  recordPivotInteraction(req, {
+    userId,
+    eventId,
+    batchWeek: doc.batchWeek,
+    type: 'external_open',
+    ...pickInteractionContext(body),
+  });
+
   logPivot('info', 'external ticket open recorded', {
     ...pivotRequestContext(req),
     eventId,
@@ -268,6 +295,14 @@ async function confirmRegistered(req, rawEventId, body = {}) {
     status: 'registered',
     batchWeek,
     timeSlotId: slotResolution.timeSlotId,
+  });
+
+  recordPivotInteraction(req, {
+    userId,
+    eventId,
+    batchWeek: doc.batchWeek,
+    type: 'registered',
+    ...pickInteractionContext(body),
   });
 
   logPivot('info', 'registration confirmed', {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
@@ -142,6 +142,7 @@ function useDebouncedValue(value, delayMs) {
 function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
   const { addNotification } = useNotification();
   const [searchParams, setSearchParams] = useSearchParams();
+  const initializedWeekRef = useRef(false);
 
   const urlBatchWeek = searchParams.get('batchWeek');
   const urlUserId = searchParams.get('userId');
@@ -254,6 +255,19 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
   });
 
   const ops = opsResponse?.success ? opsResponse.data : null;
+  const dropDayOfWeek = ops?.weekRange?.dropDayOfWeek ?? ops?.dropSchedule?.dayOfWeek ?? 4;
+  const dropTimeZone = ops?.weekRange?.timeZone ?? ops?.dropSchedule?.timezone ?? 'UTC';
+
+  useEffect(() => {
+    if (initializedWeekRef.current) return;
+    if (isValidIsoWeek(urlBatchWeek)) {
+      initializedWeekRef.current = true;
+      return;
+    }
+    if (!ops?.anchors?.liveWeek) return;
+    initializedWeekRef.current = true;
+    setBatchWeek(ops.anchors.liveWeek, { immediate: true });
+  }, [ops?.anchors?.liveWeek, urlBatchWeek, setBatchWeek]);
   const overview = ops?.journey && !ops.journey.error ? ops.journey : null;
   const funnel = ops?.funnel && !ops.funnel.error ? ops.funnel : null;
   const users = usersResponse?.success ? usersResponse.data?.users ?? [] : [];
@@ -411,6 +425,8 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
             onChange={setBatchWeek}
             keyboardNavActive={keyboardNavActive}
             anchors={ops?.anchors}
+            dropDayOfWeek={dropDayOfWeek}
+            timeZone={dropTimeZone}
             pending={batchWeek !== committedWeek}
           />
           <button

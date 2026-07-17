@@ -21,7 +21,12 @@ function PlatformAdminsPage() {
   const { data: listResponse, loading, error: fetchError, refetch } = useFetch('/admin/platform-admins', {
     cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },
   });
-  const list = listResponse?.success ? (listResponse.data || []) : [];
+  const listPayload = listResponse?.success ? listResponse.data : null;
+  const list = Array.isArray(listPayload)
+    ? listPayload
+    : Array.isArray(listPayload?.admins)
+      ? listPayload.admins
+      : [];
 
   const { data: orgConfigResponse, refetch: refetchOrgConfig } = useFetch('/org-management/config', {
     cache: { enabled: true, ttlMs: ADMIN_PAGE_CACHE_TTL_MS },

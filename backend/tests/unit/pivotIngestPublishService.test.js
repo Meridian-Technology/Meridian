@@ -716,6 +716,109 @@ describe('pivotIngestPublishService updateIngestEvent', () => {
     );
   });
 
+  it('updates enrichment metadata without blocking publish', async () => {
+    Event.findByIdAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439012',
+        name: 'Updated Event',
+        customFields: {
+          pivot: {
+            ingestStatus: 'published',
+            host: { name: 'New Host' },
+            tags: ['live-music'],
+            enrichment: {
+              vibe: ['dancey', 'loud'],
+              priceBand: 'mid',
+              neighborhood: 'downtown',
+              audience: '21+',
+            },
+          },
+        },
+      }),
+    });
+
+    const result = await updateIngestEvent(
+      { globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        eventId: '507f1f77bcf86cd799439012',
+        overrides: {
+          enrichment: {
+            vibe: 'dancey, loud',
+            priceBand: 'mid',
+            neighborhood: 'downtown',
+            audience: '21+',
+          },
+        },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.data.event.enrichment).toEqual({
+      vibe: ['dancey', 'loud'],
+      priceBand: 'mid',
+      neighborhood: 'downtown',
+      audience: '21+',
+    });
+    expect(Event.findByIdAndUpdate).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439012',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'customFields.pivot': expect.objectContaining({
+            enrichment: {
+              vibe: ['dancey', 'loud'],
+              priceBand: 'mid',
+              neighborhood: 'downtown',
+              audience: '21+',
+            },
+          }),
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('still publishes when enrichment is empty', async () => {
+    Event.findByIdAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439012',
+        name: 'Published Event',
+        customFields: {
+          pivot: {
+            ingestStatus: 'published',
+            host: { name: 'New Host' },
+            tags: ['live-music'],
+          },
+        },
+      }),
+    });
+
+    const result = await updateIngestEvent(
+      { globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        eventId: '507f1f77bcf86cd799439012',
+        overrides: {
+          ingestStatus: 'published',
+          enrichment: {},
+        },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(Event.findByIdAndUpdate).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439012',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'customFields.pivot': expect.not.objectContaining({
+            enrichment: expect.anything(),
+          }),
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
   it('rejects invalid ingestStatus', async () => {
     const result = await updateIngestEvent(
       { globalDb: {} },

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   isValidIsoWeek,
   shiftIsoWeek,
-  formatIsoWeekRange,
+  formatBatchWeekRange,
   toIsoWeek,
 } from '../../../utils/pivotIsoWeek';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
@@ -17,7 +17,7 @@ const VIEWPORT_PAD = 8;
 
 function buildWeekOptions(
   centerWeek,
-  { past = DEFAULT_PAST, future = DEFAULT_FUTURE, extraWeeks = [] } = {},
+  { past = DEFAULT_PAST, future = DEFAULT_FUTURE, extraWeeks = [], dropDayOfWeek = 4, timeZone = 'UTC' } = {},
 ) {
   const center = isValidIsoWeek(centerWeek) ? centerWeek : toIsoWeek();
   const byWeek = new Map();
@@ -26,7 +26,7 @@ function buildWeekOptions(
     if (!week) continue;
     byWeek.set(week, {
       week,
-      rangeLabel: formatIsoWeekRange(week),
+      rangeLabel: formatBatchWeekRange(week, { dropDayOfWeek, timeZone }),
       delta,
     });
   }
@@ -34,7 +34,7 @@ function buildWeekOptions(
     if (!isValidIsoWeek(week) || byWeek.has(week)) continue;
     byWeek.set(week, {
       week,
-      rangeLabel: formatIsoWeekRange(week),
+      rangeLabel: formatBatchWeekRange(week, { dropDayOfWeek, timeZone }),
       delta: week < center ? -past - 1 : future + 1,
     });
   }
@@ -66,6 +66,8 @@ function PivotBatchWeekPicker({
   disabled = false,
   keyboardNavActive = null,
   anchors = null,
+  dropDayOfWeek = 4,
+  timeZone = 'UTC',
   pastWeeks = DEFAULT_PAST,
   futureWeeks = DEFAULT_FUTURE,
   label = 'Batch week',
@@ -86,8 +88,10 @@ function PivotBatchWeekPicker({
         past: pastWeeks,
         future: futureWeeks,
         extraWeeks: [anchors?.liveWeek, anchors?.curateWeek].filter(Boolean),
+        dropDayOfWeek,
+        timeZone,
       }),
-    [batchWeek, pastWeeks, futureWeeks, anchors?.liveWeek, anchors?.curateWeek],
+    [batchWeek, pastWeeks, futureWeeks, anchors?.liveWeek, anchors?.curateWeek, dropDayOfWeek, timeZone],
   );
 
   const close = useCallback(() => setOpen(false), []);
@@ -161,7 +165,9 @@ function PivotBatchWeekPicker({
     [onChange, close],
   );
 
-  const rangeHint = valid ? formatIsoWeekRange(batchWeek) : '—';
+  const rangeHint = valid
+    ? formatBatchWeekRange(batchWeek, { dropDayOfWeek, timeZone })
+    : '—';
 
   const menu =
     open && menuPos && typeof document !== 'undefined'
@@ -182,9 +188,15 @@ function PivotBatchWeekPicker({
               {options.map((opt) => {
                 const selected = opt.week === batchWeek;
                 const isLive = anchors?.liveWeek === opt.week;
-                const isNext = anchors?.curateWeek === opt.week;
+                const isReleaseWindow =
+                  Boolean(anchors?.dropPending) && anchors?.curateWeek === opt.week;
+                const isNext =
+                  !anchors?.dropPending &&
+                  anchors?.curateWeek === opt.week &&
+                  anchors?.curateWeek !== anchors?.liveWeek;
                 let badge = null;
                 if (isLive) badge = 'Live';
+                else if (isReleaseWindow) badge = 'Release';
                 else if (isNext) badge = 'Next drop';
                 else if (opt.delta === 0) badge = 'Selected';
 

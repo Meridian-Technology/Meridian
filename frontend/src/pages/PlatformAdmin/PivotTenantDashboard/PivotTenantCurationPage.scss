@@ -79,6 +79,18 @@
     min-width: 200px;
   }
 
+  &__batch-banner-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  &__explore-preview-btn {
+    flex-shrink: 0;
+  }
+
   &__batch-week {
     margin: 0 0 2px;
     font-size: 22px;
@@ -351,6 +363,22 @@
   &__bulk-tags {
     flex: 1 1 220px;
     min-width: 180px;
+  }
+
+  &__release-hint {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: var(--la-radius, 8px);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--la-text-secondary, #525252);
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.18);
+
+    &--blocked {
+      background: rgba(234, 179, 8, 0.1);
+      border-color: rgba(234, 179, 8, 0.25);
+    }
   }
 
   &__batch-pill {

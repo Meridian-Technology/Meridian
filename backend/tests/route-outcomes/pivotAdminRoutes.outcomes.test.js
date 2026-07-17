@@ -89,6 +89,7 @@ jest.mock('../../services/pivotIngestPublishService', () => ({
 jest.mock('../../services/pivotTagSuggestService', () => ({
   suggestPivotEventTags: jest.fn(),
   suggestPivotEventTagsBatch: jest.fn(),
+  suggestAndApplyPivotEventTags: jest.fn(),
 }));
 
 jest.mock('../../services/pivotCatalogPurgeService', () => ({
@@ -149,6 +150,7 @@ const {
 const {
   suggestPivotEventTags,
   suggestPivotEventTagsBatch,
+  suggestAndApplyPivotEventTags,
 } = require('../../services/pivotTagSuggestService');
 const { purgePivotCatalog } = require('../../services/pivotCatalogPurgeService');
 const { listPivotTags, seedPivotTagCatalog } = require('../../services/pivotTagCatalogService');
@@ -1214,6 +1216,34 @@ describe('pivotAdminRoutes POST /admin/pivot/ingest/suggest-tags', () => {
     expect(response.status).toBe(200);
     expect(response.body.data.suggestions).toHaveLength(1);
     expect(suggestPivotEventTagsBatch).toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes POST /admin/pivot/ingest/suggest-and-apply-tags', () => {
+  beforeEach(() => {
+    suggestAndApplyPivotEventTags.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('applies suggested tags server-side', async () => {
+    suggestAndApplyPivotEventTags.mockResolvedValue({
+      data: { attempted: 2, updated: 2, failed: 0, skipped: 0, results: [] },
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/ingest/suggest-and-apply-tags')
+      .send({ tenantKey: 'nyc', eventIds: ['a', 'b'], onlyTagless: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.updated).toBe(2);
+    expect(suggestAndApplyPivotEventTags).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        eventIds: ['a', 'b'],
+        onlyTagless: true,
+      }),
+    );
   });
 });
 

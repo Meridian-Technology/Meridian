@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
+import { useDashboard } from '../../../contexts/DashboardContext';
 import {
   toIsoWeek,
   isValidIsoWeek,
   shiftIsoWeek,
   formatEventWhen,
-  formatIsoWeekRange,
+  formatBatchWeekRange,
   resolveCurationStageWeeks,
   resolveCurationStageForWeek,
   CURATION_STAGE_META,
@@ -18,6 +19,7 @@ import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import PivotManualImportModal, {
   manualDraftToImportEntry,
 } from '../PivotLab/PivotManualImportModal';
+import PivotJsonImportPanel from '../PivotLab/PivotJsonImportPanel';
 import PivotCatalogEventEditModal, {
   catalogEditDraftToOverrides,
 } from '../PivotLab/PivotCatalogEventEditModal';
@@ -25,6 +27,7 @@ import PivotReadinessCard from './PivotReadinessCard';
 import PivotCurationMonitorPanel from './PivotCurationMonitorPanel';
 import PivotTenantPage from './PivotTenantPage';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
+import PivotTenantExplorePanel from './PivotTenantExplorePanel';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
@@ -121,6 +124,7 @@ function RunStatusPill({ status }) {
  */
 function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const { addNotification } = useNotification();
+  const { showOverlay } = useDashboard();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const urlBatchWeek = searchParams.get('batchWeek');
@@ -225,6 +229,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   } = useFetch(opsUrl, { params: opsParams, cache: NO_FETCH_CACHE });
 
   const ops = opsResponse?.success ? opsResponse.data : null;
+  const opsDropSchedule = ops?.dropSchedule;
 
   const stageWeeks = useMemo(() => {
     if (ops?.anchors?.liveWeek) {
@@ -233,36 +238,55 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         curateWeek: ops.anchors.curateWeek,
         postMortemWeek: ops.anchors.postMortemWeek,
         currentWeek: ops.anchors.currentWeek,
+        dropPending: Boolean(ops.anchors.dropPending),
       };
     }
-    return resolveCurationStageWeeks(new Date(), null);
-  }, [ops?.anchors]);
+    return resolveCurationStageWeeks(new Date(), opsDropSchedule?.nextDropAt || null);
+  }, [ops?.anchors, opsDropSchedule?.nextDropAt]);
+
+  const dropDayOfWeek = ops?.weekRange?.dropDayOfWeek ?? opsDropSchedule?.dayOfWeek ?? 4;
+  const dropTimeZone = ops?.weekRange?.timeZone ?? opsDropSchedule?.timezone ?? 'UTC';
 
   const stage = ops?.stage || resolveCurationStageForWeek(committedWeek, stageWeeks);
-  const isCurateStage = stage === 'curate';
+  const isReleaseWindow =
+    Boolean(stageWeeks.dropPending) && committedWeek === stageWeeks.curateWeek;
   const isMonitorStage = stage === 'live' || stage === 'post-mortem';
-  const stageMeta = CURATION_STAGE_META[stage] || CURATION_STAGE_META.curate;
+  const canPublishCatalog = stage === 'curate' || isReleaseWindow || stage === 'live';
+  const stageMeta =
+    isReleaseWindow && stage === 'curate'
+      ? CURATION_STAGE_META.curate
+      : stage === 'live' && canPublishCatalog
+        ? {
+            ...CURATION_STAGE_META.live,
+            description: 'Current drop cycle — stage and release events to the live feed.',
+          }
+        : CURATION_STAGE_META[stage] || CURATION_STAGE_META.curate;
 
-  // Default to the upcoming curate week once anchors are known (unless URL set a week).
+  // Default to the drop-cycle live batch once anchors are known (unless URL set a week).
   useEffect(() => {
     if (initializedWeekRef.current) return;
     if (isValidIsoWeek(urlBatchWeek)) {
       initializedWeekRef.current = true;
       return;
     }
-    if (!ops?.anchors?.curateWeek) return;
+    if (!ops?.anchors?.liveWeek) return;
     initializedWeekRef.current = true;
-    if (isValidIsoWeek(ops.anchors.curateWeek)) {
-      setBatchWeek(ops.anchors.curateWeek, { immediate: true });
+    if (isValidIsoWeek(ops.anchors.liveWeek)) {
+      setBatchWeek(ops.anchors.liveWeek, { immediate: true });
     }
-  }, [ops?.anchors?.curateWeek, urlBatchWeek]);
+  }, [ops?.anchors?.liveWeek, urlBatchWeek, setBatchWeek]);
 
   const overview = ops?.overview && !ops.overview.error ? ops.overview : null;
-  const drop = overview?.dropSchedule || ops?.dropSchedule;
+  const drop = overview?.dropSchedule || opsDropSchedule;
   const statusCounts = overview?.kpis?.eventCountsByStatus;
-  const weekRangeLabel = batchWeekValid
-    ? formatIsoWeekRange(batchWeek)
-    : '—';
+  const weekRangeLabel =
+    ops?.weekRange?.label ||
+    (batchWeekValid
+      ? formatBatchWeekRange(batchWeek, {
+          dropDayOfWeek,
+          timeZone: dropTimeZone,
+        })
+      : '—');
   const dropLabel = drop?.nextDropFormatted || null;
   const overviewLoading = opsLoading;
 
@@ -278,14 +302,14 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
   const jobs =
     ops?.jobs && !ops.jobs.error ? (ops.jobs.jobs ?? EMPTY_LIST) : EMPTY_LIST;
-  const jobsLoading = opsLoading && isCurateStage && !ops?.jobs;
+  const jobsLoading = opsLoading && canPublishCatalog && !ops?.jobs;
   const jobsError = ops?.jobs?.error || opsError || null;
 
   const events =
     ops?.catalog && !ops.catalog.error
       ? (ops.catalog.events ?? EMPTY_LIST)
       : EMPTY_LIST;
-  const eventsLoading = opsLoading && isCurateStage && !ops?.catalog;
+  const eventsLoading = opsLoading && canPublishCatalog && !ops?.catalog;
   const eventsError = ops?.catalog?.error || null;
 
   const {
@@ -295,7 +319,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
   const readiness =
     ops?.readiness && !ops.readiness.error ? ops.readiness : null;
-  const readinessLoading = opsLoading && isCurateStage && !ops?.readiness;
+  const readinessLoading = opsLoading && canPublishCatalog && !ops?.readiness;
 
   const runUrl =
     tenantKey && activeRunId
@@ -597,55 +621,101 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     ],
   );
 
-  const handleRelease = useCallback(async () => {
-    if (!tenantKey || !batchWeekValid || !weekSettled) return;
-    if (stagedCount === 0) {
+  const releaseStagedEvents = useCallback(
+    async ({ eventIds = null, count, confirmMessage, busy = 'release' } = {}) => {
+      if (!tenantKey || !batchWeekValid || !weekSettled) return false;
+      const releaseCount = count ?? (eventIds?.length || stagedCount);
+      if (releaseCount === 0) {
+        addNotification({
+          title: 'Nothing to release',
+          message: 'Stage events for this week before releasing to the live feed.',
+          type: 'warning',
+        });
+        return false;
+      }
+      if (
+        !window.confirm(
+          confirmMessage ||
+            `Release ${releaseCount} staged event(s) for ${committedWeek} to the live feed?`,
+        )
+      ) {
+        return false;
+      }
+
+      setBusyKey(busy);
+      const { data, error } = await authenticatedRequest(
+        `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(committedWeek)}/release`,
+        {
+          method: 'POST',
+          data: eventIds?.length ? { eventIds } : {},
+        },
+      );
+      setBusyKey(null);
+
+      if (error || !data?.success) {
+        addNotification({
+          title: 'Release failed',
+          message: error || data?.message || 'Could not release batch.',
+          type: 'error',
+        });
+        return false;
+      }
+
+      refreshAll();
+      setSelectedIds(new Set());
       addNotification({
-        title: 'Nothing to release',
-        message: 'Stage events for this week before releasing to the live deck.',
+        title: 'Published',
+        message: `${data.data?.releasedCount ?? 0} event(s) are now live for ${committedWeek}.`,
+        type: 'success',
+      });
+      return true;
+    },
+    [
+      addNotification,
+      batchWeekValid,
+      committedWeek,
+      refreshAll,
+      stagedCount,
+      tenantKey,
+      weekSettled,
+    ],
+  );
+
+  const handleRelease = useCallback(
+    () => releaseStagedEvents({ count: stagedCount }),
+    [releaseStagedEvents, stagedCount],
+  );
+
+  const handleBulkRelease = useCallback(async () => {
+    const staged = selectedEvents.filter((event) => event.ingestStatus === 'staged');
+    if (!staged.length) {
+      addNotification({
+        title: 'No staged events selected',
+        message: 'Select staged events to publish, or use Publish all staged.',
         type: 'warning',
       });
       return;
     }
-    if (
-      !window.confirm(
-        `Release ${stagedCount} staged event(s) for ${committedWeek} to the live feed?`,
-      )
-    ) {
-      return;
-    }
-
-    setBusyKey('release');
-    const { data, error } = await authenticatedRequest(
-      `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(committedWeek)}/release`,
-      { method: 'POST', data: {} },
-    );
-    setBusyKey(null);
-
-    if (error || !data?.success) {
-      addNotification({
-        title: 'Release failed',
-        message: error || data?.message || 'Could not release batch.',
-        type: 'error',
-      });
-      return;
-    }
-
-    refreshAll();
-    addNotification({
-      title: 'Released',
-      message: `${data.data?.releasedCount ?? 0} event(s) are now live for ${committedWeek}.`,
-      type: 'success',
+    await releaseStagedEvents({
+      eventIds: staged.map((event) => event._id),
+      count: staged.length,
+      confirmMessage: `Publish ${staged.length} selected staged event(s) for ${committedWeek} to the live feed?`,
+      busy: 'bulk-release',
     });
-  }, [
-    addNotification,
-    committedWeek,
-    batchWeekValid,
-    refreshAll,
-    stagedCount,
-    tenantKey,
-    weekSettled,
-  ]);
+  }, [addNotification, committedWeek, releaseStagedEvents, selectedEvents]);
+
+  const handleReleaseOne = useCallback(
+    async (event) => {
+      if (!event || event.ingestStatus !== 'staged') return;
+      await releaseStagedEvents({
+        eventIds: [event._id],
+        count: 1,
+        confirmMessage: `Publish “${event.name}” to the live feed?`,
+        busy: `release-${event._id}`,
+      });
+    },
+    [releaseStagedEvents],
+  );
 
   const patchEventOverrides = useCallback(
     async (eventId, overrides) => {
@@ -778,7 +848,55 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     async (draft) => {
       if (!editingEvent || !tenantKey) return false;
       setEditSaving(true);
+      const wantsPublish = draft.ingestStatus === 'published';
+      const wasStaged = editingEvent.ingestStatus === 'staged';
       const overrides = catalogEditDraftToOverrides(draft);
+
+      if (wasStaged && wantsPublish) {
+        if (!draft.tags?.length) {
+          setEditSaving(false);
+          addNotification({
+            title: 'Tags required',
+            message: 'Select at least one catalog tag before publishing.',
+            type: 'warning',
+          });
+          return false;
+        }
+        const { ingestStatus: _ingestStatus, ...metadataOverrides } = overrides;
+        const result = await patchEventOverrides(editingEvent._id, metadataOverrides);
+        if (result.error) {
+          setEditSaving(false);
+          addNotification({
+            title: 'Update failed',
+            message: result.error,
+            type: 'error',
+          });
+          return false;
+        }
+        const batchWeekForRelease = editingEvent.batchWeek || committedWeek;
+        const { data, error } = await authenticatedRequest(
+          `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(batchWeekForRelease)}/release`,
+          { method: 'POST', data: { eventIds: [editingEvent._id] } },
+        );
+        setEditSaving(false);
+        if (error || !data?.success) {
+          addNotification({
+            title: 'Publish failed',
+            message: error || data?.message || 'Could not publish event.',
+            type: 'error',
+          });
+          return false;
+        }
+        setEditingEvent(null);
+        refreshAll();
+        addNotification({
+          title: 'Published',
+          message: `${editingEvent.name} is now live.`,
+          type: 'success',
+        });
+        return true;
+      }
+
       const result = await patchEventOverrides(editingEvent._id, overrides);
       setEditSaving(false);
       if (result.error) {
@@ -794,7 +912,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       addNotification({ title: 'Updated', message: 'Catalog event saved.', type: 'success' });
       return true;
     },
-    [addNotification, editingEvent, patchEventOverrides, refreshAll, tenantKey],
+    [addNotification, committedWeek, editingEvent, patchEventOverrides, refreshAll, tenantKey],
   );
 
   const suggestTagsForEdit = useCallback(
@@ -1013,12 +1131,45 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const displayCity = overview?.cityDisplayName || cityDisplayName || tenantKey;
   const runInFlight =
     activeRun && (activeRun.status === 'queued' || activeRun.status === 'running');
+  const releaseBusy =
+    busyKey === 'release' ||
+    busyKey === 'bulk-release' ||
+    (typeof busyKey === 'string' && busyKey.startsWith('release-'));
   const releaseDisabled =
     !batchWeekValid ||
     !weekSettled ||
     stagedCount === 0 ||
-    busyKey === 'release' ||
+    releaseBusy ||
     Boolean(runInFlight);
+  const selectedStagedCount = useMemo(
+    () => selectedEvents.filter((event) => event.ingestStatus === 'staged').length,
+    [selectedEvents],
+  );
+  const releaseBlockReason = useMemo(() => {
+    if (stagedCount === 0) return null;
+    if (!weekSettled) return 'Updating week… release will be available in a moment.';
+    if (runInFlight) return 'Wait for the crawl to finish before publishing staged events.';
+    return null;
+  }, [runInFlight, stagedCount, weekSettled]);
+
+  const openExplorePreview = useCallback(() => {
+    if (!tenantKey || !committedWeekValid) return;
+    showOverlay(
+      <PivotTenantExplorePanel
+        tenantKey={tenantKey}
+        batchWeek={committedWeek}
+        cityDisplayName={displayCity}
+        weekRangeLabel={weekRangeLabel}
+      />,
+    );
+  }, [
+    committedWeek,
+    committedWeekValid,
+    displayCity,
+    showOverlay,
+    tenantKey,
+    weekRangeLabel,
+  ]);
 
   return (
     <PivotTenantPage
@@ -1033,12 +1184,12 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             type="button"
             className="linear-btn linear-btn--ghost pivot-tenant-kbd-btn"
             onClick={refreshAll}
-            disabled={overviewLoading || (isCurateStage && (eventsLoading || jobsLoading))}
+            disabled={overviewLoading || (canPublishCatalog && (eventsLoading || jobsLoading))}
           >
             Refresh
             <KeybindTooltip label="Refresh" keybind="R" />
           </button>
-          {isCurateStage ? (
+          {canPublishCatalog ? (
             <>
               <label
                 className="pivot-tenant-curation__check"
@@ -1058,11 +1209,11 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                 disabled={releaseDisabled}
                 title={
                   stagedCount === 0
-                    ? 'Stage events before releasing'
-                    : `Release ${stagedCount} staged event(s)`
+                    ? 'Stage events before publishing'
+                    : `Publish all ${stagedCount} staged event(s)`
                 }
               >
-                {busyKey === 'release' ? 'Releasing…' : `Release week (${stagedCount})`}
+                {releaseBusy ? 'Publishing…' : `Publish week (${stagedCount})`}
               </button>
             </>
           ) : null}
@@ -1082,19 +1233,41 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             <p className="pivot-tenant-curation__batch-drop">Drop · {dropLabel}</p>
           ) : null}
           <p className="pivot-tenant-curation__batch-anchors">
-            Live <strong>{stageWeeks.liveWeek}</strong>
-            {' · '}
-            Next drop <strong>{stageWeeks.curateWeek}</strong>
+            {stageWeeks.dropPending && stageWeeks.curateWeek !== stageWeeks.liveWeek ? (
+              <>
+                Live <strong>{stageWeeks.liveWeek}</strong>
+                {' · '}
+                Next drop <strong>{stageWeeks.curateWeek}</strong>
+              </>
+            ) : (
+              <>
+                Live <strong>{stageWeeks.liveWeek}</strong>
+              </>
+            )}
           </p>
         </div>
-        <PivotBatchWeekPicker
-          batchWeek={batchWeek}
-          onChange={setBatchWeek}
-          keyboardNavActive={keyboardNavActive}
-          anchors={stageWeeks}
-          showLabel={false}
-          pending={!weekSettled}
-        />
+        <div className="pivot-tenant-curation__batch-banner-actions">
+          <PivotBatchWeekPicker
+            batchWeek={batchWeek}
+            onChange={setBatchWeek}
+            keyboardNavActive={keyboardNavActive}
+            anchors={stageWeeks}
+            dropDayOfWeek={dropDayOfWeek}
+            timeZone={dropTimeZone}
+            showLabel={false}
+            pending={!weekSettled}
+          />
+          {batchWeekValid && committedWeekValid ? (
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary pivot-tenant-curation__explore-preview-btn"
+              onClick={openExplorePreview}
+              title={`Preview the mobile Explore tab for ${committedWeek}`}
+            >
+              Explore preview
+            </button>
+          ) : null}
+        </div>
       </aside>
 
       {!batchWeekValid ? (
@@ -1117,7 +1290,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         />
       ) : null}
 
-      {isCurateStage ? (
+      {canPublishCatalog ? (
         <>
       <aside className="pivot-tenant-curation__drop" aria-label="Drop and week status">
         <div>
@@ -1200,12 +1373,13 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         <div className="pivot-lab__section-head">
           <div>
             <h2 id="curation-jobs" className="linear-section__title">
-              Saved jobs
+              Saved jobs · {committedWeek}
             </h2>
             <p className="pivot-lab__section-hint">
-              Persist Partiful/Luma explore URLs. By default each discovered event lands in the
-              ISO week of its start date (one crawl can fill many weeks). Enable “Force into
-              review week” to pin everything to the week above.
+              Persist Partiful/Luma explore URLs for this tenant. “Run for week” targets{' '}
+              <strong>{committedWeek}</strong> (the batch week in the header). By default each
+              discovered event lands in the ISO week of its start date (one crawl can fill many
+              weeks). Enable “Force into review week” to pin everything to {committedWeek}.
             </p>
           </div>
           <button type="button" className="linear-btn linear-btn--secondary" onClick={openCreateJob}>
@@ -1278,7 +1452,9 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                           }
                           onClick={() => handleRunJob(job)}
                         >
-                          {busyKey === `job-run-${job._id}` ? 'Starting…' : 'Run for week'}
+                          {busyKey === `job-run-${job._id}`
+                            ? 'Starting…'
+                            : `Run for ${committedWeek}`}
                         </button>
                         <button
                           type="button"
@@ -1435,10 +1611,12 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         <div className="pivot-lab__section-head">
           <div>
             <h2 id="curation-manual" className="linear-section__title">
-              Manual add
+              Manual add · {committedWeek}
             </h2>
             <p className="pivot-lab__section-hint">
-              Paste a single event URL, or open the manual form for JSON-free entry.
+              Import tools for the current batch week: paste a single event URL, import agent JSON,
+              or open the manual form for JSON-free entry. Unless “Force into review week” is on,
+              events land in the week of their start date.
             </p>
           </div>
           <button
@@ -1466,6 +1644,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             {urlImportLoading ? 'Working…' : 'Import URL'}
           </button>
         </div>
+        <PivotJsonImportPanel
+          tenantKey={tenantKey}
+          batchWeek={committedWeek}
+          forceBatchWeek={forceBatchWeek}
+          disabled={!committedWeekValid || !weekSettled || !tenantKey}
+          mode="stage"
+          onBeforeStage={() => setBatchWeek(committedWeek, { immediate: true })}
+          onStaged={refreshAll}
+        />
       </section>
 
       <section className="linear-section pivot-lab__section" aria-labelledby="curation-queue">
@@ -1494,6 +1681,18 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             </select>
           </label>
         </div>
+
+        {stagedCount > 0 ? (
+          <p
+            className={`pivot-tenant-curation__release-hint${
+              releaseBlockReason ? ' pivot-tenant-curation__release-hint--blocked' : ''
+            }`}
+            role="status"
+          >
+            {releaseBlockReason ||
+              `${stagedCount} staged — publish to make events visible in the app feed.`}
+          </p>
+        ) : null}
 
         <div className="pivot-tenant-curation__bulk">
           <label className="pivot-tenant-curation__check">
@@ -1537,11 +1736,39 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             </button>
             <button
               type="button"
-              className="linear-btn linear-btn--primary"
+              className="linear-btn linear-btn--secondary"
               onClick={handleBulkStage}
               disabled={!selectedIds.size || busyKey === 'bulk-stage'}
             >
               {busyKey === 'bulk-stage' ? 'Staging…' : 'Stage selected'}
+            </button>
+            <button
+              type="button"
+              className="linear-btn linear-btn--primary"
+              onClick={handleBulkRelease}
+              disabled={
+                !selectedStagedCount ||
+                releaseDisabled ||
+                busyKey === 'bulk-release'
+              }
+              title={
+                selectedStagedCount === 0
+                  ? 'Select staged events to publish'
+                  : releaseBlockReason || `Publish ${selectedStagedCount} selected staged event(s)`
+              }
+            >
+              {busyKey === 'bulk-release'
+                ? 'Publishing…'
+                : `Publish selected (${selectedStagedCount})`}
+            </button>
+            <button
+              type="button"
+              className="linear-btn linear-btn--primary"
+              onClick={handleRelease}
+              disabled={releaseDisabled}
+              title={releaseBlockReason || `Publish all ${stagedCount} staged event(s)`}
+            >
+              {releaseBusy ? 'Publishing…' : `Publish all staged (${stagedCount})`}
             </button>
           </div>
         </div>
@@ -1567,7 +1794,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                   <th scope="col">Tags</th>
                   <th scope="col">Status</th>
                   <th scope="col">Source</th>
-                  <th scope="col">Edit</th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1623,13 +1850,28 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                       </td>
                       <td>{event.source || '—'}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--ghost pivot-lab__edit-btn"
-                          onClick={() => setEditingEvent(event)}
-                        >
-                          Edit
-                        </button>
+                        <div className="pivot-tenant-curation__row-actions">
+                          <button
+                            type="button"
+                            className="linear-btn linear-btn--ghost pivot-lab__edit-btn"
+                            onClick={() => setEditingEvent(event)}
+                          >
+                            Edit
+                          </button>
+                          {event.ingestStatus === 'staged' ? (
+                            <button
+                              type="button"
+                              className="linear-btn linear-btn--primary pivot-lab__edit-btn"
+                              onClick={() => handleReleaseOne(event)}
+                              disabled={releaseDisabled || busyKey === `release-${event._id}`}
+                              title={
+                                releaseBlockReason || 'Publish this staged event to the live feed'
+                              }
+                            >
+                              {busyKey === `release-${event._id}` ? 'Publishing…' : 'Publish'}
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );

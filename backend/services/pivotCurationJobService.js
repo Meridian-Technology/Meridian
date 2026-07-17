@@ -25,6 +25,16 @@ function serializeCurationJob(doc) {
     lastRunAt: row.lastRunAt || null,
     lastRunStatus: row.lastRunStatus || null,
     lastRunStats: row.lastRunStats || null,
+    lastRunEvents: Array.isArray(row.lastRunEvents)
+      ? row.lastRunEvents.map((event) => ({
+          eventId: event?.eventId ? String(event.eventId) : null,
+          name: event?.name || null,
+          batchWeek: event?.batchWeek || null,
+          sourceUrl: event?.sourceUrl || null,
+          ingestStatus: event?.ingestStatus || null,
+          updated: Boolean(event?.updated),
+        }))
+      : [],
     createdBy: row.createdBy || null,
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,

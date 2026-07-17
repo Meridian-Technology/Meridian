@@ -17,13 +17,12 @@ const {
 const { listPivotLabEvents } = require('./pivotLabEventsService');
 const { listCurationJobs } = require('./pivotCurationJobService');
 const { buildDropSchedulePayload } = require('./pivotConfigService');
-const { resolvePivotDropInstant } = require('../utilities/pivotDropSchedule');
 const {
-  toIsoWeek,
-  shiftIsoWeek,
-  isValidIsoWeek,
-  isoWeekToUtcRange,
-} = require('../utilities/pivotIsoWeek');
+  resolvePivotDropConfig,
+  resolvePivotStageAnchors,
+  resolveStageForBatchWeek,
+} = require('../utilities/pivotDropSchedule');
+const { formatBatchWeekRangeLabel, shiftIsoWeek } = require('../utilities/pivotIsoWeek');
 
 const ALL_SECTIONS = Object.freeze([
   'overview',
@@ -47,68 +46,14 @@ const PRESETS = Object.freeze({
 const DEFAULT_PERFORMANCE_LIMIT = 10;
 const CURATION_PERFORMANCE_LIMIT = 100;
 
-function formatIsoWeekRangeLabel(batchWeek) {
-  let range;
-  try {
-    range = isoWeekToUtcRange(batchWeek);
-  } catch {
-    return null;
+function curationSectionsForStage(stage, { releaseWindow = false } = {}) {
+  if (releaseWindow) {
+    return ['overview', 'readiness', 'catalog', 'jobs'];
   }
-  const { start, end } = range;
-  const lastDay = new Date(end.getTime() - 1);
-  const sameYear = start.getUTCFullYear() === lastDay.getUTCFullYear();
-  const startLabel = start.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    ...(sameYear ? {} : { year: 'numeric' }),
-    timeZone: 'UTC',
-  });
-  const endLabel = lastDay.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-  return `${startLabel} – ${endLabel}`;
-}
-
-/**
- * Derive live / curate weeks from now + current ISO week's drop instant.
- */
-function resolveStageAnchors(tenant, now = new Date()) {
-  const currentWeek = toIsoWeek(now);
-  let dropPending = false;
-  let currentWeekDropAt = null;
-  try {
-    const currentDrop = resolvePivotDropInstant(tenant, currentWeek, now);
-    currentWeekDropAt = currentDrop.dropAt.toISOString();
-    dropPending = currentDrop.dropAt.getTime() > now.getTime();
-  } catch {
-    dropPending = false;
+  if (stage === 'live') {
+    return ['overview', 'performance', 'journey', 'readiness', 'catalog', 'jobs'];
   }
-
-  const liveWeek = dropPending ? shiftIsoWeek(currentWeek, -1) : currentWeek;
-  const curateWeek = dropPending ? currentWeek : shiftIsoWeek(currentWeek, 1);
-
-  return {
-    currentWeek,
-    liveWeek,
-    curateWeek,
-    postMortemWeek: shiftIsoWeek(liveWeek, -1),
-    dropPending,
-    currentWeekDropAt,
-  };
-}
-
-function resolveStageForWeek(batchWeek, anchors) {
-  if (!isValidIsoWeek(batchWeek) || !anchors?.liveWeek) return 'curate';
-  if (batchWeek === anchors.liveWeek) return 'live';
-  if (batchWeek > anchors.liveWeek) return 'curate';
-  return 'post-mortem';
-}
-
-function curationSectionsForStage(stage) {
-  if (stage === 'live' || stage === 'post-mortem') {
+  if (stage === 'post-mortem') {
     return ['overview', 'performance', 'journey'];
   }
   return ['overview', 'readiness', 'catalog', 'jobs'];
@@ -118,7 +63,7 @@ function curationSectionsForStage(stage) {
  * Parse include query into a unique ordered section list.
  * Accepts presets (`overview`, `journeys`, `curation`) and/or section names.
  */
-function parseInclude(raw, { stage } = {}) {
+function parseInclude(raw, { stage, releaseWindow = false } = {}) {
   const tokens = String(raw || '')
     .split(',')
     .map((part) => part.trim().toLowerCase())
@@ -151,7 +96,7 @@ function parseInclude(raw, { stage } = {}) {
 
   for (const token of tokens) {
     if (token === 'curation' || token === '__curation__') {
-      for (const name of curationSectionsForStage(stage || 'curate')) {
+      for (const name of curationSectionsForStage(stage || 'curate', { releaseWindow })) {
         const err = push(name);
         if (err) return err;
       }
@@ -198,20 +143,28 @@ function wants(sections, name) {
  */
 async function getTenantOpsBundle(req, options = {}) {
   const now = options.now || new Date();
-  const normalized = normalizeBatchWeek(options.batchWeek, now);
-  if (normalized.error) return normalized;
 
   const tenantResult = await resolvePivotTenant(req, options.tenantKey);
   if (tenantResult.error) return tenantResult;
 
-  const { batchWeek } = normalized;
   const { tenant } = tenantResult;
   const tenantKey = tenant.tenantKey;
-  const anchors = resolveStageAnchors(tenant, now);
-  const stage = resolveStageForWeek(batchWeek, anchors);
+  const anchors = resolvePivotStageAnchors(tenant, now);
+  const defaultBatchWeek = anchors.liveWeek;
+  const normalized = normalizeBatchWeek(
+    options.batchWeek?.trim() || defaultBatchWeek,
+    now,
+  );
+  if (normalized.error) return normalized;
+
+  const { batchWeek } = normalized;
+  const dropConfig = resolvePivotDropConfig(tenant);
+  const stage = resolveStageForBatchWeek(batchWeek, tenant, now);
+  const releaseWindow =
+    Boolean(anchors.dropPending) && batchWeek === anchors.curateWeek;
 
   const includeRaw = options.include;
-  const parsed = parseInclude(includeRaw, { stage });
+  const parsed = parseInclude(includeRaw, { stage, releaseWindow });
   if (parsed.error) return parsed;
   const { sections } = parsed;
 
@@ -233,7 +186,10 @@ async function getTenantOpsBundle(req, options = {}) {
     dropSchedule = null;
   }
 
-  const weekRangeLabel = formatIsoWeekRangeLabel(batchWeek);
+  const weekRangeLabel = formatBatchWeekRangeLabel(batchWeek, {
+    dropDayOfWeek: dropConfig.dayOfWeek,
+    timeZone: dropConfig.timezone,
+  });
 
   const tasks = {};
 
@@ -311,14 +267,19 @@ async function getTenantOpsBundle(req, options = {}) {
     cityDisplayName: tenant.location || tenant.name || tenantKey,
     batchWeek,
     stage,
+    releaseWindow,
     anchors: {
       liveWeek: anchors.liveWeek,
       curateWeek: anchors.curateWeek,
       postMortemWeek: anchors.postMortemWeek,
       currentWeek: anchors.currentWeek,
+      dropPending: anchors.dropPending,
+      currentWeekDropAt: anchors.currentWeekDropAt,
     },
     weekRange: {
       label: weekRangeLabel,
+      dropDayOfWeek: dropConfig.dayOfWeek,
+      timeZone: dropConfig.timezone,
     },
     dropSchedule,
     include: sections,
@@ -341,10 +302,10 @@ async function getTenantOpsBundle(req, options = {}) {
 module.exports = {
   getTenantOpsBundle,
   parseInclude,
-  resolveStageAnchors,
-  resolveStageForWeek,
+  resolveStageAnchors: resolvePivotStageAnchors,
+  resolveStageForWeek: resolveStageForBatchWeek,
   curationSectionsForStage,
-  formatIsoWeekRangeLabel,
+  formatIsoWeekRangeLabel: formatBatchWeekRangeLabel,
   ALL_SECTIONS,
   PRESETS,
 };

@@ -7,6 +7,10 @@ const {
 } = require('./pivotIntentService');
 const { resolveDisplayHost, PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
+const {
+  recordPivotInteraction,
+  pickInteractionContext,
+} = require('./pivotInteractionService');
 
 const PIVOT_EVENT_FEATURE = 'pivot_event';
 const RECAP_EVENT_FIELDS =
@@ -169,6 +173,15 @@ async function submitEventFeedback(req, body = {}) {
       responses,
       metadata,
     );
+
+    recordPivotInteraction(req, {
+      userId,
+      eventId,
+      batchWeek: batchWeek || undefined,
+      type: 'rating',
+      rating: ratingNumber,
+      ...pickInteractionContext(body),
+    });
 
     return {
       data: {

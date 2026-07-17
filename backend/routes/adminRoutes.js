@@ -4,12 +4,19 @@ const { randomUUID } = require('crypto');
 const router = express.Router();
 const { verifyToken, authorizeRoles } = require('../middlewares/verifyToken');
 const { requireAdmin } = require('../middlewares/requireAdmin');
+const { requirePlatformAdmin } = require('../middlewares/requirePlatformAdmin');
 const mongoose = require('mongoose');
 const { connectToDatabase } = require('../connectionsManager');
 const { getConnections, disconnectSocket, disconnectAll } = require('../socket');
 const { createSession } = require('../utilities/sessionUtils');
 const { getCookieDomain } = require('../utilities/cookieUtils');
 const getGlobalModels = require('../services/getGlobalModelService');
+const {
+  listPlatformAdmins,
+  nominatePlatformAdmin,
+  approvePlatformAdminInvite,
+  revokePlatformAdminInvite,
+} = require('../services/platformAdminInviteService');
 const {
   DEFAULT_TENANTS,
   normalizeTenantRows,
@@ -242,22 +249,14 @@ router.get('/admin/user/:userId/analytics', verifyToken, requireAdmin, async (re
 });
 
 /**
- * GET /admin/platform-admins – list platform admins (GlobalUsers with platform_admin role)
+ * GET /admin/platform-admins – list active platform admins + open nominations
+ * Response: { admins, nominations } (also accepts legacy clients that only read data as array — see note).
+ * Platform Admin UI uses this shape; campus Admin page still works if it reads data.admins || data.
  */
 router.get('/admin/platform-admins', verifyToken, requireAdmin, async (req, res) => {
   try {
-    const { PlatformRole, GlobalUser } = getGlobalModels(req, 'PlatformRole', 'GlobalUser');
-    const roles = await PlatformRole.find({ roles: 'platform_admin' }).lean();
-    const globalUserIds = roles.map(r => r.globalUserId);
-    const users = await GlobalUser.find({ _id: { $in: globalUserIds } }).select('email name picture createdAt').lean();
-    const byId = users.reduce((acc, u) => { acc[u._id.toString()] = u; return acc; }, {});
-    const list = roles.map(r => ({
-      globalUserId: r.globalUserId,
-      email: byId[r.globalUserId.toString()]?.email,
-      name: byId[r.globalUserId.toString()]?.name,
-      picture: byId[r.globalUserId.toString()]?.picture,
-    }));
-    res.json({ success: true, data: list });
+    const data = await listPlatformAdmins(req);
+    res.json({ success: true, data });
   } catch (err) {
     console.error('GET /admin/platform-admins failed:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -265,7 +264,90 @@ router.get('/admin/platform-admins', verifyToken, requireAdmin, async (req, res)
 });
 
 /**
- * POST /admin/platform-admins – add platform admin by email or globalUserId
+ * POST /admin/platform-admins/nominate – nominate by email (no live role until Approve)
+ * Body: { email: string }
+ */
+router.post(
+  '/admin/platform-admins/nominate',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await nominatePlatformAdmin(req, { email: req.body?.email });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      console.error('POST /admin/platform-admins/nominate failed:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
+
+/**
+ * POST /admin/platform-admins/nominations/:inviteId/approve – grant platform_admin
+ */
+router.post(
+  '/admin/platform-admins/nominations/:inviteId/approve',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await approvePlatformAdminInvite(req, {
+        inviteId: req.params.inviteId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      console.log(
+        `Platform admin approved: ${result.data.email} by ${req.user.userId || req.user.globalUserId}`,
+      );
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      console.error('POST /admin/platform-admins/nominations/:inviteId/approve failed:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
+
+/**
+ * DELETE /admin/platform-admins/nominations/:inviteId – cancel open nomination
+ */
+router.delete(
+  '/admin/platform-admins/nominations/:inviteId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await revokePlatformAdminInvite(req, {
+        inviteId: req.params.inviteId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      console.error('DELETE /admin/platform-admins/nominations/:inviteId failed:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+);
+
+/**
+ * POST /admin/platform-admins – add platform admin by email or globalUserId (legacy campus Admin)
  * Body: { email?: string, globalUserId?: string }
  */
 router.post('/admin/platform-admins', verifyToken, requireAdmin, async (req, res) => {

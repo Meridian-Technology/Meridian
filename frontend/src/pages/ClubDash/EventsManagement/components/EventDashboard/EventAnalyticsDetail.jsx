@@ -17,6 +17,25 @@ const FAKE_FUNNEL_DATA = [
     { label: 'Check-ins', value: 189 },
 ];
 
+function getEventFunnelDateRange(event) {
+    if (!event?.start_time) return null;
+
+    const startDate = new Date(event.createdAt || event.start_time);
+    const now = new Date();
+    const eventEnd = event.end_time ? new Date(event.end_time) : null;
+    const endDate = eventEnd && eventEnd < now ? eventEnd : now;
+
+    return { startDate, endDate };
+}
+
+function formatEventFunnelDateRangeLabel(startDate, endDate) {
+    if (!startDate || !endDate) return null;
+    const startLabel = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const endLabel = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    if (startLabel === endLabel) return startLabel;
+    return `${startLabel} – ${endLabel}`;
+}
+
 function EventAnalyticsDetail({ event, stats, orgId, onRefresh }) {
     const { addNotification } = useNotification();
     const [analytics, setAnalytics] = useState(null);
@@ -28,10 +47,20 @@ function EventAnalyticsDetail({ event, stats, orgId, onRefresh }) {
     const [exporting, setExporting] = useState(false);
     const [timeRange, setTimeRange] = useState('90d');
 
+    const eventFunnelRange = useMemo(() => getEventFunnelDateRange(event), [event]);
+
+    const funnelAnalyticsUrl = useMemo(() => {
+        if (!event?._id || !eventFunnelRange) return null;
+        const { startDate, endDate } = eventFunnelRange;
+        return `/event-analytics/event/${event._id}?startDate=${encodeURIComponent(startDate.toISOString())}&endDate=${encodeURIComponent(endDate.toISOString())}`;
+    }, [event?._id, eventFunnelRange]);
+
     // Fetch detailed analytics using the correct route
     const { data: analyticsData, refetch } = useFetch(
         event?._id ? `/event-analytics/event/${event._id}?timeRange=${timeRange}` : null
     );
+
+    const { data: funnelAnalyticsData, refetch: refetchFunnelAnalytics } = useFetch(funnelAnalyticsUrl);
 
     useEffect(() => {
         if (analyticsData?.success) {
@@ -50,10 +79,11 @@ function EventAnalyticsDetail({ event, stats, orgId, onRefresh }) {
         // Refresh analytics every 30 seconds for real-time updates
         const interval = setInterval(() => {
             refetch();
+            refetchFunnelAnalytics();
         }, 30000);
 
         return () => clearInterval(interval);
-    }, [refetch, timeRange]);
+    }, [refetch, refetchFunnelAnalytics, timeRange]);
 
     const formatDate = (dateString) => {
         return new Date(dateString).toLocaleDateString('en-US', {
@@ -70,25 +100,34 @@ function EventAnalyticsDetail({ event, stats, orgId, onRefresh }) {
     };
 
     const platform = analytics?.platform || {};
-    const safeAnalyticsForFunnel = USE_FAKE_FUNNEL_DATA ? {} : (analytics || {});
-    const uniqueViewsTotalForFunnel = (safeAnalyticsForFunnel.uniqueViews || 0) + (safeAnalyticsForFunnel.uniqueAnonymousViews || 0);
+    const funnelAnalytics = funnelAnalyticsData?.success ? funnelAnalyticsData.data : null;
+    const funnelPlatform = funnelAnalytics?.platform || {};
+    const funnelDateRangeLabel = eventFunnelRange
+        ? formatEventFunnelDateRangeLabel(eventFunnelRange.startDate, eventFunnelRange.endDate)
+        : null;
+    const uniqueViewsTotalForFunnel = (funnelAnalytics?.uniqueViews || 0) + (funnelAnalytics?.uniqueAnonymousViews || 0);
+    const funnelLoading = !USE_FAKE_FUNNEL_DATA && funnelAnalyticsData === undefined;
 
     const funnelData = useMemo(() => {
         if (USE_FAKE_FUNNEL_DATA) return FAKE_FUNNEL_DATA;
 
-        const uniqueViews = platform.uniqueEventViews > 0 ? platform.uniqueEventViews : uniqueViewsTotalForFunnel;
+        const uniqueViews = funnelPlatform.uniqueEventViews > 0
+            ? funnelPlatform.uniqueEventViews
+            : uniqueViewsTotalForFunnel;
         const steps = [
             { label: 'Unique viewers', value: uniqueViews },
         ];
         if (event?.registrationFormId) {
-            steps.push({ label: 'Opened form', value: platform.uniqueFormOpens || 0 });
+            steps.push({ label: 'Opened form', value: funnelPlatform.uniqueFormOpens || 0 });
         }
         steps.push(
             { label: 'Registrations', value: actualRegistrations },
             { label: 'Check-ins', value: actualCheckIns }
         );
         return steps;
-    }, [platform, event?.registrationFormId, uniqueViewsTotalForFunnel, actualRegistrations, actualCheckIns]);
+    }, [funnelPlatform, event?.registrationFormId, uniqueViewsTotalForFunnel, actualRegistrations, actualCheckIns]);
+
+    const funnelTotalViews = (funnelAnalytics?.views || 0) + (funnelAnalytics?.anonymousViews || 0);
 
     // const handleExport = async () => {
     //     if (!event?._id || !orgId) return;
@@ -199,18 +238,31 @@ function EventAnalyticsDetail({ event, stats, orgId, onRefresh }) {
                 </div>
             </div>
 
-            {(USE_FAKE_FUNNEL_DATA || totalViews > 0 || actualRegistrations > 0 || actualCheckIns > 0 || platform.registrationFormOpens > 0) && (
+            {(USE_FAKE_FUNNEL_DATA || funnelLoading || funnelTotalViews > 0 || actualRegistrations > 0 || actualCheckIns > 0 || funnelPlatform.registrationFormOpens > 0) && (
                 <HeaderContainer
                     icon="mingcute:chart-bar-fill"
                     header="Engagement Funnel"
-                    subheader={<span className="funnel-subtitle">Unique users at each step</span>}
+                    subheader={(
+                        <span className="funnel-subtitle">
+                            Unique users at each step
+                            {funnelDateRangeLabel && (
+                                <span className="funnel-subtitle-range"> · {funnelDateRangeLabel}</span>
+                            )}
+                        </span>
+                    )}
                     classN="analytics-card funnel-section"
                     size="1rem"
                 >
                     <div className="card-content funnel-chart-container">
-                        <div className="funnel-chart-wrapper">
-                            <FunnelChart data={funnelData} />
-                        </div>
+                        {funnelLoading ? (
+                            <div className="funnel-chart-loading">
+                                <Icon icon="mdi:loading" className="spinner" />
+                            </div>
+                        ) : (
+                            <div className="funnel-chart-wrapper">
+                                <FunnelChart data={funnelData} />
+                            </div>
+                        )}
                     </div>
                 </HeaderContainer>
             )}

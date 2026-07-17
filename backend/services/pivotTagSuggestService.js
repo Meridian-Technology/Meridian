@@ -8,6 +8,9 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_MAX_TOKENS = 256;
 const REQUEST_TIMEOUT_MS = 20_000;
+/** Cap in-flight Claude calls — memory is tiny; rate limits are the constraint. */
+const DEFAULT_BATCH_CONCURRENCY = 4;
+const MAX_BATCH_CONCURRENCY = 8;
 const LOG_PREFIX = '[pivotTagSuggest]';
 
 function logSuggest(level, message, meta) {
@@ -35,6 +38,42 @@ function resolveAnthropicApiKey() {
 
 function resolveClaudeModel() {
   return process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || DEFAULT_CLAUDE_MODEL;
+}
+
+function resolveBatchConcurrency(override) {
+  if (Number.isFinite(override) && override > 0) {
+    return Math.min(MAX_BATCH_CONCURRENCY, Math.max(1, Math.floor(override)));
+  }
+  const fromEnv = Number.parseInt(
+    process.env.PIVOT_TAG_SUGGEST_CONCURRENCY || '',
+    10,
+  );
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return Math.min(MAX_BATCH_CONCURRENCY, Math.max(1, fromEnv));
+  }
+  return DEFAULT_BATCH_CONCURRENCY;
+}
+
+/**
+ * Run async work over items with a fixed worker pool (order-preserving results).
+ * Prefer this over unbounded Promise.all for external APIs with rate limits.
+ */
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const list = Array.isArray(items) ? items : [];
+  const results = new Array(list.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < list.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(list[index], index);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, concurrency), Math.max(list.length, 1));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
 }
 
 function trimString(value) {
@@ -180,18 +219,31 @@ async function suggestPivotEventTags(req, rawEvent = {}, options = {}) {
     };
   }
 
-  const catalogResult = await listPivotTags(req);
-  if (catalogResult.error) {
-    logSuggest('warn', 'catalog lookup failed', {
-      message: catalogResult.error,
-      code: catalogResult.code,
-      hasGlobalDb: Boolean(req.globalDb),
-    });
-    return catalogResult;
+  let catalogTags = Array.isArray(options.catalogTags) ? options.catalogTags : null;
+  let catalogSlugSet =
+    options.catalogSlugSet instanceof Set ? options.catalogSlugSet : null;
+
+  if (!catalogTags) {
+    const catalogResult = await listPivotTags(req);
+    if (catalogResult.error) {
+      logSuggest('warn', 'catalog lookup failed', {
+        message: catalogResult.error,
+        code: catalogResult.code,
+        hasGlobalDb: Boolean(req.globalDb),
+      });
+      return catalogResult;
+    }
+    catalogTags = catalogResult.data?.tags || [];
   }
 
-  const catalogTags = catalogResult.data?.tags || [];
-  logSuggest('info', 'catalog loaded', { activeTagCount: catalogTags.length });
+  if (!catalogSlugSet && catalogTags.length) {
+    catalogSlugSet = new Set(catalogTags.map((tag) => tag.slug).filter(Boolean));
+  }
+
+  logSuggest('info', 'catalog loaded', {
+    activeTagCount: catalogTags.length,
+    sharedCatalog: Boolean(options.catalogTags),
+  });
   if (!catalogTags.length) {
     logSuggest('warn', 'catalog empty');
     return {
@@ -207,7 +259,10 @@ async function suggestPivotEventTags(req, rawEvent = {}, options = {}) {
     const rawTags = parseTagsFromClaudeText(responseText);
     logSuggest('info', 'parsed claude tags', { rawTags });
 
-    const validated = await validatePivotEventTags(req, rawTags, { required: true });
+    const validated = await validatePivotEventTags(req, rawTags, {
+      required: true,
+      ...(catalogSlugSet ? { catalogSlugSet } : {}),
+    });
     if (validated.error) {
       logSuggest('warn', 'tag validation failed', {
         code: validated.code,
@@ -218,7 +273,11 @@ async function suggestPivotEventTags(req, rawEvent = {}, options = {}) {
         error: validated.error,
         status: validated.status,
         code: validated.code,
-        data: { rawTags, model: resolveClaudeModel(), responsePreview: truncateForLog(responseText, 240) },
+        data: {
+          rawTags,
+          model: resolveClaudeModel(),
+          responsePreview: truncateForLog(responseText, 240),
+        },
       };
     }
 
@@ -247,7 +306,10 @@ async function suggestPivotEventTags(req, rawEvent = {}, options = {}) {
     const status = err.response?.status;
     if (status === 404) {
       const modelMessage = err.response?.data?.error?.message || '';
-      logSuggest('warn', 'claude model not found', { model: resolveClaudeModel(), modelMessage });
+      logSuggest('warn', 'claude model not found', {
+        model: resolveClaudeModel(),
+        modelMessage,
+      });
       return {
         error: modelMessage.includes('model:')
           ? `Claude model not found (${resolveClaudeModel()}). Set CLAUDE_MODEL to a current ID such as claude-sonnet-4-6 or claude-haiku-4-5-20251001.`
@@ -259,9 +321,18 @@ async function suggestPivotEventTags(req, rawEvent = {}, options = {}) {
     if (status === 401 || status === 403) {
       logSuggest('warn', 'claude auth failed', { status });
       return {
-        error: 'Claude API rejected the API key.',
+        error: 'Claude API authentication failed. Check ANTHROPIC_API_KEY.',
         status: 502,
         code: 'LLM_AUTH_FAILED',
+      };
+    }
+    if (status === 429) {
+      logSuggest('warn', 'claude rate limited', { status });
+      return {
+        error:
+          'Claude rate limit hit. Retry shortly or lower PIVOT_TAG_SUGGEST_CONCURRENCY.',
+        status: 429,
+        code: 'LLM_RATE_LIMITED',
       };
     }
 
@@ -278,9 +349,13 @@ async function suggestPivotEventTags(req, rawEvent = {}, options = {}) {
   }
 }
 
-async function suggestPivotEventTagsBatch(req, rawEvents = []) {
+async function suggestPivotEventTagsBatch(req, rawEvents = [], options = {}) {
   const events = Array.isArray(rawEvents) ? rawEvents : [];
-  logSuggest('info', 'batch suggest start', { eventCount: events.length });
+  const concurrency = resolveBatchConcurrency(options.concurrency);
+  logSuggest('info', 'batch suggest start', {
+    eventCount: events.length,
+    concurrency,
+  });
   if (!events.length) {
     return {
       error: 'At least one event is required.',
@@ -289,32 +364,86 @@ async function suggestPivotEventTagsBatch(req, rawEvents = []) {
     };
   }
 
-  const suggestions = [];
-  const failures = [];
-
-  for (let index = 0; index < events.length; index += 1) {
-    const rawEvent = events[index];
-    const result = await suggestPivotEventTags(req, rawEvent, { batchIndex: index });
-    if (result.error) {
-      failures.push({
-        index,
-        name: trimString(rawEvent?.name) || null,
-        message: result.error,
-        code: result.code,
-      });
-      suggestions.push({ tags: [] });
-      continue;
-    }
-
-    suggestions.push({ tags: result.data.tags, model: result.data.model });
+  const apiKey = resolveAnthropicApiKey();
+  if (!apiKey) {
+    logSuggest('warn', 'missing anthropic api key');
+    return {
+      error:
+        'Tag suggestion requires ANTHROPIC_API_KEY (or CLAUDE_API_KEY) in the environment.',
+      status: 503,
+      code: 'LLM_NOT_CONFIGURED',
+      data: {
+        suggestions: events.map(() => ({ tags: [] })),
+        failures: events.map((rawEvent, index) => ({
+          index,
+          name: trimString(rawEvent?.name) || null,
+          message:
+            'Tag suggestion requires ANTHROPIC_API_KEY (or CLAUDE_API_KEY) in the environment.',
+          code: 'LLM_NOT_CONFIGURED',
+        })),
+        suggestedCount: 0,
+        failedCount: events.length,
+      },
+    };
   }
+
+  const catalogResult = await listPivotTags(req);
+  if (catalogResult.error) {
+    return catalogResult;
+  }
+  const catalogTags = catalogResult.data?.tags || [];
+  if (!catalogTags.length) {
+    return {
+      error: 'Pivot tag catalog is empty. Run seed:pivot-tag-catalog first.',
+      status: 503,
+      code: 'TAG_CATALOG_EMPTY',
+    };
+  }
+  const catalogSlugSet = new Set(
+    catalogTags.map((tag) => tag.slug).filter(Boolean),
+  );
+
+  const perEvent = await mapWithConcurrency(
+    events,
+    concurrency,
+    async (rawEvent, index) => {
+      const result = await suggestPivotEventTags(req, rawEvent, {
+        batchIndex: index,
+        catalogTags,
+        catalogSlugSet,
+      });
+      if (result.error) {
+        return {
+          suggestion: { tags: [] },
+          failure: {
+            index,
+            name: trimString(rawEvent?.name) || null,
+            message: result.error,
+            code: result.code,
+          },
+        };
+      }
+      return {
+        suggestion: { tags: result.data.tags, model: result.data.model },
+        failure: null,
+      };
+    },
+  );
+
+  const suggestions = perEvent.map((entry) => entry.suggestion);
+  const failures = perEvent.map((entry) => entry.failure).filter(Boolean);
 
   const suggestedCount = suggestions.filter((entry) => entry.tags?.length).length;
   logSuggest('info', 'batch suggest complete', {
     eventCount: events.length,
+    concurrency,
     suggestedCount,
     failedCount: failures.length,
-    failures: failures.map((entry) => ({ index: entry.index, code: entry.code, name: entry.name })),
+    failures: failures.map((entry) => ({
+      index: entry.index,
+      code: entry.code,
+      name: entry.name,
+    })),
   });
 
   if (suggestedCount === 0 && failures.length > 0) {
@@ -337,6 +466,212 @@ async function suggestPivotEventTagsBatch(req, rawEvents = []) {
       failures,
       suggestedCount,
       failedCount: failures.length,
+      concurrency,
+    },
+  };
+}
+
+function eventHasTags(pivotTags) {
+  if (!Array.isArray(pivotTags)) {
+    return false;
+  }
+  return pivotTags.some((tag) => typeof tag === 'string' && tag.trim());
+}
+
+/**
+ * Server-side suggest + apply: Claude suggestions are written to catalog events
+ * in the same request so a dropped client connection cannot leave tags unapplied
+ * after Claude already ran.
+ */
+async function suggestAndApplyPivotEventTags(req, options = {}) {
+  const {
+    resolvePivotTenant,
+    updateIngestEvent,
+  } = require('./pivotIngestPublishService');
+  const { connectToDatabase } = require('../connectionsManager');
+  const getModels = require('./getModelService');
+  const mongoose = require('mongoose');
+
+  const tenantKey = trimString(options.tenantKey);
+  if (!tenantKey) {
+    return {
+      error: 'tenantKey is required.',
+      status: 400,
+      code: 'TENANT_KEY_REQUIRED',
+    };
+  }
+
+  const rawIds = Array.isArray(options.eventIds) ? options.eventIds : [];
+  const eventIds = [
+    ...new Set(
+      rawIds
+        .map((id) => trimString(id))
+        .filter((id) => id && mongoose.Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (!eventIds.length) {
+    return {
+      error: 'At least one valid eventId is required.',
+      status: 400,
+      code: 'EVENT_IDS_REQUIRED',
+    };
+  }
+
+  const onlyTagless = options.onlyTagless !== false;
+  const applyConcurrency = resolveBatchConcurrency(options.applyConcurrency);
+
+  const tenantResult = await resolvePivotTenant(req, tenantKey);
+  if (tenantResult.error) {
+    return tenantResult;
+  }
+
+  const db = await connectToDatabase(tenantResult.tenant.tenantKey);
+  const { Event } = getModels({ db }, 'Event');
+  const rows = await Event.find({
+    _id: { $in: eventIds },
+    isDeleted: { $ne: true },
+    'customFields.pivot': { $exists: true },
+  })
+    .select('name description location customFields.pivot')
+    .lean();
+
+  const byId = new Map(rows.map((row) => [String(row._id), row]));
+  const ordered = eventIds.map((id) => byId.get(id)).filter(Boolean);
+
+  const targets = onlyTagless
+    ? ordered.filter((row) => !eventHasTags(row.customFields?.pivot?.tags))
+    : ordered;
+
+  logSuggest('info', 'suggest-and-apply start', {
+    tenantKey,
+    requestedCount: eventIds.length,
+    foundCount: ordered.length,
+    targetCount: targets.length,
+    onlyTagless,
+  });
+
+  if (!targets.length) {
+    return {
+      data: {
+        attempted: 0,
+        updated: 0,
+        failed: 0,
+        skipped: eventIds.length,
+        results: [],
+      },
+    };
+  }
+
+  const suggestPayloads = targets.map((row) => {
+    const pivot = row.customFields?.pivot || {};
+    return {
+      name: row.name,
+      description: row.description,
+      location: row.location,
+      hostName: pivot.host?.name,
+      sourceTags: Array.isArray(pivot.sourceTags) ? pivot.sourceTags : undefined,
+    };
+  });
+
+  const suggestResult = await suggestPivotEventTagsBatch(req, suggestPayloads, {
+    concurrency: options.concurrency,
+  });
+  if (
+    suggestResult.error &&
+    !(Number(suggestResult.data?.suggestedCount) > 0)
+  ) {
+    return suggestResult;
+  }
+
+  const suggestions = suggestResult.data?.suggestions || [];
+  const applyJobs = [];
+  const results = [];
+
+  for (let index = 0; index < targets.length; index += 1) {
+    const row = targets[index];
+    const eventId = String(row._id);
+    const tags = (suggestions[index]?.tags || []).filter(
+      (tag) => typeof tag === 'string' && tag.trim(),
+    );
+    if (!tags.length) {
+      results.push({
+        eventId,
+        name: row.name || null,
+        status: 'failed',
+        code: 'NO_TAGS_SUGGESTED',
+        tags: [],
+      });
+      continue;
+    }
+    applyJobs.push({ eventId, name: row.name || null, tags, resultIndex: results.length });
+    results.push({
+      eventId,
+      name: row.name || null,
+      status: 'pending',
+      tags,
+    });
+  }
+
+  await mapWithConcurrency(applyJobs, applyConcurrency, async (job) => {
+    const patch = await updateIngestEvent(req, {
+      tenantKey,
+      eventId: job.eventId,
+      overrides: { tags: job.tags },
+    });
+    if (patch.error) {
+      results[job.resultIndex] = {
+        eventId: job.eventId,
+        name: job.name,
+        status: 'failed',
+        code: patch.code || 'APPLY_FAILED',
+        message: patch.error,
+        tags: job.tags,
+      };
+      return;
+    }
+    results[job.resultIndex] = {
+      eventId: job.eventId,
+      name: job.name,
+      status: 'updated',
+      tags: job.tags,
+    };
+  });
+
+  const updated = results.filter((entry) => entry.status === 'updated').length;
+  const failed = results.filter((entry) => entry.status === 'failed').length;
+
+  logSuggest('info', 'suggest-and-apply complete', {
+    tenantKey,
+    attempted: targets.length,
+    updated,
+    failed,
+  });
+
+  if (updated === 0 && failed > 0) {
+    return {
+      error: results.find((entry) => entry.message)?.message || 'Unable to suggest and apply tags.',
+      status: suggestResult.status || 400,
+      code: results.find((entry) => entry.code)?.code || 'SUGGEST_AND_APPLY_FAILED',
+      data: {
+        attempted: targets.length,
+        updated: 0,
+        failed,
+        skipped: eventIds.length - targets.length,
+        results,
+        suggestFailures: suggestResult.data?.failures || [],
+      },
+    };
+  }
+
+  return {
+    data: {
+      attempted: targets.length,
+      updated,
+      failed,
+      skipped: eventIds.length - targets.length,
+      results,
+      suggestFailures: suggestResult.data?.failures || [],
+      concurrency: suggestResult.data?.concurrency,
     },
   };
 }
@@ -344,7 +679,10 @@ async function suggestPivotEventTagsBatch(req, rawEvents = []) {
 module.exports = {
   suggestPivotEventTags,
   suggestPivotEventTagsBatch,
+  suggestAndApplyPivotEventTags,
   buildTagSuggestionPrompt,
   parseTagsFromClaudeText,
   resolveAnthropicApiKey,
+  resolveBatchConcurrency,
+  mapWithConcurrency,
 };

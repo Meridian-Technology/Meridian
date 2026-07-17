@@ -6,6 +6,7 @@ const {
   normalizeBatchWeek,
 } = require('./pivotWeeklySnapshotService');
 const { serializePivotMovie } = require('../utilities/pivotMovieMetadata');
+const { serializePivotEnrichment } = require('../utilities/pivotEnrichment');
 
 function labEventsQuery(batchWeek) {
   return {
@@ -27,6 +28,7 @@ function serializeLabEvent(event, intentStatsByEventId) {
   const pivot = event.customFields?.pivot || {};
   const host = pivot.host || {};
   const movie = serializePivotMovie(pivot.movie);
+  const enrichment = serializePivotEnrichment(pivot);
   const timeSlots = Array.isArray(pivot.timeSlots)
     ? pivot.timeSlots.map((slot) => ({
         id: slot.id,
@@ -52,6 +54,7 @@ function serializeLabEvent(event, intentStatsByEventId) {
     tags: Array.isArray(pivot.tags) ? pivot.tags : [],
     timeSlots,
     ...(movie ? { movie } : {}),
+    ...(enrichment ? { enrichment } : {}),
     organizerName: host.name || '',
     organizerImageUrl: host.imageUrl || null,
     intentStats: intentStatsByEventId?.get(String(event._id)) || EMPTY_INTENT_STATS,

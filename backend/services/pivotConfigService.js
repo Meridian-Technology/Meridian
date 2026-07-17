@@ -1,9 +1,11 @@
 const { getTenantByKey } = require('./tenantConfigService');
-const { isValidIsoWeek, toIsoWeek } = require('../utilities/pivotIsoWeek');
+const { isValidIsoWeek } = require('../utilities/pivotIsoWeek');
 const {
   describePivotDropSchedule,
   isPivotTenant,
   resolvePivotDropInstant,
+  resolvePivotLiveBatchWeek,
+  resolvePivotUpcomingDropBatchWeek,
 } = require('../utilities/pivotDropSchedule');
 
 function buildDropSchedulePayload(tenant, batchWeek, now = new Date()) {
@@ -39,16 +41,22 @@ async function getPivotConfig(req, options = {}) {
   }
 
   const now = options.now || new Date();
-  const batchWeek = options.batchWeek?.trim() || toIsoWeek(now);
-  if (options.batchWeek && !isValidIsoWeek(batchWeek)) {
+  const liveBatchWeek =
+    options.batchWeek?.trim() || resolvePivotLiveBatchWeek(tenant, now);
+  if (options.batchWeek && !isValidIsoWeek(liveBatchWeek)) {
     return { error: 'batchWeek must be ISO format YYYY-Www.', status: 400, code: 'INVALID_BATCH_WEEK' };
   }
+
+  const dropScheduleBatchWeek = options.batchWeek?.trim()
+    ? liveBatchWeek
+    : resolvePivotUpcomingDropBatchWeek(tenant, now);
 
   return {
     data: {
       tenantKey: tenant.tenantKey,
       cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
-      dropSchedule: buildDropSchedulePayload(tenant, batchWeek, now),
+      liveBatchWeek,
+      dropSchedule: buildDropSchedulePayload(tenant, dropScheduleBatchWeek, now),
     },
   };
 }

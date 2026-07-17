@@ -1,7 +1,7 @@
 {
   "events": {
     "repo": "git@github.com:Study-Compass/Events-Backend.git",
-    "ref": "4af5cda46b48fcd78f6be03a1e124868c8a36a15",
+    "ref": "14ff4b360284458e451028f4ff1c7f3a8b8ae0eb",
     "dest": "backend/events"
   }
 }

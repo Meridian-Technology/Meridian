@@ -1,5 +1,6 @@
 const globalUserSchema = require('../schemas/globalUser');
 const platformRoleSchema = require('../schemas/platformRole');
+const platformAdminInviteSchema = require('../schemas/platformAdminInvite');
 const tenantMembershipSchema = require('../schemas/tenantMembership');
 const globalSessionSchema = require('../schemas/globalSession');
 const tenantConfigSchema = require('../schemas/tenantConfig');
@@ -18,7 +19,7 @@ const pivotCurationRunSchema = require('../schemas/pivotCurationRun');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names: 'GlobalUser', 'PlatformRole', 'TenantMembership', 'Session', 'TenantConfig', 'PivotReferralCode', 'PivotReferralRedemption', 'PivotWeeklySnapshot', 'PivotLabNotes', 'PivotTagCatalog', 'PivotPosterTemplate', 'PivotCurationJob', 'PivotCurationRun'
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -30,6 +31,11 @@ const getGlobalModels = (req, ...names) => {
     const models = {
         GlobalUser: db.model('GlobalUser', globalUserSchema, 'global_users'),
         PlatformRole: db.model('PlatformRole', platformRoleSchema, 'platform_roles'),
+        PlatformAdminInvite: db.model(
+            'PlatformAdminInvite',
+            platformAdminInviteSchema,
+            'platform_admin_invites'
+        ),
         TenantMembership: db.model('TenantMembership', tenantMembershipSchema, 'tenant_memberships'),
         Session: db.model('Session', globalSessionSchema, 'sessions'),
         TenantConfig: db.model('TenantConfig', tenantConfigSchema, 'tenant_config'),
