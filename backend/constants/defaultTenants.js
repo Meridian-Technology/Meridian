@@ -1,6 +1,16 @@
 const TENANT_STATUSES = new Set(['active', 'coming_soon', 'maintenance', 'hidden']);
 const TENANT_TYPES = new Set(['campus', 'pivot']);
 
+const PIVOT_DROP_PUSH_TITLE_MAX = 100;
+const PIVOT_DROP_PUSH_BODY_MAX = 240;
+
+function normalizePivotDropPushField(value, maxLength) {
+  if (value === undefined || value === null) return undefined;
+  const trimmed = String(value).trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, maxLength);
+}
+
 function normalizePivotDropOverrides(rows = []) {
   if (!Array.isArray(rows)) return undefined;
 
@@ -18,7 +28,16 @@ function normalizePivotDropOverrides(rows = []) {
           ? 0
           : Number(minuteRaw);
       if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
-      return { batchWeek, dayOfWeek, hour, minute };
+      const pushTitle = normalizePivotDropPushField(row?.pushTitle, PIVOT_DROP_PUSH_TITLE_MAX);
+      const pushBody = normalizePivotDropPushField(row?.pushBody, PIVOT_DROP_PUSH_BODY_MAX);
+      return {
+        batchWeek,
+        dayOfWeek,
+        hour,
+        minute,
+        ...(pushTitle ? { pushTitle } : {}),
+        ...(pushBody ? { pushBody } : {}),
+      };
     })
     .filter(Boolean);
 
@@ -51,6 +70,18 @@ function normalizePivotDropFields(row = {}, target = {}) {
   const overrides = normalizePivotDropOverrides(row.pivotDropOverrides);
   if (overrides) {
     target.pivotDropOverrides = overrides;
+  }
+  const pushTitle = normalizePivotDropPushField(row.pivotDropPushTitle, PIVOT_DROP_PUSH_TITLE_MAX);
+  if (pushTitle) {
+    target.pivotDropPushTitle = pushTitle;
+  } else if (row.pivotDropPushTitle !== undefined) {
+    target.pivotDropPushTitle = undefined;
+  }
+  const pushBody = normalizePivotDropPushField(row.pivotDropPushBody, PIVOT_DROP_PUSH_BODY_MAX);
+  if (pushBody) {
+    target.pivotDropPushBody = pushBody;
+  } else if (row.pivotDropPushBody !== undefined) {
+    target.pivotDropPushBody = undefined;
   }
   return target;
 }

@@ -27,6 +27,9 @@ const {
   getWeeklyDropStatus,
   sendWeeklyDropPush,
   updateWeeklyDropConfig,
+  resolveWeeklyDropPushCopy,
+  PUSH_TITLE,
+  PUSH_BODY,
 } = require('../../services/pivotWeeklyDropService');
 
 describe('pivotWeeklyDropService', () => {
@@ -67,6 +70,60 @@ describe('pivotWeeklyDropService', () => {
     expect(result.dropSchedule.nextDropFormatted).toMatch(/Thu Jun 4/);
     expect(result.publishedEventCount).toBe(3);
     expect(result.pivotPushRecipientCount).toBe(2);
+    expect(result.dropSchedule.pushCopy.title).toBe(PUSH_TITLE);
+  });
+
+  it('resolveWeeklyDropPushCopy prefers per-week override and tenant defaults', () => {
+    const tenant = {
+      pivotDropPushTitle: 'NYC drop',
+      pivotDropPushBody: 'Swipe the week',
+      pivotDropOverrides: [
+        {
+          batchWeek: '2026-W23',
+          pushTitle: 'W23 special',
+          pushBody: 'Only this week',
+        },
+      ],
+    };
+
+    expect(resolveWeeklyDropPushCopy(tenant, '2026-W24')).toEqual({
+      title: 'NYC drop',
+      body: 'Swipe the week',
+      source: 'tenant',
+    });
+    expect(resolveWeeklyDropPushCopy(tenant, '2026-W23')).toEqual({
+      title: 'W23 special',
+      body: 'Only this week',
+      source: 'override',
+    });
+    expect(
+      resolveWeeklyDropPushCopy(tenant, '2026-W23', {
+        pushTitle: 'One-off',
+        pushBody: 'Tonight only',
+      })
+    ).toEqual({
+      title: 'One-off',
+      body: 'Tonight only',
+      source: 'send',
+    });
+  });
+
+  it('sendWeeklyDropPush dry-run uses custom push copy', async () => {
+    getTenantByKey.mockResolvedValue(nycTenant);
+
+    const result = await sendWeeklyDropPush({}, 'nyc', {
+      batchWeek: '2026-W23',
+      dryRun: true,
+      force: true,
+      pushTitle: 'Iowa City is live',
+      pushBody: '52 events waiting for you',
+    });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.pushCopy.title).toBe('Iowa City is live');
+    expect(result.sampleMessage?.title).toBe('Iowa City is live');
+    expect(result.sampleMessage?.body).toBe('52 events waiting for you');
+    expect(rebuildWeeklySnapshot).not.toHaveBeenCalled();
   });
 
   it('updateWeeklyDropConfig persists drop fields', async () => {

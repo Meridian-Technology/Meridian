@@ -6,6 +6,7 @@
  *   npm run send:pivot-weekly-push -- --tenantKey=nyc --batchWeek=2026-W22
  *   npm run send:pivot-weekly-push -- --tenantKey=nyc --dry-run
  *   npm run send:pivot-weekly-push -- --tenantKey=nyc --force
+ *   npm run send:pivot-weekly-push -- --tenantKey=nyc --pushTitle="Iowa City" --pushBody="Your week is live"
  */
 require('./ensureBackendNodeModules');
 require('dotenv').config();
@@ -23,14 +24,15 @@ const {
   resolvePivotDropInstant,
 } = require('../utilities/pivotDropSchedule');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
+const {
+  buildWeeklyDropPushMessage,
+  resolveWeeklyDropPushCopy,
+} = require('../services/pivotWeeklyDropService');
 
 const CONFIG_KEY = 'default';
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const EXPO_BATCH_SIZE = 100;
 const DROP_WINDOW_MS = 30 * 60 * 1000;
-
-const PUSH_TITLE = 'just go*';
-const PUSH_BODY = 'What are you doing this week? Just go.';
 
 function readArg(prefix) {
   const flag = process.argv.find((arg) => arg.startsWith(`${prefix}=`));
@@ -39,28 +41,6 @@ function readArg(prefix) {
 
 function hasFlag(flag) {
   return process.argv.includes(flag);
-}
-
-function buildWeeklyDropPushMessage(pushToken, batchWeek) {
-  return {
-    to: pushToken,
-    sound: 'default',
-    title: PUSH_TITLE,
-    body: PUSH_BODY,
-    data: {
-      type: 'pivot_week',
-      edition: 'pivot',
-      appEdition: 'pivot',
-      batchWeek,
-      navigation: {
-        type: 'navigate',
-        route: 'PivotWeek',
-        deepLink: 'meridian://pivot/week',
-      },
-    },
-    priority: 'default',
-    channelId: 'default',
-  };
 }
 
 async function countPublishedEvents(req, batchWeek) {
@@ -129,6 +109,8 @@ async function run() {
   const batchWeek = readArg('--batchWeek') || toIsoWeek();
   const dryRun = hasFlag('--dry-run');
   const force = hasFlag('--force');
+  const pushTitle = readArg('--pushTitle');
+  const pushBody = readArg('--pushBody');
 
   if (!tenantKey) {
     throw new Error('Missing required flag --tenantKey=<city>');
@@ -200,8 +182,9 @@ async function run() {
     return;
   }
 
+  const pushCopy = resolveWeeklyDropPushCopy(tenant, batchWeek, { pushTitle, pushBody });
   const messages = recipients.map((recipient) =>
-    buildWeeklyDropPushMessage(recipient.pushToken, batchWeek)
+    buildWeeklyDropPushMessage(recipient.pushToken, batchWeek, pushCopy)
   );
 
   if (dryRun) {
@@ -209,8 +192,8 @@ async function run() {
     console.log(
       JSON.stringify(
         {
-          title: PUSH_TITLE,
-          body: PUSH_BODY,
+          title: pushCopy.title,
+          body: pushCopy.body,
           recipientCount: messages.length,
           sample: messages[0],
         },

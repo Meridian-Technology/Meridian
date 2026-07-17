@@ -18,13 +18,65 @@ const DROP_WINDOW_MS = 30 * 60 * 1000;
 
 const PUSH_TITLE = 'just go*';
 const PUSH_BODY = 'What are you doing this week? Just go.';
+const PUSH_TITLE_MAX = 100;
+const PUSH_BODY_MAX = 240;
 
-function buildWeeklyDropPushMessage(pushToken, batchWeek) {
+function trimPushField(value, maxLength) {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, maxLength);
+}
+
+function resolveWeeklyDropPushCopy(tenant, batchWeek, options = {}) {
+  const override = Array.isArray(tenant?.pivotDropOverrides)
+    ? tenant.pivotDropOverrides.find((row) => row?.batchWeek === batchWeek)
+    : null;
+
+  const title =
+    trimPushField(options.pushTitle, PUSH_TITLE_MAX) ||
+    trimPushField(override?.pushTitle, PUSH_TITLE_MAX) ||
+    trimPushField(tenant?.pivotDropPushTitle, PUSH_TITLE_MAX) ||
+    PUSH_TITLE;
+
+  const body =
+    trimPushField(options.pushBody, PUSH_BODY_MAX) ||
+    trimPushField(override?.pushBody, PUSH_BODY_MAX) ||
+    trimPushField(tenant?.pivotDropPushBody, PUSH_BODY_MAX) ||
+    PUSH_BODY;
+
+  let source = 'default';
+  if (trimPushField(options.pushTitle, PUSH_TITLE_MAX) || trimPushField(options.pushBody, PUSH_BODY_MAX)) {
+    source = 'send';
+  } else if (
+    trimPushField(override?.pushTitle, PUSH_TITLE_MAX) ||
+    trimPushField(override?.pushBody, PUSH_BODY_MAX)
+  ) {
+    source = 'override';
+  } else if (
+    trimPushField(tenant?.pivotDropPushTitle, PUSH_TITLE_MAX) ||
+    trimPushField(tenant?.pivotDropPushBody, PUSH_BODY_MAX)
+  ) {
+    source = 'tenant';
+  }
+
+  return { title, body, source };
+}
+
+function buildWeeklyDropPushMessage(pushToken, batchWeek, copy = {}) {
+  const title =
+    trimPushField(copy.title, PUSH_TITLE_MAX) ||
+    trimPushField(copy.pushTitle, PUSH_TITLE_MAX) ||
+    PUSH_TITLE;
+  const body =
+    trimPushField(copy.body, PUSH_BODY_MAX) ||
+    trimPushField(copy.pushBody, PUSH_BODY_MAX) ||
+    PUSH_BODY;
   return {
     to: pushToken,
     sound: 'default',
-    title: PUSH_TITLE,
-    body: PUSH_BODY,
+    title,
+    body,
     data: {
       type: 'pivot_week',
       edition: 'pivot',
@@ -77,6 +129,15 @@ function validateDropConfigPayload(body = {}) {
   const patch = {};
   normalizePivotDropFields(body, patch);
 
+  const pushTitle = trimPushField(body.pivotDropPushTitle, PUSH_TITLE_MAX);
+  if (body.pivotDropPushTitle !== undefined) {
+    patch.pivotDropPushTitle = pushTitle || undefined;
+  }
+  const pushBody = trimPushField(body.pivotDropPushBody, PUSH_BODY_MAX);
+  if (body.pivotDropPushBody !== undefined) {
+    patch.pivotDropPushBody = pushBody || undefined;
+  }
+
   if (body.pivotDropOverrides !== undefined) {
     const overrides = normalizePivotDropOverrides(body.pivotDropOverrides);
     patch.pivotDropOverrides = overrides || [];
@@ -96,14 +157,16 @@ function validateDropConfigPayload(body = {}) {
 function serializeDropSchedule(tenant, batchWeek, now = new Date()) {
   const dropSchedule = buildDropSchedulePayload(tenant, batchWeek, now);
   const deltaMs = Math.abs(now.getTime() - new Date(dropSchedule.nextDropAt).getTime());
+  const pushCopy = resolveWeeklyDropPushCopy(tenant, batchWeek);
 
   return {
     ...dropSchedule,
     minutesFromDropAt: Math.round(deltaMs / 60000),
     withinDropWindow: deltaMs <= DROP_WINDOW_MS,
     pushCopy: {
-      title: PUSH_TITLE,
-      body: PUSH_BODY,
+      title: pushCopy.title,
+      body: pushCopy.body,
+      source: pushCopy.source,
     },
   };
 }
@@ -213,6 +276,10 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
   const force = options.force === true;
   const now = new Date();
   const dropSchedule = serializeDropSchedule(tenant, batchWeek, now);
+  const pushCopy = resolveWeeklyDropPushCopy(tenant, batchWeek, {
+    pushTitle: options.pushTitle,
+    pushBody: options.pushBody,
+  });
   const publishedEventCount = await countPublishedEvents(tenantKey, batchWeek);
   const recipients = await loadPivotPushRecipients(tenantKey);
 
@@ -240,13 +307,14 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
   }
 
   const messages = recipients.map((recipient) =>
-    buildWeeklyDropPushMessage(recipient.pushToken, batchWeek)
+    buildWeeklyDropPushMessage(recipient.pushToken, batchWeek, pushCopy)
   );
 
   if (dryRun) {
     return {
       dryRun: true,
       dropSchedule,
+      pushCopy,
       publishedEventCount,
       pivotPushRecipientCount: recipients.length,
       warnings,
@@ -291,6 +359,7 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
   return {
     dryRun: false,
     dropSchedule,
+    pushCopy,
     publishedEventCount,
     pivotPushRecipientCount: recipients.length,
     sent,
@@ -304,7 +373,10 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
 module.exports = {
   PUSH_TITLE,
   PUSH_BODY,
+  PUSH_TITLE_MAX,
+  PUSH_BODY_MAX,
   DROP_WINDOW_MS,
+  resolveWeeklyDropPushCopy,
   buildWeeklyDropPushMessage,
   getWeeklyDropStatus,
   updateWeeklyDropConfig,

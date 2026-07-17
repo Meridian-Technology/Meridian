@@ -22,6 +22,13 @@ const EMPTY_OVERRIDE = {
   dayOfWeek: 4,
   hour: 18,
   minute: 0,
+  pushTitle: '',
+  pushBody: '',
+};
+
+const DEFAULT_PUSH_COPY = {
+  title: 'just go*',
+  body: 'What are you doing this week? Just go.',
 };
 
 function tenantToDropForm(tenant) {
@@ -39,12 +46,16 @@ function tenantToDropForm(tenant) {
       tenant?.pivotDropMinute !== undefined && tenant?.pivotDropMinute !== null
         ? String(tenant.pivotDropMinute)
         : '0',
+    pivotDropPushTitle: tenant?.pivotDropPushTitle || '',
+    pivotDropPushBody: tenant?.pivotDropPushBody || '',
     pivotDropOverrides: Array.isArray(tenant?.pivotDropOverrides)
       ? tenant.pivotDropOverrides.map((row) => ({
           batchWeek: row.batchWeek || '',
           dayOfWeek: String(row.dayOfWeek ?? 4),
           hour: String(row.hour ?? 18),
           minute: String(row.minute ?? 0),
+          pushTitle: row.pushTitle || '',
+          pushBody: row.pushBody || '',
         }))
       : [],
   };
@@ -63,6 +74,7 @@ function PivotWeeklyDropPage() {
   const [batchWeek, setBatchWeek] = useState(() => toIsoWeek());
   const [selectedTenantKey, setSelectedTenantKey] = useState('');
   const [form, setForm] = useState(() => tenantToDropForm(null));
+  const [pushCopy, setPushCopy] = useState(DEFAULT_PUSH_COPY);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -107,6 +119,15 @@ function PivotWeeklyDropPage() {
     }
   }, [selectedTenant?.tenantKey, selectedTenant?.pivotDropTimezone, selectedTenant?.pivotDropDayOfWeek]);
 
+  useEffect(() => {
+    if (dropSchedule?.pushCopy) {
+      setPushCopy({
+        title: dropSchedule.pushCopy.title || DEFAULT_PUSH_COPY.title,
+        body: dropSchedule.pushCopy.body || DEFAULT_PUSH_COPY.body,
+      });
+    }
+  }, [dropSchedule?.pushCopy?.title, dropSchedule?.pushCopy?.body, batchWeek, selectedTenantKey]);
+
   const handleFormChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -139,6 +160,8 @@ function PivotWeeklyDropPage() {
     pivotDropDayOfWeek: Number(form.pivotDropDayOfWeek),
     pivotDropHour: Number(form.pivotDropHour),
     pivotDropMinute: Number(form.pivotDropMinute),
+    pivotDropPushTitle: form.pivotDropPushTitle.trim() || undefined,
+    pivotDropPushBody: form.pivotDropPushBody.trim() || undefined,
     pivotDropOverrides: form.pivotDropOverrides
       .filter((row) => row.batchWeek.trim())
       .map((row) => ({
@@ -146,6 +169,8 @@ function PivotWeeklyDropPage() {
         dayOfWeek: Number(row.dayOfWeek),
         hour: Number(row.hour),
         minute: Number(row.minute),
+        ...(row.pushTitle?.trim() ? { pushTitle: row.pushTitle.trim() } : {}),
+        ...(row.pushBody?.trim() ? { pushBody: row.pushBody.trim() } : {}),
       })),
   });
 
@@ -209,7 +234,7 @@ function PivotWeeklyDropPage() {
 
       if (!dryRun && !force) {
         const confirmed = window.confirm(
-          `Send weekly drop push to ${status?.pivotPushRecipientCount ?? 0} pivot devices for ${selectedTenantKey}?`
+          `Send weekly drop push to ${status?.pivotPushRecipientCount ?? 0} pivot devices for ${selectedTenantKey}?\n\nTitle: ${pushCopy.title}\nBody: ${pushCopy.body}`
         );
         if (!confirmed) return;
       }
@@ -219,7 +244,13 @@ function PivotWeeklyDropPage() {
         `/admin/platform/tenants/${selectedTenantKey}/pivot-weekly-drop/send`,
         {
           method: 'POST',
-          data: { batchWeek, dryRun, force },
+          data: {
+            batchWeek,
+            dryRun,
+            force,
+            pushTitle: pushCopy.title.trim(),
+            pushBody: pushCopy.body.trim(),
+          },
           headers: { 'Content-Type': 'application/json' },
         }
       );
@@ -238,7 +269,7 @@ function PivotWeeklyDropPage() {
       if (dryRun) {
         addNotification({
           title: 'Push preview',
-          message: `${result.pivotPushRecipientCount} recipients · ${result.publishedEventCount} published events`,
+          message: `${result.pivotPushRecipientCount} recipients · ${result.publishedEventCount} published events · “${result.pushCopy?.title || pushCopy.title}”`,
           type: 'success',
         });
       } else {
@@ -250,7 +281,15 @@ function PivotWeeklyDropPage() {
       }
       refetchStatus();
     },
-    [addNotification, batchWeek, refetchStatus, selectedTenantKey, status?.pivotPushRecipientCount]
+    [
+      addNotification,
+      batchWeek,
+      pushCopy.body,
+      pushCopy.title,
+      refetchStatus,
+      selectedTenantKey,
+      status?.pivotPushRecipientCount,
+    ]
   );
 
   return (
@@ -359,9 +398,43 @@ function PivotWeeklyDropPage() {
           </div>
 
           <div className="pivot-weekly-drop__copy">
-            <p className="pivot-weekly-drop__copy-label">Push copy</p>
-            <p className="pivot-weekly-drop__copy-title">{dropSchedule.pushCopy?.title}</p>
-            <p className="pivot-weekly-drop__copy-body">{dropSchedule.pushCopy?.body}</p>
+            <div className="pivot-weekly-drop__copy-head">
+              <p className="pivot-weekly-drop__copy-label">Push notification</p>
+              {dropSchedule.pushCopy?.source ? (
+                <span className="pivot-weekly-drop__copy-source">
+                  {dropSchedule.pushCopy.source === 'override'
+                    ? 'Per-week override'
+                    : dropSchedule.pushCopy.source === 'tenant'
+                      ? 'City default'
+                      : 'Just Go default'}
+                </span>
+              ) : null}
+            </div>
+            <p className="pivot-weekly-drop__copy-hint">
+              Edit copy for this send. Save schedule below to persist city defaults or per-week
+              overrides.
+            </p>
+            <label className="linear-field">
+              <span className="linear-field__label">Title</span>
+              <input
+                className="linear-input"
+                value={pushCopy.title}
+                onChange={(e) => setPushCopy((prev) => ({ ...prev, title: e.target.value }))}
+                maxLength={100}
+                placeholder={DEFAULT_PUSH_COPY.title}
+              />
+            </label>
+            <label className="linear-field">
+              <span className="linear-field__label">Body</span>
+              <textarea
+                className="linear-input pivot-weekly-drop__copy-textarea"
+                value={pushCopy.body}
+                onChange={(e) => setPushCopy((prev) => ({ ...prev, body: e.target.value }))}
+                maxLength={240}
+                rows={3}
+                placeholder={DEFAULT_PUSH_COPY.body}
+              />
+            </label>
             <code className="linear-code">Opens PivotWeek · meridian://pivot/week</code>
           </div>
 
@@ -456,6 +529,37 @@ function PivotWeeklyDropPage() {
             </label>
           </div>
 
+          <div className="pivot-weekly-drop__push-defaults">
+            <h3 className="pivot-weekly-drop__overrides-title">Default push copy</h3>
+            <p className="pivot-weekly-drop__hint">
+              Used for every week unless a per-week override or send-time edit replaces it. Leave
+              blank to use the Just Go default.
+            </p>
+            <div className="linear-form__grid">
+              <label className="linear-field">
+                <span className="linear-field__label">Default title</span>
+                <input
+                  className="linear-input"
+                  value={form.pivotDropPushTitle}
+                  onChange={(e) => handleFormChange('pivotDropPushTitle', e.target.value)}
+                  maxLength={100}
+                  placeholder={DEFAULT_PUSH_COPY.title}
+                />
+              </label>
+              <label className="linear-field pivot-weekly-drop__push-body-field">
+                <span className="linear-field__label">Default body</span>
+                <textarea
+                  className="linear-input pivot-weekly-drop__copy-textarea"
+                  value={form.pivotDropPushBody}
+                  onChange={(e) => handleFormChange('pivotDropPushBody', e.target.value)}
+                  maxLength={240}
+                  rows={2}
+                  placeholder={DEFAULT_PUSH_COPY.body}
+                />
+              </label>
+            </div>
+          </div>
+
           <div className="pivot-weekly-drop__overrides">
             <div className="pivot-weekly-drop__overrides-head">
               <h3 className="pivot-weekly-drop__overrides-title">Per-week overrides</h3>
@@ -513,6 +617,26 @@ function PivotWeeklyDropPage() {
                         max={59}
                         value={row.minute}
                         onChange={(e) => handleOverrideChange(index, 'minute', e.target.value)}
+                      />
+                    </label>
+                    <label className="linear-field pivot-weekly-drop__override-push">
+                      <span className="linear-field__label">Push title</span>
+                      <input
+                        className="linear-input"
+                        value={row.pushTitle}
+                        onChange={(e) => handleOverrideChange(index, 'pushTitle', e.target.value)}
+                        maxLength={100}
+                        placeholder="Optional"
+                      />
+                    </label>
+                    <label className="linear-field pivot-weekly-drop__override-push pivot-weekly-drop__override-push-body">
+                      <span className="linear-field__label">Push body</span>
+                      <input
+                        className="linear-input"
+                        value={row.pushBody}
+                        onChange={(e) => handleOverrideChange(index, 'pushBody', e.target.value)}
+                        maxLength={240}
+                        placeholder="Optional"
                       />
                     </label>
                     <button

@@ -6,6 +6,8 @@ const pivotDropOverrideSchema = new mongoose.Schema(
     dayOfWeek: { type: Number, required: true, min: 0, max: 6 },
     hour: { type: Number, required: true, min: 0, max: 23 },
     minute: { type: Number, default: 0, min: 0, max: 59 },
+    pushTitle: { type: String, default: null, trim: true, maxlength: 100 },
+    pushBody: { type: String, default: null, trim: true, maxlength: 240 },
   },
   { _id: false }
 );
@@ -35,6 +37,8 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotDropDayOfWeek: { type: Number, default: null, min: 0, max: 6 },
     pivotDropHour: { type: Number, default: null, min: 0, max: 23 },
     pivotDropMinute: { type: Number, default: 0, min: 0, max: 59 },
+    pivotDropPushTitle: { type: String, default: null, trim: true, maxlength: 100 },
+    pivotDropPushBody: { type: String, default: null, trim: true, maxlength: 240 },
     pivotDropOverrides: { type: [pivotDropOverrideSchema], default: undefined },
     provisioningConfirmations: {
       dns: { type: Boolean, default: false },

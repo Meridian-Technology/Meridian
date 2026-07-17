@@ -60,6 +60,8 @@ router.post(
         batchWeek: req.body?.batchWeek,
         dryRun: req.body?.dryRun === true,
         force: req.body?.force === true,
+        pushTitle: req.body?.pushTitle,
+        pushBody: req.body?.pushBody,
       });
       if (result.error) {
         return res.status(result.status || 400).json({

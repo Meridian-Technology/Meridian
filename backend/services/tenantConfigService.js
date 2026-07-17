@@ -92,6 +92,8 @@ function toStoredTenantRow(tenant) {
     pivotDropDayOfWeek: tenant.pivotDropDayOfWeek,
     pivotDropHour: tenant.pivotDropHour,
     pivotDropMinute: tenant.pivotDropMinute,
+    pivotDropPushTitle: tenant.pivotDropPushTitle,
+    pivotDropPushBody: tenant.pivotDropPushBody,
     pivotDropOverrides: tenant.pivotDropOverrides,
     provisioningConfirmations: tenant.provisioningConfirmations,
   };
