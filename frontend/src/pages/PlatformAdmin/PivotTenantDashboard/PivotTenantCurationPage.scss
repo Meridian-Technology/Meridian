@@ -277,6 +277,15 @@
     color: var(--la-text-secondary, inherit);
   }
 
+  &__week-link {
+    display: inline;
+    margin: 0 4px;
+    padding: 0 6px;
+    min-height: 0;
+    font-size: inherit;
+    vertical-align: baseline;
+  }
+
   &__url-cell {
     max-width: 280px;
     overflow: hidden;

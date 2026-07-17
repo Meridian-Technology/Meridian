@@ -141,7 +141,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     isValidIsoWeek(urlBatchWeek) ? urlBatchWeek.trim() : toIsoWeek(),
   );
   /** When true, crawl/manual ingest pins every event into `batchWeek` instead of the event's start date. */
-  const [forceBatchWeek, setForceBatchWeek] = useState(false);
+  const [forceBatchWeek, setForceBatchWeek] = useState(true);
   const [filter, setFilter] = useState(
     FILTER_OPTIONS.some((opt) => opt.value === urlFilter) ? urlFilter : 'all',
   );
@@ -169,6 +169,8 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const [tagSuggestLoadingKey, setTagSuggestLoadingKey] = useState(null);
   const [urlImportValue, setUrlImportValue] = useState('');
   const [urlImportLoading, setUrlImportLoading] = useState(false);
+  /** Shown when a bulk stage lands events outside the selected review week. */
+  const [stageLandHint, setStageLandHint] = useState(null);
   const initializedWeekRef = useRef(false);
 
   // Keep committed week / filter bookmarkable (preserve page=1). Drop legacy stage= param.
@@ -195,6 +197,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       { replace: true },
     );
   }, [committedWeek, committedWeekValid, filter, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    setStageLandHint(null);
+  }, [committedWeek, forceBatchWeek]);
 
   // Sync from deep links when the URL changes externally.
   useEffect(() => {
@@ -394,6 +400,45 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     refetchOps();
     if (activeRunId) refetchRun();
   }, [activeRunId, refetchOps, refetchRun]);
+
+  const handleJsonStaged = useCallback(
+    (result) => {
+      refreshAll();
+      setStageLandHint(null);
+
+      const counts = result?.batchWeekCounts || {};
+      const weeks = Object.keys(counts).sort();
+      if (!weeks.length) return;
+
+      const inReviewWeek = counts[committedWeek] || 0;
+      const totalStaged = weeks.reduce((sum, week) => sum + (counts[week] || 0), 0);
+
+      if (forceBatchWeek || inReviewWeek === totalStaged) {
+        return;
+      }
+
+      if (weeks.length === 1) {
+        const landedWeek = weeks[0];
+        setBatchWeek(landedWeek, { immediate: true });
+        addNotification({
+          title: 'Review week switched',
+          message: `${totalStaged} event(s) staged into ${landedWeek} by start date — switched the review queue to that week.`,
+          type: 'info',
+        });
+        return;
+      }
+
+      setStageLandHint({ batchWeekCounts: counts, totalStaged });
+      addNotification({
+        title: 'Events staged in other weeks',
+        message: `${totalStaged} event(s) landed by start date (${weeks
+          .map((week) => `${week} (${counts[week]})`)
+          .join(', ')}). Switch the batch week above to review them, or enable “Force into review week”.`,
+        type: 'warning',
+      });
+    },
+    [addNotification, committedWeek, forceBatchWeek, refreshAll, setBatchWeek],
+  );
 
   const keybindsEnabled =
     batchWeekValid &&
@@ -1651,9 +1696,47 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           disabled={!committedWeekValid || !weekSettled || !tenantKey}
           mode="stage"
           onBeforeStage={() => setBatchWeek(committedWeek, { immediate: true })}
-          onStaged={refreshAll}
+          onStaged={handleJsonStaged}
         />
       </section>
+
+      {stageLandHint ? (
+        <div
+          className="pivot-tenant-curation__run-banner pivot-tenant-curation__run-banner--failed"
+          role="status"
+        >
+          <div>
+            <strong>Staged events are in other batch weeks</strong>
+            <span className="pivot-tenant-curation__run-msg">
+              {' '}
+              {stageLandHint.totalStaged} event(s) landed by start date:{' '}
+              {Object.keys(stageLandHint.batchWeekCounts)
+                .sort()
+                .map((week) => (
+                  <button
+                    key={week}
+                    type="button"
+                    className="linear-btn linear-btn--ghost pivot-tenant-curation__week-link"
+                    onClick={() => {
+                      setBatchWeek(week, { immediate: true });
+                      setStageLandHint(null);
+                    }}
+                  >
+                    {week} ({stageLandHint.batchWeekCounts[week]})
+                  </button>
+                ))}
+              . Enable “Force into review week” before staging to pin everything to {committedWeek}.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="linear-btn linear-btn--ghost"
+            onClick={() => setStageLandHint(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <section className="linear-section pivot-lab__section" aria-labelledby="curation-queue">
         <div className="pivot-lab__section-head">

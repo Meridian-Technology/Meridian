@@ -269,15 +269,41 @@ export default function PivotJsonImportPanel({
     const publishedCount = data.data?.publishedCount ?? data.data?.published?.length ?? 0;
     const failedCount = data.data?.failedCount ?? data.data?.failures?.length ?? 0;
     const updatedCount = data.data?.updatedCount ?? 0;
+    const batchWeekCounts = data.data?.batchWeekCounts || {};
+    const weekKeys = Object.keys(batchWeekCounts).sort();
+    const weekSuffix =
+      weekKeys.length > 1
+        ? ` Weeks: ${weekKeys.map((w) => `${w} (${batchWeekCounts[w]})`).join(', ')}.`
+        : weekKeys.length === 1
+          ? ` Week ${weekKeys[0]}.`
+          : batchWeek
+            ? ` Week ${batchWeek}.`
+            : '';
+    const landedInReviewWeek =
+      !forceBatchWeek && batchWeek && (batchWeekCounts[batchWeek] || 0) < publishedCount;
+    const updatedSuffix =
+      updatedCount > 0
+        ? ` ${updatedCount} updated existing catalog event(s) — already-published rows stay live.`
+        : '';
 
     addNotification({
       title: failedCount ? 'Batch partially staged' : 'JSON staged',
       message: failedCount
-        ? `${publishedCount} staged, ${updatedCount} updated, ${failedCount} failed.`
-        : `${publishedCount} event(s) staged for ${batchWeek}.`,
-      type: failedCount ? 'warning' : 'success',
+        ? `${publishedCount} staged, ${updatedCount} updated, ${failedCount} failed.${weekSuffix}${updatedSuffix}`
+        : `${publishedCount} event(s) staged.${weekSuffix}${updatedSuffix}${
+            landedInReviewWeek
+              ? ' Some events landed outside the selected review week — switch batch week to review them.'
+              : ' Open the review queue below to publish.'
+          }`,
+      type: failedCount || landedInReviewWeek ? 'warning' : 'success',
     });
-    onStaged?.();
+    onStaged?.({
+      batchWeekCounts,
+      publishedCount,
+      updatedCount,
+      failedCount,
+      forceBatchWeek,
+    });
   }, [
     addNotification,
     batchWeek,
@@ -383,9 +409,16 @@ export default function PivotJsonImportPanel({
     <details className="pivot-lab__json-import">
       <summary className="pivot-lab__json-import-summary">
         JSON import (agents)
-        {mode === 'stage' && batchWeek ? ` · stages to ${batchWeek}` : null}
+        {mode === 'stage' && batchWeek && forceBatchWeek ? ` · pins to ${batchWeek}` : null}
       </summary>
       <div className="pivot-lab__json-import-body">
+        {!forceBatchWeek && mode === 'stage' && batchWeek ? (
+          <p className="pivot-lab__json-import-hint pivot-lab__json-import-hint--warn">
+            <strong>Force into review week</strong> is off — events will land in the ISO week of each
+            start date and may split across multiple weeks. They will not appear in the review queue
+            until you switch to that batch week.
+          </p>
+        ) : null}
         <p className="pivot-lab__json-import-hint">
           For Just Go weekly ops: give agents the prompt below, paste their JSON here, then review
           before {mode === 'stage' ? 'staging' : 'loading'}.

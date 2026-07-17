@@ -563,6 +563,14 @@
     code {
       font-size: 11px;
     }
+
+    &--warn {
+      padding: 8px 10px;
+      border-radius: var(--la-radius);
+      border: 1px solid rgba(180, 120, 40, 0.35);
+      background: rgba(180, 120, 40, 0.08);
+      color: var(--la-text, inherit);
+    }
   }
 
   &__json-import-actions {
