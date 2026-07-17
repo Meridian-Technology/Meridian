@@ -7,7 +7,6 @@ const crypto = require('crypto');
 const ALLOWED_MIME_TYPES = [
     'image/jpeg',
     'image/png',
-    'image/gif',
     'image/webp'
 ];
 
@@ -17,7 +16,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 // File type validation middleware
 const fileFilter = (req, file, cb) => {
     if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-        cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed.'), false);
+        cb(new Error('Invalid file type. Only JPEG, PNG, and WebP images are allowed.'), false);
         return;
     }
     cb(null, true);
