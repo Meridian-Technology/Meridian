@@ -9,6 +9,7 @@ const {
 
 const RAILS = [
   { id: 'friends', title: 'friends going', retrieval: 'friends_rail' },
+  { id: 'crews', title: 'crews going', retrieval: 'crews_rail' },
   { id: 'tonight', title: 'tonight', retrieval: 'filter' },
   { id: 'tag:live-music', title: 'live music', retrieval: 'tag_rail' },
   { id: 'tag:board-games', title: 'board games', retrieval: 'tag_rail' },
@@ -133,6 +134,26 @@ describe('pivotExploreSectionsService', () => {
 
       expect(sections.find((section) => section.id === 'friends')).toBeUndefined();
       expect(sections.find((section) => section.id === 'tag:live-music')).toBeUndefined();
+    });
+
+    it('builds crews_rail from locked picks and crew interest counts', () => {
+      const lockedCrewPickEventIds = new Set(['5']);
+      const events = [
+        mockEvent('1'),
+        mockEvent('2'),
+        mockEvent('3'),
+        mockEvent('4'),
+        mockEvent('5', { crewRegisteredCount: 1 }),
+        mockEvent('6', { crewInterestedCount: 2 }),
+        mockEvent('7', { crewInterestedCount: 1 }),
+      ];
+
+      const sections = buildRulesExploreSections(events, RAILS, { lockedCrewPickEventIds });
+      const crewsSection = sections.find((section) => section.id === 'crews');
+
+      expect(crewsSection).toBeDefined();
+      expect(crewsSection.retrieval).toBe('crews_rail');
+      expect(crewsSection.events.map((event) => event._id)).toEqual(['5', '6', '7']);
     });
   });
 

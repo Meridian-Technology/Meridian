@@ -56,6 +56,7 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const EXPLORE_RAIL_COPY = {
   friends: 'friends going',
+  crews: 'crews going',
   tonight: 'tonight',
   forYou: 'for you later',
 };
@@ -344,11 +345,52 @@ function collectWeekTagSlugs(events) {
   return slugs;
 }
 
+async function userHasActiveCrews(req, userId) {
+  const { PivotCrewMembership } = getModels(req, 'PivotCrewMembership');
+  const count = await PivotCrewMembership.countDocuments({
+    userId,
+    status: 'active',
+  });
+  return count > 0;
+}
+
+async function loadUserCrewLockedPickEventIds(req, userId, batchWeek) {
+  const { PivotCrewMembership, PivotCrewWeekState } = getModels(
+    req,
+    'PivotCrewMembership',
+    'PivotCrewWeekState',
+  );
+
+  const memberships = await PivotCrewMembership.find({
+    userId,
+    status: 'active',
+  })
+    .select('crewId')
+    .lean();
+
+  if (!memberships.length) {
+    return new Set();
+  }
+
+  const crewIds = memberships.map((row) => row.crewId);
+  const weekStates = await PivotCrewWeekState.find({
+    crewId: { $in: crewIds },
+    batchWeek,
+    judgementStatus: { $in: ['confirmed', 'swapped'] },
+    proposedEventId: { $ne: null },
+  })
+    .select('proposedEventId')
+    .lean();
+
+  return new Set(weekStates.map((row) => String(row.proposedEventId)));
+}
+
 function buildExploreRails(
   catalogTagRows,
   weekEvents,
   userInterestTags = new Set(),
   previewMode = false,
+  hasCrews = false,
 ) {
   const rails = [
     {
@@ -356,6 +398,17 @@ function buildExploreRails(
       title: EXPLORE_RAIL_COPY.friends,
       retrieval: 'friends_rail',
     },
+  ];
+
+  if (hasCrews) {
+    rails.push({
+      id: 'crews',
+      title: EXPLORE_RAIL_COPY.crews,
+      retrieval: 'crews_rail',
+    });
+  }
+
+  rails.push(
     {
       id: 'tonight',
       title: EXPLORE_RAIL_COPY.tonight,
@@ -366,7 +419,7 @@ function buildExploreRails(
       title: EXPLORE_RAIL_COPY.forYou,
       retrieval: 'for_you_rail',
     },
-  ];
+  );
 
   const weekTagSlugs = collectWeekTagSlugs(weekEvents);
   for (const row of catalogTagRows) {
@@ -660,6 +713,8 @@ async function getPivotExplore(req, options = {}) {
   let negativeFeedbackTags;
   let crewRankConfig = buildFeedRankCrewConfig();
   let crewBleedTags = new Set();
+  let hasCrews = false;
+  let lockedCrewPickEventIds = new Set();
   if (previewMode) {
     userInterestTags = new Set();
     friendSocial = {
@@ -669,17 +724,22 @@ async function getPivotExplore(req, options = {}) {
     };
     negativeFeedbackTags = new Set();
   } else {
+    hasCrews = await userHasActiveCrews(req, userId);
+    if (hasCrews) {
+      lockedCrewPickEventIds = await loadUserCrewLockedPickEventIds(req, userId, batchWeek);
+    }
+
     [userInterestTags, friendSocial, negativeFeedbackTags, crewRankConfig] = await Promise.all([
       loadUserInterestTags(req, userId),
       loadFriendSocial(req, userId, catalogEventIds, FRIEND_CAP, batchWeek),
       sort === 'for_you'
         ? loadNegativeFeedbackTags(req, userId)
         : Promise.resolve(new Set()),
-      sort === 'for_you'
+      sort === 'for_you' || hasCrews
         ? getFeedRankCrewConfig(req)
         : Promise.resolve(buildFeedRankCrewConfig()),
     ]);
-    if (sort === 'for_you') {
+    if (sort === 'for_you' || hasCrews) {
       await applyCrewSocialCounts(
         req,
         userId,
@@ -687,7 +747,7 @@ async function getPivotExplore(req, options = {}) {
         batchWeek,
         friendSocial.socialByEvent,
       );
-      if (crewRankConfig.interestBleed?.enabled) {
+      if (sort === 'for_you' && crewRankConfig.interestBleed?.enabled) {
         const crewTagUnion = await loadCrewInterestBleedTags(
           req,
           userId,
@@ -727,6 +787,7 @@ async function getPivotExplore(req, options = {}) {
     catalogEvents,
     userInterestTags,
     previewMode,
+    hasCrews,
   );
   const serializedEvents = serializeExploreCatalogEvents(filteredEvents, {
     socialByEvent,
@@ -742,6 +803,7 @@ async function getPivotExplore(req, options = {}) {
     rails,
     filters,
     now,
+    lockedCrewPickEventIds,
   });
   const filterRemovals = summarizeExploreFilterRemovals(
     catalogEvents,
@@ -854,6 +916,8 @@ module.exports = {
   shouldExcludePassedExploreEvent,
   applyExploreFilters,
   buildExploreRails,
+  userHasActiveCrews,
+  loadUserCrewLockedPickEventIds,
   buildExploreFiltersPayload,
   EXPLORE_INTENT_BADGE_PRIORITY,
   DEFAULT_EXPLORE_LIMIT,

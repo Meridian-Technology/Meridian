@@ -76,7 +76,18 @@ function withExploreModels(partial = {}) {
 
   return {
     UniversalFeedback: mockUniversalFeedbackModel(),
-    PivotCrewMembership: { find: emptyMembershipFind },
+    PivotCrewMembership: {
+      find: emptyMembershipFind,
+      countDocuments: jest.fn().mockResolvedValue(0),
+      ...partial.PivotCrewMembership,
+    },
+    PivotCrewWeekState: {
+      find: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      })),
+      ...partial.PivotCrewWeekState,
+    },
     PivotCrew: { find: emptyCrewFind },
     ...partial,
   };
@@ -197,6 +208,35 @@ describe('pivotExploreService filter helpers', () => {
 
     expect(rails).toEqual([
       { id: 'friends', title: 'friends going', retrieval: 'friends_rail' },
+      { id: 'tonight', title: 'tonight', retrieval: 'filter' },
+      { id: 'for_you', title: 'for you later', retrieval: 'for_you_rail' },
+      { id: 'tag:live-music', title: 'live music', retrieval: 'tag_rail' },
+    ]);
+  });
+
+  it('buildExploreRails includes crews rail only when user has crews', () => {
+    const weekEvents = [
+      {
+        customFields: {
+          pivot: { tags: ['live-music'] },
+        },
+      },
+    ];
+
+    expect(
+      buildExploreRails(CATALOG_TAGS, weekEvents, new Set(['live-music']), false, false),
+    ).toEqual([
+      { id: 'friends', title: 'friends going', retrieval: 'friends_rail' },
+      { id: 'tonight', title: 'tonight', retrieval: 'filter' },
+      { id: 'for_you', title: 'for you later', retrieval: 'for_you_rail' },
+      { id: 'tag:live-music', title: 'live music', retrieval: 'tag_rail' },
+    ]);
+
+    expect(
+      buildExploreRails(CATALOG_TAGS, weekEvents, new Set(['live-music']), false, true),
+    ).toEqual([
+      { id: 'friends', title: 'friends going', retrieval: 'friends_rail' },
+      { id: 'crews', title: 'crews going', retrieval: 'crews_rail' },
       { id: 'tonight', title: 'tonight', retrieval: 'filter' },
       { id: 'for_you', title: 'for you later', retrieval: 'for_you_rail' },
       { id: 'tag:live-music', title: 'live music', retrieval: 'tag_rail' },
@@ -347,6 +387,7 @@ describe('getPivotExplore', () => {
     expect(result.data.events[0].userIntent).toBeNull();
     expect(result.data.events[0]).not.toHaveProperty('hostingId');
     expect(result.data.events[0]).not.toHaveProperty('rankInFeed');
+    expect(result.data.rails.some((rail) => rail.id === 'crews')).toBe(false);
     expect(Event.find).toHaveBeenCalledWith(
       expect.objectContaining({
         'customFields.pivot.batchWeek': '2026-W22',
@@ -1071,5 +1112,163 @@ describe('getPivotExplore', () => {
       'Published Event',
       'Staged Event',
     ]);
+  });
+
+  it('includes crews rail when user belongs to crews', async () => {
+    const crewId = '665a000000000000000000c1';
+    const friendId = '507f191e810c19729de860ec';
+    const events = [
+      {
+        _id: '665a000000000000000000f1',
+        name: 'Friend Filler One',
+        start_time: new Date('2026-05-28T17:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue F1' }, tags: ['live-music'] } },
+      },
+      {
+        _id: '665a000000000000000000f2',
+        name: 'Friend Filler Two',
+        start_time: new Date('2026-05-28T17:30:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue F2' }, tags: ['live-music'] } },
+      },
+      {
+        _id: '665a000000000000000000f3',
+        name: 'Friend Filler Three',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue F3' }, tags: ['live-music'] } },
+      },
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Crew Pick Night',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue A' }, tags: ['live-music'] } },
+      },
+      {
+        _id: '665a000000000000000000a2',
+        name: 'Crew Interested Two',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue B' }, tags: ['live-music'] } },
+      },
+      {
+        _id: '665a000000000000000000a3',
+        name: 'Crew Interested Three',
+        start_time: new Date('2026-05-28T21:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue C' }, tags: ['live-music'] } },
+      },
+    ];
+
+    const PivotEventIntent = {
+      find: jest.fn((query) => {
+        if (query.userId && !query.userId.$in) {
+          return mockIntentFind([]);
+        }
+        if (query.eventId?.$in && query.userId?.$in && query.batchWeek) {
+          return mockIntentFind([
+            {
+              eventId: '665a000000000000000000a1',
+              userId: friendId,
+              status: 'registered',
+              batchWeek: '2026-W22',
+            },
+            {
+              eventId: '665a000000000000000000a2',
+              userId: friendId,
+              status: 'interested',
+              batchWeek: '2026-W22',
+            },
+            {
+              eventId: '665a000000000000000000a3',
+              userId: '507f191e810c19729de860ed',
+              status: 'interested',
+              batchWeek: '2026-W22',
+            },
+          ]);
+        }
+        if (query.eventId?.$in && query.userId?.$in) {
+          return mockIntentFind([
+            {
+              eventId: '665a000000000000000000f1',
+              userId: friendId,
+              status: 'interested',
+              batchWeek: '2026-W22',
+            },
+            {
+              eventId: '665a000000000000000000f2',
+              userId: friendId,
+              status: 'interested',
+              batchWeek: '2026-W22',
+            },
+            {
+              eventId: '665a000000000000000000f3',
+              userId: friendId,
+              status: 'registered',
+              batchWeek: '2026-W22',
+            },
+          ]);
+        }
+        return mockIntentFind([]);
+      }),
+    };
+
+    getModels.mockReturnValue(withExploreModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([
+            { requester: userId, recipient: friendId },
+          ]),
+        })),
+      },
+      PivotEventIntent,
+      PivotCrew: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([{ _id: crewId }]),
+        })),
+      },
+      PivotCrewMembership: {
+        find: jest.fn((query) => {
+          if (query.userId && !query.userId.$in && !query.crewId) {
+            return {
+              select: jest.fn().mockReturnThis(),
+              lean: jest.fn().mockResolvedValue([{ crewId }]),
+            };
+          }
+          if (query.crewId?.$in) {
+            return {
+              select: jest.fn().mockReturnThis(),
+              lean: jest.fn().mockResolvedValue([
+                { userId: friendId, status: 'active' },
+                { userId: '507f191e810c19729de860ed', status: 'active' },
+              ]),
+            };
+          }
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([]),
+          };
+        }),
+        countDocuments: jest.fn().mockResolvedValue(1),
+      },
+      PivotCrewWeekState: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([
+            { proposedEventId: '665a000000000000000000a1' },
+          ]),
+        })),
+      },
+      User: mockUserModel([{ _id: friendId, name: 'Pat', picture: null }], ['live-music']),
+    }));
+
+    const result = await getPivotExplore(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.rails.some((rail) => rail.id === 'crews')).toBe(true);
+    expect(result.data.rails.find((rail) => rail.id === 'crews')).toEqual({
+      id: 'crews',
+      title: 'crews going',
+      retrieval: 'crews_rail',
+    });
+    expect(result.data.events.some((event) => event.crewRegisteredCount > 0)).toBe(true);
   });
 });

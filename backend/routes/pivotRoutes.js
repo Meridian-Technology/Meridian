@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { validateReferralCode, redeemReferralCode } = require('../services/pivotReferralCodeService');
 const { getPivotFeed, getPivotEventFriends } = require('../services/pivotFeedService');
+const { getPivotEventCrossCrewOverlap } = require('../services/pivotCrossCrewService');
 const { getPivotExplore } = require('../services/pivotExploreService');
 const {
   recordFeedAction,
@@ -848,6 +849,32 @@ router.get('/events/:eventId/friends', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load event friends.',
+    });
+  }
+});
+
+router.get('/events/:eventId/cross-crew-overlap', verifyToken, async (req, res) => {
+  try {
+    const result = await getPivotEventCrossCrewOverlap(req, req.params.eventId, {
+      batchWeek: req.query.batchWeek,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/events/:eventId/cross-crew-overlap', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load cross-crew overlap.',
     });
   }
 });

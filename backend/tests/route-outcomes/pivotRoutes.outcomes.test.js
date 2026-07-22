@@ -27,6 +27,10 @@ jest.mock('../../services/pivotFeedService', () => ({
   getPivotEventFriends: jest.fn(),
 }));
 
+jest.mock('../../services/pivotCrossCrewService', () => ({
+  getPivotEventCrossCrewOverlap: jest.fn(),
+}));
+
 jest.mock('../../services/pivotExploreService', () => ({
   getPivotExplore: jest.fn(),
 }));
@@ -77,6 +81,7 @@ const {
 } = require('../../services/pivotEntryService');
 const { validateReferralCode, redeemReferralCode } = require('../../services/pivotReferralCodeService');
 const { getPivotFeed } = require('../../services/pivotFeedService');
+const { getPivotEventCrossCrewOverlap } = require('../../services/pivotCrossCrewService');
 const { getPivotExplore } = require('../../services/pivotExploreService');
 const {
   recordFeedAction,
@@ -731,6 +736,34 @@ describe('pivotRoutes GET /pivot/week-recap', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body.code).toBe('INVALID_BATCH_WEEK');
+  });
+});
+
+describe('pivotRoutes GET /pivot/events/:eventId/cross-crew-overlap', () => {
+  beforeEach(() => {
+    getPivotEventCrossCrewOverlap.mockReset();
+  });
+
+  it('returns overlap payload for an event', async () => {
+    getPivotEventCrossCrewOverlap.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W22',
+        crossCrewOverlap: true,
+        surfaceCopyKey: 'another_crew_going',
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/events/665a1b2c3d4e5f6789012345/cross-crew-overlap?batchWeek=2026-W22')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.crossCrewOverlap).toBe(true);
+    expect(getPivotEventCrossCrewOverlap).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      '665a1b2c3d4e5f6789012345',
+      { batchWeek: '2026-W22' },
+    );
   });
 });
 

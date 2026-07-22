@@ -21,6 +21,7 @@ const {
 } = require('./pivotInteractionService');
 const { scheduleCrewWeekRecompute } = require('./pivotCrewWeekStateService');
 const { loadLockedCrewPicksForUser } = require('./pivotCrewJudgementService');
+const { attachCrossCrewOverlapFlags } = require('./pivotCrossCrewService');
 
 const FEED_ACTION_TO_STATUS = {
   interested: 'interested',
@@ -374,7 +375,12 @@ async function getWeekRecap(req, options = {}) {
     .lean();
 
   if (!intents.length) {
-    const crewPicks = await loadLockedCrewPicksForUser(req, batchWeek);
+    const crewPicks = await attachCrossCrewOverlapFlags(
+      req,
+      batchWeek,
+      await loadLockedCrewPicksForUser(req, batchWeek),
+      (pick) => pick.event.id,
+    );
     return { data: { batchWeek, events: [], crewPicks } };
   }
 
@@ -433,17 +439,25 @@ async function getWeekRecap(req, options = {}) {
       });
     });
 
-  const crewPicks = await loadLockedCrewPicksForUser(req, batchWeek);
+  const [crewPicks, eventsWithOverlap] = await Promise.all([
+    attachCrossCrewOverlapFlags(
+      req,
+      batchWeek,
+      await loadLockedCrewPicksForUser(req, batchWeek),
+      (pick) => pick.event.id,
+    ),
+    attachCrossCrewOverlapFlags(req, batchWeek, recapEvents, (event) => event._id),
+  ]);
 
   logPivot('info', 'week recap built', {
     ...pivotRequestContext(req),
     batchWeek,
     intentCount: intents.length,
-    eventCount: recapEvents.length,
+    eventCount: eventsWithOverlap.length,
     crewPickCount: crewPicks.length,
   });
 
-  return { data: { batchWeek, events: recapEvents, crewPicks } };
+  return { data: { batchWeek, events: eventsWithOverlap, crewPicks } };
 }
 
 async function resetWeekActions(req, options = {}) {

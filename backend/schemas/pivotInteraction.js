@@ -23,6 +23,7 @@ const PIVOT_INTERACTION_RETRIEVALS = Object.freeze([
   'similar',
   'for_you_rail',
   'friends_rail',
+  'crews_rail',
   'tag_rail',
   'curated_rail',
 ]);

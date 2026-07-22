@@ -7,6 +7,9 @@ jest.mock('../../services/pivotInteractionService', () => ({
 jest.mock('../../services/pivotCrewJudgementService', () => ({
   loadLockedCrewPicksForUser: jest.fn().mockResolvedValue([]),
 }));
+jest.mock('../../services/pivotCrossCrewService', () => ({
+  attachCrossCrewOverlapFlags: jest.fn(async (_req, _batchWeek, rows) => rows),
+}));
 
 const getModels = require('../../services/getModelService');
 const { getFeedPilotWindowFilter } = require('../../services/pivotFeedService');
