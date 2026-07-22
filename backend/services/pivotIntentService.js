@@ -19,6 +19,8 @@ const {
   recordPivotInteraction,
   pickInteractionContext,
 } = require('./pivotInteractionService');
+const { scheduleCrewWeekRecompute } = require('./pivotCrewWeekStateService');
+const { loadLockedCrewPicksForUser } = require('./pivotCrewJudgementService');
 
 const FEED_ACTION_TO_STATUS = {
   interested: 'interested',
@@ -177,6 +179,8 @@ async function recordFeedAction(req, body = {}) {
     batchWeek: doc.batchWeek,
     action,
   });
+
+  scheduleCrewWeekRecompute(req, { userId, batchWeek: doc.batchWeek });
 
   return {
     data: {
@@ -370,7 +374,8 @@ async function getWeekRecap(req, options = {}) {
     .lean();
 
   if (!intents.length) {
-    return { data: { batchWeek, events: [] } };
+    const crewPicks = await loadLockedCrewPicksForUser(req, batchWeek);
+    return { data: { batchWeek, events: [], crewPicks } };
   }
 
   const intentByEvent = new Map(
@@ -428,14 +433,17 @@ async function getWeekRecap(req, options = {}) {
       });
     });
 
+  const crewPicks = await loadLockedCrewPicksForUser(req, batchWeek);
+
   logPivot('info', 'week recap built', {
     ...pivotRequestContext(req),
     batchWeek,
     intentCount: intents.length,
     eventCount: recapEvents.length,
+    crewPickCount: crewPicks.length,
   });
 
-  return { data: { batchWeek, events: recapEvents } };
+  return { data: { batchWeek, events: recapEvents, crewPicks } };
 }
 
 async function resetWeekActions(req, options = {}) {

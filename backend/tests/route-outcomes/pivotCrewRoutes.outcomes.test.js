@@ -20,6 +20,17 @@ jest.mock('../../services/pivotCrewService', () => ({
   invitePivotCrewPlaceholders: jest.fn(),
 }));
 
+jest.mock('../../services/pivotCrewWeekStateService', () => ({
+  getPivotCrewWeekProgress: jest.fn(),
+  CREW_WEEK_PROGRESS_CACHE_TTL_MS: 30000,
+}));
+
+jest.mock('../../services/pivotCrewJudgementService', () => ({
+  getPivotCrewWeekJudgement: jest.fn(),
+  confirmPivotCrewWeekPick: jest.fn(),
+  swapPivotCrewWeekPick: jest.fn(),
+}));
+
 const {
   createPivotCrew,
   listPivotCrews,
@@ -28,6 +39,12 @@ const {
   joinPivotCrew,
   invitePivotCrewPlaceholders,
 } = require('../../services/pivotCrewService');
+const { getPivotCrewWeekProgress } = require('../../services/pivotCrewWeekStateService');
+const {
+  getPivotCrewWeekJudgement,
+  confirmPivotCrewWeekPick,
+  swapPivotCrewWeekPick,
+} = require('../../services/pivotCrewJudgementService');
 const pivotRoutes = require('../../routes/pivotRoutes');
 
 const CREW_ID = '665a1b2c3d4e5f6789012345';
@@ -52,6 +69,109 @@ describe('pivotRoutes /pivot/crews', () => {
     rotatePivotCrewInviteLink.mockReset();
     joinPivotCrew.mockReset();
     invitePivotCrewPlaceholders.mockReset();
+    getPivotCrewWeekProgress.mockReset();
+    getPivotCrewWeekJudgement.mockReset();
+    confirmPivotCrewWeekPick.mockReset();
+    swapPivotCrewWeekPick.mockReset();
+  });
+
+  it('GET /pivot/crews/week returns crew week progress', async () => {
+    getPivotCrewWeekProgress.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W30',
+        crews: [
+          {
+            crewId: CREW_ID,
+            name: 'Friday Plans',
+            swipedCount: 2,
+            activeCount: 3,
+            invitedCount: 1,
+            quorumMet: false,
+            proposedEvent: null,
+            runnerUp: null,
+            judgementWindowEndsAt: null,
+          },
+        ],
+      },
+      cacheHit: false,
+    });
+
+    const response = await request(buildApp()).get('/pivot/crews/week?batchWeek=2026-W30');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('private, max-age=30');
+    expect(response.body.data.crews[0].swipedCount).toBe(2);
+    expect(getPivotCrewWeekProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      { batchWeek: '2026-W30' },
+    );
+  });
+
+  it('GET /pivot/crews/:crewId/week/judgement returns breakdown', async () => {
+    getPivotCrewWeekJudgement.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W30',
+        crewId: CREW_ID,
+        crewName: 'Friday Plans',
+        voteBreakdown: [],
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      `/pivot/crews/${CREW_ID}/week/judgement?batchWeek=2026-W30`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.crewName).toBe('Friday Plans');
+  });
+
+  it('POST /pivot/crews/:crewId/week/confirm locks pick', async () => {
+    confirmPivotCrewWeekPick.mockResolvedValue({
+      data: {
+        crewId: CREW_ID,
+        judgementStatus: 'confirmed',
+        eventId: '665a1b2c3d4e5f6789012346',
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/pivot/crews/${CREW_ID}/week/confirm`)
+      .send({ eventId: '665a1b2c3d4e5f6789012346', batchWeek: '2026-W30' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.judgementStatus).toBe('confirmed');
+  });
+
+  it('POST /pivot/crews/:crewId/week/confirm returns 409 when window closed', async () => {
+    confirmPivotCrewWeekPick.mockResolvedValue({
+      error: 'The judgement window for this crew has closed.',
+      status: 409,
+      code: 'JUDGEMENT_WINDOW_CLOSED',
+    });
+
+    const response = await request(buildApp())
+      .post(`/pivot/crews/${CREW_ID}/week/confirm`)
+      .send({ eventId: '665a1b2c3d4e5f6789012346' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('JUDGEMENT_WINDOW_CLOSED');
+  });
+
+  it('POST /pivot/crews/:crewId/week/swap chooses runner-up', async () => {
+    swapPivotCrewWeekPick.mockResolvedValue({
+      data: {
+        crewId: CREW_ID,
+        judgementStatus: 'swapped',
+        eventId: '665a1b2c3d4e5f6789012346',
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/pivot/crews/${CREW_ID}/week/swap`)
+      .send({ batchWeek: '2026-W30' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.judgementStatus).toBe('swapped');
   });
 
   it('POST /pivot/crews creates a crew', async () => {

@@ -4,6 +4,9 @@ jest.mock('../../services/pivotInteractionService', () => ({
   pickInteractionContext: jest.requireActual('../../services/pivotInteractionService')
     .pickInteractionContext,
 }));
+jest.mock('../../services/pivotCrewJudgementService', () => ({
+  loadLockedCrewPicksForUser: jest.fn().mockResolvedValue([]),
+}));
 
 const getModels = require('../../services/getModelService');
 const { getFeedPilotWindowFilter } = require('../../services/pivotFeedService');
@@ -397,6 +400,7 @@ describe('getWeekRecap', () => {
 
     expect(result.data.batchWeek).toBe('2026-W22');
     expect(result.data.events).toHaveLength(2);
+    expect(result.data.crewPicks).toEqual([]);
     const statuses = result.data.events.map((e) => e.userIntent);
     expect(statuses).toContain('interested');
     expect(statuses).toContain('registered');
@@ -423,6 +427,7 @@ describe('getWeekRecap', () => {
 
     const result = await getWeekRecap(req, { batchWeek: '2026-W22', now });
     expect(result.data.events).toEqual([]);
+    expect(result.data.crewPicks).toEqual([]);
   });
 
   it('rejects an invalid batchWeek', async () => {

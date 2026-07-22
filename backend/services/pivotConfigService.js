@@ -58,6 +58,7 @@ async function getPivotConfig(req, options = {}) {
       cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
       liveBatchWeek,
       dropSchedule: buildDropSchedulePayload(tenant, dropScheduleBatchWeek, now),
+      liveDropSchedule: buildDropSchedulePayload(tenant, liveBatchWeek, now),
       crew: mergePivotCrewConfig(tenant.pivotCrewConfig),
     },
   };

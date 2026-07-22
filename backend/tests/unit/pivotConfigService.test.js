@@ -70,6 +70,7 @@ describe('pivotConfigService', () => {
       expect(result.data.crew.feedMix.personalInterestWeight).toBe(0.7);
       expect(result.data.crew.nudges.unfinishedSwipeReminderHours).toBe(6);
       expect(result.data.crew.version).toBe(PIVOT_CREW_CONFIG_VERSION);
+      expect(result.data.liveDropSchedule.batchWeek).toBe(result.data.liveBatchWeek);
     });
   });
 });

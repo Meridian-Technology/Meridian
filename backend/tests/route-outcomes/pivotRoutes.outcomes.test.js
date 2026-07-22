@@ -690,6 +690,18 @@ describe('pivotRoutes GET /pivot/week-recap', () => {
             userIntent: 'interested',
           },
         ],
+        crewPicks: [
+          {
+            crewId: '665a1b2c3d4e5f6789012346',
+            crewName: 'Friday Plans',
+            judgementStatus: 'confirmed',
+            event: {
+              id: '665a1b2c3d4e5f6789012347',
+              name: 'Jazz Night',
+              startTime: '2026-07-24T22:00:00.000Z',
+            },
+          },
+        ],
       },
     });
 
@@ -699,6 +711,7 @@ describe('pivotRoutes GET /pivot/week-recap', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body.data.events).toHaveLength(1);
+    expect(response.body.data.crewPicks).toHaveLength(1);
     expect(getWeekRecap).toHaveBeenCalledWith(
       expect.objectContaining({ school: 'nyc' }),
       { batchWeek: '2026-W22' },

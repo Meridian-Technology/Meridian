@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 const getModels = require('./getModelService');
 const pivotCrewMembershipSchema = require('../schemas/pivotCrewMembership');
+const {
+  scheduleCrewWeekRecompute,
+  scheduleCrewWeekRecomputeForCrew,
+} = require('./pivotCrewWeekStateService');
+const { toIsoWeek } = require('../utilities/pivotIsoWeek');
 
 const CREW_NAME_MAX_LENGTH = 80;
 const MAX_INVITE_PLACEHOLDERS_PER_REQUEST = 20;
@@ -569,6 +574,10 @@ async function joinPivotCrew(req, options = {}) {
     placeholder,
     leftMembership,
   });
+
+  const batchWeek = toIsoWeek(new Date());
+  scheduleCrewWeekRecomputeForCrew(req, { crewId: crew._id.toString(), batchWeek });
+  scheduleCrewWeekRecompute(req, { userId, batchWeek });
 
   return getPivotCrewDetail(req, crew._id.toString());
 }
