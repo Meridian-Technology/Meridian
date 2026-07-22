@@ -41,6 +41,7 @@ const {
 const {
   pivotReferralValidateRateLimit,
 } = require('../middlewares/pivotReferralValidateRateLimit');
+const pivotCrewRoutes = require('./pivotCrewRoutes');
 
 const { verifyToken } = require('../middlewares/verifyToken');
 const {
@@ -53,6 +54,8 @@ const {
 const router = express.Router();
 
 router.use(pivotRequestLogger);
+
+router.use('/crews', pivotCrewRoutes);
 
 router.get('/cities', async (req, res) => {
   try {

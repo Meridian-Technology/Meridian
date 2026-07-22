@@ -68,6 +68,8 @@ const pivotEventIntentSchema = require('../schemas/pivotEventIntent');
 const pivotBatchSchema = require('../schemas/pivotBatch');
 const pivotInteractionSchema = require('../schemas/pivotInteraction');
 const pivotDeckSnapshotSchema = require('../schemas/pivotDeckSnapshot');
+const pivotCrewSchema = require('../schemas/pivotCrew');
+const pivotCrewMembershipSchema = require('../schemas/pivotCrewMembership');
 const registeredConnections = new WeakSet();
 const MODEL_DEFINITIONS = Object.freeze({
     BadgeGrant: { modelName: 'BadgeGrant', schema: badgeGrantSchema, collection: 'badgegrants' },
@@ -149,6 +151,16 @@ const MODEL_DEFINITIONS = Object.freeze({
         modelName: 'PivotDeckSnapshot',
         schema: pivotDeckSnapshotSchema,
         collection: 'pivotDeckSnapshots',
+    },
+    PivotCrew: {
+        modelName: 'PivotCrew',
+        schema: pivotCrewSchema,
+        collection: 'pivotCrews',
+    },
+    PivotCrewMembership: {
+        modelName: 'PivotCrewMembership',
+        schema: pivotCrewMembershipSchema,
+        collection: 'pivotCrewMemberships',
     },
     ResourcesConfig: { modelName: 'ResourcesConfig', schema: resourcesConfigSchema, collection: 'resourcesConfigs' },
     ShuttleConfig: { modelName: 'ShuttleConfig', schema: shuttleConfigSchema, collection: 'shuttleConfigs' },
