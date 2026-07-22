@@ -475,6 +475,7 @@ module.exports = {
   listPivotFriendRequests,
   acceptPivotFriendRequest,
   declinePivotFriendRequest,
+  resolveFriendshipStatus,
   SEARCH_RESULT_LIMIT,
   MIN_QUERY_LENGTH,
   COHORT_SUGGESTION_LIMIT,

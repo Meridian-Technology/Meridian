@@ -12,6 +12,7 @@ const pivotTagCatalogSchema = require('../schemas/pivotTagCatalog');
 const pivotPosterTemplateSchema = require('../schemas/pivotPosterTemplate');
 const pivotCurationJobSchema = require('../schemas/pivotCurationJob');
 const pivotCurationRunSchema = require('../schemas/pivotCurationRun');
+const pivotContactHashSchema = require('../schemas/pivotContactHash');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -66,6 +67,11 @@ const getGlobalModels = (req, ...names) => {
             'PivotCurationRun',
             pivotCurationRunSchema,
             'pivot_curation_runs'
+        ),
+        PivotContactHash: db.model(
+            'PivotContactHash',
+            pivotContactHashSchema,
+            'pivot_contact_hashes'
         ),
     };
 

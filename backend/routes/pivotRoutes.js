@@ -34,6 +34,7 @@ const {
   acceptPivotFriendRequest,
   declinePivotFriendRequest,
 } = require('../services/pivotFriendService');
+const { matchPivotContacts } = require('../services/pivotContactMatchService');
 const {
   listPivotCities,
   resolvePivotEntry,
@@ -825,6 +826,30 @@ router.post('/friends/request', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to send friend request.',
+    });
+  }
+});
+
+router.post('/contacts/match', verifyToken, async (req, res) => {
+  try {
+    const result = await matchPivotContacts(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/contacts/match', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to match contacts.',
     });
   }
 });

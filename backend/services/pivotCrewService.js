@@ -582,6 +582,74 @@ async function joinPivotCrew(req, options = {}) {
   return getPivotCrewDetail(req, crew._id.toString());
 }
 
+async function addPivotCrewMember(req, crewId, options = {}) {
+  const access = await requireActiveMembership(req, crewId);
+  if (access.error) {
+    return access;
+  }
+
+  const requesterId = req.user?.userId;
+  const targetUserId = String(options.userId || '').trim();
+  if (!toObjectId(targetUserId)) {
+    return {
+      error: 'A valid userId is required.',
+      status: 400,
+      code: 'INVALID_USER_ID',
+    };
+  }
+
+  if (targetUserId === requesterId.toString()) {
+    return {
+      error: 'Cannot add yourself to the crew.',
+      status: 400,
+      code: 'SELF_ADD',
+    };
+  }
+
+  const { crew, PivotCrewMembership } = access;
+  const targetObjectId = toObjectId(targetUserId);
+  const { User } = getModels(req, 'User');
+
+  const targetUser = await User.findById(targetObjectId).select('_id').lean();
+  if (!targetUser) {
+    return { error: 'User not found.', status: 404, code: 'USER_NOT_FOUND' };
+  }
+
+  const existingActive = await PivotCrewMembership.findOne({
+    crewId: crew._id,
+    userId: targetObjectId,
+    status: 'active',
+  }).lean();
+
+  if (existingActive) {
+    return {
+      error: 'User is already in this crew.',
+      status: 400,
+      code: 'ALREADY_MEMBER',
+    };
+  }
+
+  const leftMembership = await PivotCrewMembership.findOne({
+    crewId: crew._id,
+    userId: targetObjectId,
+    status: 'left',
+  });
+
+  await activateCrewMembership({
+    crewId: crew._id,
+    userObjectId: targetObjectId,
+    PivotCrewMembership,
+    placeholder: null,
+    leftMembership,
+  });
+
+  const batchWeek = toIsoWeek(new Date());
+  scheduleCrewWeekRecomputeForCrew(req, { crewId: crew._id.toString(), batchWeek });
+  scheduleCrewWeekRecompute(req, { userId: targetUserId, batchWeek });
+
+  return getPivotCrewDetail(req, crew._id.toString());
+}
+
 module.exports = {
   createPivotCrew,
   listPivotCrews,
@@ -589,6 +657,7 @@ module.exports = {
   rotatePivotCrewInviteLink,
   joinPivotCrew,
   invitePivotCrewPlaceholders,
+  addPivotCrewMember,
   countQuorumEligibleMembers,
   buildCrewQuorumSnapshot,
   buildCrewInviteLinks,

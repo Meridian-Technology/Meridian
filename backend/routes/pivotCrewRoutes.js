@@ -11,6 +11,7 @@ const {
   rotatePivotCrewInviteLink,
   joinPivotCrew,
   invitePivotCrewPlaceholders,
+  addPivotCrewMember,
 } = require('../services/pivotCrewService');
 const {
   getPivotCrewWeekProgress,
@@ -270,6 +271,32 @@ router.post(
       return res.status(500).json({
         success: false,
         message: 'Unable to create crew invites.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/:crewId/members',
+  verifyToken,
+  param('crewId').isMongoId().withMessage('Invalid crew id.'),
+  body('userId').isMongoId().withMessage('A valid userId is required.'),
+  async (req, res) => {
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+
+    try {
+      const result = await addPivotCrewMember(req, req.params.crewId, {
+        userId: req.body.userId,
+      });
+      return handleServiceResult(res, result, 201);
+    } catch (err) {
+      logPivotRouteError('POST /pivot/crews/:crewId/members', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to add crew member.',
       });
     }
   },

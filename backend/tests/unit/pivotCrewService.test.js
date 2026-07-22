@@ -14,6 +14,7 @@ const {
   rotatePivotCrewInviteLink,
   joinPivotCrew,
   invitePivotCrewPlaceholders,
+  addPivotCrewMember,
   countQuorumEligibleMembers,
   buildCrewQuorumSnapshot,
   PIVOT_CREW_INVITED_DISPLAY_LABEL,
@@ -238,6 +239,31 @@ describe('pivotCrewService (Task 1.2)', () => {
       expect(joined.data.roster.find((row) => row.userId === memberId.toString())?.displayLabel).toBe(
         'Member Person',
       );
+    });
+  });
+
+  describe('addPivotCrewMember', () => {
+    it('adds an existing tenant user as an active crew member', async () => {
+      const created = await createPivotCrew(req, { name: 'Contacts Crew' });
+      const crewId = created.data.crew.id;
+
+      const added = await addPivotCrewMember(req, crewId, { userId: memberId.toString() });
+
+      expect(added.data.crew.activeMemberCount).toBe(2);
+      expect(
+        added.data.roster.some(
+          (row) => row.userId === memberId.toString() && row.status === 'active',
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects adding yourself', async () => {
+      const created = await createPivotCrew(req, { name: 'Self Crew' });
+      const result = await addPivotCrewMember(req, created.data.crew.id, {
+        userId: ownerId.toString(),
+      });
+
+      expect(result.code).toBe('SELF_ADD');
     });
   });
 });
