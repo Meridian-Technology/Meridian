@@ -27,6 +27,11 @@ const {
   loadFriendSocial,
   loadUserInterestTags,
   loadNegativeFeedbackTags,
+  getFeedRankCrewConfig,
+  buildFeedRankCrewConfig,
+  applyCrewSocialCounts,
+  loadCrewInterestBleedTags,
+  subtractInterestTags,
   resolvePivotFeedBatchWeek,
   PIVOT_EVENT_STATUSES,
   PIVOT_FEED_RANKER_VERSION,
@@ -403,6 +408,8 @@ function serializeExploreCatalogEvents(
       friendsGoing: [],
       friendInterestedCount: 0,
       friendRegisteredCount: 0,
+      crewInterestedCount: 0,
+      crewRegisteredCount: 0,
     };
     const userIntentRow = userIntents.get(id);
     const normalizedSlots = normalizePivotTimeSlots(
@@ -425,6 +432,8 @@ function serializeExploreCatalogEvents(
       friendsGoing: social.friendsGoing,
       friendsInterestedCount: social.friendInterestedCount || 0,
       friendsGoingCount: social.friendRegisteredCount || 0,
+      crewInterestedCount: social.crewInterestedCount || 0,
+      crewRegisteredCount: social.crewRegisteredCount || 0,
     });
   });
 }
@@ -649,6 +658,8 @@ async function getPivotExplore(req, options = {}) {
   let userInterestTags;
   let friendSocial;
   let negativeFeedbackTags;
+  let crewRankConfig = buildFeedRankCrewConfig();
+  let crewBleedTags = new Set();
   if (previewMode) {
     userInterestTags = new Set();
     friendSocial = {
@@ -658,13 +669,34 @@ async function getPivotExplore(req, options = {}) {
     };
     negativeFeedbackTags = new Set();
   } else {
-    [userInterestTags, friendSocial, negativeFeedbackTags] = await Promise.all([
+    [userInterestTags, friendSocial, negativeFeedbackTags, crewRankConfig] = await Promise.all([
       loadUserInterestTags(req, userId),
       loadFriendSocial(req, userId, catalogEventIds, FRIEND_CAP, batchWeek),
       sort === 'for_you'
         ? loadNegativeFeedbackTags(req, userId)
         : Promise.resolve(new Set()),
+      sort === 'for_you'
+        ? getFeedRankCrewConfig(req)
+        : Promise.resolve(buildFeedRankCrewConfig()),
     ]);
+    if (sort === 'for_you') {
+      await applyCrewSocialCounts(
+        req,
+        userId,
+        catalogEventIds,
+        batchWeek,
+        friendSocial.socialByEvent,
+      );
+      if (crewRankConfig.interestBleed?.enabled) {
+        const crewTagUnion = await loadCrewInterestBleedTags(
+          req,
+          userId,
+          batchWeek,
+          crewRankConfig.interestBleed,
+        );
+        crewBleedTags = subtractInterestTags(crewTagUnion, userInterestTags);
+      }
+    }
   }
   const { userIntents, socialByEvent, socialByEventAndSlot } = friendSocial;
 
@@ -679,7 +711,11 @@ async function getPivotExplore(req, options = {}) {
 
   if (sort === 'for_you') {
     filteredEvents.sort(
-      compareByFeedRank(socialByEvent, userInterestTags, negativeFeedbackTags),
+      compareByFeedRank(socialByEvent, userInterestTags, negativeFeedbackTags, {
+        crewSignalWeight: crewRankConfig.crewSignalWeight,
+        interestBleed: crewRankConfig.interestBleed,
+        crewBleedTags,
+      }),
     );
   } else {
     filteredEvents.sort(compareByStartTime);

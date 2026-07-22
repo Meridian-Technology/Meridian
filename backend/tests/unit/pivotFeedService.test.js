@@ -2,6 +2,9 @@ jest.mock('../../services/getModelService', () => jest.fn());
 jest.mock('../../services/tenantConfigService', () => ({
   getTenantByKey: jest.fn(),
 }));
+jest.mock('../../services/pivotConfigService', () => ({
+  getPivotConfig: jest.fn(),
+}));
 jest.mock('../../services/pivotDeckSnapshotService', () => ({
   normalizeDeckSnapshotRefresh: jest.requireActual('../../services/pivotDeckSnapshotService')
     .normalizeDeckSnapshotRefresh,
@@ -10,6 +13,7 @@ jest.mock('../../services/pivotDeckSnapshotService', () => ({
 
 const getModels = require('../../services/getModelService');
 const { getTenantByKey } = require('../../services/tenantConfigService');
+const { getPivotConfig } = require('../../services/pivotConfigService');
 const { recordPivotDeckSnapshot } = require('../../services/pivotDeckSnapshotService');
 const {
   getPivotFeed,
@@ -22,11 +26,15 @@ const {
   serializePivotFeedEvent,
   normalizeExcludeEventIds,
   countInterestOverlap,
+  countCrewInterestBleedScore,
+  computeInterestRankScore,
+  subtractInterestTags,
   countNegativeTagOverlap,
   compareByFeedRank,
   normalizeInterestTagSet,
   loadNegativeFeedbackTags,
   resolvePivotFeedBatchWeek,
+  clearFeedCrewConfigCacheForTests,
 } = require('../../services/pivotFeedService');
 
 function mockUserModel(pivotInterestTags = [], friendUsers = []) {
@@ -52,8 +60,19 @@ function mockUniversalFeedbackModel(rows = []) {
 }
 
 function withFeedModels(partial = {}) {
+  const emptyMembershipFind = jest.fn(() => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  }));
+  const emptyCrewFind = jest.fn(() => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  }));
+
   return {
     UniversalFeedback: mockUniversalFeedbackModel(),
+    PivotCrewMembership: { find: emptyMembershipFind },
+    PivotCrew: { find: emptyCrewFind },
     ...partial,
   };
 }
@@ -187,7 +206,57 @@ describe('pivotFeedService helpers', () => {
       friendsInterestedCount: 0,
       friendsGoingCount: 0,
     });
+    expect(payload).not.toHaveProperty('crewInterestedCount');
+    expect(payload).not.toHaveProperty('crewRegisteredCount');
     expect(payload).not.toHaveProperty('hostingId');
+  });
+
+  it('serializePivotFeedEvent includes crew counts when non-zero', () => {
+    const payload = serializePivotFeedEvent(
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Friday Night Board Games',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Brooklyn Board Game Cafe' } } },
+      },
+      {
+        displayHost: { name: 'Brooklyn Board Game Cafe' },
+        userIntent: null,
+        friendsInterested: [],
+        friendsGoing: [],
+        friendsInterestedCount: 0,
+        friendsGoingCount: 0,
+        crewInterestedCount: 2,
+        crewRegisteredCount: 1,
+      },
+    );
+
+    expect(payload.crewInterestedCount).toBe(2);
+    expect(payload.crewRegisteredCount).toBe(1);
+  });
+
+  it('serializePivotFeedEvent omits zero crew counts', () => {
+    const payload = serializePivotFeedEvent(
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Friday Night Board Games',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Brooklyn Board Game Cafe' } } },
+      },
+      {
+        displayHost: { name: 'Brooklyn Board Game Cafe' },
+        userIntent: null,
+        friendsInterested: [],
+        friendsGoing: [],
+        friendsInterestedCount: 0,
+        friendsGoingCount: 0,
+        crewInterestedCount: 0,
+        crewRegisteredCount: 0,
+      },
+    );
+
+    expect(payload).not.toHaveProperty('crewInterestedCount');
+    expect(payload).not.toHaveProperty('crewRegisteredCount');
   });
 
   it('countInterestOverlap uses catalog slug equality only', () => {
@@ -261,6 +330,212 @@ describe('pivotFeedService helpers', () => {
     expect(events.map((event) => event._id)).toEqual(['2', '1']);
   });
 
+  it('compareByFeedRank skips crew tiers when crewSignalWeight is zero', () => {
+    const socialByEvent = new Map([
+      [
+        '1',
+        {
+          friendInterestedCount: 0,
+          friendRegisteredCount: 0,
+          crewInterestedCount: 5,
+          crewRegisteredCount: 0,
+        },
+      ],
+      [
+        '2',
+        {
+          friendInterestedCount: 0,
+          friendRegisteredCount: 0,
+          crewInterestedCount: 0,
+          crewRegisteredCount: 0,
+        },
+      ],
+    ]);
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+    ];
+
+    events.sort(
+      compareByFeedRank(socialByEvent, new Set(), new Set(), { crewSignalWeight: 0 }),
+    );
+
+    expect(events.map((event) => event._id)).toEqual(['2', '1']);
+  });
+
+  it('compareByFeedRank boosts crew registered above crew interested when weighted', () => {
+    const socialByEvent = new Map([
+      [
+        '1',
+        {
+          friendInterestedCount: 0,
+          friendRegisteredCount: 0,
+          crewInterestedCount: 3,
+          crewRegisteredCount: 0,
+        },
+      ],
+      [
+        '2',
+        {
+          friendInterestedCount: 0,
+          friendRegisteredCount: 0,
+          crewInterestedCount: 1,
+          crewRegisteredCount: 1,
+        },
+      ],
+    ]);
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+    ];
+
+    events.sort(
+      compareByFeedRank(socialByEvent, new Set(), new Set(), { crewSignalWeight: 0.2 }),
+    );
+
+    expect(events.map((event) => event._id)).toEqual(['2', '1']);
+  });
+
+  it('compareByFeedRank applies crew boosts after friend boosts', () => {
+    const socialByEvent = new Map([
+      [
+        '1',
+        {
+          friendInterestedCount: 1,
+          friendRegisteredCount: 0,
+          crewInterestedCount: 5,
+          crewRegisteredCount: 5,
+        },
+      ],
+      [
+        '2',
+        {
+          friendInterestedCount: 0,
+          friendRegisteredCount: 0,
+          crewInterestedCount: 1,
+          crewRegisteredCount: 1,
+        },
+      ],
+    ]);
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+    ];
+
+    events.sort(
+      compareByFeedRank(socialByEvent, new Set(), new Set(), { crewSignalWeight: 0.2 }),
+    );
+
+    expect(events.map((event) => event._id)).toEqual(['1', '2']);
+  });
+
+  it('countCrewInterestBleedScore caps bleed at maxWeight', () => {
+    const crewTags = normalizeInterestTagSet(['live-music', 'board-games', 'food']);
+    const event = {
+      customFields: {
+        pivot: { tags: ['live-music', 'board-games', 'food'] },
+      },
+    };
+
+    expect(countCrewInterestBleedScore(event, crewTags, 0.15)).toBe(0.15);
+    expect(countCrewInterestBleedScore(event, crewTags, 0)).toBe(0);
+  });
+
+  it('computeInterestRankScore keeps personal overlap ahead of bleed-only ties', () => {
+    const personalTags = normalizeInterestTagSet(['live-music']);
+    const crewBleedTags = normalizeInterestTagSet(['board-games']);
+    const personalMatch = {
+      customFields: { pivot: { tags: ['live-music'] } },
+    };
+    const bleedOnlyMatch = {
+      customFields: { pivot: { tags: ['board-games'] } },
+    };
+    const rankOptions = {
+      interestBleed: { enabled: true, maxWeight: 0.15 },
+      crewBleedTags,
+    };
+
+    expect(computeInterestRankScore(personalMatch, personalTags, rankOptions)).toBe(1);
+    expect(computeInterestRankScore(bleedOnlyMatch, personalTags, rankOptions)).toBe(0.15);
+  });
+
+  it('compareByFeedRank applies crew interest bleed below personal overlap', () => {
+    const socialByEvent = new Map();
+    const personalTags = normalizeInterestTagSet([]);
+    const crewBleedTags = normalizeInterestTagSet(['live-music']);
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { tags: ['live-music'] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+    ];
+
+    events.sort(
+      compareByFeedRank(socialByEvent, personalTags, new Set(), {
+        interestBleed: { enabled: true, maxWeight: 0.15 },
+        crewBleedTags,
+      }),
+    );
+
+    expect(events.map((event) => event._id)).toEqual(['1', '2']);
+  });
+
+  it('compareByFeedRank skips interest bleed when disabled', () => {
+    const socialByEvent = new Map();
+    const crewBleedTags = normalizeInterestTagSet(['live-music']);
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: { pivot: { tags: ['live-music'] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+    ];
+
+    events.sort(
+      compareByFeedRank(socialByEvent, new Set(), new Set(), {
+        interestBleed: { enabled: false, maxWeight: 0.15 },
+        crewBleedTags,
+      }),
+    );
+
+    expect(events.map((event) => event._id)).toEqual(['2', '1']);
+  });
+
   it('countNegativeTagOverlap returns zero for untagged events', () => {
     const negativeTags = normalizeInterestTagSet(['board-games']);
     expect(
@@ -283,12 +558,23 @@ describe('getPivotFeed', () => {
   beforeEach(() => {
     getModels.mockReset();
     getTenantByKey.mockReset();
+    getPivotConfig.mockReset();
     recordPivotDeckSnapshot.mockClear();
+    clearFeedCrewConfigCacheForTests();
     getTenantByKey.mockResolvedValue({
       tenantKey: 'nyc',
       name: 'New York City Pilot',
       location: 'New York City',
       pivotPilot: true,
+    });
+    getPivotConfig.mockResolvedValue({
+      data: {
+        crew: {
+          feedMix: {
+            crewSignalWeight: 0.2,
+          },
+        },
+      },
     });
   });
 
@@ -699,6 +985,489 @@ describe('getPivotFeed', () => {
     expect(result.data.events.map((event) => event.name)).toEqual([
       'Live Music Night',
       'Untagged Early',
+    ]);
+  });
+
+  it('boosts events with crew registered above crew interested only', async () => {
+    const crewMemberId = '507f191e810c19729de860ed';
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'No Crew Signal',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        registrationCount: 50,
+        customFields: { pivot: { host: { name: 'Venue A' } } },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Crew Interested',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        registrationCount: 5,
+        customFields: { pivot: { host: { name: 'Venue B' } } },
+      },
+      {
+        _id: '665a000000000000000000c3',
+        name: 'Crew Registered',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        registrationCount: 1,
+        customFields: { pivot: { host: { name: 'Venue C' } } },
+      },
+    ];
+
+    const crewId = '665a000000000000000000d4';
+    const PivotCrewMembership = {
+      find: jest.fn((query) => {
+        if (query.userId && !query.crewId) {
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([{ crewId }]),
+          };
+        }
+        if (query.crewId) {
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([{ userId: crewMemberId }]),
+          };
+        }
+        return {
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        };
+      }),
+    };
+    const PivotCrew = {
+      find: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{ _id: crewId }]),
+      })),
+    };
+    const PivotEventIntent = {
+      find: jest.fn((query) => {
+        if (query.userId?.$in) {
+          return mockIntentFind([
+            {
+              eventId: '665a000000000000000000b2',
+              userId: crewMemberId,
+              status: 'interested',
+            },
+            {
+              eventId: '665a000000000000000000c3',
+              userId: crewMemberId,
+              status: 'registered',
+            },
+          ]);
+        }
+        return mockIntentFind();
+      }),
+    };
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotCrew,
+      PivotCrewMembership,
+      PivotEventIntent,
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Crew Registered',
+      'Crew Interested',
+      'No Crew Signal',
+    ]);
+    expect(getPivotConfig).toHaveBeenCalled();
+  });
+
+  it('returns crew social counts on feed events and dedupes members across crews', async () => {
+    const crewMemberA = '507f191e810c19729de860ed';
+    const crewMemberB = '507f191e810c19729de860ee';
+    const events = [
+      {
+        _id: '665a000000000000000000c3',
+        name: 'Crew Night',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue C' } } },
+      },
+    ];
+
+    const crewIdOne = '665a000000000000000000d4';
+    const crewIdTwo = '665a000000000000000000d5';
+    const PivotCrewMembership = {
+      find: jest.fn((query) => {
+        if (query.userId && !query.crewId) {
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([
+              { crewId: crewIdOne },
+              { crewId: crewIdTwo },
+            ]),
+          };
+        }
+        if (query.crewId) {
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([
+              { userId: crewMemberA },
+              { userId: crewMemberB },
+            ]),
+          };
+        }
+        return {
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        };
+      }),
+    };
+    const PivotCrew = {
+      find: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{ _id: crewIdOne }, { _id: crewIdTwo }]),
+      })),
+    };
+    const PivotEventIntent = {
+      find: jest.fn((query) => {
+        if (query.userId?.$in) {
+          return mockIntentFind([
+            {
+              eventId: '665a000000000000000000c3',
+              userId: crewMemberA,
+              status: 'registered',
+            },
+            {
+              eventId: '665a000000000000000000c3',
+              userId: crewMemberB,
+              status: 'interested',
+            },
+          ]);
+        }
+        return mockIntentFind();
+      }),
+    };
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotCrew,
+      PivotCrewMembership,
+      PivotEventIntent,
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+    const event = result.data.events[0];
+
+    expect(event.crewRegisteredCount).toBe(1);
+    expect(event.crewInterestedCount).toBe(2);
+  });
+
+  it('omits crew social count fields when user has no crew signal', async () => {
+    const events = [
+      {
+        _id: '665a1b2c3d4e5f6789012345',
+        name: 'Solo Deck Event',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: {
+            batchWeek: '2026-W22',
+            ingestStatus: 'published',
+            host: { name: 'Venue' },
+          },
+        },
+      },
+    ];
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events[0]).not.toHaveProperty('crewInterestedCount');
+    expect(result.data.events[0]).not.toHaveProperty('crewRegisteredCount');
+  });
+
+  it('keeps pre-crew rank order when crewSignalWeight is zero', async () => {
+    getPivotConfig.mockResolvedValue({
+      data: {
+        crew: {
+          feedMix: {
+            crewSignalWeight: 0,
+          },
+        },
+      },
+    });
+
+    const crewMemberId = '507f191e810c19729de860ed';
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Earlier Untagged',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue A' } } },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Later Crew Boosted',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: { pivot: { host: { name: 'Venue B' } } },
+      },
+    ];
+
+    const crewId = '665a000000000000000000d4';
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotCrew: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([{ _id: crewId }]),
+        })),
+      },
+      PivotCrewMembership: {
+        find: jest.fn((query) => {
+          if (query.userId && !query.crewId) {
+            return {
+              select: jest.fn().mockReturnThis(),
+              lean: jest.fn().mockResolvedValue([{ crewId }]),
+            };
+          }
+          if (query.crewId) {
+            return {
+              select: jest.fn().mockReturnThis(),
+              lean: jest.fn().mockResolvedValue([{ userId: crewMemberId }]),
+            };
+          }
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      },
+      PivotEventIntent: {
+        find: jest.fn((query) => {
+          if (query.userId?.$in) {
+            return mockIntentFind([
+              {
+                eventId: '665a000000000000000000b2',
+                userId: crewMemberId,
+                status: 'registered',
+              },
+            ]);
+          }
+          return mockIntentFind();
+        }),
+      },
+      User: mockUserModel(),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Earlier Untagged',
+      'Later Crew Boosted',
+    ]);
+  });
+
+  it('boosts events matching crew member interests when bleed is enabled', async () => {
+    const crewMemberId = '507f191e810c19729de860ed';
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Earlier Generic',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: ['food'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Crew Jazz Night',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+    ];
+
+    const crewId = '665a000000000000000000d4';
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotCrew: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([{ _id: crewId }]),
+        })),
+      },
+      PivotCrewMembership: {
+        find: jest.fn((query) => {
+          if (query.userId && !query.crewId) {
+            return {
+              select: jest.fn().mockReturnThis(),
+              lean: jest.fn().mockResolvedValue([{ crewId }]),
+            };
+          }
+          if (query.crewId) {
+            return {
+              select: jest.fn().mockReturnThis(),
+              lean: jest.fn().mockResolvedValue([{ userId: crewMemberId }]),
+            };
+          }
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: {
+        findById: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue({ pivotInterestTags: [] }),
+        })),
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([
+            { _id: crewMemberId, pivotInterestTags: ['live-music'] },
+          ]),
+        })),
+      },
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Crew Jazz Night',
+      'Earlier Generic',
+    ]);
+  });
+
+  it('ignores crew interest bleed when requiresCrewMemberSwipe and member has not swiped', async () => {
+    getPivotConfig.mockResolvedValue({
+      data: {
+        crew: {
+          feedMix: { crewSignalWeight: 0.2 },
+          interestBleed: {
+            enabled: true,
+            maxWeight: 0.15,
+            requiresCrewMemberSwipe: true,
+          },
+        },
+      },
+    });
+
+    const crewMemberId = '507f191e810c19729de860ed';
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Earlier Generic',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: ['food'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Crew Jazz Night',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+    ];
+
+    const crewId = '665a000000000000000000d4';
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotCrew: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([{ _id: crewId }]),
+        })),
+      },
+      PivotCrewMembership: {
+        find: jest.fn((query) => {
+          if (query.userId && !query.crewId) {
+            return {
+              select: jest.fn().mockReturnThis(),
+              lean: jest.fn().mockResolvedValue([{ crewId }]),
+            };
+          }
+          if (query.crewId) {
+            return {
+              select: jest.fn().mockReturnThis(),
+              lean: jest.fn().mockResolvedValue([{ userId: crewMemberId }]),
+            };
+          }
+          return {
+            select: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      },
+      PivotEventIntent: {
+        find: jest.fn((query) => {
+          if (query.batchWeek && query.userId?.$in) {
+            return mockIntentFind([]);
+          }
+          return mockIntentFind();
+        }),
+      },
+      User: {
+        findById: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue({ pivotInterestTags: [] }),
+        })),
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([
+            { _id: crewMemberId, pivotInterestTags: ['live-music'] },
+          ]),
+        })),
+      },
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Earlier Generic',
+      'Crew Jazz Night',
     ]);
   });
 

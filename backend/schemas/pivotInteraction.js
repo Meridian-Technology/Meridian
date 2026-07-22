@@ -130,6 +130,16 @@ const pivotInteractionSchema = new mongoose.Schema(
       max: 5,
       default: null,
     },
+    /** Active crew ids for the viewer at write time (Task 3.4 — deck eval). */
+    crewIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PivotCrew' }],
+    },
+    /** Shipped `crew.version` from GET /pivot/config when crewIds present. */
+    crewConfigVersion: {
+      type: Number,
+      min: 1,
+      default: null,
+    },
   },
   { timestamps: true },
 );

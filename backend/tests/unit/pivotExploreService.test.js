@@ -2,6 +2,9 @@ jest.mock('../../services/getModelService', () => jest.fn());
 jest.mock('../../services/tenantConfigService', () => ({
   getTenantByKey: jest.fn(),
 }));
+jest.mock('../../services/pivotConfigService', () => ({
+  getPivotConfig: jest.fn(),
+}));
 jest.mock('../../services/pivotTagCatalogService', () => ({
   listPivotTags: jest.fn(),
   normalizePivotTagSlugs: jest.requireActual('../../services/pivotTagCatalogService')
@@ -11,6 +14,7 @@ jest.mock('../../services/pivotTagCatalogService', () => ({
 
 const getModels = require('../../services/getModelService');
 const { getTenantByKey } = require('../../services/tenantConfigService');
+const { getPivotConfig } = require('../../services/pivotConfigService');
 const {
   listPivotTags,
   validatePivotEventTags,
@@ -61,8 +65,19 @@ function mockUniversalFeedbackModel(rows = []) {
 }
 
 function withExploreModels(partial = {}) {
+  const emptyMembershipFind = jest.fn(() => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  }));
+  const emptyCrewFind = jest.fn(() => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  }));
+
   return {
     UniversalFeedback: mockUniversalFeedbackModel(),
+    PivotCrewMembership: { find: emptyMembershipFind },
+    PivotCrew: { find: emptyCrewFind },
     ...partial,
   };
 }
@@ -243,6 +258,7 @@ describe('getPivotExplore', () => {
   beforeEach(() => {
     getModels.mockReset();
     getTenantByKey.mockReset();
+    getPivotConfig.mockReset();
     listPivotTags.mockReset();
     validatePivotEventTags.mockReset();
     setupCatalogMocks();
@@ -251,6 +267,15 @@ describe('getPivotExplore', () => {
       name: 'New York City Pilot',
       location: 'Brooklyn',
       pivotPilot: true,
+    });
+    getPivotConfig.mockResolvedValue({
+      data: {
+        crew: {
+          feedMix: {
+            crewSignalWeight: 0.2,
+          },
+        },
+      },
     });
   });
 

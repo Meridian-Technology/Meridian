@@ -501,7 +501,7 @@ router.post(
         });
       }
 
-      const result = recordPivotImpressions(req, req.body);
+      const result = await recordPivotImpressions(req, req.body);
       if (result.error) {
         logPivotServiceReject('POST /pivot/interactions/impressions', result, req, {
           received: Array.isArray(req.body?.impressions)

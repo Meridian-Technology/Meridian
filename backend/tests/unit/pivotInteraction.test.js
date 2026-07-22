@@ -7,10 +7,15 @@ const pivotInteractionSchema = require('../../schemas/pivotInteraction');
 const pivotEventIntentSchema = require('../../schemas/pivotEventIntent');
 
 jest.mock('../../services/getModelService', () => jest.fn());
+jest.mock('../../services/pivotFeedService', () => ({
+  resolveUserActiveCrewIds: jest.fn(),
+}));
 
 const getModels = require('../../services/getModelService');
+const { resolveUserActiveCrewIds } = require('../../services/pivotFeedService');
 const {
   normalizePivotInteractionPayload,
+  normalizeCrewIds,
   writePivotInteraction,
   recordPivotInteraction,
   recordPivotImpressions,
@@ -56,6 +61,8 @@ describe('PivotInteraction schema + writer (Task 1.1)', () => {
 
   afterEach(async () => {
     await mongo.reset();
+    resolveUserActiveCrewIds.mockReset();
+    resolveUserActiveCrewIds.mockResolvedValue([]);
   });
 
   afterAll(async () => {
@@ -123,6 +130,44 @@ describe('PivotInteraction schema + writer (Task 1.1)', () => {
 
       expect(result.error).toMatch(/Invalid interaction type/);
       expect(result.code).toBe('INVALID_INTERACTION_TYPE');
+    });
+
+    it('persists optional crew context fields when valid', () => {
+      const crewId = new mongoose.Types.ObjectId();
+      const result = normalizePivotInteractionPayload({
+        userId,
+        eventId,
+        batchWeek: '2026-W28',
+        type: 'impression',
+        crewIds: [crewId, crewId, 'bad-id'],
+        crewConfigVersion: 1,
+      });
+
+      expect(result.doc.crewIds).toEqual([String(crewId)]);
+      expect(result.doc.crewConfigVersion).toBe(1);
+    });
+
+    it('omits crew fields when crewIds empty', () => {
+      const result = normalizePivotInteractionPayload({
+        userId,
+        eventId,
+        batchWeek: '2026-W28',
+        type: 'impression',
+        crewIds: [],
+        crewConfigVersion: 1,
+      });
+
+      expect(result.doc.crewIds).toBeUndefined();
+      expect(result.doc.crewConfigVersion).toBeUndefined();
+    });
+  });
+
+  describe('normalizeCrewIds', () => {
+    it('dedupes valid object ids', () => {
+      const crewId = new mongoose.Types.ObjectId();
+      expect(normalizeCrewIds([crewId, String(crewId), 'nope'])).toEqual([
+        String(crewId),
+      ]);
     });
   });
 
@@ -232,7 +277,7 @@ describe('PivotInteraction schema + writer (Task 1.1)', () => {
           return 0;
         });
 
-      const result = recordPivotImpressions(req, {
+      const result = await recordPivotImpressions(req, {
         batchWeek: '2026-W28',
         impressions: [
           { eventId, rankInFeed: 0 },
@@ -258,11 +303,40 @@ describe('PivotInteraction schema + writer (Task 1.1)', () => {
       expect(rows[0].retrieval).toBe('weekly_batch');
       expect(rows[0].rankInFeed).toBe(0);
       expect(rows[0].rankerVersion).toBe('rules_v0');
+      expect(rows[0].crewIds?.length ?? 0).toBe(0);
+      expect(rows[0].crewConfigVersion).toBeNull();
       expect(rows[1].rankInFeed).toBe(2);
     });
 
-    it('skips invalid items without failing the batch', () => {
-      const result = recordPivotImpressions(req, {
+    it('attaches crew context to deck impressions when user has crews', async () => {
+      const crewId = new mongoose.Types.ObjectId();
+      resolveUserActiveCrewIds.mockResolvedValue([String(crewId)]);
+
+      const callbacks = [];
+      const setImmediateSpy = jest
+        .spyOn(global, 'setImmediate')
+        .mockImplementation((fn) => {
+          callbacks.push(fn);
+          return 0;
+        });
+
+      const result = await recordPivotImpressions(req, {
+        batchWeek: '2026-W28',
+        impressions: [{ eventId, rankInFeed: 0 }],
+      });
+
+      expect(result.data.accepted).toBe(1);
+
+      setImmediateSpy.mockRestore();
+      await Promise.all(callbacks.map((fn) => fn()));
+
+      const row = await PivotInteraction.findOne({ type: 'impression' }).lean();
+      expect(row.crewIds.map(String)).toEqual([String(crewId)]);
+      expect(row.crewConfigVersion).toBe(1);
+    });
+
+    it('skips invalid items without failing the batch', async () => {
+      const result = await recordPivotImpressions(req, {
         batchWeek: '2026-W28',
         impressions: [
           { eventId: 'not-an-id', rankInFeed: 0 },
