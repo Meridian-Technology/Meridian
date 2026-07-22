@@ -1,5 +1,9 @@
 const TENANT_STATUSES = new Set(['active', 'coming_soon', 'maintenance', 'hidden']);
 const TENANT_TYPES = new Set(['campus', 'pivot']);
+const {
+  mergePivotCrewConfigOverrides,
+  validatePivotCrewConfigPatch,
+} = require('../utilities/pivotCrewConfig');
 
 const PIVOT_DROP_PUSH_TITLE_MAX = 100;
 const PIVOT_DROP_PUSH_BODY_MAX = 240;
@@ -200,6 +204,16 @@ function normalizeTenantOverride(row = {}) {
 
   normalizePivotDropFields(row, out);
 
+  if (row.pivotCrewConfig !== undefined && row.pivotCrewConfig !== null) {
+    const crewValidation = validatePivotCrewConfigPatch(row.pivotCrewConfig);
+    if (crewValidation.error) {
+      return null;
+    }
+    if (crewValidation.patch && Object.keys(crewValidation.patch).length > 0) {
+      out.pivotCrewConfig = crewValidation.patch;
+    }
+  }
+
   return Object.keys(out).length > 1 ? out : null;
 }
 
@@ -223,7 +237,7 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
   normalizeTenantRows(baseRows).forEach((row) => merged.set(row.tenantKey, row));
   normalizeTenantOverrides(overrideRows).forEach((row) => {
     const base = merged.get(row.tenantKey) || {};
-    const { provisioningConfirmations: pcPatch, ...rest } = row;
+    const { provisioningConfirmations: pcPatch, pivotCrewConfig: crewPatch, ...rest } = row;
     const next = { ...base, ...rest };
     if (pcPatch) {
       next.provisioningConfirmations = {
@@ -233,6 +247,12 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
         ...(base.provisioningConfirmations || {}),
         ...pcPatch,
       };
+    }
+    if (crewPatch) {
+      next.pivotCrewConfig = mergePivotCrewConfigOverrides(
+        base.pivotCrewConfig,
+        crewPatch,
+      );
     }
     merged.set(row.tenantKey, next);
   });

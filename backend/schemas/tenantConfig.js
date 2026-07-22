@@ -12,6 +12,47 @@ const pivotDropOverrideSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const pivotCrewConfigSchema = new mongoose.Schema(
+  {
+    version: { type: Number, default: null, min: 1 },
+    feedMix: {
+      personalInterestWeight: { type: Number, default: null, min: 0, max: 1 },
+      crewSignalWeight: { type: Number, default: null, min: 0, max: 1 },
+      friendSignalWeight: { type: Number, default: null, min: 0, max: 1 },
+      explorationWeight: { type: Number, default: null, min: 0, max: 1 },
+    },
+    interestBleed: {
+      enabled: { type: Boolean, default: null },
+      maxWeight: { type: Number, default: null, min: 0, max: 1 },
+      requiresCrewMemberSwipe: { type: Boolean, default: null },
+    },
+    quorum: {
+      minSwipeParticipation: { type: Number, default: null, min: 0, max: 1 },
+      minActiveMembers: { type: Number, default: null, min: 1 },
+    },
+    judgement: {
+      windowHoursBeforeEvent: { type: Number, default: null, min: 1 },
+      minHoursAfterDeckComplete: { type: Number, default: null, min: 0 },
+    },
+    pick: {
+      algorithm: { type: String, default: null, trim: true },
+      interestedWeight: { type: Number, default: null, min: 0 },
+      registeredWeight: { type: Number, default: null, min: 0 },
+      tieBreak: { type: String, default: null, trim: true },
+    },
+    crossCrew: {
+      enabled: { type: Boolean, default: null },
+      minSharedFriends: { type: Number, default: null, min: 0 },
+      surfaceCopyKey: { type: String, default: null, trim: true, maxlength: 64 },
+    },
+    nudges: {
+      soloCreateCrewAfterWeeks: { type: Number, default: null, min: 0 },
+      unfinishedSwipeReminderHours: { type: Number, default: null, min: 1 },
+    },
+  },
+  { _id: false }
+);
+
 const tenantEntrySchema = new mongoose.Schema(
   {
     tenantKey: { type: String, required: true, trim: true, lowercase: true },
@@ -40,6 +81,7 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotDropPushTitle: { type: String, default: null, trim: true, maxlength: 100 },
     pivotDropPushBody: { type: String, default: null, trim: true, maxlength: 240 },
     pivotDropOverrides: { type: [pivotDropOverrideSchema], default: undefined },
+    pivotCrewConfig: { type: pivotCrewConfigSchema, default: undefined },
     provisioningConfirmations: {
       dns: { type: Boolean, default: false },
       cors: { type: Boolean, default: false },

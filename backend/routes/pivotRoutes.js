@@ -34,6 +34,11 @@ const {
   declinePivotFriendRequest,
 } = require('../services/pivotFriendService');
 const {
+  listPivotCities,
+  resolvePivotEntry,
+  redeemPivotEntry,
+} = require('../services/pivotEntryService');
+const {
   pivotReferralValidateRateLimit,
 } = require('../middlewares/pivotReferralValidateRateLimit');
 
@@ -48,6 +53,77 @@ const {
 const router = express.Router();
 
 router.use(pivotRequestLogger);
+
+router.get('/cities', async (req, res) => {
+  try {
+    const result = await listPivotCities(req);
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/cities', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load just go cities.',
+    });
+  }
+});
+
+router.post('/entry', async (req, res) => {
+  try {
+    const result = await resolvePivotEntry(req, {
+      tenantKey: req.body?.tenantKey,
+      subdomain: req.body?.subdomain,
+      referralCode: req.body?.referralCode || req.body?.code,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/entry', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to resolve city entry.',
+    });
+  }
+});
+
+router.post('/entry/redeem', verifyToken, async (req, res) => {
+  try {
+    const result = await redeemPivotEntry(req, {
+      referralCode: req.body?.referralCode || req.body?.code,
+      referredByUserId: req.body?.referredByUserId,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/entry/redeem', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to record city entry.',
+    });
+  }
+});
 
 router.get('/referral/preview', pivotReferralValidateRateLimit, async (req, res) => {
   try {

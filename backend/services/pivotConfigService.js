@@ -7,6 +7,7 @@ const {
   resolvePivotLiveBatchWeek,
   resolvePivotUpcomingDropBatchWeek,
 } = require('../utilities/pivotDropSchedule');
+const { mergePivotCrewConfig } = require('../utilities/pivotCrewConfig');
 
 function buildDropSchedulePayload(tenant, batchWeek, now = new Date()) {
   const resolved = resolvePivotDropInstant(tenant, batchWeek, now);
@@ -57,6 +58,7 @@ async function getPivotConfig(req, options = {}) {
       cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
       liveBatchWeek,
       dropSchedule: buildDropSchedulePayload(tenant, dropScheduleBatchWeek, now),
+      crew: mergePivotCrewConfig(tenant.pivotCrewConfig),
     },
   };
 }

@@ -19,6 +19,10 @@ const {
   normalizePivotDropFields,
   normalizePivotDropOverrides,
 } = require('../constants/defaultTenants');
+const {
+  mergePivotCrewConfigOverrides,
+  validatePivotCrewConfigPatch,
+} = require('../utilities/pivotCrewConfig');
 const { invalidateTenantConnection } = require('../connectionsManager');
 const { renameTenantKey } = require('../services/tenantKeyRenameService');
 const {
@@ -186,6 +190,20 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       dropPatch.pivotDropOverrides = normalizePivotDropOverrides(req.body.pivotDropOverrides) || [];
     }
     Object.assign(updated, dropPatch);
+
+    if (req.body.pivotCrewConfig !== undefined) {
+      const crewValidation = validatePivotCrewConfigPatch(req.body.pivotCrewConfig);
+      if (crewValidation.error) {
+        return res.status(400).json({ success: false, message: crewValidation.error });
+      }
+      updated.pivotCrewConfig = mergePivotCrewConfigOverrides(
+        existing.pivotCrewConfig,
+        crewValidation.patch || {},
+      );
+      if (!updated.pivotCrewConfig || Object.keys(updated.pivotCrewConfig).length === 0) {
+        delete updated.pivotCrewConfig;
+      }
+    }
 
     const mergedPreview = (await getMergedTenants(req)).map((row) =>
       row.tenantKey === tenantKey ? updated : row

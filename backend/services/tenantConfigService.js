@@ -12,6 +12,7 @@ const {
   normalizePivotDropOverrides,
 } = require('../constants/defaultTenants');
 const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
+const { validatePivotCrewConfigPatch } = require('../utilities/pivotCrewConfig');
 const {
   connectToDatabase,
   setTenantUriCache,
@@ -342,6 +343,13 @@ function validateTenantMetadataUpdate(body = {}) {
 
   if (body.pivotDropTimezone !== undefined && !String(body.pivotDropTimezone).trim()) {
     return { error: 'pivotDropTimezone cannot be empty.' };
+  }
+
+  if (body.pivotCrewConfig !== undefined) {
+    const crewValidation = validatePivotCrewConfigPatch(body.pivotCrewConfig);
+    if (crewValidation.error) {
+      return { error: crewValidation.error };
+    }
   }
 
   return { ok: true };

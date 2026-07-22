@@ -11,6 +11,12 @@ jest.mock('../../middlewares/verifyToken', () => ({
   },
 }));
 
+jest.mock('../../services/pivotEntryService', () => ({
+  listPivotCities: jest.fn(),
+  resolvePivotEntry: jest.fn(),
+  redeemPivotEntry: jest.fn(),
+}));
+
 jest.mock('../../services/pivotReferralCodeService', () => ({
   validateReferralCode: jest.fn(),
   redeemReferralCode: jest.fn(),
@@ -64,6 +70,11 @@ jest.mock('../../services/pivotFriendService', () => ({
   declinePivotFriendRequest: jest.fn(),
 }));
 
+const {
+  listPivotCities,
+  resolvePivotEntry,
+  redeemPivotEntry,
+} = require('../../services/pivotEntryService');
 const { validateReferralCode, redeemReferralCode } = require('../../services/pivotReferralCodeService');
 const { getPivotFeed } = require('../../services/pivotFeedService');
 const { getPivotExplore } = require('../../services/pivotExploreService');
@@ -99,6 +110,81 @@ function buildBaseApp() {
   app.use('/pivot', pivotRoutes);
   return app;
 }
+
+describe('pivotRoutes GET /pivot/cities', () => {
+  beforeEach(() => {
+    listPivotCities.mockReset();
+  });
+
+  it('returns 200 with city list', async () => {
+    listPivotCities.mockResolvedValue({
+      data: {
+        cities: [
+          {
+            tenantKey: 'nyc',
+            subdomain: 'nyc',
+            cityDisplayName: 'New York City',
+            status: 'active',
+            statusMessage: '',
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/cities');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.cities).toHaveLength(1);
+  });
+});
+
+describe('pivotRoutes POST /pivot/entry', () => {
+  beforeEach(() => {
+    resolvePivotEntry.mockReset();
+  });
+
+  it('returns 200 with entry payload', async () => {
+    resolvePivotEntry.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        subdomain: 'nyc',
+        cityDisplayName: 'New York City',
+        batchWeek: null,
+        referralAttribution: false,
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/entry')
+      .send({ tenantKey: 'nyc' });
+
+    expect(response.statusCode).toBe(200);
+    expect(resolvePivotEntry).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ tenantKey: 'nyc' }),
+    );
+  });
+});
+
+describe('pivotRoutes POST /pivot/entry/redeem', () => {
+  beforeEach(() => {
+    redeemPivotEntry.mockReset();
+  });
+
+  it('returns 200 for open entry redeem', async () => {
+    redeemPivotEntry.mockResolvedValue({
+      data: { entered: true, referralRedeemed: false },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/entry/redeem')
+      .set('Authorization', 'Bearer test-token')
+      .send({});
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.entered).toBe(true);
+  });
+});
 
 describe('pivotRoutes GET /pivot/referral/preview', () => {
   beforeEach(() => {
