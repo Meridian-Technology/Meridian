@@ -7,6 +7,11 @@ jest.mock('../../services/pivotInteractionService', () => ({
 jest.mock('../../services/pivotCrewJudgementService', () => ({
   loadLockedCrewPicksForUser: jest.fn().mockResolvedValue([]),
 }));
+jest.mock('../../services/pivotCrewWeekStateService', () => ({
+  scheduleCrewWeekRecompute: jest.fn(),
+  recomputeCrewWeekState: jest.fn().mockResolvedValue({ data: {} }),
+  invalidateCrewWeekProgressForUserCrews: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../services/pivotCrossCrewService', () => ({
   attachCrossCrewOverlapFlags: jest.fn(async (_req, _batchWeek, rows) => rows),
 }));
@@ -16,6 +21,7 @@ const { getFeedPilotWindowFilter } = require('../../services/pivotFeedService');
 const { recordPivotInteraction } = require('../../services/pivotInteractionService');
 const {
   recordFeedAction,
+  recordFeedActions,
   recordExternalOpen,
   confirmRegistered,
   getWeekRecap,
@@ -23,6 +29,9 @@ const {
   serializeRecapEvent,
   resolveRegisteredTimeSlotId,
 } = require('../../services/pivotIntentService');
+const {
+  scheduleCrewWeekRecompute,
+} = require('../../services/pivotCrewWeekStateService');
 
 const userId = '507f191e810c19729de860eb';
 const eventId = '665a1b2c3d4e5f6789012345';
@@ -253,6 +262,61 @@ describe('recordFeedAction', () => {
   });
 });
 
+describe('recordFeedActions', () => {
+  const eventIdTwo = '665a1b2c3d4e5f6789012346';
+
+  beforeEach(() => {
+    getModels.mockReset();
+    recordPivotInteraction.mockClear();
+    scheduleCrewWeekRecompute.mockClear();
+  });
+
+  it('batches actions and recomputes crew week once per batchWeek', async () => {
+    const findOneAndUpdate = jest.fn((_query, update) => ({
+      lean: jest.fn().mockResolvedValue({
+        eventId: _query.eventId,
+        status: update.$set.status,
+        batchWeek: '2026-W22',
+        timeSlotId: null,
+      }),
+    }));
+    getModels.mockImplementation((_req, ...names) => {
+      if (names.includes('Event')) {
+        return {
+          Event: {
+            findOne: jest.fn((query) =>
+              mockEventFindOne(
+                publishedEvent({
+                  _id: query._id || query.$and?.[0]?._id || eventId,
+                }),
+              ),
+            ),
+          },
+        };
+      }
+      return { PivotEventIntent: { findOneAndUpdate } };
+    });
+
+    const result = await recordFeedActions(req, {
+      now,
+      actions: [
+        { eventId, action: 'pass' },
+        { eventId: eventIdTwo, action: 'interested' },
+        { eventId, action: 'interested' },
+      ],
+    });
+
+    expect(result.data.accepted).toBe(2);
+    expect(result.data.failed).toBe(0);
+    expect(result.data.results).toHaveLength(2);
+    expect(scheduleCrewWeekRecompute).toHaveBeenCalledTimes(1);
+    expect(scheduleCrewWeekRecompute).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({ userId, batchWeek: '2026-W22' }),
+    );
+  });
+});
+
 describe('recordExternalOpen', () => {
   beforeEach(() => {
     getModels.mockReset();
@@ -441,20 +505,76 @@ describe('getWeekRecap', () => {
 });
 
 describe('resetWeekActions', () => {
+  const {
+    recomputeCrewWeekState,
+    invalidateCrewWeekProgressForUserCrews,
+  } = require('../../services/pivotCrewWeekStateService');
+
   beforeEach(() => {
     getModels.mockReset();
+    recomputeCrewWeekState.mockClear();
+    invalidateCrewWeekProgressForUserCrews.mockClear();
   });
 
   it('deletes all intents for the batch week (interested, registered, passed)', async () => {
     const deleteMany = jest.fn().mockResolvedValue({ deletedCount: 3 });
     getModels.mockReturnValue({
       PivotEventIntent: { deleteMany },
+      PivotCrewMembership: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      PivotCrewWeekState: { deleteMany: jest.fn() },
     });
 
     const result = await resetWeekActions(req, { batchWeek: '2026-W22', now });
 
-    expect(result.data).toEqual({ batchWeek: '2026-W22', deletedCount: 3 });
+    expect(result.data).toEqual({
+      batchWeek: '2026-W22',
+      deletedCount: 3,
+      crewStatesReset: 0,
+    });
     expect(deleteMany).toHaveBeenCalledWith({
+      userId,
+      batchWeek: '2026-W22',
+    });
+  });
+
+  it('also clears and recomputes crew week decisions for the user\'s crews', async () => {
+    const crewId = '665a1b2c3d4e5f6789012345';
+    const intentDeleteMany = jest.fn().mockResolvedValue({ deletedCount: 2 });
+    const crewStateDeleteMany = jest.fn().mockResolvedValue({ deletedCount: 1 });
+    getModels.mockReturnValue({
+      PivotEventIntent: { deleteMany: intentDeleteMany },
+      PivotCrewMembership: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([{ crewId }]),
+          }),
+        }),
+      },
+      PivotCrewWeekState: { deleteMany: crewStateDeleteMany },
+    });
+
+    const result = await resetWeekActions(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data).toEqual({
+      batchWeek: '2026-W22',
+      deletedCount: 2,
+      crewStatesReset: 1,
+    });
+    expect(crewStateDeleteMany).toHaveBeenCalledWith({
+      crewId: { $in: [crewId] },
+      batchWeek: '2026-W22',
+    });
+    expect(recomputeCrewWeekState).toHaveBeenCalledWith(req, {
+      crewId,
+      batchWeek: '2026-W22',
+    });
+    expect(invalidateCrewWeekProgressForUserCrews).toHaveBeenCalledWith(req, {
       userId,
       batchWeek: '2026-W22',
     });

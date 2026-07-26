@@ -422,5 +422,97 @@ describe('pivotCrewJudgementService (Task 2.3)', () => {
       expect(crewPicks[0].event.id).toBe(eventTwoId.toString());
       expect(crewPicks[0].judgementStatus).toBe('confirmed');
     });
+
+    it('democratic confirm starts consensus without locking for multi-member crews', async () => {
+      const ritualReq = {
+        ...req,
+        get: (header) => (header === 'X-App-Version' ? '2.0.0' : undefined),
+      };
+
+      const result = await confirmPivotCrewWeekPick(ritualReq, {
+        crewId: crewId.toString(),
+        eventId: eventTwoId.toString(),
+        batchWeek,
+        now: new Date('2026-07-21T18:00:00.000Z'),
+      });
+
+      expect(result.data.locked).toBe(false);
+      expect(result.data.judgementStatus).toBe('deciding');
+      expect(result.data.consensus.startedAt).toBeTruthy();
+      expect(result.data.consensus.confirms.confirmedCount).toBe(1);
+      expect(result.data.consensus.viewerHasConfirmedCurrent).toBe(true);
+
+      const { PivotCrewWeekState } = getModels(
+        { db: mongo.connection, school: tenantKey },
+        'PivotCrewWeekState',
+      );
+      const stored = await PivotCrewWeekState.findOne({ crewId, batchWeek }).lean();
+      expect(stored.judgementStatus).toBe('deciding');
+      expect(stored.memberJudgements).toHaveLength(1);
+      expect(stored.crewSwapsRemaining).toBe(2);
+    });
+
+    it('democratic swap spends shared budget and resets confirms', async () => {
+      const ritualReq = {
+        ...req,
+        get: (header) => (header === 'X-App-Version' ? '2.0.0' : undefined),
+      };
+
+      await confirmPivotCrewWeekPick(ritualReq, {
+        crewId: crewId.toString(),
+        eventId: eventTwoId.toString(),
+        batchWeek,
+        now: new Date('2026-07-21T18:00:00.000Z'),
+      });
+
+      const swapResult = await swapPivotCrewWeekPick(ritualReq, {
+        crewId: crewId.toString(),
+        batchWeek,
+        now: new Date('2026-07-21T18:05:00.000Z'),
+      });
+
+      expect(swapResult.data.locked).toBe(false);
+      expect(swapResult.data.judgementStatus).toBe('deciding');
+      expect(swapResult.data.proposedEvent.id).toBe(eventOneId.toString());
+      expect(swapResult.data.consensus.swapsRemaining).toBe(1);
+      expect(swapResult.data.consensus.confirms.confirmedCount).toBe(1);
+      expect(swapResult.data.consensus.viewerAction).toBe('swapped');
+    });
+
+    it('democratic unanimous confirms lock early', async () => {
+      const ritualReq = {
+        ...req,
+        get: (header) => (header === 'X-App-Version' ? '2.0.0' : undefined),
+      };
+
+      // Only owner + memberB are needed once we shrink actives to two.
+      const { PivotCrewMembership } = getModels(
+        { db: mongo.connection, school: tenantKey },
+        'PivotCrewMembership',
+      );
+      await PivotCrewMembership.deleteMany({ userId: memberCId });
+
+      await confirmPivotCrewWeekPick(ritualReq, {
+        crewId: crewId.toString(),
+        eventId: eventTwoId.toString(),
+        batchWeek,
+        now: new Date('2026-07-21T18:00:00.000Z'),
+      });
+
+      const memberReq = {
+        ...ritualReq,
+        user: { userId: memberBId.toString() },
+      };
+      const result = await confirmPivotCrewWeekPick(memberReq, {
+        crewId: crewId.toString(),
+        eventId: eventTwoId.toString(),
+        batchWeek,
+        now: new Date('2026-07-21T18:10:00.000Z'),
+      });
+
+      expect(result.data.locked).toBe(true);
+      expect(result.data.lockReason).toBe('unanimous');
+      expect(result.data.judgementStatus).toBe('confirmed');
+    });
   });
 });

@@ -89,6 +89,38 @@ describe('pivotCrewConfig', () => {
       expect(PIVOT_CREW_CONFIG_DEFAULTS.crossCrew.surfaceCopyKey).toBe(
         'another_crew_going',
       );
+      expect(PIVOT_CREW_CONFIG_DEFAULTS.judgement).toEqual({
+        windowHoursBeforeEvent: 24,
+        minHoursAfterDeckComplete: 6,
+        consensusWindowMinutes: 180,
+        swapResetBonusMinutes: 15,
+        crewSwapBudget: 2,
+      });
+    });
+  });
+
+  describe('judgement consensus knobs', () => {
+    it('accepts consensus window, swap bonus, and crew swap budget', () => {
+      const result = validatePivotCrewConfigPatch({
+        judgement: {
+          consensusWindowMinutes: 120,
+          swapResetBonusMinutes: 10,
+          crewSwapBudget: 1,
+        },
+      });
+      expect(result.ok).toBe(true);
+      expect(result.patch.judgement).toEqual({
+        consensusWindowMinutes: 120,
+        swapResetBonusMinutes: 10,
+        crewSwapBudget: 1,
+      });
+    });
+
+    it('rejects out-of-range consensus window', () => {
+      const result = validatePivotCrewConfigPatch({
+        judgement: { consensusWindowMinutes: 10 },
+      });
+      expect(result.error).toMatch(/consensusWindowMinutes/);
     });
   });
 });

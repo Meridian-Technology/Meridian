@@ -6,6 +6,7 @@ const { getPivotEventCrossCrewOverlap } = require('../services/pivotCrossCrewSer
 const { getPivotExplore } = require('../services/pivotExploreService');
 const {
   recordFeedAction,
+  recordFeedActions,
   recordExternalOpen,
   confirmRegistered,
   getWeekRecap,
@@ -18,6 +19,11 @@ const {
   listUserPivotEventFeedback,
 } = require('../services/pivotFeedbackService');
 const { getPivotConfig } = require('../services/pivotConfigService');
+const {
+  getPivotWeekRitual,
+  RITUAL_MIN_APP_VERSION,
+} = require('../services/pivotWeekRitualService');
+const { requireMinAppVersion } = require('../middlewares/requireMinAppVersion');
 const { listPivotTags } = require('../services/pivotTagCatalogService');
 const {
   getPivotProfileInterests,
@@ -353,6 +359,45 @@ router.get('/config', verifyToken, async (req, res) => {
   }
 });
 
+router.get(
+  '/week-ritual',
+  verifyToken,
+  requireMinAppVersion(RITUAL_MIN_APP_VERSION),
+  async (req, res) => {
+    try {
+      const result = await getPivotWeekRitual(req, { batchWeek: req.query.batchWeek });
+      if (result.error) {
+        logPivotServiceReject('GET /pivot/week-ritual', result, req, {
+          batchWeek: req.query.batchWeek,
+        });
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      logPivotServiceSuccess('GET /pivot/week-ritual', req, {
+        batchWeek: result.data?.batchWeek,
+        phase: result.data?.phase,
+        crewCount: result.data?.crews?.length ?? 0,
+      });
+
+      res.set('Cache-Control', 'private, max-age=15');
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /pivot/week-ritual', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load week ritual.',
+      });
+    }
+  },
+);
+
 router.get('/explore', verifyToken, async (req, res) => {
   try {
     const result = await getPivotExplore(req, {
@@ -473,6 +518,39 @@ router.post('/feed/action', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to record pivot intent.',
+    });
+  }
+});
+
+router.post('/feed/actions', verifyToken, async (req, res) => {
+  try {
+    const result = await recordFeedActions(req, req.body);
+    if (result.error) {
+      logPivotServiceReject('POST /pivot/feed/actions', result, req, {
+        actionCount: Array.isArray(req.body?.actions) ? req.body.actions.length : 0,
+      });
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    logPivotServiceSuccess('POST /pivot/feed/actions', req, {
+      accepted: result.data?.accepted,
+      failed: result.data?.failed,
+      received: result.data?.received,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/feed/actions', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to record pivot intents.',
     });
   }
 });
@@ -904,6 +982,7 @@ router.get('/events/:eventId/cross-crew-overlap', verifyToken, async (req, res) 
   }
 });
 
+/** @deprecated remove after min store version — new binary uses recap embedded in GET /pivot/week-ritual */
 router.get('/week-recap', verifyToken, async (req, res) => {
   try {
     const result = await getWeekRecap(req, { batchWeek: req.query.batchWeek });

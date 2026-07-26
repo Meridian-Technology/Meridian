@@ -10,6 +10,10 @@ const {
   resolvePivotDropInstant,
 } = require('../utilities/pivotDropSchedule');
 const { isValidIsoWeek } = require('../utilities/pivotIsoWeek');
+const {
+  buildRitualPushData,
+  resolveRitualNudgePushBody,
+} = require('../utilities/pivotRitualNudge');
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const EXPO_BATCH_SIZE = 100;
@@ -64,23 +68,25 @@ function buildCrewNudgePushBody(remainingCount) {
 
 function buildCrewNudgePushMessage(pushToken, payload = {}) {
   const remainingCount = Math.max(1, Number(payload.remainingCount) || 1);
+  const ritualPhase = payload.ritualPhase || 'swiping';
+  const ritualNudgeType = payload.ritualNudgeType || 'quorum_waiting';
+  const body =
+    trimPushBody(payload.body) ||
+    resolveRitualNudgePushBody(ritualNudgeType) ||
+    buildCrewNudgePushBody(remainingCount);
+
   return {
     to: pushToken,
     sound: 'default',
     title: NUDGE_PUSH_TITLE,
-    body: buildCrewNudgePushBody(remainingCount),
-    data: {
-      type: 'pivot_crew_nudge',
-      edition: 'pivot',
-      appEdition: 'pivot',
+    body,
+    data: buildRitualPushData({
       batchWeek: payload.batchWeek,
+      ritualPhase,
       crewId: payload.crewId,
-      navigation: {
-        type: 'navigate',
-        route: 'PivotWeek',
-        deepLink: 'meridian://pivot/week',
-      },
-    },
+      ritualNudgeType,
+      pushType: 'pivot_crew_nudge',
+    }),
     priority: 'default',
     channelId: 'default',
   };
@@ -304,6 +310,8 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
         crewId,
         crewName: crewNameById.get(crewId),
         remainingCount,
+        ritualPhase: 'swiping',
+        ritualNudgeType: 'quorum_waiting',
       }),
     );
 
@@ -346,6 +354,106 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
   };
 }
 
+async function sendPendingConsensusNudgesForTenant(req, options = {}) {
+  const tenantKey = req.school;
+  if (!tenantKey) {
+    return { error: 'Tenant context required.', status: 400 };
+  }
+
+  const tenant = await getTenantByKey(req, tenantKey);
+  if (!tenant || !isPivotTenant(tenant)) {
+    return { data: { tenantKey, sent: 0, failed: 0, skipped: 'not_pivot' } };
+  }
+
+  const now = options.now || new Date();
+  const batchWeek = options.batchWeek || resolvePivotLiveBatchWeek(tenant, now);
+  const { PivotCrewWeekState, PivotCrewMembership } = getModels(
+    req,
+    'PivotCrewWeekState',
+    'PivotCrewMembership',
+  );
+
+  const decidingStates = await PivotCrewWeekState.find({
+    tenantKey: tenantKey.toLowerCase(),
+    batchWeek,
+    judgementStatus: 'deciding',
+    consensusStartedAt: { $ne: null },
+    consensusEndsAt: { $ne: null },
+  }).lean();
+
+  let sent = 0;
+  let failed = 0;
+  let crewsNudged = 0;
+
+  for (const weekState of decidingStates) {
+    const startedMs = new Date(weekState.consensusStartedAt).getTime();
+    const endsMs = new Date(weekState.consensusEndsAt).getTime();
+    if (Number.isNaN(startedMs) || Number.isNaN(endsMs) || endsMs <= startedMs) {
+      continue;
+    }
+    const midpoint = startedMs + (endsMs - startedMs) / 2;
+    if (now.getTime() < midpoint) {
+      continue;
+    }
+
+    const proposedEventId = weekState.proposedEventId?.toString?.();
+    if (!proposedEventId) {
+      continue;
+    }
+
+    const memberships = await PivotCrewMembership.find({
+      crewId: weekState.crewId,
+      status: 'active',
+      userId: { $ne: null },
+    })
+      .select('userId')
+      .lean();
+
+    const confirmedIds = new Set(
+      (weekState.memberJudgements || [])
+        .filter((entry) => {
+          const eventId = entry.eventId?.toString?.() || entry.eventId;
+          return (
+            (entry.action === 'confirmed' || entry.action === 'swapped') &&
+            eventId === proposedEventId
+          );
+        })
+        .map((entry) => entry.userId?.toString?.())
+        .filter(Boolean),
+    );
+
+    const pendingUserIds = memberships
+      .map((row) => row.userId?.toString?.())
+      .filter((userId) => userId && !confirmedIds.has(userId));
+
+    if (!pendingUserIds.length) {
+      continue;
+    }
+
+    const result = await notifyPendingConsensusConfirms(req, {
+      crewId: weekState.crewId.toString(),
+      batchWeek,
+      pendingUserIds,
+    });
+    sent += result.data?.sent || 0;
+    failed += result.data?.failed || 0;
+    if ((result.data?.sent || 0) > 0) {
+      crewsNudged += 1;
+    }
+  }
+
+  return {
+    data: {
+      tenantKey,
+      batchWeek,
+      sent,
+      failed,
+      crewsNudged,
+      crewsChecked: decidingStates.length,
+    },
+  };
+}
+
 async function runAllCrewUnfinishedSwipeNudges(globalReq, options = {}) {
   const pivotTenants = (await getMergedTenants(globalReq)).filter(isPivotTenant);
   const results = [];
@@ -355,7 +463,11 @@ async function runAllCrewUnfinishedSwipeNudges(globalReq, options = {}) {
       const db = await connectToDatabase(tenant.tenantKey);
       const tenantReq = { db, school: tenant.tenantKey, globalDb: globalReq.globalDb };
       const result = await sendCrewUnfinishedSwipeNudgesForTenant(tenantReq, options);
-      results.push(result.data || { tenantKey: tenant.tenantKey, error: result.error });
+      const pending = await sendPendingConsensusNudgesForTenant(tenantReq, options);
+      results.push({
+        ...(result.data || { tenantKey: tenant.tenantKey, error: result.error }),
+        consensusPending: pending.data || null,
+      });
     } catch (error) {
       console.error(`[pivotCrewNudge] send failed tenant=${tenant.tenantKey}:`, error);
       results.push({
@@ -368,6 +480,150 @@ async function runAllCrewUnfinishedSwipeNudges(globalReq, options = {}) {
   return { data: { tenants: results } };
 }
 
+async function loadActiveMemberPushRecipients(req, crewId, { excludeUserId } = {}) {
+  const crewObjectId = toObjectId(crewId);
+  if (!crewObjectId) {
+    return [];
+  }
+
+  const { PivotCrewMembership, User } = getModels(req, 'PivotCrewMembership', 'User');
+  const memberships = await PivotCrewMembership.find({
+    crewId: crewObjectId,
+    status: 'active',
+    userId: { $ne: null },
+  })
+    .select('userId')
+    .lean();
+
+  const recipientIds = memberships
+    .map((row) => row.userId?.toString?.())
+    .filter((userId) => userId && userId !== excludeUserId);
+
+  if (!recipientIds.length) {
+    return [];
+  }
+
+  return User.find({
+    _id: { $in: recipientIds.map((id) => toObjectId(id)) },
+    pushToken: { $exists: true, $nin: [null, ''] },
+    pushAppEdition: 'pivot',
+  })
+    .select('_id pushToken')
+    .lean();
+}
+
+/**
+ * Notify other active members when consensus starts or a shared swap resets confirms.
+ */
+async function notifyCrewConsensusPeers(
+  req,
+  {
+    crewId,
+    batchWeek,
+    actorUserId,
+    kind = 'decide_started',
+  },
+) {
+  const ritualNudgeType =
+    kind === 'swap' || kind === 'decide_swap' ? 'decide_swap' : 'decide_started';
+
+  try {
+    const recipients = await loadActiveMemberPushRecipients(req, crewId, {
+      excludeUserId: actorUserId?.toString?.() || actorUserId,
+    });
+    if (!recipients.length) {
+      return { data: { sent: 0, failed: 0 } };
+    }
+
+    const messages = recipients.map((recipient) =>
+      buildCrewNudgePushMessage(recipient.pushToken, {
+        batchWeek,
+        crewId,
+        ritualPhase: 'decide',
+        ritualNudgeType,
+        body: resolveRitualNudgePushBody(ritualNudgeType),
+      }),
+    );
+
+    let sent = 0;
+    let failed = 0;
+    for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
+      const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
+      const result = await sendExpoBatch(batch);
+      sent += result.sent;
+      failed += result.failed;
+    }
+
+    return { data: { sent, failed } };
+  } catch (error) {
+    console.error('[pivotCrewNudge] consensus peer notify failed', {
+      crewId,
+      batchWeek,
+      error: error.message,
+    });
+    return { data: { sent: 0, failed: 1 } };
+  }
+}
+
+/**
+ * Mid-window reminder for members who have not confirmed the current proposal.
+ */
+async function notifyPendingConsensusConfirms(
+  req,
+  {
+    crewId,
+    batchWeek,
+    pendingUserIds = [],
+  },
+) {
+  if (!pendingUserIds.length) {
+    return { data: { sent: 0, failed: 0 } };
+  }
+
+  try {
+    const { User } = getModels(req, 'User');
+    const recipients = await User.find({
+      _id: { $in: pendingUserIds.map((id) => toObjectId(id)).filter(Boolean) },
+      pushToken: { $exists: true, $nin: [null, ''] },
+      pushAppEdition: 'pivot',
+    })
+      .select('_id pushToken')
+      .lean();
+
+    if (!recipients.length) {
+      return { data: { sent: 0, failed: 0 } };
+    }
+
+    const messages = recipients.map((recipient) =>
+      buildCrewNudgePushMessage(recipient.pushToken, {
+        batchWeek,
+        crewId,
+        ritualPhase: 'decide',
+        ritualNudgeType: 'decide_pending',
+        body: resolveRitualNudgePushBody('decide_pending'),
+      }),
+    );
+
+    let sent = 0;
+    let failed = 0;
+    for (let index = 0; index < messages.length; index += EXPO_BATCH_SIZE) {
+      const batch = messages.slice(index, index + EXPO_BATCH_SIZE);
+      const result = await sendExpoBatch(batch);
+      sent += result.sent;
+      failed += result.failed;
+    }
+
+    return { data: { sent, failed } };
+  } catch (error) {
+    console.error('[pivotCrewNudge] pending confirm notify failed', {
+      crewId,
+      batchWeek,
+      error: error.message,
+    });
+    return { data: { sent: 0, failed: 1 } };
+  }
+}
+
 module.exports = {
   NUDGE_PUSH_TITLE,
   buildCrewNudgePushBody,
@@ -378,4 +634,7 @@ module.exports = {
   isCrewEligibleForNudge,
   sendCrewUnfinishedSwipeNudgesForTenant,
   runAllCrewUnfinishedSwipeNudges,
+  notifyCrewConsensusPeers,
+  notifyPendingConsensusConfirms,
+  sendPendingConsensusNudgesForTenant,
 };

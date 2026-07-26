@@ -28,6 +28,9 @@ const PIVOT_CREW_CONFIG_DEFAULTS = Object.freeze({
   judgement: Object.freeze({
     windowHoursBeforeEvent: 24,
     minHoursAfterDeckComplete: 6,
+    consensusWindowMinutes: 180,
+    swapResetBonusMinutes: 15,
+    crewSwapBudget: 2,
   }),
   pick: Object.freeze({
     algorithm: 'weighted_majority',
@@ -201,6 +204,32 @@ function validateJudgementPatch(patch) {
     );
     if (result.error) return { error: result.error };
     out.minHoursAfterDeckComplete = result.value;
+  }
+  if (patch.consensusWindowMinutes !== undefined) {
+    const result = clampPositiveInt(
+      patch.consensusWindowMinutes,
+      'judgement.consensusWindowMinutes',
+      { min: 30, max: 720 },
+    );
+    if (result.error) return { error: result.error };
+    out.consensusWindowMinutes = result.value;
+  }
+  if (patch.swapResetBonusMinutes !== undefined) {
+    const result = clampPositiveInt(
+      patch.swapResetBonusMinutes,
+      'judgement.swapResetBonusMinutes',
+      { min: 0, max: 120 },
+    );
+    if (result.error) return { error: result.error };
+    out.swapResetBonusMinutes = result.value;
+  }
+  if (patch.crewSwapBudget !== undefined) {
+    const result = clampPositiveInt(patch.crewSwapBudget, 'judgement.crewSwapBudget', {
+      min: 0,
+      max: 5,
+    });
+    if (result.error) return { error: result.error };
+    out.crewSwapBudget = result.value;
   }
 
   return { ok: true, patch: Object.keys(out).length ? out : undefined };

@@ -4,9 +4,12 @@ const PIVOT_CREW_JUDGEMENT_STATUSES = Object.freeze([
   'awaiting_quorum',
   'proposed',
   'split',
+  'deciding',
   'confirmed',
   'swapped',
 ]);
+
+const MEMBER_JUDGEMENT_ACTIONS = Object.freeze(['confirmed', 'swapped']);
 
 const memberVoteSchema = new mongoose.Schema(
   {
@@ -18,6 +21,31 @@ const memberVoteSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ['interested', 'registered'],
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
+const memberJudgementSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    action: {
+      type: String,
+      enum: MEMBER_JUDGEMENT_ACTIONS,
+      required: true,
+    },
+    eventId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Event',
+      required: true,
+    },
+    at: {
+      type: Date,
       required: true,
     },
   },
@@ -113,6 +141,11 @@ const pivotCrewWeekStateSchema = new mongoose.Schema(
       ref: 'Event',
       default: null,
     },
+    originalProposedEventId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Event',
+      default: null,
+    },
     proposedScore: {
       type: Number,
       default: null,
@@ -127,6 +160,23 @@ const pivotCrewWeekStateSchema = new mongoose.Schema(
       enum: PIVOT_CREW_JUDGEMENT_STATUSES,
       required: true,
     },
+    consensusStartedAt: {
+      type: Date,
+      default: null,
+    },
+    consensusEndsAt: {
+      type: Date,
+      default: null,
+    },
+    crewSwapsRemaining: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+    memberJudgements: {
+      type: [memberJudgementSchema],
+      default: [],
+    },
     aggregatedAt: {
       type: Date,
       required: true,
@@ -137,6 +187,11 @@ const pivotCrewWeekStateSchema = new mongoose.Schema(
 
 pivotCrewWeekStateSchema.index({ crewId: 1, batchWeek: 1 }, { unique: true });
 pivotCrewWeekStateSchema.index({ tenantKey: 1, batchWeek: 1 });
+pivotCrewWeekStateSchema.index({
+  judgementStatus: 1,
+  consensusEndsAt: 1,
+});
 
 module.exports = pivotCrewWeekStateSchema;
 module.exports.PIVOT_CREW_JUDGEMENT_STATUSES = PIVOT_CREW_JUDGEMENT_STATUSES;
+module.exports.MEMBER_JUDGEMENT_ACTIONS = MEMBER_JUDGEMENT_ACTIONS;

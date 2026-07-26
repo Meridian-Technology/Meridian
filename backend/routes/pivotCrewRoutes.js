@@ -12,6 +12,9 @@ const {
   joinPivotCrew,
   invitePivotCrewPlaceholders,
   addPivotCrewMember,
+  listPivotCrewInvites,
+  acceptPivotCrewInvite,
+  declinePivotCrewInvite,
 } = require('../services/pivotCrewService');
 const {
   getPivotCrewWeekProgress,
@@ -19,9 +22,12 @@ const {
 } = require('../services/pivotCrewWeekStateService');
 const {
   getPivotCrewWeekJudgement,
+  getPivotCrewWeekJudgements,
   confirmPivotCrewWeekPick,
   swapPivotCrewWeekPick,
 } = require('../services/pivotCrewJudgementService');
+const { requireMinAppVersion } = require('../middlewares/requireMinAppVersion');
+const { RITUAL_MIN_APP_VERSION } = require('../services/pivotWeekRitualService');
 
 const router = express.Router();
 
@@ -99,6 +105,7 @@ router.post(
 );
 
 router.get(
+  /** @deprecated remove after min store version — new binary uses GET /pivot/week-ritual */
   '/week',
   verifyToken,
   async (req, res) => {
@@ -134,6 +141,39 @@ router.get(
   },
 );
 
+router.get(
+  '/week/judgements',
+  verifyToken,
+  requireMinAppVersion(RITUAL_MIN_APP_VERSION),
+  async (req, res) => {
+    try {
+      const result = await getPivotCrewWeekJudgements(req, {
+        batchWeek: req.query.batchWeek,
+      });
+
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      res.set('Cache-Control', 'private, max-age=15');
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /pivot/crews/week/judgements', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load crew judgements.',
+      });
+    }
+  },
+);
+
 router.get('/', verifyToken, async (req, res) => {
   try {
     const result = await listPivotCrews(req);
@@ -147,6 +187,66 @@ router.get('/', verifyToken, async (req, res) => {
   }
 });
 
+router.get('/invites', verifyToken, async (req, res) => {
+  try {
+    const result = await listPivotCrewInvites(req);
+    return handleServiceResult(res, result);
+  } catch (err) {
+    logPivotRouteError('GET /pivot/crews/invites', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load crew invites.',
+    });
+  }
+});
+
+router.post(
+  '/invites/:membershipId/accept',
+  verifyToken,
+  param('membershipId').isMongoId().withMessage('Invalid membership id.'),
+  async (req, res) => {
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+
+    try {
+      const result = await acceptPivotCrewInvite(req, req.params.membershipId);
+      return handleServiceResult(res, result);
+    } catch (err) {
+      logPivotRouteError('POST /pivot/crews/invites/:membershipId/accept', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to accept crew invite.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/invites/:membershipId/decline',
+  verifyToken,
+  param('membershipId').isMongoId().withMessage('Invalid membership id.'),
+  async (req, res) => {
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+
+    try {
+      const result = await declinePivotCrewInvite(req, req.params.membershipId);
+      return handleServiceResult(res, result);
+    } catch (err) {
+      logPivotRouteError('POST /pivot/crews/invites/:membershipId/decline', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to decline crew invite.',
+      });
+    }
+  },
+);
+
+/** @deprecated remove after min store version — new binary uses GET /pivot/crews/week/judgements */
 router.get(
   '/:crewId/week/judgement',
   verifyToken,

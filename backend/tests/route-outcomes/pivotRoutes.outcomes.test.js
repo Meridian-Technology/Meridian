@@ -56,6 +56,11 @@ jest.mock('../../services/pivotConfigService', () => ({
   getPivotConfig: jest.fn(),
 }));
 
+jest.mock('../../services/pivotWeekRitualService', () => ({
+  getPivotWeekRitual: jest.fn(),
+  RITUAL_MIN_APP_VERSION: '2.0.0',
+}));
+
 jest.mock('../../services/pivotTagCatalogService', () => ({
   listPivotTags: jest.fn(),
 }));
@@ -96,6 +101,7 @@ const {
   submitEventFeedback,
 } = require('../../services/pivotFeedbackService');
 const { getPivotConfig } = require('../../services/pivotConfigService');
+const { getPivotWeekRitual } = require('../../services/pivotWeekRitualService');
 const { listPivotTags } = require('../../services/pivotTagCatalogService');
 const {
   getPivotProfileInterests,
@@ -882,6 +888,74 @@ describe('pivotRoutes POST /pivot/dev/reset-week-actions', () => {
       expect.objectContaining({ school: 'nyc' }),
       expect.objectContaining({ batchWeek: undefined }),
     );
+  });
+});
+
+describe('pivotRoutes GET /pivot/week-ritual', () => {
+  beforeEach(() => {
+    getPivotWeekRitual.mockReset();
+  });
+
+  it('returns 426 when X-App-Version is missing', async () => {
+    const response = await request(buildBaseApp())
+      .get('/pivot/week-ritual')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(426);
+    expect(response.body.code).toBe('APP_UPGRADE_REQUIRED');
+    expect(getPivotWeekRitual).not.toHaveBeenCalled();
+  });
+
+  it('returns 426 when X-App-Version is below ritual minimum', async () => {
+    const response = await request(buildBaseApp())
+      .get('/pivot/week-ritual')
+      .set('Authorization', 'Bearer test-token')
+      .set('X-App-Version', '1.9.9');
+
+    expect(response.statusCode).toBe(426);
+    expect(response.body.minAppVersion).toBe('2.0.0');
+  });
+
+  it('returns 200 with ritual payload for supported app versions', async () => {
+    getPivotWeekRitual.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W30',
+        phase: 'swiping',
+        deck: { remaining: 2, complete: false, holdUntil: null },
+        crews: [{ crewId: '665a1b2c3d4e5f6789012345', name: 'Friday Plans' }],
+        decideQueueOrder: [],
+        actions: { openDeck: true, openDecide: false, openRecap: false },
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/week-ritual?batchWeek=2026-W30')
+      .set('Authorization', 'Bearer test-token')
+      .set('X-App-Version', '2.0.0');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.phase).toBe('swiping');
+    expect(getPivotWeekRitual).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      expect.objectContaining({ batchWeek: '2026-W30' }),
+    );
+  });
+
+  it('returns 400 when ritual service rejects batchWeek', async () => {
+    getPivotWeekRitual.mockResolvedValue({
+      error: 'batchWeek must be ISO format YYYY-Www.',
+      status: 400,
+      code: 'INVALID_BATCH_WEEK',
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/week-ritual?batchWeek=bad')
+      .set('Authorization', 'Bearer test-token')
+      .set('X-App-Version', '2.0.0');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('INVALID_BATCH_WEEK');
   });
 });
 

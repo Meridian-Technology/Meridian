@@ -13,9 +13,17 @@ const {
   resolveDisplayHost,
   PIVOT_EVENT_STATUSES,
 } = require('./pivotFeedService');
+const { resolvePivotCoverImageUrl } = require('../utilities/pivotMovieMetadata');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 
 const LOCKED_JUDGEMENT_STATUSES = new Set(['confirmed', 'swapped']);
+const PRESERVED_JUDGEMENT_STATUSES = new Set([
+  'proposed',
+  'split',
+  'deciding',
+  'confirmed',
+  'swapped',
+]);
 const CREW_WEEK_PROGRESS_CACHE_TTL_MS = 30_000;
 const crewWeekProgressCache = new Map();
 const invalidatedCrewWeekProgressKeys = new Set();
@@ -98,6 +106,15 @@ function serializeCrewWeekEvent(event, voteEntry) {
   }
 
   const pivot = event.customFields?.pivot || {};
+  const coverImageUrl = resolvePivotCoverImageUrl(event);
+  const tags = Array.isArray(pivot.tags) ? pivot.tags.filter(Boolean).slice(0, 4) : [];
+  const description =
+    typeof event.description === 'string' && event.description.trim()
+      ? event.description.trim()
+      : typeof pivot.movie?.synopsis === 'string' && pivot.movie.synopsis.trim()
+        ? pivot.movie.synopsis.trim()
+        : null;
+
   return {
     id: event._id.toString(),
     name: event.name,
@@ -106,6 +123,9 @@ function serializeCrewWeekEvent(event, voteEntry) {
     location: event.location,
     externalLink: event.externalLink || null,
     displayHost: resolveDisplayHost(pivot),
+    ...(coverImageUrl ? { coverImageUrl } : {}),
+    ...(tags.length ? { tags } : {}),
+    ...(description ? { description } : {}),
     score: voteEntry?.score ?? null,
     interestedCount: voteEntry?.interestedCount ?? 0,
     registeredCount: voteEntry?.registeredCount ?? 0,
@@ -176,6 +196,17 @@ function serializeCrewWeekProgressRow(crew, weekState, eventsById, crewConfig) {
         })
       : null;
 
+  const swapBudget = Number(crewConfig?.judgement?.crewSwapBudget);
+  const defaultSwapBudget = Number.isInteger(swapBudget) ? swapBudget : 2;
+  const memberJudgements = weekState?.memberJudgements || [];
+  const confirmedCount = memberJudgements.filter((entry) => {
+    const eventId = entry.eventId?.toString?.() || entry.eventId;
+    return (
+      (entry.action === 'confirmed' || entry.action === 'swapped') &&
+      eventId === proposedEventId
+    );
+  }).length;
+
   return {
     crewId: crew._id.toString(),
     name: crew.name,
@@ -191,6 +222,21 @@ function serializeCrewWeekProgressRow(crew, weekState, eventsById, crewConfig) {
       ? serializeCrewWeekEvent(eventsById.get(runnerUpEventId), voteByEventId.get(runnerUpEventId))
       : null,
     judgementWindowEndsAt,
+    consensus: {
+      startedAt: weekState?.consensusStartedAt
+        ? new Date(weekState.consensusStartedAt).toISOString()
+        : null,
+      endsAt: weekState?.consensusEndsAt
+        ? new Date(weekState.consensusEndsAt).toISOString()
+        : null,
+      swapsRemaining:
+        weekState?.crewSwapsRemaining == null
+          ? defaultSwapBudget
+          : Number(weekState.crewSwapsRemaining),
+      swapBudget: defaultSwapBudget,
+      confirmedCount,
+      activeCount: swipeProgress.activeMemberCount,
+    },
   };
 }
 
@@ -257,7 +303,7 @@ async function buildCrewWeekProgressPayload(req, batchWeek) {
         status: { $in: PIVOT_EVENT_STATUSES },
         isDeleted: { $ne: true },
       })
-        .select('name location start_time end_time externalLink customFields.pivot')
+        .select('name description location start_time end_time externalLink image customFields.pivot')
         .lean()
     : [];
 
@@ -524,9 +570,18 @@ function aggregateCrewWeekState({
     return {
       swipeProgress,
       proposedEventId: lockedPick.proposedEventId,
+      originalProposedEventId:
+        lockedPick.originalProposedEventId || lockedPick.proposedEventId,
       proposedScore: lockedPick.proposedScore,
       voteBreakdown: lockedPick.voteBreakdown,
       judgementStatus: lockedPick.judgementStatus,
+      consensusStartedAt: lockedPick.consensusStartedAt || null,
+      consensusEndsAt: lockedPick.consensusEndsAt || null,
+      crewSwapsRemaining:
+        lockedPick.crewSwapsRemaining == null
+          ? null
+          : lockedPick.crewSwapsRemaining,
+      memberJudgements: lockedPick.memberJudgements || [],
     };
   }
 
@@ -534,9 +589,14 @@ function aggregateCrewWeekState({
     return {
       swipeProgress,
       proposedEventId: null,
+      originalProposedEventId: null,
       proposedScore: null,
       voteBreakdown: [],
       judgementStatus: 'awaiting_quorum',
+      consensusStartedAt: null,
+      consensusEndsAt: null,
+      crewSwapsRemaining: null,
+      memberJudgements: [],
     };
   }
 
@@ -548,19 +608,30 @@ function aggregateCrewWeekState({
     return {
       swipeProgress,
       proposedEventId: null,
+      originalProposedEventId: null,
       proposedScore: null,
       voteBreakdown: [],
       judgementStatus: 'awaiting_quorum',
+      consensusStartedAt: null,
+      consensusEndsAt: null,
+      crewSwapsRemaining: null,
+      memberJudgements: [],
     };
   }
 
   if (isSplitVote(sorted, pickConfig.tieBreak, eventStartById)) {
+    const topId = voteBreakdown[0]?.eventId || null;
     return {
       swipeProgress,
-      proposedEventId: null,
+      proposedEventId: topId,
+      originalProposedEventId: topId,
       proposedScore: null,
       voteBreakdown: voteBreakdown.slice(0, 2),
       judgementStatus: 'split',
+      consensusStartedAt: null,
+      consensusEndsAt: null,
+      crewSwapsRemaining: null,
+      memberJudgements: [],
     };
   }
 
@@ -568,9 +639,14 @@ function aggregateCrewWeekState({
   return {
     swipeProgress,
     proposedEventId: winner.eventId,
+    originalProposedEventId: winner.eventId,
     proposedScore: winner.score,
     voteBreakdown,
     judgementStatus: 'proposed',
+    consensusStartedAt: null,
+    consensusEndsAt: null,
+    crewSwapsRemaining: null,
+    memberJudgements: [],
   };
 }
 
@@ -626,32 +702,75 @@ async function resolveBatchWeek(req, batchWeek) {
   return { batchWeek: toIsoWeek(new Date()) };
 }
 
+function serializeStoredVoteBreakdown(voteBreakdown = []) {
+  return voteBreakdown.map((entry) => ({
+    eventId: entry.eventId?.toString?.() || String(entry.eventId),
+    score: entry.score,
+    interestedCount: entry.interestedCount,
+    registeredCount: entry.registeredCount,
+    memberVotes: (entry.memberVotes || []).map((vote) => ({
+      userId: vote.userId?.toString?.() || String(vote.userId),
+      status: vote.status,
+    })),
+  }));
+}
+
+/**
+ * Preserve proposal + consensus once a crew has left awaiting_quorum so recomputes
+ * do not reshuffle picks mid-judgement.
+ */
 function buildLockedPick(existing) {
-  if (!existing || !LOCKED_JUDGEMENT_STATUSES.has(existing.judgementStatus)) {
+  if (!existing || !PRESERVED_JUDGEMENT_STATUSES.has(existing.judgementStatus)) {
     return null;
   }
 
   return {
     proposedEventId: existing.proposedEventId?.toString?.() || existing.proposedEventId,
+    originalProposedEventId:
+      existing.originalProposedEventId?.toString?.() ||
+      existing.originalProposedEventId ||
+      existing.proposedEventId?.toString?.() ||
+      existing.proposedEventId ||
+      null,
     proposedScore: existing.proposedScore,
-    voteBreakdown: (existing.voteBreakdown || []).map((entry) => ({
-      eventId: entry.eventId?.toString?.() || String(entry.eventId),
-      score: entry.score,
-      interestedCount: entry.interestedCount,
-      registeredCount: entry.registeredCount,
-      memberVotes: (entry.memberVotes || []).map((vote) => ({
-        userId: vote.userId?.toString?.() || String(vote.userId),
-        status: vote.status,
-      })),
-    })),
+    voteBreakdown: serializeStoredVoteBreakdown(existing.voteBreakdown),
     judgementStatus: existing.judgementStatus,
+    consensusStartedAt: existing.consensusStartedAt || null,
+    consensusEndsAt: existing.consensusEndsAt || null,
+    crewSwapsRemaining:
+      existing.crewSwapsRemaining == null ? null : existing.crewSwapsRemaining,
+    memberJudgements: (existing.memberJudgements || []).map((entry) => ({
+      userId: entry.userId?.toString?.() || String(entry.userId),
+      action: entry.action,
+      eventId: entry.eventId?.toString?.() || String(entry.eventId),
+      at: entry.at,
+    })),
   };
 }
 
-function toStoredWeekState(aggregation, { crewId, batchWeek, tenantKey, aggregatedAt }) {
+function toStoredWeekState(
+  aggregation,
+  { crewId, batchWeek, tenantKey, aggregatedAt, crewConfig },
+) {
   const proposedEventId = aggregation.proposedEventId
     ? toObjectId(aggregation.proposedEventId)
     : null;
+  const originalProposedEventId = aggregation.originalProposedEventId
+    ? toObjectId(aggregation.originalProposedEventId)
+    : proposedEventId;
+
+  const isOpenProposal =
+    aggregation.judgementStatus === 'proposed' ||
+    aggregation.judgementStatus === 'split' ||
+    aggregation.judgementStatus === 'deciding';
+
+  const swapBudget = crewConfig?.judgement?.crewSwapBudget;
+  const defaultSwapBudget = Number.isInteger(swapBudget) ? swapBudget : 2;
+
+  let crewSwapsRemaining = aggregation.crewSwapsRemaining;
+  if (crewSwapsRemaining == null && isOpenProposal) {
+    crewSwapsRemaining = defaultSwapBudget;
+  }
 
   return {
     crewId,
@@ -659,6 +778,7 @@ function toStoredWeekState(aggregation, { crewId, batchWeek, tenantKey, aggregat
     tenantKey,
     swipeProgress: aggregation.swipeProgress,
     proposedEventId,
+    originalProposedEventId,
     proposedScore: aggregation.proposedScore,
     voteBreakdown: aggregation.voteBreakdown.map((entry) => ({
       eventId: toObjectId(entry.eventId),
@@ -671,6 +791,20 @@ function toStoredWeekState(aggregation, { crewId, batchWeek, tenantKey, aggregat
       })),
     })),
     judgementStatus: aggregation.judgementStatus,
+    consensusStartedAt: aggregation.consensusStartedAt
+      ? new Date(aggregation.consensusStartedAt)
+      : null,
+    consensusEndsAt: aggregation.consensusEndsAt
+      ? new Date(aggregation.consensusEndsAt)
+      : null,
+    crewSwapsRemaining:
+      crewSwapsRemaining == null ? null : Number(crewSwapsRemaining),
+    memberJudgements: (aggregation.memberJudgements || []).map((entry) => ({
+      userId: toObjectId(entry.userId),
+      action: entry.action,
+      eventId: toObjectId(entry.eventId),
+      at: entry.at instanceof Date ? entry.at : new Date(entry.at),
+    })),
     aggregatedAt,
   };
 }
@@ -766,6 +900,7 @@ async function recomputeCrewWeekState(req, { crewId, batchWeek }) {
     batchWeek: normalizedWeek.batchWeek,
     tenantKey,
     aggregatedAt,
+    crewConfig,
   });
 
   const doc = await PivotCrewWeekState.findOneAndUpdate(
