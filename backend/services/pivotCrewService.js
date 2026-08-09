@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const getModels = require('./getModelService');
 const pivotCrewMembershipSchema = require('../schemas/pivotCrewMembership');
+const NotificationService = require('./notificationService');
 const {
   scheduleCrewWeekRecompute,
   scheduleCrewWeekRecomputeForCrew,
@@ -62,11 +63,68 @@ function serializeCrewSummary(crew, counts = {}) {
     activeMemberCount: counts.activeMemberCount ?? 0,
     invitedCount: counts.invitedCount ?? 0,
     role: counts.role ?? null,
+    /** null = inherit tenant judgement.maxPickSlots */
+    maxPickSlots:
+      crew.maxPickSlots == null ? null : Number(crew.maxPickSlots),
   };
 }
 
+/**
+ * Update per-crew decide settings (owner/admin).
+ * maxPickSlots: 1 | 2 | null (inherit tenant default).
+ */
+async function updatePivotCrewSettings(req, { crewId, maxPickSlots }) {
+  const access = await requireActiveMembership(req, crewId);
+  if (access.error) {
+    return access;
+  }
+
+  const role = access.membership?.role;
+  if (role !== 'owner' && role !== 'admin') {
+    return {
+      error: 'Only crew owners can change pick settings.',
+      status: 403,
+      code: 'FORBIDDEN',
+    };
+  }
+
+  if (maxPickSlots !== undefined) {
+    if (maxPickSlots !== null && maxPickSlots !== 1 && maxPickSlots !== 2) {
+      return {
+        error: 'maxPickSlots must be 1, 2, or null.',
+        status: 400,
+        code: 'INVALID_MAX_PICK_SLOTS',
+      };
+    }
+  }
+
+  const { crew, PivotCrew } = access;
+  const $set = {};
+  if (maxPickSlots === null) {
+    $set.maxPickSlots = null;
+  } else if (maxPickSlots === 1 || maxPickSlots === 2) {
+    $set.maxPickSlots = maxPickSlots;
+  }
+
+  if (Object.keys($set).length === 0) {
+    return getPivotCrewDetail(req, crew._id.toString());
+  }
+
+  const updated = await PivotCrew.findOneAndUpdate(
+    { _id: crew._id, archivedAt: null },
+    { $set },
+    { new: true, runValidators: true },
+  ).lean();
+
+  if (!updated) {
+    return notFound();
+  }
+
+  return getPivotCrewDetail(req, updated._id.toString());
+}
+
 function serializeRosterMember(row, userById) {
-  if (row.status === 'invited' || !row.userId) {
+  if (row.status === 'invited' && !row.userId) {
     return {
       membershipId: row._id.toString(),
       status: row.status,
@@ -78,15 +136,28 @@ function serializeRosterMember(row, userById) {
     };
   }
 
-  const user = userById.get(row.userId.toString());
+  if (row.userId) {
+    const user = userById.get(row.userId.toString());
+    return {
+      membershipId: row._id.toString(),
+      status: row.status,
+      role: row.role,
+      displayLabel: user?.name || (row.status === 'pending' ? 'pending' : 'member'),
+      userId: row.userId.toString(),
+      picture: user?.picture || null,
+      invitedAt: row.invitedAt,
+      joinedAt: row.joinedAt,
+    };
+  }
+
   return {
     membershipId: row._id.toString(),
     status: row.status,
     role: row.role,
-    displayLabel: user?.name || 'member',
-    userId: row.userId.toString(),
-    picture: user?.picture || null,
-    joinedAt: row.joinedAt,
+    displayLabel: PIVOT_CREW_INVITED_DISPLAY_LABEL,
+    userId: null,
+    picture: null,
+    invitedAt: row.invitedAt,
   };
 }
 
@@ -364,6 +435,14 @@ async function createPivotCrew(req, options = {}) {
 
   const inviteLinks = buildCrewInviteLinks(shareInviteToken);
 
+  // So week home / ritual include this solo circle immediately (invite-waiting).
+  const batchWeek = toIsoWeek(now);
+  scheduleCrewWeekRecomputeForCrew(req, {
+    crewId: crew._id.toString(),
+    batchWeek,
+  });
+  scheduleCrewWeekRecompute(req, { userId, batchWeek });
+
   return {
     data: {
       crew: serializeCrewSummary(crew.toObject(), {
@@ -440,7 +519,7 @@ async function getPivotCrewDetail(req, crewId) {
 
   const rosterRows = await PivotCrewMembership.find({
     crewId: crew._id,
-    status: { $in: ['active', 'invited'] },
+    status: { $in: ['active', 'invited', 'pending'] },
   })
     .sort({ role: 1, joinedAt: 1, invitedAt: 1 })
     .lean();
@@ -608,9 +687,10 @@ async function addPivotCrewMember(req, crewId, options = {}) {
 
   const { crew, PivotCrewMembership } = access;
   const targetObjectId = toObjectId(targetUserId);
-  const { User } = getModels(req, 'User');
+  const requesterObjectId = toObjectId(requesterId);
+  const { User, Notification } = getModels(req, 'User', 'Notification');
 
-  const targetUser = await User.findById(targetObjectId).select('_id').lean();
+  const targetUser = await User.findById(targetObjectId).select('name username').lean();
   if (!targetUser) {
     return { error: 'User not found.', status: 404, code: 'USER_NOT_FOUND' };
   }
@@ -629,35 +709,316 @@ async function addPivotCrewMember(req, crewId, options = {}) {
     };
   }
 
-  const leftMembership = await PivotCrewMembership.findOne({
+  const existingPending = await PivotCrewMembership.findOne({
     crewId: crew._id,
     userId: targetObjectId,
-    status: 'left',
+    status: 'pending',
+  }).lean();
+
+  if (existingPending) {
+    return {
+      error: 'Invite already sent.',
+      status: 400,
+      code: 'INVITE_PENDING',
+    };
+  }
+
+  const requesterUser = await User.findById(requesterObjectId).select('name username').lean();
+  if (!requesterUser) {
+    return { error: 'User not found.', status: 404, code: 'REQUESTER_NOT_FOUND' };
+  }
+
+  const now = new Date();
+  const pendingMembership = await PivotCrewMembership.create({
+    crewId: crew._id,
+    userId: targetObjectId,
+    invitedByUserId: requesterObjectId,
+    inviteToken: generateShareInviteToken(),
+    status: 'pending',
+    role: 'member',
+    invitedAt: now,
   });
 
-  await activateCrewMembership({
-    crewId: crew._id,
-    userObjectId: targetObjectId,
-    PivotCrewMembership,
-    placeholder: null,
-    leftMembership,
+  const notificationService = NotificationService.withModels({ Notification, User });
+  const senderName =
+    requesterUser.name?.trim() ||
+    requesterUser.username?.trim() ||
+    'Someone';
+
+  await notificationService.createSystemNotification(
+    targetObjectId,
+    'User',
+    'crew_invite',
+    {
+      senderName,
+      crewName: crew.name,
+      membershipId: pendingMembership._id,
+      crewId: crew._id,
+      sender: requesterObjectId,
+    },
+  );
+
+  return getPivotCrewDetail(req, crew._id.toString());
+}
+
+async function listPivotCrewInvites(req) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    return unauthorized();
+  }
+
+  const tenantKey = normalizeTenantKey(req);
+  if (!tenantKey) {
+    return invalidTenant();
+  }
+
+  const userObjectId = toObjectId(userId);
+  const { PivotCrew, PivotCrewMembership, User } = getModels(
+    req,
+    'PivotCrew',
+    'PivotCrewMembership',
+    'User',
+  );
+
+  const pendingRows = await PivotCrewMembership.find({
+    userId: userObjectId,
+    status: 'pending',
+  })
+    .sort({ invitedAt: -1 })
+    .lean();
+
+  if (!pendingRows.length) {
+    return { data: { received: [] } };
+  }
+
+  const crewIds = pendingRows.map((row) => row.crewId);
+  const crews = await PivotCrew.find({
+    _id: { $in: crewIds },
+    tenantKey,
+    archivedAt: null,
+  })
+    .select('name')
+    .lean();
+  const crewById = new Map(crews.map((row) => [row._id.toString(), row]));
+
+  const inviterIds = pendingRows
+    .map((row) => row.invitedByUserId)
+    .filter(Boolean);
+  const inviters = inviterIds.length
+    ? await User.find({ _id: { $in: inviterIds } })
+        .select('name username picture')
+        .lean()
+    : [];
+  const inviterById = new Map(inviters.map((user) => [user._id.toString(), user]));
+
+  const received = pendingRows
+    .filter((row) => crewById.has(row.crewId.toString()))
+    .map((row) => {
+      const inviter = row.invitedByUserId
+        ? inviterById.get(row.invitedByUserId.toString())
+        : null;
+      return {
+        membershipId: row._id.toString(),
+        crewId: row.crewId.toString(),
+        crewName: crewById.get(row.crewId.toString())?.name || 'crew',
+        invitedAt: row.invitedAt,
+        inviter: inviter
+          ? {
+              id: inviter._id.toString(),
+              name: inviter.name || inviter.username || 'member',
+              picture: inviter.picture || null,
+            }
+          : null,
+      };
+    });
+
+  return { data: { received } };
+}
+
+async function acceptPivotCrewInvite(req, membershipId) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    return unauthorized();
+  }
+
+  const tenantKey = normalizeTenantKey(req);
+  if (!tenantKey) {
+    return invalidTenant();
+  }
+
+  const membershipObjectId = toObjectId(membershipId);
+  if (!membershipObjectId) {
+    return {
+      error: 'A valid membership id is required.',
+      status: 400,
+      code: 'INVALID_MEMBERSHIP_ID',
+    };
+  }
+
+  const userObjectId = toObjectId(userId);
+  const { PivotCrew, PivotCrewMembership } = getModels(req, 'PivotCrew', 'PivotCrewMembership');
+
+  const pendingMembership = await PivotCrewMembership.findOne({
+    _id: membershipObjectId,
+    userId: userObjectId,
+    status: 'pending',
   });
+
+  if (!pendingMembership) {
+    return {
+      error: 'Crew invite not found.',
+      status: 404,
+      code: 'INVITE_NOT_FOUND',
+    };
+  }
+
+  const crew = await PivotCrew.findOne({
+    _id: pendingMembership.crewId,
+    tenantKey,
+    archivedAt: null,
+  }).lean();
+
+  if (!crew) {
+    return notFound('Crew not found.');
+  }
+
+  const now = new Date();
+  pendingMembership.status = 'active';
+  pendingMembership.joinedAt = now;
+  pendingMembership.inviteToken = generateShareInviteToken();
+  await pendingMembership.save();
 
   const batchWeek = toIsoWeek(new Date());
   scheduleCrewWeekRecomputeForCrew(req, { crewId: crew._id.toString(), batchWeek });
-  scheduleCrewWeekRecompute(req, { userId: targetUserId, batchWeek });
+  scheduleCrewWeekRecompute(req, { userId, batchWeek });
 
-  return getPivotCrewDetail(req, crew._id.toString());
+  return {
+    data: {
+      crewId: crew._id.toString(),
+      crewName: crew.name,
+    },
+  };
+}
+
+async function declinePivotCrewInvite(req, membershipId) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    return unauthorized();
+  }
+
+  const membershipObjectId = toObjectId(membershipId);
+  if (!membershipObjectId) {
+    return {
+      error: 'A valid membership id is required.',
+      status: 400,
+      code: 'INVALID_MEMBERSHIP_ID',
+    };
+  }
+
+  const userObjectId = toObjectId(userId);
+  const { PivotCrewMembership } = getModels(req, 'PivotCrewMembership');
+
+  const result = await PivotCrewMembership.deleteOne({
+    _id: membershipObjectId,
+    userId: userObjectId,
+    status: 'pending',
+  });
+
+  if (!result.deletedCount) {
+    return {
+      error: 'Crew invite not found.',
+      status: 404,
+      code: 'INVITE_NOT_FOUND',
+    };
+  }
+
+  return { data: { declined: true } };
+}
+
+/**
+ * Soft-delete a crew (sets archivedAt). Owner-only — members cannot delete.
+ * Archived crews drop out of lists/rituals and can no longer be joined.
+ */
+async function deletePivotCrew(req, crewId) {
+  const access = await requireActiveMembership(req, crewId);
+  if (access.error) {
+    return access;
+  }
+
+  const role = access.membership?.role;
+  if (role !== 'owner') {
+    return {
+      error: 'Only the crew owner can delete this crew.',
+      status: 403,
+      code: 'FORBIDDEN',
+    };
+  }
+
+  const { crew, PivotCrew, PivotCrewMembership } = access;
+  const memberUserIds = await PivotCrewMembership.find({
+    crewId: crew._id,
+    userId: { $ne: null },
+    status: { $in: ['active', 'pending'] },
+  })
+    .select('userId')
+    .lean();
+
+  const archivedAt = new Date();
+  const updated = await PivotCrew.findOneAndUpdate(
+    { _id: crew._id, archivedAt: null },
+    { $set: { archivedAt } },
+    { new: true, runValidators: true },
+  ).lean();
+
+  if (!updated) {
+    return notFound();
+  }
+
+  // Mark active/pending/invited memberships left so they cannot reappear via status quirks.
+  await PivotCrewMembership.updateMany(
+    {
+      crewId: crew._id,
+      status: { $in: ['active', 'pending', 'invited'] },
+    },
+    {
+      $set: { status: 'left' },
+    },
+  );
+
+  const batchWeek = toIsoWeek(new Date());
+  scheduleCrewWeekRecomputeForCrew(req, {
+    crewId: crew._id.toString(),
+    batchWeek,
+  });
+  const recomputeUserIds = new Set(
+    memberUserIds.map((row) => row.userId?.toString()).filter(Boolean),
+  );
+  recomputeUserIds.add(String(req.user.userId));
+  for (const userId of recomputeUserIds) {
+    scheduleCrewWeekRecompute(req, { userId, batchWeek });
+  }
+
+  return {
+    data: {
+      crewId: updated._id.toString(),
+      archivedAt: archivedAt.toISOString(),
+    },
+  };
 }
 
 module.exports = {
   createPivotCrew,
   listPivotCrews,
   getPivotCrewDetail,
+  updatePivotCrewSettings,
+  deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
   invitePivotCrewPlaceholders,
   addPivotCrewMember,
+  listPivotCrewInvites,
+  acceptPivotCrewInvite,
+  declinePivotCrewInvite,
   countQuorumEligibleMembers,
   buildCrewQuorumSnapshot,
   buildCrewInviteLinks,

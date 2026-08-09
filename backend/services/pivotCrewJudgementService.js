@@ -13,35 +13,33 @@ const {
   isJudgementWindowOpen,
   buildDecideQueueOrder,
   crewNeedsUserAction,
+  OPEN_BALLOT_STATUSES,
 } = require('../utilities/pivotCrewDecideQueue');
 const {
-  OPEN_CONSENSUS_STATUSES,
   LOCKED_JUDGEMENT_STATUSES,
-  resolveEffectiveConsensusEndsAt,
-  startConsensusWindow,
-  extendConsensusWindowOnSwap,
-  isConsensusExpired,
-  resolveLockedJudgementStatus,
-  memberConfirmedCurrentProposal,
-  countConfirmedOnCurrentProposal,
-  isUnanimousOnCurrentProposal,
-  upsertMemberJudgement,
-  resolveViewerAction,
-} = require('../utilities/pivotCrewConsensus');
-const { isAppVersionAtLeast } = require('../utilities/appVersion');
-const { APP_VERSION_HEADER } = require('../middlewares/requireMinAppVersion');
+  LEGACY_OPEN_JUDGEMENT_STATUSES,
+  isOpenBallotStatus,
+  validateRankingAgainstShortlist,
+  resolveBordaWinner,
+  upsertMemberBallot,
+  memberHasBalloted,
+  getMemberRanking,
+  countBallotsFromActives,
+  allActivesHaveBalloted,
+  isBallotExpired,
+  toIdString,
+} = require('../utilities/pivotCrewBorda');
 const { PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
-
-const RITUAL_MIN_APP_VERSION = String(
-  process.env.PIVOT_RITUAL_MIN_APP_VERSION || '2.0.0',
-).trim();
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 const { getMergedTenants } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
 const { connectToDatabase } = require('../connectionsManager');
 const { notifyCrewConsensusPeers } = require('./pivotCrewNudgeService');
-
-const LEGACY_READY_STATUSES = new Set(['proposed', 'split']);
+const {
+  resolveEffectiveMaxPickSlots,
+  normalizeProposedEventIds,
+  syncPrimaryProposedFields,
+} = require('../utilities/pivotCrewPickSlots');
 
 function toObjectId(value) {
   if (!mongoose.Types.ObjectId.isValid(value)) {
@@ -54,58 +52,18 @@ function unauthorized() {
   return { error: 'Authentication required.', status: 401, code: 'UNAUTHORIZED' };
 }
 
-function usesDemocraticConsensus(req) {
-  const appVersion = req.get?.(APP_VERSION_HEADER)?.trim();
-  return Boolean(appVersion && isAppVersionAtLeast(appVersion, RITUAL_MIN_APP_VERSION));
+function resolveShortlistEventIds(weekState) {
+  if (Array.isArray(weekState?.shortlistEventIds) && weekState.shortlistEventIds.length) {
+    return weekState.shortlistEventIds.map(toIdString).filter(Boolean);
+  }
+  return (weekState?.voteBreakdown || [])
+    .slice(0, 5)
+    .map((entry) => toIdString(entry.eventId))
+    .filter(Boolean);
 }
 
 function getTopCandidateEventIds(weekState) {
-  if (!weekState?.voteBreakdown?.length) {
-    if (weekState?.proposedEventId) {
-      return [weekState.proposedEventId.toString()];
-    }
-    return [];
-  }
-
-  if (weekState.judgementStatus === 'split') {
-    return weekState.voteBreakdown.slice(0, 2).map((entry) => entry.eventId.toString());
-  }
-
-  const ids = weekState.voteBreakdown.slice(0, 2).map((entry) => entry.eventId.toString());
-  if (weekState.proposedEventId) {
-    ids.unshift(weekState.proposedEventId.toString());
-  }
-  return [...new Set(ids)];
-}
-
-function resolveSwapTargetEventId(weekState) {
-  if (!weekState?.voteBreakdown?.length) {
-    return null;
-  }
-
-  if (weekState.judgementStatus === 'split' && !weekState.proposedEventId) {
-    return weekState.voteBreakdown[1]?.eventId?.toString?.() || null;
-  }
-
-  const proposedId = weekState.proposedEventId?.toString?.() || null;
-  const runnerEntry = weekState.voteBreakdown.find((entry) => {
-    const eventId = entry.eventId.toString();
-    return !proposedId || eventId !== proposedId;
-  });
-  return runnerEntry?.eventId?.toString?.() || null;
-}
-
-function resolveCurrentProposedEventId(weekState, voteBreakdown = []) {
-  if (weekState?.proposedEventId) {
-    return weekState.proposedEventId.toString();
-  }
-  if (
-    weekState?.judgementStatus === 'split' ||
-    weekState?.judgementStatus === 'deciding'
-  ) {
-    return voteBreakdown[0]?.eventId || null;
-  }
-  return null;
+  return resolveShortlistEventIds(weekState);
 }
 
 async function requireActiveCrewMembership(req, crewId) {
@@ -157,8 +115,11 @@ async function loadWeekStateEvents(req, weekState, batchWeek) {
   if (weekState?.proposedEventId) {
     eventIds.add(weekState.proposedEventId.toString());
   }
-  if (weekState?.originalProposedEventId) {
-    eventIds.add(weekState.originalProposedEventId.toString());
+  for (const id of resolveShortlistEventIds(weekState)) {
+    eventIds.add(id);
+  }
+  for (const id of normalizeProposedEventIds(weekState)) {
+    eventIds.add(id);
   }
   for (const entry of weekState?.voteBreakdown || []) {
     eventIds.add(entry.eventId.toString());
@@ -187,8 +148,12 @@ function resolveJudgementWindowEndsAt(weekState, eventsById, crewConfig) {
     return null;
   }
 
-  const candidateStarts = (weekState.voteBreakdown || [])
-    .map((entry) => eventsById.get(entry.eventId.toString())?.start_time?.getTime?.())
+  const candidateIds = resolveShortlistEventIds(weekState);
+  const candidateStarts = (candidateIds.length
+    ? candidateIds
+    : (weekState.voteBreakdown || []).map((entry) => entry.eventId.toString())
+  )
+    .map((eventId) => eventsById.get(eventId)?.start_time?.getTime?.())
     .filter((value) => Number.isFinite(value));
 
   if (!candidateStarts.length) {
@@ -211,7 +176,7 @@ async function loadJudgementVoteUsers(req, weekState) {
       }
     }
   }
-  for (const entry of weekState?.memberJudgements || []) {
+  for (const entry of weekState?.memberBallots || []) {
     if (entry.userId) {
       userIds.add(entry.userId.toString());
     }
@@ -272,82 +237,94 @@ function serializeVoteBreakdown(weekState, eventsById, usersById) {
   });
 }
 
-function buildConsensusPayload({
+function buildBallotPayload({
   weekState,
-  crewConfig,
   judgementWindowEndsAt,
   activeMemberUserIds,
   usersById,
   viewerUserId,
   now,
+  bordaScores = null,
 }) {
-  const proposedEventId = weekState?.proposedEventId?.toString?.() || null;
-  const swapBudget = Number(crewConfig?.judgement?.crewSwapBudget);
-  const budget = Number.isInteger(swapBudget) ? swapBudget : 2;
-  const swapsRemaining =
-    weekState?.crewSwapsRemaining == null ? budget : Number(weekState.crewSwapsRemaining);
+  const shortlistEventIds = resolveShortlistEventIds(weekState);
+  const ballotEndsAt = weekState?.ballotEndsAt
+    ? new Date(weekState.ballotEndsAt).toISOString()
+    : judgementWindowEndsAt;
+  const effectiveEndsAt = (() => {
+    const ballotMs = ballotEndsAt ? new Date(ballotEndsAt).getTime() : null;
+    const hardMs = judgementWindowEndsAt
+      ? new Date(judgementWindowEndsAt).getTime()
+      : null;
+    if (ballotMs == null && hardMs == null) return null;
+    if (ballotMs == null) return judgementWindowEndsAt;
+    if (hardMs == null) return ballotEndsAt;
+    return new Date(Math.min(ballotMs, hardMs)).toISOString();
+  })();
 
-  const startedAt = weekState?.consensusStartedAt
-    ? new Date(weekState.consensusStartedAt).toISOString()
-    : null;
-  const endsAt = weekState?.consensusEndsAt
-    ? new Date(weekState.consensusEndsAt).toISOString()
-    : null;
-  const effectiveEndsAt = resolveEffectiveConsensusEndsAt(endsAt, judgementWindowEndsAt);
+  const ballotedMembers = (weekState?.memberBallots || []).map((entry) => {
+    const userId = entry.userId.toString();
+    const user = usersById.get(userId);
+    return {
+      userId,
+      ranking: (entry.ranking || []).map(toIdString).filter(Boolean),
+      displayLabel: user?.displayLabel || 'member',
+      picture: user?.picture || null,
+      at: entry.at ? new Date(entry.at).toISOString() : null,
+    };
+  });
 
-  const confirmedMembers = (weekState?.memberJudgements || [])
-    .filter((entry) => {
-      const eventId = entry.eventId?.toString?.() || entry.eventId;
-      return (
-        (entry.action === 'confirmed' || entry.action === 'swapped') &&
-        eventId === proposedEventId
-      );
-    })
-    .map((entry) => {
-      const userId = entry.userId.toString();
-      const user = usersById.get(userId);
-      return {
-        userId,
-        action: entry.action,
-        displayLabel: user?.displayLabel || 'member',
-        picture: user?.picture || null,
-        at: entry.at ? new Date(entry.at).toISOString() : null,
-      };
-    });
-
-  const viewerHasConfirmedCurrent = memberConfirmedCurrentProposal(
-    weekState?.memberJudgements,
-    viewerUserId,
-    proposedEventId,
-  );
+  const viewerHasBalloted = memberHasBalloted(weekState?.memberBallots, viewerUserId);
+  const viewerRanking = getMemberRanking(weekState?.memberBallots, viewerUserId);
   const locked = LOCKED_JUDGEMENT_STATUSES.has(weekState?.judgementStatus);
-  const windowOpen = isJudgementWindowOpen(judgementWindowEndsAt, now);
-  const consensusOpen =
-    OPEN_CONSENSUS_STATUSES.has(weekState?.judgementStatus) && windowOpen;
+  const endsAtForWindow = effectiveEndsAt || judgementWindowEndsAt;
+  // Missing endsAt must not brick an open ballot (events without start_time
+  // leave the hard window null; soft ballotEndsAt should usually be set).
+  const windowOpen = endsAtForWindow
+    ? isJudgementWindowOpen(endsAtForWindow, now)
+    : isOpenBallotStatus(weekState?.judgementStatus);
+  const ballotingOpen =
+    isOpenBallotStatus(weekState?.judgementStatus) && windowOpen;
 
   return {
-    startedAt,
-    endsAt,
+    shortlistEventIds,
+    endsAt: ballotEndsAt,
     effectiveEndsAt,
-    swapsRemaining,
-    swapBudget: budget,
-    confirms: {
-      confirmedCount: countConfirmedOnCurrentProposal(
-        weekState?.memberJudgements,
-        proposedEventId,
-      ),
-      activeCount: activeMemberUserIds.length,
-      members: confirmedMembers,
-    },
-    viewerAction: resolveViewerAction(weekState?.memberJudgements, viewerUserId),
-    viewerHasConfirmedCurrent,
-    canConfirm: Boolean(consensusOpen && !locked && proposedEventId && !viewerHasConfirmedCurrent),
-    canSwap: Boolean(
-      consensusOpen &&
-        !locked &&
-        swapsRemaining > 0 &&
-        resolveSwapTargetEventId(weekState),
+    ballotedCount: countBallotsFromActives(
+      weekState?.memberBallots,
+      activeMemberUserIds,
     ),
+    activeCount: activeMemberUserIds.length,
+    members: ballotedMembers,
+    viewerHasBalloted,
+    viewerRanking,
+    canBallot: Boolean(ballotingOpen && !locked && shortlistEventIds.length && !viewerHasBalloted),
+    scores: bordaScores,
+  };
+}
+
+/** Legacy consensus-shaped summary for older ritual consumers. */
+function buildLegacyConsensusShim(ballot) {
+  return {
+    startedAt: null,
+    endsAt: ballot.endsAt,
+    effectiveEndsAt: ballot.effectiveEndsAt,
+    swapsRemaining: 0,
+    swapBudget: 0,
+    confirms: {
+      confirmedCount: ballot.ballotedCount,
+      activeCount: ballot.activeCount,
+      members: ballot.members.map((m) => ({
+        userId: m.userId,
+        action: 'confirmed',
+        displayLabel: m.displayLabel,
+        picture: m.picture,
+        at: m.at,
+      })),
+    },
+    viewerAction: ballot.viewerHasBalloted ? 'confirmed' : null,
+    viewerHasConfirmedCurrent: ballot.viewerHasBalloted,
+    canConfirm: false,
+    canSwap: false,
   };
 }
 
@@ -369,45 +346,78 @@ async function ensureCrewWeekState(req, crewObjectId, batchWeek) {
     weekState = recomputed.data;
   }
 
+  // Persist cutover: legacy confirm/swap open rows → Borda balloting.
+  if (LEGACY_OPEN_JUDGEMENT_STATUSES.has(weekState.judgementStatus)) {
+    const shortlistEventIds = resolveShortlistEventIds(weekState).map(
+      (id) => toObjectId(id),
+    ).filter(Boolean);
+    const $set = {
+      judgementStatus: 'balloting',
+    };
+    if (shortlistEventIds.length && !(weekState.shortlistEventIds || []).length) {
+      $set.shortlistEventIds = shortlistEventIds;
+    }
+    await PivotCrewWeekState.updateOne(
+      { _id: weekState._id },
+      { $set },
+    );
+    weekState = {
+      ...weekState,
+      judgementStatus: 'balloting',
+      shortlistEventIds:
+        (weekState.shortlistEventIds || []).length > 0
+          ? weekState.shortlistEventIds
+          : shortlistEventIds,
+    };
+  }
+
   return { weekState };
 }
 
-function validateOpenJudgementWindow(weekState, crewConfig, eventsById, now) {
+function validateOpenBallotWindow(weekState, crewConfig, eventsById, now) {
   if (!weekState?.swipeProgress?.quorumMet) {
     return {
       error: 'Crew swipe quorum has not been met yet.',
-      status: 400,
-      code: 'JUDGEMENT_NOT_READY',
+      status: 409,
+      code: 'QUORUM_NOT_MET',
     };
   }
 
   if (LOCKED_JUDGEMENT_STATUSES.has(weekState.judgementStatus)) {
     return {
-      error: 'This crew pick is already locked for the week.',
+      error: 'Crew pick is already locked.',
       status: 409,
-      code: 'PICK_ALREADY_LOCKED',
+      code: 'ALREADY_LOCKED',
     };
   }
 
-  if (!OPEN_CONSENSUS_STATUSES.has(weekState.judgementStatus)) {
+  if (!isOpenBallotStatus(weekState.judgementStatus)) {
     return {
-      error: 'No crew pick is ready for judgement yet.',
-      status: 400,
-      code: 'JUDGEMENT_NOT_READY',
+      error: 'Crew is not open for balloting.',
+      status: 409,
+      code: 'NOT_BALLOTING',
     };
   }
 
-  const judgementWindowEndsAt = resolveJudgementWindowEndsAt(weekState, eventsById, crewConfig);
-  if (!isJudgementWindowOpen(judgementWindowEndsAt, now)) {
+  const judgementWindowEndsAt = resolveJudgementWindowEndsAt(
+    weekState,
+    eventsById,
+    crewConfig,
+  );
+  const ballotEndsAt = weekState.ballotEndsAt
+    ? new Date(weekState.ballotEndsAt).toISOString()
+    : judgementWindowEndsAt;
+  const effectiveEndsAt = ballotEndsAt || judgementWindowEndsAt;
+
+  if (!isJudgementWindowOpen(effectiveEndsAt, now)) {
     return {
-      error: 'The judgement window for this crew has closed.',
+      error: 'Ballot window has closed.',
       status: 409,
       code: 'JUDGEMENT_WINDOW_CLOSED',
-      judgementWindowEndsAt,
     };
   }
 
-  return { judgementWindowEndsAt };
+  return { judgementWindowEndsAt, ballotEndsAt: effectiveEndsAt };
 }
 
 async function persistWeekStateUpdate(req, { crewObjectId, batchWeek, $set }) {
@@ -415,7 +425,7 @@ async function persistWeekStateUpdate(req, { crewObjectId, batchWeek, $set }) {
   const updated = await PivotCrewWeekState.findOneAndUpdate(
     { crewId: crewObjectId, batchWeek },
     { $set },
-    { new: true, runValidators: true },
+    { new: true },
   ).lean();
 
   await invalidateCrewWeekProgressForCrewMembers(req, {
@@ -426,86 +436,147 @@ async function persistWeekStateUpdate(req, { crewObjectId, batchWeek, $set }) {
   return updated;
 }
 
-async function resolveCrewWeekPick(
+function buildEventTieBreakComparator(weekState, eventsById) {
+  const voteById = new Map(
+    (weekState?.voteBreakdown || []).map((entry) => [
+      toIdString(entry.eventId),
+      entry,
+    ]),
+  );
+
+  return (aId, bId) => {
+    const a = voteById.get(aId);
+    const b = voteById.get(bId);
+    const aReg = a?.registeredCount || 0;
+    const bReg = b?.registeredCount || 0;
+    if (bReg !== aReg) return bReg - aReg;
+
+    const aStart = eventsById.get(aId)?.start_time?.getTime?.() ?? Number.MAX_SAFE_INTEGER;
+    const bStart = eventsById.get(bId)?.start_time?.getTime?.() ?? Number.MAX_SAFE_INTEGER;
+    return aStart - bStart;
+  };
+}
+
+async function tallyAndLock(
   req,
   {
     crewObjectId,
     batchWeek,
     weekState,
-    eventId,
-    now = new Date(),
-    lockReason = 'manual',
+    eventsById,
+    crew = null,
+    crewConfig = null,
+    lockReason = 'unanimous_ballot',
   },
 ) {
-  const eventObjectId = toObjectId(eventId);
-  if (!eventObjectId) {
+  const shortlistEventIds = resolveShortlistEventIds(weekState);
+  if (!shortlistEventIds.length) {
     return {
-      error: 'A valid eventId is required.',
-      status: 400,
-      code: 'INVALID_EVENT_ID',
+      error: 'No shortlist to tally.',
+      status: 409,
+      code: 'SHORTLIST_EMPTY',
     };
   }
 
-  const voteEntry = (weekState.voteBreakdown || []).find(
-    (entry) => entry.eventId.toString() === eventObjectId.toString(),
-  );
-  const judgementStatus = resolveLockedJudgementStatus(
+  const maxPickSlots = resolveEffectiveMaxPickSlots({
     weekState,
-    eventObjectId.toString(),
-  );
+    crew,
+    crewConfig,
+  });
 
+  const { winnerEventId, winnerEventIds, scores } = resolveBordaWinner({
+    ballots: weekState.memberBallots || [],
+    shortlistEventIds,
+    maxWinners: maxPickSlots,
+    compareEvents: buildEventTieBreakComparator(weekState, eventsById),
+  });
+
+  if (!winnerEventId) {
+    // No ballots cast — fall back to shortlist order (swipe-weighted top N).
+    const fallbackIds = shortlistEventIds.slice(0, maxPickSlots);
+    const synced = syncPrimaryProposedFields(fallbackIds, fallbackIds);
+    const updated = await persistWeekStateUpdate(req, {
+      crewObjectId,
+      batchWeek,
+      $set: {
+        proposedEventId: toObjectId(synced.proposedEventId),
+        proposedEventIds: synced.proposedEventIds.map(toObjectId).filter(Boolean),
+        originalProposedEventId: toObjectId(synced.originalProposedEventId),
+        originalProposedEventIds: synced.originalProposedEventIds
+          .map(toObjectId)
+          .filter(Boolean),
+        judgementStatus: 'confirmed',
+        proposedScore:
+          (weekState.voteBreakdown || []).find(
+            (entry) => toIdString(entry.eventId) === fallbackIds[0],
+          )?.score ?? null,
+      },
+    });
+    return {
+      weekState: updated,
+      lockReason: lockReason === 'deadline' ? 'deadline' : 'shortlist_fallback',
+      scores,
+    };
+  }
+
+  const synced = syncPrimaryProposedFields(winnerEventIds, winnerEventIds);
   const updated = await persistWeekStateUpdate(req, {
     crewObjectId,
     batchWeek,
     $set: {
-      proposedEventId: eventObjectId,
-      proposedScore: voteEntry?.score ?? weekState.proposedScore,
-      judgementStatus,
-      aggregatedAt: now,
+      proposedEventId: toObjectId(synced.proposedEventId),
+      proposedEventIds: synced.proposedEventIds.map(toObjectId).filter(Boolean),
+      originalProposedEventId: toObjectId(synced.originalProposedEventId),
+      originalProposedEventIds: synced.originalProposedEventIds
+        .map(toObjectId)
+        .filter(Boolean),
+      judgementStatus: 'confirmed',
+      proposedScore:
+        scores.find((row) => row.eventId === winnerEventId)?.score ?? null,
     },
   });
 
-  return {
-    data: updated,
-    lockReason,
-    judgementStatus,
-    eventId: eventObjectId.toString(),
-  };
+  return { weekState: updated, lockReason, scores };
 }
 
-async function maybeResolveExpiredConsensus(
+async function maybeResolveExpiredBallot(
   req,
   { crewObjectId, batchWeek, weekState, crewConfig, eventsById, now },
 ) {
+  if (weekState?.judgementStatus !== 'balloting') {
+    return { weekState };
+  }
+
   const judgementWindowEndsAt = resolveJudgementWindowEndsAt(
     weekState,
     eventsById,
     crewConfig,
   );
-  if (!isConsensusExpired(weekState, judgementWindowEndsAt, now)) {
-    return { weekState, resolved: false };
+  const expiredByBallot = isBallotExpired(weekState, now);
+  const expiredByHard =
+    judgementWindowEndsAt && !isJudgementWindowOpen(judgementWindowEndsAt, now);
+
+  if (!expiredByBallot && !expiredByHard) {
+    return { weekState };
   }
 
-  const eventId =
-    weekState.proposedEventId?.toString?.() ||
-    weekState.voteBreakdown?.[0]?.eventId?.toString?.();
-  if (!eventId) {
-    return { weekState, resolved: false };
-  }
-
-  const locked = await resolveCrewWeekPick(req, {
+  const tallied = await tallyAndLock(req, {
     crewObjectId,
     batchWeek,
     weekState,
-    eventId,
-    now,
-    lockReason: 'timer',
+    eventsById,
+    crewConfig,
+    lockReason: 'deadline',
   });
-  if (locked.error) {
-    return locked;
+  if (tallied.error) {
+    return tallied;
   }
 
-  return { weekState: locked.data, resolved: true, lockReason: 'timer' };
+  return {
+    weekState: tallied.weekState,
+    lockReason: tallied.lockReason,
+    scores: tallied.scores,
+  };
 }
 
 async function buildCrewWeekJudgementPayload(
@@ -521,7 +592,7 @@ async function buildCrewWeekJudgementPayload(
   let weekState = loaded.weekState;
   const eventsById = await loadWeekStateEvents(req, weekState, batchWeek);
 
-  const expired = await maybeResolveExpiredConsensus(req, {
+  const expired = await maybeResolveExpiredBallot(req, {
     crewObjectId,
     batchWeek,
     weekState,
@@ -543,25 +614,61 @@ async function buildCrewWeekJudgementPayload(
   );
 
   const voteBreakdown = serializeVoteBreakdown(weekState, eventsById, usersById);
-  const proposedEventId = resolveCurrentProposedEventId(weekState, voteBreakdown);
-  const runnerUpEventId = resolveSwapTargetEventId(weekState);
-  const viewerUserId = req.user?.userId?.toString?.() || req.user?.userId || null;
-  const consensus = buildConsensusPayload({
+  const maxPickSlots = resolveEffectiveMaxPickSlots({
     weekState,
+    crew,
     crewConfig,
+  });
+  const shortlistEventIds = resolveShortlistEventIds(weekState);
+  const proposedEventIds = normalizeProposedEventIds(weekState, maxPickSlots);
+  const proposedEventId =
+    proposedEventIds[0] ||
+    (weekState.proposedEventId ? weekState.proposedEventId.toString() : null);
+
+  let bordaScores = null;
+  if (
+    LOCKED_JUDGEMENT_STATUSES.has(weekState.judgementStatus) ||
+    (weekState.memberBallots || []).length
+  ) {
+    bordaScores = resolveBordaWinner({
+      ballots: weekState.memberBallots || [],
+      shortlistEventIds,
+      compareEvents: buildEventTieBreakComparator(weekState, eventsById),
+    }).scores;
+  }
+
+  const viewerUserId = req.user?.userId?.toString?.() || req.user?.userId || null;
+  const ballot = buildBallotPayload({
+    weekState,
     judgementWindowEndsAt,
     activeMemberUserIds,
     usersById,
     viewerUserId,
     now,
+    bordaScores,
   });
+  const consensus = buildLegacyConsensusShim(ballot);
+
+  const eventFromBreakdownOrMap = (eventId) => {
+    if (!eventId) return null;
+    return (
+      voteBreakdown.find((entry) => entry.eventId === eventId)?.event ||
+      serializeCrewWeekEvent(eventsById.get(eventId), null) ||
+      null
+    );
+  };
+
+  const shortlistEvents = shortlistEventIds
+    .map((eventId) => eventFromBreakdownOrMap(eventId))
+    .filter(Boolean);
 
   const progressRow = {
     crewId: crew._id.toString(),
     quorumMet: weekState.swipeProgress.quorumMet,
     judgementStatus: weekState.judgementStatus,
-    judgementWindowEndsAt,
-    viewerHasConfirmedCurrent: consensus.viewerHasConfirmedCurrent,
+    judgementWindowEndsAt: ballot.effectiveEndsAt || judgementWindowEndsAt,
+    viewerHasBalloted: ballot.viewerHasBalloted,
+    viewerHasConfirmedCurrent: ballot.viewerHasBalloted,
   };
 
   return {
@@ -575,18 +682,35 @@ async function buildCrewWeekJudgementPayload(
       activeCount: weekState.swipeProgress.activeMemberCount,
       invitedCount: weekState.swipeProgress.invitedCount,
       judgementWindowEndsAt,
-      judgementWindowOpen: isJudgementWindowOpen(judgementWindowEndsAt, now),
+      judgementWindowOpen: (() => {
+        const endsAt = ballot.effectiveEndsAt || judgementWindowEndsAt;
+        if (endsAt) {
+          return isJudgementWindowOpen(endsAt, now);
+        }
+        return isOpenBallotStatus(weekState.judgementStatus);
+      })(),
       needsUserAction: crewNeedsUserAction(progressRow, now),
-      topCandidates: getTopCandidateEventIds(weekState),
+      topCandidates: shortlistEventIds,
+      shortlistEventIds,
+      shortlistEvents,
+      maxPickSlots,
+      proposedEvents: proposedEventIds
+        .map((eventId) => eventFromBreakdownOrMap(eventId))
+        .filter(Boolean),
       proposedEvent: proposedEventId
-        ? voteBreakdown.find((entry) => entry.eventId === proposedEventId)?.event || null
+        ? eventFromBreakdownOrMap(proposedEventId)
         : null,
-      runnerUp: runnerUpEventId
-        ? voteBreakdown.find((entry) => entry.eventId === runnerUpEventId)?.event || null
-        : null,
+      runnerUp:
+        shortlistEventIds.find((id) => id !== proposedEventId) != null
+          ? eventFromBreakdownOrMap(
+              shortlistEventIds.find((id) => id !== proposedEventId),
+            )
+          : null,
       voteBreakdown,
+      ballot,
       consensus,
       locked: LOCKED_JUDGEMENT_STATUSES.has(weekState.judgementStatus),
+      lockReason: expired.lockReason || null,
     },
   };
 }
@@ -601,6 +725,44 @@ async function getPivotCrewWeekJudgement(req, { crewId, batchWeek, now = new Dat
   if (normalizedWeek.error) {
     return normalizedWeek;
   }
+
+  return buildCrewWeekJudgementPayload(req, {
+    crew: access.crew,
+    crewObjectId: access.crewObjectId,
+    batchWeek: normalizedWeek.batchWeek,
+    now,
+  });
+}
+
+async function resetPivotCrewWeekPick(req, { crewId, batchWeek, now = new Date() }) {
+  const access = await requireActiveCrewMembership(req, crewId);
+  if (access.error) {
+    return access;
+  }
+
+  const normalizedWeek = await resolveBatchWeek(req, batchWeek);
+  if (normalizedWeek.error) {
+    return normalizedWeek;
+  }
+
+  const { PivotCrewWeekState } = getModels(req, 'PivotCrewWeekState');
+  await PivotCrewWeekState.deleteMany({
+    crewId: access.crewObjectId,
+    batchWeek: normalizedWeek.batchWeek,
+  });
+
+  const recomputed = await recomputeCrewWeekState(req, {
+    crewId: access.crewObjectId.toString(),
+    batchWeek: normalizedWeek.batchWeek,
+  });
+  if (recomputed.error) {
+    return recomputed;
+  }
+
+  await invalidateCrewWeekProgressForCrewMembers(req, {
+    crewId: access.crewObjectId.toString(),
+    batchWeek: normalizedWeek.batchWeek,
+  });
 
   return buildCrewWeekJudgementPayload(req, {
     crew: access.crew,
@@ -665,16 +827,9 @@ async function getPivotCrewWeekJudgements(req, { batchWeek, now = new Date() }) 
   };
 }
 
-/** Legacy first-writer-wins lock for pre-ritual binaries. */
-async function lockCrewWeekPickLegacy(
+async function castPivotCrewWeekBallot(
   req,
-  {
-    crewId,
-    eventId,
-    batchWeek,
-    judgementStatus,
-    now = new Date(),
-  },
+  { crewId, ranking, batchWeek, now = new Date() },
 ) {
   const access = await requireActiveCrewMembership(req, crewId);
   if (access.error) {
@@ -686,124 +841,24 @@ async function lockCrewWeekPickLegacy(
     return normalizedWeek;
   }
 
-  const eventObjectId = toObjectId(eventId);
-  if (!eventObjectId) {
-    return {
-      error: 'A valid eventId is required.',
-      status: 400,
-      code: 'INVALID_EVENT_ID',
-    };
-  }
-
-  const loaded = await ensureCrewWeekState(req, access.crewObjectId, normalizedWeek.batchWeek);
-  if (loaded.error) {
-    return loaded;
-  }
-
-  if (!LEGACY_READY_STATUSES.has(loaded.weekState.judgementStatus)) {
-    if (LOCKED_JUDGEMENT_STATUSES.has(loaded.weekState.judgementStatus)) {
-      return {
-        error: 'This crew pick is already locked for the week.',
-        status: 409,
-        code: 'PICK_ALREADY_LOCKED',
-      };
-    }
-    if (loaded.weekState.judgementStatus === 'deciding') {
-      return {
-        error: 'App upgrade required to finish this crew decide.',
-        status: 426,
-        code: 'APP_UPGRADE_REQUIRED',
-      };
-    }
-    return {
-      error: 'No crew pick is ready for judgement yet.',
-      status: 400,
-      code: 'JUDGEMENT_NOT_READY',
-    };
-  }
-
-  const crewConfig = await resolveCrewConfig(req);
-  const eventsById = await loadWeekStateEvents(req, loaded.weekState, normalizedWeek.batchWeek);
-  const validation = validateOpenJudgementWindow(
-    loaded.weekState,
-    crewConfig,
-    eventsById,
-    now,
+  const loaded = await ensureCrewWeekState(
+    req,
+    access.crewObjectId,
+    normalizedWeek.batchWeek,
   );
-  if (validation.error) {
-    return validation;
-  }
-
-  const allowedEventIds = getTopCandidateEventIds(loaded.weekState);
-  if (!allowedEventIds.includes(eventObjectId.toString())) {
-    return {
-      error: 'eventId must be one of the top crew candidates for this week.',
-      status: 400,
-      code: 'INVALID_CANDIDATE',
-    };
-  }
-
-  const voteEntry = (loaded.weekState.voteBreakdown || []).find(
-    (entry) => entry.eventId.toString() === eventObjectId.toString(),
-  );
-
-  const updated = await persistWeekStateUpdate(req, {
-    crewObjectId: access.crewObjectId,
-    batchWeek: normalizedWeek.batchWeek,
-    $set: {
-      proposedEventId: eventObjectId,
-      proposedScore: voteEntry?.score ?? loaded.weekState.proposedScore,
-      judgementStatus,
-      aggregatedAt: now,
-    },
-  });
-
-  const lockedEvent = eventsById.get(eventObjectId.toString());
-
-  return {
-    data: {
-      batchWeek: normalizedWeek.batchWeek,
-      crewId: access.crew._id.toString(),
-      crewName: access.crew.name,
-      judgementStatus: updated.judgementStatus,
-      eventId: eventObjectId.toString(),
-      event: serializeCrewWeekEvent(lockedEvent, voteEntry),
-      judgementWindowEndsAt: validation.judgementWindowEndsAt,
-      locked: true,
-    },
-  };
-}
-
-async function castConfirmConsensus(req, { crewId, eventId, batchWeek, now = new Date() }) {
-  const access = await requireActiveCrewMembership(req, crewId);
-  if (access.error) {
-    return access;
-  }
-
-  const normalizedWeek = await resolveBatchWeek(req, batchWeek);
-  if (normalizedWeek.error) {
-    return normalizedWeek;
-  }
-
-  const eventObjectId = toObjectId(eventId);
-  if (!eventObjectId) {
-    return {
-      error: 'A valid eventId is required.',
-      status: 400,
-      code: 'INVALID_EVENT_ID',
-    };
-  }
-
-  const loaded = await ensureCrewWeekState(req, access.crewObjectId, normalizedWeek.batchWeek);
   if (loaded.error) {
     return loaded;
   }
 
   const crewConfig = await resolveCrewConfig(req);
   let weekState = loaded.weekState;
-  const eventsById = await loadWeekStateEvents(req, weekState, normalizedWeek.batchWeek);
+  const eventsById = await loadWeekStateEvents(
+    req,
+    weekState,
+    normalizedWeek.batchWeek,
+  );
 
-  const expired = await maybeResolveExpiredConsensus(req, {
+  const expired = await maybeResolveExpiredBallot(req, {
     crewObjectId: access.crewObjectId,
     batchWeek: normalizedWeek.batchWeek,
     weekState,
@@ -818,507 +873,179 @@ async function castConfirmConsensus(req, { crewId, eventId, batchWeek, now = new
 
   if (LOCKED_JUDGEMENT_STATUSES.has(weekState.judgementStatus)) {
     return {
-      error: 'This crew pick is already locked for the week.',
+      error: 'Crew pick is already locked.',
       status: 409,
-      code: 'PICK_ALREADY_LOCKED',
+      code: 'ALREADY_LOCKED',
     };
   }
 
-  const validation = validateOpenJudgementWindow(weekState, crewConfig, eventsById, now);
-  if (validation.error) {
-    return validation;
+  const windowCheck = validateOpenBallotWindow(
+    weekState,
+    crewConfig,
+    eventsById,
+    now,
+  );
+  if (windowCheck.error) {
+    return windowCheck;
   }
 
-  const currentProposedId = weekState.proposedEventId?.toString?.();
-  if (!currentProposedId || currentProposedId !== eventObjectId.toString()) {
+  const shortlistEventIds = resolveShortlistEventIds(weekState);
+  const validated = validateRankingAgainstShortlist(ranking, shortlistEventIds);
+  if (!validated.ok) {
     return {
-      error: 'eventId must match the current crew proposal.',
+      error: validated.message,
       status: 400,
-      code: 'INVALID_CANDIDATE',
+      code: validated.error,
     };
   }
 
-  const activeMemberUserIds = await loadActiveMemberUserIds(req, access.crewObjectId);
-  let memberJudgements = weekState.memberJudgements || [];
-  const alreadyConfirmed = memberConfirmedCurrentProposal(
-    memberJudgements,
-    access.userId,
-    currentProposedId,
+  if (memberHasBalloted(weekState.memberBallots, access.userId)) {
+    return {
+      error: 'You have already cast a ballot for this crew week.',
+      status: 409,
+      code: 'BALLOT_ALREADY_CAST',
+    };
+  }
+
+  const memberBallots = upsertMemberBallot(weekState.memberBallots, {
+    userId: toObjectId(access.userId),
+    ranking: validated.ranking.map((id) => toObjectId(id)),
+    at: now instanceof Date ? now : new Date(now),
+  });
+
+  weekState = await persistWeekStateUpdate(req, {
+    crewObjectId: access.crewObjectId,
+    batchWeek: normalizedWeek.batchWeek,
+    $set: { memberBallots },
+  });
+
+  const activeMemberUserIds = await loadActiveMemberUserIds(
+    req,
+    access.crewObjectId,
   );
 
-  if (!alreadyConfirmed) {
-    memberJudgements = upsertMemberJudgement(memberJudgements, {
-      userId: access.userId,
-      action: 'confirmed',
-      eventId: eventObjectId.toString(),
-      at: now,
-    });
-  }
-
-  let consensusStartedAt = weekState.consensusStartedAt;
-  let consensusEndsAt = weekState.consensusEndsAt;
-  const isFirstAction = !consensusStartedAt;
-  if (!consensusStartedAt) {
-    const started = startConsensusWindow(
-      now,
+  if (allActivesHaveBalloted(memberBallots, activeMemberUserIds)) {
+    const tallied = await tallyAndLock(req, {
+      crewObjectId: access.crewObjectId,
+      batchWeek: normalizedWeek.batchWeek,
+      weekState,
+      eventsById,
+      crew: access.crew,
       crewConfig,
-      validation.judgementWindowEndsAt,
-    );
-    consensusStartedAt = started.consensusStartedAt;
-    consensusEndsAt = started.consensusEndsAt;
-  }
-
-  const unanimous = isUnanimousOnCurrentProposal({
-    activeMemberUserIds,
-    memberJudgements,
-    proposedEventId: currentProposedId,
-  });
-
-  if (unanimous) {
-    const locked = await resolveCrewWeekPick(req, {
-      crewObjectId: access.crewObjectId,
-      batchWeek: normalizedWeek.batchWeek,
-      weekState: {
-        ...weekState,
-        memberJudgements,
-        consensusStartedAt,
-        consensusEndsAt,
-      },
-      eventId: currentProposedId,
-      now,
-      lockReason: 'unanimous',
+      lockReason: 'unanimous_ballot',
     });
-    if (locked.error) {
-      return locked;
+    if (tallied.error) {
+      return tallied;
     }
+    weekState = tallied.weekState;
 
-    await persistWeekStateUpdate(req, {
-      crewObjectId: access.crewObjectId,
-      batchWeek: normalizedWeek.batchWeek,
-      $set: {
-        memberJudgements: memberJudgements.map((entry) => ({
-          userId: toObjectId(entry.userId),
-          action: entry.action,
-          eventId: toObjectId(entry.eventId),
-          at: entry.at instanceof Date ? entry.at : new Date(entry.at),
-        })),
-        consensusStartedAt: new Date(consensusStartedAt),
-        consensusEndsAt: consensusEndsAt ? new Date(consensusEndsAt) : null,
-      },
-    });
-
-    const payload = await buildCrewWeekJudgementPayload(req, {
-      crew: access.crew,
-      crewObjectId: access.crewObjectId,
-      batchWeek: normalizedWeek.batchWeek,
-      now,
-    });
-    if (payload.error) {
-      return payload;
-    }
-
-    if (isFirstAction) {
-      void notifyCrewConsensusPeers(req, {
-        crewId: access.crew._id.toString(),
-        batchWeek: normalizedWeek.batchWeek,
-        actorUserId: access.userId,
-        kind: 'decide_started',
-      });
-    }
-
-    return {
-      data: {
-        ...payload.data,
-        eventId: currentProposedId,
-        event: payload.data.proposedEvent,
-        locked: true,
-        lockReason: 'unanimous',
-      },
-    };
-  }
-
-  const swapBudget = Number(crewConfig?.judgement?.crewSwapBudget);
-  const defaultSwapBudget = Number.isInteger(swapBudget) ? swapBudget : 2;
-  const crewSwapsRemaining =
-    weekState.crewSwapsRemaining == null
-      ? defaultSwapBudget
-      : Number(weekState.crewSwapsRemaining);
-
-  await persistWeekStateUpdate(req, {
-    crewObjectId: access.crewObjectId,
-    batchWeek: normalizedWeek.batchWeek,
-    $set: {
-      judgementStatus: 'deciding',
-      memberJudgements: memberJudgements.map((entry) => ({
-        userId: toObjectId(entry.userId),
-        action: entry.action,
-        eventId: toObjectId(entry.eventId),
-        at: entry.at instanceof Date ? entry.at : new Date(entry.at),
-      })),
-      consensusStartedAt: new Date(consensusStartedAt),
-      consensusEndsAt: consensusEndsAt ? new Date(consensusEndsAt) : null,
-      crewSwapsRemaining,
-      originalProposedEventId:
-        weekState.originalProposedEventId || weekState.proposedEventId || null,
-      aggregatedAt: now,
-    },
-  });
-
-  if (isFirstAction) {
     void notifyCrewConsensusPeers(req, {
-      crewId: access.crew._id.toString(),
-      batchWeek: normalizedWeek.batchWeek,
+      crewId: access.crewObjectId.toString(),
       actorUserId: access.userId,
-      kind: 'decide_started',
-    });
+      batchWeek: normalizedWeek.batchWeek,
+      kind: 'locked',
+    }).catch(() => {});
+  } else {
+    void notifyCrewConsensusPeers(req, {
+      crewId: access.crewObjectId.toString(),
+      actorUserId: access.userId,
+      batchWeek: normalizedWeek.batchWeek,
+      kind: 'balloted',
+    }).catch(() => {});
   }
 
-  const payload = await buildCrewWeekJudgementPayload(req, {
+  return buildCrewWeekJudgementPayload(req, {
     crew: access.crew,
     crewObjectId: access.crewObjectId,
     batchWeek: normalizedWeek.batchWeek,
     now,
   });
-  if (payload.error) {
-    return payload;
-  }
+}
 
+/** @deprecated confirm/swap removed — use castPivotCrewWeekBallot */
+async function confirmPivotCrewWeekPick() {
   return {
-    data: {
-      ...payload.data,
-      eventId: currentProposedId,
-      event: payload.data.proposedEvent,
-      locked: false,
-      lockReason: null,
-    },
+    error: 'Confirm is retired. Rank the shortlist via POST …/week/ballot.',
+    status: 410,
+    code: 'CONFIRM_RETIRED',
   };
 }
 
-async function castSwapConsensus(req, { crewId, batchWeek, now = new Date() }) {
-  const access = await requireActiveCrewMembership(req, crewId);
-  if (access.error) {
-    return access;
-  }
-
-  const normalizedWeek = await resolveBatchWeek(req, batchWeek);
-  if (normalizedWeek.error) {
-    return normalizedWeek;
-  }
-
-  const loaded = await ensureCrewWeekState(req, access.crewObjectId, normalizedWeek.batchWeek);
-  if (loaded.error) {
-    return loaded;
-  }
-
-  const crewConfig = await resolveCrewConfig(req);
-  let weekState = loaded.weekState;
-  const eventsById = await loadWeekStateEvents(req, weekState, normalizedWeek.batchWeek);
-
-  const expired = await maybeResolveExpiredConsensus(req, {
-    crewObjectId: access.crewObjectId,
-    batchWeek: normalizedWeek.batchWeek,
-    weekState,
-    crewConfig,
-    eventsById,
-    now,
-  });
-  if (expired.error) {
-    return expired;
-  }
-  weekState = expired.weekState;
-
-  if (LOCKED_JUDGEMENT_STATUSES.has(weekState.judgementStatus)) {
-    return {
-      error: 'This crew pick is already locked for the week.',
-      status: 409,
-      code: 'PICK_ALREADY_LOCKED',
-    };
-  }
-
-  const validation = validateOpenJudgementWindow(weekState, crewConfig, eventsById, now);
-  if (validation.error) {
-    return validation;
-  }
-
-  const swapBudget = Number(crewConfig?.judgement?.crewSwapBudget);
-  const defaultBudget = Number.isInteger(swapBudget) ? swapBudget : 2;
-  const swapsRemaining =
-    weekState.crewSwapsRemaining == null
-      ? defaultBudget
-      : Number(weekState.crewSwapsRemaining);
-
-  if (swapsRemaining <= 0) {
-    return {
-      error: 'This crew has used all shared swaps for the week.',
-      status: 409,
-      code: 'SWAP_BUDGET_EXHAUSTED',
-    };
-  }
-
-  const swapEventId = resolveSwapTargetEventId(weekState);
-  if (!swapEventId) {
-    return {
-      error: 'No alternate crew pick is available to swap.',
-      status: 400,
-      code: 'SWAP_NOT_AVAILABLE',
-    };
-  }
-
-  const allowedEventIds = getTopCandidateEventIds(weekState);
-  if (!allowedEventIds.includes(swapEventId)) {
-    return {
-      error: 'Swap is only allowed among the top crew candidates.',
-      status: 400,
-      code: 'INVALID_CANDIDATE',
-    };
-  }
-
-  const voteEntry = (weekState.voteBreakdown || []).find(
-    (entry) => entry.eventId.toString() === swapEventId,
-  );
-  const timer = extendConsensusWindowOnSwap(
-    weekState,
-    now,
-    crewConfig,
-    validation.judgementWindowEndsAt,
-  );
-
-  // Implicit confirm for swapper on the new candidate; clear everyone else.
-  const memberJudgements = [
-    {
-      userId: access.userId,
-      action: 'swapped',
-      eventId: swapEventId,
-      at: now,
-    },
-  ];
-
-  const activeMemberUserIds = await loadActiveMemberUserIds(req, access.crewObjectId);
-  const unanimous = isUnanimousOnCurrentProposal({
-    activeMemberUserIds,
-    memberJudgements,
-    proposedEventId: swapEventId,
-  });
-
-  if (unanimous) {
-    await persistWeekStateUpdate(req, {
-      crewObjectId: access.crewObjectId,
-      batchWeek: normalizedWeek.batchWeek,
-      $set: {
-        proposedEventId: toObjectId(swapEventId),
-        proposedScore: voteEntry?.score ?? weekState.proposedScore,
-        crewSwapsRemaining: swapsRemaining - 1,
-        memberJudgements: memberJudgements.map((entry) => ({
-          userId: toObjectId(entry.userId),
-          action: entry.action,
-          eventId: toObjectId(entry.eventId),
-          at: entry.at instanceof Date ? entry.at : new Date(entry.at),
-        })),
-        consensusStartedAt: new Date(timer.consensusStartedAt),
-        consensusEndsAt: timer.consensusEndsAt
-          ? new Date(timer.consensusEndsAt)
-          : null,
-        judgementStatus: 'deciding',
-        aggregatedAt: now,
-      },
-    });
-
-    const locked = await resolveCrewWeekPick(req, {
-      crewObjectId: access.crewObjectId,
-      batchWeek: normalizedWeek.batchWeek,
-      weekState: {
-        ...weekState,
-        proposedEventId: toObjectId(swapEventId),
-        originalProposedEventId: weekState.originalProposedEventId,
-      },
-      eventId: swapEventId,
-      now,
-      lockReason: 'unanimous',
-    });
-    if (locked.error) {
-      return locked;
-    }
-
-    const payload = await buildCrewWeekJudgementPayload(req, {
-      crew: access.crew,
-      crewObjectId: access.crewObjectId,
-      batchWeek: normalizedWeek.batchWeek,
-      now,
-    });
-    if (payload.error) {
-      return payload;
-    }
-
-    return {
-      data: {
-        ...payload.data,
-        eventId: swapEventId,
-        event: payload.data.proposedEvent,
-        locked: true,
-        lockReason: 'unanimous',
-      },
-    };
-  }
-
-  await persistWeekStateUpdate(req, {
-    crewObjectId: access.crewObjectId,
-    batchWeek: normalizedWeek.batchWeek,
-    $set: {
-      proposedEventId: toObjectId(swapEventId),
-      proposedScore: voteEntry?.score ?? weekState.proposedScore,
-      judgementStatus: 'deciding',
-      crewSwapsRemaining: swapsRemaining - 1,
-      memberJudgements: memberJudgements.map((entry) => ({
-        userId: toObjectId(entry.userId),
-        action: entry.action,
-        eventId: toObjectId(entry.eventId),
-        at: entry.at instanceof Date ? entry.at : new Date(entry.at),
-      })),
-      consensusStartedAt: new Date(timer.consensusStartedAt),
-      consensusEndsAt: timer.consensusEndsAt ? new Date(timer.consensusEndsAt) : null,
-      aggregatedAt: now,
-    },
-  });
-
-  void notifyCrewConsensusPeers(req, {
-    crewId: access.crew._id.toString(),
-    batchWeek: normalizedWeek.batchWeek,
-    actorUserId: access.userId,
-    kind: 'decide_swap',
-  });
-
-  const payload = await buildCrewWeekJudgementPayload(req, {
-    crew: access.crew,
-    crewObjectId: access.crewObjectId,
-    batchWeek: normalizedWeek.batchWeek,
-    now,
-  });
-  if (payload.error) {
-    return payload;
-  }
-
+/** @deprecated confirm/swap removed — use castPivotCrewWeekBallot */
+async function swapPivotCrewWeekPick() {
   return {
-    data: {
-      ...payload.data,
-      eventId: swapEventId,
-      event: payload.data.proposedEvent,
-      locked: false,
-      lockReason: null,
-    },
+    error: 'Swap is retired. Rank the shortlist via POST …/week/ballot.',
+    status: 410,
+    code: 'SWAP_RETIRED',
   };
 }
 
-async function confirmPivotCrewWeekPick(req, { crewId, eventId, batchWeek, now = new Date() }) {
-  if (usesDemocraticConsensus(req)) {
-    return castConfirmConsensus(req, { crewId, eventId, batchWeek, now });
+async function resolveExpiredCrewBallotsForTenant(req, { now = new Date() } = {}) {
+  const tenantKey = typeof req.school === 'string' ? req.school.trim().toLowerCase() : '';
+  if (!tenantKey) {
+    return { error: 'City tenant is required.', status: 400, code: 'TENANT_REQUIRED' };
   }
 
-  return lockCrewWeekPickLegacy(req, {
-    crewId,
-    eventId,
-    batchWeek,
-    judgementStatus: 'confirmed',
-    now,
-  });
-}
-
-async function swapPivotCrewWeekPick(req, { crewId, batchWeek, now = new Date() }) {
-  if (usesDemocraticConsensus(req)) {
-    return castSwapConsensus(req, { crewId, batchWeek, now });
-  }
-
-  const access = await requireActiveCrewMembership(req, crewId);
-  if (access.error) {
-    return access;
-  }
-
-  const normalizedWeek = await resolveBatchWeek(req, batchWeek);
-  if (normalizedWeek.error) {
-    return normalizedWeek;
-  }
-
-  const loaded = await ensureCrewWeekState(req, access.crewObjectId, normalizedWeek.batchWeek);
-  if (loaded.error) {
-    return loaded;
-  }
-
-  const swapEventId = resolveSwapTargetEventId(loaded.weekState);
-  if (!swapEventId) {
-    return {
-      error: 'No alternate crew pick is available to swap.',
-      status: 400,
-      code: 'SWAP_NOT_AVAILABLE',
-    };
-  }
-
-  return lockCrewWeekPickLegacy(req, {
-    crewId,
-    eventId: swapEventId,
-    batchWeek: normalizedWeek.batchWeek,
-    judgementStatus: 'swapped',
-    now,
-  });
-}
-
-async function resolveExpiredCrewConsensusForTenant(req, { now = new Date() } = {}) {
   const { PivotCrewWeekState } = getModels(req, 'PivotCrewWeekState');
-  const crewConfig = await resolveCrewConfig(req);
-  const candidates = await PivotCrewWeekState.find({
-    tenantKey: req.school,
-    judgementStatus: 'deciding',
-    consensusEndsAt: { $ne: null, $lte: now },
-  }).lean();
+  const openStates = await PivotCrewWeekState.find({
+    tenantKey,
+    judgementStatus: 'balloting',
+    ballotEndsAt: { $ne: null, $lte: now },
+  })
+    .select('crewId batchWeek')
+    .lean();
 
   let resolved = 0;
-  let failed = 0;
+  for (const row of openStates) {
+    const accessCrewId = row.crewId.toString();
+    const loaded = await ensureCrewWeekState(req, row.crewId, row.batchWeek);
+    if (loaded.error || !loaded.weekState) continue;
 
-  for (const weekState of candidates) {
-    try {
-      const eventsById = await loadWeekStateEvents(req, weekState, weekState.batchWeek);
-      const result = await maybeResolveExpiredConsensus(req, {
-        crewObjectId: weekState.crewId,
-        batchWeek: weekState.batchWeek,
-        weekState,
-        crewConfig,
-        eventsById,
-        now,
-      });
-      if (result.error) {
-        failed += 1;
-      } else if (result.resolved) {
-        resolved += 1;
-      }
-    } catch (error) {
-      failed += 1;
-      console.error('[pivotCrewJudgement] expiry resolve failed', {
-        crewId: weekState.crewId?.toString?.(),
-        batchWeek: weekState.batchWeek,
-        error: error.message,
-      });
+    const crewConfig = await resolveCrewConfig(req);
+    const eventsById = await loadWeekStateEvents(req, loaded.weekState, row.batchWeek);
+    const result = await maybeResolveExpiredBallot(req, {
+      crewObjectId: row.crewId,
+      batchWeek: row.batchWeek,
+      weekState: loaded.weekState,
+      crewConfig,
+      eventsById,
+      now,
+    });
+    if (!result.error && result.lockReason) {
+      resolved += 1;
     }
+    void accessCrewId;
   }
 
-  return { data: { resolved, failed, scanned: candidates.length } };
+  return { data: { tenantKey, resolved, scanned: openStates.length } };
+}
+
+/** @deprecated alias — scheduler still imports consensus name */
+async function resolveExpiredCrewConsensusForTenant(req, options) {
+  return resolveExpiredCrewBallotsForTenant(req, options);
 }
 
 async function resolveAllExpiredCrewConsensus(reqLike = {}, options = {}) {
-  const pivotTenants = (await getMergedTenants(reqLike)).filter(isPivotTenant);
+  const tenants = await getMergedTenants(reqLike);
   const results = [];
 
-  for (const tenant of pivotTenants) {
+  for (const tenant of tenants) {
+    if (!isPivotTenant(tenant)) continue;
+    const tenantKey = tenant.tenantKey || tenant.key;
+    if (!tenantKey) continue;
+
     try {
-      const { db } = await connectToDatabase(tenant.key);
-      const tenantReq = { ...reqLike, school: tenant.key, db };
-      const result = await resolveExpiredCrewConsensusForTenant(tenantReq, options);
-      results.push({ tenantKey: tenant.key, ...result.data });
-    } catch (error) {
+      const connection = await connectToDatabase(tenantKey);
+      const tenantReq = { ...reqLike, school: tenantKey, db: connection };
+      const result = await resolveExpiredCrewBallotsForTenant(tenantReq, options);
       results.push({
-        tenantKey: tenant.key,
-        resolved: 0,
-        failed: 1,
-        scanned: 0,
-        error: error.message,
+        tenantKey,
+        ...(result.error
+          ? { error: result.error, code: result.code }
+          : result.data),
       });
+    } catch (error) {
+      results.push({ tenantKey, error: error.message });
     }
   }
 
@@ -1416,10 +1143,13 @@ module.exports = {
   buildCrewWeekJudgementPayload,
   getPivotCrewWeekJudgement,
   getPivotCrewWeekJudgements,
+  castPivotCrewWeekBallot,
   confirmPivotCrewWeekPick,
   swapPivotCrewWeekPick,
+  resetPivotCrewWeekPick,
   loadLockedCrewPicksForUser,
+  resolveExpiredCrewBallotsForTenant,
   resolveExpiredCrewConsensusForTenant,
   resolveAllExpiredCrewConsensus,
-  usesDemocraticConsensus,
+  tallyAndLock,
 };

@@ -12,6 +12,7 @@ const userSchema = require('../../schemas/user');
 const getModels = require('../../services/getModelService');
 const {
   aggregateCrewWeekState,
+  buildLockedPick,
   recomputeCrewWeekState,
   getPivotCrewWeekProgress,
   invalidateCrewWeekProgressCache,
@@ -36,7 +37,7 @@ describe('pivotCrewWeekStateService (Task 2.1)', () => {
       return { status: 'active', userId: new mongoose.Types.ObjectId(userId) };
     }
 
-    it('proposes weighted_majority winner when quorum is met', () => {
+    it('auto-locks a single shortlist candidate when quorum is met', () => {
       const memberships = [
         activeMembership(userA),
         activeMembership(userB),
@@ -62,8 +63,9 @@ describe('pivotCrewWeekStateService (Task 2.1)', () => {
       expect(result.swipeProgress.invitedCount).toBe(1);
       expect(result.swipeProgress.participationRate).toBeCloseTo(2 / 3, 5);
       expect(result.swipeProgress.quorumMet).toBe(true);
-      expect(result.judgementStatus).toBe('proposed');
+      expect(result.judgementStatus).toBe('confirmed');
       expect(result.proposedEventId).toBe(eventOne);
+      expect(result.shortlistEventIds).toEqual([eventOne]);
       expect(result.proposedScore).toBeCloseTo(1 + 1.5, 5);
       expect(result.voteBreakdown[0].interestedCount).toBe(1);
       expect(result.voteBreakdown[0].registeredCount).toBe(1);
@@ -110,7 +112,7 @@ describe('pivotCrewWeekStateService (Task 2.1)', () => {
       expect(result.judgementStatus).toBe('awaiting_quorum');
     });
 
-    it('returns split with top two candidates and no auto-resolution', () => {
+    it('opens balloting with a shortlist when multiple candidates exist', () => {
       const passedEventId = new mongoose.Types.ObjectId().toString();
       const memberships = [
         activeMembership(userA),
@@ -135,17 +137,96 @@ describe('pivotCrewWeekStateService (Task 2.1)', () => {
       });
 
       expect(result.swipeProgress.quorumMet).toBe(true);
-      expect(result.judgementStatus).toBe('split');
+      expect(result.judgementStatus).toBe('balloting');
       expect(result.proposedEventId).toBeNull();
       expect(result.proposedScore).toBeNull();
+      expect(result.shortlistEventIds).toHaveLength(2);
+      expect(result.shortlistEventIds.sort()).toEqual([eventOne, eventTwo].sort());
+      expect(result.ballotEndsAt).toBeTruthy();
       expect(result.voteBreakdown).toHaveLength(2);
-      expect(result.voteBreakdown.map((row) => row.eventId).sort()).toEqual(
-        [eventOne, eventTwo].sort(),
-      );
       expect(result.voteBreakdown.every((row) => row.score === 1.5)).toBe(true);
     });
 
-    it('breaks ties with earliest event start before declaring split', () => {
+    it('keeps shortlist unlocked until the first ranking ballot', () => {
+      const eventThree = new mongoose.Types.ObjectId().toString();
+      const memberships = [
+        activeMembership(userA),
+        activeMembership(userB),
+        activeMembership(userC),
+      ];
+      const earlyIntents = [
+        { userId: userA, eventId: eventOne, status: 'interested', batchWeek },
+        { userId: userB, eventId: eventTwo, status: 'interested', batchWeek },
+      ];
+      const sharedStart = Date.parse('2026-07-25T20:00:00.000Z');
+      const eventStartById = new Map([
+        [eventOne, sharedStart],
+        [eventTwo, sharedStart],
+        [eventThree, sharedStart],
+      ]);
+
+      const opened = aggregateCrewWeekState({
+        memberships,
+        intents: earlyIntents,
+        eventStartById,
+        crewConfig,
+      });
+      expect(opened.judgementStatus).toBe('balloting');
+      expect(opened.shortlistEventIds.sort()).toEqual(
+        [eventOne, eventTwo].sort(),
+      );
+      expect(
+        buildLockedPick({
+          judgementStatus: 'balloting',
+          shortlistEventIds: opened.shortlistEventIds,
+          memberBallots: [],
+          ballotEndsAt: opened.ballotEndsAt,
+        }),
+      ).toBeNull();
+
+      const withLateSwipe = aggregateCrewWeekState({
+        memberships,
+        intents: [
+          ...earlyIntents,
+          { userId: userC, eventId: eventThree, status: 'interested', batchWeek },
+        ],
+        eventStartById,
+        crewConfig,
+        lockedPick: null,
+      });
+      expect(withLateSwipe.shortlistEventIds).toContain(eventThree);
+      expect(withLateSwipe.shortlistEventIds).toHaveLength(3);
+
+      const frozen = aggregateCrewWeekState({
+        memberships,
+        intents: [
+          ...earlyIntents,
+          { userId: userC, eventId: eventThree, status: 'interested', batchWeek },
+        ],
+        eventStartById,
+        crewConfig,
+        lockedPick: buildLockedPick({
+          judgementStatus: 'balloting',
+          shortlistEventIds: opened.shortlistEventIds,
+          memberBallots: [
+            {
+              userId: userA,
+              ranking: opened.shortlistEventIds,
+              at: new Date('2026-07-24T12:00:00.000Z'),
+            },
+          ],
+          ballotEndsAt: opened.ballotEndsAt,
+          voteBreakdown: opened.voteBreakdown,
+        }),
+      });
+      expect(frozen.shortlistEventIds.sort()).toEqual(
+        opened.shortlistEventIds.sort(),
+      );
+      expect(frozen.shortlistEventIds).not.toContain(eventThree);
+      expect(frozen.memberBallots).toHaveLength(1);
+    });
+
+    it('orders shortlist by weighted score then earliest start', () => {
       const memberships = [
         activeMembership(userA),
         activeMembership(userB),
@@ -167,9 +248,56 @@ describe('pivotCrewWeekStateService (Task 2.1)', () => {
         crewConfig,
       });
 
-      expect(result.judgementStatus).toBe('proposed');
-      expect(result.proposedEventId).toBe(eventTwo);
-      expect(result.proposedScore).toBeCloseTo(2.5, 5);
+      expect(result.judgementStatus).toBe('balloting');
+      expect(result.proposedEventId).toBeNull();
+      expect(result.shortlistEventIds[0]).toBe(eventTwo);
+      expect(result.voteBreakdown[0].score).toBeCloseTo(2.5, 5);
+    });
+
+    it('keeps up to five voteBreakdown peers as the ballot shortlist pool', () => {
+      const eventIds = Array.from({ length: 6 }, () =>
+        new mongoose.Types.ObjectId().toString(),
+      );
+      const memberships = [
+        activeMembership(userA),
+        activeMembership(userB),
+        activeMembership(userC),
+      ];
+      const intents = eventIds.flatMap((eventId, index) => {
+        if (index === 0) {
+          return [
+            { userId: userA, eventId, status: 'registered', batchWeek },
+            { userId: userB, eventId, status: 'interested', batchWeek },
+            { userId: userC, eventId, status: 'interested', batchWeek },
+          ];
+        }
+        return [
+          {
+            userId: [userA, userB, userC][index % 3],
+            eventId,
+            status: 'interested',
+            batchWeek,
+          },
+        ];
+      });
+
+      const result = aggregateCrewWeekState({
+        memberships,
+        intents,
+        eventStartById: new Map(
+          eventIds.map((eventId, index) => [
+            eventId,
+            Date.parse(`2026-07-2${index + 1}T20:00:00.000Z`),
+          ]),
+        ),
+        crewConfig,
+      });
+
+      expect(result.judgementStatus).toBe('balloting');
+      expect(result.voteBreakdown).toHaveLength(5);
+      expect(result.shortlistEventIds).toHaveLength(5);
+      expect(result.shortlistEventIds[0]).toBe(eventIds[0]);
+      expect(result.voteBreakdown[0].eventId).toBe(eventIds[0]);
     });
   });
 
@@ -385,9 +513,13 @@ describe('pivotCrewWeekStateService (Task 2.1)', () => {
       expect(result.data.swipeProgress.swipedCount).toBe(3);
       expect(result.data.swipeProgress.invitedCount).toBe(1);
       expect(result.data.swipeProgress.quorumMet).toBe(true);
-      expect(result.data.judgementStatus).toBe('proposed');
-      expect(result.data.proposedEventId.toString()).toBe(eventTwoId.toString());
-      expect(result.data.proposedScore).toBeCloseTo(2.5, 5);
+      expect(result.data.judgementStatus).toBe('balloting');
+      expect(result.data.proposedEventId).toBeNull();
+      expect(result.data.shortlistEventIds.map(String)).toEqual([
+        eventTwoId.toString(),
+        eventOneId.toString(),
+      ]);
+      expect(result.data.ballotEndsAt).toBeTruthy();
     });
 
     it('preserves locked picks on recompute when judgement is confirmed', async () => {
@@ -648,7 +780,7 @@ describe('pivotCrewWeekStateService (Task 2.1)', () => {
       await mongo.cleanup();
     });
 
-    it('returns crew week progress with proposed event and runner-up', async () => {
+    it('returns crew week progress with balloting shortlist and runner-up', async () => {
       const result = await getPivotCrewWeekProgress(req, { batchWeek });
 
       expect(result.data.batchWeek).toBe(batchWeek);
@@ -660,11 +792,16 @@ describe('pivotCrewWeekStateService (Task 2.1)', () => {
         activeCount: 3,
         invitedCount: 1,
         quorumMet: true,
-        judgementStatus: 'proposed',
+        judgementStatus: 'balloting',
       });
-      expect(result.data.crews[0].proposedEvent.id).toBe(eventTwoId.toString());
+      expect(result.data.crews[0].proposedEvent).toBeNull();
+      expect(result.data.crews[0].shortlistEventIds).toEqual([
+        eventTwoId.toString(),
+        eventOneId.toString(),
+      ]);
       expect(result.data.crews[0].runnerUp.id).toBe(eventOneId.toString());
       expect(result.data.crews[0].judgementWindowEndsAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(result.data.crews[0].ballot.endsAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
     it('serves cached responses for 30s and invalidates after intent write', async () => {

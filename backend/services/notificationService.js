@@ -222,7 +222,7 @@ class NotificationService {
                 pushAppEdition: recipient.pushAppEdition,
             });
             const friendshipId = notification.template?.variables?.friendshipId;
-            const pushNotificationType = ['friend_request', 'friend_accepted', 'friend_activity'].includes(
+            const pushNotificationType = ['friend_request', 'friend_accepted', 'friend_activity', 'crew_invite'].includes(
                 notificationKind,
             )
                 ? notificationKind
@@ -314,6 +314,13 @@ class NotificationService {
                     route: 'PivotFriends',
                     params: {},
                     deepLink: 'meridian://pivot/friends',
+                };
+            case 'crew_invite':
+                return {
+                    type: 'navigate',
+                    route: 'PivotCrewInvites',
+                    params: {},
+                    deepLink: 'meridian://pivot/crews/invites',
                 };
             default:
                 return navigation;
@@ -725,6 +732,8 @@ class NotificationService {
                 metadata: {
                     ...(template.navigation ? { navigation: this.interpolateObject(template.navigation, variables) } : {}),
                     ...(variables.friendshipId ? { friendshipId: String(variables.friendshipId) } : {}),
+                    ...(variables.membershipId ? { membershipId: String(variables.membershipId) } : {}),
+                    ...(variables.crewId ? { crewId: String(variables.crewId) } : {}),
                     ...(variables.sender ? { sender: String(variables.sender) } : {}),
                     ...(variables.metadata || {})
                 }
@@ -865,6 +874,21 @@ class NotificationService {
                         icon: 'material-symbols:person-cancel-rounded'
                     }
                 ]
+            },
+            'crew_invite': {
+                title: 'Crew invite',
+                message: '<strong>{{senderName|capitalize}}</strong> invited you to join <strong>{{crewName|capitalize}}</strong>.',
+                version: '1.0',
+                priority: 'normal',
+                channels: ['in_app', 'push'],
+                sender: '{{sender}}',
+                senderModel: 'User',
+                navigation: {
+                    type: 'navigate',
+                    route: 'PivotCrewInvites',
+                    params: {},
+                    deepLink: 'meridian://pivot/crews/invites',
+                },
             },
             'org_message_new':{
                 title: '{{orgName}} has posted a new announcement',
@@ -1166,6 +1190,8 @@ class NotificationService {
                 metadata: {
                     ...(template.navigation ? { navigation: this.interpolateObject(template.navigation, variables) } : {}),
                     ...(variables.friendshipId ? { friendshipId: String(variables.friendshipId) } : {}),
+                    ...(variables.membershipId ? { membershipId: String(variables.membershipId) } : {}),
+                    ...(variables.crewId ? { crewId: String(variables.crewId) } : {}),
                     ...(variables.sender ? { sender: String(variables.sender) } : {}),
                     ...(variables.metadata || {})
                 }

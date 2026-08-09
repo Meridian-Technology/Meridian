@@ -1,4 +1,4 @@
-const { OPEN_CONSENSUS_STATUSES } = require('./pivotCrewConsensus');
+const { OPEN_BALLOT_STATUSES } = require('./pivotCrewBorda');
 
 function isJudgementWindowOpen(judgementWindowEndsAt, now = new Date()) {
   if (!judgementWindowEndsAt) {
@@ -11,6 +11,14 @@ function isJudgementWindowOpen(judgementWindowEndsAt, now = new Date()) {
   return now.getTime() <= endsAtMs;
 }
 
+/** Open decide statuses for Borda balloting (+ legacy open consensus during cutover). */
+const OPEN_CONSENSUS_STATUSES = new Set([
+  'balloting',
+  'proposed',
+  'split',
+  'deciding',
+]);
+
 /** @deprecated use OPEN_CONSENSUS_STATUSES — kept for callers that import the name */
 const JUDGEMENT_READY_STATUSES = OPEN_CONSENSUS_STATUSES;
 
@@ -19,7 +27,7 @@ function pickCrewsNeedingDecide(crews, now = new Date()) {
     (crew) =>
       crew.quorumMet &&
       OPEN_CONSENSUS_STATUSES.has(crew.judgementStatus) &&
-      isJudgementWindowOpen(crew.judgementWindowEndsAt, now),
+      isJudgementWindowOpen(crew.judgementWindowEndsAt || crew.ballot?.endsAt, now),
   );
 }
 
@@ -42,14 +50,12 @@ function crewNeedsUserAction(crew, now = new Date()) {
   if (
     !crew.quorumMet ||
     !OPEN_CONSENSUS_STATUSES.has(crew.judgementStatus) ||
-    !isJudgementWindowOpen(crew.judgementWindowEndsAt, now)
+    !isJudgementWindowOpen(crew.judgementWindowEndsAt || crew.ballot?.endsAt, now)
   ) {
     return false;
   }
 
-  // When consensus tally is present, only nudge members who have not confirmed
-  // the current proposal (or swapped onto it).
-  if (crew.viewerHasConfirmedCurrent === true) {
+  if (crew.viewerHasBalloted === true || crew.viewerHasConfirmedCurrent === true) {
     return false;
   }
 
@@ -59,6 +65,7 @@ function crewNeedsUserAction(crew, now = new Date()) {
 module.exports = {
   JUDGEMENT_READY_STATUSES,
   OPEN_CONSENSUS_STATUSES,
+  OPEN_BALLOT_STATUSES,
   isJudgementWindowOpen,
   pickCrewsNeedingDecide,
   pickCrewsWithPendingJudgement,

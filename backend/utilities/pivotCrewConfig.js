@@ -6,6 +6,7 @@
 const PIVOT_CREW_CONFIG_VERSION = 1;
 
 const PICK_ALGORITHMS = new Set(['weighted_majority']);
+const PICK_BALLOT_METHODS = new Set(['borda']);
 const PICK_TIE_BREAKS = new Set(['most_registered_then_earliest_start']);
 
 const PIVOT_CREW_CONFIG_DEFAULTS = Object.freeze({
@@ -28,12 +29,18 @@ const PIVOT_CREW_CONFIG_DEFAULTS = Object.freeze({
   judgement: Object.freeze({
     windowHoursBeforeEvent: 24,
     minHoursAfterDeckComplete: 6,
+    /** Soft ballot clock after quorum; capped by hard judgement window. */
+    ballotWindowMinutes: 180,
+    /** Deprecated confirm/swap knobs — kept for tenant config compat. */
     consensusWindowMinutes: 180,
     swapResetBonusMinutes: 15,
     crewSwapBudget: 2,
+    /** Group pick capacity (1–2). v1 Borda locks a single winner. */
+    maxPickSlots: 1,
   }),
   pick: Object.freeze({
     algorithm: 'weighted_majority',
+    ballotMethod: 'borda',
     interestedWeight: 1,
     registeredWeight: 1.5,
     tieBreak: 'most_registered_then_earliest_start',
@@ -205,6 +212,15 @@ function validateJudgementPatch(patch) {
     if (result.error) return { error: result.error };
     out.minHoursAfterDeckComplete = result.value;
   }
+  if (patch.ballotWindowMinutes !== undefined) {
+    const result = clampPositiveInt(
+      patch.ballotWindowMinutes,
+      'judgement.ballotWindowMinutes',
+      { min: 30, max: 720 },
+    );
+    if (result.error) return { error: result.error };
+    out.ballotWindowMinutes = result.value;
+  }
   if (patch.consensusWindowMinutes !== undefined) {
     const result = clampPositiveInt(
       patch.consensusWindowMinutes,
@@ -231,6 +247,14 @@ function validateJudgementPatch(patch) {
     if (result.error) return { error: result.error };
     out.crewSwapBudget = result.value;
   }
+  if (patch.maxPickSlots !== undefined) {
+    const result = clampPositiveInt(patch.maxPickSlots, 'judgement.maxPickSlots', {
+      min: 1,
+      max: 2,
+    });
+    if (result.error) return { error: result.error };
+    out.maxPickSlots = result.value;
+  }
 
   return { ok: true, patch: Object.keys(out).length ? out : undefined };
 }
@@ -248,6 +272,15 @@ function validatePickPatch(patch) {
       return { error: `pick.algorithm must be one of: ${Array.from(PICK_ALGORITHMS).join(', ')}.` };
     }
     out.algorithm = algorithm;
+  }
+  if (patch.ballotMethod !== undefined) {
+    const ballotMethod = String(patch.ballotMethod).trim();
+    if (!PICK_BALLOT_METHODS.has(ballotMethod)) {
+      return {
+        error: `pick.ballotMethod must be one of: ${Array.from(PICK_BALLOT_METHODS).join(', ')}.`,
+      };
+    }
+    out.ballotMethod = ballotMethod;
   }
   if (patch.interestedWeight !== undefined) {
     const result = clampPositiveNumber(patch.interestedWeight, 'pick.interestedWeight', {

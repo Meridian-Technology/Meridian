@@ -30,6 +30,16 @@ const pivotCrewSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    /**
+     * How many events this crew can lock per week (1–2).
+     * null = inherit tenant judgement.maxPickSlots.
+     */
+    maxPickSlots: {
+      type: Number,
+      default: null,
+      min: 1,
+      max: 2,
+    },
   },
   { timestamps: true },
 );

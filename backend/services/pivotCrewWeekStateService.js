@@ -15,15 +15,25 @@ const {
 } = require('./pivotFeedService');
 const { resolvePivotCoverImageUrl } = require('../utilities/pivotMovieMetadata');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
+const {
+  computeBallotEndsAt,
+  LEGACY_OPEN_JUDGEMENT_STATUSES,
+} = require('../utilities/pivotCrewBorda');
 
 const LOCKED_JUDGEMENT_STATUSES = new Set(['confirmed', 'swapped']);
 const PRESERVED_JUDGEMENT_STATUSES = new Set([
+  'balloting',
+  'confirmed',
+  // Legacy in-flight / historical rows.
   'proposed',
   'split',
   'deciding',
-  'confirmed',
   'swapped',
 ]);
+/** Peers persisted on voteBreakdown — matches mobile decide dial capacity. */
+const PIVOT_CREW_VOTE_BREAKDOWN_LIMIT = 5;
+/** Ballot eligibility pool — matches dial capacity (rank still uses top 3 slots). */
+const SHORTLIST_LIMIT = PIVOT_CREW_VOTE_BREAKDOWN_LIMIT;
 const CREW_WEEK_PROGRESS_CACHE_TTL_MS = 30_000;
 const crewWeekProgressCache = new Map();
 const invalidatedCrewWeekProgressKeys = new Set();
@@ -132,7 +142,33 @@ function serializeCrewWeekEvent(event, voteEntry) {
   };
 }
 
+function resolveShortlistEventIds(weekState) {
+  if (Array.isArray(weekState?.shortlistEventIds) && weekState.shortlistEventIds.length) {
+    return weekState.shortlistEventIds
+      .map((id) => id?.toString?.() || String(id))
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(weekState?.voteBreakdown) && weekState.voteBreakdown.length) {
+    return weekState.voteBreakdown
+      .slice(0, SHORTLIST_LIMIT)
+      .map((entry) => entry.eventId?.toString?.() || String(entry.eventId))
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 function resolveRunnerUpEventId(weekState) {
+  const shortlist = resolveShortlistEventIds(weekState);
+  if (shortlist.length >= 2) {
+    const proposedId = weekState?.proposedEventId?.toString?.() || null;
+    if (proposedId) {
+      return shortlist.find((id) => id !== proposedId) || shortlist[1] || null;
+    }
+    return shortlist[1] || null;
+  }
+
   if (!weekState?.voteBreakdown?.length) {
     return null;
   }
@@ -163,8 +199,11 @@ function resolveProposedEventId(weekState) {
 }
 
 function serializeCrewWeekProgressRow(crew, weekState, eventsById, crewConfig) {
+  // Viewer only appears here with an active membership — if week state is not
+  // recomputed yet (brand-new solo circle), treat as 1 active so invite-waiting
+  // surfaces instead of a zeroed-out row that looks empty/broken.
   const swipeProgress = weekState?.swipeProgress || {
-    activeMemberCount: 0,
+    activeMemberCount: 1,
     swipedCount: 0,
     invitedCount: 0,
     participationRate: 0,
@@ -196,16 +235,9 @@ function serializeCrewWeekProgressRow(crew, weekState, eventsById, crewConfig) {
         })
       : null;
 
-  const swapBudget = Number(crewConfig?.judgement?.crewSwapBudget);
-  const defaultSwapBudget = Number.isInteger(swapBudget) ? swapBudget : 2;
-  const memberJudgements = weekState?.memberJudgements || [];
-  const confirmedCount = memberJudgements.filter((entry) => {
-    const eventId = entry.eventId?.toString?.() || entry.eventId;
-    return (
-      (entry.action === 'confirmed' || entry.action === 'swapped') &&
-      eventId === proposedEventId
-    );
-  }).length;
+  const shortlistEventIds = resolveShortlistEventIds(weekState);
+  const memberBallots = weekState?.memberBallots || [];
+  const ballotedCount = memberBallots.length;
 
   return {
     crewId: crew._id.toString(),
@@ -215,6 +247,7 @@ function serializeCrewWeekProgressRow(crew, weekState, eventsById, crewConfig) {
     invitedCount: swipeProgress.invitedCount,
     quorumMet: swipeProgress.quorumMet,
     judgementStatus: weekState?.judgementStatus || 'awaiting_quorum',
+    shortlistEventIds,
     proposedEvent: proposedEventId
       ? serializeCrewWeekEvent(eventsById.get(proposedEventId), voteByEventId.get(proposedEventId))
       : null,
@@ -222,19 +255,22 @@ function serializeCrewWeekProgressRow(crew, weekState, eventsById, crewConfig) {
       ? serializeCrewWeekEvent(eventsById.get(runnerUpEventId), voteByEventId.get(runnerUpEventId))
       : null,
     judgementWindowEndsAt,
+    ballot: {
+      endsAt: weekState?.ballotEndsAt
+        ? new Date(weekState.ballotEndsAt).toISOString()
+        : judgementWindowEndsAt,
+      ballotedCount,
+      activeCount: swipeProgress.activeMemberCount,
+    },
+    // Legacy shape for older ritual consumers during cutover.
     consensus: {
-      startedAt: weekState?.consensusStartedAt
-        ? new Date(weekState.consensusStartedAt).toISOString()
-        : null,
-      endsAt: weekState?.consensusEndsAt
-        ? new Date(weekState.consensusEndsAt).toISOString()
-        : null,
-      swapsRemaining:
-        weekState?.crewSwapsRemaining == null
-          ? defaultSwapBudget
-          : Number(weekState.crewSwapsRemaining),
-      swapBudget: defaultSwapBudget,
-      confirmedCount,
+      startedAt: null,
+      endsAt: weekState?.ballotEndsAt
+        ? new Date(weekState.ballotEndsAt).toISOString()
+        : judgementWindowEndsAt,
+      swapsRemaining: 0,
+      swapBudget: 0,
+      confirmedCount: ballotedCount,
       activeCount: swipeProgress.activeMemberCount,
     },
   };
@@ -495,31 +531,6 @@ function sortCandidates(candidates, tieBreak, eventStartById) {
   });
 }
 
-function isSplitVote(sortedCandidates, tieBreak, eventStartById) {
-  if (sortedCandidates.length < 2) {
-    return false;
-  }
-
-  const [first, second] = sortedCandidates;
-  if (first.score !== second.score) {
-    return false;
-  }
-
-  if (tieBreak === 'most_registered_then_earliest_start') {
-    if (first.registeredCount !== second.registeredCount) {
-      return false;
-    }
-
-    const firstStart = eventStartById.get(first.eventId);
-    const secondStart = eventStartById.get(second.eventId);
-    if (firstStart !== secondStart) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 function serializeVoteBreakdown(entries = []) {
   return entries.map((entry) => ({
     eventId: entry.eventId,
@@ -533,8 +544,30 @@ function serializeVoteBreakdown(entries = []) {
   }));
 }
 
+function emptyBallotAggregation(swipeProgress) {
+  return {
+    swipeProgress,
+    proposedEventId: null,
+    proposedEventIds: [],
+    originalProposedEventId: null,
+    originalProposedEventIds: [],
+    shortlistEventIds: [],
+    proposedScore: null,
+    voteBreakdown: [],
+    judgementStatus: 'awaiting_quorum',
+    ballotEndsAt: null,
+    memberBallots: [],
+    consensusStartedAt: null,
+    consensusEndsAt: null,
+    crewSwapsRemaining: null,
+    memberJudgements: [],
+  };
+}
+
 /**
  * Pure aggregation for unit tests and recompute path.
+ * Quorum → balloting + live shortlist; single candidate → confirmed.
+ * Shortlist freezes once the first ranking ballot is in (see buildLockedPick).
  */
 function aggregateCrewWeekState({
   memberships,
@@ -542,6 +575,7 @@ function aggregateCrewWeekState({
   eventStartById = new Map(),
   crewConfig = PIVOT_CREW_CONFIG_DEFAULTS,
   lockedPick = null,
+  now = new Date(),
 }) {
   const quorumConfig = crewConfig.quorum;
   const pickConfig = crewConfig.pick;
@@ -570,11 +604,17 @@ function aggregateCrewWeekState({
     return {
       swipeProgress,
       proposedEventId: lockedPick.proposedEventId,
+      proposedEventIds: lockedPick.proposedEventIds,
       originalProposedEventId:
         lockedPick.originalProposedEventId || lockedPick.proposedEventId,
+      originalProposedEventIds: lockedPick.originalProposedEventIds,
+      shortlistEventIds: lockedPick.shortlistEventIds || [],
+      maxPickSlots: lockedPick.maxPickSlots,
       proposedScore: lockedPick.proposedScore,
       voteBreakdown: lockedPick.voteBreakdown,
       judgementStatus: lockedPick.judgementStatus,
+      ballotEndsAt: lockedPick.ballotEndsAt || null,
+      memberBallots: lockedPick.memberBallots || [],
       consensusStartedAt: lockedPick.consensusStartedAt || null,
       consensusEndsAt: lockedPick.consensusEndsAt || null,
       crewSwapsRemaining:
@@ -586,32 +626,57 @@ function aggregateCrewWeekState({
   }
 
   if (!swipeProgress.quorumMet) {
-    return {
-      swipeProgress,
-      proposedEventId: null,
-      originalProposedEventId: null,
-      proposedScore: null,
-      voteBreakdown: [],
-      judgementStatus: 'awaiting_quorum',
-      consensusStartedAt: null,
-      consensusEndsAt: null,
-      crewSwapsRemaining: null,
-      memberJudgements: [],
-    };
+    return emptyBallotAggregation(swipeProgress);
   }
 
   const candidates = buildEventScores(intents, activeMemberUserIds, pickConfig);
   const sorted = sortCandidates(candidates, pickConfig.tieBreak, eventStartById);
-  const voteBreakdown = serializeVoteBreakdown(sorted.slice(0, 3));
+  const voteBreakdown = serializeVoteBreakdown(
+    sorted.slice(0, PIVOT_CREW_VOTE_BREAKDOWN_LIMIT),
+  );
 
   if (sorted.length === 0) {
+    return emptyBallotAggregation(swipeProgress);
+  }
+
+  const shortlistEventIds = sorted
+    .slice(0, SHORTLIST_LIMIT)
+    .map((entry) => entry.eventId);
+
+  const candidateStarts = shortlistEventIds
+    .map((eventId) => {
+      const start = eventStartById.get(eventId);
+      return start == null ? null : Number(start);
+    })
+    .filter((value) => Number.isFinite(value));
+
+  const hardWindowEndsAt = computeJudgementWindowEndsAt({
+    candidateEventStarts: candidateStarts,
+    quorumMetAt: now,
+    crewConfig,
+  });
+  const ballotEndsAt = computeBallotEndsAt({
+    quorumMetAt: now,
+    hardWindowEndsAt,
+    ballotWindowMinutes: crewConfig?.judgement?.ballotWindowMinutes,
+    now,
+  });
+
+  // Single candidate: skip ballot and lock immediately.
+  if (shortlistEventIds.length === 1) {
+    const winnerId = shortlistEventIds[0];
     return {
       swipeProgress,
-      proposedEventId: null,
-      originalProposedEventId: null,
-      proposedScore: null,
-      voteBreakdown: [],
-      judgementStatus: 'awaiting_quorum',
+      proposedEventId: winnerId,
+      proposedEventIds: [winnerId],
+      originalProposedEventId: winnerId,
+      originalProposedEventIds: [winnerId],
+      shortlistEventIds,
+      proposedScore: sorted[0].score,
+      voteBreakdown,
+      judgementStatus: 'confirmed',
+      ballotEndsAt: null,
+      memberBallots: [],
       consensusStartedAt: null,
       consensusEndsAt: null,
       crewSwapsRemaining: null,
@@ -619,30 +684,18 @@ function aggregateCrewWeekState({
     };
   }
 
-  if (isSplitVote(sorted, pickConfig.tieBreak, eventStartById)) {
-    const topId = voteBreakdown[0]?.eventId || null;
-    return {
-      swipeProgress,
-      proposedEventId: topId,
-      originalProposedEventId: topId,
-      proposedScore: null,
-      voteBreakdown: voteBreakdown.slice(0, 2),
-      judgementStatus: 'split',
-      consensusStartedAt: null,
-      consensusEndsAt: null,
-      crewSwapsRemaining: null,
-      memberJudgements: [],
-    };
-  }
-
-  const winner = sorted[0];
   return {
     swipeProgress,
-    proposedEventId: winner.eventId,
-    originalProposedEventId: winner.eventId,
-    proposedScore: winner.score,
+    proposedEventId: null,
+    proposedEventIds: [],
+    originalProposedEventId: null,
+    originalProposedEventIds: [],
+    shortlistEventIds,
+    proposedScore: null,
     voteBreakdown,
-    judgementStatus: 'proposed',
+    judgementStatus: 'balloting',
+    ballotEndsAt: ballotEndsAt ? ballotEndsAt.toISOString() : null,
+    memberBallots: [],
     consensusStartedAt: null,
     consensusEndsAt: null,
     crewSwapsRemaining: null,
@@ -715,26 +768,96 @@ function serializeStoredVoteBreakdown(voteBreakdown = []) {
   }));
 }
 
+function isOpenBallotingStatus(status) {
+  return (
+    status === 'balloting' || LEGACY_OPEN_JUDGEMENT_STATUSES.has(status)
+  );
+}
+
+function hasSubmittedRankings(existing) {
+  if (!existing) {
+    return false;
+  }
+  if (Array.isArray(existing.memberBallots) && existing.memberBallots.length > 0) {
+    return true;
+  }
+  // Legacy confirm/swap rows — treat as already in-flight judgement.
+  return (
+    Array.isArray(existing.memberJudgements) &&
+    existing.memberJudgements.length > 0
+  );
+}
+
 /**
- * Preserve proposal + consensus once a crew has left awaiting_quorum so recomputes
- * do not reshuffle picks mid-judgement.
+ * Freeze shortlist + ballots once judgement is underway.
+ * Open balloting with zero rankings stays unlocked so late swipes can still
+ * reshape the dial pool; the first submitted ranking freezes it.
  */
 function buildLockedPick(existing) {
   if (!existing || !PRESERVED_JUDGEMENT_STATUSES.has(existing.judgementStatus)) {
     return null;
   }
 
+  if (
+    isOpenBallotingStatus(existing.judgementStatus) &&
+    !hasSubmittedRankings(existing)
+  ) {
+    return null;
+  }
+
+  const proposedEventId =
+    existing.proposedEventId?.toString?.() || existing.proposedEventId || null;
+  const proposedEventIds = Array.isArray(existing.proposedEventIds)
+    ? existing.proposedEventIds
+        .map((id) => id?.toString?.() || String(id))
+        .filter(Boolean)
+    : proposedEventId
+      ? [proposedEventId]
+      : [];
+  const originalProposedEventId =
+    existing.originalProposedEventId?.toString?.() ||
+    existing.originalProposedEventId ||
+    proposedEventId ||
+    null;
+  const originalProposedEventIds = Array.isArray(existing.originalProposedEventIds)
+    ? existing.originalProposedEventIds
+        .map((id) => id?.toString?.() || String(id))
+        .filter(Boolean)
+    : originalProposedEventId
+      ? [originalProposedEventId]
+      : [];
+  const shortlistEventIds = Array.isArray(existing.shortlistEventIds)
+    ? existing.shortlistEventIds
+        .map((id) => id?.toString?.() || String(id))
+        .filter(Boolean)
+    : resolveShortlistEventIds(existing);
+
+  // Cutover: freeze legacy confirm/swap rows into Borda balloting.
+  const judgementStatus = LEGACY_OPEN_JUDGEMENT_STATUSES.has(
+    existing.judgementStatus,
+  )
+    ? 'balloting'
+    : existing.judgementStatus;
+
   return {
-    proposedEventId: existing.proposedEventId?.toString?.() || existing.proposedEventId,
-    originalProposedEventId:
-      existing.originalProposedEventId?.toString?.() ||
-      existing.originalProposedEventId ||
-      existing.proposedEventId?.toString?.() ||
-      existing.proposedEventId ||
-      null,
+    proposedEventId,
+    proposedEventIds,
+    originalProposedEventId,
+    originalProposedEventIds,
+    shortlistEventIds,
+    maxPickSlots:
+      existing.maxPickSlots == null ? null : Number(existing.maxPickSlots),
     proposedScore: existing.proposedScore,
     voteBreakdown: serializeStoredVoteBreakdown(existing.voteBreakdown),
-    judgementStatus: existing.judgementStatus,
+    judgementStatus,
+    ballotEndsAt: existing.ballotEndsAt || null,
+    memberBallots: (existing.memberBallots || []).map((entry) => ({
+      userId: entry.userId?.toString?.() || String(entry.userId),
+      ranking: (entry.ranking || []).map(
+        (id) => id?.toString?.() || String(id),
+      ),
+      at: entry.at,
+    })),
     consensusStartedAt: existing.consensusStartedAt || null,
     consensusEndsAt: existing.consensusEndsAt || null,
     crewSwapsRemaining:
@@ -748,9 +871,36 @@ function buildLockedPick(existing) {
   };
 }
 
+/**
+ * While the shortlist is still open (balloting, no rankings yet), keep the
+ * original ballot window so late-swipe recomputes don't reset the timer.
+ */
+function carryOpenBallotWindow(aggregation, existing) {
+  if (
+    !existing ||
+    !aggregation ||
+    aggregation.judgementStatus !== 'balloting' ||
+    hasSubmittedRankings(existing) ||
+    !isOpenBallotingStatus(existing.judgementStatus) ||
+    !existing.ballotEndsAt
+  ) {
+    return aggregation;
+  }
+
+  const ballotEndsAt =
+    existing.ballotEndsAt instanceof Date
+      ? existing.ballotEndsAt.toISOString()
+      : existing.ballotEndsAt;
+
+  return {
+    ...aggregation,
+    ballotEndsAt,
+  };
+}
+
 function toStoredWeekState(
   aggregation,
-  { crewId, batchWeek, tenantKey, aggregatedAt, crewConfig },
+  { crewId, batchWeek, tenantKey, aggregatedAt, crewConfig, crew = null },
 ) {
   const proposedEventId = aggregation.proposedEventId
     ? toObjectId(aggregation.proposedEventId)
@@ -759,18 +909,43 @@ function toStoredWeekState(
     ? toObjectId(aggregation.originalProposedEventId)
     : proposedEventId;
 
-  const isOpenProposal =
-    aggregation.judgementStatus === 'proposed' ||
-    aggregation.judgementStatus === 'split' ||
-    aggregation.judgementStatus === 'deciding';
+  const proposedEventIdsRaw = Array.isArray(aggregation.proposedEventIds)
+    ? aggregation.proposedEventIds
+    : proposedEventId
+      ? [aggregation.proposedEventId]
+      : [];
+  const proposedEventIds = proposedEventIdsRaw
+    .map((id) => toObjectId(id))
+    .filter(Boolean);
+  const originalProposedEventIdsRaw = Array.isArray(
+    aggregation.originalProposedEventIds,
+  )
+    ? aggregation.originalProposedEventIds
+    : originalProposedEventId
+      ? [aggregation.originalProposedEventId || aggregation.proposedEventId]
+      : [];
+  const originalProposedEventIds = originalProposedEventIdsRaw
+    .map((id) => toObjectId(id))
+    .filter(Boolean);
 
-  const swapBudget = crewConfig?.judgement?.crewSwapBudget;
-  const defaultSwapBudget = Number.isInteger(swapBudget) ? swapBudget : 2;
+  const configMaxPickSlots = Number(crewConfig?.judgement?.maxPickSlots);
+  const crewMaxPickSlots = Number(crew?.maxPickSlots);
+  const inheritedMax = Number.isInteger(crewMaxPickSlots)
+    ? Math.max(1, Math.min(2, crewMaxPickSlots))
+    : Number.isInteger(configMaxPickSlots)
+      ? Math.max(1, Math.min(2, configMaxPickSlots))
+      : 1;
+  const maxPickSlots =
+    aggregation.maxPickSlots != null
+      ? Math.max(1, Math.min(2, Number(aggregation.maxPickSlots)))
+      : inheritedMax;
 
-  let crewSwapsRemaining = aggregation.crewSwapsRemaining;
-  if (crewSwapsRemaining == null && isOpenProposal) {
-    crewSwapsRemaining = defaultSwapBudget;
-  }
+  const shortlistEventIdsRaw = Array.isArray(aggregation.shortlistEventIds)
+    ? aggregation.shortlistEventIds
+    : [];
+  const shortlistEventIds = shortlistEventIdsRaw
+    .map((id) => toObjectId(id))
+    .filter(Boolean);
 
   return {
     crewId,
@@ -778,7 +953,11 @@ function toStoredWeekState(
     tenantKey,
     swipeProgress: aggregation.swipeProgress,
     proposedEventId,
+    proposedEventIds,
     originalProposedEventId,
+    originalProposedEventIds,
+    shortlistEventIds,
+    maxPickSlots,
     proposedScore: aggregation.proposedScore,
     voteBreakdown: aggregation.voteBreakdown.map((entry) => ({
       eventId: toObjectId(entry.eventId),
@@ -791,6 +970,14 @@ function toStoredWeekState(
       })),
     })),
     judgementStatus: aggregation.judgementStatus,
+    ballotEndsAt: aggregation.ballotEndsAt
+      ? new Date(aggregation.ballotEndsAt)
+      : null,
+    memberBallots: (aggregation.memberBallots || []).map((entry) => ({
+      userId: toObjectId(entry.userId),
+      ranking: (entry.ranking || []).map((id) => toObjectId(id)).filter(Boolean),
+      at: entry.at instanceof Date ? entry.at : new Date(entry.at),
+    })),
     consensusStartedAt: aggregation.consensusStartedAt
       ? new Date(aggregation.consensusStartedAt)
       : null,
@@ -798,7 +985,9 @@ function toStoredWeekState(
       ? new Date(aggregation.consensusEndsAt)
       : null,
     crewSwapsRemaining:
-      crewSwapsRemaining == null ? null : Number(crewSwapsRemaining),
+      aggregation.crewSwapsRemaining == null
+        ? null
+        : Number(aggregation.crewSwapsRemaining),
     memberJudgements: (aggregation.memberJudgements || []).map((entry) => ({
       userId: toObjectId(entry.userId),
       action: entry.action,
@@ -887,13 +1076,16 @@ async function recomputeCrewWeekState(req, { crewId, batchWeek }) {
   ]);
 
   const aggregatedAt = new Date();
-  const aggregation = aggregateCrewWeekState({
-    memberships,
-    intents,
-    eventStartById,
-    crewConfig,
-    lockedPick: buildLockedPick(existing),
-  });
+  const aggregation = carryOpenBallotWindow(
+    aggregateCrewWeekState({
+      memberships,
+      intents,
+      eventStartById,
+      crewConfig,
+      lockedPick: buildLockedPick(existing),
+    }),
+    existing,
+  );
 
   const stored = toStoredWeekState(aggregation, {
     crewId: crewObjectId,
@@ -901,6 +1093,7 @@ async function recomputeCrewWeekState(req, { crewId, batchWeek }) {
     tenantKey,
     aggregatedAt,
     crewConfig,
+    crew,
   });
 
   const doc = await PivotCrewWeekState.findOneAndUpdate(
@@ -1087,12 +1280,14 @@ module.exports = {
   PIVOT_CREW_JUDGEMENT_STATUSES,
   CREW_WEEK_PROGRESS_CACHE_TTL_MS,
   aggregateCrewWeekState,
+  buildLockedPick,
   computeJudgementWindowEndsAt,
   serializeCrewWeekEvent,
   serializeCrewWeekProgressRow,
   getPivotCrewWeekProgress,
   invalidateCrewWeekProgressCache,
   invalidateCrewWeekProgressForCrewMembers,
+  invalidateCrewWeekProgressForUserCrews,
   resolveBatchWeek,
   resolveCrewConfig,
   recomputeCrewWeekState,

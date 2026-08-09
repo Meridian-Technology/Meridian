@@ -2,7 +2,13 @@
  * Pure helpers for democratic crew consensus (timer + shared swaps).
  */
 
-const OPEN_CONSENSUS_STATUSES = new Set(['proposed', 'split', 'deciding']);
+/** Legacy confirm/swap open set + balloting for cutover readers. */
+const OPEN_CONSENSUS_STATUSES = new Set([
+  'balloting',
+  'proposed',
+  'split',
+  'deciding',
+]);
 const LOCKED_JUDGEMENT_STATUSES = new Set(['confirmed', 'swapped']);
 
 function toMs(value) {

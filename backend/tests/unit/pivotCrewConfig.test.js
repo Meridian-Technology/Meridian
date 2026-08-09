@@ -92,10 +92,14 @@ describe('pivotCrewConfig', () => {
       expect(PIVOT_CREW_CONFIG_DEFAULTS.judgement).toEqual({
         windowHoursBeforeEvent: 24,
         minHoursAfterDeckComplete: 6,
+        ballotWindowMinutes: 180,
         consensusWindowMinutes: 180,
         swapResetBonusMinutes: 15,
         crewSwapBudget: 2,
+        maxPickSlots: 1,
       });
+      expect(PIVOT_CREW_CONFIG_DEFAULTS.judgement.ballotWindowMinutes).toBe(180);
+      expect(PIVOT_CREW_CONFIG_DEFAULTS.pick.ballotMethod).toBe('borda');
     });
   });
 
@@ -114,6 +118,19 @@ describe('pivotCrewConfig', () => {
         swapResetBonusMinutes: 10,
         crewSwapBudget: 1,
       });
+    });
+
+    it('accepts judgement.maxPickSlots in 1–2', () => {
+      const ok = validatePivotCrewConfigPatch({
+        judgement: { maxPickSlots: 2 },
+      });
+      expect(ok.ok).toBe(true);
+      expect(ok.patch.judgement).toEqual({ maxPickSlots: 2 });
+
+      const bad = validatePivotCrewConfigPatch({
+        judgement: { maxPickSlots: 3 },
+      });
+      expect(bad.error).toMatch(/maxPickSlots/);
     });
 
     it('rejects out-of-range consensus window', () => {

@@ -15,9 +15,15 @@ jest.mock('../../services/pivotCrewService', () => ({
   createPivotCrew: jest.fn(),
   listPivotCrews: jest.fn(),
   getPivotCrewDetail: jest.fn(),
+  updatePivotCrewSettings: jest.fn(),
+  deletePivotCrew: jest.fn(),
   rotatePivotCrewInviteLink: jest.fn(),
   joinPivotCrew: jest.fn(),
   invitePivotCrewPlaceholders: jest.fn(),
+  addPivotCrewMember: jest.fn(),
+  listPivotCrewInvites: jest.fn(),
+  acceptPivotCrewInvite: jest.fn(),
+  declinePivotCrewInvite: jest.fn(),
 }));
 
 jest.mock('../../services/pivotCrewWeekStateService', () => ({
@@ -27,14 +33,18 @@ jest.mock('../../services/pivotCrewWeekStateService', () => ({
 
 jest.mock('../../services/pivotCrewJudgementService', () => ({
   getPivotCrewWeekJudgement: jest.fn(),
+  getPivotCrewWeekJudgements: jest.fn(),
+  castPivotCrewWeekBallot: jest.fn(),
   confirmPivotCrewWeekPick: jest.fn(),
   swapPivotCrewWeekPick: jest.fn(),
+  resetPivotCrewWeekPick: jest.fn(),
 }));
 
 const {
   createPivotCrew,
   listPivotCrews,
   getPivotCrewDetail,
+  deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
   invitePivotCrewPlaceholders,
@@ -42,6 +52,8 @@ const {
 const { getPivotCrewWeekProgress } = require('../../services/pivotCrewWeekStateService');
 const {
   getPivotCrewWeekJudgement,
+  getPivotCrewWeekJudgements,
+  castPivotCrewWeekBallot,
   confirmPivotCrewWeekPick,
   swapPivotCrewWeekPick,
 } = require('../../services/pivotCrewJudgementService');
@@ -66,11 +78,14 @@ describe('pivotRoutes /pivot/crews', () => {
     createPivotCrew.mockReset();
     listPivotCrews.mockReset();
     getPivotCrewDetail.mockReset();
+    deletePivotCrew.mockReset();
     rotatePivotCrewInviteLink.mockReset();
     joinPivotCrew.mockReset();
     invitePivotCrewPlaceholders.mockReset();
     getPivotCrewWeekProgress.mockReset();
     getPivotCrewWeekJudgement.mockReset();
+    getPivotCrewWeekJudgements.mockReset();
+    castPivotCrewWeekBallot.mockReset();
     confirmPivotCrewWeekPick.mockReset();
     swapPivotCrewWeekPick.mockReset();
   });
@@ -107,6 +122,49 @@ describe('pivotRoutes /pivot/crews', () => {
     );
   });
 
+  it('GET /pivot/crews/week/judgements returns 426 without X-App-Version', async () => {
+    const response = await request(buildApp()).get('/pivot/crews/week/judgements?batchWeek=2026-W30');
+
+    expect(response.status).toBe(426);
+    expect(response.body.code).toBe('APP_UPGRADE_REQUIRED');
+    expect(getPivotCrewWeekJudgements).not.toHaveBeenCalled();
+  });
+
+  it('GET /pivot/crews/week/judgements returns batch decide payload', async () => {
+    getPivotCrewWeekJudgements.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W30',
+        decideQueueOrder: [CREW_ID, '665a1b2c3d4e5f6789012346'],
+        judgements: [
+          {
+            crewId: CREW_ID,
+            crewName: 'Friday Plans',
+            needsUserAction: true,
+            voteBreakdown: [{ eventId: '665a1b2c3d4e5f6789012347' }],
+          },
+          {
+            crewId: '665a1b2c3d4e5f6789012346',
+            crewName: 'Saturday Crew',
+            needsUserAction: true,
+            voteBreakdown: [],
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildApp())
+      .get('/pivot/crews/week/judgements?batchWeek=2026-W30')
+      .set('X-App-Version', '2.0.0');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.judgements).toHaveLength(2);
+    expect(response.body.data.decideQueueOrder).toHaveLength(2);
+    expect(getPivotCrewWeekJudgements).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      expect.objectContaining({ batchWeek: '2026-W30' }),
+    );
+  });
+
   it('GET /pivot/crews/:crewId/week/judgement returns breakdown', async () => {
     getPivotCrewWeekJudgement.mockResolvedValue({
       data: {
@@ -125,53 +183,54 @@ describe('pivotRoutes /pivot/crews', () => {
     expect(response.body.data.crewName).toBe('Friday Plans');
   });
 
-  it('POST /pivot/crews/:crewId/week/confirm locks pick', async () => {
-    confirmPivotCrewWeekPick.mockResolvedValue({
+  it('POST /pivot/crews/:crewId/week/ballot casts ranking', async () => {
+    castPivotCrewWeekBallot.mockResolvedValue({
       data: {
         crewId: CREW_ID,
-        judgementStatus: 'confirmed',
-        eventId: '665a1b2c3d4e5f6789012346',
+        judgementStatus: 'balloting',
+        ballot: { viewerHasBalloted: true },
       },
     });
 
     const response = await request(buildApp())
-      .post(`/pivot/crews/${CREW_ID}/week/confirm`)
-      .send({ eventId: '665a1b2c3d4e5f6789012346', batchWeek: '2026-W30' });
+      .post(`/pivot/crews/${CREW_ID}/week/ballot`)
+      .send({
+        ranking: ['665a1b2c3d4e5f6789012346', '665a1b2c3d4e5f6789012347'],
+        batchWeek: '2026-W30',
+      });
 
     expect(response.status).toBe(200);
-    expect(response.body.data.judgementStatus).toBe('confirmed');
+    expect(response.body.data.ballot.viewerHasBalloted).toBe(true);
   });
 
-  it('POST /pivot/crews/:crewId/week/confirm returns 409 when window closed', async () => {
+  it('POST /pivot/crews/:crewId/week/confirm returns 410 retired', async () => {
     confirmPivotCrewWeekPick.mockResolvedValue({
-      error: 'The judgement window for this crew has closed.',
-      status: 409,
-      code: 'JUDGEMENT_WINDOW_CLOSED',
+      error: 'Confirm is retired. Rank the shortlist via POST …/week/ballot.',
+      status: 410,
+      code: 'CONFIRM_RETIRED',
     });
 
     const response = await request(buildApp())
       .post(`/pivot/crews/${CREW_ID}/week/confirm`)
       .send({ eventId: '665a1b2c3d4e5f6789012346' });
 
-    expect(response.status).toBe(409);
-    expect(response.body.code).toBe('JUDGEMENT_WINDOW_CLOSED');
+    expect(response.status).toBe(410);
+    expect(response.body.code).toBe('CONFIRM_RETIRED');
   });
 
-  it('POST /pivot/crews/:crewId/week/swap chooses runner-up', async () => {
+  it('POST /pivot/crews/:crewId/week/swap returns 410 retired', async () => {
     swapPivotCrewWeekPick.mockResolvedValue({
-      data: {
-        crewId: CREW_ID,
-        judgementStatus: 'swapped',
-        eventId: '665a1b2c3d4e5f6789012346',
-      },
+      error: 'Swap is retired. Rank the shortlist via POST …/week/ballot.',
+      status: 410,
+      code: 'SWAP_RETIRED',
     });
 
     const response = await request(buildApp())
       .post(`/pivot/crews/${CREW_ID}/week/swap`)
       .send({ batchWeek: '2026-W30' });
 
-    expect(response.status).toBe(200);
-    expect(response.body.data.judgementStatus).toBe('swapped');
+    expect(response.status).toBe(410);
+    expect(response.body.code).toBe('SWAP_RETIRED');
   });
 
   it('POST /pivot/crews creates a crew', async () => {
@@ -286,5 +345,23 @@ describe('pivotRoutes /pivot/crews', () => {
 
     expect(response.status).toBe(400);
     expect(joinPivotCrew).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /pivot/crews/:crewId archives a crew', async () => {
+    deletePivotCrew.mockResolvedValue({
+      data: {
+        crewId: CREW_ID,
+        archivedAt: '2026-08-08T08:00:00.000Z',
+      },
+    });
+
+    const response = await request(buildApp()).delete(`/pivot/crews/${CREW_ID}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.crewId).toBe(CREW_ID);
+    expect(deletePivotCrew).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      CREW_ID,
+    );
   });
 });

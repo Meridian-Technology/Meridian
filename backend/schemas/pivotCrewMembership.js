@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 
-const PIVOT_CREW_MEMBERSHIP_STATUSES = Object.freeze(['active', 'invited', 'left']);
+const PIVOT_CREW_MEMBERSHIP_STATUSES = Object.freeze(['active', 'invited', 'pending', 'left']);
 const PIVOT_CREW_MEMBERSHIP_ROLES = Object.freeze(['owner', 'member']);
 
 /** Member, owner, or invited placeholder for a Pivot crew. */
@@ -33,6 +33,12 @@ const pivotCrewMembershipSchema = new mongoose.Schema(
       enum: PIVOT_CREW_MEMBERSHIP_ROLES,
       required: true,
     },
+    /** Set when a specific user was invited in-app (pending accept). */
+    invitedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     invitedAt: {
       type: Date,
       required: true,
@@ -51,7 +57,7 @@ pivotCrewMembershipSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      status: 'active',
+      status: { $in: ['active', 'pending'] },
       userId: { $type: 'objectId' },
     },
   },

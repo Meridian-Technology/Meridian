@@ -8,6 +8,8 @@ const {
   createPivotCrew,
   listPivotCrews,
   getPivotCrewDetail,
+  updatePivotCrewSettings,
+  deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
   invitePivotCrewPlaceholders,
@@ -23,8 +25,10 @@ const {
 const {
   getPivotCrewWeekJudgement,
   getPivotCrewWeekJudgements,
+  castPivotCrewWeekBallot,
   confirmPivotCrewWeekPick,
   swapPivotCrewWeekPick,
+  resetPivotCrewWeekPick,
 } = require('../services/pivotCrewJudgementService');
 const { requireMinAppVersion } = require('../middlewares/requireMinAppVersion');
 const { RITUAL_MIN_APP_VERSION } = require('../services/pivotWeekRitualService');
@@ -273,11 +277,95 @@ router.get(
   },
 );
 
+router.patch(
+  '/:crewId/settings',
+  verifyToken,
+  param('crewId').isMongoId().withMessage('Invalid crew id.'),
+  body('maxPickSlots')
+    .optional({ nullable: true })
+    .custom((value) => value === null || value === 1 || value === 2)
+    .withMessage('maxPickSlots must be 1, 2, or null.'),
+  async (req, res) => {
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+
+    try {
+      const result = await updatePivotCrewSettings(req, {
+        crewId: req.params.crewId,
+        maxPickSlots: req.body.maxPickSlots,
+      });
+      return handleServiceResult(res, result);
+    } catch (err) {
+      logPivotRouteError('PATCH /pivot/crews/:crewId/settings', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to update crew settings.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/:crewId',
+  verifyToken,
+  param('crewId').isMongoId().withMessage('Invalid crew id.'),
+  async (req, res) => {
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+
+    try {
+      const result = await deletePivotCrew(req, req.params.crewId);
+      return handleServiceResult(res, result);
+    } catch (err) {
+      logPivotRouteError('DELETE /pivot/crews/:crewId', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to delete crew.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/:crewId/week/ballot',
+  verifyToken,
+  param('crewId').isMongoId().withMessage('Invalid crew id.'),
+  body('ranking')
+    .isArray({ min: 1, max: 3 })
+    .withMessage('ranking must be an array of 1–3 event ids.'),
+  body('ranking.*').isMongoId().withMessage('Each ranking entry must be a valid event id.'),
+  async (req, res) => {
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+
+    try {
+      const result = await castPivotCrewWeekBallot(req, {
+        crewId: req.params.crewId,
+        ranking: req.body.ranking,
+        batchWeek: req.body.batchWeek || req.query.batchWeek,
+      });
+      return handleServiceResult(res, result);
+    } catch (err) {
+      logPivotRouteError('POST /pivot/crews/:crewId/week/ballot', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to cast crew ballot.',
+      });
+    }
+  },
+);
+
+/** @deprecated — confirm/swap retired; returns 410 CONFIRM_RETIRED */
 router.post(
   '/:crewId/week/confirm',
   verifyToken,
   param('crewId').isMongoId().withMessage('Invalid crew id.'),
-  body('eventId').isMongoId().withMessage('A valid eventId is required.'),
   async (req, res) => {
     const validationResponse = handleValidation(req, res);
     if (validationResponse) {
@@ -288,6 +376,7 @@ router.post(
       const result = await confirmPivotCrewWeekPick(req, {
         crewId: req.params.crewId,
         eventId: req.body.eventId,
+        eventIds: req.body.eventIds,
         batchWeek: req.body.batchWeek || req.query.batchWeek,
       });
       return handleServiceResult(res, result);
@@ -301,6 +390,7 @@ router.post(
   },
 );
 
+/** @deprecated — confirm/swap retired; returns 410 SWAP_RETIRED */
 router.post(
   '/:crewId/week/swap',
   verifyToken,
@@ -314,6 +404,8 @@ router.post(
     try {
       const result = await swapPivotCrewWeekPick(req, {
         crewId: req.params.crewId,
+        eventId: req.body.eventId,
+        slotIndex: req.body.slotIndex,
         batchWeek: req.body.batchWeek || req.query.batchWeek,
       });
       return handleServiceResult(res, result);
@@ -322,6 +414,40 @@ router.post(
       return res.status(500).json({
         success: false,
         message: 'Unable to swap crew pick.',
+      });
+    }
+  },
+);
+
+/** Dev only — clear locked/consensus pick so the crew returns to decide. */
+router.post(
+  '/:crewId/week/dev/reset-pick',
+  verifyToken,
+  param('crewId').isMongoId().withMessage('Invalid crew id.'),
+  async (req, res) => {
+    if (process.env.NODE_ENV !== 'development') {
+      return res.status(404).json({
+        success: false,
+        message: 'Not found.',
+      });
+    }
+
+    const validationResponse = handleValidation(req, res);
+    if (validationResponse) {
+      return validationResponse;
+    }
+
+    try {
+      const result = await resetPivotCrewWeekPick(req, {
+        crewId: req.params.crewId,
+        batchWeek: req.body.batchWeek || req.query.batchWeek,
+      });
+      return handleServiceResult(res, result);
+    } catch (err) {
+      logPivotRouteError('POST /pivot/crews/:crewId/week/dev/reset-pick', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to reset crew pick.',
       });
     }
   },

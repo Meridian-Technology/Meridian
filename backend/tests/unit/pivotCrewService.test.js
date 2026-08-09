@@ -1,3 +1,9 @@
+jest.mock('../../services/notificationService', () => ({
+  withModels: jest.fn(() => ({
+    createSystemNotification: jest.fn().mockResolvedValue({}),
+  })),
+}));
+
 const mongoose = require('mongoose');
 const {
   createMongoMemoryConnection,
@@ -11,10 +17,14 @@ const {
   createPivotCrew,
   listPivotCrews,
   getPivotCrewDetail,
+  deletePivotCrew,
   rotatePivotCrewInviteLink,
   joinPivotCrew,
   invitePivotCrewPlaceholders,
   addPivotCrewMember,
+  listPivotCrewInvites,
+  acceptPivotCrewInvite,
+  declinePivotCrewInvite,
   countQuorumEligibleMembers,
   buildCrewQuorumSnapshot,
   PIVOT_CREW_INVITED_DISPLAY_LABEL,
@@ -243,18 +253,52 @@ describe('pivotCrewService (Task 1.2)', () => {
   });
 
   describe('addPivotCrewMember', () => {
-    it('adds an existing tenant user as an active crew member', async () => {
+    it('sends a pending crew invite instead of adding the user immediately', async () => {
       const created = await createPivotCrew(req, { name: 'Contacts Crew' });
       const crewId = created.data.crew.id;
 
-      const added = await addPivotCrewMember(req, crewId, { userId: memberId.toString() });
+      const invited = await addPivotCrewMember(req, crewId, { userId: memberId.toString() });
 
-      expect(added.data.crew.activeMemberCount).toBe(2);
+      expect(invited.data.crew.activeMemberCount).toBe(1);
       expect(
-        added.data.roster.some(
+        invited.data.roster.some(
+          (row) => row.userId === memberId.toString() && row.status === 'pending',
+        ),
+      ).toBe(true);
+
+      req.user.userId = memberId.toString();
+      const inbox = await listPivotCrewInvites(req);
+      expect(inbox.data.received).toHaveLength(1);
+      expect(inbox.data.received[0].crewName).toBe('Contacts Crew');
+
+      const membershipId = inbox.data.received[0].membershipId;
+      const accepted = await acceptPivotCrewInvite(req, membershipId);
+      expect(accepted.data.crewName).toBe('Contacts Crew');
+
+      req.user.userId = ownerId.toString();
+      const detail = await getPivotCrewDetail(req, crewId);
+      expect(detail.data.crew.activeMemberCount).toBe(2);
+      expect(
+        detail.data.roster.some(
           (row) => row.userId === memberId.toString() && row.status === 'active',
         ),
       ).toBe(true);
+    });
+
+    it('declines a pending crew invite', async () => {
+      const created = await createPivotCrew(req, { name: 'Decline Crew' });
+      const crewId = created.data.crew.id;
+
+      await addPivotCrewMember(req, crewId, { userId: memberId.toString() });
+
+      req.user.userId = memberId.toString();
+      const inbox = await listPivotCrewInvites(req);
+      const membershipId = inbox.data.received[0].membershipId;
+      const declined = await declinePivotCrewInvite(req, membershipId);
+      expect(declined.data.declined).toBe(true);
+
+      const afterDecline = await listPivotCrewInvites(req);
+      expect(afterDecline.data.received).toHaveLength(0);
     });
 
     it('rejects adding yourself', async () => {
@@ -264,6 +308,39 @@ describe('pivotCrewService (Task 1.2)', () => {
       });
 
       expect(result.code).toBe('SELF_ADD');
+    });
+  });
+
+  describe('deletePivotCrew', () => {
+    it('lets the owner archive a crew and removes it from lists', async () => {
+      const created = await createPivotCrew(req, { name: 'Delete Me' });
+      const crewId = created.data.crew.id;
+
+      const deleted = await deletePivotCrew(req, crewId);
+      expect(deleted.data.crewId).toBe(crewId);
+      expect(deleted.data.archivedAt).toBeTruthy();
+
+      const listed = await listPivotCrews(req);
+      expect(listed.data.crews).toHaveLength(0);
+
+      const detail = await getPivotCrewDetail(req, crewId);
+      expect(detail.status).toBe(404);
+    });
+
+    it('forbids non-owner members from deleting', async () => {
+      const created = await createPivotCrew(req, { name: 'Member Guard' });
+      const token = decodeURIComponent(created.data.inviteLink.split('token=')[1]);
+
+      req.user.userId = memberId.toString();
+      await joinPivotCrew(req, { token });
+
+      const result = await deletePivotCrew(req, created.data.crew.id);
+      expect(result.status).toBe(403);
+      expect(result.code).toBe('FORBIDDEN');
+
+      req.user.userId = ownerId.toString();
+      const listed = await listPivotCrews(req);
+      expect(listed.data.crews).toHaveLength(1);
     });
   });
 });

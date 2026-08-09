@@ -11,35 +11,59 @@ const eventSchema = require('../../events/schemas/event');
 const userSchema = require('../../schemas/user');
 const getModels = require('../../services/getModelService');
 const {
-  confirmPivotCrewWeekPick,
-  swapPivotCrewWeekPick,
+  castPivotCrewWeekBallot,
   getPivotCrewWeekJudgement,
   isJudgementWindowOpen,
   getTopCandidateEventIds,
   loadLockedCrewPicksForUser,
 } = require('../../services/pivotCrewJudgementService');
-const { getWeekRecap } = require('../../services/pivotIntentService');
+const { recomputeCrewWeekState } = require('../../services/pivotCrewWeekStateService');
 const { PIVOT_CREW_CONFIG_DEFAULTS } = require('../../utilities/pivotCrewConfig');
 
-describe('pivotCrewJudgementService (Task 2.3)', () => {
+describe('pivotCrewJudgementService (Borda ballot)', () => {
   const batchWeek = '2026-W30';
   const tenantKey = 'nyc';
 
   describe('pure helpers', () => {
-    it('getTopCandidateEventIds returns top two for split votes', () => {
-      const eventOne = new mongoose.Types.ObjectId().toString();
-      const eventTwo = new mongoose.Types.ObjectId().toString();
+    it('getTopCandidateEventIds prefers shortlistEventIds when present', () => {
+      const shortlist = [
+        new mongoose.Types.ObjectId().toString(),
+        new mongoose.Types.ObjectId().toString(),
+        new mongoose.Types.ObjectId().toString(),
+      ];
 
       expect(
         getTopCandidateEventIds({
-          judgementStatus: 'split',
+          shortlistEventIds: shortlist,
           voteBreakdown: [
-            { eventId: eventOne },
-            { eventId: eventTwo },
+            { eventId: new mongoose.Types.ObjectId() },
             { eventId: new mongoose.Types.ObjectId() },
           ],
         }),
-      ).toEqual([eventOne, eventTwo]);
+      ).toEqual(shortlist);
+    });
+
+    it('getTopCandidateEventIds falls back to top five voteBreakdown ids', () => {
+      const eventOne = new mongoose.Types.ObjectId().toString();
+      const eventTwo = new mongoose.Types.ObjectId().toString();
+      const eventThree = new mongoose.Types.ObjectId().toString();
+      const eventFour = new mongoose.Types.ObjectId().toString();
+      const eventFive = new mongoose.Types.ObjectId().toString();
+      const eventSix = new mongoose.Types.ObjectId().toString();
+
+      expect(
+        getTopCandidateEventIds({
+          judgementStatus: 'balloting',
+          voteBreakdown: [
+            { eventId: eventOne },
+            { eventId: eventTwo },
+            { eventId: eventThree },
+            { eventId: eventFour },
+            { eventId: eventFive },
+            { eventId: eventSix },
+          ],
+        }),
+      ).toEqual([eventOne, eventTwo, eventThree, eventFour, eventFive]);
     });
 
     it('isJudgementWindowOpen respects endsAt timestamp', () => {
@@ -49,13 +73,12 @@ describe('pivotCrewJudgementService (Task 2.3)', () => {
     });
   });
 
-  describe('confirm / swap / judgement APIs', () => {
+  describe('cast ballot / judgement APIs', () => {
     let mongo;
     let req;
     let ownerId;
     let memberBId;
     let memberCId;
-    let outsiderId;
     let eventOneId;
     let eventTwoId;
     let crewId;
@@ -102,24 +125,22 @@ describe('pivotCrewJudgementService (Task 2.3)', () => {
       ownerId = new mongoose.Types.ObjectId();
       memberBId = new mongoose.Types.ObjectId();
       memberCId = new mongoose.Types.ObjectId();
-      outsiderId = new mongoose.Types.ObjectId();
       eventOneId = new mongoose.Types.ObjectId();
       eventTwoId = new mongoose.Types.ObjectId();
 
-      const { User, PivotCrew, PivotCrewMembership, PivotCrewWeekState, Event } = getModels(
+      const { User, PivotCrew, PivotCrewMembership, Event, PivotEventIntent } = getModels(
         { db: mongo.connection, school: tenantKey },
         'User',
         'PivotCrew',
         'PivotCrewMembership',
-        'PivotCrewWeekState',
         'Event',
+        'PivotEventIntent',
       );
 
       await User.create([
         { _id: ownerId, name: 'Owner', email: 'owner@test.com', username: 'owner_test' },
         { _id: memberBId, name: 'Member B', email: 'b@test.com', username: 'member_b' },
         { _id: memberCId, name: 'Member C', email: 'c@test.com', username: 'member_c' },
-        { _id: outsiderId, name: 'Outsider', email: 'out@test.com', username: 'outsider' },
       ]);
 
       const crew = await PivotCrew.create({
@@ -206,41 +227,26 @@ describe('pivotCrewJudgementService (Task 2.3)', () => {
         },
       ]);
 
-      await PivotCrewWeekState.create({
-        crewId,
-        batchWeek,
-        tenantKey,
-        swipeProgress: {
-          activeMemberCount: 3,
-          swipedCount: 3,
-          invitedCount: 0,
-          participationRate: 1,
-          quorumMet: true,
+      await PivotEventIntent.create([
+        {
+          userId: ownerId,
+          eventId: eventOneId,
+          batchWeek,
+          status: 'registered',
         },
-        proposedEventId: eventTwoId,
-        proposedScore: 2.5,
-        voteBreakdown: [
-          {
-            eventId: eventTwoId,
-            score: 2.5,
-            interestedCount: 1,
-            registeredCount: 1,
-            memberVotes: [
-              { userId: memberBId, status: 'registered' },
-              { userId: memberCId, status: 'interested' },
-            ],
-          },
-          {
-            eventId: eventOneId,
-            score: 1.5,
-            interestedCount: 0,
-            registeredCount: 1,
-            memberVotes: [{ userId: ownerId, status: 'registered' }],
-          },
-        ],
-        judgementStatus: 'proposed',
-        aggregatedAt: new Date('2026-07-21T12:00:00.000Z'),
-      });
+        {
+          userId: memberBId,
+          eventId: eventTwoId,
+          batchWeek,
+          status: 'registered',
+        },
+        {
+          userId: memberCId,
+          eventId: eventTwoId,
+          batchWeek,
+          status: 'interested',
+        },
+      ]);
 
       req = {
         db: mongo.connection,
@@ -264,41 +270,72 @@ describe('pivotCrewJudgementService (Task 2.3)', () => {
         'PivotCrew',
         'PivotCrewMembership',
         'PivotCrewWeekState',
+        'PivotEventIntent',
       );
       await models.PivotCrew.syncIndexes();
       await models.PivotCrewMembership.syncIndexes();
       await models.PivotCrewWeekState.syncIndexes();
+      await models.PivotEventIntent.syncIndexes();
     });
 
     afterAll(async () => {
       await mongo.cleanup();
     });
 
-    it('GET judgement returns proposed event and vote breakdown', async () => {
-      const result = await getPivotCrewWeekJudgement(req, {
+    async function openBalloting() {
+      const result = await recomputeCrewWeekState(req, {
         crewId: crewId.toString(),
         batchWeek,
-        now: new Date('2026-07-21T18:00:00.000Z'),
       });
+      expect(result.data.judgementStatus).toBe('balloting');
+      expect(result.data.shortlistEventIds.map(String)).toEqual([
+        eventTwoId.toString(),
+        eventOneId.toString(),
+      ]);
+      return result.data;
+    }
 
-      expect(result.data.crewName).toBe('Judgement Crew');
-      expect(result.data.proposedEvent.id).toBe(eventTwoId.toString());
-      expect(result.data.runnerUp.id).toBe(eventOneId.toString());
-      expect(result.data.voteBreakdown).toHaveLength(2);
-      expect(result.data.voteBreakdown[0].memberVotes[0].displayLabel).toBe('Member B');
-      expect(result.data.judgementWindowOpen).toBe(true);
-    });
+    function memberReq(userId) {
+      return {
+        ...req,
+        user: { userId: userId.toString() },
+      };
+    }
 
-    it('confirm locks the proposed pick', async () => {
-      const result = await confirmPivotCrewWeekPick(req, {
+    it('recompute opens balloting; all members balloting locks Borda winner', async () => {
+      await openBalloting();
+
+      const ballotNow = new Date('2026-07-21T18:00:00.000Z');
+      const rankingWinnerFirst = [eventTwoId.toString(), eventOneId.toString()];
+
+      const first = await castPivotCrewWeekBallot(memberReq(ownerId), {
         crewId: crewId.toString(),
-        eventId: eventTwoId.toString(),
+        ranking: rankingWinnerFirst,
         batchWeek,
-        now: new Date('2026-07-21T18:00:00.000Z'),
+        now: ballotNow,
+      });
+      expect(first.data.judgementStatus).toBe('balloting');
+      expect(first.data.ballot.ballotedCount).toBe(1);
+      expect(first.data.ballot.viewerHasBalloted).toBe(true);
+
+      await castPivotCrewWeekBallot(memberReq(memberBId), {
+        crewId: crewId.toString(),
+        ranking: rankingWinnerFirst,
+        batchWeek,
+        now: new Date('2026-07-21T18:05:00.000Z'),
       });
 
-      expect(result.data.judgementStatus).toBe('confirmed');
-      expect(result.data.event.id).toBe(eventTwoId.toString());
+      const locked = await castPivotCrewWeekBallot(memberReq(memberCId), {
+        crewId: crewId.toString(),
+        ranking: rankingWinnerFirst,
+        batchWeek,
+        now: new Date('2026-07-21T18:10:00.000Z'),
+      });
+
+      expect(locked.data.judgementStatus).toBe('confirmed');
+      expect(locked.data.locked).toBe(true);
+      expect(locked.data.proposedEvent.id).toBe(eventTwoId.toString());
+      expect(locked.data.ballot.ballotedCount).toBe(3);
 
       const { PivotCrewWeekState } = getModels(
         { db: mongo.connection, school: tenantKey },
@@ -306,113 +343,106 @@ describe('pivotCrewJudgementService (Task 2.3)', () => {
       );
       const stored = await PivotCrewWeekState.findOne({ crewId, batchWeek }).lean();
       expect(stored.judgementStatus).toBe('confirmed');
+      expect(stored.proposedEventId.toString()).toBe(eventTwoId.toString());
+      expect(stored.memberBallots).toHaveLength(3);
     });
 
-    it('rejects confirm after judgement window closes with 409', async () => {
-      const result = await confirmPivotCrewWeekPick(req, {
-        crewId: crewId.toString(),
-        eventId: eventTwoId.toString(),
-        batchWeek,
-        now: new Date('2026-07-25T00:00:00.000Z'),
-      });
+    it('rejects duplicate ballot with 409', async () => {
+      await openBalloting();
 
-      expect(result.status).toBe(409);
-      expect(result.code).toBe('JUDGEMENT_WINDOW_CLOSED');
-    });
-
-    it('swap chooses runner-up among top candidates', async () => {
-      const result = await swapPivotCrewWeekPick(req, {
+      const ranking = [eventTwoId.toString(), eventOneId.toString()];
+      await castPivotCrewWeekBallot(req, {
         crewId: crewId.toString(),
+        ranking,
         batchWeek,
         now: new Date('2026-07-21T18:00:00.000Z'),
       });
 
-      expect(result.data.judgementStatus).toBe('swapped');
-      expect(result.data.event.id).toBe(eventOneId.toString());
+      const duplicate = await castPivotCrewWeekBallot(req, {
+        crewId: crewId.toString(),
+        ranking,
+        batchWeek,
+        now: new Date('2026-07-21T18:01:00.000Z'),
+      });
+
+      expect(duplicate.status).toBe(409);
+      expect(duplicate.code).toBe('BALLOT_ALREADY_CAST');
     });
 
-    it('rejects swap when candidate is not in top breakdown', async () => {
-      const { PivotCrewWeekState } = getModels(
-        { db: mongo.connection, school: tenantKey },
-        'PivotCrewWeekState',
-      );
-      await PivotCrewWeekState.updateOne(
-        { crewId, batchWeek },
-        {
-          $set: {
-            judgementStatus: 'split',
-            proposedEventId: null,
-            voteBreakdown: [
-              {
-                eventId: eventOneId,
-                score: 1.5,
-                interestedCount: 0,
-                registeredCount: 1,
-                memberVotes: [{ userId: ownerId, status: 'registered' }],
-              },
-            ],
-          },
-        },
-      );
+    it('rejects invalid ranking with 400', async () => {
+      await openBalloting();
 
-      const result = await swapPivotCrewWeekPick(req, {
+      const result = await castPivotCrewWeekBallot(req, {
         crewId: crewId.toString(),
+        ranking: [new mongoose.Types.ObjectId().toString()],
         batchWeek,
         now: new Date('2026-07-21T18:00:00.000Z'),
       });
 
       expect(result.status).toBe(400);
-      expect(result.code).toBe('SWAP_NOT_AVAILABLE');
+      expect(result.code).toBe('RANKING_INVALID');
     });
 
-    it('split confirm accepts either top candidate', async () => {
-      const { PivotCrewWeekState } = getModels(
-        { db: mongo.connection, school: tenantKey },
-        'PivotCrewWeekState',
-      );
-      await PivotCrewWeekState.updateOne(
-        { crewId, batchWeek },
-        {
-          $set: {
-            judgementStatus: 'split',
-            proposedEventId: null,
-            voteBreakdown: [
-              {
-                eventId: eventOneId,
-                score: 1.5,
-                interestedCount: 0,
-                registeredCount: 1,
-                memberVotes: [{ userId: ownerId, status: 'registered' }],
-              },
-              {
-                eventId: eventTwoId,
-                score: 1.5,
-                interestedCount: 0,
-                registeredCount: 1,
-                memberVotes: [{ userId: memberBId, status: 'registered' }],
-              },
-            ],
-          },
-        },
-      );
+    it('GET judgement returns ballot fields while balloting', async () => {
+      await openBalloting();
 
-      const result = await confirmPivotCrewWeekPick(req, {
+      await castPivotCrewWeekBallot(req, {
         crewId: crewId.toString(),
-        eventId: eventOneId.toString(),
+        ranking: [eventTwoId.toString(), eventOneId.toString()],
         batchWeek,
         now: new Date('2026-07-21T18:00:00.000Z'),
       });
 
-      expect(result.data.judgementStatus).toBe('confirmed');
-      expect(result.data.event.id).toBe(eventOneId.toString());
+      const result = await getPivotCrewWeekJudgement(req, {
+        crewId: crewId.toString(),
+        batchWeek,
+        now: new Date('2026-07-21T18:30:00.000Z'),
+      });
+
+      expect(result.data.crewName).toBe('Judgement Crew');
+      expect(result.data.judgementStatus).toBe('balloting');
+      expect(result.data.shortlistEventIds).toEqual([
+        eventTwoId.toString(),
+        eventOneId.toString(),
+      ]);
+      expect(result.data.ballot).toMatchObject({
+        shortlistEventIds: [eventTwoId.toString(), eventOneId.toString()],
+        ballotedCount: 1,
+        activeCount: 3,
+        viewerHasBalloted: true,
+        canBallot: false,
+      });
+      expect(result.data.ballot.viewerRanking).toEqual([
+        eventTwoId.toString(),
+        eventOneId.toString(),
+      ]);
+      expect(result.data.ballot.endsAt).toBeTruthy();
+      expect(result.data.judgementWindowOpen).toBe(true);
     });
 
-    it('loadLockedCrewPicksForUser surfaces confirmed picks for recap', async () => {
-      await confirmPivotCrewWeekPick(req, {
+    it('loadLockedCrewPicksForUser surfaces confirmed picks after ballot lock', async () => {
+      await openBalloting();
+
+      const ranking = [eventTwoId.toString(), eventOneId.toString()];
+      const ballotNow = new Date('2026-07-21T18:00:00.000Z');
+
+      await castPivotCrewWeekBallot(memberReq(ownerId), {
         crewId: crewId.toString(),
-        eventId: eventTwoId.toString(),
+        ranking,
         batchWeek,
-        now: new Date('2026-07-21T18:00:00.000Z'),
+        now: ballotNow,
+      });
+      await castPivotCrewWeekBallot(memberReq(memberBId), {
+        crewId: crewId.toString(),
+        ranking,
+        batchWeek,
+        now: ballotNow,
+      });
+      await castPivotCrewWeekBallot(memberReq(memberCId), {
+        crewId: crewId.toString(),
+        ranking,
+        batchWeek,
+        now: ballotNow,
       });
 
       const crewPicks = await loadLockedCrewPicksForUser(req, batchWeek);
@@ -421,98 +451,6 @@ describe('pivotCrewJudgementService (Task 2.3)', () => {
       expect(crewPicks[0].crewName).toBe('Judgement Crew');
       expect(crewPicks[0].event.id).toBe(eventTwoId.toString());
       expect(crewPicks[0].judgementStatus).toBe('confirmed');
-    });
-
-    it('democratic confirm starts consensus without locking for multi-member crews', async () => {
-      const ritualReq = {
-        ...req,
-        get: (header) => (header === 'X-App-Version' ? '2.0.0' : undefined),
-      };
-
-      const result = await confirmPivotCrewWeekPick(ritualReq, {
-        crewId: crewId.toString(),
-        eventId: eventTwoId.toString(),
-        batchWeek,
-        now: new Date('2026-07-21T18:00:00.000Z'),
-      });
-
-      expect(result.data.locked).toBe(false);
-      expect(result.data.judgementStatus).toBe('deciding');
-      expect(result.data.consensus.startedAt).toBeTruthy();
-      expect(result.data.consensus.confirms.confirmedCount).toBe(1);
-      expect(result.data.consensus.viewerHasConfirmedCurrent).toBe(true);
-
-      const { PivotCrewWeekState } = getModels(
-        { db: mongo.connection, school: tenantKey },
-        'PivotCrewWeekState',
-      );
-      const stored = await PivotCrewWeekState.findOne({ crewId, batchWeek }).lean();
-      expect(stored.judgementStatus).toBe('deciding');
-      expect(stored.memberJudgements).toHaveLength(1);
-      expect(stored.crewSwapsRemaining).toBe(2);
-    });
-
-    it('democratic swap spends shared budget and resets confirms', async () => {
-      const ritualReq = {
-        ...req,
-        get: (header) => (header === 'X-App-Version' ? '2.0.0' : undefined),
-      };
-
-      await confirmPivotCrewWeekPick(ritualReq, {
-        crewId: crewId.toString(),
-        eventId: eventTwoId.toString(),
-        batchWeek,
-        now: new Date('2026-07-21T18:00:00.000Z'),
-      });
-
-      const swapResult = await swapPivotCrewWeekPick(ritualReq, {
-        crewId: crewId.toString(),
-        batchWeek,
-        now: new Date('2026-07-21T18:05:00.000Z'),
-      });
-
-      expect(swapResult.data.locked).toBe(false);
-      expect(swapResult.data.judgementStatus).toBe('deciding');
-      expect(swapResult.data.proposedEvent.id).toBe(eventOneId.toString());
-      expect(swapResult.data.consensus.swapsRemaining).toBe(1);
-      expect(swapResult.data.consensus.confirms.confirmedCount).toBe(1);
-      expect(swapResult.data.consensus.viewerAction).toBe('swapped');
-    });
-
-    it('democratic unanimous confirms lock early', async () => {
-      const ritualReq = {
-        ...req,
-        get: (header) => (header === 'X-App-Version' ? '2.0.0' : undefined),
-      };
-
-      // Only owner + memberB are needed once we shrink actives to two.
-      const { PivotCrewMembership } = getModels(
-        { db: mongo.connection, school: tenantKey },
-        'PivotCrewMembership',
-      );
-      await PivotCrewMembership.deleteMany({ userId: memberCId });
-
-      await confirmPivotCrewWeekPick(ritualReq, {
-        crewId: crewId.toString(),
-        eventId: eventTwoId.toString(),
-        batchWeek,
-        now: new Date('2026-07-21T18:00:00.000Z'),
-      });
-
-      const memberReq = {
-        ...ritualReq,
-        user: { userId: memberBId.toString() },
-      };
-      const result = await confirmPivotCrewWeekPick(memberReq, {
-        crewId: crewId.toString(),
-        eventId: eventTwoId.toString(),
-        batchWeek,
-        now: new Date('2026-07-21T18:10:00.000Z'),
-      });
-
-      expect(result.data.locked).toBe(true);
-      expect(result.data.lockReason).toBe('unanimous');
-      expect(result.data.judgementStatus).toBe('confirmed');
     });
   });
 });

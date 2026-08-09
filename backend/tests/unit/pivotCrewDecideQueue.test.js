@@ -13,12 +13,12 @@ describe('pivotCrewDecideQueue', () => {
     expect(isJudgementWindowOpen(endsAt, new Date('2026-07-26T12:00:00.000Z'))).toBe(false);
   });
 
-  it('crewNeedsUserAction is true for open proposed crews', () => {
+  it('crewNeedsUserAction is true for open balloting crews', () => {
     expect(
       crewNeedsUserAction(
         {
           quorumMet: true,
-          judgementStatus: 'proposed',
+          judgementStatus: 'balloting',
           judgementWindowEndsAt: '2026-07-25T12:00:00.000Z',
         },
         now,
@@ -38,37 +38,37 @@ describe('pivotCrewDecideQueue', () => {
       crewNeedsUserAction(
         {
           quorumMet: true,
-          judgementStatus: 'deciding',
+          judgementStatus: 'balloting',
           judgementWindowEndsAt: '2026-07-25T12:00:00.000Z',
-          viewerHasConfirmedCurrent: true,
+          viewerHasBalloted: true,
         },
         now,
       ),
     ).toBe(false);
   });
 
-  it('buildDecideQueueOrder preserves crew week order and includes deciding', () => {
+  it('buildDecideQueueOrder includes balloting crews', () => {
     const crews = [
       {
         crewId: 'crew-1',
         quorumMet: true,
-        judgementStatus: 'proposed',
+        judgementStatus: 'balloting',
         judgementWindowEndsAt: '2026-07-25T12:00:00.000Z',
       },
       {
         crewId: 'crew-2',
         quorumMet: true,
-        judgementStatus: 'deciding',
+        judgementStatus: 'confirmed',
         judgementWindowEndsAt: '2026-07-25T12:00:00.000Z',
       },
       {
         crewId: 'crew-3',
         quorumMet: true,
-        judgementStatus: 'split',
+        judgementStatus: 'balloting',
         judgementWindowEndsAt: '2026-07-25T12:00:00.000Z',
       },
     ];
 
-    expect(buildDecideQueueOrder(crews, now)).toEqual(['crew-1', 'crew-2', 'crew-3']);
+    expect(buildDecideQueueOrder(crews, now)).toEqual(['crew-1', 'crew-3']);
   });
 });

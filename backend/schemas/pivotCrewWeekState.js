@@ -2,10 +2,12 @@ const mongoose = require('mongoose');
 
 const PIVOT_CREW_JUDGEMENT_STATUSES = Object.freeze([
   'awaiting_quorum',
+  'balloting',
+  'confirmed',
+  // Legacy statuses retained for reading in-flight / historical rows.
   'proposed',
   'split',
   'deciding',
-  'confirmed',
   'swapped',
 ]);
 
@@ -43,6 +45,26 @@ const memberJudgementSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Event',
       required: true,
+    },
+    at: {
+      type: Date,
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
+const memberBallotSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    /** Ordered shortlist event ids (partial ranks OK). */
+    ranking: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Event' }],
+      default: [],
     },
     at: {
       type: Date,
@@ -113,7 +135,7 @@ const swipeProgressSchema = new mongoose.Schema(
   { _id: false },
 );
 
-/** Per crew × batchWeek aggregation for proposed picks and judgement (Task 2.1). */
+/** Per crew × batchWeek aggregation for shortlist, ballots, and locked pick. */
 const pivotCrewWeekStateSchema = new mongoose.Schema(
   {
     crewId: {
@@ -141,10 +163,31 @@ const pivotCrewWeekStateSchema = new mongoose.Schema(
       ref: 'Event',
       default: null,
     },
+    /** Ordered multi-pick set; proposedEventId mirrors [0]. */
+    proposedEventIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Event' }],
+      default: undefined,
+    },
     originalProposedEventId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Event',
       default: null,
+    },
+    originalProposedEventIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Event' }],
+      default: undefined,
+    },
+    /** Frozen top-3 (or fewer) shortlist once balloting opens. */
+    shortlistEventIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Event' }],
+      default: undefined,
+    },
+    /** Frozen capacity for this week once judgement opens. */
+    maxPickSlots: {
+      type: Number,
+      default: null,
+      min: 1,
+      max: 2,
     },
     proposedScore: {
       type: Number,
@@ -160,6 +203,15 @@ const pivotCrewWeekStateSchema = new mongoose.Schema(
       enum: PIVOT_CREW_JUDGEMENT_STATUSES,
       required: true,
     },
+    ballotEndsAt: {
+      type: Date,
+      default: null,
+    },
+    memberBallots: {
+      type: [memberBallotSchema],
+      default: [],
+    },
+    /** Legacy confirm/swap fields — retained for historical rows; unused by Borda path. */
     consensusStartedAt: {
       type: Date,
       default: null,
@@ -187,6 +239,10 @@ const pivotCrewWeekStateSchema = new mongoose.Schema(
 
 pivotCrewWeekStateSchema.index({ crewId: 1, batchWeek: 1 }, { unique: true });
 pivotCrewWeekStateSchema.index({ tenantKey: 1, batchWeek: 1 });
+pivotCrewWeekStateSchema.index({
+  judgementStatus: 1,
+  ballotEndsAt: 1,
+});
 pivotCrewWeekStateSchema.index({
   judgementStatus: 1,
   consensusEndsAt: 1,
