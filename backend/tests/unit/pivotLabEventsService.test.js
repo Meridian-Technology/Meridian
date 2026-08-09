@@ -46,6 +46,32 @@ describe('pivotLabEventsService', () => {
         externalOpens: 0,
         externalOpenUsers: 0,
       });
+      expect(row.platformManaged).toBe(false);
+      expect(row.createdByUserId).toBeNull();
+      expect(row.creatorSubmittedAt).toBeNull();
+    });
+
+    it('surfaces Just Go host-created provenance for curation', () => {
+      const row = serializeLabEvent({
+        _id: 'e2',
+        name: 'Rooftop Set',
+        customFields: {
+          pivot: {
+            source: 'justgo',
+            platformManaged: false,
+            createdByUserId: 'user-abc',
+            creatorSubmittedAt: '2026-08-08T18:00:00.000Z',
+            host: { name: 'Maya' },
+            ingestStatus: 'draft',
+            batchWeek: '2026-W32',
+          },
+        },
+      });
+      expect(row.source).toBe('justgo');
+      expect(row.platformManaged).toBe(false);
+      expect(row.createdByUserId).toBe('user-abc');
+      expect(row.creatorSubmittedAt).toBe('2026-08-08T18:00:00.000Z');
+      expect(row.organizerName).toBe('Maya');
     });
   });
 

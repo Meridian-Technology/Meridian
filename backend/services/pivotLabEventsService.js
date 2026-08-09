@@ -43,6 +43,12 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
       }))
     : [];
 
+  const creatorSubmittedAt = pivot.creatorSubmittedAt
+    ? pivot.creatorSubmittedAt instanceof Date
+      ? pivot.creatorSubmittedAt.toISOString()
+      : pivot.creatorSubmittedAt
+    : null;
+
   return {
     _id: String(event._id),
     name: event.name,
@@ -66,6 +72,10 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     ...(enrichment ? { enrichment } : {}),
     organizerName: host.name || '',
     organizerImageUrl: host.imageUrl || null,
+    /** Host-created (Just Go Creator) provenance — ops curation / Task 3.1 */
+    platformManaged: pivot.platformManaged === true,
+    createdByUserId: pivot.createdByUserId ? String(pivot.createdByUserId) : null,
+    creatorSubmittedAt,
     intentStats: intentStatsByEventId?.get(String(event._id)) || EMPTY_INTENT_STATS,
   };
 }
