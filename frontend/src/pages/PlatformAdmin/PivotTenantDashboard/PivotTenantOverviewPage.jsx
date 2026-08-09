@@ -11,6 +11,9 @@ import {
 import PivotReadinessCard from './PivotReadinessCard';
 import PivotTenantPage from './PivotTenantPage';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
+import PivotHostLiveWeekAlert, {
+  formatHostCreatedCounts,
+} from './PivotHostLiveWeekAlert';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
@@ -243,6 +246,16 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
   const kpis = overview?.kpis;
   const vsPrev = overview?.vsPrevWeek;
   const displayCity = overview?.cityDisplayName || cityDisplayName || tenantKey;
+  const hostLiveWeekAlert = overview?.hostLiveWeekAlert || null;
+  const hostCreatedCounts = kpis?.hostCreatedCounts || {
+    hostDraft: kpis?.hostDraft ?? 0,
+    hostStaged: kpis?.hostStaged ?? 0,
+    hostPublished: kpis?.hostPublished ?? 0,
+  };
+  const hostCreatedTotal =
+    (hostCreatedCounts.hostDraft ?? 0) +
+    (hostCreatedCounts.hostStaged ?? 0) +
+    (hostCreatedCounts.hostPublished ?? 0);
 
   const feedbackLabel =
     kpis?.feedbackAvg != null
@@ -300,9 +313,17 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
             </span>
             {drop.localSchedule ? <span>{drop.localSchedule}</span> : null}
             {drop.timezone ? <span>{drop.timezone}</span> : null}
+            {overview ? (
+              <span className="pivot-host-created-counts" title="Just Go Creator listings this week">
+                <span className="pivot-host-created-counts__label">Host-created</span>
+                <span>{formatHostCreatedCounts(hostCreatedCounts)}</span>
+              </span>
+            ) : null}
           </div>
         </aside>
       ) : null}
+
+      <PivotHostLiveWeekAlert alert={hostLiveWeekAlert} />
 
       <PivotReadinessCard
         readiness={readiness}
@@ -339,6 +360,11 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
               value={kpis.eventCount ?? 0}
               hint={eventHint}
               delta={deltaFor(vsPrev, 'eventCount')}
+            />
+            <MetricCard
+              label="Host-created"
+              value={hostCreatedTotal}
+              hint={formatHostCreatedCounts(hostCreatedCounts)}
             />
             <MetricCard
               label="Interested"

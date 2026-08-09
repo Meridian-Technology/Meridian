@@ -13,8 +13,14 @@ const {
 const { buildDropSchedulePayload } = require('./pivotConfigService');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { loadIntentStatsByEventId, labEventsQuery } = require('./pivotLabEventsService');
+const {
+  isLiveCreatorBatchWeek,
+  buildCreatorListingCurationHref,
+} = require('./pivotCreatorAdminNotifyService');
 const { shiftIsoWeek } = require('../utilities/pivotIsoWeek');
 const { PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
+
+const HOST_CREATED_SOURCE = 'justgo';
 
 const DEFAULT_PERFORMANCE_LIMIT = 20;
 const MAX_PERFORMANCE_LIMIT = 100;
@@ -130,6 +136,81 @@ async function aggregateEventCountsByStatus(Event, batchWeek) {
   };
 }
 
+/**
+ * Just Go Creator Console listings (`source: justgo`) for a batch week, by ingestStatus.
+ * Task 3.2 — overview / curation host-pressure counts.
+ */
+async function aggregateHostCreatedCountsByStatus(Event, batchWeek) {
+  const rows = await Event.aggregate([
+    {
+      $match: {
+        ...catalogEventsQuery(batchWeek),
+        'customFields.pivot.source': HOST_CREATED_SOURCE,
+      },
+    },
+    {
+      $group: {
+        _id: { $ifNull: ['$customFields.pivot.ingestStatus', 'unknown'] },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const counts = {
+    hostDraft: 0,
+    hostStaged: 0,
+    hostPublished: 0,
+    other: 0,
+    total: 0,
+  };
+
+  for (const row of rows) {
+    if (row._id === 'draft') counts.hostDraft = row.count;
+    else if (row._id === 'staged') counts.hostStaged = row.count;
+    else if (row._id === 'published') counts.hostPublished = row.count;
+    else counts.other += row.count;
+  }
+
+  counts.total =
+    counts.hostDraft + counts.hostStaged + counts.hostPublished + counts.other;
+  return counts;
+}
+
+function emptyHostCreatedCounts() {
+  return {
+    hostDraft: 0,
+    hostStaged: 0,
+    hostPublished: 0,
+    other: 0,
+    total: 0,
+  };
+}
+
+function buildHostLiveWeekAlert({
+  tenantKey,
+  batchWeek,
+  hostCreatedCounts,
+  liveWeek,
+}) {
+  const hostDraft = hostCreatedCounts?.hostDraft ?? 0;
+  const isLiveWeek = Boolean(liveWeek?.isLive);
+  return {
+    active: isLiveWeek && hostDraft > 0,
+    isLiveWeek,
+    hostDraft,
+    hostStaged: hostCreatedCounts?.hostStaged ?? 0,
+    hostPublished: hostCreatedCounts?.hostPublished ?? 0,
+    publishedCount: liveWeek?.publishedCount ?? 0,
+    batchStatus: liveWeek?.batchStatus ?? null,
+    reasons: Array.isArray(liveWeek?.reasons) ? liveWeek.reasons : [],
+    curationHref: buildCreatorListingCurationHref({
+      tenantKey,
+      batchWeek,
+      emphasizeLive: isLiveWeek && hostDraft > 0,
+    }),
+  };
+}
+
 /** Funnel stages matching PivotLabOverview FunnelChart definitions. */
 function buildFunnelStages({
   swipeCount,
@@ -191,11 +272,14 @@ async function aggregateTenantOverview(req, tenant, batchWeek, options = {}) {
   const includeStatusBreakdown = options.includeStatusBreakdown === true;
   const includeReferralCodes = options.includeReferralCodes !== false;
 
-  const [eventCount, events, eventCountsByStatus] = await Promise.all([
+  const [eventCount, events, eventCountsByStatus, hostCreatedCounts] = await Promise.all([
     Event.countDocuments(eventQuery),
     Event.find(eventQuery).select('_id').lean(),
     includeStatusBreakdown
       ? aggregateEventCountsByStatus(Event, batchWeek)
+      : Promise.resolve(null),
+    includeStatusBreakdown
+      ? aggregateHostCreatedCountsByStatus(Event, batchWeek)
       : Promise.resolve(null),
   ]);
   const eventIds = events.map((event) => event._id);
@@ -253,6 +337,12 @@ async function aggregateTenantOverview(req, tenant, batchWeek, options = {}) {
   }
   if (eventCountsByStatus) {
     row.eventCountsByStatus = eventCountsByStatus;
+  }
+  if (hostCreatedCounts) {
+    row.hostCreatedCounts = hostCreatedCounts;
+    row.hostDraft = hostCreatedCounts.hostDraft;
+    row.hostStaged = hostCreatedCounts.hostStaged;
+    row.hostPublished = hostCreatedCounts.hostPublished;
   }
 
   return row;
@@ -403,6 +493,32 @@ async function getTenantOverview(req, options = {}) {
     }
   }
 
+  const hostCreatedCounts = current.hostCreatedCounts || emptyHostCreatedCounts();
+  let liveWeek = {
+    isLive: false,
+    publishedCount: 0,
+    batchStatus: null,
+    reasons: [],
+  };
+  try {
+    liveWeek = await isLiveCreatorBatchWeek(req, {
+      tenantKey: tenant.tenantKey,
+      batchWeek,
+    });
+  } catch (error) {
+    console.error(
+      `[pivotAdminOverview] live-week check failed tenant=${tenant.tenantKey} batchWeek=${batchWeek}:`,
+      error,
+    );
+  }
+
+  const hostLiveWeekAlert = buildHostLiveWeekAlert({
+    tenantKey: tenant.tenantKey,
+    batchWeek,
+    hostCreatedCounts,
+    liveWeek,
+  });
+
   const funnel = buildFunnelStages(current);
 
   return {
@@ -415,6 +531,10 @@ async function getTenantOverview(req, options = {}) {
         activeUsers: current.activeUsers,
         eventCount: current.eventCount,
         eventCountsByStatus: current.eventCountsByStatus,
+        hostDraft: hostCreatedCounts.hostDraft,
+        hostStaged: hostCreatedCounts.hostStaged,
+        hostPublished: hostCreatedCounts.hostPublished,
+        hostCreatedCounts,
         interestedCount: current.interestedCount,
         registeredCount: current.registeredCount,
         externalOpenCount: current.externalOpenCount,
@@ -426,6 +546,7 @@ async function getTenantOverview(req, options = {}) {
         inviteShares: current.inviteShares,
         interestsSaved: current.interestsSaved,
       },
+      hostLiveWeekAlert,
       funnel,
       vsPrevWeek,
       dropSchedule: current.dropSchedule,
@@ -519,6 +640,8 @@ module.exports = {
   aggregateTenantOverview,
   aggregateRegisteredFeedback,
   aggregateEventCountsByStatus,
+  aggregateHostCreatedCountsByStatus,
+  buildHostLiveWeekAlert,
   buildFunnelStages,
   buildVsPrevWeek,
   getPivotOverview,
