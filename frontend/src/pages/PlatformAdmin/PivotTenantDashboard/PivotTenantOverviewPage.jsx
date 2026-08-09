@@ -119,6 +119,19 @@ function deltaFor(vsPrevWeek, key) {
   return row.delta;
 }
 
+function ratePointsDelta(vsPrevWeek, key) {
+  const row = vsPrevWeek?.[key];
+  if (!row || row.current == null || row.previous == null || row.delta == null) return null;
+  const points = Math.round(row.delta * 1000) / 10;
+  if (points === 0) return '0pp vs prev';
+  return `${points > 0 ? '+' : ''}${points}pp vs prev`;
+}
+
+function crewMetricHint(base, vsPrevWeek, key) {
+  const delta = ratePointsDelta(vsPrevWeek, key);
+  return delta ? `${base} · ${delta}` : base;
+}
+
 /**
  * Per-tenant Overview — city KPIs, funnel, active-users trend, next-drop callout,
  * top events, and actionable insights.
@@ -187,6 +200,13 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
   const insights = insightsPayload?.insights ?? [];
   const insightsError = ops?.insights?.error || null;
   const insightsLoading = opsLoading && !insightsPayload;
+
+  const crewMetrics =
+    ops?.crewMetrics && !ops.crewMetrics.error ? ops.crewMetrics : null;
+  const crewKpis = crewMetrics?.kpis;
+  const crewVsPrev = crewMetrics?.vsPrevWeek;
+  const crewMetricsError = ops?.crewMetrics?.error || null;
+  const crewMetricsLoading = opsLoading && !crewMetrics;
 
   const selectedRetention =
     ops?.retention && !ops.retention.error ? ops.retention.tenant : null;
@@ -342,6 +362,77 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
               hint="ratings from going"
             />
           </div>
+
+          <div className="pivot-tenant-overview__crew-section">
+            <div className="pivot-lab__section-head">
+              <div>
+                <h3 className="pivot-lab__panel-title">Crew coordination</h3>
+                <p className="pivot-lab__section-hint">
+                  Funnel metrics for {crewMetrics?.batchWeek || overview.batchWeek || batchWeek}.
+                  {crewMetrics?.totalCrews != null
+                    ? ` ${crewMetrics.totalCrews} active crew${crewMetrics.totalCrews === 1 ? '' : 's'}.`
+                    : ''}
+                </p>
+              </div>
+            </div>
+            {crewMetricsError ? (
+              <p className="pivot-lab__error" role="alert">
+                {typeof crewMetricsError === 'string'
+                  ? crewMetricsError
+                  : 'Unable to load crew metrics.'}
+              </p>
+            ) : null}
+            {crewMetricsLoading && !crewKpis ? (
+              <p className="pivot-lab__empty">Loading crew metrics…</p>
+            ) : null}
+            {crewKpis ? (
+              <div className="pivot-lab__kpi-grid pivot-tenant-overview__crew-grid">
+                <MetricCard
+                  label="Crew creation rate"
+                  value={formatRate(crewKpis.crewCreationRate?.rate)}
+                  hint={crewMetricHint(
+                    `${crewKpis.crewCreationRate?.usersWithCrew ?? 0} / ${crewKpis.crewCreationRate?.wau ?? 0} WAU in a crew`,
+                    crewVsPrev,
+                    'crewCreationRate',
+                  )}
+                />
+                <MetricCard
+                  label="Quorum hit rate"
+                  value={formatRate(crewKpis.quorumHitRate?.rate)}
+                  hint={crewMetricHint(
+                    `${crewKpis.quorumHitRate?.quorumMet ?? 0} / ${crewKpis.quorumHitRate?.activeCrews ?? 0} active crews met quorum`,
+                    crewVsPrev,
+                    'quorumHitRate',
+                  )}
+                />
+                <MetricCard
+                  label="Judgement confirm rate"
+                  value={formatRate(crewKpis.judgementConfirmRate?.rate)}
+                  hint={crewMetricHint(
+                    `${crewKpis.judgementConfirmRate?.confirmed ?? 0} / ${crewKpis.judgementConfirmRate?.proposed ?? 0} proposed picks confirmed`,
+                    crewVsPrev,
+                    'judgementConfirmRate',
+                  )}
+                />
+                <MetricCard
+                  label="Invited → joined"
+                  value={formatRate(crewKpis.invitedJoinRate?.rate)}
+                  hint={crewMetricHint(
+                    `${crewKpis.invitedJoinRate?.resolved ?? 0} / ${crewKpis.invitedJoinRate?.sent ?? 0} invites resolved this week`,
+                    crewVsPrev,
+                    'invitedJoinRate',
+                  )}
+                />
+                <MetricCard
+                  label="Cross-crew surfaces"
+                  value={crewKpis.crossCrewSurfaces?.views ?? 0}
+                  hint={`${crewKpis.crossCrewSurfaces?.clicks ?? 0} clicks · ${formatRate(crewKpis.crossCrewSurfaces?.clickThroughRate) || '—'} CTR`}
+                  delta={deltaFor(crewVsPrev, 'crossCrewViews')}
+                />
+              </div>
+            ) : null}
+          </div>
+
           <div className="pivot-lab__overview-grid">
             <div className="pivot-lab__panel">
               <h3 className="pivot-lab__panel-title">This week&apos;s loop</h3>

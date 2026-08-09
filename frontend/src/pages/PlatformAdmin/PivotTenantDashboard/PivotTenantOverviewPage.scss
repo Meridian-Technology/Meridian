@@ -69,6 +69,16 @@
     color: var(--la-text-secondary, inherit);
   }
 
+  &__crew-section {
+    margin: 24px 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--la-border-subtle, rgba(0, 0, 0, 0.08));
+  }
+
+  &__crew-grid {
+    margin-top: 12px;
+  }
+
   &__insights-slot {
     margin-top: 8px;
   }

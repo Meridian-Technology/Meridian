@@ -11,6 +11,7 @@ const {
   getTenantEventPerformance,
 } = require('../services/pivotAdminOverviewService');
 const { getTenantInsights } = require('../services/pivotTenantInsightsService');
+const { getTenantCrewMetrics } = require('../services/pivotCrewMetricsService');
 const {
   releaseBatch,
   unreleaseBatch,
@@ -388,6 +389,38 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load tenant pivot insights.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/crew-metrics',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantCrewMetrics(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/crew-metrics', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant crew metrics.',
       });
     }
   },
