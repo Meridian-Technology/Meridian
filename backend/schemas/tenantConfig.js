@@ -53,6 +53,19 @@ const pivotCrewConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const pivotMobileConfigSchema = new mongoose.Schema(
+  {
+    minAppVersion: { type: String, default: null, trim: true },
+    forceUpdate: { type: Boolean, default: null },
+    message: { type: String, default: null, trim: true, maxlength: 240 },
+    storeUrls: {
+      ios: { type: String, default: null, trim: true, maxlength: 512 },
+      android: { type: String, default: null, trim: true, maxlength: 512 },
+    },
+  },
+  { _id: false }
+);
+
 const tenantEntrySchema = new mongoose.Schema(
   {
     tenantKey: { type: String, required: true, trim: true, lowercase: true },
@@ -82,6 +95,7 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotDropPushBody: { type: String, default: null, trim: true, maxlength: 240 },
     pivotDropOverrides: { type: [pivotDropOverrideSchema], default: undefined },
     pivotCrewConfig: { type: pivotCrewConfigSchema, default: undefined },
+    pivotMobileConfig: { type: pivotMobileConfigSchema, default: undefined },
     provisioningConfirmations: {
       dns: { type: Boolean, default: false },
       cors: { type: Boolean, default: false },

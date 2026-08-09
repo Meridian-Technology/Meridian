@@ -5,6 +5,7 @@ jest.mock('../../services/tenantConfigService', () => ({
 const { getTenantByKey } = require('../../services/tenantConfigService');
 const { getPivotConfig, buildDropSchedulePayload } = require('../../services/pivotConfigService');
 const { PIVOT_CREW_CONFIG_VERSION } = require('../../utilities/pivotCrewConfig');
+const { PIVOT_MOBILE_STORE_URLS } = require('../../utilities/pivotMobileConfig');
 
 describe('pivotConfigService', () => {
   const nycTenant = {
@@ -71,6 +72,32 @@ describe('pivotConfigService', () => {
       expect(result.data.crew.nudges.unfinishedSwipeReminderHours).toBe(6);
       expect(result.data.crew.version).toBe(PIVOT_CREW_CONFIG_VERSION);
       expect(result.data.liveDropSchedule.batchWeek).toBe(result.data.liveBatchWeek);
+    });
+
+    it('includes mobile update gate defaults for backward-compatible clients', async () => {
+      getTenantByKey.mockResolvedValue(nycTenant);
+
+      const result = await getPivotConfig({ school: 'nyc' });
+
+      expect(result.data.mobile.minAppVersion).toBe('1.0.0');
+      expect(result.data.mobile.forceUpdate).toBe(false);
+      expect(result.data.mobile.storeUrls).toEqual(PIVOT_MOBILE_STORE_URLS);
+      expect(result.data.mobile.message).toMatch(/crew this week/i);
+    });
+
+    it('merges tenant pivotMobileConfig overrides into mobile payload', async () => {
+      getTenantByKey.mockResolvedValue({
+        ...nycTenant,
+        pivotMobileConfig: {
+          minAppVersion: '2.0.0',
+          forceUpdate: true,
+        },
+      });
+
+      const result = await getPivotConfig({ school: 'nyc' });
+
+      expect(result.data.mobile.minAppVersion).toBe('2.0.0');
+      expect(result.data.mobile.forceUpdate).toBe(true);
     });
   });
 });

@@ -13,6 +13,7 @@ const {
 } = require('../constants/defaultTenants');
 const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
 const { validatePivotCrewConfigPatch } = require('../utilities/pivotCrewConfig');
+const { validatePivotMobileConfigPatch } = require('../utilities/pivotMobileConfig');
 const {
   connectToDatabase,
   setTenantUriCache,
@@ -349,6 +350,13 @@ function validateTenantMetadataUpdate(body = {}) {
     const crewValidation = validatePivotCrewConfigPatch(body.pivotCrewConfig);
     if (crewValidation.error) {
       return { error: crewValidation.error };
+    }
+  }
+
+  if (body.pivotMobileConfig !== undefined) {
+    const mobileValidation = validatePivotMobileConfigPatch(body.pivotMobileConfig);
+    if (mobileValidation.error) {
+      return { error: mobileValidation.error };
     }
   }
 

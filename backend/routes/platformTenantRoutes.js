@@ -20,9 +20,11 @@ const {
   normalizePivotDropOverrides,
 } = require('../constants/defaultTenants');
 const {
-  mergePivotCrewConfigOverrides,
   validatePivotCrewConfigPatch,
 } = require('../utilities/pivotCrewConfig');
+const {
+  validatePivotMobileConfigPatch,
+} = require('../utilities/pivotMobileConfig');
 const { invalidateTenantConnection } = require('../connectionsManager');
 const { renameTenantKey } = require('../services/tenantKeyRenameService');
 const {
@@ -191,17 +193,33 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
     }
     Object.assign(updated, dropPatch);
 
-    if (req.body.pivotCrewConfig !== undefined) {
+    if (req.body.pivotCrewConfig === null) {
+      delete updated.pivotCrewConfig;
+    } else if (req.body.pivotCrewConfig !== undefined) {
       const crewValidation = validatePivotCrewConfigPatch(req.body.pivotCrewConfig);
       if (crewValidation.error) {
         return res.status(400).json({ success: false, message: crewValidation.error });
       }
-      updated.pivotCrewConfig = mergePivotCrewConfigOverrides(
-        existing.pivotCrewConfig,
-        crewValidation.patch || {},
-      );
-      if (!updated.pivotCrewConfig || Object.keys(updated.pivotCrewConfig).length === 0) {
+      const patch = crewValidation.patch || {};
+      if (Object.keys(patch).length === 0) {
         delete updated.pivotCrewConfig;
+      } else {
+        updated.pivotCrewConfig = patch;
+      }
+    }
+
+    if (req.body.pivotMobileConfig === null) {
+      delete updated.pivotMobileConfig;
+    } else if (req.body.pivotMobileConfig !== undefined) {
+      const mobileValidation = validatePivotMobileConfigPatch(req.body.pivotMobileConfig);
+      if (mobileValidation.error) {
+        return res.status(400).json({ success: false, message: mobileValidation.error });
+      }
+      const patch = mobileValidation.patch || {};
+      if (Object.keys(patch).length === 0) {
+        delete updated.pivotMobileConfig;
+      } else {
+        updated.pivotMobileConfig = patch;
       }
     }
 
