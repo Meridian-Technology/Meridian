@@ -57,9 +57,14 @@ function serializeRitualCrew(crewRow, members = [], now = new Date()) {
       status: crewRow.judgementStatus,
       proposed: crewRow.proposedEvent,
       runnerUp: crewRow.runnerUp,
+      shortlistEventIds: crewRow.shortlistEventIds || [],
       needsUserAction: crewNeedsUserAction(crewRow, now),
       judgementWindowEndsAt: crewRow.judgementWindowEndsAt,
-      judgementWindowOpen: isJudgementWindowOpen(crewRow.judgementWindowEndsAt, now),
+      judgementWindowOpen: isJudgementWindowOpen(
+        crewRow.ballot?.endsAt || crewRow.judgementWindowEndsAt,
+        now,
+      ),
+      ballot: crewRow.ballot || null,
       consensus: crewRow.consensus || null,
     },
   };
@@ -85,9 +90,15 @@ function resolveDeckHoldUntil(crews, decideQueueOrder, now = new Date()) {
   return new Date(Math.min(...endsAtValues)).toISOString();
 }
 
-function buildRitualActions(phase) {
+function buildRitualActions(phase, deck = null) {
+  const deckIncomplete = deck != null && deck.complete === false;
   return {
-    openDeck: phase === 'solo' || phase === 'drop_live' || phase === 'swiping',
+    // Late swipers keep the deck after peers hit quorum (phase flips to decide).
+    openDeck:
+      phase === 'solo' ||
+      phase === 'drop_live' ||
+      phase === 'swiping' ||
+      (phase === 'decide' && deckIncomplete),
     openDecide: phase === 'decide',
     openRecap: phase === 'recap',
   };
@@ -179,6 +190,14 @@ async function getPivotWeekRitual(req, options = {}) {
     return { error: 'Tenant not found.', status: 404 };
   }
   if (!isPivotTenant(tenant)) {
+    console.warn('[pivot] GET /pivot/week-ritual non-pivot tenant', {
+      tenantKey: tenant.tenantKey,
+      tenantType: tenant.tenantType,
+      pivotPilot: tenant.pivotPilot === true,
+      reqSchool: tenantKey,
+      xTenant: req.headers?.['x-tenant'] || null,
+      host: req.headers?.host || null,
+    });
     return {
       error: 'Week ritual is only available for pivot city tenants.',
       status: 400,
@@ -252,7 +271,7 @@ async function getPivotWeekRitual(req, options = {}) {
       decideQueueOrder,
       recap,
       nudge,
-      actions: buildRitualActions(phase),
+      actions: buildRitualActions(phase, deck),
     },
   };
 }

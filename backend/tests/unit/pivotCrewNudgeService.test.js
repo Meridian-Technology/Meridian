@@ -55,7 +55,9 @@ describe('pivotCrewNudgeService', () => {
 
     expect(message.data.type).toBe('pivot_crew_nudge');
     expect(message.data.crewId).toBe(crewId);
-    expect(message.body).toBe("3 haven't swiped yet — finish the deck");
+    expect(message.data.ritualPhase).toBe('swiping');
+    expect(message.data.ritualNudgeType).toBe('quorum_waiting');
+    expect(message.body).toBe('your crew is waiting on swipes');
   });
 
   it('computes nudge eligibility from dropAt plus reminder hours', () => {

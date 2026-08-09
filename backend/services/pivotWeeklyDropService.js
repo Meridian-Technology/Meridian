@@ -1,5 +1,6 @@
 const axios = require('axios');
-const { connectToDatabase } = require('../connectionsManager');
+const mongoose = require('mongoose');
+const connectionsManager = require('../connectionsManager');
 const getModels = require('./getModelService');
 const { getTenantByKey, upsertStoredTenantRow, serializeTenantForAdmin } = require('./tenantConfigService');
 const { normalizePivotDropFields, normalizePivotDropOverrides } = require('../constants/defaultTenants');
@@ -11,6 +12,14 @@ const {
   isPivotTenant,
 } = require('../utilities/pivotDropSchedule');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
+const {
+  countUnfinishedSwipers,
+  resolveCrewWeeklyDropBody,
+  resolveCrewWeeklyDropVariant,
+} = require('../utilities/pivotCrewPushCopy');
+const { computeRitualPhase } = require('../utilities/pivotRitualPhase');
+const { buildDecideQueueOrder } = require('../utilities/pivotCrewDecideQueue');
+const { buildRitualPushData } = require('../utilities/pivotRitualNudge');
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const EXPO_BATCH_SIZE = 100;
@@ -63,6 +72,264 @@ function resolveWeeklyDropPushCopy(tenant, batchWeek, options = {}) {
   return { title, body, source };
 }
 
+function toObjectId(value) {
+  if (!value) {
+    return null;
+  }
+  if (value instanceof mongoose.Types.ObjectId) {
+    return value;
+  }
+  if (mongoose.Types.ObjectId.isValid(value)) {
+    return new mongoose.Types.ObjectId(value);
+  }
+  return null;
+}
+
+function resolveWeeklyDropPushCopyForRecipient(baseCopy, crewContext = {}) {
+  const variant = resolveCrewWeeklyDropVariant(crewContext);
+  if (!variant) {
+    return {
+      title: baseCopy.title,
+      body: baseCopy.body,
+      source: baseCopy.source,
+      audience: 'solo',
+      crewVariant: null,
+      ritualPhase: crewContext.ritualPhase || 'solo',
+      decideCrewId: null,
+    };
+  }
+
+  const crewBody = resolveCrewWeeklyDropBody(variant);
+  return {
+    title: baseCopy.title,
+    body: trimPushField(crewBody, PUSH_BODY_MAX) || baseCopy.body,
+    source: variant === 'ritual' || variant === 'unfinished' ? 'crew' : 'ritual',
+    audience: 'crew',
+    crewVariant: variant,
+    ritualPhase: crewContext.ritualPhase || null,
+    decideCrewId: crewContext.decideCrewId || null,
+  };
+}
+
+function computeDeckCompleteFromSnapshot(snapshot, swipedEventIds) {
+  if (!snapshot?.orderedEventIds?.length) {
+    return false;
+  }
+  return snapshot.orderedEventIds.every((eventId) =>
+    swipedEventIds.has(String(eventId)),
+  );
+}
+
+function buildCrewRowsForUser(crewIds, weekStateByCrewId) {
+  return Array.from(crewIds)
+    .map((crewId) => {
+      const weekState = weekStateByCrewId.get(crewId);
+      if (!weekState) {
+        return null;
+      }
+      return {
+        crewId,
+        quorumMet: weekState.swipeProgress?.quorumMet === true,
+        judgementStatus: weekState.judgementStatus || 'awaiting_quorum',
+        judgementWindowEndsAt: weekState.judgementWindowEndsAt || null,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function loadWeeklyDropCrewContext(tenantKey, batchWeek, userIds = []) {
+  const normalizedIds = userIds
+    .map((userId) => String(userId || '').trim())
+    .filter(Boolean);
+  const contextByUserId = new Map(
+    normalizedIds.map((userId) => [
+      userId,
+      {
+        hasCrew: false,
+        userSwiped: false,
+        anyCrewUnfinished: false,
+        deckComplete: false,
+        decideQueueOrder: [],
+        decideCrewId: null,
+        ritualPhase: 'solo',
+      },
+    ]),
+  );
+
+  if (!normalizedIds.length) {
+    return contextByUserId;
+  }
+
+  const db = await connectionsManager.connectToDatabase(tenantKey);
+  const req = { db, school: tenantKey };
+  const { PivotCrewMembership, PivotCrewWeekState, PivotEventIntent, PivotDeckSnapshot } = getModels(
+    req,
+    'PivotCrewMembership',
+    'PivotCrewWeekState',
+    'PivotEventIntent',
+    'PivotDeckSnapshot',
+  );
+
+  const objectIds = normalizedIds.map(toObjectId).filter(Boolean);
+  const [memberships, swipedUserIds, deckSnapshots] = await Promise.all([
+    PivotCrewMembership.find({
+      userId: { $in: objectIds },
+      status: 'active',
+    })
+      .select('userId crewId')
+      .lean(),
+    PivotEventIntent.distinct('userId', {
+      batchWeek,
+      userId: { $in: objectIds },
+    }),
+    PivotDeckSnapshot.find({
+      userId: { $in: objectIds },
+      batchWeek,
+    })
+      .select('userId orderedEventIds')
+      .lean(),
+  ]);
+
+  const swipedIntentRows = await PivotEventIntent.find({
+    batchWeek,
+    userId: { $in: objectIds },
+  })
+    .select('userId eventId')
+    .lean();
+
+  const swipedEventsByUserId = new Map();
+  for (const row of swipedIntentRows) {
+    const userId = row.userId?.toString?.();
+    if (!userId) {
+      continue;
+    }
+    if (!swipedEventsByUserId.has(userId)) {
+      swipedEventsByUserId.set(userId, new Set());
+    }
+    swipedEventsByUserId.get(userId).add(String(row.eventId));
+  }
+
+  const snapshotByUserId = new Map(
+    deckSnapshots.map((row) => [row.userId.toString(), row]),
+  );
+
+  const swipedSet = new Set(
+    swipedUserIds.map((userId) => String(userId)).filter(Boolean),
+  );
+  for (const userId of normalizedIds) {
+    const row = contextByUserId.get(userId);
+    if (row) {
+      row.userSwiped = swipedSet.has(userId);
+      row.deckComplete = computeDeckCompleteFromSnapshot(
+        snapshotByUserId.get(userId),
+        swipedEventsByUserId.get(userId) || new Set(),
+      );
+    }
+  }
+
+  if (!memberships.length) {
+    return contextByUserId;
+  }
+
+  const crewIdsByUser = new Map();
+  const allCrewIds = new Set();
+  for (const membership of memberships) {
+    const userId = membership.userId?.toString?.();
+    const crewId = membership.crewId?.toString?.();
+    if (!userId || !crewId) {
+      continue;
+    }
+    if (!crewIdsByUser.has(userId)) {
+      crewIdsByUser.set(userId, new Set());
+    }
+    crewIdsByUser.get(userId).add(crewId);
+    allCrewIds.add(crewId);
+    const row = contextByUserId.get(userId);
+    if (row) {
+      row.hasCrew = true;
+    }
+  }
+
+  if (!allCrewIds.size) {
+    return contextByUserId;
+  }
+
+  const weekStates = await PivotCrewWeekState.find({
+    tenantKey,
+    batchWeek,
+    crewId: { $in: Array.from(allCrewIds).map((crewId) => toObjectId(crewId)) },
+  })
+    .select('crewId swipeProgress judgementStatus')
+    .lean();
+
+  const weekStateByCrewId = new Map(
+    weekStates.map((row) => [row.crewId?.toString?.(), row]),
+  );
+
+  const unfinishedByCrewId = new Map(
+    weekStates.map((row) => [
+      row.crewId?.toString?.(),
+      countUnfinishedSwipers(row.swipeProgress) > 0,
+    ]),
+  );
+
+  for (const [userId, crewIds] of crewIdsByUser.entries()) {
+    const row = contextByUserId.get(userId);
+    if (!row) {
+      continue;
+    }
+    row.anyCrewUnfinished = Array.from(crewIds).some((crewId) => {
+      if (!unfinishedByCrewId.has(crewId)) {
+        return true;
+      }
+      return unfinishedByCrewId.get(crewId) === true;
+    });
+
+    const crewRows = buildCrewRowsForUser(crewIds, weekStateByCrewId);
+    row.decideQueueOrder = buildDecideQueueOrder(crewRows, new Date(), {
+      requireOpenWindow: false,
+    });
+    row.decideCrewId = row.decideQueueOrder[0] || null;
+    row.ritualPhase = computeRitualPhase({
+      hasCrews: row.hasCrew,
+      dropPending: false,
+      deck: {
+        complete: row.deckComplete,
+        started: row.userSwiped,
+      },
+      decideQueueOrder: row.decideQueueOrder,
+    });
+  }
+
+  return contextByUserId;
+}
+
+function summarizePushCopyBreakdown(messages = []) {
+  return messages.reduce(
+    (acc, message) => {
+      const audience = message?.data?.audience || 'solo';
+      if (audience === 'crew') {
+        const variant = message?.data?.crewVariant;
+        if (variant === 'unfinished') {
+          acc.crewUnfinished += 1;
+        } else if (variant === 'ritual') {
+          acc.crewRitual += 1;
+        } else if (variant === 'decide') {
+          acc.crewDecide += 1;
+        } else if (variant === 'recap') {
+          acc.crewRecap += 1;
+        } else {
+          acc.crew += 1;
+        }
+      } else {
+        acc.solo += 1;
+      }
+      return acc;
+    },
+    { solo: 0, crewUnfinished: 0, crewRitual: 0, crewDecide: 0, crewRecap: 0, crew: 0 },
+  );
+}
+
 function buildWeeklyDropPushMessage(pushToken, batchWeek, copy = {}) {
   const title =
     trimPushField(copy.title, PUSH_TITLE_MAX) ||
@@ -72,21 +339,34 @@ function buildWeeklyDropPushMessage(pushToken, batchWeek, copy = {}) {
     trimPushField(copy.body, PUSH_BODY_MAX) ||
     trimPushField(copy.pushBody, PUSH_BODY_MAX) ||
     PUSH_BODY;
+
+  const ritualPhase = copy.ritualPhase || (copy.audience === 'solo' ? 'solo' : 'drop_live');
+  const ritualNudgeType =
+    copy.crewVariant === 'decide'
+      ? 'decide'
+      : copy.crewVariant === 'recap'
+        ? 'recap'
+        : copy.crewVariant === 'unfinished'
+          ? 'quorum_waiting'
+          : copy.crewVariant === 'ritual'
+            ? 'swipe'
+            : null;
+
   return {
     to: pushToken,
     sound: 'default',
     title,
     body,
     data: {
-      type: 'pivot_week',
-      edition: 'pivot',
-      appEdition: 'pivot',
-      batchWeek,
-      navigation: {
-        type: 'navigate',
-        route: 'PivotWeek',
-        deepLink: 'meridian://pivot/week',
-      },
+      ...buildRitualPushData({
+        batchWeek,
+        ritualPhase,
+        crewId: copy.decideCrewId || null,
+        ritualNudgeType,
+        pushType: 'pivot_week',
+      }),
+      audience: copy.audience || 'solo',
+      crewVariant: copy.crewVariant || null,
     },
     priority: 'default',
     channelId: 'default',
@@ -94,7 +374,7 @@ function buildWeeklyDropPushMessage(pushToken, batchWeek, copy = {}) {
 }
 
 async function countPublishedEvents(tenantKey, batchWeek) {
-  const db = await connectToDatabase(tenantKey);
+  const db = await connectionsManager.connectToDatabase(tenantKey);
   const req = { db, school: tenantKey };
   const { Event } = getModels(req, 'Event');
   return Event.countDocuments({
@@ -104,7 +384,7 @@ async function countPublishedEvents(tenantKey, batchWeek) {
 }
 
 async function countPivotPushRecipients(tenantKey) {
-  const db = await connectToDatabase(tenantKey);
+  const db = await connectionsManager.connectToDatabase(tenantKey);
   const req = { db, school: tenantKey };
   const { User } = getModels(req, 'User');
   return User.countDocuments({
@@ -114,7 +394,7 @@ async function countPivotPushRecipients(tenantKey) {
 }
 
 async function loadPivotPushRecipients(tenantKey) {
-  const db = await connectToDatabase(tenantKey);
+  const db = await connectionsManager.connectToDatabase(tenantKey);
   const req = { db, school: tenantKey };
   const { User } = getModels(req, 'User');
   return User.find({
@@ -123,6 +403,30 @@ async function loadPivotPushRecipients(tenantKey) {
   })
     .select('_id pushToken')
     .lean();
+}
+
+async function buildWeeklyDropPushMessages(tenant, batchWeek, recipients, options = {}) {
+  const baseCopy = resolveWeeklyDropPushCopy(tenant, batchWeek, options);
+  const crewContextByUserId = await loadWeeklyDropCrewContext(
+    tenant.tenantKey,
+    batchWeek,
+    recipients.map((recipient) => recipient._id),
+  );
+
+  return recipients.map((recipient) => {
+    const userId = recipient._id?.toString?.();
+    const crewContext = crewContextByUserId.get(userId) || {
+      hasCrew: false,
+      userSwiped: false,
+      anyCrewUnfinished: false,
+      deckComplete: false,
+      decideQueueOrder: [],
+      decideCrewId: null,
+      ritualPhase: 'solo',
+    };
+    const copy = resolveWeeklyDropPushCopyForRecipient(baseCopy, crewContext);
+    return buildWeeklyDropPushMessage(recipient.pushToken, batchWeek, copy);
+  });
 }
 
 function validateDropConfigPayload(body = {}) {
@@ -306,15 +610,18 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
     }
   }
 
-  const messages = recipients.map((recipient) =>
-    buildWeeklyDropPushMessage(recipient.pushToken, batchWeek, pushCopy)
-  );
+  const messages = await buildWeeklyDropPushMessages(tenant, batchWeek, recipients, {
+    pushTitle: options.pushTitle,
+    pushBody: options.pushBody,
+  });
+  const pushCopyBreakdown = summarizePushCopyBreakdown(messages);
 
   if (dryRun) {
     return {
       dryRun: true,
       dropSchedule,
       pushCopy,
+      pushCopyBreakdown,
       publishedEventCount,
       pivotPushRecipientCount: recipients.length,
       warnings,
@@ -360,6 +667,7 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
     dryRun: false,
     dropSchedule,
     pushCopy,
+    pushCopyBreakdown,
     publishedEventCount,
     pivotPushRecipientCount: recipients.length,
     sent,
@@ -377,6 +685,9 @@ module.exports = {
   PUSH_BODY_MAX,
   DROP_WINDOW_MS,
   resolveWeeklyDropPushCopy,
+  resolveWeeklyDropPushCopyForRecipient,
+  loadWeeklyDropCrewContext,
+  buildWeeklyDropPushMessages,
   buildWeeklyDropPushMessage,
   getWeeklyDropStatus,
   updateWeeklyDropConfig,

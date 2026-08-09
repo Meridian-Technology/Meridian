@@ -126,8 +126,17 @@ describe('pivotWeekRitualService helpers', () => {
 
   describe('buildRitualActions', () => {
     it('maps phases to client action flags', () => {
-      expect(buildRitualActions('decide')).toEqual({
+      expect(
+        buildRitualActions('decide', { complete: true, remaining: 0 }),
+      ).toEqual({
         openDeck: false,
+        openDecide: true,
+        openRecap: false,
+      });
+      expect(
+        buildRitualActions('decide', { complete: false, remaining: 3 }),
+      ).toEqual({
+        openDeck: true,
         openDecide: true,
         openRecap: false,
       });
