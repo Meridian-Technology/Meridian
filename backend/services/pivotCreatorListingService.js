@@ -1,0 +1,934 @@
+/**
+ * Just Go Creator Console — create/update host listings as Pivot curation drafts.
+ *
+ * Provenance: customFields.pivot.source = 'justgo', platformManaged = false.
+ * Creators never set ingestStatus to published; ops release via Tenant Curation.
+ *
+ * Post-publish edits (locked default): content fields OK; ingestStatus / batchWeek
+ * locked for creators (ops only).
+ */
+
+const getModels = require('./getModelService');
+const { connectToDatabase } = require('../connectionsManager');
+const {
+  resolvePivotTenant,
+  resolveCatalogOrgId,
+} = require('./pivotIngestPublishService');
+const { sanitizeEventPosterImage } = require('./pivotIngestPreviewService');
+const { validatePivotEventTags } = require('./pivotTagCatalogService');
+const { normalizePivotTimeSlots } = require('../utilities/pivotTimeSlots');
+const {
+  serializeLabEvent,
+  loadIntentStatsByEventId,
+} = require('./pivotLabEventsService');
+const {
+  resolveCreatorPublishConfig,
+  computeCreatorBatchWeek,
+  resolveCreatorDefaultIngestStatus,
+} = require('../utilities/pivotCreatorPublishConfig');
+const {
+  normalizeIngestStatus,
+  PIVOT_FEED_INGEST_STATUS,
+} = require('../utilities/pivotIngestStatus');
+const { logPivot } = require('../utilities/pivotLogger');
+const {
+  notifyAdminsOnCreatorListingCreate,
+} = require('./pivotCreatorAdminNotifyService');
+
+const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
+const CREATOR_SOURCE = 'justgo';
+const CREATOR_EDITABLE_INGEST = new Set(['draft', 'staged']);
+const EMPTY_INTENT_STATS = Object.freeze({
+  interested: 0,
+  registered: 0,
+  passed: 0,
+  externalOpens: 0,
+  externalOpenUsers: 0,
+});
+const EMPTY_ANALYTICS_SUMMARY = Object.freeze({
+  views: 0,
+  uniqueViews: 0,
+  anonymousViews: 0,
+  uniqueAnonymousViews: 0,
+  registrations: 0,
+  uniqueRegistrations: 0,
+});
+const LISTING_SELECT =
+  'name description image start_time end_time location externalLink type visibility status hostingType hostingId customFields.pivot createdAt updatedAt';
+
+function trimString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const trimmed = trimString(value);
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function parseDateTime(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function resolveCreatorUserId(req) {
+  return (
+    trimString(req.pivotCreator?.globalUserId) ||
+    trimString(req.user?.globalUserId) ||
+    trimString(req.user?.userId) ||
+    null
+  );
+}
+
+function resolveListingTenantKey(req, options = {}) {
+  return (
+    trimString(options.tenantKey) ||
+    trimString(req.pivotCreator?.tenantKey) ||
+    trimString(req.school) ||
+    null
+  );
+}
+
+async function resolveListingContext(req, options = {}) {
+  const tenantKey = resolveListingTenantKey(req, options);
+  if (!tenantKey || tenantKey === 'www') {
+    return {
+      error: 'Just Go Creator requires a city tenant.',
+      status: 403,
+      code: 'CREATOR_TENANT_REQUIRED',
+    };
+  }
+
+  if (req.pivotCreator?.tenant && req.pivotCreator.tenantKey === tenantKey) {
+    return { tenant: req.pivotCreator.tenant, tenantKey };
+  }
+
+  const tenantResult = await resolvePivotTenant(req, tenantKey);
+  if (tenantResult.error) return tenantResult;
+  return { tenant: tenantResult.tenant, tenantKey: tenantResult.tenant.tenantKey };
+}
+
+async function resolveTenantDb(req, tenantKey) {
+  if (req.db && trimString(req.school) === tenantKey) {
+    return { db: req.db, school: tenantKey };
+  }
+  const db = await connectToDatabase(tenantKey);
+  return { db, school: tenantKey };
+}
+
+function normalizeCreatorTimeSlots(rawSlots) {
+  if (!Array.isArray(rawSlots) || !rawSlots.length) {
+    return [];
+  }
+  return normalizePivotTimeSlots(rawSlots).map((slot) => ({
+    id: slot.id,
+    start_time: slot.start_time,
+    ...(slot.end_time ? { end_time: slot.end_time } : {}),
+    ...(slot.label ? { label: slot.label } : {}),
+  }));
+}
+
+/**
+ * Validate create/update content payload (not ingest/week — those are stamped separately).
+ */
+function validateListingPayload(payload = {}, { partial = false } = {}) {
+  const name = firstNonEmpty(payload.name);
+  const location = firstNonEmpty(payload.location);
+  const description =
+    payload.description !== undefined
+      ? trimString(payload.description)
+      : undefined;
+  const hostName = firstNonEmpty(
+    payload.hostName,
+    payload.host?.name,
+    payload.displayHostName,
+  );
+  const hostImageUrl = firstNonEmpty(
+    payload.hostImageUrl,
+    payload.host?.imageUrl,
+  );
+  const hostProfileUrl = firstNonEmpty(
+    payload.hostProfileUrl,
+    payload.host?.profileUrl,
+  );
+  const externalLink = firstNonEmpty(
+    payload.externalLink,
+    payload.ticketUrl,
+    payload.sourceUrl,
+  );
+  const image = sanitizeEventPosterImage(
+    firstNonEmpty(payload.image, payload.coverImage),
+  );
+  const timeSlots = normalizeCreatorTimeSlots(payload.timeSlots);
+
+  let startTime = parseDateTime(payload.start_time ?? payload.startTime);
+  let endTime = parseDateTime(payload.end_time ?? payload.endTime);
+
+  if (timeSlots.length) {
+    if (!startTime) startTime = timeSlots[0].start_time;
+    if (!endTime) {
+      endTime = timeSlots.reduce((latest, slot) => {
+        const candidate = slot.end_time || slot.start_time;
+        return !latest || candidate > latest ? candidate : latest;
+      }, null);
+    }
+  }
+
+  if (!partial) {
+    const missing = [];
+    if (!name) missing.push('name');
+    if (!location) missing.push('location');
+    if (!hostName) missing.push('hostName');
+    if (!startTime && !timeSlots.length) missing.push('start_time');
+    if (missing.length) {
+      return {
+        error: `Missing required fields: ${missing.join(', ')}.`,
+        status: 400,
+        code: 'MISSING_REQUIRED_FIELDS',
+      };
+    }
+  } else {
+    if (payload.name !== undefined && !name) {
+      return {
+        error: 'name cannot be empty.',
+        status: 400,
+        code: 'INVALID_NAME',
+      };
+    }
+    if (payload.location !== undefined && !location) {
+      return {
+        error: 'location cannot be empty.',
+        status: 400,
+        code: 'INVALID_LOCATION',
+      };
+    }
+    if (
+      (payload.hostName !== undefined ||
+        payload.host !== undefined ||
+        payload.displayHostName !== undefined) &&
+      !hostName
+    ) {
+      return {
+        error: 'hostName cannot be empty.',
+        status: 400,
+        code: 'HOST_NAME_REQUIRED',
+      };
+    }
+  }
+
+  if (
+    !partial ||
+    payload.start_time !== undefined ||
+    payload.startTime !== undefined ||
+    payload.timeSlots !== undefined
+  ) {
+    if (
+      (payload.start_time !== undefined ||
+        payload.startTime !== undefined ||
+        payload.timeSlots !== undefined ||
+        !partial) &&
+      !startTime
+    ) {
+      return {
+        error: 'start_time must be a valid datetime.',
+        status: 400,
+        code: 'INVALID_START_TIME',
+      };
+    }
+  }
+
+  if (startTime && (!endTime || endTime <= startTime)) {
+    endTime = new Date(startTime.getTime() + DEFAULT_DURATION_MS);
+  }
+
+  if (
+    (payload.end_time !== undefined || payload.endTime !== undefined) &&
+    payload.end_time !== null &&
+    payload.endTime !== null &&
+    !endTime
+  ) {
+    return {
+      error: 'end_time must be a valid datetime.',
+      status: 400,
+      code: 'INVALID_END_TIME',
+    };
+  }
+
+  return {
+    fields: {
+      ...(name !== null && (!partial || payload.name !== undefined)
+        ? { name }
+        : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(location !== null && (!partial || payload.location !== undefined)
+        ? { location }
+        : {}),
+      ...(startTime &&
+      (!partial ||
+        payload.start_time !== undefined ||
+        payload.startTime !== undefined ||
+        payload.timeSlots !== undefined)
+        ? { startTime }
+        : {}),
+      ...(endTime &&
+      (!partial ||
+        payload.end_time !== undefined ||
+        payload.endTime !== undefined ||
+        payload.start_time !== undefined ||
+        payload.startTime !== undefined ||
+        payload.timeSlots !== undefined)
+        ? { endTime }
+        : {}),
+      ...(hostName &&
+      (!partial ||
+        payload.hostName !== undefined ||
+        payload.host !== undefined ||
+        payload.displayHostName !== undefined)
+        ? { hostName }
+        : {}),
+      ...(payload.hostImageUrl !== undefined ||
+      payload.host?.imageUrl !== undefined
+        ? { hostImageUrl: hostImageUrl || null }
+        : !partial && hostImageUrl
+          ? { hostImageUrl }
+          : {}),
+      ...(payload.hostProfileUrl !== undefined ||
+      payload.host?.profileUrl !== undefined
+        ? { hostProfileUrl: hostProfileUrl || null }
+        : !partial && hostProfileUrl
+          ? { hostProfileUrl }
+          : {}),
+      ...(payload.externalLink !== undefined ||
+      payload.ticketUrl !== undefined ||
+      payload.sourceUrl !== undefined
+        ? { externalLink: externalLink || null }
+        : !partial && externalLink
+          ? { externalLink }
+          : {}),
+      ...(payload.image !== undefined || payload.coverImage !== undefined
+        ? { image: image || null }
+        : !partial && image
+          ? { image }
+          : {}),
+      ...(payload.timeSlots !== undefined || (!partial && timeSlots.length)
+        ? { timeSlots }
+        : {}),
+      ...(payload.tags !== undefined ? { tags: payload.tags } : {}),
+    },
+  };
+}
+
+/**
+ * Reject creator attempts to publish or smuggle ops-only lifecycle fields.
+ */
+function rejectCreatorLifecycleOverrides(payload = {}) {
+  if (payload.ingestStatus === undefined) return null;
+
+  const statusResult = normalizeIngestStatus(payload.ingestStatus);
+  if (statusResult.error) return statusResult;
+
+  if (statusResult.ingestStatus === PIVOT_FEED_INGEST_STATUS) {
+    return {
+      error:
+        'Creators cannot publish listings to the live feed. Submit as a draft; Just Go ops release the weekly drop.',
+      status: 403,
+      code: 'CREATOR_PUBLISH_FORBIDDEN',
+    };
+  }
+
+  // Creators also cannot self-stage via payload — ingest comes from tenant config on create.
+  return {
+    error: 'Creators cannot change ingestStatus. Just Go ops control curation status.',
+    status: 403,
+    code: 'CREATOR_INGEST_STATUS_LOCKED',
+  };
+}
+
+function assertListingOwnership(event, creatorUserId) {
+  const ownerId = trimString(event?.customFields?.pivot?.createdByUserId);
+  if (!ownerId || !creatorUserId || ownerId !== String(creatorUserId)) {
+    return {
+      error: 'You can only manage your own Just Go listings.',
+      status: 403,
+      code: 'CREATOR_NOT_OWNER',
+    };
+  }
+  return null;
+}
+
+function assertJustGoListing(event) {
+  const pivot = event?.customFields?.pivot || {};
+  if (pivot.source !== CREATOR_SOURCE) {
+    return {
+      error: 'Event is not a Just Go Creator listing.',
+      status: 404,
+      code: 'EVENT_NOT_FOUND',
+    };
+  }
+  return null;
+}
+
+function serializeAnalyticsSummary(analyticsDoc) {
+  if (!analyticsDoc) {
+    return { ...EMPTY_ANALYTICS_SUMMARY };
+  }
+  return {
+    views: analyticsDoc.views ?? 0,
+    uniqueViews: analyticsDoc.uniqueViews ?? 0,
+    anonymousViews: analyticsDoc.anonymousViews ?? 0,
+    uniqueAnonymousViews: analyticsDoc.uniqueAnonymousViews ?? 0,
+    registrations: analyticsDoc.registrations ?? 0,
+    uniqueRegistrations: analyticsDoc.uniqueRegistrations ?? 0,
+  };
+}
+
+function serializeCreatorListing(event, intentStatsByEventId = null) {
+  const base = serializeLabEvent(event, intentStatsByEventId);
+  const pivot = event?.customFields?.pivot || {};
+  const host = pivot.host || {};
+  return {
+    ...base,
+    platformManaged: pivot.platformManaged === true,
+    createdByUserId: pivot.createdByUserId
+      ? String(pivot.createdByUserId)
+      : null,
+    creatorSubmittedAt: pivot.creatorSubmittedAt || null,
+    host: {
+      name: host.name || base.organizerName || '',
+      ...(host.imageUrl ? { imageUrl: host.imageUrl } : {}),
+      ...(host.profileUrl ? { profileUrl: host.profileUrl } : {}),
+    },
+  };
+}
+
+function parseIngestStatusFilter(raw) {
+  if (raw === undefined || raw === null || raw === '') {
+    return { statuses: null };
+  }
+
+  const parts = Array.isArray(raw)
+    ? raw
+    : String(raw)
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+  if (!parts.length) {
+    return { statuses: null };
+  }
+
+  const statuses = [];
+  for (const part of parts) {
+    const normalized = normalizeIngestStatus(part);
+    if (normalized.error) {
+      return {
+        error: `Invalid ingestStatus filter: ${part}. Use draft, staged, or published.`,
+        status: 400,
+        code: 'INVALID_INGEST_STATUS',
+      };
+    }
+    if (!statuses.includes(normalized.ingestStatus)) {
+      statuses.push(normalized.ingestStatus);
+    }
+  }
+
+  return { statuses };
+}
+
+function ownJustGoListingsQuery(creatorUserId, statuses = null) {
+  const query = {
+    isDeleted: { $ne: true },
+    'customFields.pivot.source': CREATOR_SOURCE,
+    'customFields.pivot.createdByUserId': String(creatorUserId),
+  };
+  if (statuses?.length === 1) {
+    query['customFields.pivot.ingestStatus'] = statuses[0];
+  } else if (statuses?.length > 1) {
+    query['customFields.pivot.ingestStatus'] = { $in: statuses };
+  }
+  return query;
+}
+
+/**
+ * GET list — current creator's host-created events for the city tenant.
+ * Optional `ingestStatus` query (single or comma-separated).
+ */
+async function listListings(req, options = {}) {
+  const creatorUserId = resolveCreatorUserId(req);
+  if (!creatorUserId) {
+    return {
+      error: 'Authentication required.',
+      status: 401,
+      code: 'AUTH_REQUIRED',
+    };
+  }
+
+  const context = await resolveListingContext(req, options);
+  if (context.error) return context;
+
+  const statusFilter = parseIngestStatusFilter(
+    options.ingestStatus !== undefined ? options.ingestStatus : options.status,
+  );
+  if (statusFilter.error) return statusFilter;
+
+  const tenantReq = await resolveTenantDb(req, context.tenantKey);
+  const { Event, PivotEventIntent } = getModels(
+    tenantReq,
+    'Event',
+    'PivotEventIntent',
+  );
+
+  const events = await Event.find(
+    ownJustGoListingsQuery(creatorUserId, statusFilter.statuses),
+  )
+    .select(LISTING_SELECT)
+    .sort({ start_time: -1, _id: -1 })
+    .lean();
+
+  const intentStatsByEventId = await loadIntentStatsByEventId(
+    PivotEventIntent,
+    events.map((event) => event._id),
+  );
+
+  return {
+    data: {
+      tenantKey: context.tenantKey,
+      events: events.map((event) =>
+        serializeCreatorListing(event, intentStatsByEventId),
+      ),
+      total: events.length,
+    },
+  };
+}
+
+/**
+ * GET detail — own listing + safe intent / analytics summaries (zeros for drafts).
+ */
+async function getListing(req, eventId, options = {}) {
+  const creatorUserId = resolveCreatorUserId(req);
+  if (!creatorUserId) {
+    return {
+      error: 'Authentication required.',
+      status: 401,
+      code: 'AUTH_REQUIRED',
+    };
+  }
+
+  const id = trimString(eventId);
+  if (!id) {
+    return {
+      error: 'eventId is required.',
+      status: 400,
+      code: 'EVENT_ID_REQUIRED',
+    };
+  }
+
+  const context = await resolveListingContext(req, options);
+  if (context.error) return context;
+
+  const tenantReq = await resolveTenantDb(req, context.tenantKey);
+  const { Event, PivotEventIntent, EventAnalytics } = getModels(
+    tenantReq,
+    'Event',
+    'PivotEventIntent',
+    'EventAnalytics',
+  );
+
+  const existing = await Event.findOne({
+    _id: id,
+    isDeleted: { $ne: true },
+    'customFields.pivot': { $exists: true },
+  })
+    .select(LISTING_SELECT)
+    .lean();
+
+  if (!existing) {
+    return {
+      error: 'Listing not found.',
+      status: 404,
+      code: 'EVENT_NOT_FOUND',
+    };
+  }
+
+  const justGoCheck = assertJustGoListing(existing);
+  if (justGoCheck) return justGoCheck;
+
+  const ownership = assertListingOwnership(existing, creatorUserId);
+  if (ownership) return ownership;
+
+  let analyticsDoc = null;
+  try {
+    analyticsDoc = await EventAnalytics.findOne({ eventId: existing._id })
+      .select(
+        'views uniqueViews anonymousViews uniqueAnonymousViews registrations uniqueRegistrations',
+      )
+      .lean();
+  } catch {
+    // Catalog drafts often have no analytics row; never fail the detail read.
+    analyticsDoc = null;
+  }
+
+  const intentStatsByEventId = await loadIntentStatsByEventId(
+    PivotEventIntent,
+    [existing._id],
+  );
+
+  const intentStats =
+    intentStatsByEventId.get(String(existing._id)) || { ...EMPTY_INTENT_STATS };
+  const analytics = serializeAnalyticsSummary(analyticsDoc);
+
+  return {
+    data: {
+      tenantKey: context.tenantKey,
+      event: serializeCreatorListing(existing, intentStatsByEventId),
+      stats: {
+        intents: intentStats,
+        analytics,
+      },
+    },
+  };
+}
+
+function buildCreatorPivotMetadata({
+  fields,
+  batchWeek,
+  ingestStatus,
+  createdByUserId,
+  creatorSubmittedAt,
+  tags,
+}) {
+  const host = {
+    name: fields.hostName,
+    ...(fields.hostImageUrl ? { imageUrl: fields.hostImageUrl } : {}),
+    ...(fields.hostProfileUrl ? { profileUrl: fields.hostProfileUrl } : {}),
+  };
+
+  return {
+    batchWeek,
+    source: CREATOR_SOURCE,
+    platformManaged: false,
+    createdByUserId: String(createdByUserId),
+    creatorSubmittedAt:
+      creatorSubmittedAt instanceof Date
+        ? creatorSubmittedAt.toISOString()
+        : creatorSubmittedAt,
+    host,
+    tags: tags || [],
+    ...(fields.timeSlots?.length ? { timeSlots: fields.timeSlots } : {}),
+    ingestStatus,
+    ...(fields.externalLink ? { sourceUrl: fields.externalLink } : {}),
+  };
+}
+
+/**
+ * Create a host listing → always curation draft|staged from config (never published).
+ */
+async function createListing(req, payload = {}) {
+  const lifecycleBlock = rejectCreatorLifecycleOverrides(payload);
+  if (lifecycleBlock) return lifecycleBlock;
+
+  if (payload.batchWeek !== undefined) {
+    return {
+      error: 'Creators cannot set batchWeek directly; it is derived from the event start.',
+      status: 403,
+      code: 'CREATOR_BATCH_WEEK_LOCKED',
+    };
+  }
+
+  const creatorUserId = resolveCreatorUserId(req);
+  if (!creatorUserId) {
+    return {
+      error: 'Authentication required.',
+      status: 401,
+      code: 'AUTH_REQUIRED',
+    };
+  }
+
+  const context = await resolveListingContext(req);
+  if (context.error) return context;
+
+  const validated = validateListingPayload(payload, { partial: false });
+  if (validated.error) return validated;
+  const { fields } = validated;
+
+  const config = resolveCreatorPublishConfig(context.tenant);
+  const ingestStatus = resolveCreatorDefaultIngestStatus(config);
+
+  const weekResult = computeCreatorBatchWeek(fields.startTime, config, {
+    timeSlots: fields.timeSlots,
+  });
+  if (weekResult.error) return weekResult;
+
+  const tagsRequired = config.requireTagsToSubmit === true;
+  const tagResult = await validatePivotEventTags(req, fields.tags, {
+    required: tagsRequired,
+  });
+  if (tagResult.error) return tagResult;
+
+  const catalogResult = await resolveCatalogOrgId(req, context.tenant);
+  const tenantReq = await resolveTenantDb(req, context.tenantKey);
+  const { Event } = getModels(tenantReq, 'Event');
+
+  const submittedAt = new Date();
+  const pivot = buildCreatorPivotMetadata({
+    fields,
+    batchWeek: weekResult.batchWeek,
+    ingestStatus,
+    createdByUserId: creatorUserId,
+    creatorSubmittedAt: submittedAt,
+    tags: tagResult.tags,
+  });
+
+  const eventPayload = {
+    name: fields.name,
+    description: fields.description || '',
+    type: 'social',
+    location: fields.location,
+    start_time: fields.startTime,
+    end_time: fields.endTime,
+    status: 'not-applicable',
+    visibility: 'public',
+    registrationEnabled: true,
+    expectedAttendance: 0,
+    ...(fields.externalLink ? { externalLink: fields.externalLink } : {}),
+    hostingType: 'Org',
+    hostingId: catalogResult.orgId,
+    isDeleted: false,
+    ...(fields.image ? { image: fields.image } : {}),
+    customFields: { pivot },
+  };
+
+  const created = await Event.create(eventPayload);
+  const event =
+    typeof created.toObject === 'function' ? created.toObject() : created;
+
+  logPivot('info', 'creator listing submitted', {
+    tenantKey: context.tenantKey,
+    eventId: String(event._id),
+    batchWeek: weekResult.batchWeek,
+    batchWeekSource: weekResult.source,
+    ingestStatus,
+    createdByUserId: creatorUserId,
+  });
+
+  // Task 2.3 — best-effort ops notify; never block create.
+  void notifyAdminsOnCreatorListingCreate(req, {
+    tenant: context.tenant,
+    config,
+    event,
+    batchWeek: weekResult.batchWeek,
+    creatorUserId,
+  }).catch((err) => {
+    logPivot('warn', 'creator listing admin notify failed', {
+      tenantKey: context.tenantKey,
+      eventId: String(event._id),
+      message: err?.message,
+    });
+  });
+
+  return {
+    data: {
+      event: serializeCreatorListing(event),
+      created: true,
+      ingestStatus,
+      batchWeek: weekResult.batchWeek,
+      batchWeekSource: weekResult.source,
+    },
+  };
+}
+
+/**
+ * Update own listing. Content editable after publish; ingestStatus/batchWeek locked.
+ */
+async function updateListing(req, eventId, payload = {}) {
+  const lifecycleBlock = rejectCreatorLifecycleOverrides(payload);
+  if (lifecycleBlock) return lifecycleBlock;
+
+  if (payload.batchWeek !== undefined) {
+    return {
+      error: 'Creators cannot change batchWeek. Just Go ops assign weeks in curation.',
+      status: 403,
+      code: 'CREATOR_BATCH_WEEK_LOCKED',
+    };
+  }
+
+  const creatorUserId = resolveCreatorUserId(req);
+  if (!creatorUserId) {
+    return {
+      error: 'Authentication required.',
+      status: 401,
+      code: 'AUTH_REQUIRED',
+    };
+  }
+
+  const id = trimString(eventId);
+  if (!id) {
+    return {
+      error: 'eventId is required.',
+      status: 400,
+      code: 'EVENT_ID_REQUIRED',
+    };
+  }
+
+  const context = await resolveListingContext(req);
+  if (context.error) return context;
+
+  const validated = validateListingPayload(payload, { partial: true });
+  if (validated.error) return validated;
+  const { fields } = validated;
+
+  const tenantReq = await resolveTenantDb(req, context.tenantKey);
+  const { Event } = getModels(tenantReq, 'Event');
+
+  const existing = await Event.findOne({
+    _id: id,
+    isDeleted: { $ne: true },
+    'customFields.pivot': { $exists: true },
+  }).lean();
+
+  if (!existing) {
+    return {
+      error: 'Listing not found.',
+      status: 404,
+      code: 'EVENT_NOT_FOUND',
+    };
+  }
+
+  const justGoCheck = assertJustGoListing(existing);
+  if (justGoCheck) return justGoCheck;
+
+  const ownership = assertListingOwnership(existing, creatorUserId);
+  if (ownership) return ownership;
+
+  const pivot = { ...(existing.customFields?.pivot || {}) };
+  const currentStatus = pivot.ingestStatus || 'draft';
+  const isPublished = currentStatus === PIVOT_FEED_INGEST_STATUS;
+
+  if (!isPublished && !CREATOR_EDITABLE_INGEST.has(currentStatus)) {
+    return {
+      error: 'This listing cannot be edited in its current curation state.',
+      status: 409,
+      code: 'CREATOR_EDIT_LOCKED',
+    };
+  }
+
+  const config = resolveCreatorPublishConfig(context.tenant);
+  const setPayload = {};
+
+  if (fields.name !== undefined) setPayload.name = fields.name;
+  if (fields.description !== undefined) setPayload.description = fields.description;
+  if (fields.location !== undefined) setPayload.location = fields.location;
+  if (fields.image !== undefined) setPayload.image = fields.image;
+  if (fields.startTime !== undefined) setPayload.start_time = fields.startTime;
+  if (fields.endTime !== undefined) setPayload.end_time = fields.endTime;
+  if (fields.externalLink !== undefined) {
+    setPayload.externalLink = fields.externalLink;
+    if (fields.externalLink) {
+      pivot.sourceUrl = fields.externalLink;
+    } else {
+      delete pivot.sourceUrl;
+    }
+  }
+
+  const host = { ...(pivot.host || {}) };
+  if (fields.hostName !== undefined) host.name = fields.hostName;
+  if (fields.hostImageUrl !== undefined) {
+    if (fields.hostImageUrl) host.imageUrl = fields.hostImageUrl;
+    else delete host.imageUrl;
+  }
+  if (fields.hostProfileUrl !== undefined) {
+    if (fields.hostProfileUrl) host.profileUrl = fields.hostProfileUrl;
+    else delete host.profileUrl;
+  }
+  if (!host.name) {
+    return {
+      error: 'hostName cannot be empty.',
+      status: 400,
+      code: 'HOST_NAME_REQUIRED',
+    };
+  }
+  pivot.host = host;
+
+  // Provenance invariants — never let an update strip justgo / flip platformManaged.
+  pivot.source = CREATOR_SOURCE;
+  pivot.platformManaged = false;
+  pivot.createdByUserId = pivot.createdByUserId || String(creatorUserId);
+
+  if (fields.timeSlots !== undefined) {
+    if (fields.timeSlots.length) {
+      pivot.timeSlots = fields.timeSlots;
+    } else {
+      delete pivot.timeSlots;
+    }
+  }
+
+  if (fields.tags !== undefined) {
+    const tagsRequired = config.requireTagsToSubmit === true;
+    const tagResult = await validatePivotEventTags(req, fields.tags, {
+      required: tagsRequired,
+    });
+    if (tagResult.error) return tagResult;
+    pivot.tags = tagResult.tags;
+  }
+
+  // Recompute batchWeek from new start only while still in curation (not after publish).
+  const nextStart =
+    fields.startTime ||
+    existing.start_time ||
+    (Array.isArray(pivot.timeSlots) && pivot.timeSlots[0]?.start_time) ||
+    null;
+
+  if (!isPublished && (fields.startTime !== undefined || fields.timeSlots !== undefined)) {
+    const weekResult = computeCreatorBatchWeek(nextStart, config, {
+      timeSlots: fields.timeSlots !== undefined ? fields.timeSlots : pivot.timeSlots,
+    });
+    if (weekResult.error) return weekResult;
+    pivot.batchWeek = weekResult.batchWeek;
+  }
+  // Published: batchWeek + ingestStatus stay as ops left them (locked default).
+
+  setPayload['customFields.pivot'] = pivot;
+
+  const updated = await Event.findByIdAndUpdate(
+    id,
+    { $set: setPayload },
+    { new: true, runValidators: true },
+  ).lean();
+
+  logPivot('info', 'creator listing updated', {
+    tenantKey: context.tenantKey,
+    eventId: id,
+    ingestStatus: pivot.ingestStatus,
+    batchWeek: pivot.batchWeek,
+    createdByUserId: creatorUserId,
+    publishedContentEdit: isPublished,
+  });
+
+  return {
+    data: {
+      event: serializeCreatorListing(updated),
+      updated: true,
+      ingestStatus: pivot.ingestStatus || null,
+      batchWeek: pivot.batchWeek || null,
+    },
+  };
+}
+
+module.exports = {
+  createListing,
+  updateListing,
+  listListings,
+  getListing,
+  serializeCreatorListing,
+  serializeAnalyticsSummary,
+  validateListingPayload,
+  rejectCreatorLifecycleOverrides,
+  assertListingOwnership,
+  parseIngestStatusFilter,
+  CREATOR_SOURCE,
+  EMPTY_INTENT_STATS,
+  EMPTY_ANALYTICS_SUMMARY,
+};
