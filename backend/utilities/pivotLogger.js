@@ -40,8 +40,11 @@ function logPivot(level, message, meta) {
 }
 
 function pivotRequestContext(req) {
+  const xTenant = req.headers?.['x-tenant'];
   return {
     tenant: req.school || undefined,
+    xTenant: xTenant ? String(xTenant).toLowerCase() : undefined,
+    host: req.headers?.host || undefined,
     userId: req.user?.userId ? String(req.user.userId) : undefined,
     method: req.method,
     path: req.originalUrl || req.url,
