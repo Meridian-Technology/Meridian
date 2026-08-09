@@ -13,6 +13,7 @@ const pivotPosterTemplateSchema = require('../schemas/pivotPosterTemplate');
 const pivotCurationJobSchema = require('../schemas/pivotCurationJob');
 const pivotCurationRunSchema = require('../schemas/pivotCurationRun');
 const pivotContactHashSchema = require('../schemas/pivotContactHash');
+const pivotCreatorGrantSchema = require('../schemas/pivotCreatorGrant');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -20,7 +21,7 @@ const pivotContactHashSchema = require('../schemas/pivotContactHash');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', …
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCreatorGrant', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -72,6 +73,11 @@ const getGlobalModels = (req, ...names) => {
             'PivotContactHash',
             pivotContactHashSchema,
             'pivot_contact_hashes'
+        ),
+        PivotCreatorGrant: db.model(
+            'PivotCreatorGrant',
+            pivotCreatorGrantSchema,
+            'pivot_creator_grants'
         ),
     };
 

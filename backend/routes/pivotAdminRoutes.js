@@ -74,6 +74,11 @@ const {
 const { getMergedTenants } = require('../services/tenantConfigService');
 const { isPivotTenant } = require('../services/pivotReferralCodeService');
 const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
+const {
+  listCreatorGrants,
+  grantCreator,
+  revokeCreator,
+} = require('../services/pivotCreatorGrantService');
 
 const router = express.Router();
 
@@ -1477,5 +1482,94 @@ router.get('/snapshots/:batchWeek', verifyToken, requirePlatformAdmin, async (re
     });
   }
 });
+
+/** Just Go Creator grants — API-only v0 (Task 1.1). */
+router.get(
+  '/tenants/:tenantKey/creators',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listCreatorGrants(req, req.params.tenantKey, {
+        status: req.query?.status,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/creators', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to list Just Go creators.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/creators',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await grantCreator(req, req.params.tenantKey, req.body || {});
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(result.reactivated ? 200 : 201).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/creators', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to grant Just Go creator access.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/tenants/:tenantKey/creators/:globalUserId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await revokeCreator(
+        req,
+        req.params.tenantKey,
+        req.params.globalUserId,
+      );
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError(
+        'DELETE /admin/pivot/tenants/:tenantKey/creators/:globalUserId',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to revoke Just Go creator access.',
+      });
+    }
+  },
+);
 
 module.exports = router;
