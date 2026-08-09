@@ -14,6 +14,7 @@ const {
 const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
 const { validatePivotCrewConfigPatch } = require('../utilities/pivotCrewConfig');
 const { validatePivotMobileConfigPatch } = require('../utilities/pivotMobileConfig');
+const { validateCreatorPublishConfigPatch } = require('../utilities/pivotCreatorPublishConfig');
 const {
   connectToDatabase,
   setTenantUriCache,
@@ -357,6 +358,13 @@ function validateTenantMetadataUpdate(body = {}) {
     const mobileValidation = validatePivotMobileConfigPatch(body.pivotMobileConfig);
     if (mobileValidation.error) {
       return { error: mobileValidation.error };
+    }
+  }
+
+  if (body.creatorPublish !== undefined) {
+    const creatorValidation = validateCreatorPublishConfigPatch(body.creatorPublish);
+    if (creatorValidation.error) {
+      return { error: creatorValidation.error };
     }
   }
 

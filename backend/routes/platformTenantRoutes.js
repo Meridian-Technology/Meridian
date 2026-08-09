@@ -25,6 +25,9 @@ const {
 const {
   validatePivotMobileConfigPatch,
 } = require('../utilities/pivotMobileConfig');
+const {
+  validateCreatorPublishConfigPatch,
+} = require('../utilities/pivotCreatorPublishConfig');
 const { invalidateTenantConnection } = require('../connectionsManager');
 const { renameTenantKey } = require('../services/tenantKeyRenameService');
 const {
@@ -220,6 +223,21 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
         delete updated.pivotMobileConfig;
       } else {
         updated.pivotMobileConfig = patch;
+      }
+    }
+
+    if (req.body.creatorPublish === null) {
+      delete updated.creatorPublish;
+    } else if (req.body.creatorPublish !== undefined) {
+      const creatorValidation = validateCreatorPublishConfigPatch(req.body.creatorPublish);
+      if (creatorValidation.error) {
+        return res.status(400).json({ success: false, message: creatorValidation.error });
+      }
+      const patch = creatorValidation.patch || {};
+      if (Object.keys(patch).length === 0) {
+        delete updated.creatorPublish;
+      } else {
+        updated.creatorPublish = patch;
       }
     }
 

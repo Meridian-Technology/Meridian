@@ -66,6 +66,27 @@ const pivotMobileConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/** Just Go Creator Console publish knobs (sparse overrides; defaults in pivotCreatorPublishConfig). */
+const creatorPublishConfigSchema = new mongoose.Schema(
+  {
+    defaultIngestStatus: {
+      type: String,
+      enum: ['draft', 'staged'],
+      default: null,
+    },
+    weekAssignment: {
+      type: String,
+      enum: ['event_start', 'force'],
+      default: null,
+    },
+    forceBatchWeek: { type: String, default: null, trim: true },
+    requireTagsToSubmit: { type: Boolean, default: null },
+    notifyAdminsOnCreate: { type: Boolean, default: null },
+    notifyAdminsOnLiveWeekSubmit: { type: Boolean, default: null },
+  },
+  { _id: false }
+);
+
 const tenantEntrySchema = new mongoose.Schema(
   {
     tenantKey: { type: String, required: true, trim: true, lowercase: true },
@@ -96,6 +117,7 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotDropOverrides: { type: [pivotDropOverrideSchema], default: undefined },
     pivotCrewConfig: { type: pivotCrewConfigSchema, default: undefined },
     pivotMobileConfig: { type: pivotMobileConfigSchema, default: undefined },
+    creatorPublish: { type: creatorPublishConfigSchema, default: undefined },
     provisioningConfirmations: {
       dns: { type: Boolean, default: false },
       cors: { type: Boolean, default: false },
