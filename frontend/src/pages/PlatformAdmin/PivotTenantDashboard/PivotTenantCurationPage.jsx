@@ -62,6 +62,8 @@ const STRATEGY_OPTIONS = [
   { value: 'explicit', label: 'Explicit (pass on run)' },
 ];
 
+const PURGE_CONFIRM_TOKEN = 'PURGE';
+
 function formatEventTags(tags) {
   if (!Array.isArray(tags) || !tags.length) return '—';
   return tags.join(', ');
@@ -171,6 +173,9 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const [urlImportLoading, setUrlImportLoading] = useState(false);
   /** Shown when a bulk stage lands events outside the selected review week. */
   const [stageLandHint, setStageLandHint] = useState(null);
+  const [purgeConfirm, setPurgeConfirm] = useState('');
+  const [purgingCatalog, setPurgingCatalog] = useState(false);
+  const [purgingOutOfWeek, setPurgingOutOfWeek] = useState(false);
   const initializedWeekRef = useRef(false);
 
   // Keep committed week / filter bookmarkable (preserve page=1). Drop legacy stage= param.
@@ -317,6 +322,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       : EMPTY_LIST;
   const eventsLoading = opsLoading && canPublishCatalog && !ops?.catalog;
   const eventsError = ops?.catalog?.error || null;
+  const outOfWeekCount = ops?.catalog?.outOfWeekCount ?? 0;
 
   const {
     data: tagsResponse,
@@ -1216,6 +1222,164 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     weekRangeLabel,
   ]);
 
+  const handlePurgeCatalog = useCallback(async () => {
+    if (!tenantKey || !committedWeekValid || !weekSettled) return;
+
+    if (purgeConfirm.trim() !== PURGE_CONFIRM_TOKEN) {
+      addNotification({
+        title: 'Confirmation required',
+        message: `Type ${PURGE_CONFIRM_TOKEN} to delete catalog data.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Permanently delete pivot catalog events, intents, feedback, and analytics for ${displayCity} · ${committedWeek}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setPurgingCatalog(true);
+    const { data, error } = await authenticatedRequest('/admin/pivot/dev/purge-catalog', {
+      method: 'POST',
+      data: {
+        confirm: PURGE_CONFIRM_TOKEN,
+        tenantKey,
+        batchWeek: committedWeek,
+        clearSnapshots: true,
+      },
+    });
+    setPurgingCatalog(false);
+
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Purge failed',
+        message: error || data?.message || 'Could not purge pivot catalog data.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const totals = data.data?.totals || {};
+    setPurgeConfirm('');
+    refreshAll();
+    addNotification({
+      title: 'Catalog purged',
+      message: `Removed ${totals.events ?? 0} events, ${totals.intents ?? 0} intents, and ${totals.feedback ?? 0} feedback rows for ${committedWeek}.`,
+      type: 'success',
+    });
+  }, [
+    addNotification,
+    committedWeek,
+    committedWeekValid,
+    displayCity,
+    purgeConfirm,
+    refreshAll,
+    tenantKey,
+    weekSettled,
+  ]);
+
+  const handlePurgeOutOfWeek = useCallback(async () => {
+    if (!tenantKey || !committedWeekValid || !weekSettled || outOfWeekCount === 0) return;
+
+    if (
+      !window.confirm(
+        `Permanently delete ${outOfWeekCount} event(s) in ${committedWeek} whose start dates fall outside ${weekRangeLabel}? These are usually events forced into the review week. Related intents and feedback will also be removed. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setPurgingOutOfWeek(true);
+    const { data, error } = await authenticatedRequest(
+      `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/catalog/purge-out-of-week`,
+      {
+        method: 'POST',
+        data: { batchWeek: committedWeek },
+      },
+    );
+    setPurgingOutOfWeek(false);
+
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Purge failed',
+        message: error || data?.message || 'Could not purge out-of-range catalog events.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const deleted = data.data?.deleted || {};
+    refreshAll();
+    addNotification({
+      title: 'Out-of-range events purged',
+      message: `Removed ${deleted.events ?? 0} event(s) outside ${weekRangeLabel}.`,
+      type: 'success',
+    });
+  }, [
+    addNotification,
+    committedWeek,
+    committedWeekValid,
+    outOfWeekCount,
+    refreshAll,
+    tenantKey,
+    weekRangeLabel,
+    weekSettled,
+  ]);
+
+  const handleDeleteEvent = useCallback(
+    async (event) => {
+      if (!tenantKey || !event?._id) return;
+
+      if (
+        !window.confirm(
+          `Permanently delete “${event.name}” (${event.batchWeek || 'no batch week'})? Related intents and feedback for this event will also be removed. This cannot be undone.`,
+        )
+      ) {
+        return;
+      }
+
+      setBusyKey(`delete-${event._id}`);
+      const { data, error } = await authenticatedRequest(
+        `/admin/pivot/ingest/${encodeURIComponent(event._id)}`,
+        {
+          method: 'DELETE',
+          data: { tenantKey },
+        },
+      );
+      setBusyKey(null);
+
+      if (error || !data?.success) {
+        addNotification({
+          title: 'Delete failed',
+          message: error || data?.message || 'Could not delete catalog event.',
+          type: 'error',
+        });
+        return;
+      }
+
+      setSelectedIds((prev) => {
+        if (!prev.has(event._id)) return prev;
+        const next = new Set(prev);
+        next.delete(event._id);
+        return next;
+      });
+      if (editingEvent?._id === event._id) {
+        setEditingEvent(null);
+      }
+      refreshAll();
+      addNotification({
+        title: 'Event deleted',
+        message: `${event.name} was removed from the catalog.`,
+        type: 'success',
+      });
+    },
+    [addNotification, editingEvent, refreshAll, tenantKey],
+  );
+
   return (
     <PivotTenantPage
       title="Curation"
@@ -1921,7 +2085,18 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                         </button>
                       </td>
                       <td>
-                        <span className="pivot-tenant-curation__batch-pill">
+                        <span
+                          className={`pivot-tenant-curation__batch-pill${
+                            event.outOfReviewRange
+                              ? ' pivot-tenant-curation__batch-pill--out-of-range'
+                              : ''
+                          }`}
+                          title={
+                            event.outOfReviewRange
+                              ? `Start date outside ${weekRangeLabel}`
+                              : undefined
+                          }
+                        >
                           {event.batchWeek || '—'}
                         </span>
                       </td>
@@ -1954,6 +2129,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                               {busyKey === `release-${event._id}` ? 'Publishing…' : 'Publish'}
                             </button>
                           ) : null}
+                          <button
+                            type="button"
+                            className="linear-btn linear-btn--ghost pivot-lab__edit-btn pivot-tenant-curation__delete-btn"
+                            onClick={() => handleDeleteEvent(event)}
+                            disabled={busyKey === `delete-${event._id}`}
+                            title="Permanently delete this catalog event"
+                          >
+                            {busyKey === `delete-${event._id}` ? 'Deleting…' : 'Delete'}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1971,6 +2155,77 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         )}
       </section>
         </>
+      ) : null}
+
+      {tenantKey && committedWeekValid ? (
+        <section
+          className="linear-section pivot-lab__section pivot-lab__dev-tools"
+          aria-labelledby="pivot-tenant-curation-danger-zone"
+        >
+          <h2 id="pivot-tenant-curation-danger-zone" className="linear-section__title">
+            Danger zone
+          </h2>
+          <p className="pivot-lab__notes-hint">
+            Permanently deletes catalog events, attendee intents, event feedback, analytics, and the
+            stored weekly snapshot for <strong>{displayCity}</strong> ·{' '}
+            <strong>{committedWeek}</strong>. Referral codes and interview notes are kept. This
+            cannot be undone.
+          </p>
+          {outOfWeekCount > 0 ? (
+            <p className="pivot-lab__notes-hint pivot-tenant-curation__out-of-week-hint">
+              <strong>{outOfWeekCount}</strong> event(s) in {committedWeek} have start dates outside{' '}
+              {weekRangeLabel} — often from forcing into the review week. Purge them without
+              touching in-range events.
+            </p>
+          ) : null}
+          <div className="pivot-lab__dev-tools-grid">
+            <label className="linear-field">
+              <span className="linear-field__label">Type {PURGE_CONFIRM_TOKEN} to confirm</span>
+              <input
+                className="linear-input"
+                value={purgeConfirm}
+                onChange={(e) => setPurgeConfirm(e.target.value)}
+                placeholder={PURGE_CONFIRM_TOKEN}
+                autoComplete="off"
+              />
+            </label>
+          </div>
+          <div className="pivot-lab__notes-actions">
+            <button
+              type="button"
+              className="linear-btn pivot-lab__purge-btn"
+              onClick={handlePurgeCatalog}
+              disabled={
+                purgingCatalog ||
+                !weekSettled ||
+                purgeConfirm.trim() !== PURGE_CONFIRM_TOKEN
+              }
+            >
+              {purgingCatalog
+                ? 'Purging…'
+                : `Purge catalog week (${committedWeek})`}
+            </button>
+            <button
+              type="button"
+              className="linear-btn pivot-lab__purge-btn"
+              onClick={handlePurgeOutOfWeek}
+              disabled={
+                purgingOutOfWeek ||
+                !weekSettled ||
+                outOfWeekCount === 0
+              }
+              title={
+                outOfWeekCount === 0
+                  ? `No events outside ${weekRangeLabel}`
+                  : `Delete ${outOfWeekCount} event(s) outside ${weekRangeLabel}`
+              }
+            >
+              {purgingOutOfWeek
+                ? 'Purging…'
+                : `Purge out-of-range events (${outOfWeekCount})`}
+            </button>
+          </div>
+        </section>
       ) : null}
 
       <PivotCatalogEventEditModal

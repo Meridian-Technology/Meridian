@@ -309,6 +309,19 @@
     align-items: center;
   }
 
+  &__delete-btn {
+    color: var(--la-danger, #b42318);
+  }
+
+  &__out-of-week-hint {
+    margin-top: 8px;
+  }
+
+  &__batch-pill--out-of-range {
+    color: var(--la-danger, #b42318);
+    border-color: var(--la-danger, #b42318);
+  }
+
   &__job-form {
     margin-top: 16px;
     padding: 16px;

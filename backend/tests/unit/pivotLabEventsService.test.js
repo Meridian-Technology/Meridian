@@ -8,11 +8,19 @@ jest.mock('../../services/tenantConfigService', () => ({
 jest.mock('../../services/pivotReferralCodeService', () => ({
   isPivotTenant: jest.fn(),
 }));
+jest.mock('../../services/pivotCatalogPurgeService', () => ({
+  countPivotCatalogOutOfWeek: jest.fn(),
+}));
+jest.mock('../../utilities/pivotDropSchedule', () => ({
+  resolvePivotDropConfig: jest.fn(),
+}));
 
 const getModels = require('../../services/getModelService');
 const { connectToDatabase } = require('../../connectionsManager');
 const { getMergedTenants } = require('../../services/tenantConfigService');
 const { isPivotTenant } = require('../../services/pivotReferralCodeService');
+const { countPivotCatalogOutOfWeek } = require('../../services/pivotCatalogPurgeService');
+const { resolvePivotDropConfig } = require('../../utilities/pivotDropSchedule');
 const {
   listPivotLabEvents,
   serializeLabEvent,
@@ -24,6 +32,8 @@ describe('pivotLabEventsService', () => {
     jest.clearAllMocks();
     isPivotTenant.mockImplementation((tenant) => tenant?.tenantType === 'pivot');
     connectToDatabase.mockResolvedValue({});
+    countPivotCatalogOutOfWeek.mockResolvedValue({ count: 2 });
+    resolvePivotDropConfig.mockReturnValue({ dayOfWeek: 4, timezone: 'UTC' });
   });
 
   describe('serializeLabEvent', () => {
@@ -111,6 +121,8 @@ describe('pivotLabEventsService', () => {
         externalOpens: 0,
         externalOpenUsers: 0,
       });
+      expect(result.data.outOfWeekCount).toBe(2);
+      expect(countPivotCatalogOutOfWeek).toHaveBeenCalledWith('nyc', '2026-W27', 4);
     });
   });
 });

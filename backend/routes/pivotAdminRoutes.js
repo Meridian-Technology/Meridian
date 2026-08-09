@@ -50,7 +50,11 @@ const {
   publishBatchIngestEvents,
   updateIngestEvent,
 } = require('../services/pivotIngestPublishService');
-const { purgePivotCatalog } = require('../services/pivotCatalogPurgeService');
+const {
+  purgePivotCatalog,
+  deletePivotCatalogEvent,
+  purgePivotCatalogOutOfWeek,
+} = require('../services/pivotCatalogPurgeService');
 const { listPivotTags, seedPivotTagCatalog } = require('../services/pivotTagCatalogService');
 const {
   suggestPivotEventTags,
@@ -67,6 +71,9 @@ const {
   logPivotServiceReject,
   logPivotServiceSuccess,
 } = require('../utilities/pivotLogger');
+const { getMergedTenants } = require('../services/tenantConfigService');
+const { isPivotTenant } = require('../services/pivotReferralCodeService');
+const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
 
 const router = express.Router();
 
@@ -1341,6 +1348,82 @@ router.patch('/ingest/:eventId', verifyToken, requirePlatformAdmin, async (req, 
     });
   }
 });
+
+router.delete('/ingest/:eventId', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await deletePivotCatalogEvent(
+      req.body?.tenantKey || req.query?.tenantKey,
+      req.params.eventId,
+    );
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('DELETE /admin/pivot/ingest/:eventId', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to delete pivot catalog event.',
+    });
+  }
+});
+
+router.post(
+  '/tenants/:tenantKey/catalog/purge-out-of-week',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = req.params.tenantKey?.trim()?.toLowerCase();
+      const pivotTenants = (await getMergedTenants(req)).filter(isPivotTenant);
+      const tenant = pivotTenants.find((row) => row.tenantKey === tenantKey);
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pivot tenant not found.',
+          code: 'TENANT_NOT_FOUND',
+        });
+      }
+
+      const dropConfig = resolvePivotDropConfig(tenant);
+      const result = await purgePivotCatalogOutOfWeek(
+        tenantKey,
+        req.body?.batchWeek,
+        dropConfig.dayOfWeek,
+      );
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/catalog/purge-out-of-week',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to purge out-of-range pivot catalog events.',
+      });
+    }
+  },
+);
 
 router.post('/dev/purge-catalog', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {

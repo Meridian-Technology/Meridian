@@ -234,6 +234,46 @@ function resolveEventBatchWeek(options = {}) {
   return { batchWeek: toIsoWeek(now), source: 'current' };
 }
 
+/**
+ * Whether an event start falls outside the drop-aligned batch window
+ * (drop weekday through the following Wednesday).
+ */
+function isEventStartOutOfBatchWeekRange(startTime, batchWeek, dropDayOfWeek = 4) {
+  if (!batchWeek || !isValidIsoWeek(batchWeek)) {
+    return false;
+  }
+  if (startTime == null || startTime === '') {
+    return true;
+  }
+
+  const date = startTime instanceof Date ? startTime : new Date(startTime);
+  if (Number.isNaN(date.getTime())) {
+    return true;
+  }
+
+  const { start, end } = batchWeekToDropCycleUtcRange(batchWeek, dropDayOfWeek);
+  return date < start || date >= end;
+}
+
+/**
+ * Mongo query for pivot catalog events assigned to `batchWeek` whose start_time
+ * is outside that week's drop-cycle range (e.g. forced into the review week).
+ */
+function outOfRangeCatalogEventsQuery(batchWeek, dropDayOfWeek = 4) {
+  const { start, end } = batchWeekToDropCycleUtcRange(batchWeek, dropDayOfWeek);
+  return {
+    'customFields.pivot': { $exists: true },
+    'customFields.pivot.batchWeek': batchWeek,
+    isDeleted: { $ne: true },
+    $or: [
+      { start_time: { $lt: start } },
+      { start_time: { $gte: end } },
+      { start_time: null },
+      { start_time: { $exists: false } },
+    ],
+  };
+}
+
 module.exports = {
   toIsoWeek,
   toIsoWeekInTimeZone,
@@ -248,5 +288,7 @@ module.exports = {
   shiftIsoWeek,
   batchWeekFromEventDate,
   resolveEventBatchWeek,
+  isEventStartOutOfBatchWeekRange,
+  outOfRangeCatalogEventsQuery,
   ISO_WEEK_PATTERN,
 };
