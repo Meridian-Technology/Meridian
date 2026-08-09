@@ -131,6 +131,7 @@ const WWW_ALLOWED_PATHS = [
   '/tenant-status',
   '/platform-admin',
   '/admin/pivot',
+  '/justgo',
   '/login',
 ];
 

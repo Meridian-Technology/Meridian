@@ -202,6 +202,7 @@ function createApp() {
     '/select-school',
     '/tenant-status',
     '/platform-admin',
+    '/justgo',
     '/static',
     '/health',
     '/validate-token',
