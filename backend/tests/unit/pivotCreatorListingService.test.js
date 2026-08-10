@@ -587,6 +587,102 @@ describe('pivotCreatorListingService', () => {
       expect(result.data.stats.analytics.views).toBe(10);
     });
 
+    describe('stats.daily', () => {
+      const NOW = new Date('2026-06-15T09:00:00.000Z');
+
+      function mockExisting() {
+        Event.findOne.mockReturnValue({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue(existingEvent()),
+        });
+      }
+
+      it('returns a zero-filled 14-day UTC window ending today', async () => {
+        mockExisting();
+        EventAnalytics.aggregate = jest.fn().mockResolvedValue([]);
+        PivotEventIntent.aggregate = jest.fn().mockResolvedValue([]);
+
+        const result = await getListing(makeReq(), EVENT_ID, { now: NOW });
+        const daily = result.data.stats.daily;
+
+        expect(daily).toHaveLength(14);
+        expect(daily[0].date).toBe('2026-06-02');
+        expect(daily[13].date).toBe('2026-06-15');
+        expect(daily.every((day) => day.views === 0 && day.interested === 0)).toBe(true);
+      });
+
+      it('fills buckets from the view and intent aggregates', async () => {
+        mockExisting();
+        EventAnalytics.aggregate = jest
+          .fn()
+          .mockResolvedValue([{ _id: '2026-06-14', views: 9 }]);
+        PivotEventIntent.aggregate = jest
+          .fn()
+          .mockResolvedValue([{ _id: '2026-06-14', interested: 4, registered: 2 }]);
+
+        const result = await getListing(makeReq(), EVENT_ID, { now: NOW });
+        const byDate = new Map(result.data.stats.daily.map((day) => [day.date, day]));
+
+        expect(byDate.get('2026-06-14')).toEqual({
+          date: '2026-06-14',
+          views: 9,
+          interested: 4,
+          registered: 2,
+        });
+        expect(byDate.get('2026-06-13')).toEqual({
+          date: '2026-06-13',
+          views: 0,
+          interested: 0,
+          registered: 0,
+        });
+      });
+
+      it('scopes both aggregates to this event and the window', async () => {
+        mockExisting();
+        EventAnalytics.aggregate = jest.fn().mockResolvedValue([]);
+        PivotEventIntent.aggregate = jest.fn().mockResolvedValue([]);
+
+        await getListing(makeReq(), EVENT_ID, { now: NOW });
+
+        const [viewPipeline] = EventAnalytics.aggregate.mock.calls[0];
+        expect(viewPipeline[0]).toEqual({ $match: { eventId: EVENT_ID } });
+
+        const [intentPipeline] = PivotEventIntent.aggregate.mock.calls[0];
+        expect(intentPipeline[0].$match.eventId).toBe(EVENT_ID);
+        expect(intentPipeline[0].$match.status).toEqual({
+          $in: ['interested', 'registered'],
+        });
+        expect(intentPipeline[0].$match.createdAt.$gte.toISOString()).toBe(
+          '2026-06-02T00:00:00.000Z',
+        );
+      });
+
+      it('never fails the detail read when the aggregates blow up', async () => {
+        mockExisting();
+        EventAnalytics.aggregate = jest.fn().mockRejectedValue(new Error('no analytics'));
+        PivotEventIntent.aggregate = jest.fn().mockRejectedValue(new Error('nope'));
+        loadIntentStatsByEventId.mockResolvedValue(new Map());
+
+        const result = await getListing(makeReq(), EVENT_ID, { now: NOW });
+
+        expect(result.error).toBeUndefined();
+        expect(result.data.event.ingestStatus).toBe('draft');
+        expect(result.data.stats.daily).toHaveLength(14);
+        expect(result.data.stats.daily.every((day) => day.views === 0)).toBe(true);
+      });
+
+      it('survives a tenant with no aggregate support at all', async () => {
+        mockExisting();
+        delete EventAnalytics.aggregate;
+        delete PivotEventIntent.aggregate;
+
+        const result = await getListing(makeReq(), EVENT_ID, { now: NOW });
+
+        expect(result.error).toBeUndefined();
+        expect(result.data.stats.daily).toHaveLength(14);
+      });
+    });
+
     it('forbids reading another creator listing', async () => {
       Event.findOne.mockReturnValue({
         select: jest.fn().mockReturnThis(),
