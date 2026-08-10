@@ -228,6 +228,10 @@ describe('pivotCrossCrewService (Task 4.1)', () => {
       });
     });
 
+    afterAll(async () => {
+      await mongo.cleanup();
+    });
+
     function buildReq(userId = viewerId) {
       return {
         db: mongo.connection,
