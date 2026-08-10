@@ -9,10 +9,15 @@ jest.mock('../../services/pivotLabEventsService', () => ({
   labEventsQuery: jest.requireActual('../../services/pivotLabEventsService').labEventsQuery,
   loadIntentStatsByEventId: jest.fn(),
 }));
+// requireActual must stay out of the factory body: resolving this same module id while the
+// factory is still evaluating makes Jest run the factory a second time, so the service under
+// test binds a different jest.fn() than the one configured here.
 jest.mock('../../services/pivotAdminOverviewService', () => ({
   aggregateTenantOverview: jest.fn(),
-  serializePerformanceEvent: jest.requireActual('../../services/pivotAdminOverviewService')
-    .serializePerformanceEvent,
+  serializePerformanceEvent: (...args) =>
+    jest
+      .requireActual('../../services/pivotAdminOverviewService')
+      .serializePerformanceEvent(...args),
 }));
 jest.mock('../../services/pivotWeeklySnapshotService', () => ({
   normalizeBatchWeek: jest.requireActual('../../services/pivotWeeklySnapshotService')

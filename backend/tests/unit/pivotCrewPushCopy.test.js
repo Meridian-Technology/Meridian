@@ -45,7 +45,7 @@ describe('pivotCrewPushCopy', () => {
         ritualPhase: 'decide',
       }),
     ).toBe('decide');
-    expect(resolveCrewWeeklyDropBody('decide')).toBe("confirm where your crew's going");
+    expect(resolveCrewWeeklyDropBody('decide')).toBe(CREW_WEEKLY_DROP_PUSH_BODIES.decide);
   });
 
   it('returns recap variant during recap phase', () => {

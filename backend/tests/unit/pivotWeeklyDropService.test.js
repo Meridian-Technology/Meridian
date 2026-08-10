@@ -23,6 +23,7 @@ const { rebuildWeeklySnapshot } = require('../../services/pivotWeeklySnapshotSer
 const { connectToDatabase } = require('../../connectionsManager');
 const getModels = require('../../services/getModelService');
 const { getTenantByKey, upsertStoredTenantRow } = require('../../services/tenantConfigService');
+const { CREW_WEEKLY_DROP_PUSH_BODIES } = require('../../utilities/pivotCrewPushCopy');
 const {
   getWeeklyDropStatus,
   sendWeeklyDropPush,
@@ -236,7 +237,7 @@ describe('pivotWeeklyDropService', () => {
       [{ _id: '1', pushToken: 'ExponentPushToken[a]' }],
     );
 
-    expect(messages[0].body).toBe("confirm where your crew's going");
+    expect(messages[0].body).toBe(CREW_WEEKLY_DROP_PUSH_BODIES.decide);
     expect(messages[0].data.crewVariant).toBe('decide');
     expect(messages[0].data.ritualPhase).toBe('decide');
     expect(messages[0].data.crewId).toBe('crew-1');
