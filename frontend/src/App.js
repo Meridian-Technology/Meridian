@@ -35,6 +35,7 @@ import JustGoCreatorShell from './pages/JustGoCreator/JustGoCreatorShell';
 import JustGoCreatorHome from './pages/JustGoCreator/JustGoCreatorHome';
 import JustGoCreatorNew from './pages/JustGoCreator/JustGoCreatorNew';
 import JustGoCreatorEventWorkspace from './pages/JustGoCreator/JustGoCreatorEventWorkspace';
+import JustGoCreatorLogin from './pages/JustGoCreator/JustGoCreatorLogin';
 import OIEDash from './pages/OIEDash/OIEDash';
 import NewBadge from './pages/NewBadge/NewBadge';
 import CreateOrg from './pages/CreateOrg/CreateOrg';
@@ -240,6 +241,7 @@ function App() {
                                                 <Route path="/admin/pivot" element={<Navigate to="/platform-admin?page=1" replace />} />
                                             </Route>
                                             {/* Just Go Creator Console — separate from ClubDash / Platform Admin */}
+                                            <Route path="/justgo/creator/login" element={<JustGoCreatorLogin />} />
                                             <Route element={<JustGoCreatorProtectedRoute />}>
                                                 <Route element={<JustGoCreatorShell />}>
                                                     <Route path="/justgo/creator" element={<JustGoCreatorHome />} />

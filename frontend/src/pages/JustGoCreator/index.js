@@ -1,4 +1,5 @@
 export { default as JustGoCreatorShell } from './JustGoCreatorShell';
+export { default as JustGoCreatorLogin } from './JustGoCreatorLogin';
 export { default as JustGoCreatorHome } from './JustGoCreatorHome';
 export { default as JustGoCreatorGate } from './JustGoCreatorGate';
 export { default as JustGoCreatorNew } from './JustGoCreatorNew';

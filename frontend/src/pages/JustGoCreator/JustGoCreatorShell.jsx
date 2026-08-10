@@ -28,7 +28,7 @@ function JustGoCreatorShell() {
     } catch {
       // Best-effort; still leave the console.
     }
-    navigate('/login', { replace: true });
+    navigate(JUSTGO_CREATOR_ROUTES.login, { replace: true });
   };
 
   return (
