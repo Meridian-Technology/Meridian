@@ -1,20 +1,44 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import useAuth from '../../hooks/useAuth';
 import justGoCreatorCopy from './justGoCreatorCopy';
+import JustGoCreatorListingForm from './JustGoCreatorListingForm';
+import JustGoCreatorSubmitConfirm from './JustGoCreatorSubmitConfirm';
 import { JUSTGO_CREATOR_ROUTES } from './justGoCreatorRoutes';
 
-/** Create-listing route stub (form lands in Task 4.2). */
+/** Create a listing. On success the page becomes the flare-register confirmation. */
 function JustGoCreatorNew() {
   const copy = justGoCreatorCopy.newListing;
+  const { user } = useAuth();
+  const [created, setCreated] = useState(null);
+
+  if (created) {
+    return (
+      <JustGoCreatorSubmitConfirm
+        batchWeek={created.batchWeek}
+        eventId={created.event?._id}
+        notice={created.coverUploaded === false ? justGoCreatorCopy.form.coverUploadFailed : null}
+        onCreateAnother={() => setCreated(null)}
+      />
+    );
+  }
 
   return (
     <section>
-      <p className="justgo-creator__page-eyebrow">{justGoCreatorCopy.productShortName}</p>
       <h1 className="justgo-creator__page-title">{copy.title}</h1>
       <p className="justgo-creator__page-subtitle">{copy.subtitle}</p>
-      <Link className="justgo-creator__text-link" to={JUSTGO_CREATOR_ROUTES.home}>
-        {copy.backToList}
-      </Link>
+
+      <JustGoCreatorListingForm
+        mode="create"
+        defaultHostName={user?.name || ''}
+        onCreated={setCreated}
+      />
+
+      <p className="justgo-creator__back">
+        <Link className="justgo-creator__text-link" to={JUSTGO_CREATOR_ROUTES.home}>
+          {copy.backToList}
+        </Link>
+      </p>
     </section>
   );
 }

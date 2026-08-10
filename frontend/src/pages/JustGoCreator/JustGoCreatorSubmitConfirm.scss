@@ -1,0 +1,100 @@
+/**
+ * Submit confirmation — flare register.
+ * Scrapbook title + tilted ticker sticker for the drop week; the one celebratory moment in the
+ * console. Everything else in the create flow stays calm.
+ */
+
+.jg-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 34rem;
+  margin: clamp(0.5rem, 4vh, 2.5rem) 0;
+}
+
+.jg-confirm__eyebrow {
+  margin: 0 0 0.75rem;
+  font-family: var(--jg-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--jg-ink-soft);
+}
+
+.jg-confirm__week {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1.75rem 0 0;
+  padding: 0.35rem 0.7rem;
+  border: 2px solid var(--jg-border-strong);
+  border-radius: 0;
+  background: var(--jg-ticker);
+  transform: rotate(-1deg);
+  box-shadow: 2px 3px 0 rgba(26, 23, 20, 0.22);
+}
+
+.jg-confirm__week-label {
+  font-family: var(--jg-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--jg-ink);
+}
+
+.jg-confirm__week-value {
+  font-family: var(--jg-font-mono);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--jg-ink);
+}
+
+.jg-confirm__body {
+  margin: 1.5rem 0 0;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--jg-ink);
+}
+
+.jg-confirm__parity {
+  margin: 0.85rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--jg-ink-soft);
+}
+
+.jg-confirm__notice {
+  margin: 1.25rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius);
+  background: var(--jg-surface-subtle);
+  font-size: 0.9rem;
+  color: var(--jg-ink-muted);
+}
+
+.jg-confirm__actions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-top: 1.75rem;
+}
+
+.jg-confirm__link {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--jg-ink);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.jg-confirm__link:hover {
+  color: var(--jg-accent);
+}
