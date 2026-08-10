@@ -12,6 +12,9 @@ const {
   normalizePivotDropOverrides,
 } = require('../constants/defaultTenants');
 const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
+const { validatePivotCrewConfigPatch } = require('../utilities/pivotCrewConfig');
+const { validatePivotMobileConfigPatch } = require('../utilities/pivotMobileConfig');
+const { validateCreatorPublishConfigPatch } = require('../utilities/pivotCreatorPublishConfig');
 const {
   connectToDatabase,
   setTenantUriCache,
@@ -92,6 +95,8 @@ function toStoredTenantRow(tenant) {
     pivotDropDayOfWeek: tenant.pivotDropDayOfWeek,
     pivotDropHour: tenant.pivotDropHour,
     pivotDropMinute: tenant.pivotDropMinute,
+    pivotDropPushTitle: tenant.pivotDropPushTitle,
+    pivotDropPushBody: tenant.pivotDropPushBody,
     pivotDropOverrides: tenant.pivotDropOverrides,
     provisioningConfirmations: tenant.provisioningConfirmations,
   };
@@ -340,6 +345,27 @@ function validateTenantMetadataUpdate(body = {}) {
 
   if (body.pivotDropTimezone !== undefined && !String(body.pivotDropTimezone).trim()) {
     return { error: 'pivotDropTimezone cannot be empty.' };
+  }
+
+  if (body.pivotCrewConfig !== undefined) {
+    const crewValidation = validatePivotCrewConfigPatch(body.pivotCrewConfig);
+    if (crewValidation.error) {
+      return { error: crewValidation.error };
+    }
+  }
+
+  if (body.pivotMobileConfig !== undefined) {
+    const mobileValidation = validatePivotMobileConfigPatch(body.pivotMobileConfig);
+    if (mobileValidation.error) {
+      return { error: mobileValidation.error };
+    }
+  }
+
+  if (body.creatorPublish !== undefined) {
+    const creatorValidation = validateCreatorPublishConfigPatch(body.creatorPublish);
+    if (creatorValidation.error) {
+      return { error: creatorValidation.error };
+    }
   }
 
   return { ok: true };

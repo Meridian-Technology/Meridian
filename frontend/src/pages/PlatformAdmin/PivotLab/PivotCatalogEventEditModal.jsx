@@ -301,13 +301,69 @@ function PivotCatalogEventEditModal({
             </h2>
             <p className="pivot-manual-import__meta">
               {cityLabel || 'No city'} · {batchWeek}
-              {event?.source ? ` · ${event.source}` : ''}
+              {event?.source === 'justgo'
+                ? ' · Host-created'
+                : event?.source
+                  ? ` · ${event.source}`
+                  : ''}
             </p>
           </div>
         </header>
 
         <div className="pivot-catalog-edit__layout">
           <div className="pivot-manual-import__form pivot-catalog-edit__form">
+            {event?.source === 'justgo' ? (
+              <section
+                className="pivot-manual-import__section pivot-catalog-edit__host-created"
+                aria-label="Host-created provenance"
+              >
+                <div className="pivot-catalog-edit__host-created-head">
+                  <h3 className="pivot-manual-import__section-title">Host-created</h3>
+                  <span className="pivot-catalog-edit__host-created-badge">Just Go</span>
+                </div>
+                <dl className="pivot-catalog-edit__host-created-meta">
+                  <div>
+                    <dt>Creator</dt>
+                    <dd>{event.createdByUserId || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Submitted</dt>
+                    <dd>
+                      {event.creatorSubmittedAt
+                        ? new Date(event.creatorSubmittedAt).toLocaleString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })
+                        : '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Platform managed</dt>
+                    <dd>{event.platformManaged === true ? 'true' : 'false'}</dd>
+                  </div>
+                  <div>
+                    <dt>External link</dt>
+                    <dd>
+                      {event.externalLink || event.sourceUrl ? (
+                        <a
+                          href={event.externalLink || event.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open listing
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            ) : null}
+
             <section className="pivot-manual-import__section" aria-label="Event details">
               <h3 className="pivot-manual-import__section-title">Event</h3>
               <label className="pivot-manual-import__field pivot-manual-import__field--wide">

@@ -17,6 +17,8 @@ const { getMergedTenants } = require('../../services/tenantConfigService');
 const { isPivotTenant } = require('../../services/pivotReferralCodeService');
 const {
   purgePivotCatalog,
+  deletePivotCatalogEvent,
+  purgePivotCatalogOutOfWeek,
   PURGE_CONFIRM_TOKEN,
 } = require('../../services/pivotCatalogPurgeService');
 
@@ -32,6 +34,15 @@ describe('pivotCatalogPurgeService', () => {
       find: jest.fn().mockReturnValue({
         select: jest.fn().mockReturnValue({
           lean: jest.fn().mockResolvedValue(eventIds.map((_id) => ({ _id }))),
+        }),
+      }),
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            _id: eventIds[0],
+            name: 'Test Event',
+            customFields: { pivot: { batchWeek: '2026-W21' } },
+          }),
         }),
       }),
       deleteMany: jest.fn().mockResolvedValue({ deletedCount: eventIds.length }),
@@ -190,5 +201,42 @@ describe('pivotCatalogPurgeService', () => {
     expect(connectToDatabase).toHaveBeenCalledTimes(2);
     expect(result.data.tenants).toHaveLength(2);
     expect(result.data.totals.events).toBe(2);
+  });
+
+  it('deletes a single pivot catalog event and related data', async () => {
+    const models = buildTenantModels();
+    const result = await deletePivotCatalogEvent('nyc', '665a1b2c3d4e5f6789012345');
+
+    expect(result.data.eventId).toBe('665a1b2c3d4e5f6789012345');
+    expect(result.data.deleted.events).toBe(1);
+    expect(models.PivotEventIntent.deleteMany).toHaveBeenCalledWith({
+      eventId: { $in: ['665a1b2c3d4e5f6789012345'] },
+    });
+  });
+
+  it('purges catalog events outside the review week date range', async () => {
+    const models = buildTenantModels(['665a1b2c3d4e5f6789012345', '665a1b2c3d4e5f6789012346']);
+    const outOfRangeQuery = {
+      'customFields.pivot.batchWeek': '2026-W21',
+      $or: expect.any(Array),
+    };
+    models.Event.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { _id: '665a1b2c3d4e5f6789012345' },
+          { _id: '665a1b2c3d4e5f6789012346' },
+        ]),
+      }),
+    });
+
+    const result = await purgePivotCatalogOutOfWeek('nyc', '2026-W21', 4);
+
+    expect(result.data.outOfWeekEventCount).toBe(2);
+    expect(models.Event.find).toHaveBeenCalledWith(
+      expect.objectContaining(outOfRangeQuery),
+    );
+    expect(models.Event.deleteMany).toHaveBeenCalledWith({
+      _id: { $in: ['665a1b2c3d4e5f6789012345', '665a1b2c3d4e5f6789012346'] },
+    });
   });
 });

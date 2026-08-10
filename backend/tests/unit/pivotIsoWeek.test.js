@@ -9,6 +9,8 @@ const {
   shiftIsoWeek,
   batchWeekFromEventDate,
   resolveEventBatchWeek,
+  isEventStartOutOfBatchWeekRange,
+  outOfRangeCatalogEventsQuery,
 } = require('../../utilities/pivotIsoWeek');
 
 describe('pivotIsoWeek', () => {
@@ -127,6 +129,28 @@ describe('pivotIsoWeek', () => {
     it('falls back to provided batchWeek when undated', () => {
       const result = resolveEventBatchWeek({ batchWeek: '2026-W30' });
       expect(result).toEqual({ batchWeek: '2026-W30', source: 'fallback' });
+    });
+  });
+
+  describe('isEventStartOutOfBatchWeekRange', () => {
+    it('flags starts before the drop-aligned window', () => {
+      expect(
+        isEventStartOutOfBatchWeekRange('2026-07-07T12:00:00.000Z', '2026-W28', 4),
+      ).toBe(true);
+    });
+
+    it('accepts starts inside the drop-aligned window', () => {
+      expect(
+        isEventStartOutOfBatchWeekRange('2026-07-10T18:00:00.000Z', '2026-W28', 4),
+      ).toBe(false);
+    });
+  });
+
+  describe('outOfRangeCatalogEventsQuery', () => {
+    it('scopes to the review batch week with out-of-range start times', () => {
+      const query = outOfRangeCatalogEventsQuery('2026-W28', 4);
+      expect(query['customFields.pivot.batchWeek']).toBe('2026-W28');
+      expect(query.$or).toHaveLength(4);
     });
   });
 });

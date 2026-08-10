@@ -30,6 +30,11 @@ import Admin  from './pages/Admin/Admin';
 import PlatformAdmin from './pages/PlatformAdmin/PlatformAdmin';
 import PivotTenantDashboard from './pages/PlatformAdmin/PivotTenantDashboard/PivotTenantDashboard';
 import PlatformProtectedRoute from './components/PlatformProtectedRoute/PlatformProtectedRoute';
+import JustGoCreatorProtectedRoute from './components/JustGoCreatorProtectedRoute/JustGoCreatorProtectedRoute';
+import JustGoCreatorShell from './pages/JustGoCreator/JustGoCreatorShell';
+import JustGoCreatorHome from './pages/JustGoCreator/JustGoCreatorHome';
+import JustGoCreatorNew from './pages/JustGoCreator/JustGoCreatorNew';
+import JustGoCreatorEventWorkspace from './pages/JustGoCreator/JustGoCreatorEventWorkspace';
 import OIEDash from './pages/OIEDash/OIEDash';
 import NewBadge from './pages/NewBadge/NewBadge';
 import CreateOrg from './pages/CreateOrg/CreateOrg';
@@ -233,6 +238,14 @@ function App() {
                                                 <Route path="/platform-admin" element={<AnimatedPageWrapper><PlatformAdmin /></AnimatedPageWrapper>} />
                                                 <Route path="/platform-admin/pivot/:tenantKey" element={<AnimatedPageWrapper><PivotTenantDashboard /></AnimatedPageWrapper>} />
                                                 <Route path="/admin/pivot" element={<Navigate to="/platform-admin?page=1" replace />} />
+                                            </Route>
+                                            {/* Just Go Creator Console — separate from ClubDash / Platform Admin */}
+                                            <Route element={<JustGoCreatorProtectedRoute />}>
+                                                <Route element={<JustGoCreatorShell />}>
+                                                    <Route path="/justgo/creator" element={<JustGoCreatorHome />} />
+                                                    <Route path="/justgo/creator/new" element={<JustGoCreatorNew />} />
+                                                    <Route path="/justgo/creator/events/:eventId" element={<JustGoCreatorEventWorkspace />} />
+                                                </Route>
                                             </Route>
                                             <Route path="/auth/saml/callback" element={<SAMLCallback />}/>
                                             <Route path="*" element={<Error />}/>

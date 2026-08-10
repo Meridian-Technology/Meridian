@@ -1,5 +1,23 @@
 const TENANT_STATUSES = new Set(['active', 'coming_soon', 'maintenance', 'hidden']);
 const TENANT_TYPES = new Set(['campus', 'pivot']);
+const {
+  mergePivotCrewConfigOverrides,
+  validatePivotCrewConfigPatch,
+} = require('../utilities/pivotCrewConfig');
+const {
+  mergeCreatorPublishConfigOverrides,
+  validateCreatorPublishConfigPatch,
+} = require('../utilities/pivotCreatorPublishConfig');
+
+const PIVOT_DROP_PUSH_TITLE_MAX = 100;
+const PIVOT_DROP_PUSH_BODY_MAX = 240;
+
+function normalizePivotDropPushField(value, maxLength) {
+  if (value === undefined || value === null) return undefined;
+  const trimmed = String(value).trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, maxLength);
+}
 
 function normalizePivotDropOverrides(rows = []) {
   if (!Array.isArray(rows)) return undefined;
@@ -18,7 +36,16 @@ function normalizePivotDropOverrides(rows = []) {
           ? 0
           : Number(minuteRaw);
       if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
-      return { batchWeek, dayOfWeek, hour, minute };
+      const pushTitle = normalizePivotDropPushField(row?.pushTitle, PIVOT_DROP_PUSH_TITLE_MAX);
+      const pushBody = normalizePivotDropPushField(row?.pushBody, PIVOT_DROP_PUSH_BODY_MAX);
+      return {
+        batchWeek,
+        dayOfWeek,
+        hour,
+        minute,
+        ...(pushTitle ? { pushTitle } : {}),
+        ...(pushBody ? { pushBody } : {}),
+      };
     })
     .filter(Boolean);
 
@@ -51,6 +78,18 @@ function normalizePivotDropFields(row = {}, target = {}) {
   const overrides = normalizePivotDropOverrides(row.pivotDropOverrides);
   if (overrides) {
     target.pivotDropOverrides = overrides;
+  }
+  const pushTitle = normalizePivotDropPushField(row.pivotDropPushTitle, PIVOT_DROP_PUSH_TITLE_MAX);
+  if (pushTitle) {
+    target.pivotDropPushTitle = pushTitle;
+  } else if (row.pivotDropPushTitle !== undefined) {
+    target.pivotDropPushTitle = undefined;
+  }
+  const pushBody = normalizePivotDropPushField(row.pivotDropPushBody, PIVOT_DROP_PUSH_BODY_MAX);
+  if (pushBody) {
+    target.pivotDropPushBody = pushBody;
+  } else if (row.pivotDropPushBody !== undefined) {
+    target.pivotDropPushBody = undefined;
   }
   return target;
 }
@@ -169,6 +208,26 @@ function normalizeTenantOverride(row = {}) {
 
   normalizePivotDropFields(row, out);
 
+  if (row.pivotCrewConfig !== undefined && row.pivotCrewConfig !== null) {
+    const crewValidation = validatePivotCrewConfigPatch(row.pivotCrewConfig);
+    if (crewValidation.error) {
+      return null;
+    }
+    if (crewValidation.patch && Object.keys(crewValidation.patch).length > 0) {
+      out.pivotCrewConfig = crewValidation.patch;
+    }
+  }
+
+  if (row.creatorPublish !== undefined && row.creatorPublish !== null) {
+    const creatorValidation = validateCreatorPublishConfigPatch(row.creatorPublish);
+    if (creatorValidation.error) {
+      return null;
+    }
+    if (creatorValidation.patch && Object.keys(creatorValidation.patch).length > 0) {
+      out.creatorPublish = creatorValidation.patch;
+    }
+  }
+
   return Object.keys(out).length > 1 ? out : null;
 }
 
@@ -192,7 +251,12 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
   normalizeTenantRows(baseRows).forEach((row) => merged.set(row.tenantKey, row));
   normalizeTenantOverrides(overrideRows).forEach((row) => {
     const base = merged.get(row.tenantKey) || {};
-    const { provisioningConfirmations: pcPatch, ...rest } = row;
+    const {
+      provisioningConfirmations: pcPatch,
+      pivotCrewConfig: crewPatch,
+      creatorPublish: creatorPublishPatch,
+      ...rest
+    } = row;
     const next = { ...base, ...rest };
     if (pcPatch) {
       next.provisioningConfirmations = {
@@ -202,6 +266,18 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
         ...(base.provisioningConfirmations || {}),
         ...pcPatch,
       };
+    }
+    if (crewPatch) {
+      next.pivotCrewConfig = mergePivotCrewConfigOverrides(
+        base.pivotCrewConfig,
+        crewPatch,
+      );
+    }
+    if (creatorPublishPatch) {
+      next.creatorPublish = mergeCreatorPublishConfigOverrides(
+        base.creatorPublish,
+        creatorPublishPatch,
+      );
     }
     merged.set(row.tenantKey, next);
   });

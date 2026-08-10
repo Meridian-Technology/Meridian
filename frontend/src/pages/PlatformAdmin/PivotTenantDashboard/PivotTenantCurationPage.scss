@@ -125,6 +125,10 @@
     }
   }
 
+  &__host-counts {
+    margin: 8px 0 0;
+  }
+
   &__mode-pill {
     display: inline-block;
     padding: 2px 8px;
@@ -309,6 +313,19 @@
     align-items: center;
   }
 
+  &__delete-btn {
+    color: var(--la-danger, #b42318);
+  }
+
+  &__out-of-week-hint {
+    margin-top: 8px;
+  }
+
+  &__batch-pill--out-of-range {
+    color: var(--la-danger, #b42318);
+    border-color: var(--la-danger, #b42318);
+  }
+
   &__job-form {
     margin-top: 16px;
     padding: 16px;
@@ -398,6 +415,71 @@
     letter-spacing: 0.02em;
     color: var(--la-text-secondary, #525252);
     white-space: nowrap;
+  }
+
+  &__queue-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px 12px;
+  }
+
+  &__source-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 79, 31, 0.35);
+    border-radius: 999px;
+    background: #faf6ef;
+    color: #1a1714;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+    &:hover {
+      border-color: #ff4f1f;
+      background: rgba(255, 79, 31, 0.08);
+    }
+
+    &--active {
+      border-color: #ff4f1f;
+      background: #ff4f1f;
+      color: #faf6ef;
+
+      .pivot-tenant-curation__source-chip-count {
+        background: rgba(250, 246, 239, 0.22);
+        color: #faf6ef;
+      }
+    }
+  }
+
+  &__source-chip-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgba(26, 23, 20, 0.08);
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__source-pill {
+    border-radius: 4px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    text-transform: none;
+
+    &--justgo {
+      background: rgba(255, 79, 31, 0.12);
+      color: #d63d12;
+      border: 1px solid rgba(255, 79, 31, 0.28);
+    }
   }
 
   .is-disabled td {

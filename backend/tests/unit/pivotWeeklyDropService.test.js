@@ -23,10 +23,16 @@ const { rebuildWeeklySnapshot } = require('../../services/pivotWeeklySnapshotSer
 const { connectToDatabase } = require('../../connectionsManager');
 const getModels = require('../../services/getModelService');
 const { getTenantByKey, upsertStoredTenantRow } = require('../../services/tenantConfigService');
+const { CREW_WEEKLY_DROP_PUSH_BODIES } = require('../../utilities/pivotCrewPushCopy');
 const {
   getWeeklyDropStatus,
   sendWeeklyDropPush,
   updateWeeklyDropConfig,
+  resolveWeeklyDropPushCopy,
+  resolveWeeklyDropPushCopyForRecipient,
+  buildWeeklyDropPushMessages,
+  PUSH_TITLE,
+  PUSH_BODY,
 } = require('../../services/pivotWeeklyDropService');
 
 describe('pivotWeeklyDropService', () => {
@@ -55,7 +61,186 @@ describe('pivotWeeklyDropService', () => {
           }),
         }),
       },
+      PivotCrewMembership: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      PivotCrewWeekState: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      PivotEventIntent: {
+        distinct: jest.fn().mockResolvedValue([]),
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      PivotDeckSnapshot: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
     }));
+  });
+
+  it('resolveWeeklyDropPushCopyForRecipient keeps solo users on default drop copy', () => {
+    const baseCopy = { title: PUSH_TITLE, body: PUSH_BODY, source: 'default' };
+    expect(
+      resolveWeeklyDropPushCopyForRecipient(baseCopy, {
+        hasCrew: false,
+      }),
+    ).toEqual({
+      title: PUSH_TITLE,
+      body: PUSH_BODY,
+      source: 'default',
+      audience: 'solo',
+      crewVariant: null,
+      ritualPhase: 'solo',
+      decideCrewId: null,
+    });
+  });
+
+  it('resolveWeeklyDropPushCopyForRecipient uses crew ritual copy', () => {
+    const baseCopy = { title: PUSH_TITLE, body: PUSH_BODY, source: 'default' };
+    expect(
+      resolveWeeklyDropPushCopyForRecipient(baseCopy, {
+        hasCrew: true,
+        userSwiped: true,
+        anyCrewUnfinished: false,
+      }),
+    ).toMatchObject({
+      body: "where's your crew going this week?",
+      audience: 'crew',
+      crewVariant: 'ritual',
+    });
+  });
+
+  it('buildWeeklyDropPushMessages personalizes crew and solo recipients', async () => {
+    getModels.mockImplementation(() => ({
+      PivotCrewMembership: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              { userId: '1', crewId: 'crew-1' },
+            ]),
+          }),
+        }),
+      },
+      PivotCrewWeekState: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              {
+                crewId: 'crew-1',
+                swipeProgress: { activeMemberCount: 2, swipedCount: 0 },
+                judgementStatus: 'awaiting_quorum',
+              },
+            ]),
+          }),
+        }),
+      },
+      PivotEventIntent: {
+        distinct: jest.fn().mockResolvedValue([]),
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      PivotDeckSnapshot: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+    }));
+
+    const messages = await buildWeeklyDropPushMessages(
+      nycTenant,
+      '2026-W23',
+      [
+        { _id: '1', pushToken: 'ExponentPushToken[a]' },
+        { _id: '2', pushToken: 'ExponentPushToken[b]' },
+      ],
+    );
+
+    expect(messages[0].body).toBe("your crew hasn't swiped yet");
+    expect(messages[0].data.ritualPhase).toBe('drop_live');
+    expect(messages[0].data.navigation.route).toBe('PivotWeek');
+    expect(messages[1].body).toBe(PUSH_BODY);
+    expect(messages[1].data.audience).toBe('solo');
+    expect(messages[1].data.ritualPhase).toBe('solo');
+  });
+
+  it('buildWeeklyDropPushMessages uses decide copy when recipient is in decide phase', async () => {
+    getModels.mockImplementation(() => ({
+      PivotCrewMembership: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              { userId: '1', crewId: 'crew-1' },
+            ]),
+          }),
+        }),
+      },
+      PivotCrewWeekState: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              {
+                crewId: 'crew-1',
+                swipeProgress: { activeMemberCount: 2, swipedCount: 2, quorumMet: true },
+                judgementStatus: 'proposed',
+              },
+            ]),
+          }),
+        }),
+      },
+      PivotEventIntent: {
+        distinct: jest.fn().mockResolvedValue(['1']),
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              { userId: '1', eventId: '665a1b2c3d4e5f6789012345' },
+            ]),
+          }),
+        }),
+      },
+      PivotDeckSnapshot: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              {
+                userId: '1',
+                orderedEventIds: ['665a1b2c3d4e5f6789012345'],
+              },
+            ]),
+          }),
+        }),
+      },
+    }));
+
+    const messages = await buildWeeklyDropPushMessages(
+      nycTenant,
+      '2026-W23',
+      [{ _id: '1', pushToken: 'ExponentPushToken[a]' }],
+    );
+
+    expect(messages[0].body).toBe(CREW_WEEKLY_DROP_PUSH_BODIES.decide);
+    expect(messages[0].data.crewVariant).toBe('decide');
+    expect(messages[0].data.ritualPhase).toBe('decide');
+    expect(messages[0].data.crewId).toBe('crew-1');
   });
 
   it('getWeeklyDropStatus returns resolved drop schedule', async () => {
@@ -67,6 +252,60 @@ describe('pivotWeeklyDropService', () => {
     expect(result.dropSchedule.nextDropFormatted).toMatch(/Thu Jun 4/);
     expect(result.publishedEventCount).toBe(3);
     expect(result.pivotPushRecipientCount).toBe(2);
+    expect(result.dropSchedule.pushCopy.title).toBe(PUSH_TITLE);
+  });
+
+  it('resolveWeeklyDropPushCopy prefers per-week override and tenant defaults', () => {
+    const tenant = {
+      pivotDropPushTitle: 'NYC drop',
+      pivotDropPushBody: 'Swipe the week',
+      pivotDropOverrides: [
+        {
+          batchWeek: '2026-W23',
+          pushTitle: 'W23 special',
+          pushBody: 'Only this week',
+        },
+      ],
+    };
+
+    expect(resolveWeeklyDropPushCopy(tenant, '2026-W24')).toEqual({
+      title: 'NYC drop',
+      body: 'Swipe the week',
+      source: 'tenant',
+    });
+    expect(resolveWeeklyDropPushCopy(tenant, '2026-W23')).toEqual({
+      title: 'W23 special',
+      body: 'Only this week',
+      source: 'override',
+    });
+    expect(
+      resolveWeeklyDropPushCopy(tenant, '2026-W23', {
+        pushTitle: 'One-off',
+        pushBody: 'Tonight only',
+      })
+    ).toEqual({
+      title: 'One-off',
+      body: 'Tonight only',
+      source: 'send',
+    });
+  });
+
+  it('sendWeeklyDropPush dry-run uses custom push copy', async () => {
+    getTenantByKey.mockResolvedValue(nycTenant);
+
+    const result = await sendWeeklyDropPush({}, 'nyc', {
+      batchWeek: '2026-W23',
+      dryRun: true,
+      force: true,
+      pushTitle: 'Iowa City is live',
+      pushBody: '52 events waiting for you',
+    });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.pushCopy.title).toBe('Iowa City is live');
+    expect(result.sampleMessage?.title).toBe('Iowa City is live');
+    expect(result.sampleMessage?.body).toBe('52 events waiting for you');
+    expect(rebuildWeeklySnapshot).not.toHaveBeenCalled();
   });
 
   it('updateWeeklyDropConfig persists drop fields', async () => {

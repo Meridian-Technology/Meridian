@@ -54,8 +54,11 @@
     "seed:pivot-feed-events": "node migrations/seedPivotFeedEvents.js",
     "seed:pivot-feedback-config": "node migrations/seedPivotFeedbackConfig.js",
     "seed:pivot-tag-catalog": "node migrations/seedPivotTagCatalog.js",
+    "seed:pivot-crews": "node migrations/seedPivotCrews.js",
     "rebuild:pivot-weekly-snapshot": "node migrations/rebuildPivotWeeklySnapshot.js",
-    "send:pivot-weekly-push": "node migrations/sendPivotWeeklyPush.js"
+    "rebuild:pivot-crew-week-state": "node migrations/rebuildPivotCrewWeekState.js",
+    "send:pivot-weekly-push": "node migrations/sendPivotWeeklyPush.js",
+    "dry-run:pivot-crew-ritual": "node migrations/pivotCrewRitualDryRun.js"
   },
   "devDependencies": {
     "jest": "^30.3.0",

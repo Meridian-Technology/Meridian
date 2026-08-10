@@ -49,6 +49,23 @@ function serializedEventHasFriendActivity(event) {
   );
 }
 
+function serializedEventHasCrewActivity(event, lockedPickEventIds = new Set()) {
+  if (lockedPickEventIds.has(String(event._id))) {
+    return true;
+  }
+
+  return (event.crewInterestedCount || 0) + (event.crewRegisteredCount || 0) > 0;
+}
+
+function serializedEventCrewActivityScore(event, lockedPickEventIds = new Set()) {
+  const lockedBoost = lockedPickEventIds.has(String(event._id)) ? 100 : 0;
+  return (
+    lockedBoost
+    + (event.crewRegisteredCount || 0) * 1.5
+    + (event.crewInterestedCount || 0)
+  );
+}
+
 function serializedEventHasTag(event, tagSlug) {
   const tags = event.tags;
   if (!Array.isArray(tags) || !tags.length) {
@@ -170,6 +187,9 @@ function buildRulesExploreSections(events, rails, options = {}) {
     EXPLORE_CATEGORY_MAX_EVENTS,
   );
   const now = options.now instanceof Date ? options.now : new Date();
+  const lockedPickEventIds = options.lockedCrewPickEventIds instanceof Set
+    ? options.lockedCrewPickEventIds
+    : new Set();
   const tracker = new Map();
   const sections = [];
 
@@ -205,6 +225,22 @@ function buildRulesExploreSections(events, rails, options = {}) {
       friendsRail.title,
       'friends_rail',
       events.filter(serializedEventHasFriendActivity),
+    );
+  }
+
+  const crewsRail = rails.find((rail) => rail.id === 'crews');
+  if (crewsRail) {
+    appendCategory(
+      crewsRail.id,
+      crewsRail.title,
+      'crews_rail',
+      [...events]
+        .filter((event) => serializedEventHasCrewActivity(event, lockedPickEventIds))
+        .sort(
+          (left, right) =>
+            serializedEventCrewActivityScore(right, lockedPickEventIds)
+            - serializedEventCrewActivityScore(left, lockedPickEventIds),
+        ),
     );
   }
 
@@ -326,7 +362,10 @@ async function resolveExploreSections(req, options = {}) {
   }
 
   return {
-    sections: buildRulesExploreSections(serializedEvents, rails, { now }),
+    sections: buildRulesExploreSections(serializedEvents, rails, {
+      now,
+      lockedCrewPickEventIds: options.lockedCrewPickEventIds,
+    }),
     sectionsSource: 'rules_v0',
   };
 }
@@ -344,5 +383,7 @@ module.exports = {
   resolveExploreSections,
   serializedEventSocialScore,
   serializedEventHasFriendActivity,
+  serializedEventHasCrewActivity,
+  serializedEventCrewActivityScore,
   isSerializedEventTonight,
 };

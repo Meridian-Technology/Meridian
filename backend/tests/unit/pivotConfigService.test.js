@@ -1,4 +1,11 @@
-const { buildDropSchedulePayload } = require('../../services/pivotConfigService');
+jest.mock('../../services/tenantConfigService', () => ({
+  getTenantByKey: jest.fn(),
+}));
+
+const { getTenantByKey } = require('../../services/tenantConfigService');
+const { getPivotConfig, buildDropSchedulePayload } = require('../../services/pivotConfigService');
+const { PIVOT_CREW_CONFIG_VERSION } = require('../../utilities/pivotCrewConfig');
+const { PIVOT_MOBILE_STORE_URLS } = require('../../utilities/pivotMobileConfig');
 
 describe('pivotConfigService', () => {
   const nycTenant = {
@@ -31,6 +38,66 @@ describe('pivotConfigService', () => {
       const payload = buildDropSchedulePayload(tenant, '2026-W23');
       expect(payload.source).toBe('override');
       expect(payload.nextDropAt).toBe('2026-06-05T16:30:00.000Z');
+    });
+  });
+
+  describe('getPivotConfig', () => {
+    beforeEach(() => {
+      getTenantByKey.mockReset();
+    });
+
+    it('includes merged crew defaults when tenant has no overrides', async () => {
+      getTenantByKey.mockResolvedValue(nycTenant);
+
+      const result = await getPivotConfig({ school: 'nyc' });
+
+      expect(result.data.crew.version).toBe(PIVOT_CREW_CONFIG_VERSION);
+      expect(result.data.crew.feedMix.personalInterestWeight).toBe(0.7);
+      expect(result.data.crew.quorum.minSwipeParticipation).toBe(0.6);
+    });
+
+    it('merges tenant pivotCrewConfig overrides into crew payload', async () => {
+      getTenantByKey.mockResolvedValue({
+        ...nycTenant,
+        pivotCrewConfig: {
+          feedMix: { crewSignalWeight: 0.3 },
+          nudges: { unfinishedSwipeReminderHours: 6 },
+        },
+      });
+
+      const result = await getPivotConfig({ school: 'nyc' });
+
+      expect(result.data.crew.feedMix.crewSignalWeight).toBe(0.3);
+      expect(result.data.crew.feedMix.personalInterestWeight).toBe(0.7);
+      expect(result.data.crew.nudges.unfinishedSwipeReminderHours).toBe(6);
+      expect(result.data.crew.version).toBe(PIVOT_CREW_CONFIG_VERSION);
+      expect(result.data.liveDropSchedule.batchWeek).toBe(result.data.liveBatchWeek);
+    });
+
+    it('includes mobile update gate defaults for backward-compatible clients', async () => {
+      getTenantByKey.mockResolvedValue(nycTenant);
+
+      const result = await getPivotConfig({ school: 'nyc' });
+
+      expect(result.data.mobile.minAppVersion).toBe('1.0.0');
+      expect(result.data.mobile.forceUpdate).toBe(false);
+      expect(result.data.mobile.storeUrls).toEqual(PIVOT_MOBILE_STORE_URLS);
+      expect(result.data.mobile.message).toMatch(/crew this week/i);
+    });
+
+    it('merges tenant pivotMobileConfig overrides into mobile payload', async () => {
+      getTenantByKey.mockResolvedValue({
+        ...nycTenant,
+        pivotMobileConfig: {
+          minAppVersion: '2.0.0',
+          forceUpdate: true,
+        },
+      });
+
+      const result = await getPivotConfig({ school: 'nyc' });
+
+      expect(result.data.mobile.minAppVersion).toBe('2.0.0');
+      expect(result.data.mobile.forceUpdate).toBe(true);
     });
   });
 });

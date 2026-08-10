@@ -25,8 +25,13 @@ const {
   recordPivotDeckSnapshot,
 } = require('./pivotDeckSnapshotService');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
+const {
+  PIVOT_CREW_CONFIG_DEFAULTS,
+} = require('../utilities/pivotCrewConfig');
+const { getPivotConfig } = require('./pivotConfigService');
 
 const FRIEND_CAP = 5;
+const FEED_CREW_CONFIG_CACHE_TTL_MS = 60_000;
 const PIVOT_EVENT_STATUSES = ['approved', 'not-applicable'];
 const LOW_FEEDBACK_RATING_THRESHOLD = 3;
 /** Ranker id stamped on feed payloads + deck impressions (Task 1.2). */
@@ -34,6 +39,9 @@ const PIVOT_FEED_RANKER_VERSION = 'rules_v0';
 const PUBLIC_EVENT_FIELDS =
   'name description location start_time end_time externalLink type registrationCount image customFields.pivot';
 const CATALOG_PROBE_FIELDS = 'start_time end_time customFields.pivot';
+
+/** @type {Map<string, { expiresAt: number, value: { crewSignalWeight: number } }>} */
+const feedCrewConfigCache = new Map();
 
 const PUBLISHED_CATALOG_BASE_QUERY = {
   'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
@@ -246,6 +254,12 @@ function serializePivotFeedEvent(event, extras) {
     // even when the preview arrays above are capped at FRIEND_CAP.
     friendsInterestedCount: extras.friendsInterestedCount,
     friendsGoingCount: extras.friendsGoingCount,
+    ...(extras.crewInterestedCount > 0
+      ? { crewInterestedCount: extras.crewInterestedCount }
+      : {}),
+    ...(extras.crewRegisteredCount > 0
+      ? { crewRegisteredCount: extras.crewRegisteredCount }
+      : {}),
     /** 0-based position in the ranked feed (exposure bias / training). */
     ...(typeof extras.rankInFeed === 'number' ? { rankInFeed: extras.rankInFeed } : {}),
   };
@@ -282,9 +296,237 @@ function makeEmptySocialMap(eventIds) {
         friendsGoing: [],
         friendInterestedCount: 0,
         friendRegisteredCount: 0,
+        crewInterestedCount: 0,
+        crewRegisteredCount: 0,
       },
     ]),
   );
+}
+
+function buildFeedRankCrewConfig(crewConfig = PIVOT_CREW_CONFIG_DEFAULTS) {
+  return {
+    crewSignalWeight:
+      crewConfig.feedMix?.crewSignalWeight
+      ?? PIVOT_CREW_CONFIG_DEFAULTS.feedMix.crewSignalWeight,
+    interestBleed: {
+      enabled:
+        crewConfig.interestBleed?.enabled
+        ?? PIVOT_CREW_CONFIG_DEFAULTS.interestBleed.enabled,
+      maxWeight:
+        crewConfig.interestBleed?.maxWeight
+        ?? PIVOT_CREW_CONFIG_DEFAULTS.interestBleed.maxWeight,
+      requiresCrewMemberSwipe:
+        crewConfig.interestBleed?.requiresCrewMemberSwipe
+        ?? PIVOT_CREW_CONFIG_DEFAULTS.interestBleed.requiresCrewMemberSwipe,
+    },
+  };
+}
+
+async function getFeedRankCrewConfig(req) {
+  const tenantKey = req.school;
+  const fallback = buildFeedRankCrewConfig(PIVOT_CREW_CONFIG_DEFAULTS);
+
+  if (!tenantKey) {
+    return fallback;
+  }
+
+  const cached = feedCrewConfigCache.get(tenantKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  let value = fallback;
+  try {
+    const result = await getPivotConfig(req);
+    if (result.data?.crew) {
+      value = buildFeedRankCrewConfig(result.data.crew);
+    }
+  } catch (error) {
+    logPivot('warn', 'feed rank crew config fallback', {
+      ...pivotRequestContext(req),
+      error: error.message,
+    });
+  }
+
+  feedCrewConfigCache.set(tenantKey, {
+    value,
+    expiresAt: Date.now() + FEED_CREW_CONFIG_CACHE_TTL_MS,
+  });
+  return value;
+}
+
+function clearFeedCrewConfigCacheForTests() {
+  feedCrewConfigCache.clear();
+}
+
+async function resolveUserCrewScope(req, userId) {
+  const userObjectId = mongoose.Types.ObjectId.isValid(String(userId))
+    ? new mongoose.Types.ObjectId(String(userId))
+    : null;
+  if (!userObjectId) {
+    return { crewIds: [], memberIds: [] };
+  }
+
+  const tenantKey = typeof req.school === 'string' ? req.school.trim().toLowerCase() : '';
+  const { PivotCrew, PivotCrewMembership } = getModels(
+    req,
+    'PivotCrew',
+    'PivotCrewMembership',
+  );
+
+  const myMemberships = await PivotCrewMembership.find({
+    userId: userObjectId,
+    status: 'active',
+  })
+    .select('crewId')
+    .lean();
+
+  if (!myMemberships.length) {
+    return { crewIds: [], memberIds: [] };
+  }
+
+  const crewIds = myMemberships.map((row) => row.crewId);
+  const activeCrews = await PivotCrew.find({
+    _id: { $in: crewIds },
+    archivedAt: null,
+    ...(tenantKey ? { tenantKey } : {}),
+  })
+    .select('_id')
+    .lean();
+
+  if (!activeCrews.length) {
+    return { crewIds: [], memberIds: [] };
+  }
+
+  const activeCrewIds = activeCrews.map((crew) => crew._id);
+  const crewMembers = await PivotCrewMembership.find({
+    crewId: { $in: activeCrewIds },
+    status: 'active',
+    userId: { $ne: null, $nin: [userObjectId] },
+  })
+    .select('userId')
+    .lean();
+
+  return {
+    crewIds: activeCrewIds.map((id) => String(id)),
+    memberIds: [...new Set(crewMembers.map((row) => String(row.userId)).filter(Boolean))],
+  };
+}
+
+async function resolveActiveCrewMemberIds(req, userId) {
+  const { memberIds } = await resolveUserCrewScope(req, userId);
+  return memberIds;
+}
+
+async function resolveUserActiveCrewIds(req, userId) {
+  const { crewIds } = await resolveUserCrewScope(req, userId);
+  return crewIds;
+}
+
+async function loadCrewInterestBleedTags(req, userId, batchWeek, interestBleedConfig) {
+  if (!interestBleedConfig?.enabled) {
+    return new Set();
+  }
+
+  let crewMemberIds = await resolveActiveCrewMemberIds(req, userId);
+  if (!crewMemberIds.length) {
+    return new Set();
+  }
+
+  if (interestBleedConfig.requiresCrewMemberSwipe && batchWeek) {
+    const { PivotEventIntent } = getModels(req, 'PivotEventIntent');
+    const swipedRows = await PivotEventIntent.find({
+      batchWeek,
+      userId: { $in: crewMemberIds },
+    })
+      .select('userId')
+      .lean();
+
+    const swipedUserIds = new Set(
+      swipedRows.map((row) => String(row.userId)).filter(Boolean),
+    );
+    crewMemberIds = crewMemberIds.filter((memberId) => swipedUserIds.has(memberId));
+    if (!crewMemberIds.length) {
+      return new Set();
+    }
+  }
+
+  const { User } = getModels(req, 'User');
+  const users = await User.find({ _id: { $in: crewMemberIds } })
+    .select('pivotInterestTags')
+    .lean();
+
+  const tags = new Set();
+  for (const user of users) {
+    for (const tag of normalizeInterestTagSet(user?.pivotInterestTags)) {
+      tags.add(tag);
+    }
+  }
+  return tags;
+}
+
+function subtractInterestTags(sourceTags, excludeTags) {
+  if (!sourceTags?.size) {
+    return new Set();
+  }
+  if (!excludeTags?.size) {
+    return new Set(sourceTags);
+  }
+
+  const out = new Set();
+  for (const tag of sourceTags) {
+    if (!excludeTags.has(tag)) {
+      out.add(tag);
+    }
+  }
+  return out;
+}
+
+async function applyCrewSocialCounts(req, userId, eventIds, batchWeek, socialByEvent) {
+  if (!eventIds.length || !batchWeek) {
+    return;
+  }
+
+  const crewMemberIds = await resolveActiveCrewMemberIds(req, userId);
+  if (!crewMemberIds.length) {
+    return;
+  }
+
+  const { PivotEventIntent } = getModels(req, 'PivotEventIntent');
+
+  const intentRows = await PivotEventIntent.find({
+    eventId: { $in: eventIds },
+    userId: { $in: crewMemberIds },
+    batchWeek,
+    status: { $in: ['interested', 'registered'] },
+  })
+    .select('eventId userId status')
+    .lean();
+
+  const statusByEventUser = new Map();
+  for (const row of intentRows) {
+    const eventKey = String(row.eventId);
+    const memberKey = String(row.userId);
+    const compositeKey = `${eventKey}\0${memberKey}`;
+    const existing = statusByEventUser.get(compositeKey);
+    if (row.status === 'registered' || !existing) {
+      statusByEventUser.set(compositeKey, row.status);
+    }
+  }
+
+  for (const [compositeKey, status] of statusByEventUser) {
+    const eventKey = compositeKey.split('\0')[0];
+    const bucket = socialByEvent.get(eventKey);
+    if (!bucket) {
+      continue;
+    }
+    if (status === 'registered') {
+      bucket.crewRegisteredCount += 1;
+      bucket.crewInterestedCount += 1;
+    } else {
+      bucket.crewInterestedCount += 1;
+    }
+  }
 }
 
 async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, batchWeek = null) {
@@ -494,11 +736,43 @@ function countNegativeTagOverlap(event, negativeFeedbackTags) {
   return overlap;
 }
 
+function countCrewInterestBleedScore(event, crewBleedTags, maxWeight) {
+  const cappedWeight = Number(maxWeight) || 0;
+  if (cappedWeight <= 0 || !crewBleedTags?.size) {
+    return 0;
+  }
+
+  const overlap = countInterestOverlap(event, crewBleedTags);
+  if (overlap <= 0) {
+    return 0;
+  }
+
+  return Math.min(overlap * cappedWeight, cappedWeight);
+}
+
+function computeInterestRankScore(event, userInterestTags, rankOptions = {}) {
+  const personalScore = countInterestOverlap(event, userInterestTags);
+  const interestBleed = rankOptions.interestBleed;
+  if (!interestBleed?.enabled) {
+    return personalScore;
+  }
+
+  const bleedScore = countCrewInterestBleedScore(
+    event,
+    rankOptions.crewBleedTags,
+    interestBleed.maxWeight,
+  );
+  return personalScore + bleedScore;
+}
+
 function compareByFeedRank(
   socialByEvent,
   userInterestTags,
   negativeFeedbackTags = new Set(),
+  rankOptions = {},
 ) {
+  const crewSignalWeight = Number(rankOptions.crewSignalWeight) || 0;
+
   return (a, b) => {
     const sa = socialByEvent.get(String(a._id));
     const sb = socialByEvent.get(String(b._id));
@@ -514,8 +788,22 @@ function compareByFeedRank(
       return bInterested - aInterested;
     }
 
-    const aOverlap = countInterestOverlap(a, userInterestTags);
-    const bOverlap = countInterestOverlap(b, userInterestTags);
+    if (crewSignalWeight > 0) {
+      const aCrewRegistered = (sa?.crewRegisteredCount || 0) * crewSignalWeight;
+      const bCrewRegistered = (sb?.crewRegisteredCount || 0) * crewSignalWeight;
+      if (aCrewRegistered !== bCrewRegistered) {
+        return bCrewRegistered - aCrewRegistered;
+      }
+
+      const aCrewInterested = (sa?.crewInterestedCount || 0) * crewSignalWeight;
+      const bCrewInterested = (sb?.crewInterestedCount || 0) * crewSignalWeight;
+      if (aCrewInterested !== bCrewInterested) {
+        return bCrewInterested - aCrewInterested;
+      }
+    }
+
+    const aOverlap = computeInterestRankScore(a, userInterestTags, rankOptions);
+    const bOverlap = computeInterestRankScore(b, userInterestTags, rankOptions);
     if (aOverlap !== bOverlap) {
       return bOverlap - aOverlap;
     }
@@ -646,18 +934,37 @@ async function getPivotFeed(req, options = {}) {
       isUpcomingPivotEvent(event, now),
   );
   const eventIds = validEvents.map((event) => event._id);
-  const { userIntents, socialByEvent, socialByEventAndSlot } = await loadFriendSocial(
-    req,
-    userId,
-    eventIds,
-    FRIEND_CAP,
-    batchWeek,
-  );
+  const [
+    { userIntents, socialByEvent, socialByEventAndSlot },
+    userInterestTags,
+    negativeFeedbackTags,
+    crewRankConfig,
+  ] = await Promise.all([
+    loadFriendSocial(req, userId, eventIds, FRIEND_CAP, batchWeek),
+    loadUserInterestTags(req, userId),
+    loadNegativeFeedbackTags(req, userId),
+    getFeedRankCrewConfig(req),
+  ]);
 
-  const userInterestTags = await loadUserInterestTags(req, userId);
-  const negativeFeedbackTags = await loadNegativeFeedbackTags(req, userId);
+  await applyCrewSocialCounts(req, userId, eventIds, batchWeek, socialByEvent);
+
+  let crewBleedTags = new Set();
+  if (crewRankConfig.interestBleed?.enabled) {
+    const crewTagUnion = await loadCrewInterestBleedTags(
+      req,
+      userId,
+      batchWeek,
+      crewRankConfig.interestBleed,
+    );
+    crewBleedTags = subtractInterestTags(crewTagUnion, userInterestTags);
+  }
+
   validEvents.sort(
-    compareByFeedRank(socialByEvent, userInterestTags, negativeFeedbackTags),
+    compareByFeedRank(socialByEvent, userInterestTags, negativeFeedbackTags, {
+      crewSignalWeight: crewRankConfig.crewSignalWeight,
+      interestBleed: crewRankConfig.interestBleed,
+      crewBleedTags,
+    }),
   );
 
   const cityDisplayName = tenant?.location || tenant?.name || req.school;
@@ -711,6 +1018,8 @@ async function getPivotFeed(req, options = {}) {
           friendsGoing: [],
           friendInterestedCount: 0,
           friendRegisteredCount: 0,
+          crewInterestedCount: 0,
+          crewRegisteredCount: 0,
         };
         const userIntentRow = userIntents.get(id);
         const normalizedSlots = normalizePivotTimeSlots(
@@ -733,6 +1042,8 @@ async function getPivotFeed(req, options = {}) {
           friendsGoing: social.friendsGoing,
           friendsInterestedCount: social.friendInterestedCount || 0,
           friendsGoingCount: social.friendRegisteredCount || 0,
+          crewInterestedCount: social.crewInterestedCount || 0,
+          crewRegisteredCount: social.crewRegisteredCount || 0,
           rankInFeed,
         });
       }),
@@ -809,8 +1120,19 @@ module.exports = {
   normalizeExcludeEventIds,
   normalizeInterestTagSet,
   countInterestOverlap,
+  countCrewInterestBleedScore,
+  computeInterestRankScore,
+  subtractInterestTags,
   countNegativeTagOverlap,
   compareByFeedRank,
+  getFeedRankCrewConfig,
+  buildFeedRankCrewConfig,
+  resolveUserCrewScope,
+  resolveActiveCrewMemberIds,
+  resolveUserActiveCrewIds,
+  loadCrewInterestBleedTags,
+  applyCrewSocialCounts,
+  clearFeedCrewConfigCacheForTests,
   loadFriendSocial,
   loadUserInterestTags,
   loadNegativeFeedbackTags,

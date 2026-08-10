@@ -5,6 +5,7 @@ const {
   getTenantEventPerformance,
 } = require('./pivotAdminOverviewService');
 const { getTenantInsights } = require('./pivotTenantInsightsService');
+const { getTenantCrewMetrics } = require('./pivotCrewMetricsService');
 const { getBatchReadiness } = require('./pivotBatchReadinessService');
 const {
   getJourneyOverview,
@@ -30,6 +31,7 @@ const ALL_SECTIONS = Object.freeze([
   'insights',
   'readiness',
   'retention',
+  'crewMetrics',
   'journey',
   'funnel',
   'catalog',
@@ -37,7 +39,7 @@ const ALL_SECTIONS = Object.freeze([
 ]);
 
 const PRESETS = Object.freeze({
-  overview: ['overview', 'performance', 'insights', 'readiness', 'retention'],
+  overview: ['overview', 'performance', 'insights', 'readiness', 'retention', 'crewMetrics'],
   journeys: ['journey', 'funnel'],
   /** Expanded server-side from resolved stage for the requested batchWeek. */
   curation: ['__curation__'],
@@ -225,6 +227,9 @@ async function getTenantOpsBundle(req, options = {}) {
         tenant: row,
       },
     }));
+  }
+  if (wants(sections, 'crewMetrics')) {
+    tasks.crewMetrics = getTenantCrewMetrics(req, { tenantKey, batchWeek, now });
   }
   if (wants(sections, 'journey')) {
     tasks.journey = getJourneyOverview(req, { tenantKey, batchWeek, now });

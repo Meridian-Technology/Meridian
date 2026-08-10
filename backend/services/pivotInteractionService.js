@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const getModels = require('./getModelService');
 const { isValidIsoWeek, toIsoWeek } = require('../utilities/pivotIsoWeek');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const { PIVOT_CREW_CONFIG_VERSION } = require('../utilities/pivotCrewConfig');
+const { resolveUserActiveCrewIds } = require('./pivotFeedService');
 const {
   PIVOT_INTERACTION_SURFACES,
   PIVOT_INTERACTION_RETRIEVALS,
@@ -60,6 +62,60 @@ function pickInteractionContext(body = {}, defaults = {}) {
   }
 
   return ctx;
+}
+
+function normalizeCrewIds(raw) {
+  if (!Array.isArray(raw) || !raw.length) {
+    return null;
+  }
+
+  const seen = new Set();
+  const crewIds = [];
+  for (const value of raw) {
+    const id = String(value || '').trim();
+    if (!id || !mongoose.Types.ObjectId.isValid(id) || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    crewIds.push(id);
+  }
+
+  return crewIds.length ? crewIds : null;
+}
+
+function normalizeCrewConfigVersion(raw) {
+  if (raw == null) {
+    return null;
+  }
+  const version = Number(raw);
+  if (!Number.isInteger(version) || version < 1) {
+    return null;
+  }
+  return version;
+}
+
+async function resolveInteractionCrewContext(req, { surface = DEFAULT_SURFACE } = {}) {
+  if (surface !== DEFAULT_SURFACE || !req?.user?.userId) {
+    return {};
+  }
+
+  try {
+    const crewIds = await resolveUserActiveCrewIds(req, req.user.userId);
+    if (!crewIds.length) {
+      return {};
+    }
+
+    return {
+      crewIds,
+      crewConfigVersion: PIVOT_CREW_CONFIG_VERSION,
+    };
+  } catch (error) {
+    logPivot('warn', 'interaction crew context fallback', {
+      ...pivotRequestContext(req),
+      error: error.message,
+    });
+    return {};
+  }
 }
 
 /**
@@ -168,6 +224,15 @@ function normalizePivotInteractionPayload(payload = {}) {
     }
   }
 
+  const crewIds = normalizeCrewIds(payload.crewIds);
+  if (crewIds) {
+    doc.crewIds = crewIds;
+    const crewConfigVersion = normalizeCrewConfigVersion(payload.crewConfigVersion);
+    if (crewConfigVersion != null) {
+      doc.crewConfigVersion = crewConfigVersion;
+    }
+  }
+
   return { doc };
 }
 
@@ -234,7 +299,7 @@ function recordPivotInteraction(req, payload = {}) {
  *
  * Body: `{ impressions: [{ eventId, rankInFeed, batchWeek? }], batchWeek?, sessionId?, requestId? }`
  */
-function recordPivotImpressions(req, body = {}) {
+async function recordPivotImpressions(req, body = {}) {
   const userId = req.user?.userId;
   if (!userId) {
     return {
@@ -282,6 +347,10 @@ function recordPivotImpressions(req, body = {}) {
       ? body.rankerVersion.trim()
       : DEFAULT_IMPRESSION_RANKER_VERSION;
 
+  const deckCrewContext = await resolveInteractionCrewContext(req, {
+    surface: DEFAULT_SURFACE,
+  });
+
   let accepted = 0;
   let skipped = 0;
 
@@ -313,6 +382,11 @@ function recordPivotImpressions(req, body = {}) {
       continue;
     }
 
+    const surface = String(item.surface || DEFAULT_SURFACE)
+      .trim()
+      .toLowerCase();
+    const crewContext = surface === DEFAULT_SURFACE ? deckCrewContext : {};
+
     recordPivotInteraction(req, {
       userId,
       eventId,
@@ -324,6 +398,7 @@ function recordPivotImpressions(req, body = {}) {
       rankerVersion: item.rankerVersion || rankerVersion,
       sessionId: item.sessionId || sessionId || undefined,
       requestId: item.requestId || requestId || undefined,
+      ...crewContext,
     });
     accepted += 1;
   }
@@ -448,6 +523,8 @@ function recordPivotMicroInteractions(req, body = {}) {
 
 module.exports = {
   normalizePivotInteractionPayload,
+  normalizeCrewIds,
+  resolveInteractionCrewContext,
   writePivotInteraction,
   recordPivotInteraction,
   recordPivotImpressions,

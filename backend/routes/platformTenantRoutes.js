@@ -19,6 +19,15 @@ const {
   normalizePivotDropFields,
   normalizePivotDropOverrides,
 } = require('../constants/defaultTenants');
+const {
+  validatePivotCrewConfigPatch,
+} = require('../utilities/pivotCrewConfig');
+const {
+  validatePivotMobileConfigPatch,
+} = require('../utilities/pivotMobileConfig');
+const {
+  validateCreatorPublishConfigPatch,
+} = require('../utilities/pivotCreatorPublishConfig');
 const { invalidateTenantConnection } = require('../connectionsManager');
 const { renameTenantKey } = require('../services/tenantKeyRenameService');
 const {
@@ -186,6 +195,51 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       dropPatch.pivotDropOverrides = normalizePivotDropOverrides(req.body.pivotDropOverrides) || [];
     }
     Object.assign(updated, dropPatch);
+
+    if (req.body.pivotCrewConfig === null) {
+      delete updated.pivotCrewConfig;
+    } else if (req.body.pivotCrewConfig !== undefined) {
+      const crewValidation = validatePivotCrewConfigPatch(req.body.pivotCrewConfig);
+      if (crewValidation.error) {
+        return res.status(400).json({ success: false, message: crewValidation.error });
+      }
+      const patch = crewValidation.patch || {};
+      if (Object.keys(patch).length === 0) {
+        delete updated.pivotCrewConfig;
+      } else {
+        updated.pivotCrewConfig = patch;
+      }
+    }
+
+    if (req.body.pivotMobileConfig === null) {
+      delete updated.pivotMobileConfig;
+    } else if (req.body.pivotMobileConfig !== undefined) {
+      const mobileValidation = validatePivotMobileConfigPatch(req.body.pivotMobileConfig);
+      if (mobileValidation.error) {
+        return res.status(400).json({ success: false, message: mobileValidation.error });
+      }
+      const patch = mobileValidation.patch || {};
+      if (Object.keys(patch).length === 0) {
+        delete updated.pivotMobileConfig;
+      } else {
+        updated.pivotMobileConfig = patch;
+      }
+    }
+
+    if (req.body.creatorPublish === null) {
+      delete updated.creatorPublish;
+    } else if (req.body.creatorPublish !== undefined) {
+      const creatorValidation = validateCreatorPublishConfigPatch(req.body.creatorPublish);
+      if (creatorValidation.error) {
+        return res.status(400).json({ success: false, message: creatorValidation.error });
+      }
+      const patch = creatorValidation.patch || {};
+      if (Object.keys(patch).length === 0) {
+        delete updated.creatorPublish;
+      } else {
+        updated.creatorPublish = patch;
+      }
+    }
 
     const mergedPreview = (await getMergedTenants(req)).map((row) =>
       row.tenantKey === tenantKey ? updated : row

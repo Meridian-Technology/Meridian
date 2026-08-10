@@ -137,11 +137,19 @@ function createApp() {
         const host = req.headers.host || '';
         // Extract subdomain: for 'rpi.meridian.study' -> 'rpi', for 'localhost:5001' -> default tenant
         let subdomain = host.split('.')[0];
+        const hostLower = String(host).toLowerCase();
+        const isDevTunnelHost =
+          hostLower.includes('devtunnels.ms') || hostLower.includes('ngrok');
         
-        // In development, if host is localhost or an IP address, default to rpi so tenant features
-        // (rooms, events, etc.) work. Use ?school= or X-Tenant header to override. Production www
-        // uses www subdomain explicitly (e.g. www.meridian.study).
-        if (host.includes('localhost') || /^\d+\.\d+\.\d+\.\d+/.test(subdomain) || !host.includes('.')) {
+        // In development, if host is localhost, a tunnel, or an IP address, default to rpi so tenant
+        // features work. Use ?school= or X-Tenant header to override. Production www uses www
+        // subdomain explicitly (e.g. www.meridian.study).
+        if (
+          host.includes('localhost') ||
+          isDevTunnelHost ||
+          /^\d+\.\d+\.\d+\.\d+/.test(subdomain) ||
+          !host.includes('.')
+        ) {
             subdomain = process.env.NODE_ENV === 'production' ? 'www' : 'rpi';
         }
 
@@ -156,6 +164,13 @@ function createApp() {
             }
             if (override && tenantKeysCache.includes(String(override).toLowerCase())) {
                 subdomain = override.toLowerCase();
+            } else if (override) {
+                console.warn('[tenant] X-Tenant ignored (unknown key)', {
+                  override: String(override).toLowerCase(),
+                  host,
+                  fallbackSchool: subdomain,
+                  knownTenantCount: tenantKeysCache.length,
+                });
             }
         }
 
@@ -187,6 +202,7 @@ function createApp() {
     '/select-school',
     '/tenant-status',
     '/platform-admin',
+    '/justgo',
     '/static',
     '/health',
     '/validate-token',

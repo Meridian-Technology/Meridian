@@ -19,6 +19,13 @@ const {
   recordPivotInteraction,
   pickInteractionContext,
 } = require('./pivotInteractionService');
+const {
+  scheduleCrewWeekRecompute,
+  recomputeCrewWeekState,
+  invalidateCrewWeekProgressForUserCrews,
+} = require('./pivotCrewWeekStateService');
+const { loadLockedCrewPicksForUser } = require('./pivotCrewJudgementService');
+const { attachCrossCrewOverlapFlags } = require('./pivotCrossCrewService');
 
 const FEED_ACTION_TO_STATUS = {
   interested: 'interested',
@@ -114,7 +121,9 @@ function resolveRegisteredTimeSlotId(event, requestedTimeSlotId) {
   return { timeSlotId: trimmed };
 }
 
-async function recordFeedAction(req, body = {}) {
+const MAX_FEED_ACTIONS_BATCH = 25;
+
+async function recordFeedAction(req, body = {}, options = {}) {
   const userId = req.user?.userId;
   if (!userId) {
     return unauthorized();
@@ -178,12 +187,115 @@ async function recordFeedAction(req, body = {}) {
     action,
   });
 
+  if (!options.deferCrewRecompute) {
+    scheduleCrewWeekRecompute(req, { userId, batchWeek: doc.batchWeek });
+  }
+
   return {
     data: {
       eventId: String(doc.eventId),
       status: doc.status,
       batchWeek: doc.batchWeek,
       timeSlotId: doc.timeSlotId || null,
+    },
+  };
+}
+
+/**
+ * Batch feed swipes into one request. Last action wins per eventId.
+ * Crew week recompute is scheduled once per distinct batchWeek.
+ */
+async function recordFeedActions(req, body = {}) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    return unauthorized();
+  }
+
+  const rawActions = Array.isArray(body.actions) ? body.actions : [];
+  if (!rawActions.length) {
+    return {
+      error: 'actions must be a non-empty array.',
+      status: 400,
+      code: 'INVALID_ACTIONS',
+    };
+  }
+  if (rawActions.length > MAX_FEED_ACTIONS_BATCH) {
+    return {
+      error: `actions cannot exceed ${MAX_FEED_ACTIONS_BATCH}.`,
+      status: 400,
+      code: 'ACTIONS_TOO_LARGE',
+    };
+  }
+
+  const deduped = new Map();
+  for (const entry of rawActions) {
+    const eventId = String(entry?.eventId || '').trim();
+    if (!eventId) {
+      continue;
+    }
+    deduped.set(eventId, entry);
+  }
+
+  const results = [];
+  const batchWeeks = new Set();
+  let accepted = 0;
+  let failed = 0;
+
+  for (const entry of deduped.values()) {
+    const result = await recordFeedAction(
+      req,
+      {
+        ...entry,
+        ...(body.now ? { now: body.now } : {}),
+      },
+      { deferCrewRecompute: true },
+    );
+
+    if (result.error) {
+      failed += 1;
+      results.push({
+        eventId: String(entry?.eventId || '').trim() || null,
+        action: String(entry?.action || '').trim() || null,
+        ok: false,
+        error: result.error,
+        code: result.code || null,
+      });
+      continue;
+    }
+
+    accepted += 1;
+    if (result.data?.batchWeek) {
+      batchWeeks.add(result.data.batchWeek);
+    }
+    results.push({
+      eventId: result.data.eventId,
+      action: String(entry?.action || '').trim() || null,
+      ok: true,
+      status: result.data.status,
+      batchWeek: result.data.batchWeek,
+      timeSlotId: result.data.timeSlotId || null,
+    });
+  }
+
+  for (const batchWeek of batchWeeks) {
+    scheduleCrewWeekRecompute(req, { userId, batchWeek });
+  }
+
+  logPivot('info', 'feed actions batch recorded', {
+    ...pivotRequestContext(req),
+    received: rawActions.length,
+    deduped: deduped.size,
+    accepted,
+    failed,
+    batchWeeks: [...batchWeeks],
+  });
+
+  return {
+    data: {
+      accepted,
+      failed,
+      received: rawActions.length,
+      results,
     },
   };
 }
@@ -370,7 +482,13 @@ async function getWeekRecap(req, options = {}) {
     .lean();
 
   if (!intents.length) {
-    return { data: { batchWeek, events: [] } };
+    const crewPicks = await attachCrossCrewOverlapFlags(
+      req,
+      batchWeek,
+      await loadLockedCrewPicksForUser(req, batchWeek),
+      (pick) => pick.event.id,
+    );
+    return { data: { batchWeek, events: [], crewPicks } };
   }
 
   const intentByEvent = new Map(
@@ -428,14 +546,25 @@ async function getWeekRecap(req, options = {}) {
       });
     });
 
+  const [crewPicks, eventsWithOverlap] = await Promise.all([
+    attachCrossCrewOverlapFlags(
+      req,
+      batchWeek,
+      await loadLockedCrewPicksForUser(req, batchWeek),
+      (pick) => pick.event.id,
+    ),
+    attachCrossCrewOverlapFlags(req, batchWeek, recapEvents, (event) => event._id),
+  ]);
+
   logPivot('info', 'week recap built', {
     ...pivotRequestContext(req),
     batchWeek,
     intentCount: intents.length,
-    eventCount: recapEvents.length,
+    eventCount: eventsWithOverlap.length,
+    crewPickCount: crewPicks.length,
   });
 
-  return { data: { batchWeek, events: recapEvents } };
+  return { data: { batchWeek, events: eventsWithOverlap, crewPicks } };
 }
 
 async function resetWeekActions(req, options = {}) {
@@ -454,7 +583,12 @@ async function resetWeekActions(req, options = {}) {
     };
   }
 
-  const { PivotEventIntent } = getModels(req, 'PivotEventIntent');
+  const { PivotEventIntent, PivotCrewMembership, PivotCrewWeekState } = getModels(
+    req,
+    'PivotEventIntent',
+    'PivotCrewMembership',
+    'PivotCrewWeekState',
+  );
 
   // Match getWeekRecap: intents are keyed by batchWeek on the intent row, not
   // the feed event pool (registered events can sit outside the pilot window).
@@ -463,16 +597,54 @@ async function resetWeekActions(req, options = {}) {
     batchWeek,
   });
 
+  // Dev reset also clears crew week judgements/consensus for crews this user
+  // belongs to, then recomputes from remaining member intents.
+  let crewStatesReset = 0;
+  const userObjectId = mongoose.Types.ObjectId.isValid(userId)
+    ? new mongoose.Types.ObjectId(String(userId))
+    : null;
+
+  if (userObjectId && PivotCrewMembership && PivotCrewWeekState) {
+    const memberships = await PivotCrewMembership.find({
+      userId: userObjectId,
+      status: 'active',
+    })
+      .select('crewId')
+      .lean();
+
+    if (memberships.length) {
+      const crewIds = memberships.map((row) => row.crewId);
+      const crewDelete = await PivotCrewWeekState.deleteMany({
+        crewId: { $in: crewIds },
+        batchWeek,
+      });
+      crewStatesReset = crewDelete.deletedCount ?? 0;
+
+      await Promise.all(
+        crewIds.map((crewId) =>
+          recomputeCrewWeekState(req, {
+            crewId: crewId.toString(),
+            batchWeek,
+          }),
+        ),
+      );
+
+      await invalidateCrewWeekProgressForUserCrews(req, { userId, batchWeek });
+    }
+  }
+
   return {
     data: {
       batchWeek,
       deletedCount: result.deletedCount ?? 0,
+      crewStatesReset,
     },
   };
 }
 
 module.exports = {
   recordFeedAction,
+  recordFeedActions,
   recordExternalOpen,
   confirmRegistered,
   getWeekRecap,

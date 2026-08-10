@@ -28,6 +28,9 @@ import PivotCurationMonitorPanel from './PivotCurationMonitorPanel';
 import PivotTenantPage from './PivotTenantPage';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
 import PivotTenantExplorePanel from './PivotTenantExplorePanel';
+import PivotHostLiveWeekAlert, {
+  formatHostCreatedCounts,
+} from './PivotHostLiveWeekAlert';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
@@ -50,6 +53,8 @@ const FILTER_OPTIONS = [
   { value: 'film', label: 'Film / showtimes' },
 ];
 
+const HOST_CREATED_SOURCE = 'justgo';
+
 const PROVIDER_OPTIONS = [
   { value: 'partiful', label: 'Partiful' },
   { value: 'luma', label: 'Luma' },
@@ -62,9 +67,15 @@ const STRATEGY_OPTIONS = [
   { value: 'explicit', label: 'Explicit (pass on run)' },
 ];
 
+const PURGE_CONFIRM_TOKEN = 'PURGE';
+
 function formatEventTags(tags) {
   if (!Array.isArray(tags) || !tags.length) return '—';
   return tags.join(', ');
+}
+
+function isHostCreatedEvent(event) {
+  return event?.source === HOST_CREATED_SOURCE;
 }
 
 function eventMatchesFilter(event, filter) {
@@ -81,6 +92,68 @@ function eventMatchesFilter(event, filter) {
     return Boolean(event.movie) || (Array.isArray(event.timeSlots) && event.timeSlots.length > 0);
   }
   return true;
+}
+
+function eventMatchesSourceFilter(event, sourceFilter) {
+  if (!sourceFilter || sourceFilter === 'all') return true;
+  if (sourceFilter === HOST_CREATED_SOURCE) return isHostCreatedEvent(event);
+  return true;
+}
+
+/** Newest host drafts first when Host-created filter is active; otherwise soft-boost them. */
+function compareCurationEvents(a, b, { hostCreatedOnly = false } = {}) {
+  if (hostCreatedOnly) {
+    const aSubmitted = a.creatorSubmittedAt ? Date.parse(a.creatorSubmittedAt) : 0;
+    const bSubmitted = b.creatorSubmittedAt ? Date.parse(b.creatorSubmittedAt) : 0;
+    if (bSubmitted !== aSubmitted) return bSubmitted - aSubmitted;
+    const aStart = a.start_time ? Date.parse(a.start_time) : 0;
+    const bStart = b.start_time ? Date.parse(b.start_time) : 0;
+    return aStart - bStart;
+  }
+
+  const aHostDraft = isHostCreatedEvent(a) && a.ingestStatus === 'draft' ? 1 : 0;
+  const bHostDraft = isHostCreatedEvent(b) && b.ingestStatus === 'draft' ? 1 : 0;
+  if (bHostDraft !== aHostDraft) return bHostDraft - aHostDraft;
+
+  if (aHostDraft && bHostDraft) {
+    const aSubmitted = a.creatorSubmittedAt ? Date.parse(a.creatorSubmittedAt) : 0;
+    const bSubmitted = b.creatorSubmittedAt ? Date.parse(b.creatorSubmittedAt) : 0;
+    if (bSubmitted !== aSubmitted) return bSubmitted - aSubmitted;
+  }
+
+  const aStart = a.start_time ? Date.parse(a.start_time) : 0;
+  const bStart = b.start_time ? Date.parse(b.start_time) : 0;
+  return aStart - bStart;
+}
+
+function CatalogSourceBadge({ source }) {
+  if (source === HOST_CREATED_SOURCE) {
+    return (
+      <span
+        className="pivot-lab__pill pivot-tenant-curation__source-pill pivot-tenant-curation__source-pill--justgo"
+        title="Submitted via Just Go Creator Console"
+      >
+        Host-created
+      </span>
+    );
+  }
+  if (source === 'partiful') {
+    return <span className="pivot-lab__pill pivot-tenant-curation__source-pill">Partiful</span>;
+  }
+  if (source === 'luma') {
+    return <span className="pivot-lab__pill pivot-tenant-curation__source-pill">Luma</span>;
+  }
+  if (source === 'manual') {
+    return (
+      <span className="pivot-lab__pill pivot-lab__pill--muted pivot-tenant-curation__source-pill">
+        Manual
+      </span>
+    );
+  }
+  if (source) {
+    return <span className="pivot-lab__pill pivot-tenant-curation__source-pill">{source}</span>;
+  }
+  return <span className="pivot-lab__pill pivot-lab__pill--muted">—</span>;
 }
 
 function emptyJobForm() {
@@ -129,6 +202,8 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
   const urlBatchWeek = searchParams.get('batchWeek');
   const urlFilter = searchParams.get('filter') || 'all';
+  const urlSource = searchParams.get('source') || 'all';
+  const urlEventId = searchParams.get('eventId');
 
   const {
     batchWeek,
@@ -144,6 +219,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const [forceBatchWeek, setForceBatchWeek] = useState(true);
   const [filter, setFilter] = useState(
     FILTER_OPTIONS.some((opt) => opt.value === urlFilter) ? urlFilter : 'all',
+  );
+  /** Separate from status/QA filter so notify deep links can use filter=draft&source=justgo. */
+  const [sourceFilter, setSourceFilter] = useState(
+    urlSource === HOST_CREATED_SOURCE ? HOST_CREATED_SOURCE : 'all',
   );
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkTags, setBulkTags] = useState([]);
@@ -171,18 +250,26 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const [urlImportLoading, setUrlImportLoading] = useState(false);
   /** Shown when a bulk stage lands events outside the selected review week. */
   const [stageLandHint, setStageLandHint] = useState(null);
+  const [purgeConfirm, setPurgeConfirm] = useState('');
+  const [purgingCatalog, setPurgingCatalog] = useState(false);
+  const [purgingOutOfWeek, setPurgingOutOfWeek] = useState(false);
   const initializedWeekRef = useRef(false);
+  const openedEventIdRef = useRef(null);
 
-  // Keep committed week / filter bookmarkable (preserve page=1). Drop legacy stage= param.
+  // Keep committed week / filter / source bookmarkable (preserve page=1). Drop legacy stage= param.
   useEffect(() => {
     const desiredFilter = filter && filter !== 'all' ? filter : null;
+    const desiredSource =
+      sourceFilter === HOST_CREATED_SOURCE ? HOST_CREATED_SOURCE : null;
     const currentFilter = searchParams.get('filter');
+    const currentSource = searchParams.get('source');
     const currentWeek = searchParams.get('batchWeek');
     const pageOk = searchParams.get('page') === '1';
     const weekOk = !committedWeekValid || currentWeek === committedWeek;
     const filterOk = desiredFilter ? currentFilter === desiredFilter : !currentFilter;
+    const sourceOk = desiredSource ? currentSource === desiredSource : !currentSource;
     const stageCleared = !searchParams.get('stage');
-    if (pageOk && weekOk && filterOk && stageCleared) return;
+    if (pageOk && weekOk && filterOk && sourceOk && stageCleared) return;
 
     setSearchParams(
       (prev) => {
@@ -192,11 +279,13 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         if (committedWeekValid) next.set('batchWeek', committedWeek);
         if (desiredFilter) next.set('filter', desiredFilter);
         else next.delete('filter');
+        if (desiredSource) next.set('source', desiredSource);
+        else next.delete('source');
         return next;
       },
       { replace: true },
     );
-  }, [committedWeek, committedWeekValid, filter, searchParams, setSearchParams]);
+  }, [committedWeek, committedWeekValid, filter, sourceFilter, searchParams, setSearchParams]);
 
   useEffect(() => {
     setStageLandHint(null);
@@ -213,7 +302,9 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     if (FILTER_OPTIONS.some((opt) => opt.value === urlFilter)) {
       setFilter((current) => (current === urlFilter ? current : urlFilter));
     }
-  }, [urlBatchWeek, urlFilter, setBatchWeek]);
+    const nextSource = urlSource === HOST_CREATED_SOURCE ? HOST_CREATED_SOURCE : 'all';
+    setSourceFilter((current) => (current === nextSource ? current : nextSource));
+  }, [urlBatchWeek, urlFilter, urlSource, setBatchWeek]);
 
   const opsParams = useMemo(
     () => ({
@@ -285,6 +376,12 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const overview = ops?.overview && !ops.overview.error ? ops.overview : null;
   const drop = overview?.dropSchedule || opsDropSchedule;
   const statusCounts = overview?.kpis?.eventCountsByStatus;
+  const hostCreatedCounts = overview?.kpis?.hostCreatedCounts || {
+    hostDraft: overview?.kpis?.hostDraft ?? 0,
+    hostStaged: overview?.kpis?.hostStaged ?? 0,
+    hostPublished: overview?.kpis?.hostPublished ?? 0,
+  };
+  const hostLiveWeekAlert = overview?.hostLiveWeekAlert || null;
   const weekRangeLabel =
     ops?.weekRange?.label ||
     (batchWeekValid
@@ -317,6 +414,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       : EMPTY_LIST;
   const eventsLoading = opsLoading && canPublishCatalog && !ops?.catalog;
   const eventsError = ops?.catalog?.error || null;
+  const outOfWeekCount = ops?.catalog?.outOfWeekCount ?? 0;
 
   const {
     data: tagsResponse,
@@ -341,10 +439,21 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     : EMPTY_LIST;
   const activeRun = runResponse?.success ? runResponse.data?.run : null;
 
-  const filteredEvents = useMemo(
-    () => events.filter((event) => eventMatchesFilter(event, filter)),
-    [events, filter],
+  const hostCreatedCount = useMemo(
+    () => events.filter((event) => isHostCreatedEvent(event)).length,
+    [events],
   );
+
+  const filteredEvents = useMemo(() => {
+    const hostCreatedOnly = sourceFilter === HOST_CREATED_SOURCE;
+    return events
+      .filter(
+        (event) =>
+          eventMatchesFilter(event, filter) && eventMatchesSourceFilter(event, sourceFilter),
+      )
+      .slice()
+      .sort((a, b) => compareCurationEvents(a, b, { hostCreatedOnly }));
+  }, [events, filter, sourceFilter]);
 
   const reviewEvents = useMemo(
     () =>
@@ -367,6 +476,16 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     [events],
   );
 
+  // Open catalog edit drawer from notify deep links (?eventId=…).
+  useEffect(() => {
+    if (!urlEventId || eventsLoading || !events.length) return;
+    if (openedEventIdRef.current === urlEventId) return;
+    const match = events.find((event) => String(event._id) === String(urlEventId));
+    if (!match) return;
+    openedEventIdRef.current = urlEventId;
+    setEditingEvent(match);
+  }, [urlEventId, events, eventsLoading]);
+
   // Poll active run until terminal.
   useEffect(() => {
     if (!activeRunId || !activeRun) return undefined;
@@ -384,7 +503,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   // Clear selection when week/filter changes.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [batchWeek, filter, tenantKey]);
+  }, [batchWeek, filter, sourceFilter, tenantKey]);
 
   const stepBatchWeek = useCallback(
     (delta) => {
@@ -1174,6 +1293,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   ]);
 
   const displayCity = overview?.cityDisplayName || cityDisplayName || tenantKey;
+
+  const focusHostCreatedReview = useCallback(() => {
+    setFilter('draft');
+    setSourceFilter(HOST_CREATED_SOURCE);
+    const queue = document.getElementById('curation-queue');
+    if (queue?.scrollIntoView) {
+      queue.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
   const runInFlight =
     activeRun && (activeRun.status === 'queued' || activeRun.status === 'running');
   const releaseBusy =
@@ -1215,6 +1343,164 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     tenantKey,
     weekRangeLabel,
   ]);
+
+  const handlePurgeCatalog = useCallback(async () => {
+    if (!tenantKey || !committedWeekValid || !weekSettled) return;
+
+    if (purgeConfirm.trim() !== PURGE_CONFIRM_TOKEN) {
+      addNotification({
+        title: 'Confirmation required',
+        message: `Type ${PURGE_CONFIRM_TOKEN} to delete catalog data.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Permanently delete pivot catalog events, intents, feedback, and analytics for ${displayCity} · ${committedWeek}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setPurgingCatalog(true);
+    const { data, error } = await authenticatedRequest('/admin/pivot/dev/purge-catalog', {
+      method: 'POST',
+      data: {
+        confirm: PURGE_CONFIRM_TOKEN,
+        tenantKey,
+        batchWeek: committedWeek,
+        clearSnapshots: true,
+      },
+    });
+    setPurgingCatalog(false);
+
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Purge failed',
+        message: error || data?.message || 'Could not purge pivot catalog data.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const totals = data.data?.totals || {};
+    setPurgeConfirm('');
+    refreshAll();
+    addNotification({
+      title: 'Catalog purged',
+      message: `Removed ${totals.events ?? 0} events, ${totals.intents ?? 0} intents, and ${totals.feedback ?? 0} feedback rows for ${committedWeek}.`,
+      type: 'success',
+    });
+  }, [
+    addNotification,
+    committedWeek,
+    committedWeekValid,
+    displayCity,
+    purgeConfirm,
+    refreshAll,
+    tenantKey,
+    weekSettled,
+  ]);
+
+  const handlePurgeOutOfWeek = useCallback(async () => {
+    if (!tenantKey || !committedWeekValid || !weekSettled || outOfWeekCount === 0) return;
+
+    if (
+      !window.confirm(
+        `Permanently delete ${outOfWeekCount} event(s) in ${committedWeek} whose start dates fall outside ${weekRangeLabel}? These are usually events forced into the review week. Related intents and feedback will also be removed. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setPurgingOutOfWeek(true);
+    const { data, error } = await authenticatedRequest(
+      `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/catalog/purge-out-of-week`,
+      {
+        method: 'POST',
+        data: { batchWeek: committedWeek },
+      },
+    );
+    setPurgingOutOfWeek(false);
+
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Purge failed',
+        message: error || data?.message || 'Could not purge out-of-range catalog events.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const deleted = data.data?.deleted || {};
+    refreshAll();
+    addNotification({
+      title: 'Out-of-range events purged',
+      message: `Removed ${deleted.events ?? 0} event(s) outside ${weekRangeLabel}.`,
+      type: 'success',
+    });
+  }, [
+    addNotification,
+    committedWeek,
+    committedWeekValid,
+    outOfWeekCount,
+    refreshAll,
+    tenantKey,
+    weekRangeLabel,
+    weekSettled,
+  ]);
+
+  const handleDeleteEvent = useCallback(
+    async (event) => {
+      if (!tenantKey || !event?._id) return;
+
+      if (
+        !window.confirm(
+          `Permanently delete “${event.name}” (${event.batchWeek || 'no batch week'})? Related intents and feedback for this event will also be removed. This cannot be undone.`,
+        )
+      ) {
+        return;
+      }
+
+      setBusyKey(`delete-${event._id}`);
+      const { data, error } = await authenticatedRequest(
+        `/admin/pivot/ingest/${encodeURIComponent(event._id)}`,
+        {
+          method: 'DELETE',
+          data: { tenantKey },
+        },
+      );
+      setBusyKey(null);
+
+      if (error || !data?.success) {
+        addNotification({
+          title: 'Delete failed',
+          message: error || data?.message || 'Could not delete catalog event.',
+          type: 'error',
+        });
+        return;
+      }
+
+      setSelectedIds((prev) => {
+        if (!prev.has(event._id)) return prev;
+        const next = new Set(prev);
+        next.delete(event._id);
+        return next;
+      });
+      if (editingEvent?._id === event._id) {
+        setEditingEvent(null);
+      }
+      refreshAll();
+      addNotification({
+        title: 'Event deleted',
+        message: `${event.name} was removed from the catalog.`,
+        type: 'success',
+      });
+    },
+    [addNotification, editingEvent, refreshAll, tenantKey],
+  );
 
   return (
     <PivotTenantPage
@@ -1290,6 +1576,12 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
               </>
             )}
           </p>
+          {overview ? (
+            <p className="pivot-host-created-counts pivot-tenant-curation__host-counts">
+              <span className="pivot-host-created-counts__label">Host-created</span>
+              <span>{formatHostCreatedCounts(hostCreatedCounts)}</span>
+            </p>
+          ) : null}
         </div>
         <div className="pivot-tenant-curation__batch-banner-actions">
           <PivotBatchWeekPicker
@@ -1314,6 +1606,11 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           ) : null}
         </div>
       </aside>
+
+      <PivotHostLiveWeekAlert
+        alert={hostLiveWeekAlert}
+        onReviewClick={focusHostCreatedReview}
+      />
 
       {!batchWeekValid ? (
         <p className="pivot-lab__error">Enter a valid batch week (YYYY-Www).</p>
@@ -1355,6 +1652,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             <strong>{draftCount}</strong> draft · <strong>{stagedCount}</strong> staged ·{' '}
             <strong>{publishedCount}</strong> published
             {statusCounts?.other ? ` · ${statusCounts.other} other` : ''}
+          </span>
+          <span className="pivot-host-created-counts" title="Just Go Creator listings this week">
+            <span className="pivot-host-created-counts__label">Host-created</span>
+            <span>{formatHostCreatedCounts(hostCreatedCounts)}</span>
           </span>
         </div>
       </aside>
@@ -1749,20 +2050,44 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
               date unless forced — switch weeks to review other batches from the same crawl.
             </p>
           </div>
-          <label className="linear-field">
-            <span className="linear-field__label">Filter</span>
-            <select
-              className="linear-input"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+          <div className="pivot-tenant-curation__queue-filters">
+            <label className="linear-field">
+              <span className="linear-field__label">Filter</span>
+              <select
+                className="linear-input"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              >
+                {FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={`pivot-tenant-curation__source-chip${
+                sourceFilter === HOST_CREATED_SOURCE
+                  ? ' pivot-tenant-curation__source-chip--active'
+                  : ''
+              }`}
+              aria-pressed={sourceFilter === HOST_CREATED_SOURCE}
+              onClick={() =>
+                setSourceFilter((current) =>
+                  current === HOST_CREATED_SOURCE ? 'all' : HOST_CREATED_SOURCE,
+                )
+              }
+              title="Show only listings submitted via Just Go Creator"
             >
-              {FILTER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              Host-created
+              {hostCreatedCount > 0 ? (
+                <span className="pivot-tenant-curation__source-chip-count">
+                  {hostCreatedCount}
+                </span>
+              ) : null}
+            </button>
+          </div>
         </div>
 
         {stagedCount > 0 ? (
@@ -1921,7 +2246,18 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                         </button>
                       </td>
                       <td>
-                        <span className="pivot-tenant-curation__batch-pill">
+                        <span
+                          className={`pivot-tenant-curation__batch-pill${
+                            event.outOfReviewRange
+                              ? ' pivot-tenant-curation__batch-pill--out-of-range'
+                              : ''
+                          }`}
+                          title={
+                            event.outOfReviewRange
+                              ? `Start date outside ${weekRangeLabel}`
+                              : undefined
+                          }
+                        >
                           {event.batchWeek || '—'}
                         </span>
                       </td>
@@ -1931,7 +2267,9 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                       <td>
                         <IngestStatusPill status={event.ingestStatus} />
                       </td>
-                      <td>{event.source || '—'}</td>
+                      <td>
+                        <CatalogSourceBadge source={event.source} />
+                      </td>
                       <td>
                         <div className="pivot-tenant-curation__row-actions">
                           <button
@@ -1954,6 +2292,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                               {busyKey === `release-${event._id}` ? 'Publishing…' : 'Publish'}
                             </button>
                           ) : null}
+                          <button
+                            type="button"
+                            className="linear-btn linear-btn--ghost pivot-lab__edit-btn pivot-tenant-curation__delete-btn"
+                            onClick={() => handleDeleteEvent(event)}
+                            disabled={busyKey === `delete-${event._id}`}
+                            title="Permanently delete this catalog event"
+                          >
+                            {busyKey === `delete-${event._id}` ? 'Deleting…' : 'Delete'}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1971,6 +2318,77 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         )}
       </section>
         </>
+      ) : null}
+
+      {tenantKey && committedWeekValid ? (
+        <section
+          className="linear-section pivot-lab__section pivot-lab__dev-tools"
+          aria-labelledby="pivot-tenant-curation-danger-zone"
+        >
+          <h2 id="pivot-tenant-curation-danger-zone" className="linear-section__title">
+            Danger zone
+          </h2>
+          <p className="pivot-lab__notes-hint">
+            Permanently deletes catalog events, attendee intents, event feedback, analytics, and the
+            stored weekly snapshot for <strong>{displayCity}</strong> ·{' '}
+            <strong>{committedWeek}</strong>. Referral codes and interview notes are kept. This
+            cannot be undone.
+          </p>
+          {outOfWeekCount > 0 ? (
+            <p className="pivot-lab__notes-hint pivot-tenant-curation__out-of-week-hint">
+              <strong>{outOfWeekCount}</strong> event(s) in {committedWeek} have start dates outside{' '}
+              {weekRangeLabel} — often from forcing into the review week. Purge them without
+              touching in-range events.
+            </p>
+          ) : null}
+          <div className="pivot-lab__dev-tools-grid">
+            <label className="linear-field">
+              <span className="linear-field__label">Type {PURGE_CONFIRM_TOKEN} to confirm</span>
+              <input
+                className="linear-input"
+                value={purgeConfirm}
+                onChange={(e) => setPurgeConfirm(e.target.value)}
+                placeholder={PURGE_CONFIRM_TOKEN}
+                autoComplete="off"
+              />
+            </label>
+          </div>
+          <div className="pivot-lab__notes-actions">
+            <button
+              type="button"
+              className="linear-btn pivot-lab__purge-btn"
+              onClick={handlePurgeCatalog}
+              disabled={
+                purgingCatalog ||
+                !weekSettled ||
+                purgeConfirm.trim() !== PURGE_CONFIRM_TOKEN
+              }
+            >
+              {purgingCatalog
+                ? 'Purging…'
+                : `Purge catalog week (${committedWeek})`}
+            </button>
+            <button
+              type="button"
+              className="linear-btn pivot-lab__purge-btn"
+              onClick={handlePurgeOutOfWeek}
+              disabled={
+                purgingOutOfWeek ||
+                !weekSettled ||
+                outOfWeekCount === 0
+              }
+              title={
+                outOfWeekCount === 0
+                  ? `No events outside ${weekRangeLabel}`
+                  : `Delete ${outOfWeekCount} event(s) outside ${weekRangeLabel}`
+              }
+            >
+              {purgingOutOfWeek
+                ? 'Purging…'
+                : `Purge out-of-range events (${outOfWeekCount})`}
+            </button>
+          </div>
+        </section>
       ) : null}
 
       <PivotCatalogEventEditModal

@@ -1,7 +1,10 @@
 const getModels = require('./getModelService');
 const { getMergedTenants } = require('./tenantConfigService');
 const { isPivotTenant } = require('./pivotReferralCodeService');
+const { countPivotCatalogOutOfWeek } = require('./pivotCatalogPurgeService');
 const { connectToDatabase } = require('../connectionsManager');
+const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
+const { isEventStartOutOfBatchWeekRange } = require('../utilities/pivotIsoWeek');
 const {
   normalizeBatchWeek,
 } = require('./pivotWeeklySnapshotService');
@@ -24,9 +27,11 @@ const EMPTY_INTENT_STATS = Object.freeze({
   externalOpenUsers: 0,
 });
 
-function serializeLabEvent(event, intentStatsByEventId) {
+function serializeLabEvent(event, intentStatsByEventId, options = {}) {
   const pivot = event.customFields?.pivot || {};
   const host = pivot.host || {};
+  const batchWeek = pivot.batchWeek || null;
+  const dropDayOfWeek = options.dropDayOfWeek;
   const movie = serializePivotMovie(pivot.movie);
   const enrichment = serializePivotEnrichment(pivot);
   const timeSlots = Array.isArray(pivot.timeSlots)
@@ -37,6 +42,12 @@ function serializeLabEvent(event, intentStatsByEventId) {
         label: slot.label || null,
       }))
     : [];
+
+  const creatorSubmittedAt = pivot.creatorSubmittedAt
+    ? pivot.creatorSubmittedAt instanceof Date
+      ? pivot.creatorSubmittedAt.toISOString()
+      : pivot.creatorSubmittedAt
+    : null;
 
   return {
     _id: String(event._id),
@@ -51,12 +62,20 @@ function serializeLabEvent(event, intentStatsByEventId) {
     ingestStatus: pivot.ingestStatus || null,
     source: pivot.source || null,
     batchWeek: pivot.batchWeek || null,
+    outOfReviewRange:
+      batchWeek && dropDayOfWeek != null
+        ? isEventStartOutOfBatchWeekRange(event.start_time, batchWeek, dropDayOfWeek)
+        : false,
     tags: Array.isArray(pivot.tags) ? pivot.tags : [],
     timeSlots,
     ...(movie ? { movie } : {}),
     ...(enrichment ? { enrichment } : {}),
     organizerName: host.name || '',
     organizerImageUrl: host.imageUrl || null,
+    /** Host-created (Just Go Creator) provenance — ops curation / Task 3.1 */
+    platformManaged: pivot.platformManaged === true,
+    createdByUserId: pivot.createdByUserId ? String(pivot.createdByUserId) : null,
+    creatorSubmittedAt,
     intentStats: intentStatsByEventId?.get(String(event._id)) || EMPTY_INTENT_STATS,
   };
 }
@@ -131,6 +150,7 @@ async function listPivotLabEvents(req, options = {}) {
   }
 
   const { batchWeek } = normalized;
+  const dropConfig = resolvePivotDropConfig(tenant);
   const db = await connectToDatabase(tenantKey);
   const tenantReq = { db };
   const { Event, PivotEventIntent } = getModels(tenantReq, 'Event', 'PivotEventIntent');
@@ -142,17 +162,25 @@ async function listPivotLabEvents(req, options = {}) {
     .sort({ start_time: 1 })
     .lean();
 
-  const intentStatsByEventId = await loadIntentStatsByEventId(
-    PivotEventIntent,
-    events.map((event) => event._id),
-  );
+  const [intentStatsByEventId, outOfWeek] = await Promise.all([
+    loadIntentStatsByEventId(
+      PivotEventIntent,
+      events.map((event) => event._id),
+    ),
+    countPivotCatalogOutOfWeek(tenantKey, batchWeek, dropConfig.dayOfWeek),
+  ]);
 
   return {
     data: {
       tenantKey,
       cityDisplayName: tenant.location || tenant.name || tenantKey,
       batchWeek,
-      events: events.map((event) => serializeLabEvent(event, intentStatsByEventId)),
+      outOfWeekCount: outOfWeek.count,
+      events: events.map((event) =>
+        serializeLabEvent(event, intentStatsByEventId, {
+          dropDayOfWeek: dropConfig.dayOfWeek,
+        }),
+      ),
     },
   };
 }

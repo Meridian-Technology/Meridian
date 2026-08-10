@@ -32,6 +32,21 @@ jest.mock('../../services/pivotLabEventsService', () => ({
 jest.mock('../../services/pivotFeedService', () => ({
   PIVOT_EVENT_STATUSES: ['approved', 'published'],
 }));
+jest.mock('../../services/pivotCreatorAdminNotifyService', () => ({
+  isLiveCreatorBatchWeek: jest.fn(),
+  buildCreatorListingCurationHref: jest.fn(
+    ({ tenantKey, batchWeek, emphasizeLive = false } = {}) => {
+      const params = new URLSearchParams({
+        page: '1',
+        batchWeek,
+        filter: 'draft',
+        source: 'justgo',
+      });
+      if (emphasizeLive) params.set('alert', 'live-week-host');
+      return `/platform-admin/pivot/${tenantKey}?${params.toString()}`;
+    },
+  ),
+}));
 
 const getModels = require('../../services/getModelService');
 const { connectToDatabase } = require('../../connectionsManager');
@@ -45,7 +60,12 @@ const {
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
 const { loadIntentStatsByEventId } = require('../../services/pivotLabEventsService');
 const {
+  isLiveCreatorBatchWeek,
+} = require('../../services/pivotCreatorAdminNotifyService');
+const {
   aggregateRegisteredFeedback,
+  aggregateHostCreatedCountsByStatus,
+  buildHostLiveWeekAlert,
   buildFunnelStages,
   buildVsPrevWeek,
   comparePerformanceRows,
@@ -61,6 +81,12 @@ describe('pivotAdminOverviewService', () => {
     isPivotTenant.mockImplementation(
       (tenant) => tenant?.pivotPilot === true || tenant?.tenantType === 'pivot',
     );
+    isLiveCreatorBatchWeek.mockResolvedValue({
+      isLive: false,
+      publishedCount: 0,
+      batchStatus: null,
+      reasons: [],
+    });
     getWeeklySnapshot.mockResolvedValue({ data: { generatedAt: new Date('2026-06-26T10:00:00.000Z') } });
     aggregateEngagementMetrics.mockResolvedValue({
       calendarAdds: 3,
@@ -224,12 +250,88 @@ describe('pivotAdminOverviewService', () => {
     });
   });
 
+  describe('aggregateHostCreatedCountsByStatus', () => {
+    it('maps justgo ingest statuses onto hostDraft/hostStaged/hostPublished', async () => {
+      const Event = {
+        aggregate: jest.fn().mockResolvedValue([
+          { _id: 'draft', count: 3 },
+          { _id: 'staged', count: 1 },
+          { _id: 'published', count: 2 },
+        ]),
+      };
+
+      const counts = await aggregateHostCreatedCountsByStatus(Event, '2026-W32');
+      expect(counts).toEqual({
+        hostDraft: 3,
+        hostStaged: 1,
+        hostPublished: 2,
+        other: 0,
+        total: 6,
+      });
+      expect(Event.aggregate).toHaveBeenCalledWith([
+        expect.objectContaining({
+          $match: expect.objectContaining({
+            'customFields.pivot.batchWeek': '2026-W32',
+            'customFields.pivot.source': 'justgo',
+          }),
+        }),
+        expect.any(Object),
+      ]);
+    });
+  });
+
+  describe('buildHostLiveWeekAlert', () => {
+    it('is active only when the week is live/released and host drafts exist', () => {
+      const active = buildHostLiveWeekAlert({
+        tenantKey: 'nyc',
+        batchWeek: '2026-W32',
+        hostCreatedCounts: { hostDraft: 2, hostStaged: 0, hostPublished: 1 },
+        liveWeek: {
+          isLive: true,
+          publishedCount: 4,
+          batchStatus: 'released',
+          reasons: ['published_events', 'batch_released'],
+        },
+      });
+      expect(active.active).toBe(true);
+      expect(active.hostDraft).toBe(2);
+      expect(active.curationHref).toContain('source=justgo');
+      expect(active.curationHref).toContain('filter=draft');
+
+      const quiet = buildHostLiveWeekAlert({
+        tenantKey: 'nyc',
+        batchWeek: '2026-W32',
+        hostCreatedCounts: { hostDraft: 2, hostStaged: 0, hostPublished: 0 },
+        liveWeek: { isLive: false, publishedCount: 0, batchStatus: null, reasons: [] },
+      });
+      expect(quiet.active).toBe(false);
+
+      const liveNoDrafts = buildHostLiveWeekAlert({
+        tenantKey: 'nyc',
+        batchWeek: '2026-W32',
+        hostCreatedCounts: { hostDraft: 0, hostStaged: 1, hostPublished: 2 },
+        liveWeek: {
+          isLive: true,
+          publishedCount: 2,
+          batchStatus: 'released',
+          reasons: ['batch_released'],
+        },
+      });
+      expect(liveNoDrafts.active).toBe(false);
+    });
+  });
+
   describe('getTenantOverview', () => {
     function mockTenantModels({
       publishedCount = 2,
       statusRows = [
         { _id: 'published', count: 2 },
         { _id: 'draft', count: 1 },
+      ],
+      hostRows = [
+        { _id: 'draft', count: 2 },
+        { _id: 'staged', count: 1 },
+        { _id: 'published', count: 0 },
       ],
     } = {}) {
       connectToDatabase.mockResolvedValue({});
@@ -245,7 +347,10 @@ describe('pivotAdminOverviewService', () => {
               ),
             }),
           }),
-          aggregate: jest.fn().mockResolvedValue(statusRows),
+          aggregate: jest
+            .fn()
+            .mockResolvedValueOnce(statusRows)
+            .mockResolvedValueOnce(hostRows),
         },
         PivotEventIntent: {
           countDocuments: jest.fn().mockImplementation((filter) => {
@@ -291,6 +396,12 @@ describe('pivotAdminOverviewService', () => {
         tenant: { tenantKey: 'nyc', tenantType: 'pivot', location: 'New York City' },
       });
       mockTenantModels();
+      isLiveCreatorBatchWeek.mockResolvedValue({
+        isLive: true,
+        publishedCount: 2,
+        batchStatus: 'released',
+        reasons: ['published_events', 'batch_released'],
+      });
 
       const result = await getTenantOverview(
         { globalDb: {} },
@@ -316,7 +427,16 @@ describe('pivotAdminOverviewService', () => {
           other: 0,
           total: 3,
         },
+        hostDraft: 2,
+        hostStaged: 1,
+        hostPublished: 0,
       });
+      expect(result.data.hostLiveWeekAlert).toMatchObject({
+        active: true,
+        isLiveWeek: true,
+        hostDraft: 2,
+      });
+      expect(result.data.hostLiveWeekAlert.curationHref).toContain('source=justgo');
       expect(result.data.funnel[0]).toMatchObject({ key: 'swipes', value: 12 });
       expect(result.data.funnel[1]).toMatchObject({ key: 'interested', value: 6 });
       expect(result.data.dropSchedule.batchWeek).toBe('2026-W26');
@@ -327,6 +447,30 @@ describe('pivotAdminOverviewService', () => {
       );
       // Only one city connection — not a fleet loop.
       expect(connectToDatabase.mock.calls.every(([key]) => key === 'nyc')).toBe(true);
+    });
+
+    it('keeps live-week alert inactive when the week is not released/live', async () => {
+      resolvePivotTenant.mockResolvedValue({
+        tenant: { tenantKey: 'nyc', tenantType: 'pivot', location: 'New York City' },
+      });
+      mockTenantModels({
+        hostRows: [{ _id: 'draft', count: 4 }],
+      });
+      isLiveCreatorBatchWeek.mockResolvedValue({
+        isLive: false,
+        publishedCount: 0,
+        batchStatus: null,
+        reasons: [],
+      });
+
+      const result = await getTenantOverview(
+        { globalDb: {} },
+        { tenantKey: 'nyc', batchWeek: '2026-W26' },
+      );
+
+      expect(result.data.kpis.hostDraft).toBe(4);
+      expect(result.data.hostLiveWeekAlert.active).toBe(false);
+      expect(result.data.hostLiveWeekAlert.isLiveWeek).toBe(false);
     });
 
     it('returns TENANT_NOT_FOUND for unknown pivot tenant', async () => {

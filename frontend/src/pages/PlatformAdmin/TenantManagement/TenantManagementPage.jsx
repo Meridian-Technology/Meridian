@@ -9,6 +9,7 @@ import TenantStatusDropdown from './TenantStatusDropdown/TenantStatusDropdown';
 import { formatTenantHealthMessage, isTenantHealthOk } from './tenantHealthUtils';
 import { isPivotTenant } from './tenantPivotUtils';
 import PivotReferralCodesPanel from './PivotReferralCodesPanel/PivotReferralCodesPanel';
+import PivotCrewConfigPanel from './PivotCrewConfigPanel/PivotCrewConfigPanel';
 import PivotTagCatalogPanel from './PivotTagCatalogPanel/PivotTagCatalogPanel';
 import { useGradient } from '../../../hooks/useGradient';
 import './TenantManagementPage.scss';
@@ -188,6 +189,7 @@ function TenantDetail({
   onConfirmStep,
   onOpenLifecycle,
   onOpenMetadata,
+  onTenantUpdated,
   savingVisibility,
   savingMetadata,
   savingStepId,
@@ -374,6 +376,11 @@ function TenantDetail({
       {isPivot ? (
         <>
           <PivotTagCatalogPanel />
+          <PivotCrewConfigPanel
+            tenantKey={tenant.tenantKey}
+            storedOverrides={tenant.pivotCrewConfig}
+            onSaved={onTenantUpdated}
+          />
           <PivotReferralCodesPanel tenantKey={tenant.tenantKey} />
         </>
       ) : null}
@@ -735,6 +742,7 @@ function TenantManagementPage() {
                 onConfirmStep={confirmManualStep}
                 onOpenLifecycle={openLifecycleModal}
                 onOpenMetadata={openMetadataModal}
+                onTenantUpdated={refetch}
                 savingVisibility={savingVisibilityKey === selected.tenantKey}
                 savingMetadata={savingMetadataKey === selected.tenantKey}
                 savingStepId={savingStepId}

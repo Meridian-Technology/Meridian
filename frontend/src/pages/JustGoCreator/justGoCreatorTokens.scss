@@ -1,0 +1,34 @@
+/**
+ * Just Go Creator Console — admin shell tokens (Task 0.2).
+ *
+ * Motif pass, not scrapbook recreation:
+ * - Borrow cream / ink / accent from the consumer Just Go palette.
+ * - Keep a calm admin canvas (phase rail, tables, forms later).
+ * - Do NOT port tilted scrapbook cards, burst stickers, or neo-brutalist clutter.
+ *
+ * Wordmark: use `assets/pivot/just-go-wordmark-dark.svg` on cream surfaces.
+ * Optional burst (`just-go-burst.svg`) only as a sparse accent — never as card chrome.
+ *
+ * Palette mirrors Meridian-Mobile `PIVOT_COLORS_LIGHT` (cream / ink / accent / burst).
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+
+.justgo-creator {
+  --jg-cream: #faf6ef;
+  --jg-cream-deep: #f0ebe0;
+  --jg-ink: #1a1714;
+  --jg-ink-muted: rgba(26, 23, 20, 0.72);
+  --jg-ink-soft: rgba(26, 23, 20, 0.5);
+  --jg-accent: #ff4f1f;
+  --jg-accent-hover: #e64518;
+  --jg-burst: #ff2a2a;
+  --jg-on-accent: #faf6ef;
+  --jg-border: rgba(26, 23, 20, 0.12);
+  --jg-surface: var(--jg-cream);
+  --jg-surface-raised: #fffdf8;
+  --jg-font-display: 'Instrument Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --jg-font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --jg-radius: 4px;
+  --jg-shell-max: 1120px;
+}

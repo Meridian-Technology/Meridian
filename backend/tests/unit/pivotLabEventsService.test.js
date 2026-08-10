@@ -8,11 +8,19 @@ jest.mock('../../services/tenantConfigService', () => ({
 jest.mock('../../services/pivotReferralCodeService', () => ({
   isPivotTenant: jest.fn(),
 }));
+jest.mock('../../services/pivotCatalogPurgeService', () => ({
+  countPivotCatalogOutOfWeek: jest.fn(),
+}));
+jest.mock('../../utilities/pivotDropSchedule', () => ({
+  resolvePivotDropConfig: jest.fn(),
+}));
 
 const getModels = require('../../services/getModelService');
 const { connectToDatabase } = require('../../connectionsManager');
 const { getMergedTenants } = require('../../services/tenantConfigService');
 const { isPivotTenant } = require('../../services/pivotReferralCodeService');
+const { countPivotCatalogOutOfWeek } = require('../../services/pivotCatalogPurgeService');
+const { resolvePivotDropConfig } = require('../../utilities/pivotDropSchedule');
 const {
   listPivotLabEvents,
   serializeLabEvent,
@@ -24,6 +32,8 @@ describe('pivotLabEventsService', () => {
     jest.clearAllMocks();
     isPivotTenant.mockImplementation((tenant) => tenant?.tenantType === 'pivot');
     connectToDatabase.mockResolvedValue({});
+    countPivotCatalogOutOfWeek.mockResolvedValue({ count: 2 });
+    resolvePivotDropConfig.mockReturnValue({ dayOfWeek: 4, timezone: 'UTC' });
   });
 
   describe('serializeLabEvent', () => {
@@ -36,6 +46,32 @@ describe('pivotLabEventsService', () => {
         externalOpens: 0,
         externalOpenUsers: 0,
       });
+      expect(row.platformManaged).toBe(false);
+      expect(row.createdByUserId).toBeNull();
+      expect(row.creatorSubmittedAt).toBeNull();
+    });
+
+    it('surfaces Just Go host-created provenance for curation', () => {
+      const row = serializeLabEvent({
+        _id: 'e2',
+        name: 'Rooftop Set',
+        customFields: {
+          pivot: {
+            source: 'justgo',
+            platformManaged: false,
+            createdByUserId: 'user-abc',
+            creatorSubmittedAt: '2026-08-08T18:00:00.000Z',
+            host: { name: 'Maya' },
+            ingestStatus: 'draft',
+            batchWeek: '2026-W32',
+          },
+        },
+      });
+      expect(row.source).toBe('justgo');
+      expect(row.platformManaged).toBe(false);
+      expect(row.createdByUserId).toBe('user-abc');
+      expect(row.creatorSubmittedAt).toBe('2026-08-08T18:00:00.000Z');
+      expect(row.organizerName).toBe('Maya');
     });
   });
 
@@ -111,6 +147,8 @@ describe('pivotLabEventsService', () => {
         externalOpens: 0,
         externalOpenUsers: 0,
       });
+      expect(result.data.outOfWeekCount).toBe(2);
+      expect(countPivotCatalogOutOfWeek).toHaveBeenCalledWith('nyc', '2026-W27', 4);
     });
   });
 });

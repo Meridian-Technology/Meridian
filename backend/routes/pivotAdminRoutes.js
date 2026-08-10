@@ -11,6 +11,7 @@ const {
   getTenantEventPerformance,
 } = require('../services/pivotAdminOverviewService');
 const { getTenantInsights } = require('../services/pivotTenantInsightsService');
+const { getTenantCrewMetrics } = require('../services/pivotCrewMetricsService');
 const {
   releaseBatch,
   unreleaseBatch,
@@ -49,7 +50,11 @@ const {
   publishBatchIngestEvents,
   updateIngestEvent,
 } = require('../services/pivotIngestPublishService');
-const { purgePivotCatalog } = require('../services/pivotCatalogPurgeService');
+const {
+  purgePivotCatalog,
+  deletePivotCatalogEvent,
+  purgePivotCatalogOutOfWeek,
+} = require('../services/pivotCatalogPurgeService');
 const { listPivotTags, seedPivotTagCatalog } = require('../services/pivotTagCatalogService');
 const {
   suggestPivotEventTags,
@@ -66,6 +71,14 @@ const {
   logPivotServiceReject,
   logPivotServiceSuccess,
 } = require('../utilities/pivotLogger');
+const { getMergedTenants } = require('../services/tenantConfigService');
+const { isPivotTenant } = require('../services/pivotReferralCodeService');
+const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
+const {
+  listCreatorGrants,
+  grantCreator,
+  revokeCreator,
+} = require('../services/pivotCreatorGrantService');
 
 const router = express.Router();
 
@@ -388,6 +401,38 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load tenant pivot insights.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/crew-metrics',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantCrewMetrics(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.query?.batchWeek,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/crew-metrics', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant crew metrics.',
       });
     }
   },
@@ -1309,6 +1354,82 @@ router.patch('/ingest/:eventId', verifyToken, requirePlatformAdmin, async (req, 
   }
 });
 
+router.delete('/ingest/:eventId', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await deletePivotCatalogEvent(
+      req.body?.tenantKey || req.query?.tenantKey,
+      req.params.eventId,
+    );
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('DELETE /admin/pivot/ingest/:eventId', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to delete pivot catalog event.',
+    });
+  }
+});
+
+router.post(
+  '/tenants/:tenantKey/catalog/purge-out-of-week',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const tenantKey = req.params.tenantKey?.trim()?.toLowerCase();
+      const pivotTenants = (await getMergedTenants(req)).filter(isPivotTenant);
+      const tenant = pivotTenants.find((row) => row.tenantKey === tenantKey);
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pivot tenant not found.',
+          code: 'TENANT_NOT_FOUND',
+        });
+      }
+
+      const dropConfig = resolvePivotDropConfig(tenant);
+      const result = await purgePivotCatalogOutOfWeek(
+        tenantKey,
+        req.body?.batchWeek,
+        dropConfig.dayOfWeek,
+      );
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/catalog/purge-out-of-week',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to purge out-of-range pivot catalog events.',
+      });
+    }
+  },
+);
+
 router.post('/dev/purge-catalog', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
     const result = await purgePivotCatalog(req, {
@@ -1361,5 +1482,94 @@ router.get('/snapshots/:batchWeek', verifyToken, requirePlatformAdmin, async (re
     });
   }
 });
+
+/** Just Go Creator grants — API-only v0 (Task 1.1). */
+router.get(
+  '/tenants/:tenantKey/creators',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listCreatorGrants(req, req.params.tenantKey, {
+        status: req.query?.status,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/creators', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to list Just Go creators.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/creators',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await grantCreator(req, req.params.tenantKey, req.body || {});
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(result.reactivated ? 200 : 201).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/creators', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to grant Just Go creator access.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/tenants/:tenantKey/creators/:globalUserId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await revokeCreator(
+        req,
+        req.params.tenantKey,
+        req.params.globalUserId,
+      );
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError(
+        'DELETE /admin/pivot/tenants/:tenantKey/creators/:globalUserId',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to revoke Just Go creator access.',
+      });
+    }
+  },
+);
 
 module.exports = router;

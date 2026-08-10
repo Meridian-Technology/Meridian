@@ -11,6 +11,12 @@ jest.mock('../../middlewares/verifyToken', () => ({
   },
 }));
 
+jest.mock('../../services/pivotEntryService', () => ({
+  listPivotCities: jest.fn(),
+  resolvePivotEntry: jest.fn(),
+  redeemPivotEntry: jest.fn(),
+}));
+
 jest.mock('../../services/pivotReferralCodeService', () => ({
   validateReferralCode: jest.fn(),
   redeemReferralCode: jest.fn(),
@@ -19,6 +25,10 @@ jest.mock('../../services/pivotReferralCodeService', () => ({
 jest.mock('../../services/pivotFeedService', () => ({
   getPivotFeed: jest.fn(),
   getPivotEventFriends: jest.fn(),
+}));
+
+jest.mock('../../services/pivotCrossCrewService', () => ({
+  getPivotEventCrossCrewOverlap: jest.fn(),
 }));
 
 jest.mock('../../services/pivotExploreService', () => ({
@@ -46,6 +56,11 @@ jest.mock('../../services/pivotConfigService', () => ({
   getPivotConfig: jest.fn(),
 }));
 
+jest.mock('../../services/pivotWeekRitualService', () => ({
+  getPivotWeekRitual: jest.fn(),
+  RITUAL_MIN_APP_VERSION: '2.0.0',
+}));
+
 jest.mock('../../services/pivotTagCatalogService', () => ({
   listPivotTags: jest.fn(),
 }));
@@ -64,8 +79,14 @@ jest.mock('../../services/pivotFriendService', () => ({
   declinePivotFriendRequest: jest.fn(),
 }));
 
+const {
+  listPivotCities,
+  resolvePivotEntry,
+  redeemPivotEntry,
+} = require('../../services/pivotEntryService');
 const { validateReferralCode, redeemReferralCode } = require('../../services/pivotReferralCodeService');
 const { getPivotFeed } = require('../../services/pivotFeedService');
+const { getPivotEventCrossCrewOverlap } = require('../../services/pivotCrossCrewService');
 const { getPivotExplore } = require('../../services/pivotExploreService');
 const {
   recordFeedAction,
@@ -80,6 +101,7 @@ const {
   submitEventFeedback,
 } = require('../../services/pivotFeedbackService');
 const { getPivotConfig } = require('../../services/pivotConfigService');
+const { getPivotWeekRitual } = require('../../services/pivotWeekRitualService');
 const { listPivotTags } = require('../../services/pivotTagCatalogService');
 const {
   getPivotProfileInterests,
@@ -99,6 +121,81 @@ function buildBaseApp() {
   app.use('/pivot', pivotRoutes);
   return app;
 }
+
+describe('pivotRoutes GET /pivot/cities', () => {
+  beforeEach(() => {
+    listPivotCities.mockReset();
+  });
+
+  it('returns 200 with city list', async () => {
+    listPivotCities.mockResolvedValue({
+      data: {
+        cities: [
+          {
+            tenantKey: 'nyc',
+            subdomain: 'nyc',
+            cityDisplayName: 'New York City',
+            status: 'active',
+            statusMessage: '',
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/cities');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.cities).toHaveLength(1);
+  });
+});
+
+describe('pivotRoutes POST /pivot/entry', () => {
+  beforeEach(() => {
+    resolvePivotEntry.mockReset();
+  });
+
+  it('returns 200 with entry payload', async () => {
+    resolvePivotEntry.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        subdomain: 'nyc',
+        cityDisplayName: 'New York City',
+        batchWeek: null,
+        referralAttribution: false,
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/entry')
+      .send({ tenantKey: 'nyc' });
+
+    expect(response.statusCode).toBe(200);
+    expect(resolvePivotEntry).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ tenantKey: 'nyc' }),
+    );
+  });
+});
+
+describe('pivotRoutes POST /pivot/entry/redeem', () => {
+  beforeEach(() => {
+    redeemPivotEntry.mockReset();
+  });
+
+  it('returns 200 for open entry redeem', async () => {
+    redeemPivotEntry.mockResolvedValue({
+      data: { entered: true, referralRedeemed: false },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/entry/redeem')
+      .set('Authorization', 'Bearer test-token')
+      .send({});
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.entered).toBe(true);
+  });
+});
 
 describe('pivotRoutes GET /pivot/referral/preview', () => {
   beforeEach(() => {
@@ -604,6 +701,18 @@ describe('pivotRoutes GET /pivot/week-recap', () => {
             userIntent: 'interested',
           },
         ],
+        crewPicks: [
+          {
+            crewId: '665a1b2c3d4e5f6789012346',
+            crewName: 'Friday Plans',
+            judgementStatus: 'confirmed',
+            event: {
+              id: '665a1b2c3d4e5f6789012347',
+              name: 'Jazz Night',
+              startTime: '2026-07-24T22:00:00.000Z',
+            },
+          },
+        ],
       },
     });
 
@@ -613,6 +722,7 @@ describe('pivotRoutes GET /pivot/week-recap', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body.data.events).toHaveLength(1);
+    expect(response.body.data.crewPicks).toHaveLength(1);
     expect(getWeekRecap).toHaveBeenCalledWith(
       expect.objectContaining({ school: 'nyc' }),
       { batchWeek: '2026-W22' },
@@ -632,6 +742,34 @@ describe('pivotRoutes GET /pivot/week-recap', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body.code).toBe('INVALID_BATCH_WEEK');
+  });
+});
+
+describe('pivotRoutes GET /pivot/events/:eventId/cross-crew-overlap', () => {
+  beforeEach(() => {
+    getPivotEventCrossCrewOverlap.mockReset();
+  });
+
+  it('returns overlap payload for an event', async () => {
+    getPivotEventCrossCrewOverlap.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W22',
+        crossCrewOverlap: true,
+        surfaceCopyKey: 'another_crew_going',
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/events/665a1b2c3d4e5f6789012345/cross-crew-overlap?batchWeek=2026-W22')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.crossCrewOverlap).toBe(true);
+    expect(getPivotEventCrossCrewOverlap).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      '665a1b2c3d4e5f6789012345',
+      { batchWeek: '2026-W22' },
+    );
   });
 });
 
@@ -750,6 +888,74 @@ describe('pivotRoutes POST /pivot/dev/reset-week-actions', () => {
       expect.objectContaining({ school: 'nyc' }),
       expect.objectContaining({ batchWeek: undefined }),
     );
+  });
+});
+
+describe('pivotRoutes GET /pivot/week-ritual', () => {
+  beforeEach(() => {
+    getPivotWeekRitual.mockReset();
+  });
+
+  it('returns 426 when X-App-Version is missing', async () => {
+    const response = await request(buildBaseApp())
+      .get('/pivot/week-ritual')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(426);
+    expect(response.body.code).toBe('APP_UPGRADE_REQUIRED');
+    expect(getPivotWeekRitual).not.toHaveBeenCalled();
+  });
+
+  it('returns 426 when X-App-Version is below ritual minimum', async () => {
+    const response = await request(buildBaseApp())
+      .get('/pivot/week-ritual')
+      .set('Authorization', 'Bearer test-token')
+      .set('X-App-Version', '1.9.9');
+
+    expect(response.statusCode).toBe(426);
+    expect(response.body.minAppVersion).toBe('2.0.0');
+  });
+
+  it('returns 200 with ritual payload for supported app versions', async () => {
+    getPivotWeekRitual.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W30',
+        phase: 'swiping',
+        deck: { remaining: 2, complete: false, holdUntil: null },
+        crews: [{ crewId: '665a1b2c3d4e5f6789012345', name: 'Friday Plans' }],
+        decideQueueOrder: [],
+        actions: { openDeck: true, openDecide: false, openRecap: false },
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/week-ritual?batchWeek=2026-W30')
+      .set('Authorization', 'Bearer test-token')
+      .set('X-App-Version', '2.0.0');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.phase).toBe('swiping');
+    expect(getPivotWeekRitual).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      expect.objectContaining({ batchWeek: '2026-W30' }),
+    );
+  });
+
+  it('returns 400 when ritual service rejects batchWeek', async () => {
+    getPivotWeekRitual.mockResolvedValue({
+      error: 'batchWeek must be ISO format YYYY-Www.',
+      status: 400,
+      code: 'INVALID_BATCH_WEEK',
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/week-ritual?batchWeek=bad')
+      .set('Authorization', 'Bearer test-token')
+      .set('X-App-Version', '2.0.0');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('INVALID_BATCH_WEEK');
   });
 });
 

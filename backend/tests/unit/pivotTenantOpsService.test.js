@@ -5,6 +5,9 @@ jest.mock('../../services/pivotAdminOverviewService', () => ({
 jest.mock('../../services/pivotTenantInsightsService', () => ({
   getTenantInsights: jest.fn(),
 }));
+jest.mock('../../services/pivotCrewMetricsService', () => ({
+  getTenantCrewMetrics: jest.fn(),
+}));
 jest.mock('../../services/pivotBatchReadinessService', () => ({
   getBatchReadiness: jest.fn(),
 }));
@@ -50,6 +53,7 @@ const {
   getTenantEventPerformance,
 } = require('../../services/pivotAdminOverviewService');
 const { getTenantInsights } = require('../../services/pivotTenantInsightsService');
+const { getTenantCrewMetrics } = require('../../services/pivotCrewMetricsService');
 const { getBatchReadiness } = require('../../services/pivotBatchReadinessService');
 const {
   getJourneyOverview,
@@ -91,6 +95,14 @@ describe('pivotTenantOpsService', () => {
       data: { events: [{ eventId: 'e1' }] },
     });
     getTenantInsights.mockResolvedValue({ data: { insights: [] } });
+    getTenantCrewMetrics.mockResolvedValue({
+      data: {
+        batchWeek: '2026-W28',
+        kpis: {
+          crewCreationRate: { rate: 0.5, usersWithCrew: 2, wau: 4 },
+        },
+      },
+    });
     getBatchReadiness.mockResolvedValue({ data: { score: 80 } });
     getJourneyOverview.mockResolvedValue({
       data: { kpis: { medianCardsSeen: 4 } },
@@ -112,6 +124,7 @@ describe('pivotTenantOpsService', () => {
         'insights',
         'readiness',
         'retention',
+        'crewMetrics',
       ]);
     });
 
@@ -192,6 +205,8 @@ describe('pivotTenantOpsService', () => {
       expect(result.data.overview.kpis.activeUsers).toBe(3);
       expect(result.data.performance.events).toHaveLength(1);
       expect(result.data.retention.tenant.tenantKey).toBe('nyc');
+      expect(result.data.crewMetrics.kpis.crewCreationRate.rate).toBe(0.5);
+      expect(getTenantCrewMetrics).toHaveBeenCalled();
       expect(getJourneyOverview).not.toHaveBeenCalled();
       expect(listCurationJobs).not.toHaveBeenCalled();
     });

@@ -7,6 +7,8 @@ const {
   resolvePivotLiveBatchWeek,
   resolvePivotUpcomingDropBatchWeek,
 } = require('../utilities/pivotDropSchedule');
+const { mergePivotCrewConfig } = require('../utilities/pivotCrewConfig');
+const { mergePivotMobileConfig } = require('../utilities/pivotMobileConfig');
 
 function buildDropSchedulePayload(tenant, batchWeek, now = new Date()) {
   const resolved = resolvePivotDropInstant(tenant, batchWeek, now);
@@ -37,6 +39,14 @@ async function getPivotConfig(req, options = {}) {
     return { error: 'Tenant not found.', status: 404 };
   }
   if (!isPivotTenant(tenant)) {
+    console.warn('[pivot] GET /pivot/config non-pivot tenant', {
+      tenantKey: tenant.tenantKey,
+      tenantType: tenant.tenantType,
+      pivotPilot: tenant.pivotPilot === true,
+      reqSchool: tenantKey,
+      xTenant: req.headers?.['x-tenant'] || null,
+      host: req.headers?.host || null,
+    });
     return { error: 'Pivot config is only available for pivot city tenants.', status: 400 };
   }
 
@@ -57,6 +67,9 @@ async function getPivotConfig(req, options = {}) {
       cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
       liveBatchWeek,
       dropSchedule: buildDropSchedulePayload(tenant, dropScheduleBatchWeek, now),
+      liveDropSchedule: buildDropSchedulePayload(tenant, liveBatchWeek, now),
+      crew: mergePivotCrewConfig(tenant.pivotCrewConfig),
+      mobile: mergePivotMobileConfig(tenant.pivotMobileConfig),
     },
   };
 }

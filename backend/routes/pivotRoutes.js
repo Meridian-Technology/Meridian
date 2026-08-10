@@ -2,9 +2,11 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { validateReferralCode, redeemReferralCode } = require('../services/pivotReferralCodeService');
 const { getPivotFeed, getPivotEventFriends } = require('../services/pivotFeedService');
+const { getPivotEventCrossCrewOverlap } = require('../services/pivotCrossCrewService');
 const { getPivotExplore } = require('../services/pivotExploreService');
 const {
   recordFeedAction,
+  recordFeedActions,
   recordExternalOpen,
   confirmRegistered,
   getWeekRecap,
@@ -17,6 +19,11 @@ const {
   listUserPivotEventFeedback,
 } = require('../services/pivotFeedbackService');
 const { getPivotConfig } = require('../services/pivotConfigService');
+const {
+  getPivotWeekRitual,
+  RITUAL_MIN_APP_VERSION,
+} = require('../services/pivotWeekRitualService');
+const { requireMinAppVersion } = require('../middlewares/requireMinAppVersion');
 const { listPivotTags } = require('../services/pivotTagCatalogService');
 const {
   getPivotProfileInterests,
@@ -33,9 +40,17 @@ const {
   acceptPivotFriendRequest,
   declinePivotFriendRequest,
 } = require('../services/pivotFriendService');
+const { matchPivotContacts } = require('../services/pivotContactMatchService');
+const {
+  listPivotCities,
+  resolvePivotEntry,
+  redeemPivotEntry,
+} = require('../services/pivotEntryService');
 const {
   pivotReferralValidateRateLimit,
 } = require('../middlewares/pivotReferralValidateRateLimit');
+const pivotCrewRoutes = require('./pivotCrewRoutes');
+const pivotCreatorRoutes = require('./pivotCreatorRoutes');
 
 const { verifyToken } = require('../middlewares/verifyToken');
 const {
@@ -48,6 +63,80 @@ const {
 const router = express.Router();
 
 router.use(pivotRequestLogger);
+
+router.use('/crews', pivotCrewRoutes);
+router.use('/creator', pivotCreatorRoutes);
+
+router.get('/cities', async (req, res) => {
+  try {
+    const result = await listPivotCities(req);
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/cities', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load just go cities.',
+    });
+  }
+});
+
+router.post('/entry', async (req, res) => {
+  try {
+    const result = await resolvePivotEntry(req, {
+      tenantKey: req.body?.tenantKey,
+      subdomain: req.body?.subdomain,
+      referralCode: req.body?.referralCode || req.body?.code,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/entry', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to resolve city entry.',
+    });
+  }
+});
+
+router.post('/entry/redeem', verifyToken, async (req, res) => {
+  try {
+    const result = await redeemPivotEntry(req, {
+      referralCode: req.body?.referralCode || req.body?.code,
+      referredByUserId: req.body?.referredByUserId,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/entry/redeem', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to record city entry.',
+    });
+  }
+});
 
 router.get('/referral/preview', pivotReferralValidateRateLimit, async (req, res) => {
   try {
@@ -272,6 +361,45 @@ router.get('/config', verifyToken, async (req, res) => {
   }
 });
 
+router.get(
+  '/week-ritual',
+  verifyToken,
+  requireMinAppVersion(RITUAL_MIN_APP_VERSION),
+  async (req, res) => {
+    try {
+      const result = await getPivotWeekRitual(req, { batchWeek: req.query.batchWeek });
+      if (result.error) {
+        logPivotServiceReject('GET /pivot/week-ritual', result, req, {
+          batchWeek: req.query.batchWeek,
+        });
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      logPivotServiceSuccess('GET /pivot/week-ritual', req, {
+        batchWeek: result.data?.batchWeek,
+        phase: result.data?.phase,
+        crewCount: result.data?.crews?.length ?? 0,
+      });
+
+      res.set('Cache-Control', 'private, max-age=15');
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /pivot/week-ritual', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load week ritual.',
+      });
+    }
+  },
+);
+
 router.get('/explore', verifyToken, async (req, res) => {
   try {
     const result = await getPivotExplore(req, {
@@ -396,6 +524,39 @@ router.post('/feed/action', verifyToken, async (req, res) => {
   }
 });
 
+router.post('/feed/actions', verifyToken, async (req, res) => {
+  try {
+    const result = await recordFeedActions(req, req.body);
+    if (result.error) {
+      logPivotServiceReject('POST /pivot/feed/actions', result, req, {
+        actionCount: Array.isArray(req.body?.actions) ? req.body.actions.length : 0,
+      });
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    logPivotServiceSuccess('POST /pivot/feed/actions', req, {
+      accepted: result.data?.accepted,
+      failed: result.data?.failed,
+      received: result.data?.received,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/feed/actions', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to record pivot intents.',
+    });
+  }
+});
+
 /**
  * Batch durable card impressions (Task 1.2). Fire-and-forget writes —
  * always returns quickly; failures are logged server-side and never block swipe.
@@ -422,7 +583,7 @@ router.post(
         });
       }
 
-      const result = recordPivotImpressions(req, req.body);
+      const result = await recordPivotImpressions(req, req.body);
       if (result.error) {
         logPivotServiceReject('POST /pivot/interactions/impressions', result, req, {
           received: Array.isArray(req.body?.impressions)
@@ -749,6 +910,30 @@ router.post('/friends/request', verifyToken, async (req, res) => {
   }
 });
 
+router.post('/contacts/match', verifyToken, async (req, res) => {
+  try {
+    const result = await matchPivotContacts(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/contacts/match', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to match contacts.',
+    });
+  }
+});
+
 router.get('/events/:eventId/friends', verifyToken, async (req, res) => {
   try {
     const result = await getPivotEventFriends(req, req.params.eventId);
@@ -773,6 +958,33 @@ router.get('/events/:eventId/friends', verifyToken, async (req, res) => {
   }
 });
 
+router.get('/events/:eventId/cross-crew-overlap', verifyToken, async (req, res) => {
+  try {
+    const result = await getPivotEventCrossCrewOverlap(req, req.params.eventId, {
+      batchWeek: req.query.batchWeek,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/events/:eventId/cross-crew-overlap', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load cross-crew overlap.',
+    });
+  }
+});
+
+/** @deprecated remove after min store version — new binary uses recap embedded in GET /pivot/week-ritual */
 router.get('/week-recap', verifyToken, async (req, res) => {
   try {
     const result = await getWeekRecap(req, { batchWeek: req.query.batchWeek });

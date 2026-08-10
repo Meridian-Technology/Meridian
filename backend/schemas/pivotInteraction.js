@@ -23,6 +23,7 @@ const PIVOT_INTERACTION_RETRIEVALS = Object.freeze([
   'similar',
   'for_you_rail',
   'friends_rail',
+  'crews_rail',
   'tag_rail',
   'curated_rail',
 ]);
@@ -128,6 +129,16 @@ const pivotInteractionSchema = new mongoose.Schema(
       type: Number,
       min: 1,
       max: 5,
+      default: null,
+    },
+    /** Active crew ids for the viewer at write time (Task 3.4 — deck eval). */
+    crewIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PivotCrew' }],
+    },
+    /** Shipped `crew.version` from GET /pivot/config when crewIds present. */
+    crewConfigVersion: {
+      type: Number,
+      min: 1,
       default: null,
     },
   },

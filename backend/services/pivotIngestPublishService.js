@@ -865,6 +865,7 @@ module.exports = {
   buildEventPayload,
   normalizePublishUrl,
   resolvePivotTenant,
+  resolveCatalogOrgId,
   resolveCreateIngestStatus,
   DEFAULT_INGEST_STATUS,
   RELEASE_NOW_CONFIRM_TOKEN,
