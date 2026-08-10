@@ -22,6 +22,22 @@ export {
   validateListingForm,
 } from './justGoCreatorFormUtils';
 export {
+  buildInsightsChart,
+  buildIntentFunnel,
+  formatConversion,
+  totalViewCount,
+} from './workspace/insightsUtils';
+export {
+  CREATOR_PHASES,
+  CREATOR_PHASE_ORDER,
+  WORKSPACE_TABS,
+  WORKSPACE_TAB_IDS,
+  buildPublicEventUrl,
+  inferCreatorPhase,
+  resolvePhaseRail,
+  resolveWorkspaceNav,
+} from './workspace/workspaceUtils';
+export {
   JUSTGO_CREATOR_ROUTES,
   JUSTGO_CREATOR_API_PREFIX,
   JUSTGO_OPS_CURATION_ROUTE,

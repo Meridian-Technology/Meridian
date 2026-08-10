@@ -4,12 +4,13 @@ import justGoWordmark from '../../assets/pivot/just-go-wordmark-dark.svg';
 import { getCurrentTenantDisplayName, getCurrentTenantKey } from '../../config/tenantRedirect';
 import useAuth from '../../hooks/useAuth';
 import justGoCreatorCopy from './justGoCreatorCopy';
+import { DemoIndicator } from './demo';
 import { JUSTGO_CREATOR_ROUTES } from './justGoCreatorRoutes';
 import './JustGoCreatorShell.scss';
 
 /**
- * Calm admin shell for Just Go Creator.
- * Motif pass only — see BRANDING.md / justGoCreatorTokens.scss.
+ * Just Go Creator console chrome — white canvas, ink type, orange pill CTA.
+ * Reskin register only; see BRANDING.md / justGoCreatorTokens.scss.
  */
 function JustGoCreatorShell() {
   const navigate = useNavigate();
@@ -47,6 +48,7 @@ function JustGoCreatorShell() {
         </Link>
 
         <nav className="justgo-creator__nav" aria-label="Creator">
+          {DemoIndicator ? <DemoIndicator /> : null}
           <NavLink
             to={JUSTGO_CREATOR_ROUTES.home}
             end
