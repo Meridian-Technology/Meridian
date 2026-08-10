@@ -8,6 +8,7 @@ const {
   serializePerformanceEvent,
 } = require('./pivotAdminOverviewService');
 const { shiftIsoWeek } = require('../utilities/pivotIsoWeek');
+const { curationHref, journeysHref } = require('../utilities/pivotAdminHrefs');
 const { PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
 
 const DEFAULT_TARGET_EVENT_COUNT = 40;
@@ -23,17 +24,6 @@ function catalogEventsQuery(batchWeek) {
     ...labEventsQuery(batchWeek),
     status: { $in: PIVOT_EVENT_STATUSES },
   };
-}
-
-function curationHref(tenantKey, batchWeek, filter) {
-  const params = new URLSearchParams({ page: '1', batchWeek });
-  if (filter) params.set('filter', filter);
-  return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
-}
-
-function journeysHref(tenantKey, batchWeek) {
-  const params = new URLSearchParams({ page: '2', batchWeek });
-  return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
 }
 
 function isDeckEligible(ingestStatus) {
