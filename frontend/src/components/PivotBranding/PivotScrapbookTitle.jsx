@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import justGoBurst from '../../../assets/pivot/just-go-burst.svg';
+import justGoBurst from '../../assets/pivot/just-go-burst.svg';
 import './PivotScrapbookTitle.scss';
 
 const SHAPE_INSET = 5;
@@ -187,6 +187,9 @@ function ScrapbookStrip({ line, layout }) {
 
 /**
  * Neo-brutalist collage title — cut-paper strips + burst, matching mobile event detail.
+ *
+ * Shared Just Go brand primitive: ops tenant dashboard headers and creator-console flare
+ * surfaces (invite gate, empty states) both render it.
  *
  * @param {object} props
  * @param {string} props.title

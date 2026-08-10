@@ -1,0 +1,183 @@
+/**
+ * Just Go Creator shared controls — reskin register.
+ *
+ * Small primitives reused across creator surfaces (list, form, and the 4.3 workspace): toggle
+ * chips, ingest status pills, and form fields. Imported once by `JustGoCreatorShell.scss` so page
+ * stylesheets can use them without re-declaring or importing anything.
+ *
+ * Pops are deliberately absent here — these controls appear in dense views. `--jg-burst` is the
+ * one exception, used only to mark a validation error.
+ */
+
+/* --- Utilities --- */
+
+/** Same treatment as the ops curation page, so both Pivot surfaces hide labels identically. */
+.jg-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Toggle chip (list filters, tag picker) --- */
+
+.jg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.1rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius-pill);
+  background: var(--jg-surface);
+  color: var(--jg-ink-muted);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--jg-dur-hover) ease,
+    border-color var(--jg-dur-hover) ease,
+    color var(--jg-dur-hover) ease;
+}
+
+.jg-chip:hover:not(.jg-chip--active) {
+  background: var(--jg-hover);
+  color: var(--jg-ink);
+}
+
+.jg-chip--active {
+  border-color: var(--jg-border-strong);
+  background: var(--jg-ink);
+  color: #ffffff;
+}
+
+.jg-chip__count {
+  font-family: var(--jg-font-mono);
+  font-size: 0.74rem;
+  line-height: 1;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--jg-radius-sharp);
+  background: var(--jg-surface-subtle);
+  color: var(--jg-ink-muted);
+}
+
+.jg-chip--active .jg-chip__count {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+/* --- Ingest status pill (ink + accent only) --- */
+
+.jg-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.5rem;
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius-sharp);
+  font-family: var(--jg-font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.jg-status--draft {
+  color: var(--jg-ink-muted);
+  background: var(--jg-surface-subtle);
+}
+
+.jg-status--staged {
+  color: #ffffff;
+  background: var(--jg-ink);
+  border-color: var(--jg-ink);
+}
+
+.jg-status--published {
+  color: var(--jg-on-accent);
+  background: var(--jg-accent);
+  border-color: var(--jg-accent);
+}
+
+.jg-status--unknown {
+  color: var(--jg-ink-soft);
+  background: var(--jg-surface);
+}
+
+/* --- Form fields --- */
+
+.jg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.15rem;
+}
+
+.jg-field__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--jg-ink);
+}
+
+.jg-field__hint,
+.jg-field__error {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.jg-field__hint {
+  color: var(--jg-ink-soft);
+}
+
+.jg-field__error {
+  color: var(--jg-burst);
+  font-weight: 500;
+}
+
+.jg-input {
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius);
+  background: var(--jg-surface);
+  color: var(--jg-ink);
+  font: inherit;
+  font-size: 0.95rem;
+  transition:
+    border-color var(--jg-dur-hover) ease,
+    box-shadow var(--jg-dur-hover) ease;
+}
+
+.jg-input::placeholder {
+  color: var(--jg-ink-soft);
+}
+
+.jg-input:focus {
+  outline: none;
+  border-color: var(--jg-ink);
+  box-shadow: 0 0 0 3px var(--jg-hover);
+}
+
+.jg-input--area {
+  min-height: 6rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.jg-field--invalid .jg-input {
+  border-color: var(--jg-burst);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jg-chip,
+  .jg-input {
+    transition-duration: 0.01ms;
+  }
+}

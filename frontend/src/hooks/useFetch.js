@@ -70,11 +70,16 @@ export const authenticatedRequest = async (url, options = {}) => {
 /**
  * @param options.params Query params. Inline `{ ... }` is safe — compared by serialized value, not reference.
  * @param options.cache Cache config. Inline `{ enabled: false }` is safe — compared by enabled/ttlMs, not reference.
+ * @returns `{ data, loading, error, errorCode, errorStatus, refetch }` — `errorCode` is the
+ * backend's stable `code` from the error body, `errorStatus` the HTTP status. Use them when the
+ * UI has to branch on a specific failure (for example a 403 gate) instead of parsing `error`.
  */
 export const useFetch = (url, options = { method: "GET", data: null }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [errorCode, setErrorCode] = useState(null);
+  const [errorStatus, setErrorStatus] = useState(null);
 
   const paramsKey = useMemo(() => stableSerialize(options.params || {}), [options.params]);
   const dataKey = useMemo(() => stableSerialize(options.data ?? null), [options.data]);
@@ -131,6 +136,8 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
     
     if (!silent) setLoading(true);
     setError(null);
+    setErrorCode(null);
+    setErrorStatus(null);
     try {
       const response = await axios({
         url,
@@ -177,14 +184,20 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
             console.log('🚫 Refresh token expired or invalid, redirecting to login');
             window.location.href = '/login';
             setError('Authentication required');
+            setErrorCode(refreshCode || 'REFRESH_FAILED');
+            setErrorStatus(refreshError.response?.status ?? 401);
           } else {
             // Do not hard logout on transient refresh failures.
             console.log('⚠️ Refresh temporarily unavailable, preserving current auth state');
             setError('Session refresh temporarily unavailable');
+            setErrorCode('REFRESH_TEMPORARY_FAILURE');
+            setErrorStatus(refreshError.response?.status ?? null);
           }
         }
       } else {
         setError(err.message);
+        setErrorCode(err.response?.data?.code ?? null);
+        setErrorStatus(err.response?.status ?? null);
       }
     } finally {
       if (!silent && !signal?.aborted) setLoading(false);
@@ -198,5 +211,5 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
   }, [fetchData]);
 
   const refetch = useCallback((opts = {}) => fetchData({ bypassCache: true, ...opts }), [fetchData]);
-  return { data, loading, error, refetch };
+  return { data, loading, error, errorCode, errorStatus, refetch };
 };

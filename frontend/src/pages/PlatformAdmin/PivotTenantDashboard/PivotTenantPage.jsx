@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PivotDashBurst from './PivotDashBurst';
-import PivotScrapbookTitle from './PivotScrapbookTitle';
+import PivotScrapbookTitle from '../../../components/PivotBranding/PivotScrapbookTitle';
 import './PivotTenantPage.scss';
-import './PivotScrapbookTitle.scss';
+import '../../../components/PivotBranding/PivotScrapbookTitle.scss';
 
 const COLLAPSE_SCROLL_PX = 28;
 

@@ -1,0 +1,14 @@
+/**
+ * Just Go brand fonts — shared by every Just Go surface (ops dashboard, creator console).
+ *
+ * Les Flos Sans is the scrapbook/wordmark face from the consumer app. Import this partial
+ * wherever `--jg-font-flos` / `'Les Flos Sans'` is used so the face resolves.
+ */
+
+@font-face {
+  font-family: 'Les Flos Sans';
+  src: url('../../assets/pivot/fonts/LesFlosSans.otf') format('opentype');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}

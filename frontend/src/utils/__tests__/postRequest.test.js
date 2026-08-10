@@ -65,4 +65,30 @@ describe('apiRequest', () => {
 
     expect(response).toEqual({ error: 'Conflict happened', code: 409 });
   });
+
+  test('surfaces the backend stable code as errorCode so callers can branch on it', async () => {
+    axios.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: { message: 'At least one catalog tag is required.', code: 'TAGS_REQUIRED' },
+      },
+    });
+
+    const response = await apiRequest('/pivot/creator/events', { name: 'x' });
+
+    expect(response).toEqual({
+      error: 'At least one catalog tag is required.',
+      code: 400,
+      errorCode: 'TAGS_REQUIRED',
+    });
+  });
+
+  test('omits errorCode when the error body carries no code', async () => {
+    axios.mockRejectedValueOnce({ response: { status: 500, data: {} } });
+
+    const response = await apiRequest('/api/boom', {});
+
+    expect(response).not.toHaveProperty('errorCode');
+    expect(response).toEqual({ error: 'An error occurred', code: 500 });
+  });
 });
