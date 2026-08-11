@@ -42,7 +42,8 @@ venv/
 
 .vscode/
 
-scripts/
+scripts/*
+!scripts/seed-event-demo.js
 .env*
 .flaskenv*
 !.env.project

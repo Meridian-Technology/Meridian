@@ -10,10 +10,17 @@ const ExternalRoomSyncService = require('../services/externalRoomSyncService');
 const { resolveAnonymousEmail, resolveAnonymousName } = require('../services/eventAnnouncementService');
 const { getEffectivePolicy, assertOrgAllowsEventCreation, assertEventReservationReady } = require('../services/atlasPolicyService');
 
-const buildOrgEventScope = (orgId) => ([
-    { hostingId: orgId },
-    { collaboratorOrgs: { $elemMatch: { orgId, status: 'active' } } }
-]);
+const mongoose = require('mongoose');
+const toObjectId = (id) => {
+    try { return new mongoose.Types.ObjectId(String(id)); } catch { return id; }
+};
+const buildOrgEventScope = (orgId) => {
+    const oid = toObjectId(orgId);
+    return [
+        { hostingId: oid },
+        { collaboratorOrgs: { $elemMatch: { orgId: oid, status: 'active' } } }
+    ];
+};
 
 const buildScopedEventQuery = (orgId, eventId) => ({
     _id: eventId,
