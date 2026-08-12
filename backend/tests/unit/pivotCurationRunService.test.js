@@ -10,12 +10,16 @@ jest.mock('../../services/pivotIngestPublishService', () => ({
 jest.mock('../../services/pivotIngestPreviewService', () => ({
   previewIngestUrl: jest.fn(),
   MAX_CRAWL_BATCH_EVENTS: null,
+  GENERIC_SITE_PROVIDER: 'generic-site',
   resolveBatchLimit: (n) => {
     if (n == null || n === '') return null;
     const num = Number(n);
     if (!Number.isFinite(num) || num <= 0) return null;
     return Math.min(Math.floor(num), 10_000);
   },
+}));
+jest.mock('../../services/pivotSiteScrapeService', () => ({
+  isSiteScrapeConfigured: jest.fn(() => true),
 }));
 jest.mock('../../services/pivotBatchService', () => ({
   ensurePivotBatch: jest.fn(),
@@ -31,6 +35,7 @@ const {
   publishIngestEvent,
 } = require('../../services/pivotIngestPublishService');
 const { previewIngestUrl } = require('../../services/pivotIngestPreviewService');
+const { isSiteScrapeConfigured } = require('../../services/pivotSiteScrapeService');
 const { ensurePivotBatch } = require('../../services/pivotBatchService');
 const {
   startCurationJobRun,
@@ -38,6 +43,8 @@ const {
   executeCurationRun,
   resolveRunBatchWeek,
   upsertDiscoveredEntry,
+  ingestEntries,
+  summarizeIngest,
 } = require('../../services/pivotCurationRunService');
 
 const JOB_ID = '665a1b2c3d4e5f6789012345';
@@ -91,6 +98,7 @@ describe('pivotCurationRunService', () => {
     connectToDatabase.mockResolvedValue({});
     connectToGlobalDatabase.mockResolvedValue({});
     ensurePivotBatch.mockResolvedValue({ data: { batchWeek: '2026-W28', status: 'curating' } });
+    isSiteScrapeConfigured.mockReturnValue(true);
   });
 
   describe('resolveRunBatchWeek', () => {
@@ -118,6 +126,158 @@ describe('pivotCurationRunService', () => {
         now: new Date('2026-07-09T12:00:00.000Z'),
       });
       expect(result.batchWeek).toMatch(/^\d{4}-W\d{2}$/);
+    });
+  });
+
+  describe('ingestEntries', () => {
+    function entry(name, sourceUrl) {
+      return { draft: { name, sourceUrl }, sourceUrl };
+    }
+
+    it('creates the batch for each week the events land in', async () => {
+      publishIngestEvent
+        .mockResolvedValueOnce({ data: { batchWeek: '2026-W28', event: { _id: 'e1' } } })
+        .mockResolvedValueOnce({ data: { batchWeek: '2026-W29', event: { _id: 'e2' } } });
+
+      const result = await ingestEntries(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entries: [entry('A', 'https://x.test/a'), entry('B', 'https://x.test/b')],
+        defaultTags: ['nightlife'],
+      });
+
+      expect(result.stats.upserted).toBe(2);
+      expect(result.stats.byBatchWeek).toEqual({ '2026-W28': 1, '2026-W29': 1 });
+      expect(ensurePivotBatch).toHaveBeenCalledTimes(2);
+      // One crawl filling several weeks is normal, and the operator is told.
+      expect(result.stats.message).toContain('across 2 weeks');
+    });
+
+    it('pins everything to one week when forced, ensuring it up front', async () => {
+      publishIngestEvent.mockResolvedValue({
+        data: { batchWeek: '2026-W28', event: { _id: 'e1' } },
+      });
+
+      await ingestEntries(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        forceBatchWeek: true,
+        entries: [entry('A', 'https://x.test/a')],
+        defaultTags: [],
+      });
+
+      expect(ensurePivotBatch).toHaveBeenCalledTimes(1);
+      expect(ensurePivotBatch).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ batchWeek: '2026-W28' }),
+      );
+    });
+
+    it('counts a duplicate as skipped rather than failed', async () => {
+      publishIngestEvent.mockResolvedValue({
+        error: 'Event already exists.',
+        code: 'DUPLICATE_EVENT',
+      });
+
+      const result = await ingestEntries(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entries: [entry('A', 'https://x.test/a')],
+        defaultTags: [],
+      });
+
+      expect(result.stats.skipped).toBe(1);
+      expect(result.stats.failed).toBe(0);
+      expect(result.failures[0].code).toBe('DUPLICATE_EVENT');
+    });
+
+    it('lets one bad entry fail without ending the batch', async () => {
+      publishIngestEvent
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValueOnce({ data: { batchWeek: '2026-W28', event: { _id: 'e2' } } });
+
+      const result = await ingestEntries(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entries: [entry('A', 'https://x.test/a'), entry('B', 'https://x.test/b')],
+        defaultTags: [],
+      });
+
+      expect(result.stats.failed).toBe(1);
+      expect(result.stats.upserted).toBe(1);
+      expect(result.failures[0].code).toBe('UPSERT_EXCEPTION');
+    });
+
+    it('reports progress periodically so a watching UI sees movement', async () => {
+      publishIngestEvent.mockResolvedValue({
+        data: { batchWeek: '2026-W28', event: { _id: 'e' } },
+      });
+      const onProgress = jest.fn();
+
+      await ingestEntries(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entries: Array.from({ length: 20 }, (_, i) => entry(`E${i}`, `https://x.test/${i}`)),
+        defaultTags: [],
+        onProgress,
+      });
+
+      expect(onProgress).toHaveBeenCalledTimes(2);
+    });
+
+    it('tags events staged only when the caller has tags to give them', async () => {
+      publishIngestEvent.mockResolvedValue({
+        data: { batchWeek: '2026-W28', event: { _id: 'e' } },
+      });
+
+      await ingestEntries(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entries: [entry('A', 'https://x.test/a')],
+        defaultTags: [],
+      });
+      expect(publishIngestEvent).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          overrides: expect.objectContaining({ ingestStatus: 'draft' }),
+        }),
+      );
+
+      await ingestEntries(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entries: [entry('B', 'https://x.test/b')],
+        defaultTags: ['nightlife'],
+      });
+      // Never `published` — ingest always stops short of the feed.
+      expect(publishIngestEvent).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          overrides: expect.objectContaining({ ingestStatus: 'staged' }),
+        }),
+      );
+    });
+  });
+
+  describe('summarizeIngest', () => {
+    it('separates genuinely new events from refreshed ones', () => {
+      // `upserted` counts rows written either way, so a re-crawl of an
+      // established source would otherwise read as if it found everything anew.
+      expect(summarizeIngest({ upserted: 19, updated: 19 })).toMatchObject({
+        added: 0,
+        refreshed: 19,
+        phrase: '19 refreshed',
+      });
+      expect(summarizeIngest({ upserted: 6, updated: 2 })).toMatchObject({
+        added: 4,
+        refreshed: 2,
+        phrase: '4 new, 2 refreshed',
+      });
+      expect(summarizeIngest({ upserted: 3, updated: 0 })).toMatchObject({
+        added: 3,
+        phrase: '3 new',
+      });
+      expect(summarizeIngest({})).toMatchObject({ added: 0, phrase: 'nothing new' });
     });
   });
 
@@ -225,6 +385,62 @@ describe('pivotCurationRunService', () => {
 
       expect(result.code).toBe('PROVIDER_NOT_CRAWLABLE');
       expect(PivotCurationRun.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects generic-site jobs when website scraping is unconfigured', async () => {
+      isSiteScrapeConfigured.mockReturnValue(false);
+      PivotCurationJob.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          leanJob({
+            provider: 'generic-site',
+            url: 'https://icfilmscene.org/',
+          }),
+        ),
+      });
+
+      const result = await startCurationJobRun(mockReq(), {
+        tenantKey: 'nyc',
+        jobId: JOB_ID,
+        batchWeek: '2026-W28',
+      });
+
+      expect(result.code).toBe('SITE_SCRAPE_NOT_CONFIGURED');
+      expect(PivotCurationRun.create).not.toHaveBeenCalled();
+    });
+
+    it('queues generic-site jobs when website scraping is configured', async () => {
+      const immediateSpy = jest.spyOn(global, 'setImmediate').mockImplementation(() => {});
+      PivotCurationJob.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          leanJob({
+            provider: 'generic-site',
+            url: 'https://icfilmscene.org/',
+          }),
+        ),
+      });
+      PivotCurationRun.create.mockResolvedValue({
+        _id: RUN_ID,
+        tenantKey: 'nyc',
+        jobId: JOB_ID,
+        batchWeek: '2026-W28',
+        status: 'queued',
+        provider: 'generic-site',
+        toObject() {
+          return this;
+        },
+      });
+
+      const result = await startCurationJobRun(mockReq(), {
+        tenantKey: 'nyc',
+        jobId: JOB_ID,
+        batchWeek: '2026-W28',
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(PivotCurationRun.create).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'generic-site' }),
+      );
+      immediateSpy.mockRestore();
     });
 
     it('returns JOB_NOT_FOUND for other tenant jobs', async () => {
@@ -491,6 +707,87 @@ describe('pivotCurationRunService', () => {
           $set: expect.objectContaining({ lastRunStatus: 'completed' }),
         }),
       );
+    });
+
+    it('passes provider and city timezone to the preview for generic-site jobs', async () => {
+      resolvePivotTenant.mockResolvedValue({
+        tenant: {
+          tenantKey: 'iowacity',
+          pivotPilot: true,
+          pivotDropTimezone: 'America/Chicago',
+          pivotDropDayOfWeek: 4,
+          pivotDropHour: 17,
+        },
+      });
+      PivotCurationRun.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: RUN_ID,
+          tenantKey: 'iowacity',
+          jobId: JOB_ID,
+          batchWeek: '2026-W28',
+          status: 'queued',
+          maxEvents: null,
+          createdBy: 'ops@meridian.app',
+        }),
+      });
+      PivotCurationJob.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          leanJob({
+            tenantKey: 'iowacity',
+            provider: 'generic-site',
+            url: 'https://icfilmscene.org/',
+          }),
+        ),
+      });
+      previewIngestUrl.mockResolvedValue({
+        data: {
+          mode: 'batch',
+          drafts: [
+            {
+              sourceUrl: 'https://icfilmscene.org/#late-shift-2026-07-10',
+              draft: {
+                name: 'Late Shift',
+                hostName: 'FilmScene',
+                location: 'FilmScene',
+                start_time: '2026-07-10T20:00:00.000Z',
+                source: 'generic-site',
+                sourceUrl: 'https://icfilmscene.org/#late-shift-2026-07-10',
+              },
+            },
+          ],
+          truncated: false,
+          discoverSource: 'firecrawl-json',
+        },
+      });
+      publishIngestEvent.mockResolvedValue({
+        data: {
+          event: { _id: 'e1', batchWeek: '2026-W28' },
+          created: true,
+          updated: false,
+          batchWeek: '2026-W28',
+        },
+      });
+
+      const patches = [];
+      PivotCurationRun.findByIdAndUpdate.mockImplementation((_id, update) => {
+        patches.push(update.$set);
+        return { lean: jest.fn().mockResolvedValue(update.$set) };
+      });
+
+      await executeCurationRun(RUN_ID);
+
+      expect(previewIngestUrl).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          url: 'https://icfilmscene.org/',
+          provider: 'generic-site',
+          timezone: 'America/Chicago',
+        }),
+      );
+
+      const completed = patches.find((p) => p.status === 'completed');
+      expect(completed.stats.upserted).toBe(1);
+      expect(completed.stats.message).toBe('Extracted from rendered website HTML.');
     });
   });
 });

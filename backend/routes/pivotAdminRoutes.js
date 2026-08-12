@@ -26,7 +26,13 @@ const {
 const {
   startCurationJobRun,
   getCurationRun,
-} = require('../services/pivotCurationRunService');const {
+} = require('../services/pivotCurationRunService');
+const {
+  startCurationBatch,
+  getCurationBatch,
+  getLatestCurationBatch,
+} = require('../services/pivotCurationBatchService');
+const {
   listCitySources,
   startCitySourceDiscovery,
   stopCitySourceDiscoveryRun,
@@ -1018,6 +1024,99 @@ router.post(
     }
   },
 );
+
+router.post(
+  '/tenants/:tenantKey/curation-batches',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await startCurationBatch(req, {
+        tenantKey: req.params.tenantKey,
+        jobIds: req.body?.jobIds,
+        batchWeek: req.body?.batchWeek,
+        forceBatchWeek: req.body?.forceBatchWeek,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      // Accepted: the batch runs well past this response, and the caller watches
+      // the returned run id.
+      return res.status(202).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/curation-batches', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to start curation batch.',
+      });
+    }
+  },
+);
+
+// Before `/curation-batches/:runId`, so the literal segment is not read as an id.
+router.get(
+  '/tenants/:tenantKey/curation-batches/latest',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getLatestCurationBatch(req, {
+        tenantKey: req.params.tenantKey,
+        includeSteps: req.query.includeSteps === 'true',
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/curation-batches/latest', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load the latest curation batch.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/curation-batches/:runId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getCurationBatch(req, {
+        tenantKey: req.params.tenantKey,
+        runId: req.params.runId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/curation-batches/:runId', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load the curation batch.',
+      });
+    }
+  },
+);
+
 router.get(
   '/tenants/:tenantKey/curation-runs/:runId',
   verifyToken,

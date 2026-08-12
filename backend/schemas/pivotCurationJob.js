@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const CURATION_PROVIDERS = ['partiful', 'luma', 'manual-json'];
+const CURATION_PROVIDERS = ['partiful', 'luma', 'manual-json', 'generic-site'];
 const BATCH_WEEK_STRATEGIES = ['explicit', 'next-drop', 'current-iso'];
 const RUN_STATUSES = ['queued', 'running', 'completed', 'failed'];
 

@@ -72,6 +72,15 @@ const pivotCurationRunSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /**
+     * Set when a batch orchestrator started this run rather than an operator
+     * clicking Run on one job. Each job keeps its own run record either way, so
+     * per-job history stays intact; this only records who asked for it.
+     */
+    parentBatchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
     status: {
       type: String,
       enum: CURATION_RUN_STATUSES,

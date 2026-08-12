@@ -1,4 +1,9 @@
 import React from 'react';
+import {
+  PivotOpsMetric,
+  PivotOpsMetricGrid,
+  PivotOpsSection,
+} from '../../../components/PivotOps';
 import PivotImportThumb from '../PivotLab/PivotImportThumb';
 import IngestStatusPill from '../PivotLab/IngestStatusPill';
 import { formatEventWhen } from '../../../utils/pivotIsoWeek';
@@ -6,15 +11,6 @@ import { formatEventWhen } from '../../../utils/pivotIsoWeek';
 function formatRate(rate) {
   if (rate == null || Number.isNaN(Number(rate))) return '—';
   return `${Math.round(Number(rate) * 100)}%`;
-}
-
-function Kpi({ label, value, hint }) {
-  return (
-    <div className="pivot-tenant-curation__kpi" title={hint}>
-      <p className="pivot-tenant-curation__kpi-label">{label}</p>
-      <p className="pivot-tenant-curation__kpi-value">{value ?? '—'}</p>
-    </div>
-  );
 }
 
 /**
@@ -42,37 +38,37 @@ function PivotCurationMonitorPanel({
 
   return (
     <div className="pivot-tenant-curation__monitor">
-      <section className="linear-section pivot-lab__section" aria-labelledby="curation-monitor-kpis">
-        <div className="pivot-lab__section-head">
-          <div>
-            <h2 id="curation-monitor-kpis" className="linear-section__title">
-              {isPostMortem ? 'Batch recap' : 'Live pulse'}
-            </h2>
-            <p className="pivot-lab__section-hint">
-              {isPostMortem
-                ? 'How this past drop performed after release.'
-                : 'In-feed performance for the batch users are swiping now.'}
-            </p>
-          </div>
-        </div>
+      <PivotOpsSection
+        title={isPostMortem ? 'Batch recap' : 'Live pulse'}
+        titleId="curation-monitor-kpis"
+        description={
+          isPostMortem
+            ? 'How this past drop performed after release.'
+            : 'In-feed performance for the batch users are swiping now.'
+        }
+      >
         {overviewLoading && !kpis ? (
           <p className="pivot-lab__empty">Loading week metrics…</p>
         ) : (
-          <div className="pivot-tenant-curation__kpi-grid">
-            <Kpi label="Active users" value={kpis?.activeUsers ?? 0} hint="Users with any intent this week" />
-            <Kpi
+          <PivotOpsMetricGrid>
+            <PivotOpsMetric
+              label="Active users"
+              value={kpis?.activeUsers ?? 0}
+              hint="Users with any intent this week"
+            />
+            <PivotOpsMetric
               label="Reached (swipes)"
               value={swipeCount}
               hint="Total swipe decisions across catalog events"
             />
-            <Kpi
+            <PivotOpsMetric
               label="Interest %"
               value={formatRate(weekInterestRate)}
               hint="(Interested + going) / swipes"
             />
-            <Kpi label="Interested" value={interestedSurvivors} />
-            <Kpi label="Going" value={kpis?.registeredCount ?? 0} />
-            <Kpi
+            <PivotOpsMetric label="Interested" value={interestedSurvivors} />
+            <PivotOpsMetric label="Going" value={kpis?.registeredCount ?? 0} />
+            <PivotOpsMetric
               label="Median cards seen"
               value={
                 journeyLoading && medianCardsSeen == null
@@ -81,24 +77,20 @@ function PivotCurationMonitorPanel({
               }
               hint="Median pivot_card_view count per user"
             />
-            <Kpi label="Ticket opens" value={kpis?.externalOpenUsers ?? kpis?.externalOpenCount ?? 0} />
-            <Kpi label="Events" value={kpis?.eventCount ?? 0} />
-          </div>
+            <PivotOpsMetric
+              label="Ticket opens"
+              value={kpis?.externalOpenUsers ?? kpis?.externalOpenCount ?? 0}
+            />
+            <PivotOpsMetric label="Events" value={kpis?.eventCount ?? 0} />
+          </PivotOpsMetricGrid>
         )}
-      </section>
+      </PivotOpsSection>
 
-      <section className="linear-section pivot-lab__section" aria-labelledby="curation-monitor-events">
-        <div className="pivot-lab__section-head">
-          <div>
-            <h2 id="curation-monitor-events" className="linear-section__title">
-              Event performance
-            </h2>
-            <p className="pivot-lab__section-hint">
-              Interest % = right-swipe survivors ÷ people reached (swiped). Reached = interested +
-              going + passed.
-            </p>
-          </div>
-        </div>
+      <PivotOpsSection
+        title="Event performance"
+        titleId="curation-monitor-events"
+        description="Interest % = right-swipe survivors ÷ people reached (swiped). Reached = interested + going + passed."
+      >
         {performanceError ? (
           <p className="pivot-lab__error" role="alert">
             {typeof performanceError === 'string'
@@ -179,7 +171,7 @@ function PivotCurationMonitorPanel({
         ) : !performanceLoading ? (
           <p className="pivot-lab__empty">No catalog events for this batch week.</p>
         ) : null}
-      </section>
+      </PivotOpsSection>
     </div>
   );
 }

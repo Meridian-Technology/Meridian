@@ -92,8 +92,14 @@ function duplicateSummary(existing, matchType, { willUpdate = false } = {}) {
   };
 }
 
-function findCatalogDuplicate(index, candidate) {
-  const sourceKey = normalizeIngestSourceUrl(candidate.sourceUrl);
+/**
+ * `sharedSourceUrl` marks imports whose sourceUrl is a venue calendar or listing
+ * page rather than a per-event permalink. Many distinct events legitimately
+ * share such a URL, so matching on it would fold a whole week onto one document.
+ * Those imports fall back to the title/time/location fingerprint.
+ */
+function findCatalogDuplicate(index, candidate, { sharedSourceUrl = false } = {}) {
+  const sourceKey = sharedSourceUrl ? null : normalizeIngestSourceUrl(candidate.sourceUrl);
   const fingerprint = buildEventFingerprint(candidate);
 
   if (sourceKey) {
@@ -210,13 +216,13 @@ async function annotateImportDuplicates(req, options = {}) {
   return annotateImportDrafts(drafts, catalogIndex);
 }
 
-async function resolveImportDuplicate(req, { tenantKey, candidate }) {
+async function resolveImportDuplicate(req, { tenantKey, candidate, sharedSourceUrl = false }) {
   if (!tenantKey) {
     return { duplicate: null, catalogIndex: [] };
   }
 
   const catalogIndex = await loadCatalogDuplicateIndex(tenantKey);
-  const duplicate = findCatalogDuplicate(catalogIndex, candidate);
+  const duplicate = findCatalogDuplicate(catalogIndex, candidate, { sharedSourceUrl });
   return { duplicate, catalogIndex };
 }
 

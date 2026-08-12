@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { ThinkingOrb } from 'thinking-orbs';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import { useDashboard } from '../../../contexts/DashboardContext';
+import useAdminDashboardTheme from '../../../hooks/useAdminDashboardTheme';
 import {
   toIsoWeek,
   isValidIsoWeek,
@@ -25,6 +27,9 @@ import PivotCatalogEventEditModal, {
 } from '../PivotLab/PivotCatalogEventEditModal';
 import PivotReadinessCard from './PivotReadinessCard';
 import PivotCurationMonitorPanel from './PivotCurationMonitorPanel';
+import PivotTenantSourcesPanel from './PivotTenantSourcesPanel';
+import PivotDiscoveryConsole, { orbStateFor, phaseLabel, OrbTint } from './PivotDiscoveryConsole';
+import Popup from '../../../components/Popup/Popup';
 import PivotTenantPage from './PivotTenantPage';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
 import PivotTenantExplorePanel from './PivotTenantExplorePanel';
@@ -43,6 +48,11 @@ import './PivotTenantPage.scss';
 const NO_FETCH_CACHE = { enabled: false };
 const EMPTY_LIST = [];
 const RUN_POLL_MS = 2500;
+/**
+ * Cadence for noticing a batch that this page did not start — discovery chains
+ * one for native sources, and another tab or the CLI can start one too.
+ */
+const BATCH_IDLE_POLL_MS = 30000;
 const MONITOR_EVENTS_LIMIT = 100;
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -58,6 +68,7 @@ const HOST_CREATED_SOURCE = 'justgo';
 const PROVIDER_OPTIONS = [
   { value: 'partiful', label: 'Partiful' },
   { value: 'luma', label: 'Luma' },
+  { value: 'generic-site', label: 'Website (scraped)' },
   { value: 'manual-json', label: 'Manual JSON' },
 ];
 
@@ -197,6 +208,8 @@ function RunStatusPill({ status }) {
  */
 function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const { addNotification } = useNotification();
+  const { isDark } = useAdminDashboardTheme();
+  const orbTheme = isDark ? 'dark' : 'light';
   const { showOverlay } = useDashboard();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -228,7 +241,13 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const [bulkTags, setBulkTags] = useState([]);
   const [busyKey, setBusyKey] = useState(null);
   const [activeRunId, setActiveRunId] = useState(null);
+  const [batchConsoleOpen, setBatchConsoleOpen] = useState(false);
+  const [batchStarting, setBatchStarting] = useState(false);
+  /** Completion is announced once per batch, however this page notices it. */
+  const batchNotifiedRef = useRef(null);
+  const previousBatchRef = useRef(null);
   const [jobFormOpen, setJobFormOpen] = useState(false);
+  const [jobsExpanded, setJobsExpanded] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
   const [jobForm, setJobForm] = useState(emptyJobForm);
   const [manualImportOpen, setManualImportOpen] = useState(false);
@@ -434,6 +453,20 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     refetch: refetchRun,
   } = useFetch(runUrl, { cache: NO_FETCH_CACHE });
 
+  /**
+   * Whether a batch is in flight is the server's fact, not this page's, so a
+   * refresh or a second tab still shows it. Steps are excluded: this only needs
+   * status and counters.
+   */
+  const latestBatchUrl = tenantKey
+    ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/curation-batches/latest`
+    : null;
+  const { data: latestBatchResponse, refetch: refetchLatestBatch } = useFetch(latestBatchUrl, {
+    cache: NO_FETCH_CACHE,
+  });
+  const latestBatch = latestBatchResponse?.success ? latestBatchResponse.data?.run : null;
+  const batchRunning = latestBatch?.status === 'running';
+
   const catalogTags = tagsResponse?.success
     ? (tagsResponse.data?.tags ?? EMPTY_LIST)
     : EMPTY_LIST;
@@ -442,6 +475,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   const hostCreatedCount = useMemo(
     () => events.filter((event) => isHostCreatedEvent(event)).length,
     [events],
+  );
+
+  /** What a batch would actually crawl — mirrors the server's own selection. */
+  const runnableJobCount = useMemo(
+    () =>
+      jobs.filter(
+        (job) => job.enabled !== false && job.provider !== 'manual-json' && Boolean(job.url),
+      ).length,
+    [jobs],
   );
 
   const filteredEvents = useMemo(() => {
@@ -499,6 +541,40 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     }, RUN_POLL_MS);
     return () => clearInterval(timer);
   }, [activeRun, activeRunId, refetchOps, refetchRun]);
+
+  // Poll the batch faster while it runs, but never stop entirely — one can be
+  // started from another tab or chained by a discovery run.
+  useEffect(() => {
+    if (!latestBatchUrl) return undefined;
+    const timer = setInterval(
+      () => {
+        refetchLatestBatch();
+        if (batchRunning) refetchOps();
+      },
+      batchRunning ? RUN_POLL_MS : BATCH_IDLE_POLL_MS,
+    );
+    return () => clearInterval(timer);
+  }, [batchRunning, latestBatchUrl, refetchLatestBatch, refetchOps]);
+
+  useEffect(() => {
+    const previous = previousBatchRef.current;
+    previousBatchRef.current = latestBatch;
+
+    if (!latestBatch || !previous) return;
+    if (previous._id !== latestBatch._id || previous.status !== 'running' || batchRunning) return;
+    if (batchNotifiedRef.current === latestBatch._id) return;
+    batchNotifiedRef.current = latestBatch._id;
+
+    refetchOps();
+    const saved = latestBatch.counters?.eventsUpserted || 0;
+    addNotification({
+      title: latestBatch.aborted ? 'Refresh stopped early' : 'Refresh complete',
+      message: latestBatch.aborted
+        ? latestBatch.aborted.error
+        : `${saved} event(s) saved from ${latestBatch.counters?.jobsRun || 0} source(s).`,
+      type: latestBatch.aborted ? 'warning' : 'success',
+    });
+  }, [addNotification, batchRunning, latestBatch, refetchOps]);
 
   // Clear selection when week/filter changes.
   useEffect(() => {
@@ -620,12 +696,14 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   }, []);
 
   const openCreateJob = useCallback(() => {
+    setJobsExpanded(true);
     setEditingJobId(null);
     setJobForm(emptyJobForm());
     setJobFormOpen(true);
   }, []);
 
   const openEditJob = useCallback((job) => {
+    setJobsExpanded(true);
     setEditingJobId(job._id);
     setJobForm({
       label: job.label || '',
@@ -658,7 +736,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     if (provider !== 'manual-json' && !url) {
       addNotification({
         title: 'URL required',
-        message: 'Partiful and Luma jobs need an explore/discover URL.',
+        message: 'Partiful, Luma, and website jobs all need a listing URL.',
         type: 'warning',
       });
       return;
@@ -784,6 +862,53 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       weekSettled,
     ],
   );
+
+  /**
+   * Refresh every enabled job in one orchestrated run.
+   *
+   * The alternative is clicking Run on each job and waiting for it, which does
+   * not scale past a handful of sources and gives no single place to watch. The
+   * orchestrator also holds one rate-limit budget across the whole city rather
+   * than letting each job hit the wall independently.
+   */
+  const handleRunAllJobs = useCallback(async () => {
+    if (!tenantKey || !batchWeekValid || !weekSettled) return;
+
+    setBatchStarting(true);
+    const { data, error } = await authenticatedRequest(
+      `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/curation-batches`,
+      {
+        method: 'POST',
+        data: { batchWeek: committedWeek, forceBatchWeek },
+      },
+    );
+    setBatchStarting(false);
+
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Refresh failed',
+        message: error || data?.message || 'Could not start the refresh.',
+        type: 'error',
+      });
+      return;
+    }
+
+    refetchLatestBatch();
+    setBatchConsoleOpen(true);
+    addNotification({
+      title: 'Refresh started',
+      message: `Crawling ${data.data?.jobs ?? 0} source(s) in the background.`,
+      type: 'success',
+    });
+  }, [
+    addNotification,
+    batchWeekValid,
+    committedWeek,
+    forceBatchWeek,
+    refetchLatestBatch,
+    tenantKey,
+    weekSettled,
+  ]);
 
   const releaseStagedEvents = useCallback(
     async ({ eventIds = null, count, confirmMessage, busy = 'release' } = {}) => {
@@ -1715,241 +1840,351 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         </div>
       ) : null}
 
+      {/* Upstream of Saved jobs: discovery is what produces the jobs below. */}
+      <PivotTenantSourcesPanel
+        tenantKey={tenantKey}
+        cityDisplayName={displayCity}
+        catalogTags={catalogTags}
+        onJobsChanged={refetchOps}
+      />
+
       <section className="linear-section pivot-lab__section" aria-labelledby="curation-jobs">
-        <div className="pivot-lab__section-head">
-          <div>
-            <h2 id="curation-jobs" className="linear-section__title">
-              Saved jobs · {committedWeek}
-            </h2>
-            <p className="pivot-lab__section-hint">
-              Persist Partiful/Luma explore URLs for this tenant. “Run for week” targets{' '}
-              <strong>{committedWeek}</strong> (the batch week in the header). By default each
-              discovered event lands in the ISO week of its start date (one crawl can fill many
-              weeks). Enable “Force into review week” to pin everything to {committedWeek}.
-            </p>
-          </div>
-          <button type="button" className="linear-btn linear-btn--secondary" onClick={openCreateJob}>
-            Add job
+        <div className="pivot-tenant-curation__collapse-bar">
+          <button
+            type="button"
+            className="pivot-tenant-curation__collapse-toggle"
+            onClick={() => setJobsExpanded((open) => !open)}
+            aria-expanded={jobsExpanded}
+          >
+            <span className="pivot-tenant-curation__collapse-label">
+              <span id="curation-jobs">Saved jobs · {committedWeek}</span>
+              <span className="pivot-tenant-curation__collapse-meta">
+                {jobsLoading
+                  ? 'Loading…'
+                  : `${jobs.length} job${jobs.length === 1 ? '' : 's'} · ${
+                      runnableJobCount || 0
+                    } runnable`}
+              </span>
+            </span>
+            <span className="pivot-tenant-curation__collapse-chevron" aria-hidden="true">
+              {jobsExpanded ? '▾' : '▸'}
+            </span>
           </button>
+          <div className="pivot-tenant-curation__jobs-actions">
+            <button
+              type="button"
+              className="linear-btn linear-btn--primary"
+              disabled={
+                batchStarting
+                || batchRunning
+                || !batchWeekValid
+                || !weekSettled
+                || Boolean(runInFlight)
+                || !runnableJobCount
+              }
+              onClick={handleRunAllJobs}
+            >
+              {batchStarting
+                ? 'Starting…'
+                : batchRunning
+                  ? 'Refreshing…'
+                  : `Run all ${runnableJobCount || ''}`.trim()}
+            </button>
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary"
+              onClick={openCreateJob}
+            >
+              Add job
+            </button>
+          </div>
         </div>
 
-        {jobsError ? <p className="pivot-lab__error">{jobsError}</p> : null}
-        {jobsLoading ? (
-          <p className="pivot-lab__empty">Loading jobs…</p>
-        ) : jobs.length ? (
-          <div className="pivot-lab__table-wrap">
-            <table className="pivot-lab__table">
-              <thead>
-                <tr>
-                  <th scope="col">Label</th>
-                  <th scope="col">Provider</th>
-                  <th scope="col">URL</th>
-                  <th scope="col">Strategy</th>
-                  <th scope="col">Last run</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => (
-                  <tr key={job._id} className={job.enabled === false ? 'is-disabled' : undefined}>
-                    <td>
-                      <strong>{job.label}</strong>
-                      {job.enabled === false ? (
-                        <span className="pivot-lab__pill pivot-lab__pill--muted"> Disabled</span>
-                      ) : null}
-                    </td>
-                    <td>{job.provider}</td>
-                    <td className="pivot-tenant-curation__url-cell">
-                      {job.url ? (
-                        <a href={job.url} target="_blank" rel="noreferrer">
-                          {job.url}
-                        </a>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>{job.defaultBatchWeekStrategy || 'next-drop'}</td>
-                    <td>
-                      {job.lastRunStatus ? (
-                        <>
-                          <RunStatusPill status={job.lastRunStatus} />{' '}
-                          <span className="pivot-tenant-curation__muted">
-                            {job.lastRunStats
-                              ? `${job.lastRunStats.upserted ?? 0}/${job.lastRunStats.discovered ?? 0}`
-                              : ''}
-                          </span>
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>
-                      <div className="pivot-tenant-curation__row-actions">
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--primary"
-                          disabled={
-                            job.provider === 'manual-json' ||
-                            job.enabled === false ||
-                            !batchWeekValid ||
-                            !weekSettled ||
-                            busyKey === `job-run-${job._id}` ||
-                            Boolean(runInFlight)
-                          }
-                          onClick={() => handleRunJob(job)}
-                        >
-                          {busyKey === `job-run-${job._id}`
-                            ? 'Starting…'
-                            : `Run for ${committedWeek}`}
-                        </button>
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--ghost"
-                          onClick={() => openEditJob(job)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--ghost"
-                          disabled={busyKey === `job-delete-${job._id}`}
-                          onClick={() => handleDeleteJob(job)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="pivot-lab__empty">
-            No saved jobs yet. Add a Partiful or Luma explore URL to crawl into this week.
-          </p>
-        )}
+        {jobsExpanded ? (
+          <>
+            <p className="pivot-lab__section-hint pivot-tenant-curation__collapse-hint">
+              Persist Partiful/Luma explore URLs for this tenant. “Run for week” targets{' '}
+              <strong>{committedWeek}</strong>. By default each discovered event lands in the ISO
+              week of its start date. Enable “Force into review week” to pin everything to{' '}
+              {committedWeek}.
+            </p>
 
-        {jobFormOpen ? (
-          <div className="pivot-tenant-curation__job-form" role="region" aria-label="Job form">
-            <h3 className="pivot-tenant-curation__job-form-title">
-              {editingJobId ? 'Edit job' : 'New job'}
-            </h3>
-            <div className="pivot-tenant-curation__job-form-grid">
-              <label className="linear-field">
-                <span className="linear-field__label">Label</span>
-                <input
-                  className="linear-input"
-                  value={jobForm.label}
-                  onChange={(e) => setJobForm((f) => ({ ...f, label: e.target.value }))}
-                  placeholder="Brooklyn Partiful explore"
-                />
-              </label>
-              <label className="linear-field">
-                <span className="linear-field__label">Provider</span>
-                <select
-                  className="linear-input"
-                  value={jobForm.provider}
-                  onChange={(e) => setJobForm((f) => ({ ...f, provider: e.target.value }))}
-                >
-                  {PROVIDER_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="linear-field pivot-tenant-curation__job-form-span">
-                <span className="linear-field__label">URL</span>
-                <input
-                  className="linear-input"
-                  value={jobForm.url}
-                  onChange={(e) => {
-                    const nextUrl = e.target.value;
-                    const detected = detectProviderFromUrl(nextUrl);
-                    setJobForm((f) => ({
-                      ...f,
-                      url: nextUrl,
-                      provider: detected || f.provider,
-                    }));
-                  }}
-                  placeholder="https://partiful.com/explore/…"
-                  disabled={jobForm.provider === 'manual-json'}
-                />
-              </label>
-              <label className="linear-field">
-                <span className="linear-field__label">Week strategy</span>
-                <select
-                  className="linear-input"
-                  value={jobForm.defaultBatchWeekStrategy}
-                  onChange={(e) =>
-                    setJobForm((f) => ({ ...f, defaultBatchWeekStrategy: e.target.value }))
-                  }
-                >
-                  {STRATEGY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="linear-field pivot-tenant-curation__check">
-                <input
-                  type="checkbox"
-                  checked={jobForm.enabled}
-                  onChange={(e) => setJobForm((f) => ({ ...f, enabled: e.target.checked }))}
-                />
-                <span>Enabled</span>
-              </label>
-              <div className="linear-field pivot-tenant-curation__job-form-span">
-                <span className="linear-field__label">Default tags</span>
-                <PivotTagMultiSelect
-                  catalogTags={catalogTags}
-                  selectedSlugs={jobForm.defaultTags}
-                  onChange={(tags) => setJobForm((f) => ({ ...f, defaultTags: tags }))}
-                  compact
-                  showLabel={false}
-                />
-              </div>
-            </div>
-            <div className="pivot-tenant-curation__row-actions">
-              <button
-                type="button"
-                className="linear-btn linear-btn--primary"
-                onClick={handleSaveJob}
-                disabled={Boolean(busyKey?.startsWith('job-'))}
+            {latestBatch ? (
+              <div
+                className={`pivot-tenant-curation__batch${
+                  latestBatch.aborted ? ' pivot-tenant-curation__batch--warn' : ''
+                }`}
               >
-                {busyKey === 'job-create' || busyKey?.startsWith('job-save-')
-                  ? 'Saving…'
-                  : 'Save job'}
-              </button>
-              <button
-                type="button"
-                className="linear-btn linear-btn--ghost"
-                onClick={() => {
-                  setJobFormOpen(false);
-                  setEditingJobId(null);
-                }}
-              >
-                Cancel
-              </button>
-              {!catalogTags.length ? (
+                <span className="pivot-tenant-curation__batch-orb" aria-hidden="true">
+                  <OrbTint />
+                  <ThinkingOrb
+                    className="pivot-orb--brand"
+                    state={orbStateFor(latestBatch, null)}
+                    size={20}
+                    theme={orbTheme}
+                    paused={!batchRunning}
+                  />
+                </span>
+                <span className="pivot-tenant-curation__batch-text">
+                  {batchRunning ? (
+                    <>
+                      <strong>{phaseLabel(latestBatch.phase)}</strong>
+                      {' — '}
+                      {latestBatch.counters?.jobsRun || 0} of {latestBatch.plan?.jobs || 0}{' '}
+                      source(s), {latestBatch.counters?.eventsUpserted || 0} event(s) saved
+                    </>
+                  ) : (
+                    <>
+                      <strong>Last refresh</strong>
+                      {' — '}
+                      {latestBatch.aborted
+                        ? latestBatch.aborted.error
+                        : `${latestBatch.counters?.eventsUpserted || 0} event(s) saved from ${
+                            latestBatch.counters?.jobsRun || 0
+                          } source(s)`}
+                    </>
+                  )}
+                </span>
                 <button
                   type="button"
                   className="linear-btn linear-btn--ghost"
-                  onClick={async () => {
-                    await authenticatedRequest('/admin/pivot/tags/seed', {
-                      method: 'POST',
-                      data: {},
-                    });
-                    refetchTags();
-                  }}
+                  onClick={() => setBatchConsoleOpen(true)}
                 >
-                  Seed tag catalog
+                  {batchRunning ? 'Watch' : 'View'}
                 </button>
-              ) : null}
-            </div>
-          </div>
+              </div>
+            ) : null}
+
+            {jobsError ? <p className="pivot-lab__error">{jobsError}</p> : null}
+            {jobsLoading ? (
+              <p className="pivot-lab__empty">Loading jobs…</p>
+            ) : jobs.length ? (
+              <div className="pivot-lab__table-wrap">
+                <table className="pivot-lab__table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Label</th>
+                      <th scope="col">Provider</th>
+                      <th scope="col">URL</th>
+                      <th scope="col">Strategy</th>
+                      <th scope="col">Last run</th>
+                      <th scope="col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.map((job) => (
+                      <tr
+                        key={job._id}
+                        className={job.enabled === false ? 'is-disabled' : undefined}
+                      >
+                        <td>
+                          <strong>{job.label}</strong>
+                          {job.enabled === false ? (
+                            <span className="pivot-lab__pill pivot-lab__pill--muted">
+                              {' '}
+                              Disabled
+                            </span>
+                          ) : null}
+                        </td>
+                        <td>{job.provider}</td>
+                        <td className="pivot-tenant-curation__url-cell">
+                          {job.url ? (
+                            <a href={job.url} target="_blank" rel="noreferrer">
+                              {job.url}
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td>{job.defaultBatchWeekStrategy || 'next-drop'}</td>
+                        <td>
+                          {job.lastRunStatus ? (
+                            <>
+                              <RunStatusPill status={job.lastRunStatus} />{' '}
+                              <span className="pivot-tenant-curation__muted">
+                                {job.lastRunStats
+                                  ? `${job.lastRunStats.upserted ?? 0}/${
+                                      job.lastRunStats.discovered ?? 0
+                                    }`
+                                  : ''}
+                              </span>
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td>
+                          <div className="pivot-tenant-curation__row-actions">
+                            <button
+                              type="button"
+                              className="linear-btn linear-btn--primary"
+                              disabled={
+                                job.provider === 'manual-json'
+                                || job.enabled === false
+                                || !batchWeekValid
+                                || !weekSettled
+                                || busyKey === `job-run-${job._id}`
+                                || Boolean(runInFlight)
+                              }
+                              onClick={() => handleRunJob(job)}
+                            >
+                              {busyKey === `job-run-${job._id}`
+                                ? 'Starting…'
+                                : `Run for ${committedWeek}`}
+                            </button>
+                            <button
+                              type="button"
+                              className="linear-btn linear-btn--ghost"
+                              onClick={() => openEditJob(job)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="linear-btn linear-btn--ghost"
+                              disabled={busyKey === `job-delete-${job._id}`}
+                              onClick={() => handleDeleteJob(job)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="pivot-lab__empty">
+                No saved jobs yet. Add a Partiful or Luma explore URL to crawl into this week.
+              </p>
+            )}
+
+            {jobFormOpen ? (
+              <div className="pivot-tenant-curation__job-form" role="region" aria-label="Job form">
+                <h3 className="pivot-tenant-curation__job-form-title">
+                  {editingJobId ? 'Edit job' : 'New job'}
+                </h3>
+                <div className="pivot-tenant-curation__job-form-grid">
+                  <label className="linear-field">
+                    <span className="linear-field__label">Label</span>
+                    <input
+                      className="linear-input"
+                      value={jobForm.label}
+                      onChange={(e) => setJobForm((f) => ({ ...f, label: e.target.value }))}
+                      placeholder="Brooklyn Partiful explore"
+                    />
+                  </label>
+                  <label className="linear-field">
+                    <span className="linear-field__label">Provider</span>
+                    <select
+                      className="linear-input"
+                      value={jobForm.provider}
+                      onChange={(e) => setJobForm((f) => ({ ...f, provider: e.target.value }))}
+                    >
+                      {PROVIDER_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="linear-field pivot-tenant-curation__job-form-span">
+                    <span className="linear-field__label">URL</span>
+                    <input
+                      className="linear-input"
+                      value={jobForm.url}
+                      onChange={(e) => {
+                        const nextUrl = e.target.value;
+                        const detected = detectProviderFromUrl(nextUrl);
+                        setJobForm((f) => ({
+                          ...f,
+                          url: nextUrl,
+                          provider: detected || f.provider,
+                        }));
+                      }}
+                      placeholder="https://partiful.com/explore/…"
+                      disabled={jobForm.provider === 'manual-json'}
+                    />
+                  </label>
+                  <label className="linear-field">
+                    <span className="linear-field__label">Week strategy</span>
+                    <select
+                      className="linear-input"
+                      value={jobForm.defaultBatchWeekStrategy}
+                      onChange={(e) =>
+                        setJobForm((f) => ({
+                          ...f,
+                          defaultBatchWeekStrategy: e.target.value,
+                        }))
+                      }
+                    >
+                      {STRATEGY_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="linear-field pivot-tenant-curation__check">
+                    <input
+                      type="checkbox"
+                      checked={jobForm.enabled}
+                      onChange={(e) => setJobForm((f) => ({ ...f, enabled: e.target.checked }))}
+                    />
+                    <span>Enabled</span>
+                  </label>
+                  <div className="linear-field pivot-tenant-curation__job-form-span">
+                    <span className="linear-field__label">Default tags</span>
+                    <PivotTagMultiSelect
+                      catalogTags={catalogTags}
+                      selectedSlugs={jobForm.defaultTags}
+                      onChange={(tags) => setJobForm((f) => ({ ...f, defaultTags: tags }))}
+                      compact
+                      showLabel={false}
+                    />
+                  </div>
+                </div>
+                <div className="pivot-tenant-curation__row-actions">
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--primary"
+                    onClick={handleSaveJob}
+                    disabled={Boolean(busyKey?.startsWith('job-'))}
+                  >
+                    {busyKey === 'job-create' || busyKey?.startsWith('job-save-')
+                      ? 'Saving…'
+                      : 'Save job'}
+                  </button>
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--ghost"
+                    onClick={() => {
+                      setJobFormOpen(false);
+                      setEditingJobId(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  {!catalogTags.length ? (
+                    <button
+                      type="button"
+                      className="linear-btn linear-btn--ghost"
+                      onClick={async () => {
+                        await authenticatedRequest('/admin/pivot/tags/seed', {
+                          method: 'POST',
+                          data: {},
+                        });
+                        refetchTags();
+                      }}
+                    >
+                      Seed tag catalog
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : null}
       </section>
 
@@ -2425,6 +2660,19 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         onSuggestTags={suggestTagsForManualImport}
         tagSuggestLoading={tagSuggestLoadingKey === 'manual-import'}
       />
+
+      <Popup
+        isOpen={batchConsoleOpen}
+        onClose={() => setBatchConsoleOpen(false)}
+        customClassName="pivot-discovery-popup"
+      >
+        <PivotDiscoveryConsole
+          tenantKey={tenantKey}
+          kind="curation-batch"
+          cityDisplayName={displayCity}
+          handleClose={() => setBatchConsoleOpen(false)}
+        />
+      </Popup>
     </PivotTenantPage>
   );
 }
