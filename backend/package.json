@@ -58,7 +58,8 @@
     "rebuild:pivot-weekly-snapshot": "node migrations/rebuildPivotWeeklySnapshot.js",
     "rebuild:pivot-crew-week-state": "node migrations/rebuildPivotCrewWeekState.js",
     "send:pivot-weekly-push": "node migrations/sendPivotWeeklyPush.js",
-    "dry-run:pivot-crew-ritual": "node migrations/pivotCrewRitualDryRun.js"
+    "dry-run:pivot-crew-ritual": "node migrations/pivotCrewRitualDryRun.js",
+    "discover:pivot-city-sources": "node migrations/discoverPivotCitySources.js"
   },
   "devDependencies": {
     "jest": "^30.3.0",

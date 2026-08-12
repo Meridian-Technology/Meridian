@@ -1,0 +1,384 @@
+/* Sized on the same element the Popup renders, matching `wider-content`'s
+   specificity so the width actually applies. */
+.popup-overlay .popup-content.pivot-discovery-popup {
+  max-width: 1400px;
+  width: 95%;
+  height: 86vh;
+  max-height: 86vh;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Paints the orb in Just Go orange — see OrbTint for why this is a filter.
+   Shared by every orb in the Pivot admin, not just the console. */
+.pivot-orb-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.pivot-orb--brand {
+  filter: url(#pivot-orb-tint);
+}
+
+@keyframes pivot-discovery-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pivot-discovery {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  font-size: 14px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 22px 26px 18px;
+    border-bottom: 1px solid var(--dash-border, rgba(26, 23, 20, 0.14));
+  }
+
+  /* thinking-orbs only ships tuned presets at 64 / 20; the larger presence
+     here is a CSS scale of the 64 preset plus a soft brand wash so the orb
+     reads as the hero of the header rather than a favicon. */
+  &__orb {
+    flex: 0 0 auto;
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 72px;
+    height: 72px;
+
+    .pivot-orb--brand {
+      position: relative;
+      z-index: 1;
+      transform: scale(1.15);
+      transform-origin: center;
+    }
+  }
+
+  &__head-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__eyebrow {
+    margin: 0 0 2px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  &__subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--la-text-muted, rgba(0, 0, 0, 0.6));
+  }
+
+  &__clock {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    /* Clear of the popup's absolutely positioned close button. */
+    margin-right: 26px;
+  }
+
+  &__clock-value {
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  &__clock-label {
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  /* Must read as a disclaimer, not decoration — these counts are not findings. */
+  &__rehearsal {
+    margin: 0;
+    padding: 10px 26px;
+    border-bottom: 1px solid rgba(210, 153, 34, 0.35);
+    background: rgba(210, 153, 34, 0.1);
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  &__counters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 1px;
+    padding: 0;
+    background: var(--dash-border, rgba(26, 23, 20, 0.14));
+    border-bottom: 1px solid var(--dash-border, rgba(26, 23, 20, 0.14));
+  }
+
+  &__counter {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 16px;
+    background: var(--background, #fff);
+  }
+
+  &__counter-value {
+    font-size: 19px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+
+  &__counter-of {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--la-text-muted, rgba(0, 0, 0, 0.45));
+  }
+
+  &__counter-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__feed {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 26px 20px;
+    scroll-behavior: smooth;
+    /* Collapse the live spacer without a jump when the run settles. */
+    transition: padding-bottom 320ms ease;
+  }
+
+  /* While work is in flight, keep empty room under the latest step so it
+     sits mid-transcript like a chat stream — never flush to the viewport
+     floor until the run is done. */
+  &__feed--live {
+    padding-bottom: min(42vh, 300px);
+  }
+
+  /* Reads as a chat transcript: no rules, no timestamps, rhythm from spacing
+     alone, so a long run scans as one train of thought rather than a log. */
+  &__steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__step {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    align-items: start;
+    gap: 10px;
+    padding: 6px 8px;
+    margin-left: -8px;
+    border-radius: var(--pivot-ops-radius-control, 12px);
+    /* Only the newly mounted row plays this — React keeps prior keys mounted
+       across polls, so a live run animates each decision as it lands. */
+    animation: pivot-discovery-step-in 780ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  &__step-marker {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-top: 1px;
+
+    .pivot-orb--brand {
+      transform: scale(1.3);
+      transform-origin: center;
+    }
+  }
+
+  &__step-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--la-text-muted, rgba(0, 0, 0, 0.25));
+  }
+
+  &__step-body {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__step-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  &__step-shimmer {
+    display: inline;
+    font-weight: 500;
+    color: var(--pivot-ops-accent, #ff4f1f);
+  }
+
+  &__step-detail {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--la-text-muted, rgba(0, 0, 0, 0.58));
+  }
+
+  &__step-url {
+    overflow: hidden;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--dash-accent, #ff4f1f);
+  }
+
+  &__step-badge,
+  &__step-tag {
+    padding: 1px 7px;
+    border-radius: var(--pivot-ops-radius-chip, 6px);
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  &__step-badge {
+    background: rgba(46, 160, 67, 0.12);
+    color: #1a7f37;
+  }
+
+  &__step-tag {
+    background: var(--la-surface, rgba(0, 0, 0, 0.05));
+    color: var(--la-text-muted, rgba(0, 0, 0, 0.55));
+  }
+
+  /* Tone carries the outcome, so a run can be skimmed for its decisions. */
+  &__step--good &__step-dot {
+    background: #2ea043;
+  }
+
+  &__step--warn &__step-dot {
+    background: #d29922;
+  }
+
+  &__step--bad &__step-dot {
+    background: #cf222e;
+  }
+
+  &__step--good &__step-title {
+    font-weight: 600;
+  }
+
+  &__step--bad &__step-title {
+    font-weight: 600;
+    color: #cf222e;
+  }
+
+  &__step--active {
+    /* Keeps the live row from hugging the viewport floor when auto-scrolled. */
+    scroll-margin-bottom: min(36vh, 240px);
+  }
+
+  &__empty,
+  &__error {
+    margin: 20px 26px;
+    font-size: 13px;
+    color: var(--la-text-muted, rgba(0, 0, 0, 0.55));
+  }
+
+  &__error {
+    color: #cf222e;
+  }
+
+  &__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 26px;
+    border-top: 1px solid var(--dash-border, rgba(26, 23, 20, 0.14));
+  }
+
+  &__foot-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__stop-btn {
+    border-color: rgba(207, 34, 46, 0.35);
+    color: #cf222e;
+
+    &:hover:not(:disabled) {
+      background: rgba(207, 34, 46, 0.08);
+      color: #cf222e;
+    }
+
+    iconify-icon[icon='mdi:loading'] {
+      animation: pivot-discovery-spin 0.8s linear infinite;
+    }
+  }
+
+  &__foot-note {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--la-text-muted, rgba(0, 0, 0, 0.55));
+  }
+
+  @media (max-width: 720px) {
+    &__head {
+      flex-wrap: wrap;
+    }
+
+    &__orb {
+      width: 80px;
+      height: 80px;
+
+      .pivot-orb--brand {
+        transform: scale(1.25);
+      }
+    }
+
+    &__step {
+      grid-template-columns: 24px 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &__step {
+      animation: none;
+    }
+  }
+}
+
+@keyframes pivot-discovery-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

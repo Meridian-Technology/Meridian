@@ -26,7 +26,18 @@ const {
 const {
   startCurationJobRun,
   getCurationRun,
-} = require('../services/pivotCurationRunService');
+} = require('../services/pivotCurationRunService');const {
+  listCitySources,
+  startCitySourceDiscovery,
+  stopCitySourceDiscoveryRun,
+  previewCitySourceDiscovery,
+  updateCitySource,
+  getCitySourceDiscoveryRun,
+  getLatestCitySourceDiscoveryRun,
+} = require('../services/pivotSourceDiscoveryService');
+const {
+  startCitySourceDiscoveryRehearsal,
+} = require('../services/pivotDiscoveryRehearsal');
 const {
   getJourneyOverview,
   getJourneyFunnel,
@@ -553,6 +564,277 @@ router.get(
 );
 
 router.get(
+  '/tenants/:tenantKey/sources',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listCitySources(req, {
+        tenantKey: req.params.tenantKey,
+        status: req.query?.status,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/sources', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to list city sources.',
+      });
+    }
+  },
+);
+
+/**
+ * Walk the pipeline with no outbound calls, so the console can be reviewed
+ * before a Firecrawl key exists and before any credits are at stake.
+ */
+router.post(
+  '/tenants/:tenantKey/sources/rehearse',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await startCitySourceDiscoveryRehearsal(req, {
+        tenantKey: req.params.tenantKey,
+        tags: req.body?.tags,
+        maxQueries: req.body?.maxQueries,
+        maxCandidates: req.body?.maxCandidates,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(202).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/sources/rehearse', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to start a discovery rehearsal.',
+      });
+    }
+  },
+);
+
+// Registered before `/sources/:sourceId` so the literal segments are not
+// swallowed by the id parameter.
+router.get(
+  '/tenants/:tenantKey/discovery-runs/latest',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getLatestCitySourceDiscoveryRun(req, {
+        tenantKey: req.params.tenantKey,
+        includeSteps: req.query.includeSteps === 'true',
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/discovery-runs/latest', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load the latest discovery run.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/discovery-runs/:runId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getCitySourceDiscoveryRun(req, {
+        tenantKey: req.params.tenantKey,
+        runId: req.params.runId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/discovery-runs/:runId', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load the discovery run.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/discovery-runs/:runId/stop',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await stopCitySourceDiscoveryRun(req, {
+        tenantKey: req.params.tenantKey,
+        runId: req.params.runId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/discovery-runs/:runId/stop',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to stop the discovery agent.',
+      });
+    }
+  },
+);
+
+router.patch(
+  '/tenants/:tenantKey/sources/:sourceId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateCitySource(req, {
+        tenantKey: req.params.tenantKey,
+        sourceId: req.params.sourceId,
+        enabled: req.body?.enabled,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('PATCH /admin/pivot/tenants/:tenantKey/sources/:sourceId', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to update city source.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/sources/discovery-plan',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await previewCitySourceDiscovery(req, {
+        tenantKey: req.params.tenantKey,
+        tags: req.query?.tags ? String(req.query.tags).split(',') : undefined,
+        maxQueries: req.query?.maxQueries,
+        maxCandidates: req.query?.maxCandidates,
+        minEvents: req.query?.minEvents,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/sources/discovery-plan',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to build a discovery plan.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/sources/discover',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await startCitySourceDiscovery(req, {
+        tenantKey: req.params.tenantKey,
+        tags: req.body?.tags,
+        maxQueries: req.body?.maxQueries,
+        resultsPerQuery: req.body?.resultsPerQuery,
+        maxCandidates: req.body?.maxCandidates,
+        minEvents: req.body?.minEvents,
+        createJobs: req.body?.createJobs,
+        recheckRejected: req.body?.recheckRejected,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      // 202: discovery keeps running after this response; poll GET .../sources.
+      return res.status(202).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/sources/discover', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to start source discovery.',
+      });
+    }
+  },
+);
+
+router.get(
   '/tenants/:tenantKey/curation-jobs',
   verifyToken,
   requirePlatformAdmin,
@@ -736,7 +1018,6 @@ router.post(
     }
   },
 );
-
 router.get(
   '/tenants/:tenantKey/curation-runs/:runId',
   verifyToken,

@@ -12,6 +12,8 @@ const pivotTagCatalogSchema = require('../schemas/pivotTagCatalog');
 const pivotPosterTemplateSchema = require('../schemas/pivotPosterTemplate');
 const pivotCurationJobSchema = require('../schemas/pivotCurationJob');
 const pivotCurationRunSchema = require('../schemas/pivotCurationRun');
+const pivotCitySourceSchema = require('../schemas/pivotCitySource');
+const pivotSourceDiscoveryRunSchema = require('../schemas/pivotSourceDiscoveryRun');
 const pivotContactHashSchema = require('../schemas/pivotContactHash');
 const pivotCreatorGrantSchema = require('../schemas/pivotCreatorGrant');
 
@@ -21,7 +23,7 @@ const pivotCreatorGrantSchema = require('../schemas/pivotCreatorGrant');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCreatorGrant', …
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -68,6 +70,16 @@ const getGlobalModels = (req, ...names) => {
             'PivotCurationRun',
             pivotCurationRunSchema,
             'pivot_curation_runs'
+        ),
+        PivotCitySource: db.model(
+            'PivotCitySource',
+            pivotCitySourceSchema,
+            'pivot_city_sources'
+        ),
+        PivotSourceDiscoveryRun: db.model(
+            'PivotSourceDiscoveryRun',
+            pivotSourceDiscoveryRunSchema,
+            'pivot_source_discovery_runs'
         ),
         PivotContactHash: db.model(
             'PivotContactHash',
