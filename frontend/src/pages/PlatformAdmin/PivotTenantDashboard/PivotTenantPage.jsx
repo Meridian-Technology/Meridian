@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PivotDashBurst from './PivotDashBurst';
 import PivotScrapbookTitle from '../../../components/PivotBranding/PivotScrapbookTitle';
-import './PivotTenantPage.scss';
+import '../../../components/PivotOps/pivotOpsTokens.scss';
+import '../../../components/PivotOps/pivotOpsLabBridge.scss';
 import '../../../components/PivotBranding/PivotScrapbookTitle.scss';
+import './PivotTenantPage.scss';
 
 const COLLAPSE_SCROLL_PX = 28;
 
@@ -16,8 +18,8 @@ function buildTenantLabel(cityDisplayName, tenantKey) {
 }
 
 /**
- * Shared Just Go ops page shell — corner burst, sticky collapsing header, scrapbook titles.
- * Pass page body as children.
+ * Shared Just Go ops page shell — corner burst, sticky collapsing scrapbook
+ * header, Pivot Ops DNA on the body (white cards + orange accent).
  */
 function PivotTenantPage({
   title,
@@ -71,11 +73,10 @@ function PivotTenantPage({
   return (
     <div
       ref={pageRef}
-      className={`pivot-tenant-page pivot-lab linear-admin general dash${
+      className={`pivot-ops pivot-tenant-page${
         collapsed ? ' is-collapsed' : ''
-      } ${className}`.trim()}
+      }${className ? ` ${className}` : ''}`}
     >
-      {/* Page-level burst — unbounded until scroll; sits behind header/body. */}
       <PivotDashBurst />
       <header className="pivot-tenant-page__header">
         <div className="pivot-tenant-page__header-inner">
@@ -96,7 +97,9 @@ function PivotTenantPage({
               <p className="pivot-tenant-page__subtitle">{subtitle}</p>
             ) : null}
           </div>
-          {actions ? <div className="pivot-lab__controls">{actions}</div> : null}
+          {actions ? (
+            <div className="pivot-tenant-page__actions">{actions}</div>
+          ) : null}
         </div>
       </header>
       <div className="pivot-tenant-page__body">{children}</div>

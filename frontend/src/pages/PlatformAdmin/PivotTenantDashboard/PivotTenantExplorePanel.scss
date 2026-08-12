@@ -1,6 +1,6 @@
 .pivot-tenant-explore-panel {
   min-height: 100%;
-  background: var(--la-surface, #fff);
+  background: var(--dash-surface, #fff);
   box-sizing: border-box;
 
   &__header {
@@ -9,8 +9,8 @@
     align-items: center;
     gap: 12px 20px;
     padding: 16px 24px;
-    border-bottom: 1px solid var(--la-border-subtle, rgba(0, 0, 0, 0.08));
-    background: var(--la-surface, #fff);
+    border-bottom: 1px solid var(--dash-border, rgba(26, 23, 20, 0.14));
+    background: var(--dash-surface, #fff);
     position: sticky;
     top: 0;
     z-index: 2;
@@ -31,7 +31,7 @@
     margin: 0;
     font-size: 20px;
     font-weight: 600;
-    color: var(--la-text, inherit);
+    color: var(--dash-ink, #1a1714);
   }
 
   &__subtitle {

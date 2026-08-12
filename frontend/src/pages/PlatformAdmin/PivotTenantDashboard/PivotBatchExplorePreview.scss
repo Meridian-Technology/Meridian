@@ -319,9 +319,9 @@
 
   &__meta {
     padding: 14px 16px;
-    border: 1px solid var(--la-border-subtle, rgba(0, 0, 0, 0.08));
-    border-radius: var(--la-radius, 8px);
-    background: var(--la-surface, rgba(0, 0, 0, 0.02));
+    border: 1px solid var(--dash-border, rgba(26, 23, 20, 0.14));
+    border-radius: var(--dash-radius, 2px);
+    background: var(--dash-surface-subtle, #f7f6f4);
 
     dl {
       display: grid;
@@ -332,11 +332,9 @@
 
     dt {
       margin: 0;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--la-text-tertiary, #6b7280);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
     }
 
     dd {
@@ -344,7 +342,7 @@
       font-size: 14px;
       font-weight: 600;
       font-variant-numeric: tabular-nums;
-      color: var(--la-text, inherit);
+      color: var(--dash-ink, #1a1714);
     }
   }
 
