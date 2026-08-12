@@ -5,12 +5,14 @@ import TenantManagementPage from './TenantManagement/TenantManagementPage';
 import PivotLabPage from './PivotLab/PivotLabPage';
 import PivotWeeklyDropPage from './PivotWeeklyDrop/PivotWeeklyDropPage';
 import PlatformAdminsPage from './PlatformAdmins/PlatformAdminsPage';
+import useAdminDashboardTheme from '../../hooks/useAdminDashboardTheme';
 import AdminLogo from '../../assets/Brand Image/ADMIN.svg';
 import '../Admin/Admin.scss';
 import './PlatformAdmin.scss';
 
 function PlatformAdmin() {
   const navigate = useNavigate();
+  const { isDark } = useAdminDashboardTheme();
 
   const menuItems = [
     {
@@ -38,12 +40,12 @@ function PlatformAdmin() {
   return (
     <Dashboard
       menuItems={menuItems}
-      additionalClass="admin platform-admin"
+      additionalClass={`admin platform-admin${isDark ? ' platform-admin--dark' : ''}`}
       logo={AdminLogo}
       onBack={() => navigate('/select-school')}
       enableSubSidebar={false}
-      primaryColor={'black'}
-      secondaryColor={'rgba(185, 185, 185, 0.2)'}
+      primaryColor={isDark ? '#e8eaed' : 'black'}
+      secondaryColor={isDark ? 'rgba(139, 147, 230, 0.22)' : 'rgba(185, 185, 185, 0.2)'}
     />
   );
 }

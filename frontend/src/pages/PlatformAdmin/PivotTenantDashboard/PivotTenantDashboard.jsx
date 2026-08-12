@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Dashboard from '../../../components/Dashboard/Dashboard';
 import { useFetch } from '../../../hooks/useFetch';
+import useAdminDashboardTheme from '../../../hooks/useAdminDashboardTheme';
 import { isPivotTenant } from '../TenantManagement/tenantPivotUtils';
 import PivotTenantOverviewPage from './PivotTenantOverviewPage';
 import PivotTenantCurationPage from './PivotTenantCurationPage';
@@ -10,6 +11,7 @@ import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
 import '../TenantManagement/TenantManagementPage.scss';
+import '../PlatformAdmin.scss';
 import './PivotTenantDashboard.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
@@ -42,6 +44,7 @@ function PivotTenantDashboard() {
   const navigate = useNavigate();
   const { tenantKey: tenantKeyParam } = useParams();
   const tenantKey = normalizeTenantKey(tenantKeyParam);
+  const { isDark } = useAdminDashboardTheme();
 
   const goToTenants = () => navigate('/platform-admin?page=0');
 
@@ -149,7 +152,9 @@ function PivotTenantDashboard() {
   return (
     <Dashboard
       menuItems={menuItems}
-      additionalClass="admin platform-admin pivot-tenant-dash"
+      additionalClass={`admin platform-admin pivot-tenant-dash${
+        isDark ? ' platform-admin--dark' : ''
+      }`}
       logo={<PivotJustGoLogo />}
       middleItem={
         <PivotTenantDropdown
@@ -162,8 +167,8 @@ function PivotTenantDashboard() {
       onBack={goToTenants}
       enableSubSidebar={false}
       defaultPage={0}
-      primaryColor="black"
-      secondaryColor="rgba(185, 185, 185, 0.2)"
+      primaryColor="#ff4f1f"
+      secondaryColor={isDark ? 'rgba(255, 79, 31, 0.22)' : 'rgba(255, 79, 31, 0.12)'}
     />
   );
 }
