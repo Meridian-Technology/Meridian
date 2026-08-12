@@ -1,0 +1,49 @@
+.pivot-ops-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--pivot-ops-radius-chip);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-transform: none;
+  letter-spacing: 0;
+  background: var(--pivot-ops-surface-subtle);
+  color: var(--pivot-ops-ink-muted);
+  border: 1px solid var(--pivot-ops-border);
+
+  &--ok {
+    background: var(--pivot-ops-success-soft);
+    color: var(--pivot-ops-success);
+    border-color: rgba(15, 118, 110, 0.22);
+  }
+
+  &--info {
+    background: var(--pivot-ops-info-soft);
+    color: var(--pivot-ops-info);
+    border-color: rgba(29, 78, 216, 0.2);
+  }
+
+  &--warn {
+    background: var(--pivot-ops-warn-soft);
+    color: var(--pivot-ops-warn);
+    border-color: rgba(180, 83, 9, 0.22);
+  }
+
+  &--danger {
+    background: var(--pivot-ops-danger-soft);
+    color: var(--pivot-ops-danger);
+    border-color: rgba(220, 38, 38, 0.22);
+  }
+
+  &--muted {
+    background: var(--pivot-ops-surface-subtle);
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &--accent {
+    background: var(--pivot-ops-accent-soft);
+    color: var(--pivot-ops-accent-hover);
+    border-color: rgba(255, 79, 31, 0.28);
+  }
+}

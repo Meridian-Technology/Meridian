@@ -1,0 +1,277 @@
+/**
+ * Bridge: restyle legacy pivot-lab / linear-admin markup inside .pivot-ops
+ * so large domain pages inherit ops DNA without a full JSX rewrite.
+ */
+
+.pivot-ops {
+  .pivot-lab__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .pivot-lab__section {
+    margin-bottom: 16px;
+  }
+
+  .pivot-lab__section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .pivot-lab__section-hint,
+  .linear-section__title + .pivot-lab__section-hint {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  .linear-section__title,
+  .pivot-lab__panel-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    text-transform: none;
+    color: var(--pivot-ops-ink);
+  }
+
+  .pivot-lab__kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .linear-stat.pivot-lab__metric,
+  .pivot-lab__metric {
+    min-width: 0;
+    padding: 12px 14px;
+    background: var(--pivot-ops-surface);
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-card);
+  }
+
+  .linear-stat__label {
+    display: block;
+    margin: 0 0 4px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  .linear-stat__value {
+    display: block;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--pivot-ops-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pivot-lab__metric-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  .pivot-lab__overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+  }
+
+  .pivot-lab__panel {
+    padding: 16px;
+    background: var(--pivot-ops-surface);
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-card);
+    min-width: 0;
+  }
+
+  .pivot-lab__funnel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .pivot-lab__funnel-row {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr) 82px;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .pivot-lab__funnel-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink);
+  }
+
+  .pivot-lab__funnel-hint {
+    display: block;
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  .pivot-lab__funnel-track {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 20px;
+    background: var(--pivot-ops-surface-subtle);
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-control);
+    overflow: hidden;
+  }
+
+  .pivot-lab__funnel-bar {
+    height: 100%;
+    background: var(--pivot-ops-accent-soft);
+    border-right: 2px solid var(--pivot-ops-accent);
+  }
+
+  .pivot-lab__funnel-value {
+    position: absolute;
+    right: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pivot-lab__funnel-conversion {
+    font-size: 11px;
+    color: var(--pivot-ops-ink-muted);
+    text-align: right;
+  }
+
+  .pivot-lab__engagement-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .pivot-lab__table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-card);
+    background: var(--pivot-ops-surface);
+  }
+
+  .pivot-lab__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+
+    th,
+    td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--pivot-ops-border);
+      vertical-align: top;
+    }
+
+    th {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--pivot-ops-ink-soft);
+      background: var(--pivot-ops-surface-subtle);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    a {
+      color: var(--pivot-ops-accent);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  .pivot-lab__pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--pivot-ops-radius-chip);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    background: var(--pivot-ops-surface-subtle);
+    color: var(--pivot-ops-ink-muted);
+    border: 1px solid var(--pivot-ops-border);
+
+    &--ok {
+      background: var(--pivot-ops-success-soft);
+      color: var(--pivot-ops-success);
+      border-color: rgba(15, 118, 110, 0.22);
+    }
+
+    &--info {
+      background: var(--pivot-ops-info-soft);
+      color: var(--pivot-ops-info);
+      border-color: rgba(29, 78, 216, 0.2);
+    }
+
+    &--warn {
+      background: var(--pivot-ops-warn-soft);
+      color: var(--pivot-ops-warn);
+      border-color: rgba(180, 83, 9, 0.22);
+    }
+
+    &--muted {
+      background: var(--pivot-ops-surface-subtle);
+      color: var(--pivot-ops-ink-soft);
+    }
+  }
+
+  .pivot-lab__empty,
+  .pivot-lab__error {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .pivot-lab__error {
+    color: var(--pivot-ops-danger);
+  }
+
+  .pivot-lab__empty {
+    color: var(--pivot-ops-ink-muted);
+  }
+
+  .linear-btn--primary {
+    background: var(--pivot-ops-accent);
+    border-color: var(--pivot-ops-accent);
+    color: var(--pivot-ops-on-accent);
+
+    &:hover:not(:disabled) {
+      background: var(--pivot-ops-accent-hover);
+      border-color: var(--pivot-ops-accent-hover);
+    }
+  }
+
+  .linear-btn--secondary:focus-visible,
+  .linear-btn:focus-visible,
+  .linear-input:focus,
+  .linear-input:focus-visible {
+    outline-color: var(--pivot-ops-accent);
+    border-color: var(--pivot-ops-accent);
+  }
+}
