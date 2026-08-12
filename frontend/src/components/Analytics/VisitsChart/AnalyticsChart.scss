@@ -77,9 +77,16 @@
         }
         
     }
-    .chart-container{
-        height:200px;
-        width:100%;
+    /* Legacy Recharts host only — visx charts size to their height prop. */
+    .chart-container:not(.chart-container-visx) {
+        height: 200px;
+        width: 100%;
+    }
+
+    .chart-container.chart-container-visx {
+        height: auto;
+        min-height: 0;
+        width: 100%;
     }
 
 
@@ -92,8 +99,8 @@
         background-color: transparent;
         border-radius: 0;
         scale:1;
-        .chart-container{
-            height:80px;
+        .chart-container:not(.chart-container-visx) {
+            height: 80px;
         }
         .row{
             margin-bottom: 30px;

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import PivotOpsAnimateNumber from '../../../components/PivotOps/PivotOpsAnimateNumber';
 import './PivotReadinessCard.scss';
 
 function formatComponentValue(component) {
@@ -55,7 +56,7 @@ function PivotReadinessCard({ readiness, loading = false, compact = false, class
       <div className="pivot-readiness__score-block">
         <p className="pivot-readiness__label">Readiness</p>
         <p className="pivot-readiness__score" aria-label={`Score ${score} out of 100`}>
-          {score}
+          <PivotOpsAnimateNumber value={score} />
           <span className="pivot-readiness__score-max">/100</span>
         </p>
         <p className="pivot-readiness__meta">

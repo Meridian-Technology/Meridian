@@ -39,9 +39,17 @@
     white-space: nowrap;
 }
 
+.admin-platform-trend-chart.visit-chart .chart-container {
+    /* Override legacy AnalyticsChart.scss fixed 200px on .visit-chart .chart-container */
+    height: auto;
+    min-height: 0;
+    width: 100%;
+}
+
 .admin-platform-trend-chart .chart-container-visx {
     width: 100%;
-    min-height: 160px;
+    height: auto;
+    min-height: 0;
     overflow: visible;
 }
 
@@ -67,10 +75,13 @@
 
 /* Keep tooltip visuals tied to chart component usage, not parent pages. */
 .rsvp-chart-tooltip-wrapper.visx-tooltip {
-    padding: 0;
-    background: transparent;
-    border: none;
-    box-shadow: none;
+    padding: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    outline: none !important;
     z-index: 9999 !important;
     pointer-events: none;
 }

@@ -28,7 +28,10 @@ const chartTheme = buildChartTheme({
 });
 
 function bandCenterX(xScale, bandwidth, xCat) {
-    return Number(xScale(xCat)) + bandwidth / 2;
+    const base = Number(xScale(xCat));
+    // Point scales have no bandwidth — the scale value is already the center.
+    if (!bandwidth) return base;
+    return base + bandwidth / 2;
 }
 
 const CHART_BAND_PADDING_INNER = 0.12;
@@ -459,6 +462,7 @@ function EventDashboardChart({
     xAccessor = defaultAccessors.xAccessor,
     yAccessor = defaultAccessors.yAccessor,
     xTickFormat = formatSemanticDate,
+    yTickFormat,
     height = 280,
     margin = { top: 12, right: 12, bottom: 28, left: 36 },
     color = '#22c55e',
@@ -470,6 +474,8 @@ function EventDashboardChart({
     showPointMarkers = false,
     emptyMessage = 'No data',
     xDomain,
+    /** Optional fixed y domain, e.g. [0, 100] for rate charts. */
+    yDomain,
     series,
     dashedLineBackdropStroke = 'var(--background, #ffffff)',
     debugInteractions = false,
@@ -479,6 +485,12 @@ function EventDashboardChart({
     onHoverSyncChange,
     enableRangeSelection = false,
     onRangeSelect,
+    bandPaddingInner = CHART_BAND_PADDING_INNER,
+    bandPaddingOuter = CHART_BAND_PADDING_OUTER,
+    /** `point` places first/last x values on the plot edges. */
+    xScaleType = 'band',
+    hideXAxis = false,
+    hideYAxis = false,
 }) {
     const containerRef = React.useRef(null);
     const lastMoveLogAtRef = React.useRef(0);
@@ -501,7 +513,12 @@ function EventDashboardChart({
         xValues.length > 40 ? MAX_X_TICKS_LONG_RANGE : MAX_X_TICKS
     );
 
-    const yMax = Math.max(...allValues, 0) * 1.1 || 10;
+    const yMax =
+        Array.isArray(yDomain) && yDomain.length === 2
+            ? yDomain[1]
+            : Math.max(...allValues, 0) * 1.1 || 10;
+    const yMin =
+        Array.isArray(yDomain) && yDomain.length === 2 ? yDomain[0] : 0;
     const gradientId = (c) => `chart-gradient-${c.replace('#', '')}`;
     const getBandIndexFromMouseEvent = React.useCallback(
         (e) => {
@@ -608,13 +625,21 @@ function EventDashboardChart({
         >
             <XYChart
                 theme={chartTheme}
-                xScale={{
-                    type: 'band',
-                    paddingInner: CHART_BAND_PADDING_INNER,
-                    paddingOuter: CHART_BAND_PADDING_OUTER,
-                    ...(xDomain && { domain: xDomain })
-                }}
-                yScale={{ type: 'linear', domain: [0, yMax] }}
+                xScale={
+                    xScaleType === 'point'
+                        ? {
+                              type: 'point',
+                              padding: 0,
+                              ...(xDomain && { domain: xDomain }),
+                          }
+                        : {
+                              type: 'band',
+                              paddingInner: bandPaddingInner,
+                              paddingOuter: bandPaddingOuter,
+                              ...(xDomain && { domain: xDomain }),
+                          }
+                }
+                yScale={{ type: 'linear', domain: [yMin, yMax] }}
                 height={height}
                 margin={margin}
             >
@@ -639,40 +664,47 @@ function EventDashboardChart({
                     strokeDasharray="2 4"
                     className="chart-grid"
                 />
-                <Axis
-                    orientation="bottom"
-                    hideAxisLine
-                    tickLength={0}
-                    tickFormat={xTickFormat}
-                    tickValues={xTickValues}
-                    tickLabelProps={() => ({
-                        fill: 'var(--light-text)',
-                        fontSize: 10,
-                        textAnchor: 'middle',
-                    })}
-                    numTicks={
-                        xTickValues != null
-                            ? xTickValues.length
-                            : Math.min(xDomain?.length ?? xValues.length, 8)
-                    }
-                />
-                <Axis
-                    orientation="left"
-                    hideAxisLine
-                    tickLength={0}
-                    tickLabelProps={() => ({
-                        fill: 'var(--light-text)',
-                        fontSize: 10,
-                        textAnchor: 'end',
-                        dx: -4,
-                    })}
-                    numTicks={4}
-                />
+                {!hideXAxis ? (
+                    <Axis
+                        orientation="bottom"
+                        hideAxisLine
+                        tickLength={0}
+                        tickFormat={xTickFormat}
+                        tickValues={xTickValues}
+                        tickLabelProps={() => ({
+                            fill: 'var(--light-text)',
+                            fontSize: 10,
+                            textAnchor: 'middle',
+                        })}
+                        numTicks={
+                            xTickValues != null
+                                ? xTickValues.length
+                                : Math.min(xDomain?.length ?? xValues.length, 8)
+                        }
+                    />
+                ) : null}
+                {!hideYAxis ? (
+                    <Axis
+                        orientation="left"
+                        hideAxisLine
+                        tickLength={0}
+                        tickFormat={yTickFormat}
+                        tickLabelProps={() => ({
+                            fill: 'var(--light-text)',
+                            fontSize: 10,
+                            textAnchor: 'end',
+                            dx: -4,
+                        })}
+                        numTicks={4}
+                    />
+                ) : null}
                 {isMultiSeries ? (
                     <>
                         {series.map((s, i) => (
                             <React.Fragment key={`area-wrap-${i}`}>
-                                {showArea && s.data?.length > 0 && (
+                                {showArea &&
+                                    s.data?.length > 0 &&
+                                    (typeof s.fillOpacity !== 'number' || s.fillOpacity > 0) && (
                                     <AreaSeries
                                         dataKey={`series-${i}`}
                                         data={s.data}
@@ -863,6 +895,20 @@ function EventDashboardChart({
                         showSeriesGlyphs={false}
                         showDatumGlyph={false}
                         zIndex={10002}
+                        // Override @visx/tooltip defaultStyles (inline) so the outer shell
+                        // doesn't show a square white card behind the custom rounded tooltip.
+                        // Keep normal font/line-height — 0 collapses the custom tooltip body.
+                        style={{
+                            position: 'absolute',
+                            pointerEvents: 'none',
+                            background: 'transparent',
+                            backgroundColor: 'transparent',
+                            color: 'inherit',
+                            padding: 0,
+                            border: 'none',
+                            borderRadius: 0,
+                            boxShadow: 'none',
+                        }}
                         verticalCrosshairStyle={{
                             stroke: '#94a3b8',
                             strokeWidth: 1,

@@ -17,8 +17,14 @@ const {
   isLiveCreatorBatchWeek,
   buildCreatorListingCurationHref,
 } = require('./pivotCreatorAdminNotifyService');
-const { shiftIsoWeek } = require('../utilities/pivotIsoWeek');
+const {
+  shiftIsoWeek,
+  isoWeekToMondayUtc,
+  daysFromIsoMonday,
+  normalizeDropDayOfWeek,
+} = require('../utilities/pivotIsoWeek');
 const { PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
+const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
 
 const HOST_CREATED_SOURCE = 'justgo';
 
@@ -140,6 +146,82 @@ async function aggregateEventCountsByStatus(Event, batchWeek) {
  * Just Go Creator Console listings (`source: justgo`) for a batch week, by ingestStatus.
  * Task 3.2 — overview / curation host-pressure counts.
  */
+function formatLocalIsoDate(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  if (!year || !month || !day) return null;
+  return `${year}-${month}-${day}`;
+}
+
+function formatLocalWeekday(date, timeZone) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+  }).format(date);
+}
+
+/**
+ * Seven drop-cycle calendar days (drop weekday → +6) with empty counts.
+ * Keys are local YYYY-MM-DD in the city timezone.
+ */
+function buildEmptyEventsByDay(batchWeek, dropDayOfWeek = 4, timeZone = 'UTC') {
+  const monday = isoWeekToMondayUtc(batchWeek);
+  if (!monday) return [];
+  const dropOffset = daysFromIsoMonday(normalizeDropDayOfWeek(dropDayOfWeek, 4));
+  const slots = [];
+  for (let i = 0; i < 7; i += 1) {
+    const day = new Date(monday);
+    day.setUTCDate(monday.getUTCDate() + dropOffset + i);
+    const noon = new Date(
+      Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 12),
+    );
+    const date = formatLocalIsoDate(noon, timeZone);
+    if (!date) continue;
+    const weekday = formatLocalWeekday(noon, timeZone);
+    slots.push({
+      date,
+      weekday,
+      count: 0,
+    });
+  }
+  return slots;
+}
+
+/**
+ * Catalog event counts per day of the drop week (city-local calendar day).
+ * Events without a parseable start_time are omitted from the heatmap.
+ */
+async function aggregateEventsByDay(Event, batchWeek, dropDayOfWeek, timeZone) {
+  const slots = buildEmptyEventsByDay(batchWeek, dropDayOfWeek, timeZone);
+  if (!slots.length) return slots;
+
+  const byDate = new Map(slots.map((slot) => [slot.date, slot]));
+  const events = await Event.find(catalogEventsQuery(batchWeek))
+    .select('start_time')
+    .lean();
+
+  for (const event of events) {
+    if (event.start_time == null) continue;
+    const start = event.start_time instanceof Date
+      ? event.start_time
+      : new Date(event.start_time);
+    if (Number.isNaN(start.getTime())) continue;
+    const dateKey = formatLocalIsoDate(start, timeZone);
+    const slot = dateKey ? byDate.get(dateKey) : null;
+    if (slot) slot.count += 1;
+  }
+
+  return slots;
+}
+
 async function aggregateHostCreatedCountsByStatus(Event, batchWeek) {
   const rows = await Event.aggregate([
     {
@@ -271,17 +353,24 @@ async function aggregateTenantOverview(req, tenant, batchWeek, options = {}) {
   const eventQuery = PUBLISHED_EVENT_QUERY(batchWeek);
   const includeStatusBreakdown = options.includeStatusBreakdown === true;
   const includeReferralCodes = options.includeReferralCodes !== false;
+  const dropConfig = resolvePivotDropConfig(tenant);
+  const dropDayOfWeek = dropConfig.dayOfWeek ?? 4;
+  const timeZone = dropConfig.timezone || 'UTC';
 
-  const [eventCount, events, eventCountsByStatus, hostCreatedCounts] = await Promise.all([
-    Event.countDocuments(eventQuery),
-    Event.find(eventQuery).select('_id').lean(),
-    includeStatusBreakdown
-      ? aggregateEventCountsByStatus(Event, batchWeek)
-      : Promise.resolve(null),
-    includeStatusBreakdown
-      ? aggregateHostCreatedCountsByStatus(Event, batchWeek)
-      : Promise.resolve(null),
-  ]);
+  const [eventCount, events, eventCountsByStatus, hostCreatedCounts, eventsByDay] =
+    await Promise.all([
+      Event.countDocuments(eventQuery),
+      Event.find(eventQuery).select('_id').lean(),
+      includeStatusBreakdown
+        ? aggregateEventCountsByStatus(Event, batchWeek)
+        : Promise.resolve(null),
+      includeStatusBreakdown
+        ? aggregateHostCreatedCountsByStatus(Event, batchWeek)
+        : Promise.resolve(null),
+      includeStatusBreakdown
+        ? aggregateEventsByDay(Event, batchWeek, dropDayOfWeek, timeZone)
+        : Promise.resolve(null),
+    ]);
   const eventIds = events.map((event) => event._id);
 
   const intentFilter = { batchWeek };
@@ -343,6 +432,9 @@ async function aggregateTenantOverview(req, tenant, batchWeek, options = {}) {
     row.hostDraft = hostCreatedCounts.hostDraft;
     row.hostStaged = hostCreatedCounts.hostStaged;
     row.hostPublished = hostCreatedCounts.hostPublished;
+  }
+  if (eventsByDay) {
+    row.eventsByDay = eventsByDay;
   }
 
   return row;
@@ -548,6 +640,7 @@ async function getTenantOverview(req, options = {}) {
       },
       hostLiveWeekAlert,
       funnel,
+      eventsByDay: current.eventsByDay || [],
       vsPrevWeek,
       dropSchedule: current.dropSchedule,
       referralCodes: current.referralCodes,
