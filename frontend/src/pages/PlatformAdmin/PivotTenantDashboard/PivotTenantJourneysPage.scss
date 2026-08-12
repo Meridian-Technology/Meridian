@@ -1,7 +1,5 @@
 .pivot-tenant-journeys {
   max-width: none;
-  /* Horizontal/vertical padding owned by PivotTenantPage shell. */
-  padding: 0;
 
   .pivot-tenant-page__body {
     max-width: 1100px;
@@ -9,12 +7,12 @@
 
   &__muted {
     font-size: 12px;
-    color: var(--la-text-tertiary, inherit);
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
   }
 
   &__link {
     font-size: 13px;
-    color: var(--la-accent, #5e6ad2);
+    color: var(--pivot-ops-accent, #ff4f1f);
     text-decoration: none;
 
     &:hover {
@@ -29,14 +27,31 @@
 
     @media (min-width: 900px) {
       grid-template-columns: 1fr 1fr;
-      gap: 14px;
     }
+  }
+
+  &__panel {
+    padding: 16px;
+  }
+
+  &__panel--funnel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  &__funnel-wrap {
+    margin: 10px -16px -16px;
+    flex: 1 1 auto;
+    min-height: 120px;
   }
 
   &__analytics-funnel {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin-top: 14px;
   }
 
   &__analytics-row {
@@ -56,13 +71,14 @@
   &__analytics-key {
     font-size: 13px;
     font-weight: 500;
-    color: var(--la-text, inherit);
+    color: var(--pivot-ops-ink, #1a1714);
   }
 
   &__analytics-conv {
     font-size: 11px;
-    color: var(--la-text-tertiary, inherit);
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 
   &__inspector {
@@ -85,11 +101,9 @@
 
   &__list-label {
     margin: 4px 0 0;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--la-text-tertiary, inherit);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
   }
 
   &__user-list {
@@ -112,19 +126,19 @@
     padding: 8px 10px;
     text-align: left;
     border: 1px solid transparent;
-    border-radius: var(--la-radius, 8px);
+    border-radius: var(--pivot-ops-radius-control, 8px);
     background: transparent;
     cursor: pointer;
     color: inherit;
     font: inherit;
 
     &:hover {
-      background: var(--la-surface, rgba(0, 0, 0, 0.03));
+      background: var(--pivot-ops-surface-subtle, #f7f6f4);
     }
 
     &--selected {
-      background: var(--la-surface, rgba(0, 0, 0, 0.04));
-      border-color: var(--la-border-subtle, rgba(0, 0, 0, 0.1));
+      background: var(--pivot-ops-surface-subtle, #f7f6f4);
+      border-color: var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
     }
   }
 
@@ -140,11 +154,12 @@
   &__user-handle {
     font-size: 11px;
     font-weight: 400;
-    color: var(--la-text-tertiary, inherit);
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
   }
 
   &__history {
     min-width: 0;
+    padding: 16px;
   }
 
   &__history-head {
@@ -160,7 +175,7 @@
     margin: 0 0 4px;
     font-size: 15px;
     font-weight: 600;
-    color: var(--la-text, inherit);
+    color: var(--pivot-ops-ink, #1a1714);
 
     .pivot-tenant-journeys__user-handle {
       margin-left: 6px;
@@ -175,7 +190,7 @@
 
   &__timeline {
     list-style: none;
-    margin: 0 0 14px;
+    margin: 10px 0 14px;
     padding: 0;
     display: flex;
     flex-direction: column;
@@ -189,9 +204,9 @@
     justify-content: space-between;
     gap: 8px 14px;
     padding: 8px 10px;
-    border: 1px solid var(--la-border-subtle, rgba(0, 0, 0, 0.08));
-    border-radius: var(--la-radius, 8px);
-    background: transparent;
+    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+    border-radius: var(--pivot-ops-radius-control, 8px);
+    background: var(--pivot-ops-surface-subtle, #f7f6f4);
   }
 
   &__timeline-main {
@@ -212,18 +227,18 @@
     margin: 0;
     font-size: 13px;
     font-weight: 500;
-    color: var(--la-text, inherit);
+    color: var(--pivot-ops-ink, #1a1714);
   }
 
   &__event-meta {
     margin: 2px 0 0;
     font-size: 11px;
-    color: var(--la-text-tertiary, inherit);
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
   }
 
   &__analytics-list {
     list-style: none;
-    margin: 0;
+    margin: 10px 0 0;
     padding: 0;
     display: flex;
     flex-direction: column;

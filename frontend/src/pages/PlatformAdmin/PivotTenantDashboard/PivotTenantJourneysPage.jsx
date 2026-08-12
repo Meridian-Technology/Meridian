@@ -3,6 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import {
+  PivotOpsAreaFunnel,
+  PivotOpsCard,
+  PivotOpsMetric,
+  PivotOpsMetricGrid,
+  PivotOpsSection,
+  PivotOpsStatus,
+} from '../../../components/PivotOps';
+import {
   toIsoWeek,
   isValidIsoWeek,
   shiftIsoWeek,
@@ -27,57 +35,9 @@ function formatRate(rate) {
   return `${Math.round(rate * 100)}%`;
 }
 
-function formatPercent(numerator, denominator) {
-  if (!denominator) return null;
-  return `${Math.round((numerator / denominator) * 100)}%`;
-}
-
 function formatConversionPct(value) {
   if (value == null || Number.isNaN(value)) return '—';
   return `${Number(value).toFixed(1)}%`;
-}
-
-function MetricCard({ label, value, hint }) {
-  return (
-    <div className="linear-stat pivot-lab__metric">
-      <span className="linear-stat__label">{label}</span>
-      <span className="linear-stat__value">{value}</span>
-      {hint ? <span className="pivot-lab__metric-hint">{hint}</span> : null}
-    </div>
-  );
-}
-
-/** Intent funnel bars — same visual language as Overview / Lab. */
-function IntentFunnelChart({ stages }) {
-  const max = Math.max(1, ...(stages || []).map((stage) => stage.value ?? 0));
-  if (!stages?.length) return null;
-
-  return (
-    <div className="pivot-lab__funnel" role="img" aria-label="Intent conversion funnel">
-      {stages.map((stage, index) => {
-        const prev = index > 0 ? stages[index - 1].value : null;
-        const conversion = prev != null ? formatPercent(stage.value, prev) : null;
-        return (
-          <div className="pivot-lab__funnel-row" key={stage.key}>
-            <div className="pivot-lab__funnel-meta">
-              <span className="pivot-lab__funnel-label">{stage.label}</span>
-              <span className="pivot-lab__funnel-hint">{stage.hint}</span>
-            </div>
-            <div className="pivot-lab__funnel-track">
-              <div
-                className="pivot-lab__funnel-bar"
-                style={{ width: `${Math.max(2, ((stage.value ?? 0) / max) * 100)}%` }}
-              />
-              <span className="pivot-lab__funnel-value">{stage.value ?? 0}</span>
-            </div>
-            <span className="pivot-lab__funnel-conversion">
-              {conversion ? `${conversion} of prev` : '\u00a0'}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 /** Analytics closed-funnel steps (pivot_* event names). */
@@ -97,12 +57,12 @@ function AnalyticsFunnelSteps({ steps }) {
             <span className="pivot-tenant-journeys__analytics-key">{step.key}</span>
             <code className="linear-code linear-code--inline">{step.event}</code>
           </div>
-          <div className="pivot-lab__funnel-track">
+          <div className="pivot-ops-funnel__track">
             <div
-              className="pivot-lab__funnel-bar"
+              className="pivot-ops-funnel__bar"
               style={{ width: `${Math.max(2, ((step.count ?? 0) / max) * 100)}%` }}
             />
-            <span className="pivot-lab__funnel-value">{step.count ?? 0}</span>
+            <span className="pivot-ops-funnel__value">{step.count ?? 0}</span>
           </div>
           <span className="pivot-tenant-journeys__analytics-conv">
             {formatConversionPct(step.conversionRate)}
@@ -116,15 +76,15 @@ function AnalyticsFunnelSteps({ steps }) {
 
 function IntentStatusPill({ status }) {
   if (status === 'registered') {
-    return <span className="pivot-lab__pill pivot-lab__pill--ok">Going</span>;
+    return <PivotOpsStatus tone="ok">Going</PivotOpsStatus>;
   }
   if (status === 'interested') {
-    return <span className="pivot-lab__pill pivot-lab__pill--info">Interested</span>;
+    return <PivotOpsStatus tone="info">Interested</PivotOpsStatus>;
   }
   if (status === 'passed') {
-    return <span className="pivot-lab__pill pivot-lab__pill--muted">Passed</span>;
+    return <PivotOpsStatus tone="muted">Passed</PivotOpsStatus>;
   }
-  return <span className="pivot-lab__pill">{status || '—'}</span>;
+  return <PivotOpsStatus>{status || '—'}</PivotOpsStatus>;
 }
 
 function useDebouncedValue(value, delayMs) {
@@ -455,68 +415,62 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
         </p>
       ) : null}
 
-      <section
-        className="linear-section pivot-lab__section"
-        aria-labelledby="pivot-journeys-kpis"
-      >
-        <div className="pivot-lab__section-head">
-          <h2 id="pivot-journeys-kpis" className="linear-section__title">
-            Week snapshot
-          </h2>
-          {overviewLoading ? (
+      <PivotOpsSection
+        title="Week snapshot"
+        titleId="pivot-journeys-kpis"
+        actions={
+          overviewLoading ? (
             <span className="pivot-tenant-journeys__muted">Loading…</span>
-          ) : null}
-        </div>
-        <div className="pivot-lab__kpi-grid">
-          <MetricCard
+          ) : null
+        }
+      >
+        <PivotOpsMetricGrid>
+          <PivotOpsMetric
             label="Active users"
             value={kpis?.activeUsers ?? '—'}
             hint="with intents this week"
           />
-          <MetricCard
+          <PivotOpsMetric
             label="Median cards seen"
             value={kpis?.medianCardsSeen ?? '—'}
             hint="pivot_card_view"
           />
-          <MetricCard
+          <PivotOpsMetric
             label="Swipes"
             value={kpis?.swipeCount ?? '—'}
             hint="pass + interested + going"
           />
-          <MetricCard
+          <PivotOpsMetric
             label="Interest rate"
             value={formatRate(conversionRates?.interestRate)}
             hint="right-swipe / swipes"
           />
-          <MetricCard
+          <PivotOpsMetric
             label="Ticket open rate"
             value={formatRate(conversionRates?.ticketOpenRate)}
             hint="openers / interested"
           />
-          <MetricCard
+          <PivotOpsMetric
             label="Register rate"
             value={formatRate(conversionRates?.registerRate)}
             hint="going / openers"
           />
-        </div>
-      </section>
+        </PivotOpsMetricGrid>
+      </PivotOpsSection>
 
-      <section
-        className="linear-section pivot-lab__section"
-        aria-labelledby="pivot-journeys-funnel"
-      >
-        <div className="pivot-lab__section-head">
-          <h2 id="pivot-journeys-funnel" className="linear-section__title">
-            Funnel
-          </h2>
-          {funnelLoading ? (
+      <PivotOpsSection
+        title="Funnel"
+        titleId="pivot-journeys-funnel"
+        actions={
+          funnelLoading ? (
             <span className="pivot-tenant-journeys__muted">Loading…</span>
           ) : funnel?.overallConversionRate != null ? (
             <span className="pivot-tenant-journeys__muted">
               Analytics overall {formatConversionPct(funnel.overallConversionRate)}
             </span>
-          ) : null}
-        </div>
+          ) : null
+        }
+      >
         {funnelMessage ? (
           <p className="pivot-lab__error" role="alert">
             {funnelMessage}
@@ -526,12 +480,22 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
           <p className="pivot-lab__empty">No funnel data for this week yet.</p>
         ) : (
           <div className="pivot-tenant-journeys__funnel-grid">
-            <div className="pivot-lab__panel">
-              <h3 className="pivot-lab__panel-title">Intent stages</h3>
-              <IntentFunnelChart stages={intentFunnel} />
-            </div>
-            <div className="pivot-lab__panel">
-              <h3 className="pivot-lab__panel-title">Analytics steps</h3>
+            <PivotOpsCard className="pivot-tenant-journeys__panel pivot-tenant-journeys__panel--funnel">
+              <h3 className="pivot-ops-section__title">Intent stages</h3>
+              <div className="pivot-tenant-journeys__funnel-wrap">
+                <PivotOpsAreaFunnel
+                  stages={(intentFunnel || []).map((stage) => ({
+                    ...stage,
+                    label:
+                      stage.key === 'openers' ? 'Openers' : stage.label,
+                  }))}
+                  ariaLabel="Intent conversion funnel"
+                  height={120}
+                />
+              </div>
+            </PivotOpsCard>
+            <PivotOpsCard className="pivot-tenant-journeys__panel">
+              <h3 className="pivot-ops-section__title">Analytics steps</h3>
               {analyticsSteps.length ? (
                 <AnalyticsFunnelSteps steps={analyticsSteps} />
               ) : (
@@ -539,24 +503,20 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
                   No pivot analytics events for this week.
                 </p>
               )}
-            </div>
+            </PivotOpsCard>
           </div>
         )}
-      </section>
+      </PivotOpsSection>
 
-      <section
-        className="linear-section pivot-lab__section"
-        aria-labelledby="pivot-journeys-inspector"
-      >
-        <div className="pivot-lab__section-head">
-          <h2 id="pivot-journeys-inspector" className="linear-section__title">
-            User inspector
-          </h2>
+      <PivotOpsSection
+        title="User inspector"
+        titleId="pivot-journeys-inspector"
+        actions={
           <Link className="pivot-tenant-journeys__link" to={curationHref}>
             Open curation
           </Link>
-        </div>
-
+        }
+      >
         <div className="pivot-tenant-journeys__inspector">
           <div className="pivot-tenant-journeys__search">
             <label className="linear-field">
@@ -642,7 +602,7 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
             ) : null}
           </div>
 
-          <div className="pivot-lab__panel pivot-tenant-journeys__history">
+          <PivotOpsCard className="pivot-tenant-journeys__history">
             {!selectedUserId ? (
               <p className="pivot-lab__empty">
                 Select a user to inspect week history and wipe interactions.
@@ -694,7 +654,7 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
 
                 {!historyLoading && history ? (
                   <>
-                    <h3 className="pivot-lab__panel-title">
+                    <h3 className="pivot-ops-section__title">
                       Intents
                       {batchWeekValid ? ` · ${batchWeek}` : ''}
                       {history.intents?.length
@@ -751,7 +711,7 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
 
                     {history.analytics?.length ? (
                       <>
-                        <h3 className="pivot-lab__panel-title">
+                        <h3 className="pivot-ops-section__title">
                           Recent analytics ({history.analytics.length})
                         </h3>
                         <ul className="pivot-tenant-journeys__analytics-list">
@@ -774,9 +734,9 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
                 ) : null}
               </>
             )}
-          </div>
+          </PivotOpsCard>
         </div>
-      </section>
+      </PivotOpsSection>
     </PivotTenantPage>
   );
 }
