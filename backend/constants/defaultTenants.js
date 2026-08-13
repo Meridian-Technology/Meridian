@@ -12,6 +12,9 @@ const {
   mergeCreatorPublishConfigOverrides,
   validateCreatorPublishConfigPatch,
 } = require('../utilities/pivotCreatorPublishConfig');
+const {
+  validatePivotDiscoveryConfigPatch,
+} = require('../utilities/pivotDiscoveryConfig');
 
 const PIVOT_DROP_PUSH_TITLE_MAX = 100;
 const PIVOT_DROP_PUSH_BODY_MAX = 240;
@@ -239,6 +242,16 @@ function normalizeTenantOverride(row = {}) {
     }
     if (creatorValidation.patch && Object.keys(creatorValidation.patch).length > 0) {
       out.creatorPublish = creatorValidation.patch;
+    }
+  }
+
+  if (row.pivotDiscovery !== undefined && row.pivotDiscovery !== null) {
+    const discoveryValidation = validatePivotDiscoveryConfigPatch(row.pivotDiscovery);
+    if (discoveryValidation.error) {
+      return null;
+    }
+    if (discoveryValidation.patch && Object.keys(discoveryValidation.patch).length > 0) {
+      out.pivotDiscovery = discoveryValidation.patch;
     }
   }
 

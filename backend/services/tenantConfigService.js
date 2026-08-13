@@ -16,6 +16,7 @@ const { validatePivotCrewConfigPatch } = require('../utilities/pivotCrewConfig')
 const { validatePivotDeckConfigPatch } = require('../utilities/pivotDeckConfig');
 const { validatePivotMobileConfigPatch } = require('../utilities/pivotMobileConfig');
 const { validateCreatorPublishConfigPatch } = require('../utilities/pivotCreatorPublishConfig');
+const { validatePivotDiscoveryConfigPatch } = require('../utilities/pivotDiscoveryConfig');
 const {
   connectToDatabase,
   setTenantUriCache,
@@ -99,6 +100,8 @@ function toStoredTenantRow(tenant) {
     pivotDropPushTitle: tenant.pivotDropPushTitle,
     pivotDropPushBody: tenant.pivotDropPushBody,
     pivotDropOverrides: tenant.pivotDropOverrides,
+    creatorPublish: tenant.creatorPublish,
+    pivotDiscovery: tenant.pivotDiscovery,
     provisioningConfirmations: tenant.provisioningConfirmations,
   };
   if (Object.prototype.hasOwnProperty.call(tenant, 'pivotDeckConfig')) {
@@ -376,6 +379,13 @@ function validateTenantMetadataUpdate(body = {}) {
     const creatorValidation = validateCreatorPublishConfigPatch(body.creatorPublish);
     if (creatorValidation.error) {
       return { error: creatorValidation.error };
+    }
+  }
+
+  if (body.pivotDiscovery !== undefined) {
+    const discoveryValidation = validatePivotDiscoveryConfigPatch(body.pivotDiscovery);
+    if (discoveryValidation.error) {
+      return { error: discoveryValidation.error };
     }
   }
 

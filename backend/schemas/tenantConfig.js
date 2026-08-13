@@ -84,6 +84,20 @@ const pivotMobileConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/** Per-city event discovery pipeline (sparse overrides; defaults in pivotDiscoveryConfig). */
+const pivotDiscoveryConfigSchema = new mongoose.Schema(
+  {
+    flow: {
+      type: String,
+      enum: ['native-then-firecrawl', 'native-only', 'firecrawl-only'],
+      default: null,
+    },
+    lumaSlug: { type: String, default: null, trim: true, lowercase: true },
+    partifulSlug: { type: String, default: null, trim: true, lowercase: true },
+  },
+  { _id: false }
+);
+
 /** Just Go Creator Console publish knobs (sparse overrides; defaults in pivotCreatorPublishConfig). */
 const creatorPublishConfigSchema = new mongoose.Schema(
   {
@@ -137,6 +151,7 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotDeckConfig: { type: pivotDeckConfigSchema, default: undefined },
     pivotMobileConfig: { type: pivotMobileConfigSchema, default: undefined },
     creatorPublish: { type: creatorPublishConfigSchema, default: undefined },
+    pivotDiscovery: { type: pivotDiscoveryConfigSchema, default: undefined },
     provisioningConfirmations: {
       dns: { type: Boolean, default: false },
       cors: { type: Boolean, default: false },
