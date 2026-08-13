@@ -250,7 +250,13 @@ function PivotDiscoveryConsole({
     const el = feedRef.current;
     if (!el || !pinnedToBottomRef.current) return undefined;
     autoScrollingRef.current = true;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    // jsdom (and a few older engines) lack Element.scrollTo — fall back to
+    // scrollTop so tests and those clients still pin to the latest step.
+    if (typeof el.scrollTo === 'function') {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
     const release = window.setTimeout(() => {
       autoScrollingRef.current = false;
     }, 500);
