@@ -21,6 +21,10 @@ const ORB_SPEED = 0.45;
  * line is written server-side, next to the logic that knows why it happened.
  */
 const PHASE_META = {
+  native: {
+    label: 'Luma and Partiful',
+    hint: 'Running the native city-index jobs before any Firecrawl search',
+  },
   searching: {
     label: 'Searching the web',
     hint: 'Running seed queries built from the tag catalog',
@@ -95,6 +99,8 @@ function orbStateFor(run, lastStep) {
   if (run.phase === 'crawling' && lastStep?.kind === 'job-start') return 'weaving';
 
   switch (run.phase) {
+    case 'native':
+      return 'weaving';
     case 'searching':
       return 'searching';
     case 'filtering':

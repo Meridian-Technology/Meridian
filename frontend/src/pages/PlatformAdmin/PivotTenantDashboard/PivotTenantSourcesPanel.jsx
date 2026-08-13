@@ -41,6 +41,24 @@ const REJECTION_LABELS = {
   'blocked-host': 'Blocked host',
 };
 
+const FLOW_OPTIONS = [
+  {
+    value: 'native-then-firecrawl',
+    label: 'Native, then websites',
+    hint: 'Crawl Luma and Partiful first, then Firecrawl search for the long tail',
+  },
+  {
+    value: 'native-only',
+    label: 'Native only',
+    hint: 'Luma and Partiful city indexes — no Firecrawl credits',
+  },
+  {
+    value: 'firecrawl-only',
+    label: 'Websites only',
+    hint: 'Firecrawl search for venue calendars; skip the native bootstrap',
+  },
+];
+
 function defaultOptions() {
   return {
     tags: [],
@@ -48,6 +66,9 @@ function defaultOptions() {
     minEvents: 1,
     createJobs: true,
     recheckRejected: false,
+    flow: 'native-then-firecrawl',
+    lumaSlug: '',
+    partifulSlug: '',
   };
 }
 
@@ -95,6 +116,7 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
   const [sitesExpanded, setSitesExpanded] = useState(false);
   const [options, setOptions] = useState(defaultOptions);
   const [starting, setStarting] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [consoleRunId, setConsoleRunId] = useState(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
@@ -102,6 +124,7 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
   /** Completion is announced once per run, whoever notices it first. */
   const notifiedRunIdRef = useRef(null);
   const previousRunRef = useRef(null);
+  const hydratedFlowRef = useRef(false);
 
   const sourcesUrl = tenantKey
     ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/sources`
@@ -144,8 +167,18 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
       ...(options.tags.length ? { tags: options.tags.join(',') } : {}),
       maxCandidates: options.maxCandidates,
       minEvents: options.minEvents,
+      flow: options.flow,
+      ...(options.lumaSlug ? { lumaSlug: options.lumaSlug } : {}),
+      ...(options.partifulSlug ? { partifulSlug: options.partifulSlug } : {}),
     }),
-    [options.maxCandidates, options.minEvents, options.tags],
+    [
+      options.maxCandidates,
+      options.minEvents,
+      options.tags,
+      options.flow,
+      options.lumaSlug,
+      options.partifulSlug,
+    ],
   );
   const { data: planResponse } = useFetch(planUrl, {
     params: planParams,
@@ -157,6 +190,17 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
     : EMPTY_LIST;
   const plan = planResponse?.success ? planResponse.data?.plan : null;
   const planError = planResponse && !planResponse.success ? planResponse.message : null;
+
+  useEffect(() => {
+    if (!plan || hydratedFlowRef.current) return;
+    hydratedFlowRef.current = true;
+    setOptions((prev) => ({
+      ...prev,
+      flow: plan.flow || prev.flow,
+      lumaSlug: plan.lumaSlug || prev.lumaSlug,
+      partifulSlug: plan.partifulSlug || prev.partifulSlug,
+    }));
+  }, [plan]);
 
   const counts = useMemo(() => {
     let qualified = 0;
@@ -224,6 +268,9 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
           minEvents: options.minEvents,
           createJobs: options.createJobs,
           recheckRejected: options.recheckRejected,
+          flow: options.flow,
+          lumaSlug: options.lumaSlug || undefined,
+          partifulSlug: options.partifulSlug || undefined,
         },
       },
     );
@@ -270,7 +317,37 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
     [addNotification, refetchSources, tenantKey],
   );
 
-  const notConfigured = plan ? plan.configured === false : false;
+  const handleSaveConfig = useCallback(async () => {
+    if (!tenantKey) return;
+    setSavingConfig(true);
+    const { data, error } = await authenticatedRequest(
+      `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/sources/discovery-config`,
+      {
+        method: 'PATCH',
+        data: {
+          flow: options.flow,
+          lumaSlug: options.lumaSlug || null,
+          partifulSlug: options.partifulSlug || null,
+        },
+      },
+    );
+    setSavingConfig(false);
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Could not save discovery flow',
+        message: error || data?.message || 'The city flow was not updated.',
+        type: 'error',
+      });
+      return;
+    }
+    addNotification({
+      title: 'Discovery flow saved',
+      message: 'This city will use that pipeline on the next run.',
+      type: 'success',
+    });
+  }, [addNotification, options.flow, options.lumaSlug, options.partifulSlug, tenantKey]);
+
+  const notConfigured = Boolean(plan) && plan.runFirecrawl !== false && plan.configured === false;
 
   const handleRunFinished = useCallback(
     (run) => {
@@ -429,8 +506,14 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
                 </>
               ) : plan && !planError ? (
                 <>
-                  Finds event websites from the city name alone · {plan.queries} searches · up to{' '}
-                  {plan.maxCandidates} sites · {plan.maxOutboundCalls} call ceiling
+                  {plan.runNative && plan.runFirecrawl
+                    ? 'Luma/Partiful first, then websites'
+                    : plan.runNative
+                      ? 'Luma and Partiful only'
+                      : 'Website search only'}
+                  {plan.runFirecrawl
+                    ? ` · ${plan.queries} searches · up to ${plan.maxCandidates} sites · ${plan.maxOutboundCalls} call ceiling`
+                    : ' · no Firecrawl credits'}
                 </>
               ) : (
                 <>Finds event websites from the city name alone, then registers refresh jobs.</>
@@ -497,6 +580,53 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
         {optionsOpen ? (
           <div className="pivot-sources__agent-options" aria-label="Discovery options">
             <div className="pivot-sources__form-grid">
+              <label className="linear-field pivot-sources__form-span">
+                <span className="linear-field__label">City flow</span>
+                <select
+                  className="linear-input"
+                  value={options.flow}
+                  onChange={(e) =>
+                    setOptions((prev) => ({ ...prev, flow: e.target.value }))
+                  }
+                >
+                  {FLOW_OPTIONS.map((flow) => (
+                    <option key={flow.value} value={flow.value}>
+                      {flow.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="pivot-sources__hint-inline">
+                  {FLOW_OPTIONS.find((flow) => flow.value === options.flow)?.hint}
+                </span>
+              </label>
+              {options.flow !== 'firecrawl-only' ? (
+                <>
+                  <label className="linear-field">
+                    <span className="linear-field__label">Luma slug</span>
+                    <input
+                      className="linear-input"
+                      type="text"
+                      placeholder="sf"
+                      value={options.lumaSlug}
+                      onChange={(e) =>
+                        setOptions((prev) => ({ ...prev, lumaSlug: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="linear-field">
+                    <span className="linear-field__label">Partiful slug</span>
+                    <input
+                      className="linear-input"
+                      type="text"
+                      placeholder="san-francisco"
+                      value={options.partifulSlug}
+                      onChange={(e) =>
+                        setOptions((prev) => ({ ...prev, partifulSlug: e.target.value }))
+                      }
+                    />
+                  </label>
+                </>
+              ) : null}
               <div className="linear-field pivot-sources__form-span">
                 <span className="linear-field__label">
                   Categories{' '}
@@ -570,6 +700,14 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
                 onClick={() => setOptions(defaultOptions())}
               >
                 Reset options
+              </button>
+              <button
+                type="button"
+                className="linear-btn linear-btn--secondary"
+                onClick={handleSaveConfig}
+                disabled={savingConfig || !tenantKey}
+              >
+                {savingConfig ? 'Saving…' : 'Save as city default'}
               </button>
             </div>
           </div>
