@@ -1,0 +1,63 @@
+.pivot-ops-area-funnel {
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+
+  &--fill {
+    flex: 1 1 auto;
+    align-self: stretch;
+    height: 100%;
+    min-height: 120px;
+  }
+
+  &__svg {
+    display: block;
+  }
+
+  &__checkpoint {
+    /* Match EventDashboardChart / AdminPlatformMetricChart grid lines */
+    stroke: rgba(0, 0, 0, 0.14);
+    stroke-width: 1;
+    stroke-dasharray: 2 4;
+  }
+
+  &__label {
+    pointer-events: none;
+  }
+
+  &__label-bg {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    width: fit-content;
+    max-width: 100%;
+    height: fit-content;
+    padding: 3px 7px;
+    border-radius: 6px;
+    border: 1px solid rgba(26, 23, 20, 0.12);
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-sizing: border-box;
+  }
+
+  &__value {
+    color: var(--pivot-ops-accent, #ff4f1f);
+    font-size: 0.95rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
+
+  &__name {
+    color: var(--pivot-ops-ink-muted, #5c564f);
+    font-size: 0.65rem;
+    font-weight: 500;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+}

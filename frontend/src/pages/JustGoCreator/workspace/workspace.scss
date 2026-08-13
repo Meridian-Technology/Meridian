@@ -1,0 +1,985 @@
+/**
+ * Event workspace — call-sheet register.
+ *
+ * Layout is still the ported `EventDashboardFocused` composition (header, sidebar grid, scrolling
+ * main with keep-alive panels), but the surface treatment is a printed docket rather than a
+ * dashboard: figures are tabular numerals sitting on the canvas under rules, structure comes from
+ * hairlines instead of repeated bordered cards, and Space Mono is reserved for machine values (week
+ * token, stamp, chart dates) instead of every label.
+ *
+ * The one loud element is `.jg-masthead` and its stamp. Everything else stays quiet to pay for it.
+ */
+
+/**
+ * Entrance is staggered shell → sidebar → main on the same curve, which is where most of the ported
+ * dashboard's polish actually comes from. Durations match it exactly (260 / 280 / 300ms).
+ */
+.jg-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  animation: jgWorkspaceIn 260ms var(--jg-ease) both;
+}
+
+@keyframes jgWorkspaceIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes jgWorkspaceSidebarIn {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes jgWorkspaceMainIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Runs again whenever a panel becomes active, so tab changes settle instead of cutting. */
+@keyframes jgWorkspacePanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The signature mark lands like a struck stamp rather than fading in. */
+@keyframes jgStampIn {
+  from {
+    opacity: 0;
+    transform: rotate(-9deg) scale(1.22);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-4deg) scale(1);
+  }
+}
+
+/* --- Header --- */
+
+/* The heavy rule closes the whole head — masthead and its figures — so it reads as one document. */
+.jg-workspace-header {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  padding: 0 0 0.85rem;
+  border-bottom: 2px solid var(--jg-border-strong);
+  transition:
+    gap var(--jg-dur-resize) var(--jg-ease),
+    padding-bottom var(--jg-dur-resize) var(--jg-ease);
+}
+
+.jg-workspace-header__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.jg-workspace-header__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--jg-ink-muted);
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: color var(--jg-dur-hover) ease;
+}
+
+.jg-workspace-header__back iconify-icon {
+  transition: transform var(--jg-dur-hover) var(--jg-ease);
+}
+
+.jg-workspace-header__back:hover {
+  color: var(--jg-ink);
+}
+
+/* The arrow leads the way back, which is the one place a nudge carries meaning. */
+.jg-workspace-header__back:hover iconify-icon {
+  transform: translateX(-2px);
+}
+
+.jg-workspace-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.jg-workspace-header__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.1rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius-pill);
+  background: var(--jg-surface);
+  color: var(--jg-ink-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--jg-dur-hover) ease,
+    border-color var(--jg-dur-hover) ease,
+    color var(--jg-dur-hover) ease,
+    transform var(--jg-dur-hover) var(--jg-ease),
+    opacity var(--jg-dur-hover) ease;
+}
+
+.jg-workspace-header__btn:hover:not(:disabled) {
+  background: var(--jg-hover);
+  border-color: var(--jg-border-strong);
+  color: var(--jg-ink);
+  transform: translateY(-1px);
+}
+
+/* Press settles back to the resting plane so the control feels physical. */
+.jg-workspace-header__btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.jg-workspace-header__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.jg-workspace-header__btn--icon {
+  padding: 0.35rem;
+  width: 2.1rem;
+  justify-content: center;
+}
+
+/* --- Masthead (signature) --- */
+
+/**
+ * Docket line: week number, then the listing, then the curation verdict. The heavy rule under it is
+ * the only 2px horizontal in the console, which is what makes the region read as a document head.
+ */
+/* Flex, not grid: the cover is optional, and a missing grid child would let the stamp fall into
+   the flexible track and stretch across the page. */
+.jg-masthead {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.jg-masthead__identity {
+  flex: 1 1 18rem;
+}
+
+.jg-masthead__thumb {
+  width: 4.25rem;
+  height: 4.25rem;
+  object-fit: cover;
+  border: 1px solid var(--jg-border-strong);
+  border-radius: var(--jg-radius);
+  transition:
+    width var(--jg-dur-resize) var(--jg-ease),
+    height var(--jg-dur-resize) var(--jg-ease);
+}
+
+.jg-masthead__week {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--jg-ink-soft);
+}
+
+/**
+ * Condensing collapses these rather than hiding them: `display: none` is not animatable, which is
+ * what made the header pop on scroll. `max-height` is the same technique the ported dashboard uses.
+ */
+.jg-masthead__dateline,
+.jg-masthead__week {
+  overflow: hidden;
+  max-height: 3rem;
+  transition:
+    max-height var(--jg-dur-collapse) var(--jg-ease),
+    margin-top var(--jg-dur-resize) var(--jg-ease),
+    opacity var(--jg-dur-fade) ease;
+}
+
+.jg-masthead__week-value {
+  font-family: var(--jg-font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: var(--jg-ink);
+}
+
+.jg-masthead__title {
+  margin: 0;
+  font-family: var(--jg-font-flos);
+  font-size: clamp(1.7rem, 3.6vw, 2.6rem);
+  font-weight: 400;
+  line-height: 1;
+  text-transform: lowercase;
+  color: var(--jg-ink);
+  transition: font-size var(--jg-dur-resize) var(--jg-ease);
+}
+
+.jg-masthead__dateline {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--jg-ink-muted);
+}
+
+/**
+ * Curation verdict as a rubber stamp rather than a badge — the workflow really does end in someone
+ * marking up a submission. Rotation is small enough to survive next to live type.
+ */
+.jg-stamp {
+  align-self: center;
+  flex: 0 0 auto;
+  margin: 0 0.35rem 0 auto;
+  padding: 0.35rem 0.8rem;
+  border: 2px solid var(--jg-border-strong);
+  /* Second rule set off from the first — the frame that makes it read as struck, not badged. */
+  outline: 1px solid var(--jg-border-strong);
+  outline-offset: 2px;
+  background: var(--jg-cream);
+  color: var(--jg-ink);
+  font-family: var(--jg-font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: rotate(-4deg);
+  animation: jgStampIn 320ms var(--jg-ease) both;
+}
+
+.jg-stamp--staged {
+  background: var(--jg-ink);
+  color: var(--jg-cream);
+}
+
+.jg-stamp--published {
+  background: var(--jg-accent);
+  border-color: var(--jg-accent);
+  outline-color: var(--jg-accent);
+  color: var(--jg-on-accent);
+}
+
+.jg-stamp--unknown {
+  color: var(--jg-ink-soft);
+  border-color: var(--jg-border);
+  outline-color: var(--jg-border);
+  background: var(--jg-surface);
+}
+
+/* Condensed: the dateline, week, and figures collapse; the title and cover shrink; the rule stays. */
+.jg-workspace-header--condensed {
+  gap: 0.85rem;
+}
+
+.jg-workspace-header--condensed .jg-masthead__dateline,
+.jg-workspace-header--condensed .jg-masthead__week {
+  max-height: 0;
+  margin-top: 0;
+  opacity: 0;
+}
+
+.jg-workspace-header--condensed .jg-masthead__title {
+  font-size: clamp(1.3rem, 2.4vw, 1.7rem);
+}
+
+.jg-workspace-header--condensed .jg-masthead__thumb {
+  width: 2.6rem;
+  height: 2.6rem;
+}
+
+.jg-workspace-header--condensed .jg-tally--masthead {
+  max-height: 0;
+  padding-top: 0;
+  opacity: 0;
+  /* A zero-height flex child still earns a gap; cancel the one the header would add. */
+  margin-top: -0.85rem;
+}
+
+@media (max-width: 700px) {
+  .jg-masthead {
+    align-items: flex-start;
+  }
+
+  .jg-stamp {
+    margin-left: 0.35rem;
+  }
+}
+
+/* --- Body grid --- */
+
+.jg-workspace__body {
+  display: grid;
+  grid-template-columns: 13.5rem minmax(0, 1fr);
+  gap: 2rem;
+  padding-top: 1.5rem;
+}
+
+.jg-workspace__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  min-width: 0;
+  animation: jgWorkspaceSidebarIn 280ms var(--jg-ease) both;
+}
+
+/* --- Phase rail --- */
+
+.jg-phase-rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.jg-phase-rail__step {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  position: relative;
+  padding: 0.3rem 0;
+}
+
+/* Connector between markers. */
+.jg-phase-rail__step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 0.42rem;
+  top: 1.5rem;
+  width: 1px;
+  height: calc(100% - 0.9rem);
+  background: var(--jg-border);
+}
+
+.jg-phase-rail__marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 1px solid var(--jg-border-strong);
+  border-radius: 50%;
+  background: var(--jg-surface);
+  font-size: 0.55rem;
+  color: #ffffff;
+  transition:
+    background var(--jg-dur-fade) var(--jg-ease),
+    border-color var(--jg-dur-fade) var(--jg-ease),
+    box-shadow var(--jg-dur-fade) ease;
+}
+
+.jg-phase-rail__label {
+  font-family: var(--jg-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--jg-ink-soft);
+}
+
+.jg-phase-rail__step--complete .jg-phase-rail__marker {
+  background: var(--jg-ink);
+  border-color: var(--jg-ink);
+}
+
+.jg-phase-rail__step--complete .jg-phase-rail__label {
+  color: var(--jg-ink-muted);
+}
+
+.jg-phase-rail__step--current .jg-phase-rail__marker {
+  background: var(--jg-accent);
+  border-color: var(--jg-accent);
+  box-shadow: 0 0 0 3px var(--jg-hover);
+}
+
+.jg-phase-rail__step--current .jg-phase-rail__label {
+  color: var(--jg-ink);
+  font-weight: 700;
+}
+
+/* --- Sidebar nav --- */
+
+.jg-workspace__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.jg-workspace__nav-section-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--jg-ink-soft);
+}
+
+.jg-workspace__nav-section-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.jg-workspace__nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: var(--jg-radius);
+  background: none;
+  color: var(--jg-ink-muted);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--jg-dur-hover) ease,
+    color var(--jg-dur-hover) ease;
+}
+
+.jg-workspace__nav-item:hover:not(.is-active) {
+  background: var(--jg-hover);
+  color: var(--jg-ink);
+}
+
+.jg-workspace__nav-item.is-active {
+  background: var(--jg-ink);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* --- Main content --- */
+
+.jg-workspace__main {
+  min-width: 0;
+  animation: jgWorkspaceMainIn 300ms var(--jg-ease) both;
+}
+
+.jg-workspace__tab-panel.is-active {
+  animation: jgWorkspacePanelIn 260ms var(--jg-ease) both;
+}
+
+.jg-workspace__content {
+  max-height: calc(100vh - 22rem);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.jg-workspace-tab__section {
+  margin-bottom: 2.25rem;
+}
+
+/* Section heads have to hold their own against 1.75rem numerals, so they carry real weight. */
+.jg-workspace-tab__title {
+  margin: 0 0 0.9rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--jg-ink);
+}
+
+.jg-workspace-tab__subtitle {
+  margin: -0.55rem 0 1.15rem;
+  font-size: 0.92rem;
+  color: var(--jg-ink-muted);
+}
+
+.jg-workspace-tab__note {
+  margin: 1.25rem 0 0;
+  max-width: 40rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--jg-ink-soft);
+}
+
+/* --- Tally --- */
+
+/**
+ * Figures sit on the canvas divided by rules instead of in boxes. Tabular numerals so columns of
+ * counts line up, and sentence-case labels rather than another uppercase mono eyebrow.
+ */
+.jg-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2rem;
+  margin: 0;
+  padding: 0;
+}
+
+.jg-tally__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.15rem 0 0.15rem 1rem;
+  border-left: 1px solid var(--jg-border);
+}
+
+.jg-tally__item:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.jg-tally__value {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+  color: var(--jg-ink);
+}
+
+.jg-tally__label {
+  font-size: 0.82rem;
+  color: var(--jg-ink-soft);
+}
+
+/* In the masthead the figures are supporting information, not the headline. */
+.jg-tally--masthead {
+  gap: 0 1.75rem;
+  padding-top: 0.85rem;
+  overflow: hidden;
+  max-height: 5rem;
+  transition:
+    max-height var(--jg-dur-collapse) var(--jg-ease),
+    padding-top var(--jg-dur-resize) var(--jg-ease),
+    margin-top var(--jg-dur-resize) var(--jg-ease),
+    opacity var(--jg-dur-fade) ease;
+}
+
+.jg-tally--masthead .jg-tally__value {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.jg-tally--masthead .jg-tally__label {
+  font-size: 0.78rem;
+}
+
+/* --- Listing summary --- */
+
+.jg-summary {
+  border-top: 1px solid var(--jg-border-strong);
+  padding-top: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.jg-summary__description {
+  margin: 0 0 1rem;
+  max-width: 46rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--jg-ink);
+}
+
+.jg-summary__row {
+  display: flex;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--jg-border);
+  font-size: 0.9rem;
+}
+
+.jg-summary__label {
+  flex: 0 0 6.5rem;
+  font-size: 0.85rem;
+  color: var(--jg-ink-soft);
+}
+
+.jg-summary__value {
+  min-width: 0;
+  color: var(--jg-ink);
+  overflow-wrap: anywhere;
+}
+
+.jg-summary__value a {
+  color: var(--jg-accent);
+}
+
+.jg-summary__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Sharp, to sit with the rest of the docket rather than reading as leftover pill chrome. */
+.jg-summary__tag {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--jg-border);
+  background: var(--jg-surface-subtle);
+  font-size: 0.8rem;
+  color: var(--jg-ink-muted);
+}
+
+/* --- Curation explainer (flare) --- */
+
+.jg-explainer {
+  position: relative;
+  margin-bottom: 2rem;
+  padding: 1rem 1.15rem;
+  border: 2px solid var(--jg-border-strong);
+  background: var(--jg-cream);
+  box-shadow: 3px 3px 0 rgba(26, 23, 20, 0.18);
+}
+
+.jg-explainer--staged {
+  background: var(--jg-ticker);
+}
+
+.jg-explainer--published {
+  background: var(--jg-sage);
+}
+
+.jg-explainer__title {
+  margin: 0 0 0.4rem;
+  font-family: var(--jg-font-flos);
+  font-size: 1.5rem;
+  line-height: 1;
+  text-transform: lowercase;
+  color: var(--jg-ink);
+}
+
+.jg-explainer__body {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--jg-ink);
+}
+
+.jg-explainer__week {
+  margin: 0.75rem 0 0;
+  font-family: var(--jg-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--jg-ink);
+}
+
+.jg-explainer__parity {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--jg-ink-muted);
+}
+
+/* --- Promo QR --- */
+
+.jg-promo {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.jg-promo__code {
+  padding: 0.85rem;
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius);
+  background: #ffffff;
+  line-height: 0;
+}
+
+.jg-promo__side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.jg-promo__url-label {
+  font-size: 0.82rem;
+  color: var(--jg-ink-soft);
+}
+
+.jg-promo__url {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius);
+  background: var(--jg-surface-subtle);
+  font-family: var(--jg-font-mono);
+  font-size: 0.8rem;
+  color: var(--jg-ink);
+  overflow-wrap: anywhere;
+}
+
+.jg-promo__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
+/* --- Intent funnel --- */
+
+.jg-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.jg-funnel__row {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr) 3rem 8rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.jg-funnel__label {
+  font-size: 0.85rem;
+  color: var(--jg-ink-muted);
+}
+
+.jg-funnel__track {
+  display: block;
+  height: 1.35rem;
+  background: var(--jg-surface-subtle);
+  border-radius: var(--jg-radius-sharp);
+  overflow: hidden;
+}
+
+/* Bars ease to their new width on refetch instead of jumping. */
+.jg-funnel__bar {
+  display: block;
+  height: 100%;
+  background: var(--jg-accent);
+  border-radius: var(--jg-radius-sharp);
+  transition: width 520ms var(--jg-ease);
+}
+
+.jg-funnel__value {
+  font-weight: 600;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--jg-ink);
+  text-align: right;
+}
+
+.jg-funnel__conversion {
+  font-size: 0.8rem;
+  color: var(--jg-ink-soft);
+}
+
+/* --- 14-day trend --- */
+
+.jg-trend {
+  border-top: 1px solid var(--jg-border-strong);
+  padding: 0.85rem 0 0.6rem;
+}
+
+.jg-trend__svg {
+  display: block;
+  width: 100%;
+  height: 9rem;
+  overflow: visible;
+}
+
+.jg-trend__area {
+  fill: var(--jg-ticker);
+  fill-opacity: 0.22;
+  stroke: var(--jg-ticker);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.jg-trend__line {
+  fill: none;
+  stroke: var(--jg-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.jg-trend__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.45rem;
+  font-family: var(--jg-font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--jg-ink-soft);
+}
+
+.jg-trend__legend {
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.jg-trend__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--jg-ink);
+}
+
+.jg-trend__swatch {
+  width: 0.85rem;
+  height: 0.2rem;
+  border-radius: var(--jg-radius-pill);
+}
+
+.jg-trend__legend-item--views .jg-trend__swatch {
+  background: var(--jg-ticker);
+}
+
+.jg-trend__legend-item--interest .jg-trend__swatch {
+  background: var(--jg-accent);
+}
+
+.jg-trend__legend-meta {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--jg-ink-soft);
+}
+
+@media (max-width: 700px) {
+  .jg-funnel__row {
+    grid-template-columns: minmax(0, 1fr) 3rem;
+    grid-template-areas:
+      'label value'
+      'track track'
+      'conversion conversion';
+    gap: 0.3rem 0.75rem;
+  }
+
+  .jg-funnel__label {
+    grid-area: label;
+  }
+
+  .jg-funnel__track {
+    grid-area: track;
+  }
+
+  .jg-funnel__value {
+    grid-area: value;
+  }
+
+  .jg-funnel__conversion {
+    grid-area: conversion;
+  }
+}
+
+/* --- Coming soon (flare) --- */
+
+.jg-coming-soon {
+  max-width: 30rem;
+  padding: 1rem 0;
+}
+
+.jg-coming-soon__body {
+  margin: 1.25rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--jg-ink-muted);
+}
+
+/* --- Narrow screens: rail and nav go horizontal above the content --- */
+
+@media (max-width: 900px) {
+  .jg-workspace__body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+
+  .jg-workspace__sidebar {
+    gap: 1rem;
+  }
+
+  .jg-phase-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .jg-phase-rail__step:not(:last-child)::before {
+    display: none;
+  }
+
+  .jg-workspace__nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .jg-workspace__nav-section-items {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .jg-workspace__content {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/**
+ * Reduced motion: drop the entrances entirely and make state changes effectively instant, rather
+ * than leaving half-speed transitions behind. Collapsing still works — it just doesn't animate.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .jg-workspace,
+  .jg-workspace__sidebar,
+  .jg-workspace__main,
+  .jg-workspace__tab-panel.is-active,
+  .jg-stamp {
+    animation: none;
+  }
+
+  .jg-workspace-header,
+  .jg-workspace-header__back,
+  .jg-workspace-header__back iconify-icon,
+  .jg-workspace-header__btn,
+  .jg-workspace__nav-item,
+  .jg-masthead__thumb,
+  .jg-masthead__title,
+  .jg-masthead__dateline,
+  .jg-masthead__week,
+  .jg-tally--masthead,
+  .jg-phase-rail__marker,
+  .jg-funnel__bar {
+    transition-duration: 0.01ms;
+  }
+
+  .jg-workspace-header__btn:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .jg-workspace-header__back:hover iconify-icon {
+    transform: none;
+  }
+}

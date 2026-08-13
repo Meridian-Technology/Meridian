@@ -1,12 +1,31 @@
 import axios from 'axios';
 
 /**
+ * Normalize a failed axios response into the `{ error, code, errorCode? }` shape callers expect.
+ * `code` stays the HTTP status for backwards compatibility; `errorCode` carries the backend's
+ * stable body `code` and is omitted when the response has none.
+ */
+const normalizeErrorResponse = (response) => {
+  const errorData = response?.data || {};
+  const bodyCode = typeof errorData.code === 'string' ? errorData.code : null;
+  return {
+    error: errorData.error || errorData.message || 'An error occurred',
+    code: response?.status,
+    ...(bodyCode ? { errorCode: bodyCode } : {}),
+  };
+};
+
+/**
  * Helper function to make HTTP requests using axios with automatic cookie handling.
  * 
  * @param {string} url - The endpoint URL to which the request is sent.
  * @param {object|FormData} body - The request payload (for POST requests).
  * @param {object} options - Additional axios options (optional).
- * @returns {Promise<object>} - The response data or an error message.
+ * @returns {Promise<object>} On success, the response body. On failure,
+ * `{ error, code, errorCode? }` where `code` is the HTTP status (or a transport
+ * label) and `errorCode` is the backend's stable `code` from the error body —
+ * use `errorCode` when the caller has to branch on a specific failure, such as
+ * mapping a validation code onto a form field.
  */
 const apiRequest = async (url, body = null, options = {}) => {
   try {
@@ -83,16 +102,7 @@ const apiRequest = async (url, body = null, options = {}) => {
           // Handle retry errors the same way as original errors
           if (retryError.response) {
             console.log(retryError.response);
-            const errorData = retryError.response.data;
-            const errorCode = retryError.response.status;
-            
-            if (errorData.error) {
-              return { error: errorData.error, code: errorCode };
-            } else if (errorData.message) {
-              return { error: errorData.message, code: errorCode };
-            } else {
-              return { error: 'An error occurred', code: errorCode };
-            }
+            return normalizeErrorResponse(retryError.response);
           } else if (retryError.request) {
             return { error: 'No response received from server', code: 'NETWORK_ERROR' };
           } else {
@@ -121,17 +131,7 @@ const apiRequest = async (url, body = null, options = {}) => {
 
     if (error.response) {
         console.log(error.response);
-        // Handle different error response formats from backend
-        const errorData = error.response.data;
-        const errorCode = error.response.status;
-        
-        if (errorData.error) {
-          return { error: errorData.error, code: errorCode };
-        } else if (errorData.message) {
-          return { error: errorData.message, code: errorCode };
-        } else {
-          return { error: 'An error occurred', code: errorCode };
-        }
+        return normalizeErrorResponse(error.response);
     } else if (error.request) {
       return { error: 'No response received from server', code: 'NETWORK_ERROR' };
     } else {

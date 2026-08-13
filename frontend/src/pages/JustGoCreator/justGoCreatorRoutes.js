@@ -4,6 +4,8 @@
  */
 
 export const JUSTGO_CREATOR_ROUTES = Object.freeze({
+  /** Public — the console's own sign-in, outside the auth gate and the shell. */
+  login: '/justgo/creator/login',
   home: '/justgo/creator',
   newListing: '/justgo/creator/new',
   eventWorkspace: '/justgo/creator/events/:eventId',

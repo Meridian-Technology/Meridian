@@ -1,34 +1,68 @@
 /**
- * Just Go Creator Console — admin shell tokens (Task 0.2).
+ * Just Go Creator Console — admin shell tokens.
  *
- * Motif pass, not scrapbook recreation:
- * - Borrow cream / ink / accent from the consumer Just Go palette.
- * - Keep a calm admin canvas (phase rail, tables, forms later).
- * - Do NOT port tilted scrapbook cards, burst stickers, or neo-brutalist clutter.
+ * Two registers (see BRANDING.md):
+ * - **Reskin** — anything ported from Meridian (shell chrome, lists, forms, tables): white
+ *   canvas, ink type and borders, orange pill CTAs. Same skeleton, Just Go skin, no layout churn.
+ * - **Flare** — Just Go–specific flows (invite gate, submit confirmation, empty / zero states):
+ *   scrapbook title strips, burst stickers, colored chips, lowercase display type.
  *
- * Wordmark: use `assets/pivot/just-go-wordmark-dark.svg` on cream surfaces.
- * Optional burst (`just-go-burst.svg`) only as a sparse accent — never as card chrome.
+ * The pops (`--jg-ticker`, `--jg-pop`, `--jg-burst`, `--jg-sage`) are **flare-only**: never card
+ * chrome or status pills in dense lists and tables. Cream survives only as a flare strip fill or
+ * photo wash — the shell canvas is white.
  *
- * Palette mirrors Meridian-Mobile `PIVOT_COLORS_LIGHT` (cream / ink / accent / burst).
+ * Wordmark: `assets/pivot/just-go-wordmark-dark.svg`.
+ * Palette mirrors Meridian-Mobile `PIVOT_COLORS_LIGHT`.
  */
 
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+@import '../../components/PivotBranding/pivotBrandFonts.scss';
 
 .justgo-creator {
+  --jg-canvas: #ffffff;
+  --jg-surface: #ffffff;
+  --jg-surface-subtle: #f7f6f4;
+  /* Flare strip fills / photo washes only — not a shell background. */
   --jg-cream: #faf6ef;
-  --jg-cream-deep: #f0ebe0;
+
   --jg-ink: #1a1714;
   --jg-ink-muted: rgba(26, 23, 20, 0.72);
   --jg-ink-soft: rgba(26, 23, 20, 0.5);
+  --jg-border: rgba(26, 23, 20, 0.14);
+  --jg-border-strong: #1a1714;
+  --jg-hover: rgba(26, 23, 20, 0.04);
+
   --jg-accent: #ff4f1f;
   --jg-accent-hover: #e64518;
+  --jg-on-accent: #ffffff;
+
+  /* Flare register only. */
+  --jg-ticker: #4ab5ff;
+  --jg-pop: #ffd23f;
   --jg-burst: #ff2a2a;
-  --jg-on-accent: #faf6ef;
-  --jg-border: rgba(26, 23, 20, 0.12);
-  --jg-surface: var(--jg-cream);
-  --jg-surface-raised: #fffdf8;
+  --jg-sage: #5fd068;
+
   --jg-font-display: 'Instrument Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --jg-font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --jg-radius: 4px;
+  --jg-font-flos: 'Les Flos Sans', 'Instrument Sans', 'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
+
+  /* Print-sharp by default. The scrapbook grammar is cut paper and hard strokes, so soft corners
+     were reading as generic admin chrome rather than Just Go. */
+  --jg-radius: 2px;
+  --jg-radius-sharp: 0;
+  --jg-radius-pill: 999px;
   --jg-shell-max: 1120px;
+
+  /**
+   * Motion, lifted from `EventDashboardFocused` so the console feels like the dashboard it was
+   * ported from. `--jg-ease` is that stack's signature curve and belongs on anything that changes
+   * size or position; plain `ease` at `--jg-dur-hover` is for colour-only interaction states.
+   */
+  --jg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --jg-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --jg-dur-hover: 200ms;
+  --jg-dur-fade: 280ms;
+  --jg-dur-resize: 380ms;
+  --jg-dur-collapse: 440ms;
 }

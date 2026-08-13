@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { PivotOpsBanner } from '../../../components/PivotOps';
 import './PivotHostLiveWeekAlert.scss';
 
 export function formatHostCreatedCounts(counts = {}) {
@@ -25,35 +26,36 @@ function PivotHostLiveWeekAlert({
       ? '1 Host-created draft'
       : `${alert.hostDraft} Host-created drafts`;
 
-  return (
-    <aside
-      className={`pivot-host-live-week-alert ${className}`.trim()}
-      role="alert"
+  const cta = typeof onReviewClick === 'function' ? (
+    <button
+      type="button"
+      className="linear-btn linear-btn--primary pivot-host-live-week-alert__cta"
+      onClick={onReviewClick}
     >
-      <div className="pivot-host-live-week-alert__copy">
-        <p className="pivot-host-live-week-alert__title">Live week — host drafts need review</p>
-        <p className="pivot-host-live-week-alert__body">
-          {draftLabel} target this week, which already has published events or is released.
-          They stay drafts until you stage and publish.
-        </p>
-      </div>
-      {typeof onReviewClick === 'function' ? (
-        <button
-          type="button"
-          className="linear-btn linear-btn--primary pivot-host-live-week-alert__cta"
-          onClick={onReviewClick}
-        >
-          Review Host-created
-        </button>
-      ) : alert.curationHref ? (
-        <Link
-          className="linear-btn linear-btn--primary pivot-host-live-week-alert__cta"
-          to={alert.curationHref}
-        >
-          Review Host-created
-        </Link>
-      ) : null}
-    </aside>
+      Review Host-created
+    </button>
+  ) : alert.curationHref ? (
+    <Link
+      className="linear-btn linear-btn--primary pivot-host-live-week-alert__cta"
+      to={alert.curationHref}
+    >
+      Review Host-created
+    </Link>
+  ) : null;
+
+  return (
+    <PivotOpsBanner
+      tone="accent"
+      role="alert"
+      title="Live week — host drafts need review"
+      actions={cta}
+      className={`pivot-host-live-week-alert ${className}`.trim()}
+    >
+      <p>
+        {draftLabel} target this week, which already has published events or is released.
+        They stay drafts until you stage and publish.
+      </p>
+    </PivotOpsBanner>
   );
 }
 

@@ -9,6 +9,7 @@ import pfp from '../../assets/defaultAvatar.svg';
 import preferences from '../../assets/Icons/Preferences.svg';
 import rightarrow from '../../assets/Icons/RightArrow.svg';
 import useAuth from '../../hooks/useAuth.js';
+import useAdminDashboardTheme from '../../hooks/useAdminDashboardTheme';
 import { useNavigate } from 'react-router-dom';
 
 import Dashboard from '../../components/Dashboard/Dashboard';
@@ -20,6 +21,9 @@ function Settings() {
     const [isDeveloper, setIsDeveloper] = useState(null);
     const { isAuthenticating, isAuthenticated, user, getDeveloper } = useAuth();
     const navigate = useNavigate();
+    // Keeps platform-admin theme attribute in sync even before the Account
+    // Settings toggle is mounted.
+    useAdminDashboardTheme();
 
     // Authentication and user data logic (unchanged)
     useEffect(() => {

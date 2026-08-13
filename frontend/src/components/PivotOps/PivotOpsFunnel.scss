@@ -1,0 +1,73 @@
+.pivot-ops-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  &__row {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr) 82px;
+    align-items: center;
+    gap: 10px;
+  }
+
+  &__meta {
+    min-width: 0;
+  }
+
+  &__label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink);
+  }
+
+  &__hint {
+    display: block;
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__track {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 20px;
+    background: var(--pivot-ops-surface-subtle);
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: var(--pivot-ops-radius-control);
+    overflow: hidden;
+  }
+
+  &__bar {
+    height: 100%;
+    background: var(--pivot-ops-accent-soft);
+    border-right: 2px solid var(--pivot-ops-accent);
+  }
+
+  &__value {
+    position: absolute;
+    right: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__conversion {
+    font-size: 11px;
+    color: var(--pivot-ops-ink-muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (max-width: 640px) {
+  .pivot-ops-funnel__row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .pivot-ops-funnel__conversion {
+    text-align: left;
+  }
+}

@@ -30,6 +30,11 @@ const {
   normalizeIngestStatus,
   PIVOT_FEED_INGEST_STATUS,
 } = require('../utilities/pivotIngestStatus');
+const {
+  CREATOR_DAILY_WINDOW_DAYS,
+  buildDailyWindow,
+  zeroFillDailySeries,
+} = require('../utilities/pivotCreatorDailySeries');
 const { logPivot } = require('../utilities/pivotLogger');
 const {
   notifyAdminsOnCreatorListingCreate,
@@ -371,6 +376,72 @@ function assertJustGoListing(event) {
   return null;
 }
 
+/**
+ * Zero-filled 14-day UTC series behind the creator Insights chart.
+ *
+ * Two sources, both bucketed by UTC day:
+ * - **views** — one `EventAnalytics.viewHistory` entry per page view, counted. Anonymous and
+ *   logged-in views are counted together, which is why the total matches `views + anonymousViews`
+ *   rather than the `views` counter alone (that one excludes anonymous).
+ * - **interested / registered** — `PivotEventIntent.createdAt`, split by the intent's *current*
+ *   status. These are **first-touch dates**, not status-transition dates: the schema has no
+ *   transition timestamp, and `updatedAt` is bumped by ticket-link taps too, so it cannot stand in
+ *   for "the day they got a ticket". Grouping first touch by current status keeps the two series a
+ *   partition of the same population the ops intent aggregate counts.
+ *
+ * Best-effort by design: catalog drafts have no analytics row, and no chart is worth failing the
+ * detail read over. Any error yields the zero-filled window.
+ */
+async function loadDailyStats(
+  { PivotEventIntent, EventAnalytics },
+  eventId,
+  now = new Date(),
+) {
+  const { startDate, endDate, keys } = buildDailyWindow(CREATOR_DAILY_WINDOW_DAYS, now);
+
+  try {
+    const [viewRows, intentRows] = await Promise.all([
+      EventAnalytics.aggregate([
+        { $match: { eventId } },
+        { $unwind: '$viewHistory' },
+        { $match: { 'viewHistory.timestamp': { $gte: startDate, $lte: endDate } } },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$viewHistory.timestamp' },
+            },
+            views: { $sum: 1 },
+          },
+        },
+      ]),
+      PivotEventIntent.aggregate([
+        {
+          $match: {
+            eventId,
+            status: { $in: ['interested', 'registered'] },
+            createdAt: { $gte: startDate, $lte: endDate },
+          },
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            interested: {
+              $sum: { $cond: [{ $eq: ['$status', 'interested'] }, 1, 0] },
+            },
+            registered: {
+              $sum: { $cond: [{ $eq: ['$status', 'registered'] }, 1, 0] },
+            },
+          },
+        },
+      ]),
+    ]);
+
+    return zeroFillDailySeries(keys, { viewRows, intentRows });
+  } catch {
+    return zeroFillDailySeries(keys);
+  }
+}
+
 function serializeAnalyticsSummary(analyticsDoc) {
   if (!analyticsDoc) {
     return { ...EMPTY_ANALYTICS_SUMMARY };
@@ -579,6 +650,11 @@ async function getListing(req, eventId, options = {}) {
   const intentStats =
     intentStatsByEventId.get(String(existing._id)) || { ...EMPTY_INTENT_STATS };
   const analytics = serializeAnalyticsSummary(analyticsDoc);
+  const daily = await loadDailyStats(
+    { PivotEventIntent, EventAnalytics },
+    existing._id,
+    options.now,
+  );
 
   return {
     data: {
@@ -587,6 +663,7 @@ async function getListing(req, eventId, options = {}) {
       stats: {
         intents: intentStats,
         analytics,
+        daily,
       },
     },
   };

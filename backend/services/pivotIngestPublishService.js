@@ -327,7 +327,13 @@ function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importe
   };
 }
 
-async function savePublishedCatalogEvent(tenantReq, eventPayload, sourceUrl, updateEventId) {
+async function savePublishedCatalogEvent(
+  tenantReq,
+  eventPayload,
+  sourceUrl,
+  updateEventId,
+  { sharedSourceUrl = false } = {},
+) {
   const { Event } = getModels(tenantReq, 'Event');
 
   // A fuzzy (fingerprint) duplicate resolves to a specific existing event that may have a
@@ -343,7 +349,10 @@ async function savePublishedCatalogEvent(tenantReq, eventPayload, sourceUrl, upd
     }
   }
 
-  const listingUrl = trimString(sourceUrl);
+  // A listing page is shared by many events, so upserting on it would overwrite a
+  // sibling. Identity was already settled by fingerprint above; anything reaching
+  // here is genuinely new.
+  const listingUrl = sharedSourceUrl ? '' : trimString(sourceUrl);
   if (listingUrl) {
     return Event.findOneAndUpdate(
       { 'customFields.pivot.sourceUrl': listingUrl },
@@ -429,6 +438,7 @@ async function publishIngestEvent(req, options = {}) {
   }
 
   const listingUrl = trimString(mergedInput.sourceUrl) || null;
+  const sharedSourceUrl = Boolean(options.sharedSourceUrl);
   const { duplicate } = await resolveImportDuplicate(req, {
     tenantKey: tenantResult.tenant.tenantKey,
     candidate: {
@@ -437,6 +447,7 @@ async function publishIngestEvent(req, options = {}) {
       location: validated.merged.location,
       sourceUrl: listingUrl,
     },
+    sharedSourceUrl,
   });
 
   // Batch-internal collisions (two rows of the same import) have nothing to update against.
@@ -483,6 +494,7 @@ async function publishIngestEvent(req, options = {}) {
   } else if (
     !updateEventId &&
     listingUrl &&
+    !sharedSourceUrl &&
     !options.releaseNow &&
     overrides.ingestStatus === undefined
   ) {
@@ -506,7 +518,13 @@ async function publishIngestEvent(req, options = {}) {
     ingestStatus,
   });
 
-  const event = await savePublishedCatalogEvent(tenantReq, eventPayload, listingUrl, updateEventId);
+  const event = await savePublishedCatalogEvent(
+    tenantReq,
+    eventPayload,
+    listingUrl,
+    updateEventId,
+    { sharedSourceUrl },
+  );
   const updatedExisting = Boolean(updateEventId);
 
   logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event staged', {
@@ -587,6 +605,10 @@ async function publishBatchIngestEvents(req, options = {}) {
       now: options.now,
       releaseNow: options.releaseNow,
       confirm: options.confirm,
+      sharedSourceUrl:
+        entry?.sharedSourceUrl !== undefined
+          ? Boolean(entry.sharedSourceUrl)
+          : Boolean(options.sharedSourceUrl),
     });
 
     if (result.error) {

@@ -32,26 +32,26 @@
     min-width: 148px;
     max-width: 200px;
     padding: 4px 10px;
-    border: 1px solid var(--la-border-subtle, rgba(0, 0, 0, 0.12));
-    border-radius: var(--la-radius-sm, 6px);
-    background: var(--la-bg, #fff);
+    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+    border-radius: var(--pivot-ops-radius-control, 8px);
+    background: var(--pivot-ops-surface, #fff);
     color: inherit;
     cursor: pointer;
     text-align: center;
     line-height: 1.2;
 
     &:hover:not(:disabled) {
-      border-color: var(--la-border, rgba(0, 0, 0, 0.2));
+      border-color: var(--pivot-ops-border-strong, rgba(26, 23, 20, 0.22));
     }
 
     &:focus-visible {
-      outline: 2px solid var(--la-accent, #5e6ad2);
+      outline: 2px solid var(--pivot-ops-accent, #ff4f1f);
       outline-offset: 1px;
     }
 
     &.is-open {
-      border-color: var(--la-accent, #5e6ad2);
-      box-shadow: inset 0 0 0 1px var(--la-accent, #5e6ad2);
+      border-color: var(--pivot-ops-accent, #ff4f1f);
+      box-shadow: inset 0 0 0 1px var(--pivot-ops-accent, #ff4f1f);
     }
 
     &:disabled {
@@ -64,12 +64,11 @@
     font-size: 13px;
     font-weight: 650;
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.01em;
   }
 
   &__range {
     font-size: 10px;
-    color: var(--la-text-tertiary, inherit);
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -81,15 +80,14 @@
     min-width: 280px;
     max-width: min(360px, 90vw);
     padding: 6px;
-    border: 1px solid var(--la-border-subtle, rgba(0, 0, 0, 0.12));
-    border-radius: var(--la-radius, 8px);
-    background: var(--la-bg, #fff);
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+    border-radius: var(--pivot-ops-radius-card, 12px);
+    background: var(--pivot-ops-surface, #fff);
+    box-shadow: 0 10px 28px rgba(26, 23, 20, 0.1);
     box-sizing: border-box;
 
     &--portal {
       position: fixed;
-      /* Above dashboard chrome (sidebar ~999–1003) and page stacking contexts. */
       z-index: 1100;
       display: flex;
       flex-direction: column;
@@ -114,23 +112,23 @@
     width: 100%;
     padding: 8px 10px;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--pivot-ops-radius-control, 8px);
     background: transparent;
     color: inherit;
     text-align: left;
     cursor: pointer;
 
     &:hover {
-      background: rgba(94, 106, 210, 0.08);
+      background: var(--pivot-ops-accent-soft, rgba(255, 79, 31, 0.1));
     }
 
     &.is-selected {
-      background: rgba(94, 106, 210, 0.12);
+      background: var(--pivot-ops-accent-soft, rgba(255, 79, 31, 0.1));
     }
 
     &.is-live .pivot-batch-week-picker__option-badge {
-      background: rgba(34, 140, 90, 0.14);
-      color: #1f7a4d;
+      background: var(--pivot-ops-success-soft, rgba(15, 118, 110, 0.1));
+      color: var(--pivot-ops-success, #0f766e);
     }
   }
 
@@ -142,18 +140,18 @@
 
   &__option-range {
     font-size: 11px;
-    color: var(--la-text-secondary, inherit);
+    color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
   }
 
   &__option-badge {
-    font-size: 10px;
-    font-weight: 650;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: 600;
     padding: 2px 6px;
-    border-radius: 999px;
-    background: rgba(94, 106, 210, 0.12);
-    color: #4a56b0;
+    border-radius: var(--pivot-ops-radius-chip, 6px);
+    background: var(--pivot-ops-accent-soft, rgba(255, 79, 31, 0.1));
+    color: var(--pivot-ops-accent-hover, #e64518);
     white-space: nowrap;
+    text-transform: none;
+    letter-spacing: 0;
   }
 }

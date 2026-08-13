@@ -1,0 +1,45 @@
+.pivot-ops-section {
+  margin: 0 0 16px;
+  padding: 18px 18px 16px;
+
+  &__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  &__copy {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 auto;
+  }
+
+  &__body {
+    min-width: 0;
+  }
+}
+
+/* Utilities — safe to use on nested panels outside PivotOpsSection. */
+.pivot-ops-section__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--pivot-ops-ink);
+}
+
+.pivot-ops-section__description {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--pivot-ops-ink-muted);
+}

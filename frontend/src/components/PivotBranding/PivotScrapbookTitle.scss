@@ -1,10 +1,4 @@
-@font-face {
-  font-family: 'Les Flos Sans';
-  src: url('../../../assets/pivot/fonts/LesFlosSans.otf') format('opentype');
-  font-weight: 400 700;
-  font-style: normal;
-  font-display: swap;
-}
+@import './pivotBrandFonts.scss';
 
 .pivot-scrapbook-title {
   position: relative;

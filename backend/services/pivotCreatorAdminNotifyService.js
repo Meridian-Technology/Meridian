@@ -11,7 +11,7 @@ const { connectToDatabase } = require('../connectionsManager');
 const { getResend } = require('./resendClient');
 const { listPlatformAdmins } = require('./platformAdminInviteService');
 const { getPivotBatch } = require('./pivotBatchService');
-const { curationHref } = require('./pivotTenantInsightsService');
+const { curationHref } = require('../utilities/pivotAdminHrefs');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 const { logPivot } = require('../utilities/pivotLogger');
 

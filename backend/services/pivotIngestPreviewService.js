@@ -6,6 +6,7 @@ const {
   loadCatalogDuplicateIndex,
   resolveImportDuplicate,
 } = require('./pivotIngestDuplicateService');
+const { scrapeSiteEvents } = require('./pivotSiteScrapeService');
 
 const FETCH_TIMEOUT_MS = 10_000;
 /**
@@ -29,9 +30,13 @@ const MAX_LUMA_DISCOVER_PAGES = 100;
 
 const ALLOWED_HOST_SUFFIXES = ['partiful.com', 'lu.ma', 'luma.com'];
 
+/** Provider that bypasses the host allowlist and scrapes via `pivotSiteScrapeService`. */
+const GENERIC_SITE_PROVIDER = 'generic-site';
+
 const PROVIDER_LABELS = {
   partiful: 'Partiful',
   luma: 'Luma',
+  [GENERIC_SITE_PROVIDER]: 'Website',
 };
 
 const LUMA_RESERVED_SLUGS = new Set([
@@ -472,7 +477,12 @@ function isAllowedHost(hostname) {
   );
 }
 
-function normalizeUrl(rawUrl) {
+/**
+ * @param {string} rawUrl
+ * @param {{allowAnyHost?: boolean}} [options] `allowAnyHost` skips the
+ *   Partiful/Luma allowlist for the `generic-site` provider.
+ */
+function normalizeUrl(rawUrl, options = {}) {
   const trimmed = rawUrl?.trim();
   if (!trimmed) {
     return { error: 'URL is required.', status: 400, code: 'URL_REQUIRED' };
@@ -489,7 +499,7 @@ function normalizeUrl(rawUrl) {
     return { error: 'Only HTTP(S) URLs are supported.', status: 400, code: 'INVALID_URL' };
   }
 
-  if (!isAllowedHost(parsed.hostname)) {
+  if (!options.allowAnyHost && !isAllowedHost(parsed.hostname)) {
     return {
       error: 'URL must be a Partiful or Luma event or explore link.',
       status: 400,
@@ -1306,7 +1316,83 @@ async function attachPreviewDuplicates(data, options = {}) {
   return data;
 }
 
+/**
+ * Generic website preview: render + LLM-extract the page, then reuse the same
+ * batch envelope the Partiful/Luma parsers produce. Always batch mode — a venue
+ * calendar with a single listing is still a list of one.
+ */
+async function previewGenericSiteIngest(options = {}) {
+  const normalized = normalizeUrl(options.url, { allowAnyHost: true });
+  if (normalized.error) {
+    return normalized;
+  }
+
+  const batchLimit = resolveBatchLimit(options.maxEvents);
+  const scraped = await scrapeSiteEvents({
+    url: normalized.url,
+    maxEvents: batchLimit,
+    timezone: options.timezone,
+    now: options.now,
+  });
+  if (scraped.error) {
+    return scraped;
+  }
+
+  if (!scraped.drafts.length) {
+    return {
+      error: 'No events found on this website.',
+      status: 422,
+      code: 'NO_EVENTS_FOUND',
+    };
+  }
+
+  const drafts = scraped.drafts.map((entry) => ({
+    ...entry,
+    warnings: draftWarnings(entry.draft),
+  }));
+
+  const warnings = [];
+  if (scraped.truncated) {
+    warnings.push(`Only the first ${scraped.limit} events were imported from this website.`);
+  }
+  const missingStartCount = drafts.filter((entry) => !entry.draft.start_time).length;
+  if (missingStartCount) {
+    warnings.push(
+      `${missingStartCount} event(s) had no readable start time and need one before publishing.`,
+    );
+  }
+  const missingOrganizerCount = drafts.filter((entry) => !entry.draft.hostName).length;
+  if (missingOrganizerCount) {
+    warnings.push(
+      `${missingOrganizerCount} event(s) still need an organizer name before publishing.`,
+    );
+  }
+
+  return {
+    data: await attachPreviewDuplicates(
+      {
+        mode: 'batch',
+        listLabel: scraped.listLabel || normalized.parsed.hostname,
+        drafts,
+        warnings,
+        provider: GENERIC_SITE_PROVIDER,
+        providerLabel: PROVIDER_LABELS[GENERIC_SITE_PROVIDER],
+        truncated: scraped.truncated,
+        discoveredTotal: scraped.discoveredTotal,
+        limit: scraped.limit,
+        discoverSource: scraped.source,
+        discoverPages: null,
+      },
+      options,
+    ),
+  };
+}
+
 async function previewIngestUrl(_req, options = {}) {
+  if (String(options.provider || '').trim().toLowerCase() === GENERIC_SITE_PROVIDER) {
+    return previewGenericSiteIngest(options);
+  }
+
   const normalized = normalizeUrl(options.url);
   if (normalized.error) {
     return normalized;
@@ -1438,7 +1524,10 @@ async function previewIngestUrl(_req, options = {}) {
 
 module.exports = {
   previewIngestUrl,
+  previewGenericSiteIngest,
   normalizeUrl,
+  detectProvider,
+  isAllowedHost,
   buildDraft,
   classifyIngestUrl,
   parsePartifulExploreBatch,
@@ -1468,4 +1557,5 @@ module.exports = {
   LUMA_DISCOVER_PAGE_SIZE,
   MAX_LUMA_DISCOVER_PAGES,
   HOST_ENRICH_CONCURRENCY,
+  GENERIC_SITE_PROVIDER,
 };

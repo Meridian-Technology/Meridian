@@ -1,0 +1,63 @@
+/**
+ * Dev-only demo mode chrome.
+ *
+ * Intentionally outside both branding registers — this is tooling, not product. It sits in the
+ * header bar as a single small control: quiet when off, yellow when on. There is deliberately no
+ * banner and no in-page watermark; one indicator in one place is enough to keep fixtures from being
+ * mistaken for real data, and more than that is noise in every screenshot.
+ */
+
+.jg-demo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  font-family: var(--jg-font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--jg-ink-soft);
+  background: var(--jg-surface);
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius-pill);
+  transition:
+    background var(--jg-dur-hover) ease,
+    border-color var(--jg-dur-hover) ease,
+    color var(--jg-dur-hover) ease;
+}
+
+.jg-demo-chip:hover {
+  color: var(--jg-ink);
+  border-color: var(--jg-border-strong);
+}
+
+.jg-demo-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+
+.jg-demo-chip--active {
+  color: var(--jg-ink);
+  background: var(--jg-pop);
+  border-color: var(--jg-border-strong);
+}
+
+.jg-demo-chip--active:hover {
+  background: #ffdd6b;
+}
+
+.jg-demo-chip--active .jg-demo-chip__dot {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jg-demo-chip {
+    transition-duration: 0.01ms;
+  }
+}

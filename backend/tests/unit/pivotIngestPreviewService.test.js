@@ -1,4 +1,7 @@
 jest.mock('axios');
+jest.mock('../../services/pivotSiteScrapeService', () => ({
+  scrapeSiteEvents: jest.fn(),
+}));
 jest.mock('../../services/pivotIngestDuplicateService', () => ({
   annotateImportDrafts: jest.fn((drafts) => ({ drafts, duplicateWarnings: [] })),
   formatDuplicateWarning: jest.fn(),
@@ -8,6 +11,7 @@ jest.mock('../../services/pivotIngestDuplicateService', () => ({
 }));
 
 const axios = require('axios');
+const { scrapeSiteEvents } = require('../../services/pivotSiteScrapeService');
 const {
   previewIngestUrl,
   normalizeUrl,
@@ -580,5 +584,135 @@ describe('pivotIngestPreviewService batch parsing', () => {
     expect(result.data.mode).toBe('batch');
     expect(result.data.discoverSource).toBe('luma-html');
     expect(result.data.drafts).toHaveLength(1);
+  });
+});
+
+describe('generic-site provider', () => {
+  const SITE_URL = 'https://icfilmscene.org/calendar';
+
+  function scrapedDraft(overrides = {}) {
+    return {
+      sourceUrl: 'https://icfilmscene.org/events/late-shift',
+      draft: {
+        name: 'Late Shift',
+        description: null,
+        image: null,
+        start_time: '2026-07-11T01:00:00.000Z',
+        end_time: null,
+        location: 'FilmScene',
+        hostName: 'FilmScene',
+        hostImageUrl: null,
+        sourceUrl: 'https://icfilmscene.org/events/late-shift',
+        source: 'generic-site',
+        sourceTags: [],
+        ...overrides,
+      },
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('normalizeUrl skips the host allowlist when allowAnyHost is set', () => {
+    expect(normalizeUrl(SITE_URL).code).toBe('UNSUPPORTED_HOST');
+
+    const permitted = normalizeUrl(SITE_URL, { allowAnyHost: true });
+    expect(permitted.error).toBeUndefined();
+    expect(permitted.url).toBe(SITE_URL);
+  });
+
+  it('returns a batch of scraped drafts without fetching HTML directly', async () => {
+    scrapeSiteEvents.mockResolvedValue({
+      listLabel: 'FilmScene',
+      drafts: [scrapedDraft()],
+      truncated: false,
+      discoveredTotal: 1,
+      limit: 250,
+      source: 'firecrawl-json',
+    });
+
+    const result = await previewIngestUrl(
+      {},
+      { url: SITE_URL, provider: 'generic-site', timezone: 'America/Chicago' },
+    );
+
+    expect(result.data.mode).toBe('batch');
+    expect(result.data.provider).toBe('generic-site');
+    expect(result.data.providerLabel).toBe('Website');
+    expect(result.data.discoverSource).toBe('firecrawl-json');
+    expect(result.data.drafts).toHaveLength(1);
+    expect(result.data.warnings).toEqual([]);
+    expect(scrapeSiteEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ url: SITE_URL, timezone: 'America/Chicago' }),
+    );
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  it('attaches per-draft warnings for fields the page did not expose', async () => {
+    scrapeSiteEvents.mockResolvedValue({
+      listLabel: null,
+      drafts: [scrapedDraft({ start_time: null, hostName: null })],
+      truncated: true,
+      discoveredTotal: 4,
+      limit: 1,
+      source: 'firecrawl-json',
+    });
+
+    const result = await previewIngestUrl({}, { url: SITE_URL, provider: 'generic-site' });
+
+    expect(result.data.listLabel).toBe('icfilmscene.org');
+    expect(result.data.drafts[0].warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('start time')]),
+    );
+    expect(result.data.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Only the first 1 events'),
+        expect.stringContaining('no readable start time'),
+        expect.stringContaining('organizer name'),
+      ]),
+    );
+  });
+
+  it('returns NO_EVENTS_FOUND when the page yields nothing', async () => {
+    scrapeSiteEvents.mockResolvedValue({
+      listLabel: null,
+      drafts: [],
+      truncated: false,
+      discoveredTotal: 0,
+      limit: 250,
+      source: 'firecrawl-json',
+    });
+
+    const result = await previewIngestUrl({}, { url: SITE_URL, provider: 'generic-site' });
+
+    expect(result.code).toBe('NO_EVENTS_FOUND');
+  });
+
+  it('propagates scrape service errors unchanged', async () => {
+    scrapeSiteEvents.mockResolvedValue({
+      error: 'Website scraping is not configured.',
+      status: 503,
+      code: 'SITE_SCRAPE_NOT_CONFIGURED',
+    });
+
+    const result = await previewIngestUrl({}, { url: SITE_URL, provider: 'generic-site' });
+
+    expect(result.code).toBe('SITE_SCRAPE_NOT_CONFIGURED');
+    expect(result.status).toBe(503);
+  });
+
+  it('validates the URL before calling the scrape service', async () => {
+    const result = await previewIngestUrl({}, { url: 'not a url', provider: 'generic-site' });
+
+    expect(result.code).toBe('INVALID_URL');
+    expect(scrapeSiteEvents).not.toHaveBeenCalled();
+  });
+
+  it('leaves the Partiful and Luma paths on the host allowlist', async () => {
+    const result = await previewIngestUrl({}, { url: SITE_URL });
+
+    expect(result.code).toBe('UNSUPPORTED_HOST');
+    expect(scrapeSiteEvents).not.toHaveBeenCalled();
   });
 });

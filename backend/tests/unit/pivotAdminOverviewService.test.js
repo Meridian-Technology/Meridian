@@ -439,6 +439,14 @@ describe('pivotAdminOverviewService', () => {
       expect(result.data.hostLiveWeekAlert.curationHref).toContain('source=justgo');
       expect(result.data.funnel[0]).toMatchObject({ key: 'swipes', value: 12 });
       expect(result.data.funnel[1]).toMatchObject({ key: 'interested', value: 6 });
+      expect(result.data.eventsByDay).toHaveLength(7);
+      expect(result.data.eventsByDay[0]).toEqual(
+        expect.objectContaining({
+          date: expect.any(String),
+          weekday: expect.any(String),
+          count: expect.any(Number),
+        }),
+      );
       expect(result.data.dropSchedule.batchWeek).toBe('2026-W26');
       expect(result.data.vsPrevWeek).toBeTruthy();
       expect(resolvePivotTenant).toHaveBeenCalledWith(

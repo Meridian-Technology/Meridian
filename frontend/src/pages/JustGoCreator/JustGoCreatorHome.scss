@@ -1,0 +1,207 @@
+/**
+ * Creator listings — reskin register.
+ *
+ * Calm white rows with ink hairlines, adapted from the Meridian events list composition
+ * (header + filter chips + row list). Pops stay out of here; the only flare on this page is
+ * the first-run empty state.
+ */
+
+.jg-listings__head .justgo-creator__page-subtitle {
+  margin-bottom: 1.5rem;
+}
+
+/* --- Filter chips --- */
+
+.jg-listings__filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0 0 1.25rem;
+}
+
+/* Chip styling lives in `justGoCreatorControls.scss` (shared with the tag picker). */
+
+/* --- Rows --- */
+
+/* An index, not a stack of cards: hairlines above and below, rules between. */
+.jg-listings__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 2px solid var(--jg-border-strong);
+  border-bottom: 1px solid var(--jg-border);
+}
+
+.jg-listings__row + .jg-listings__row {
+  border-top: 1px solid var(--jg-border);
+}
+
+.jg-listings__row--skeleton {
+  height: 5.25rem;
+  background: linear-gradient(
+    90deg,
+    var(--jg-surface-subtle) 0%,
+    #fdfcfb 50%,
+    var(--jg-surface-subtle) 100%
+  );
+  background-size: 200% 100%;
+  animation: jg-listings-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes jg-listings-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jg-listings__row--skeleton {
+    animation: none;
+  }
+}
+
+.jg-listings__row-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  text-decoration: none;
+  color: inherit;
+  background: var(--jg-surface);
+}
+
+.jg-listings__row-link {
+  transition: background var(--jg-dur-hover) ease;
+}
+
+.jg-listings__row-link:hover {
+  background: var(--jg-surface-subtle);
+}
+
+.jg-listings__row-chevron {
+  transition: transform var(--jg-dur-hover) var(--jg-ease);
+}
+
+.jg-listings__row-link:hover .jg-listings__row-chevron {
+  transform: translateX(2px);
+}
+
+.jg-listings__row-link:focus-visible {
+  outline: 2px solid var(--jg-accent);
+  outline-offset: -2px;
+}
+
+.jg-listings__row-main {
+  min-width: 0;
+}
+
+.jg-listings__row-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.jg-listings__row-name {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--jg-ink);
+}
+
+.jg-listings__row-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--jg-ink-soft);
+}
+
+.jg-listings__row-side {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+  color: var(--jg-ink-soft);
+}
+
+/* Mono is reserved for machine values; the week token is the clearest one in the product. */
+.jg-listings__week {
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--jg-border-strong);
+  background: var(--jg-cream);
+  font-family: var(--jg-font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--jg-ink);
+}
+
+.jg-listings__week--none {
+  background: var(--jg-surface);
+  color: var(--jg-ink-soft);
+}
+
+.jg-listings__count {
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.jg-listings__count strong {
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--jg-ink);
+}
+
+.jg-listings__row-chevron {
+  font-size: 1.25rem;
+}
+
+/* Status pill styling lives in `justGoCreatorControls.scss`. */
+
+/* --- First-run empty state (flare register) --- */
+
+.jg-listings__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 32rem;
+  padding: 1rem 0 0;
+}
+
+.jg-listings__empty-body {
+  margin: 1.5rem 0 1.5rem;
+  font-size: 1.02rem;
+  line-height: 1.55;
+  color: var(--jg-ink-muted);
+}
+
+@media (max-width: 720px) {
+  .jg-listings__row-link {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .jg-listings__row-side {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jg-listings__row-link,
+  .jg-listings__row-chevron {
+    transition-duration: 0.01ms;
+  }
+
+  .jg-listings__row-link:hover .jg-listings__row-chevron {
+    transform: none;
+  }
+}

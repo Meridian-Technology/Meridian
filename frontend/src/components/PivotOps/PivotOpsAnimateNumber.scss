@@ -1,0 +1,188 @@
+/* Out shrinks/blurs to top of glyph; in scales up from bottom. Spring lives on bump only. */
+.pivot-ops-animate-number {
+  --pon-spring: linear(
+    0,
+    0.0275 2.78%,
+    0.1008 5.56%,
+    0.2065 8.33%,
+    0.3321 11.11%,
+    0.4668 13.89%,
+    0.6016 16.67%,
+    0.7293 19.44%,
+    0.8446 22.22%,
+    0.9441 25%,
+    1.0257 27.78%,
+    1.0889 30.56%,
+    1.1341 33.33%,
+    1.1628 36.11%,
+    1.1769 38.89%,
+    1.1786 41.67%,
+    1.1705 44.44%,
+    1.1551 47.22%,
+    1.1347 50%,
+    1.1114 52.78%,
+    1.0871 55.56%,
+    1.0632 58.33%,
+    1.041 61.11%,
+    1.0213 63.89%,
+    1.0045 66.67%,
+    0.9911 69.44%,
+    0.9809 72.22%,
+    0.9738 75%,
+    0.9697 77.78%,
+    0.968 80.56%,
+    0.9683 83.33%,
+    0.9703 86.11%,
+    0.9734 88.89%,
+    0.9773 91.67%,
+    0.9816 94.44%,
+    0.9859 97.22%,
+    1
+  );
+  /* Slight in-box travel — springed on the bump wrapper. */
+  --pon-dist-out: -0.14em;
+  --pon-dist-in: 0.18em;
+  --pon-scale-out: 0.55;
+  --pon-scale-in: 0.55;
+  --pon-blur: 12px;
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.pivot-ops-animate-number__slot {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  padding: 0.02em 0;
+  margin: -0.02em 0;
+}
+
+.pivot-ops-animate-number__bump {
+  display: inline-block;
+}
+
+.pivot-ops-animate-number__bump--in {
+  animation: pon-bump-in var(--pon-dur, 520ms) var(--pon-spring) both;
+  animation-delay: 40ms;
+}
+
+.pivot-ops-animate-number__bump--out {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  animation: pon-bump-out var(--pon-dur, 520ms) var(--pon-spring) both;
+}
+
+.pivot-ops-animate-number__layer {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+
+/* Scale + blur are eased — no spring. */
+.pivot-ops-animate-number__in {
+  transform-origin: center bottom;
+  animation:
+    pon-scale-in var(--pon-dur, 520ms) cubic-bezier(0.22, 1, 0.36, 1) both,
+    pon-resolve var(--pon-dur, 520ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 40ms, 40ms;
+}
+
+.pivot-ops-animate-number__out {
+  transform-origin: center top;
+  animation:
+    pon-scale-out var(--pon-dur, 520ms) cubic-bezier(0.4, 0, 0.2, 1) both,
+    pon-dissolve var(--pon-dur, 520ms) cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+/* Springed vertical bump only (translate). */
+@keyframes pon-bump-in {
+  from {
+    transform: translateY(var(--pon-dist-in));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes pon-bump-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(var(--pon-dist-out));
+  }
+}
+
+/* Uniform scale — eased, not springed. */
+@keyframes pon-scale-in {
+  from {
+    transform: scale(var(--pon-scale-in));
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes pon-scale-out {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(var(--pon-scale-out));
+  }
+}
+
+@keyframes pon-resolve {
+  from {
+    opacity: 0;
+    filter: blur(var(--pon-blur));
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes pon-dissolve {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    filter: blur(var(--pon-blur));
+  }
+}
+
+.pivot-ops-animate-number__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pivot-ops-animate-number__bump--in,
+  .pivot-ops-animate-number__in {
+    animation: none;
+  }
+
+  .pivot-ops-animate-number__bump--out,
+  .pivot-ops-animate-number__out {
+    animation: none;
+  }
+
+  .pivot-ops-animate-number__bump--out {
+    display: none;
+  }
+}

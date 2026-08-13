@@ -6,11 +6,16 @@ const {
   previewIngestUrl,
   MAX_CRAWL_BATCH_EVENTS,
   resolveBatchLimit,
+  GENERIC_SITE_PROVIDER,
 } = require('./pivotIngestPreviewService');
+const { isSiteScrapeConfigured } = require('./pivotSiteScrapeService');
 const { normalizeBatchWeek } = require('./pivotWeeklySnapshotService');
 const { ensurePivotBatch } = require('./pivotBatchService');
 const { toIsoWeek, shiftIsoWeek } = require('../utilities/pivotIsoWeek');
-const { resolvePivotDropInstant } = require('../utilities/pivotDropSchedule');
+const {
+  resolvePivotDropInstant,
+  resolvePivotDropConfig,
+} = require('../utilities/pivotDropSchedule');
 const { logPivot } = require('../utilities/pivotLogger');
 
 const MAX_FAILURES_STORED = 50;
@@ -87,6 +92,33 @@ function serializeCurationRun(doc) {
   };
 }
 
+/**
+ * Human-readable summary of how a crawl sourced its events, shown in the run
+ * monitor. Each provider truncates for a different reason, so the wording has to
+ * match the fetch path that actually ran.
+ */
+function describeDiscovery(previewData, entryCount, maxEvents) {
+  const source = previewData?.discoverSource || null;
+
+  if (previewData?.truncated) {
+    if (source === 'luma-discover-api') {
+      return `Luma discover results truncated (${previewData.discoveredTotal || entryCount} events across ${previewData.discoverPages || '?'} pages).`;
+    }
+    if (source === 'firecrawl-json') {
+      return `Website listed more events than the crawl limit (${previewData.limit}); raise maxEvents to take more.`;
+    }
+    return `Source HTML listed more events than the crawl limit (${maxEvents}); provider pagination/scroll not yet supported.`;
+  }
+
+  if (source === 'luma-discover-api') {
+    return `Fetched via Luma discover API (${previewData.discoverPages || 1} page(s)).`;
+  }
+  if (source === 'firecrawl-json') {
+    return 'Extracted from rendered website HTML.';
+  }
+  return null;
+}
+
 function emptyStats(message = null) {
   return {
     discovered: 0,
@@ -160,6 +192,20 @@ async function buildWorkerReq(tenantKey, createdBy) {
     school: tenantKey,
     user: createdBy ? { email: createdBy } : {},
   };
+}
+
+/**
+ * Best-effort city timezone for relative-date resolution during scraping.
+ * Falls back to the pilot default rather than failing the run.
+ */
+async function resolveTenantTimezone(reqLike, tenantKey) {
+  try {
+    const tenantResult = await resolvePivotTenant(reqLike, tenantKey);
+    if (tenantResult.error) return undefined;
+    return resolvePivotDropConfig(tenantResult.tenant).timezone;
+  } catch {
+    return undefined;
+  }
 }
 
 async function updateRunDoc(reqLike, runId, patch) {
@@ -281,6 +327,164 @@ async function upsertDiscoveredEntry(
   };
 }
 
+/**
+ * Upsert a list of extracted drafts into the city catalog.
+ *
+ * Shared by curation runs and source discovery: both end up holding a list of
+ * drafts that need identical batch bookkeeping, so the per-week
+ * ensurePivotBatch calls and the byBatchWeek tally live here rather than being
+ * duplicated (and drifting) in each caller.
+ *
+ * @param {object} options.stats Mutated in place when supplied, so a caller can
+ *   publish partial counts while the loop is still running.
+ * @param {Function} options.onProgress Awaited every 10 outcomes.
+ * @returns {Promise<{stats: object, events: Array, failures: Array}>}
+ */
+async function ingestEntries(req, options = {}) {
+  const {
+    tenantKey,
+    batchWeek,
+    forceBatchWeek = false,
+    entries = [],
+    defaultTags = [],
+    onProgress = null,
+    logContext = {},
+  } = options;
+
+  const stats = options.stats || emptyStats();
+  if (!stats.byBatchWeek) stats.byBatchWeek = {};
+
+  const failures = [];
+  const events = [];
+  const tags = Array.isArray(defaultTags) ? defaultTags : [];
+  const ensuredWeeks = new Set();
+
+  // When forcing, ensure the pinned week exists up front. Otherwise ensure
+  // each event's resolved week as we upsert.
+  if (forceBatchWeek && batchWeek) {
+    await ensurePivotBatch(req, { batchWeek, status: 'curating' });
+    ensuredWeeks.add(batchWeek);
+  }
+
+  for (const entry of entries) {
+    try {
+      const outcome = await upsertDiscoveredEntry(req, {
+        tenantKey,
+        batchWeek,
+        forceBatchWeek,
+        entry,
+        defaultTags: tags,
+      });
+
+      if (outcome.upserted) {
+        stats.upserted += 1;
+        if (outcome.updated) stats.updated += 1;
+        const week = outcome.batchWeek || batchWeek;
+        if (week) {
+          stats.byBatchWeek[week] = (stats.byBatchWeek[week] || 0) + 1;
+          if (!ensuredWeeks.has(week)) {
+            await ensurePivotBatch(req, {
+              batchWeek: week,
+              status: 'curating',
+            });
+            ensuredWeeks.add(week);
+          }
+        }
+        if (events.length < MAX_EVENTS_STORED) {
+          events.push({
+            eventId: outcome.eventId ? String(outcome.eventId) : null,
+            name: outcome.name || null,
+            batchWeek: week || null,
+            sourceUrl: outcome.sourceUrl || null,
+            ingestStatus: outcome.ingestStatus || null,
+            updated: Boolean(outcome.updated),
+          });
+        }
+      } else if (outcome.skipped) {
+        stats.skipped += 1;
+        if (failures.length < MAX_FAILURES_STORED) {
+          failures.push({
+            sourceUrl: outcome.sourceUrl,
+            name: outcome.name,
+            message: outcome.message,
+            code: outcome.code,
+          });
+        }
+      } else if (outcome.failed) {
+        stats.failed += 1;
+        if (failures.length < MAX_FAILURES_STORED) {
+          failures.push({
+            sourceUrl: outcome.sourceUrl,
+            name: outcome.name,
+            message: outcome.message,
+            code: outcome.code,
+          });
+        }
+      }
+    } catch (err) {
+      stats.failed += 1;
+      if (failures.length < MAX_FAILURES_STORED) {
+        failures.push({
+          sourceUrl: entry?.sourceUrl || null,
+          name: entry?.draft?.name || null,
+          message: err.message || 'Unexpected upsert error.',
+          code: 'UPSERT_EXCEPTION',
+        });
+      }
+      logPivot('warn', 'curation ingest entry failed', {
+        ...logContext,
+        tenantKey,
+        sourceUrl: entry?.sourceUrl || null,
+        error: err.message,
+      });
+    }
+
+    // Persist progress periodically so UI polling sees movement.
+    if (onProgress && (stats.upserted + stats.skipped + stats.failed) % 10 === 0) {
+      await onProgress({ stats, events, failures });
+    }
+  }
+
+  const weekKeys = Object.keys(stats.byBatchWeek || {});
+  if (!forceBatchWeek && weekKeys.length > 1) {
+    const summary = weekKeys
+      .sort()
+      .map((w) => `${w}:${stats.byBatchWeek[w]}`)
+      .join(', ');
+    const multiMsg = `Assigned by event date across ${weekKeys.length} weeks (${summary}).`;
+    stats.message = stats.message ? `${stats.message} ${multiMsg}` : multiMsg;
+  }
+
+  return { stats, events, failures };
+}
+
+/**
+ * Split ingest counts into words an operator can act on.
+ *
+ * `stats.upserted` counts rows written, whether they were new or refreshed, so
+ * reporting it as "added" overstates a re-crawl — which is what most runs are
+ * once a source is established. The interesting number is how many events were
+ * genuinely new.
+ */
+function summarizeIngest(stats = {}) {
+  const written = stats.upserted || 0;
+  const refreshed = stats.updated || 0;
+  const added = Math.max(written - refreshed, 0);
+
+  const parts = [];
+  if (added) parts.push(`${added} new`);
+  if (refreshed) parts.push(`${refreshed} refreshed`);
+
+  return {
+    added,
+    refreshed,
+    written,
+    skipped: stats.skipped || 0,
+    failed: stats.failed || 0,
+    phrase: parts.length ? parts.join(', ') : 'nothing new',
+  };
+}
+
 async function executeCurationRun(runId) {
   let workerReq;
   let tenantKey;
@@ -372,6 +576,10 @@ async function executeCurationRun(runId) {
       url: job.url,
       ...(maxEvents != null ? { maxEvents } : {}),
       tenantKey,
+      // generic-site cannot be inferred from the host, and its extractor needs
+      // the city timezone to resolve relative dates like "Fri 8pm".
+      provider: job.provider,
+      timezone: await resolveTenantTimezone(workerReq, tenantKey),
     });
 
     if (preview.error) {
@@ -406,15 +614,7 @@ async function executeCurationRun(runId) {
       ];
     }
 
-    const stats = emptyStats(
-      preview.data?.truncated
-        ? preview.data?.discoverSource === 'luma-discover-api'
-          ? `Luma discover results truncated (${preview.data.discoveredTotal || entries.length} events across ${preview.data.discoverPages || '?'} pages).`
-          : `Source HTML listed more events than the crawl limit (${maxEvents}); provider pagination/scroll not yet supported.`
-        : preview.data?.discoverSource === 'luma-discover-api'
-          ? `Fetched via Luma discover API (${preview.data.discoverPages || 1} page(s)).`
-          : null,
-    );
+    const stats = emptyStats(describeDiscovery(preview.data, entries.length, maxEvents));
     // Note: when maxEvents is null we take every event embedded in the HTML /
     // returned by the Luma discover API; Partiful explore still has no API pagination.
     stats.discovered = entries.length;
@@ -423,108 +623,24 @@ async function executeCurationRun(runId) {
     await updateRunDoc(workerReq, runId, { stats });
 
     const forceBatchWeek = Boolean(run.forceBatchWeek);
-    // When forcing, ensure the pinned week exists up front. Otherwise ensure
-    // each event's resolved week as we upsert.
-    if (forceBatchWeek) {
-      await ensurePivotBatch(workerReq, {
-        batchWeek: run.batchWeek,
-        status: 'curating',
-      });
-    }
-
-    const failures = [];
-    const events = [];
     const defaultTags = Array.isArray(job.defaultTags) ? job.defaultTags : [];
-    const ensuredWeeks = new Set(forceBatchWeek ? [run.batchWeek] : []);
 
-    for (const entry of entries) {
-      try {
-        const outcome = await upsertDiscoveredEntry(workerReq, {
-          tenantKey,
-          batchWeek: run.batchWeek,
-          forceBatchWeek,
-          entry,
-          defaultTags,
+    const { events, failures } = await ingestEntries(workerReq, {
+      tenantKey,
+      batchWeek: run.batchWeek,
+      forceBatchWeek,
+      entries,
+      defaultTags,
+      stats,
+      logContext: { runId: String(runId) },
+      onProgress: async (progress) => {
+        await updateRunDoc(workerReq, runId, {
+          stats: progress.stats,
+          failures: progress.failures,
+          events: progress.events,
         });
-
-        if (outcome.upserted) {
-          stats.upserted += 1;
-          if (outcome.updated) stats.updated += 1;
-          const week = outcome.batchWeek || run.batchWeek;
-          if (week) {
-            stats.byBatchWeek[week] = (stats.byBatchWeek[week] || 0) + 1;
-            if (!ensuredWeeks.has(week)) {
-              await ensurePivotBatch(workerReq, {
-                batchWeek: week,
-                status: 'curating',
-              });
-              ensuredWeeks.add(week);
-            }
-          }
-          if (events.length < MAX_EVENTS_STORED) {
-            events.push({
-              eventId: outcome.eventId ? String(outcome.eventId) : null,
-              name: outcome.name || null,
-              batchWeek: week || null,
-              sourceUrl: outcome.sourceUrl || null,
-              ingestStatus: outcome.ingestStatus || null,
-              updated: Boolean(outcome.updated),
-            });
-          }
-        } else if (outcome.skipped) {
-          stats.skipped += 1;
-          if (failures.length < MAX_FAILURES_STORED) {
-            failures.push({
-              sourceUrl: outcome.sourceUrl,
-              name: outcome.name,
-              message: outcome.message,
-              code: outcome.code,
-            });
-          }
-        } else if (outcome.failed) {
-          stats.failed += 1;
-          if (failures.length < MAX_FAILURES_STORED) {
-            failures.push({
-              sourceUrl: outcome.sourceUrl,
-              name: outcome.name,
-              message: outcome.message,
-              code: outcome.code,
-            });
-          }
-        }
-      } catch (err) {
-        stats.failed += 1;
-        if (failures.length < MAX_FAILURES_STORED) {
-          failures.push({
-            sourceUrl: entry?.sourceUrl || null,
-            name: entry?.draft?.name || null,
-            message: err.message || 'Unexpected upsert error.',
-            code: 'UPSERT_EXCEPTION',
-          });
-        }
-        logPivot('warn', 'curation run entry failed', {
-          runId: String(runId),
-          tenantKey,
-          sourceUrl: entry?.sourceUrl || null,
-          error: err.message,
-        });
-      }
-
-      // Persist progress periodically so UI polling sees movement.
-      if ((stats.upserted + stats.skipped + stats.failed) % 10 === 0) {
-        await updateRunDoc(workerReq, runId, { stats, failures, events });
-      }
-    }
-
-    const weekKeys = Object.keys(stats.byBatchWeek || {});
-    if (!forceBatchWeek && weekKeys.length > 1) {
-      const summary = weekKeys
-        .sort()
-        .map((w) => `${w}:${stats.byBatchWeek[w]}`)
-        .join(', ');
-      const multiMsg = `Assigned by event date across ${weekKeys.length} weeks (${summary}).`;
-      stats.message = stats.message ? `${stats.message} ${multiMsg}` : multiMsg;
-    }
+      },
+    });
 
     const finishedAt = new Date();
     const status = 'completed';
@@ -627,6 +743,15 @@ async function startCurationJobRun(req, options = {}) {
   if (!job.url) {
     return { error: 'Job has no URL to crawl.', status: 400, code: 'URL_REQUIRED' };
   }
+  // Fail fast rather than queueing a run that can only end in a failed record.
+  if (job.provider === GENERIC_SITE_PROVIDER && !isSiteScrapeConfigured()) {
+    return {
+      error:
+        'Website scraping is not configured. Set FIRECRAWL_API_KEY in the backend environment to run generic-site curation jobs.',
+      status: 503,
+      code: 'SITE_SCRAPE_NOT_CONFIGURED',
+    };
+  }
 
   const weekResult = resolveRunBatchWeek({
     batchWeek: options.batchWeek,
@@ -709,5 +834,8 @@ module.exports = {
   serializeCurationRun,
   resolveRunBatchWeek,
   upsertDiscoveredEntry,
+  ingestEntries,
+  summarizeIngest,
+  emptyStats,
   MAX_CRAWL_BATCH_EVENTS,
 };

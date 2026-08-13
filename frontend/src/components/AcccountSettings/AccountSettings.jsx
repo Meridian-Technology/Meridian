@@ -10,6 +10,8 @@ import waiting from '../../assets/Icons/Waiting.svg';
 import error from '../../assets/circle-warning.svg';
 import unavailable from '../../assets/Icons/Circle-X.svg';
 import useAuth from '../../hooks/useAuth.js';
+import useAdminDashboardTheme from '../../hooks/useAdminDashboardTheme';
+import { isPlatformAdminUser } from '../../utils/adminDashboardTheme';
 import { Icon } from '@iconify-icon/react/dist/iconify.mjs';
 import ImageUpload from '../ImageUpload/ImageUpload';
 import axios from 'axios';
@@ -22,6 +24,8 @@ function AccountSettings({ userInfo }) {
 
     const { validateToken } = useAuth();
     const navigate = useNavigate();
+    const isPlatformAdmin = isPlatformAdminUser(userInfo);
+    const { isDark, setTheme } = useAdminDashboardTheme();
     // const [active, setActive] = useState(false);
 
     // const [changeUsername, setChangeUsername] = 
@@ -329,6 +333,36 @@ function AccountSettings({ userInfo }) {
                         }
                     </div>
                 </div>
+
+                    {isPlatformAdmin ? (
+                      <>
+                        <h2>Admin appearance</h2>
+                        <hr />
+                        <div className="settings-rows-container">
+                          <div className="user-container admin-theme-row">
+                            <div className="admin-theme-copy">
+                              <h3>Platform admin dark mode</h3>
+                              <p>
+                                Applies to Platform Admin and Just Go city dashboards only.
+                                Saved on this device.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              className={`admin-theme-toggle${isDark ? ' is-on' : ''}`}
+                              role="switch"
+                              aria-checked={isDark}
+                              onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                            >
+                              <span className="admin-theme-toggle__knob" aria-hidden="true" />
+                              <span className="admin-theme-toggle__label">
+                                {isDark ? 'Dark' : 'Light'}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
 
                     <h2>danger zone</h2>
                     <hr />

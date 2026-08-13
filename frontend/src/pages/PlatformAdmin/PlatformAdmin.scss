@@ -1,0 +1,300 @@
+/*
+ * Platform Admin + Pivot tenant dashboard dark theme.
+ *
+ * Driven by Account Settings → `data-admin-dashboard-theme="dark"` on <html>.
+ * Tokens override `.linear-admin` light defaults; dashboard chrome overrides
+ * the shared `.general-dash` shell only when `.platform-admin` is present.
+ */
+
+html[data-admin-dashboard-theme='dark'] {
+  /* —— Shared Linear tokens (content panes, Pivot Lab, curation, popups) —— */
+  .linear-admin,
+  .popup-content.pivot-discovery-popup,
+  .popup-content.pivot-discovery-popup .pivot-discovery {
+    --la-bg: #0c0e12;
+    --la-surface: #14171e;
+    --la-surface-secondary: #1a1e27;
+    --la-surface-raised: #1e2330;
+    --la-border: rgba(255, 255, 255, 0.12);
+    --la-border-subtle: rgba(255, 255, 255, 0.08);
+    --la-text: #e8eaed;
+    --la-text-secondary: #a8adb8;
+    --la-text-tertiary: #7a8190;
+    --la-text-muted: rgba(232, 234, 237, 0.55);
+    --la-accent: #8b93e6;
+    --la-accent-hover: #a4aaf0;
+    --la-accent-soft: rgba(139, 147, 230, 0.18);
+    --la-row-hover: rgba(255, 255, 255, 0.05);
+    --la-row-selected: rgba(139, 147, 230, 0.16);
+    --la-success: #2dd4bf;
+    --la-error: #f87171;
+    --la-warning: #fbbf24;
+    --la-danger: #f87171;
+    color-scheme: dark;
+  }
+
+  .linear-admin {
+    color: var(--la-text);
+
+    .linear-admin__error {
+      background: rgba(248, 113, 113, 0.12);
+      border-color: rgba(248, 113, 113, 0.35);
+    }
+
+    .linear-admin__main {
+      background: var(--la-bg);
+    }
+
+    .linear-admin__sidebar {
+      background: var(--la-surface);
+    }
+  }
+
+  .linear-btn--primary {
+    background: #e8eaed;
+    color: #0c0e12;
+    border-color: #e8eaed;
+
+    &:hover:not(:disabled) {
+      background: #cfd3dc;
+    }
+  }
+
+  .linear-badge {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--la-text-secondary);
+
+    &--active {
+      background: rgba(45, 212, 191, 0.14);
+      color: #5eead4;
+    }
+
+    &--coming_soon {
+      background: rgba(96, 165, 250, 0.14);
+      color: #93c5fd;
+    }
+
+    &--maintenance {
+      background: rgba(251, 191, 36, 0.14);
+      color: #fcd34d;
+    }
+
+    &--hidden {
+      background: rgba(255, 255, 255, 0.06);
+      color: #9ca3af;
+    }
+  }
+
+  .linear-tag {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--la-text-secondary);
+
+    &--manual {
+      background: rgba(251, 146, 60, 0.14);
+      color: #fdba74;
+    }
+
+    &--pivot {
+      background: rgba(244, 114, 182, 0.14);
+      color: #f9a8d4;
+    }
+  }
+
+  .linear-health--unknown {
+    background: #4b5563;
+  }
+
+  .linear-input,
+  .linear-textarea,
+  select.linear-input {
+    background: var(--la-surface-secondary, #1a1e27);
+    color: var(--la-text);
+    border-color: var(--la-border);
+  }
+
+  /* —— Dashboard shell (sidebar + content frame) —— */
+  .general-dash.platform-admin {
+    --oie-background: #0c0e12;
+    --background: #12151c;
+    --text: #e8eaed;
+    --text-rgba: 232, 234, 237;
+    --lightborder: rgba(255, 255, 255, 0.12);
+    --lighterborder: rgba(255, 255, 255, 0.08);
+    --darkborder: rgba(255, 255, 255, 0.45);
+    --shadow: none;
+    background-color: #0c0e12;
+    color: #e8eaed;
+    color-scheme: dark;
+
+    .dash-left {
+      background-color: #12151c;
+      border-right-color: rgba(255, 255, 255, 0.08);
+      box-shadow: none;
+
+      .back {
+        background-color: #0c0e12;
+      }
+
+      .user {
+        border-color: rgba(255, 255, 255, 0.12);
+      }
+    }
+
+    .dash-content {
+      background: #0c0e12;
+      color: #e8eaed;
+    }
+  }
+
+  /* —— Discovery console (portal) —— */
+  .popup-overlay .popup-content.pivot-discovery-popup {
+    background: #14171e;
+    color: #e8eaed;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .pivot-discovery {
+    color: var(--la-text, #e8eaed);
+
+    &__head,
+    &__counters,
+    &__foot,
+    &__rehearsal {
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &__counter {
+      background: #14171e;
+    }
+
+    &__counters {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    &__eyebrow,
+    &__subtitle,
+    &__clock-label,
+    &__counter-label,
+    &__counter-of,
+    &__step-detail,
+    &__foot-note,
+    &__empty {
+      color: rgba(232, 234, 237, 0.55);
+    }
+
+    &__step-shimmer {
+      background-image: linear-gradient(
+        90deg,
+        #ff6a3d 0%,
+        #ff6a3d 40%,
+        #ffd0bc 50%,
+        #ff6a3d 60%,
+        #ff6a3d 100%
+      );
+    }
+
+    &__step-dot {
+      background: rgba(232, 234, 237, 0.28);
+    }
+
+    &__step-tag {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(232, 234, 237, 0.65);
+    }
+
+    &__rehearsal {
+      background: rgba(251, 191, 36, 0.1);
+      border-bottom-color: rgba(251, 191, 36, 0.35);
+    }
+  }
+
+  /* —— Sources panel + common pivot lab surfaces —— */
+  .pivot-sources {
+    &__agent {
+      border-color: rgba(255, 255, 255, 0.1);
+      background:
+        radial-gradient(ellipse 140px 110px at 0% 0%, rgba(255, 79, 31, 0.18), transparent 70%),
+        rgba(255, 255, 255, 0.03);
+    }
+
+    &__agent--live {
+      border-color: rgba(255, 79, 31, 0.35);
+      background:
+        radial-gradient(ellipse 140px 110px at 0% 0%, rgba(255, 79, 31, 0.26), transparent 70%),
+        rgba(255, 255, 255, 0.03);
+    }
+
+    &__agent-city,
+    &__agent-meta,
+    &__counts,
+    &__collapse-meta {
+      color: rgba(232, 234, 237, 0.55);
+    }
+
+    &__agent-status:not(.pivot-sources__agent-status--live) {
+      color: rgba(232, 234, 237, 0.4);
+    }
+
+    &__agent-options {
+      border-top-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &__collapse-toggle {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    &__stop-btn {
+      border-color: rgba(248, 113, 113, 0.45);
+      color: #f87171;
+
+      &:hover:not(:disabled) {
+        background: rgba(248, 113, 113, 0.12);
+        color: #fca5a5;
+      }
+    }
+  }
+
+  .pivot-tenant-curation {
+    &__collapse-toggle {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    &__collapse-meta {
+      color: rgba(232, 234, 237, 0.55);
+    }
+  }
+
+  .pivot-lab {
+    &__empty,
+    &__section-hint,
+    &__error {
+      color: rgba(232, 234, 237, 0.55);
+    }
+
+    &__table {
+      th {
+        color: rgba(232, 234, 237, 0.5);
+        border-color: rgba(255, 255, 255, 0.08);
+      }
+
+      td {
+        border-color: rgba(255, 255, 255, 0.06);
+      }
+
+      tr.is-disabled {
+        opacity: 0.55;
+      }
+    }
+
+    &__pill--muted {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(232, 234, 237, 0.65);
+    }
+  }
+
+  .pivot-tenant-dash__gate {
+    color: #e8eaed;
+  }
+}

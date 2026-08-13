@@ -1,0 +1,113 @@
+/**
+ * Listing form — reskin register.
+ * Plain white fields with ink hairlines; the only accent is the submit pill and focus ring.
+ * `.jg-chip` is shared with the listings filter row (JustGoCreatorHome.scss).
+ */
+
+.jg-form {
+  max-width: 44rem;
+}
+
+.jg-form__section {
+  margin: 0 0 2rem;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.jg-form__section[disabled] {
+  opacity: 0.6;
+}
+
+.jg-form__legend {
+  padding: 0;
+  margin-bottom: 1rem;
+  font-family: var(--jg-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--jg-ink-soft);
+}
+
+.jg-form__row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.jg-form__row > .jg-field {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+/* Field / input / chip styling lives in `justGoCreatorControls.scss`. */
+
+.jg-form__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.jg-form__error,
+.jg-form__notice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 1.5rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--jg-border);
+  border-radius: var(--jg-radius);
+  font-size: 0.9rem;
+}
+
+.jg-form__error {
+  border-color: var(--jg-burst);
+  color: var(--jg-ink);
+  background: rgba(255, 42, 42, 0.06);
+}
+
+.jg-form__error:focus {
+  outline: 2px solid var(--jg-burst);
+  outline-offset: 2px;
+}
+
+.jg-form__notice {
+  color: var(--jg-ink-muted);
+  background: var(--jg-surface-subtle);
+}
+
+.jg-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--jg-border);
+}
+
+.jg-form__actions .justgo-creator__cta:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.jg-form__cancel {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0.4rem 0;
+  color: var(--jg-ink-muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.jg-form__cancel:hover {
+  color: var(--jg-ink);
+}
+
+/* The shared picker ships its own chrome; keep it on-canvas without restyling internals. */
+.jg-field .file-upload.image-upload {
+  max-width: 26rem;
+  border-radius: var(--jg-radius);
+}

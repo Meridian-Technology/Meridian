@@ -277,4 +277,90 @@ describe('pivotCurationJobService', () => {
       expect(PivotCurationJob.findOneAndDelete).not.toHaveBeenCalled();
     });
   });
+
+  describe('generic-site provider', () => {
+    it('creates a job for an arbitrary event website', async () => {
+      PivotCurationJob.create.mockResolvedValue(
+        leanDoc({
+          label: 'FilmScene calendar',
+          url: 'https://icfilmscene.org/calendar',
+          provider: 'generic-site',
+        }),
+      );
+
+      const result = await createCurationJob(mockReq(), {
+        tenantKey: 'nyc',
+        label: 'FilmScene calendar',
+        url: 'https://icfilmscene.org/calendar',
+        provider: 'generic-site',
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(PivotCurationJob.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'generic-site',
+          url: 'https://icfilmscene.org/calendar',
+        }),
+      );
+    });
+
+    it('requires a URL, unlike manual-json', async () => {
+      const result = await createCurationJob(mockReq(), {
+        tenantKey: 'nyc',
+        label: 'No URL',
+        provider: 'generic-site',
+      });
+
+      expect(result.code).toBe('URL_REQUIRED');
+      expect(PivotCurationJob.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses private hosts', async () => {
+      const result = await createCurationJob(mockReq(), {
+        tenantKey: 'nyc',
+        label: 'Internal',
+        url: 'http://169.254.169.254/latest/meta-data',
+        provider: 'generic-site',
+      });
+
+      expect(result.code).toBe('BLOCKED_HOST');
+      expect(PivotCurationJob.create).not.toHaveBeenCalled();
+    });
+
+    it('never infers generic-site from an unrecognized host', async () => {
+      const result = await createCurationJob(mockReq(), {
+        tenantKey: 'nyc',
+        label: 'Englert',
+        url: 'https://englert.org/events',
+      });
+
+      expect(result.code).toBe('PROVIDER_REQUIRED');
+      expect(result.error).toContain('generic-site');
+      expect(PivotCurationJob.create).not.toHaveBeenCalled();
+    });
+
+    it('switches an existing job over to generic-site', async () => {
+      const doc = {
+        ...leanDoc(),
+        save: jest.fn().mockResolvedValue(undefined),
+        toObject() {
+          const { save, toObject, ...rest } = this;
+          return rest;
+        },
+      };
+      PivotCurationJob.findOne.mockResolvedValue(doc);
+
+      const result = await updateCurationJob(mockReq(), {
+        tenantKey: 'nyc',
+        jobId: JOB_ID,
+        provider: 'generic-site',
+        url: 'https://littlevillagemag.com/calendar/',
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(doc.provider).toBe('generic-site');
+      expect(doc.url).toBe('https://littlevillagemag.com/calendar/');
+      expect(doc.save).toHaveBeenCalled();
+    });
+  });
 });

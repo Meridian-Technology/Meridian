@@ -1,5 +1,5 @@
 import React from 'react';
-import justGoBurst from '../../../assets/pivot/just-go-burst.svg';
+import justGoBurst from '../../../assets/pivot/just-go-burst-1.svg';
 
 /** Same burst silhouette as just-go-burst / mobile scrapbook burst. */
 const BURST_PATH =
@@ -14,13 +14,13 @@ const BURST_VIEWBOX = '18 0 64 48';
 function PivotDashBurst() {
   return (
     <div className="pivot-dash-burst" aria-hidden="true">
-      <svg
+      {/* <svg
         className="pivot-dash-burst__ink"
         viewBox={BURST_VIEWBOX}
         aria-hidden="true"
       >
         <path d={BURST_PATH} fill="#1A1714" />
-      </svg>
+      </svg> */}
       <img
         className="pivot-dash-burst__orange"
         src={justGoBurst}

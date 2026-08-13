@@ -1,0 +1,54 @@
+.pivot-ops-metric {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--pivot-ops-surface);
+  border: 1px solid var(--pivot-ops-border);
+  border-radius: var(--pivot-ops-radius-card);
+
+  &__label {
+    display: block;
+    margin: 0 0 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__value {
+    display: block;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--pivot-ops-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__hint {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  &__delta {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft);
+    font-variant-numeric: tabular-nums;
+
+    &--up {
+      color: #15803d;
+    }
+
+    &--down {
+      color: #b45309;
+    }
+  }
+}
+
+.pivot-ops-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const getGlobalModels = require('./getGlobalModelService');
 const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { normalizeUrl } = require('./pivotIngestPreviewService');
+const { normalizeSiteUrl } = require('./pivotSiteScrapeService');
 const {
   CURATION_PROVIDERS,
   BATCH_WEEK_STRATEGIES,
@@ -86,12 +87,25 @@ function normalizeStrategy(raw, { required = false } = {}) {
 /**
  * Validate URL + provider pairing.
  * - partiful/luma: require allowlisted host URL; provider must match detected host.
+ * - generic-site: require a URL on any public http(s) host (scraped via Firecrawl).
  * - manual-json: URL optional; if present must be http(s) (no Partiful/Luma host requirement).
  */
 function validateJobUrlAndProvider({ url, provider }) {
   const providerResult = normalizeProvider(provider);
   if (providerResult.error) return providerResult;
   const { provider: normalizedProvider } = providerResult;
+
+  if (normalizedProvider === 'generic-site') {
+    const normalizedSite = normalizeSiteUrl(url);
+    if (normalizedSite.error) {
+      return {
+        error: normalizedSite.error,
+        status: normalizedSite.status || 400,
+        code: normalizedSite.code || 'INVALID_URL',
+      };
+    }
+    return { url: normalizedSite.url, provider: normalizedProvider };
+  }
 
   if (normalizedProvider === 'manual-json') {
     const trimmed = url == null ? '' : String(url).trim();
@@ -170,6 +184,16 @@ async function createCurationJob(req, options = {}) {
   if (!provider && options.url) {
     const detected = normalizeUrl(options.url);
     if (detected.error) {
+      // Generic websites are supported but never inferred — scraping them costs
+      // credits, so the caller has to ask for `generic-site` explicitly.
+      if (detected.code === 'UNSUPPORTED_HOST') {
+        return {
+          error:
+            'URL is not a Partiful or Luma link. Set provider to generic-site to scrape an arbitrary event website.',
+          status: 400,
+          code: 'PROVIDER_REQUIRED',
+        };
+      }
       return {
         error: detected.error,
         status: detected.status || 400,

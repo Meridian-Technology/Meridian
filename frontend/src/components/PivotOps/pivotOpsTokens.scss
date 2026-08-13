@@ -1,0 +1,80 @@
+/**
+ * Pivot Ops — dashboard DNA tokens.
+ *
+ * Third register next to Just Go Creator Reskin / Flare. Dense ops screens use
+ * conventional white rounded cards with Just Go orange as the only brand accent.
+ * Typography inherits the admin shell (do not force Instrument Sans here).
+ * See DNA.md.
+ */
+
+.pivot-ops {
+  --pivot-ops-canvas: #f5f4f2;
+  --pivot-ops-surface: #ffffff;
+  --pivot-ops-surface-subtle: #f7f6f4;
+  --pivot-ops-ink: #1a1714;
+  --pivot-ops-ink-muted: rgba(26, 23, 20, 0.72);
+  --pivot-ops-ink-soft: rgba(26, 23, 20, 0.5);
+  --pivot-ops-border: rgba(26, 23, 20, 0.12);
+  --pivot-ops-border-strong: rgba(26, 23, 20, 0.22);
+  --pivot-ops-hover: rgba(26, 23, 20, 0.04);
+
+  --pivot-ops-accent: #ff4f1f;
+  --pivot-ops-accent-hover: #e64518;
+  --pivot-ops-accent-soft: rgba(255, 79, 31, 0.1);
+  --pivot-ops-on-accent: #ffffff;
+
+  --pivot-ops-success: #0f766e;
+  --pivot-ops-success-soft: rgba(15, 118, 110, 0.1);
+  --pivot-ops-warn: #b45309;
+  --pivot-ops-warn-soft: rgba(180, 83, 9, 0.1);
+  --pivot-ops-danger: #dc2626;
+  --pivot-ops-danger-soft: rgba(220, 38, 38, 0.08);
+  --pivot-ops-info: #1d4ed8;
+  --pivot-ops-info-soft: rgba(29, 78, 216, 0.08);
+
+  --pivot-ops-radius-card: 22px;
+  --pivot-ops-radius-control: 14px;
+  --pivot-ops-radius-chip: 10px;
+
+  --pivot-ops-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --pivot-ops-dur: 220ms;
+
+  /* Bridge legacy Linear / Lab var names used by remaining page markup. */
+  --la-bg: var(--pivot-ops-canvas);
+  --la-surface: var(--pivot-ops-surface);
+  --la-border: var(--pivot-ops-border-strong);
+  --la-border-subtle: var(--pivot-ops-border);
+  --la-text: var(--pivot-ops-ink);
+  --la-text-secondary: var(--pivot-ops-ink-muted);
+  --la-text-tertiary: var(--pivot-ops-ink-soft);
+  --la-accent: var(--pivot-ops-accent);
+  --la-accent-hover: var(--pivot-ops-accent-hover);
+  --la-accent-soft: var(--pivot-ops-accent-soft);
+  --la-radius: var(--pivot-ops-radius-card);
+  --la-radius-sm: var(--pivot-ops-radius-control);
+  --la-success: var(--pivot-ops-success);
+  --la-error: var(--pivot-ops-danger);
+  --la-row-hover: var(--pivot-ops-hover);
+
+  --dash-accent: var(--pivot-ops-accent);
+  --dash-ink: var(--pivot-ops-ink);
+  --dash-ink-muted: var(--pivot-ops-ink-muted);
+  --dash-ink-soft: var(--pivot-ops-ink-soft);
+  --dash-border: var(--pivot-ops-border);
+  --dash-surface-subtle: var(--pivot-ops-surface-subtle);
+  --dash-radius: var(--pivot-ops-radius-card);
+
+  color: var(--pivot-ops-ink);
+  background: var(--pivot-ops-canvas);
+}
+
+/**
+ * Squircle corners on every rounded surface in the ops shell.
+ * No-op where border-radius is 0; falls back to circular arcs outside Chromium.
+ */
+@supports (corner-shape: squircle) {
+  .pivot-ops,
+  .pivot-ops * {
+    corner-shape: squircle;
+  }
+}

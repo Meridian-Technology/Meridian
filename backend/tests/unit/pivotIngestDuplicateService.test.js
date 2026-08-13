@@ -89,6 +89,37 @@ describe('pivotIngestDuplicateService', () => {
         /will update it/,
       );
     });
+
+    it('ignores the source URL when it is a shared listing page', () => {
+      const duplicate = findCatalogDuplicate(
+        catalogIndex,
+        {
+          sourceUrl: 'https://partiful.com/e/sunset-listening',
+          name: 'A different event on the same calendar',
+          start_time: '2026-07-19T18:00:00-04:00',
+          location: 'Brooklyn Bridge Park',
+        },
+        { sharedSourceUrl: true },
+      );
+
+      expect(duplicate).toBeNull();
+    });
+
+    it('still matches a shared-listing import on its fingerprint', () => {
+      const duplicate = findCatalogDuplicate(
+        catalogIndex,
+        {
+          sourceUrl: 'https://partiful.com/e/sunset-listening',
+          name: 'Sunset Listening Party',
+          start_time: '2026-07-12T18:00:00-04:00',
+          location: 'Brooklyn Bridge Park',
+        },
+        { sharedSourceUrl: true },
+      );
+
+      expect(duplicate.matchType).toBe('fingerprint');
+      expect(duplicate.existingEventId).toBe('existing-1');
+    });
   });
 
   describe('annotateImportDrafts', () => {
