@@ -3,6 +3,7 @@ jest.mock('../../services/pivotIngestPublishService', () => ({
 }));
 jest.mock('../../services/pivotDiscoveryRunRecorder', () => ({
   createDiscoveryRun: jest.fn(),
+  watchDiscoveryRunCancel: jest.fn(() => ({ stop: jest.fn() })),
 }));
 jest.mock('../../services/pivotSiteScrapeService', () => ({
   searchSites: jest.fn(),

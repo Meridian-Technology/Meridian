@@ -43,6 +43,7 @@ jest.mock('../../services/pivotDiscoveryRunRecorder', () => ({
   serializeDiscoveryRun: jest.fn((doc) => doc),
   findOrchestrationRun: jest.fn(),
   findLatestOrchestrationRun: jest.fn(),
+  watchDiscoveryRunCancel: jest.fn(() => ({ stop: jest.fn() })),
 }));
 jest.mock('../../utilities/pivotLogger', () => ({ logPivot: jest.fn() }));
 
