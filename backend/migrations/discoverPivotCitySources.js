@@ -32,6 +32,9 @@
  *   --no-jobs              Register sources without creating curation jobs.
  *   --no-ingest            Register sources without publishing the events found.
  *   --recheck-rejected     Re-evaluate hosts previously rejected.
+ *   --flow=<name>          native-then-firecrawl | native-only | firecrawl-only
+ *   --luma-slug=<slug>     City slug for luma.com/{slug}
+ *   --partiful-slug=<slug> City slug for partiful.com/explore/{slug}
  */
 // Events-Backend schemas are symlinked in and resolve bare imports from their own
 // package root, so the module path has to be fixed up before anything pulls the
@@ -229,10 +232,14 @@ async function run() {
     return;
   }
 
-  if (!isSiteScrapeConfigured()) {
+  const flow = args.values.flow;
+  const lumaSlug = args.values['luma-slug'];
+  const partifulSlug = args.values['partiful-slug'];
+
+  if (!isSiteScrapeConfigured() && flow !== 'native-only') {
     throw new Error(
       'FIRECRAWL_API_KEY is not set. Every candidate would abort on SITE_SCRAPE_NOT_CONFIGURED.\n' +
-        '  Set it in Meridian/backend/.env, or use --plan to inspect the run without spending credits.',
+        '  Set it in Meridian/backend/.env, use --flow=native-only, or use --plan to inspect the run without spending credits.',
     );
   }
 
@@ -261,6 +268,9 @@ async function run() {
     createJobs: !args.flags.has('no-jobs'),
     ingestEvents: !args.flags.has('no-ingest'),
     recheckRejected: args.flags.has('recheck-rejected'),
+    flow,
+    lumaSlug,
+    partifulSlug,
   });
 
   if (result.error) {

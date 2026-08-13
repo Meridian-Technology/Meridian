@@ -157,7 +157,7 @@ describe('pivotDiscoveryRehearsal', () => {
     it('walks the same phases in the same order as a real run', async () => {
       await playRehearsal(recorder, context);
 
-      expect(recorder.phases).toEqual(['filtering', 'qualifying', 'registering']);
+      expect(recorder.phases).toEqual(['native', 'filtering', 'qualifying', 'registering']);
       expect(recorder.finished).toMatchObject({ status: 'completed' });
     });
 
@@ -209,7 +209,8 @@ describe('pivotDiscoveryRehearsal', () => {
       await playRehearsal(recorder, context);
 
       expect(recorder.counters.skippedNonSource).toBe(1);
-      expect(recorder.counters.evaluated).toBe(5);
+      expect(recorder.counters.skippedNative).toBe(1);
+      expect(recorder.counters.evaluated).toBe(4);
       expect(recorder.counters.maps).toBe(4);
     });
   });

@@ -12,7 +12,7 @@ const {
   isSiteScrapeConfigured,
   scrapeNotConfiguredResult,
 } = require('./pivotSiteScrapeService');
-const { createCurationJob } = require('./pivotCurationJobService');
+const { createCurationJob, updateCurationJob } = require('./pivotCurationJobService');
 const {
   createDiscoveryRun,
   serializeDiscoveryRun,
@@ -49,6 +49,8 @@ const {
   ingestEntries,
   resolveRunBatchWeek,
   summarizeIngest,
+  executeCurationRun,
+  emptyStats,
 } = require('./pivotCurationRunService');
 const { startCurationBatch } = require('./pivotCurationBatchService');
 const {
@@ -59,6 +61,16 @@ const {
 } = require('../constants/pivotDiscoverySeeds');
 const { logPivot } = require('../utilities/pivotLogger');
 const { MAX_STEPS } = require('../schemas/pivotSourceDiscoveryRun');
+const {
+  resolvePivotDiscoveryConfig,
+  nativeSourceSpecs,
+  isNativeSkipHost,
+  isNativeIndexUrl,
+  persistPivotDiscoveryConfig,
+  validatePivotDiscoveryConfigPatch,
+  mergePivotDiscoveryConfig,
+  NATIVE_SKIP_HOSTS,
+} = require('../utilities/pivotDiscoveryConfig');
 
 /**
  * Autonomous event-source discovery for a city.
@@ -119,6 +131,311 @@ function hostFromUrl(rawUrl) {
   } catch {
     return null;
   }
+}
+
+async function listEnabledJobs(req, tenantKey) {
+  const { PivotCurationJob } = getGlobalModels(req, 'PivotCurationJob');
+  const jobs = await PivotCurationJob.find({ tenantKey, enabled: { $ne: false } }).lean();
+  return Array.isArray(jobs) ? jobs : [];
+}
+
+async function persistBootstrappedSource(req, tenantKey, spec, now, jobId) {
+  const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+  await PivotCitySource.findOneAndUpdate(
+    { tenantKey, host: spec.host },
+    {
+      $set: {
+        url: spec.url,
+        label: spec.label,
+        provider: spec.provider,
+        status: 'qualified',
+        rejectedReason: null,
+        lastQualifiedAt: now,
+        ...(jobId ? { curationJobId: String(jobId) } : {}),
+      },
+      $setOnInsert: {
+        tenantKey,
+        host: spec.host,
+        discoveredVia: 'native-bootstrap',
+        discoveredAt: now,
+        enabled: true,
+        seedTags: [],
+      },
+    },
+    { new: true, upsert: true },
+  );
+}
+
+/**
+ * Crawl one native job inline so Luma/Partiful finish before Firecrawl search.
+ * Same create-run + execute path the batch orchestrator uses; the discovery
+ * recorder just narrates it under the `native` phase.
+ */
+async function crawlNativeJob(req, { state, tenantKey, job, actor }) {
+  const { PivotCurationRun, PivotCurationJob } = getGlobalModels(
+    req,
+    'PivotCurationRun',
+    'PivotCurationJob',
+  );
+  const label = job.label || job.url || String(job._id);
+
+  state.recorder.step({
+    phase: 'native',
+    kind: 'job-start',
+    tone: 'info',
+    title: `Crawling ${label}`,
+    detail: 'Native parser — no Firecrawl credits',
+    host: hostFromUrl(job.url),
+    url: job.url || null,
+  });
+
+  let runDoc;
+  try {
+    runDoc = await PivotCurationRun.create({
+      tenantKey,
+      jobId: job._id,
+      parentBatchId: mongoose.Types.ObjectId.isValid(state.recorder.runId)
+        ? state.recorder.runId
+        : null,
+      batchWeek: state.nativeBatchWeek || null,
+      forceBatchWeek: false,
+      status: 'queued',
+      maxEvents: null,
+      provider: job.provider,
+      url: job.url,
+      createdBy: actor || null,
+      stats: emptyStats('Events assigned to the ISO week of their start date.'),
+      failures: [],
+      events: [],
+    });
+    await PivotCurationJob.findByIdAndUpdate(job._id, {
+      $set: {
+        lastRunAt: new Date(),
+        lastRunStatus: 'queued',
+        lastRunStats: emptyStats(),
+        lastRunEvents: [],
+      },
+    });
+  } catch (err) {
+    state.failures.push({ code: 'RUN_CREATE_FAILED', error: err.message });
+    state.recorder.step({
+      phase: 'native',
+      kind: 'job-done',
+      tone: 'warn',
+      title: `Could not queue ${label}`,
+      detail: err.message,
+    });
+    return { upserted: 0, skipped: 0, failed: 0 };
+  }
+
+  await executeCurationRun(runDoc._id);
+  const finished = await PivotCurationRun.findById(runDoc._id).lean();
+  const stats = finished?.stats || {};
+  const summary = summarizeIngest(stats);
+  const { written: upserted, skipped, failed } = summary;
+
+  state.recorder.bumpCounters({
+    eventsUpserted: upserted,
+    eventsSkipped: skipped,
+    eventsFailed: failed,
+  });
+
+  if (finished?.status === 'failed') {
+    state.failures.push({
+      code: finished.errorCode || 'PREVIEW_FAILED',
+      error: finished.error || 'Crawl failed.',
+    });
+    state.recorder.step({
+      phase: 'native',
+      kind: 'job-done',
+      tone: 'warn',
+      title: `${label} failed`,
+      detail: finished.error || 'Crawl failed.',
+      code: finished.errorCode || null,
+      url: job.url || null,
+    });
+    return { upserted: 0, skipped: 0, failed: failed || 1 };
+  }
+
+  const weeks = Object.keys(stats.byBatchWeek || {}).sort();
+  const detailParts = [`no Firecrawl credits`];
+  if (weeks.length === 1) detailParts.push(`into ${weeks[0]}`);
+  if (skipped) detailParts.push(`${skipped} already on the calendar`);
+
+  state.recorder.step({
+    phase: 'native',
+    kind: 'job-done',
+    tone: upserted > 0 ? 'good' : 'warn',
+    title: `${label} — ${summary.phrase}`,
+    detail: detailParts.join(' · '),
+    host: hostFromUrl(job.url),
+    url: job.url || null,
+    eventCount: summary.added,
+  });
+  return { upserted, skipped, failed };
+}
+
+async function bootstrapNativeSources(req, options) {
+  const {
+    state,
+    tenantKey,
+    city,
+    config,
+    createJobs,
+    ingestEvents,
+    now,
+    actor,
+  } = options;
+
+  const skipHosts = new Set();
+  const nativeJobIds = [];
+  const jobsToRun = [];
+  const existingJobs = await listEnabledJobs(req, tenantKey);
+
+  for (const job of existingJobs) {
+    const host = hostFromUrl(job.url);
+    if (host) skipHosts.add(host);
+  }
+
+  if (config.skipNativeHostsInSearch) {
+    for (const host of NATIVE_SKIP_HOSTS) skipHosts.add(host);
+  }
+
+  if (!config.runNative) {
+    return { nativeJobIds, skipHosts, crawledJobIds: [], events: { upserted: 0, skipped: 0, failed: 0 } };
+  }
+
+  state.setPhase('native');
+  const specs = nativeSourceSpecs(config, city);
+  const existingNative = existingJobs.filter(
+    (job) => job.provider === 'partiful' || job.provider === 'luma',
+  );
+
+  if (!specs.length && !existingNative.length) {
+    state.recorder.step({
+      phase: 'native',
+      kind: 'native',
+      tone: 'warn',
+      title: 'No Luma or Partiful city jobs to run first',
+      detail:
+        'Set this city’s luma / Partiful slugs, or add those saved jobs. Firecrawl will still skip those hosts.',
+    });
+    return { nativeJobIds, skipHosts, crawledJobIds: [], events: { upserted: 0, skipped: 0, failed: 0 } };
+  }
+
+  for (const spec of specs) {
+    const existing = existingJobs.find((job) => job.provider === spec.provider);
+    if (existing) {
+      nativeJobIds.push(String(existing._id));
+      let job = existing;
+      if (
+        createJobs !== false &&
+        spec.url &&
+        !isNativeIndexUrl(spec.provider, existing.url)
+      ) {
+        const updated = await updateCurationJob(req, {
+          tenantKey,
+          jobId: String(existing._id),
+          url: spec.url,
+        });
+        if (updated.data?.job) {
+          job = { ...existing, url: updated.data.job.url };
+        }
+      }
+      jobsToRun.push(job);
+      state.recorder.step({
+        phase: 'native',
+        kind: 'native',
+        tone: 'good',
+        title: `${spec.host} already has a saved job`,
+        detail: `${job.url} — crawling it before Firecrawl search`,
+        host: spec.host,
+        url: job.url,
+      });
+      continue;
+    }
+
+    if (createJobs === false) {
+      state.recorder.step({
+        phase: 'native',
+        kind: 'native',
+        tone: 'info',
+        title: `Would save ${spec.label}`,
+        detail: spec.url,
+        host: spec.host,
+        url: spec.url,
+      });
+      continue;
+    }
+
+    const jobResult = await createCurationJob(req, {
+      tenantKey,
+      label: spec.label,
+      provider: spec.provider,
+      url: spec.url,
+      defaultBatchWeekStrategy: 'next-drop',
+    });
+    if (!jobResult.data?.job?._id) {
+      state.failures.push({
+        code: jobResult.code || null,
+        error: jobResult.error,
+      });
+      state.recorder.step({
+        phase: 'native',
+        kind: 'job',
+        tone: 'warn',
+        title: `Could not save ${spec.label}`,
+        detail: jobResult.error,
+        host: spec.host,
+      });
+      continue;
+    }
+
+    nativeJobIds.push(String(jobResult.data.job._id));
+    jobsToRun.push({ ...jobResult.data.job, _id: jobResult.data.job._id });
+    state.recorder.bumpCounters({ jobsCreated: 1 });
+    state.recorder.step({
+      phase: 'native',
+      kind: 'job',
+      tone: 'good',
+      title: `Saved job for ${spec.host}`,
+      detail: `${spec.url} — crawling it before Firecrawl search`,
+      host: spec.host,
+      url: spec.url,
+    });
+    await persistBootstrappedSource(
+      req,
+      tenantKey,
+      spec,
+      now,
+      jobResult.data.job._id,
+    );
+  }
+
+  for (const job of existingNative) {
+    const id = String(job._id);
+    if (!nativeJobIds.includes(id)) {
+      nativeJobIds.push(id);
+      jobsToRun.push(job);
+    }
+  }
+
+  const crawledJobIds = [];
+  const events = { upserted: 0, skipped: 0, failed: 0 };
+  if (ingestEvents !== false) {
+    for (const job of jobsToRun) {
+      if (state.shouldStop()) break;
+      const crawled = await crawlNativeJob(req, { state, tenantKey, job, actor });
+      crawledJobIds.push(String(job._id));
+      if (crawled) {
+        events.upserted += crawled.upserted || 0;
+        events.skipped += crawled.skipped || 0;
+        events.failed += crawled.failed || 0;
+      }
+    }
+  }
+
+  return { nativeJobIds, skipHosts, crawledJobIds, events };
 }
 
 /**
@@ -270,8 +587,10 @@ async function updateCitySource(req, options = {}) {
  * venue surfaced by both the live-music and nightlife queries carries both tags
  * into its curation job.
  */
-async function collectCandidates(state, queries, resultsPerQuery) {
+async function collectCandidates(state, queries, resultsPerQuery, skipHosts) {
   const candidates = new Map();
+  const skipped = new Set();
+  const blocked = skipHosts instanceof Set ? skipHosts : new Set();
 
   await runPool(
     queries,
@@ -306,6 +625,28 @@ async function collectCandidates(state, queries, resultsPerQuery) {
       for (const row of result.results) {
         const host = hostFromUrl(row.url);
         if (!host) continue;
+
+        if (blocked.has(host)) {
+          if (!skipped.has(host)) {
+            skipped.add(host);
+            const native = isNativeSkipHost(host);
+            state.recorder.bumpCounters(
+              native ? { skippedNative: 1 } : { skippedKnown: 1 },
+            );
+            state.recorder.step({
+              phase: 'searching',
+              kind: 'filter',
+              tone: 'info',
+              title: `Skipped ${host}`,
+              detail: native
+                ? 'Native parser — already covered before Firecrawl search'
+                : 'Already has a saved job or registry row',
+              host,
+              url: row.url,
+            });
+          }
+          continue;
+        }
 
         const existing = candidates.get(host);
         if (existing) {
@@ -681,6 +1022,10 @@ async function discoverCitySources(req, options = {}) {
   const minEvents = Number(options.minEvents) > 0
     ? Math.floor(Number(options.minEvents))
     : DEFAULT_MIN_EVENTS;
+  const discovery = resolvePivotDiscoveryConfig(tenant, options);
+  const firecrawlCalls = discovery.runFirecrawl
+    ? queries.length + maxCandidates * 2
+    : 0;
 
   // Reuse a run document when the caller already created one, so the id can be
   // handed back over HTTP before the work starts.
@@ -694,11 +1039,16 @@ async function discoverCitySources(req, options = {}) {
       createJobs: options.createJobs,
       recheckRejected: options.recheckRejected,
       plan: {
-        queries: queries.length,
+        queries: discovery.runFirecrawl ? queries.length : 0,
         categories: new Set(queries.map((row) => row.tag).filter(Boolean)).size,
-        maxCandidates,
+        maxCandidates: discovery.runFirecrawl ? maxCandidates : 0,
         minEvents,
-        maxOutboundCalls: queries.length + maxCandidates * 2,
+        maxOutboundCalls: firecrawlCalls,
+        flow: discovery.flow,
+        runNative: discovery.runNative,
+        runFirecrawl: discovery.runFirecrawl,
+        lumaSlug: discovery.lumaSlug,
+        partifulSlug: discovery.partifulSlug,
       },
     }));
 
@@ -726,21 +1076,29 @@ async function discoverCitySources(req, options = {}) {
   });
 
   try {
+  const now = options.now instanceof Date ? options.now : new Date();
+  const weekResult = resolveRunBatchWeek({
+    strategy: 'next-drop',
+    tenant,
+    now,
+  });
+  state.nativeBatchWeek = weekResult.error ? null : weekResult.batchWeek;
+
   const resultsPerQuery = Number(options.resultsPerQuery) > 0
     ? Math.floor(Number(options.resultsPerQuery))
     : DEFAULT_RESULTS_PER_QUERY;
 
-  recorder.step({
-    phase: 'searching',
-    kind: 'plan',
-    tone: 'info',
-    title: `Searching the web for ${city} event sources`,
-    detail: `${queries.length} queries seeded from the tag catalog · at most ${
-      queries.length + maxCandidates * 2
-    } outbound calls · dates resolved in ${state.timezone}`,
+  const nativeBootstrap = await bootstrapNativeSources(req, {
+    state,
+    tenantKey,
+    city,
+    config: discovery,
+    createJobs: options.createJobs,
+    ingestEvents: options.ingestEvents,
+    now,
+    actor: options.actor,
   });
-
-  const candidates = await collectCandidates(state, queries, resultsPerQuery);
+  const crawledNativeIds = new Set(nativeBootstrap.crawledJobIds);
 
   if (state.aborted) {
     recorder.step(abortStepFor(state.aborted, state.phase));
@@ -752,11 +1110,17 @@ async function discoverCitySources(req, options = {}) {
         city,
         location,
         queries: queries.length,
-        candidates: { found: candidates.size, skippedKnown: 0, skippedNonSource: 0, evaluated: 0 },
+        candidates: {
+          found: 0,
+          skippedKnown: 0,
+          skippedNonSource: 0,
+          skippedNative: recorder.counters?.skippedNative || 0,
+          evaluated: 0,
+        },
         qualified: [],
         rejected: [],
         events: { upserted: 0, skipped: 0, failed: 0 },
-        nativeJobIds: [],
+        nativeJobIds: nativeBootstrap.nativeJobIds,
         calls: state.calls,
         aborted: state.aborted,
         failures: state.failures,
@@ -764,6 +1128,71 @@ async function discoverCitySources(req, options = {}) {
     };
   }
 
+  const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
+  const knownRows = await PivotCitySource.find({ tenantKey }).select('host status').lean();
+  const known = new Set(
+    knownRows
+      .filter((row) => options.recheckRejected !== true || row.status !== 'rejected')
+      .map((row) => row.host),
+  );
+  const skipHosts = new Set(nativeBootstrap.skipHosts);
+
+  let candidates = new Map();
+  if (discovery.runFirecrawl) {
+    state.setPhase('searching');
+    recorder.step({
+      phase: 'searching',
+      kind: 'plan',
+      tone: 'info',
+      title: `Searching the web for ${city} event sources`,
+      detail: `${queries.length} queries seeded from the tag catalog · at most ${
+        firecrawlCalls
+      } outbound Firecrawl calls · dates resolved in ${state.timezone}`,
+    });
+
+    candidates = await collectCandidates(state, queries, resultsPerQuery, skipHosts);
+  } else {
+    recorder.step({
+      phase: 'native',
+      kind: 'plan',
+      tone: 'info',
+      title: `Native-only flow for ${city}`,
+      detail: 'Skipping Firecrawl search — this city is configured to use Luma and Partiful only',
+    });
+  }
+
+  if (state.aborted) {
+    recorder.step(abortStepFor(state.aborted, state.phase));
+    await recorder.finish({ status: 'failed', aborted: state.aborted });
+    return {
+      data: {
+        runId: recorder.runId,
+        tenantKey,
+        city,
+        location,
+        queries: queries.length,
+        candidates: {
+          found: candidates.size,
+          skippedKnown: 0,
+          skippedNonSource: 0,
+          skippedNative: 0,
+          evaluated: 0,
+        },
+        qualified: [],
+        rejected: [],
+        events: { upserted: 0, skipped: 0, failed: 0 },
+        nativeJobIds: nativeBootstrap.nativeJobIds,
+        calls: state.calls,
+        aborted: state.aborted,
+        failures: state.failures,
+      },
+    };
+  }
+
+  let outcomes = [];
+  const skipped = { known: 0, nonSource: 0 };
+  let evaluatedCount = 0;
+  if (discovery.runFirecrawl) {
   state.setPhase('filtering');
   recorder.step({
     phase: 'filtering',
@@ -773,15 +1202,6 @@ async function discoverCitySources(req, options = {}) {
     detail: 'Filtering out social platforms, reference sites, and hosts already on record',
   });
 
-  const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
-  const knownRows = await PivotCitySource.find({ tenantKey }).select('host status').lean();
-  const known = new Set(
-    knownRows
-      .filter((row) => options.recheckRejected !== true || row.status !== 'rejected')
-      .map((row) => row.host),
-  );
-
-  const skipped = { known: 0, nonSource: 0 };
   const fresh = [];
   for (const candidate of candidates.values()) {
     if (isNonSourceHost(candidate.host) || isBlockedScrapeHost(candidate.host)) {
@@ -796,14 +1216,16 @@ async function discoverCitySources(req, options = {}) {
       });
       continue;
     }
-    if (known.has(candidate.host)) {
+    if (known.has(candidate.host) || skipHosts.has(candidate.host)) {
       skipped.known += 1;
       recorder.step({
         phase: 'filtering',
         kind: 'filter',
         tone: 'info',
         title: `Skipped ${candidate.host}`,
-        detail: 'Already on record from an earlier run',
+        detail: skipHosts.has(candidate.host) && isNativeSkipHost(candidate.host)
+          ? 'Native parser — already covered before Firecrawl search'
+          : 'Already on record from an earlier run',
         host: candidate.host,
       });
       continue;
@@ -828,6 +1250,7 @@ async function discoverCitySources(req, options = {}) {
   fresh.sort((a, b) => b.seedTags.size - a.seedTags.size);
 
   const evaluating = fresh.slice(0, maxCandidates);
+  evaluatedCount = evaluating.length;
 
   recorder.bumpCounters({
     skippedKnown: skipped.known,
@@ -846,7 +1269,7 @@ async function discoverCitySources(req, options = {}) {
         : 'Ordered by how many categories surfaced each host',
   });
 
-  const outcomes = await runPool(
+  outcomes = await runPool(
     evaluating,
     DISCOVERY_CONCURRENCY,
     (candidate) => qualifyCandidate(state, candidate),
@@ -856,10 +1279,10 @@ async function discoverCitySources(req, options = {}) {
   if (state.aborted) {
     recorder.step(abortStepFor(state.aborted, 'qualifying'));
   }
+  }
 
   state.setPhase('registering');
 
-  const now = options.now instanceof Date ? options.now : new Date();
   const qualified = [];
   const rejected = [];
 
@@ -867,14 +1290,13 @@ async function discoverCitySources(req, options = {}) {
   // fallback for anything the extractor dated loosely. `next-drop` matches the
   // strategy assigned to the jobs created below, so a source's first load and
   // its later refreshes agree on where events belong.
-  const weekResult = resolveRunBatchWeek({
-    strategy: 'next-drop',
-    tenant,
-    now,
-  });
-  const ingestBatchWeek = weekResult.error ? null : weekResult.batchWeek;
-  const ingestTotals = { upserted: 0, skipped: 0, failed: 0 };
-  const nativeJobIds = [];
+  const ingestBatchWeek = state.nativeBatchWeek;
+  const ingestTotals = {
+    upserted: nativeBootstrap.events?.upserted || 0,
+    skipped: nativeBootstrap.events?.skipped || 0,
+    failed: nativeBootstrap.events?.failed || 0,
+  };
+  const nativeJobIds = [...nativeBootstrap.nativeJobIds];
 
   for (const outcome of outcomes) {
     if (!outcome) continue;
@@ -908,7 +1330,10 @@ async function discoverCitySources(req, options = {}) {
         // A native source was qualified without a scrape, so discovery holds no
         // events for it. Its job is queued for the follow-up crawl instead.
         if (!outcome.entries?.length) {
-          nativeJobIds.push(String(jobResult.data.job._id));
+          const id = String(jobResult.data.job._id);
+          if (!crawledNativeIds.has(id) && !nativeJobIds.includes(id)) {
+            nativeJobIds.push(id);
+          }
         }
         recorder.step({
           phase: 'registering',
@@ -959,8 +1384,9 @@ async function discoverCitySources(req, options = {}) {
   // Native sources qualified without a scrape, so discovery has no events to
   // hand over for them. Chaining a batch means the operator still gets one
   // action rather than a registry entry they have to notice and run themselves.
+  const pendingNativeIds = nativeJobIds.filter((id) => !crawledNativeIds.has(id));
   const chainNative =
-    nativeJobIds.length > 0
+    pendingNativeIds.length > 0
     && options.ingestEvents !== false
     && options.chainNativeJobs !== false
     && !state.aborted;
@@ -973,7 +1399,7 @@ async function discoverCitySources(req, options = {}) {
     try {
       const batchResult = await startCurationBatch(req, {
         tenantKey,
-        jobIds: nativeJobIds,
+        jobIds: pendingNativeIds,
         batchWeek: ingestBatchWeek,
         now,
       });
@@ -987,8 +1413,8 @@ async function discoverCitySources(req, options = {}) {
       kind: 'job',
       tone: batchError ? 'warn' : 'info',
       title: batchError
-        ? `Could not queue ${nativeJobIds.length} native source(s)`
-        : `Queued ${nativeJobIds.length} native source(s) for a crawl`,
+        ? `Could not queue ${pendingNativeIds.length} native source(s)`
+        : `Queued ${pendingNativeIds.length} native source(s) for a crawl`,
       detail: batchError
         ? `${batchError.error} — run them from the curation page instead`
         : 'Partiful and Luma are parsed directly rather than scraped, so their events arrive on a follow-up run',
@@ -1022,7 +1448,8 @@ async function discoverCitySources(req, options = {}) {
         found: candidates.size,
         skippedKnown: skipped.known,
         skippedNonSource: skipped.nonSource,
-        evaluated: evaluating.length,
+        skippedNative: 0,
+        evaluated: evaluatedCount,
       },
       qualified,
       rejected,
@@ -1251,22 +1678,32 @@ async function buildCityDiscoveryPlan(req, options = {}) {
     ? Math.floor(Number(options.maxCandidates))
     : DEFAULT_MAX_CANDIDATES;
 
+  const discovery = resolvePivotDiscoveryConfig(tenant, options);
   const categories = new Set(queries.map((row) => row.tag).filter(Boolean));
+  const firecrawlCalls = discovery.runFirecrawl
+    ? queries.length + maxCandidates * 2
+    : 0;
 
   return {
     tenant,
     city,
     plan: {
-      queries: queries.length,
+      queries: discovery.runFirecrawl ? queries.length : 0,
       categories: categories.size,
-      maxCandidates,
+      maxCandidates: discovery.runFirecrawl ? maxCandidates : 0,
       minEvents: Number(options.minEvents) > 0
         ? Math.floor(Number(options.minEvents))
         : DEFAULT_MIN_EVENTS,
       // Upper bound, not a prediction: one search per query, then at most a map
       // plus a qualifying scrape for each candidate that clears the filters.
-      maxOutboundCalls: queries.length + maxCandidates * 2,
+      maxOutboundCalls: firecrawlCalls,
       configured: isSiteScrapeConfigured(),
+      flow: discovery.flow,
+      runNative: discovery.runNative,
+      runFirecrawl: discovery.runFirecrawl,
+      lumaSlug: discovery.lumaSlug,
+      partifulSlug: discovery.partifulSlug,
+      nativeJobs: nativeSourceSpecs(discovery, city),
     },
   };
 }
@@ -1298,9 +1735,29 @@ async function startCitySourceDiscovery(req, options = {}) {
   const planResult = await buildCityDiscoveryPlan(req, options);
   if (planResult.error) return planResult;
 
-  // Refuse rather than queue work that would abort on its first call.
-  if (!planResult.plan.configured) {
+  // Refuse rather than queue work that would abort on its first Firecrawl call.
+  // Native-only cities do not need a key.
+  if (planResult.plan.runFirecrawl && !planResult.plan.configured) {
     return scrapeNotConfiguredResult();
+  }
+
+  if (
+    options.flow != null ||
+    Object.prototype.hasOwnProperty.call(options, 'lumaSlug') ||
+    Object.prototype.hasOwnProperty.call(options, 'partifulSlug')
+  ) {
+    try {
+      await persistPivotDiscoveryConfig(req, planResult.tenant, {
+        flow: planResult.plan.flow,
+        lumaSlug: planResult.plan.lumaSlug,
+        partifulSlug: planResult.plan.partifulSlug,
+      });
+    } catch (err) {
+      logPivot('warn', 'could not persist discovery flow', {
+        tenantKey: planResult.tenant.tenantKey,
+        error: err.message,
+      });
+    }
   }
 
   // Created here, not in the worker, so the caller gets an id it can poll
@@ -1334,6 +1791,37 @@ async function startCitySourceDiscovery(req, options = {}) {
   };
 }
 
+async function updateCityDiscoveryConfig(req, options = {}) {
+  const tenantResult = await resolvePivotTenant(req, options.tenantKey);
+  if (tenantResult.error) return tenantResult;
+
+  const validation = validatePivotDiscoveryConfigPatch({
+    flow: options.flow,
+    lumaSlug: options.lumaSlug,
+    partifulSlug: options.partifulSlug,
+  });
+  if (validation.error) return validation;
+  if (!validation.patch || !Object.keys(validation.patch).length) {
+    return { error: 'No discovery config changes.', status: 400, code: 'NO_CHANGES' };
+  }
+
+  try {
+    const saved = await persistPivotDiscoveryConfig(req, tenantResult.tenant, validation.patch);
+    const discovery = mergePivotDiscoveryConfig(saved?.pivotDiscovery || {
+      ...mergePivotDiscoveryConfig(tenantResult.tenant.pivotDiscovery),
+      ...validation.patch,
+    });
+    return {
+      data: {
+        tenantKey: tenantResult.tenant.tenantKey,
+        discovery: resolvePivotDiscoveryConfig({ pivotDiscovery: discovery }),
+      },
+    };
+  } catch (err) {
+    return { error: err.message, status: 500, code: 'DISCOVERY_CONFIG_SAVE_FAILED' };
+  }
+}
+
 module.exports = {
   discoverCitySources,
   startCitySourceDiscovery,
@@ -1342,6 +1830,7 @@ module.exports = {
   scheduleCitySourceDiscovery,
   listCitySources,
   updateCitySource,
+  updateCityDiscoveryConfig,
   getCitySourceDiscoveryRun,
   getLatestCitySourceDiscoveryRun,
   serializeCitySource,

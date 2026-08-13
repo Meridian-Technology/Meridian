@@ -38,6 +38,7 @@ const {
   stopCitySourceDiscoveryRun,
   previewCitySourceDiscovery,
   updateCitySource,
+  updateCityDiscoveryConfig,
   getCitySourceDiscoveryRun,
   getLatestCitySourceDiscoveryRun,
 } = require('../services/pivotSourceDiscoveryService');
@@ -731,6 +732,44 @@ router.post(
 );
 
 router.patch(
+  '/tenants/:tenantKey/sources/discovery-config',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateCityDiscoveryConfig(req, {
+        tenantKey: req.params.tenantKey,
+        flow: req.body?.flow,
+        lumaSlug: req.body?.lumaSlug,
+        partifulSlug: req.body?.partifulSlug,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'PATCH /admin/pivot/tenants/:tenantKey/sources/discovery-config',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to save discovery flow.',
+      });
+    }
+  },
+);
+
+router.patch(
   '/tenants/:tenantKey/sources/:sourceId',
   verifyToken,
   requirePlatformAdmin,
@@ -775,6 +814,9 @@ router.get(
         maxQueries: req.query?.maxQueries,
         maxCandidates: req.query?.maxCandidates,
         minEvents: req.query?.minEvents,
+        flow: req.query?.flow,
+        lumaSlug: req.query?.lumaSlug,
+        partifulSlug: req.query?.partifulSlug,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -817,6 +859,9 @@ router.post(
         minEvents: req.body?.minEvents,
         createJobs: req.body?.createJobs,
         recheckRejected: req.body?.recheckRejected,
+        flow: req.body?.flow,
+        lumaSlug: req.body?.lumaSlug,
+        partifulSlug: req.body?.partifulSlug,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
