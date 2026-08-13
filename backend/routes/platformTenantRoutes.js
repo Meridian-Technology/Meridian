@@ -23,6 +23,9 @@ const {
   validatePivotCrewConfigPatch,
 } = require('../utilities/pivotCrewConfig');
 const {
+  validatePivotDeckConfigPatch,
+} = require('../utilities/pivotDeckConfig');
+const {
   validatePivotMobileConfigPatch,
 } = require('../utilities/pivotMobileConfig');
 const {
@@ -209,6 +212,23 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       } else {
         updated.pivotCrewConfig = patch;
       }
+    }
+
+    if (req.body.pivotDeckConfig === null) {
+      updated.pivotDeckConfig = null;
+    } else if (req.body.pivotDeckConfig !== undefined) {
+      const deckValidation = validatePivotDeckConfigPatch(req.body.pivotDeckConfig);
+      if (deckValidation.error) {
+        return res.status(400).json({ success: false, message: deckValidation.error });
+      }
+      const patch = deckValidation.patch || {};
+      if (Object.keys(patch).length === 0) {
+        updated.pivotDeckConfig = null;
+      } else {
+        updated.pivotDeckConfig = patch;
+      }
+    } else {
+      delete updated.pivotDeckConfig;
     }
 
     if (req.body.pivotMobileConfig === null) {

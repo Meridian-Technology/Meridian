@@ -13,6 +13,7 @@ const {
 } = require('../constants/defaultTenants');
 const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
 const { validatePivotCrewConfigPatch } = require('../utilities/pivotCrewConfig');
+const { validatePivotDeckConfigPatch } = require('../utilities/pivotDeckConfig');
 const { validatePivotMobileConfigPatch } = require('../utilities/pivotMobileConfig');
 const { validateCreatorPublishConfigPatch } = require('../utilities/pivotCreatorPublishConfig');
 const {
@@ -100,6 +101,9 @@ function toStoredTenantRow(tenant) {
     pivotDropOverrides: tenant.pivotDropOverrides,
     provisioningConfirmations: tenant.provisioningConfirmations,
   };
+  if (Object.prototype.hasOwnProperty.call(tenant, 'pivotDeckConfig')) {
+    payload.pivotDeckConfig = tenant.pivotDeckConfig;
+  }
   if (isDefault) {
     const base = DEFAULT_TENANTS.find((row) => row.tenantKey === tenant.tenantKey);
     const defaultConfirmations = { dns: false, cors: false, pickerVerified: false };
@@ -351,6 +355,13 @@ function validateTenantMetadataUpdate(body = {}) {
     const crewValidation = validatePivotCrewConfigPatch(body.pivotCrewConfig);
     if (crewValidation.error) {
       return { error: crewValidation.error };
+    }
+  }
+
+  if (body.pivotDeckConfig !== undefined) {
+    const deckValidation = validatePivotDeckConfigPatch(body.pivotDeckConfig);
+    if (deckValidation.error) {
+      return { error: deckValidation.error };
     }
   }
 

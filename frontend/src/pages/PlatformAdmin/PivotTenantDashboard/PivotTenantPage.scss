@@ -8,6 +8,22 @@
   overflow-y: auto;
   box-sizing: border-box;
 
+  &.is-catalog-immersive {
+    overflow: hidden;
+
+    > .pivot-tenant-page__header {
+      /* Stay sticky at the viewport top so in/out is the same translate, in front of the catalog. */
+      z-index: 130;
+      pointer-events: none;
+      will-change: transform, opacity;
+      transition: none;
+    }
+
+    > .pivot-tenant-page__body {
+      z-index: 80;
+    }
+  }
+
   /* Body above the corner burst. Do NOT set position on the sticky header. */
   > .pivot-tenant-page__body {
     position: relative;

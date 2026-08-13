@@ -64,6 +64,10 @@ jest.mock('../../services/pivotTenantOpsService', () => ({
   getTenantOpsBundle: jest.fn(),
 }));
 
+jest.mock('../../services/pivotAdminDropDeckService', () => ({
+  previewAdminDropDeck: jest.fn(),
+}));
+
 jest.mock('../../services/pivotRetentionService', () => ({
   getPivotRetention: jest.fn(),
 }));
@@ -136,6 +140,7 @@ const {
   wipeUserWeekIntents,
 } = require('../../services/pivotTenantJourneyService');
 const { getTenantOpsBundle } = require('../../services/pivotTenantOpsService');
+const { previewAdminDropDeck } = require('../../services/pivotAdminDropDeckService');
 const { getPivotRetention } = require('../../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../../services/pivotLabEventsService');
 const {
@@ -1465,5 +1470,63 @@ describe('pivotAdminRoutes journeys', () => {
 
     expect(response.status).toBe(403);
     expect(getJourneyFunnel).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes drop deck preview', () => {
+  const USER_ID = '507f191e810c19729de860eb';
+
+  beforeEach(() => {
+    previewAdminDropDeck.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/drop-deck/preview returns the scored deck', async () => {
+    previewAdminDropDeck.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        user: { userId: USER_ID, name: 'Ada' },
+        rebuild: false,
+        frozen: true,
+        batchWeek: '2026-W28',
+        events: [{ _id: '665a000000000000000000a1', name: 'Jazz Night', dropDeckScore: { total: 2.2 } }],
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/drop-deck/preview?userId=${USER_ID}&batchWeek=2026-W28`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.frozen).toBe(true);
+    expect(response.body.data.events).toHaveLength(1);
+    expect(previewAdminDropDeck).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        userId: USER_ID,
+        batchWeek: '2026-W28',
+      }),
+    );
+  });
+
+  it('GET /tenants/:tenantKey/drop-deck/preview passes rebuild and service errors', async () => {
+    previewAdminDropDeck.mockResolvedValue({
+      error: 'User not found in this city.',
+      status: 404,
+      code: 'USER_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/drop-deck/preview?userId=${USER_ID}&rebuild=true`,
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('USER_NOT_FOUND');
+    expect(previewAdminDropDeck).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: USER_ID, rebuild: 'true' }),
+    );
   });
 });

@@ -23,25 +23,29 @@ const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
 const {
   normalizeDeckSnapshotRefresh,
   recordPivotDeckSnapshot,
+  getPivotDeckSnapshot,
 } = require('./pivotDeckSnapshotService');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 const {
   PIVOT_CREW_CONFIG_DEFAULTS,
 } = require('../utilities/pivotCrewConfig');
+const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
 const { getPivotConfig } = require('./pivotConfigService');
 
 const FRIEND_CAP = 5;
 const FEED_CREW_CONFIG_CACHE_TTL_MS = 60_000;
 const PIVOT_EVENT_STATUSES = ['approved', 'not-applicable'];
 const LOW_FEEDBACK_RATING_THRESHOLD = 3;
-/** Ranker id stamped on feed payloads + deck impressions (Task 1.2). */
-const PIVOT_FEED_RANKER_VERSION = 'rules_v0';
+/** Ranker id stamped on feed payloads + deck impressions. */
+const PIVOT_FEED_RANKER_VERSION = 'rules_v1';
 const PUBLIC_EVENT_FIELDS =
   'name description location start_time end_time externalLink type registrationCount image customFields.pivot';
 const CATALOG_PROBE_FIELDS = 'start_time end_time customFields.pivot';
 
 /** @type {Map<string, { expiresAt: number, value: { crewSignalWeight: number } }>} */
 const feedCrewConfigCache = new Map();
+/** @type {Map<string, { expiresAt: number, value: object }>} */
+const feedDeckConfigCache = new Map();
 
 const PUBLISHED_CATALOG_BASE_QUERY = {
   'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS,
@@ -262,6 +266,7 @@ function serializePivotFeedEvent(event, extras) {
       : {}),
     /** 0-based position in the ranked feed (exposure bias / training). */
     ...(typeof extras.rankInFeed === 'number' ? { rankInFeed: extras.rankInFeed } : {}),
+    ...(extras.dropDeckScore ? { dropDeckScore: extras.dropDeckScore } : {}),
   };
 }
 
@@ -357,6 +362,28 @@ async function getFeedRankCrewConfig(req) {
 
 function clearFeedCrewConfigCacheForTests() {
   feedCrewConfigCache.clear();
+  feedDeckConfigCache.clear();
+}
+
+function getFeedDeckConfigFromTenant(tenant) {
+  const tenantKey = tenant?.tenantKey;
+  const fallback = mergePivotDeckConfig();
+
+  if (!tenantKey) {
+    return fallback;
+  }
+
+  const cached = feedDeckConfigCache.get(tenantKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  const value = mergePivotDeckConfig(tenant?.pivotDeckConfig);
+  feedDeckConfigCache.set(tenantKey, {
+    value,
+    expiresAt: Date.now() + FEED_CREW_CONFIG_CACHE_TTL_MS,
+  });
+  return value;
 }
 
 async function resolveUserCrewScope(req, userId) {
@@ -765,6 +792,200 @@ function computeInterestRankScore(event, userInterestTags, rankOptions = {}) {
   return personalScore + bleedScore;
 }
 
+function explainDropDeckScore(
+  event,
+  social = {},
+  userInterestTags,
+  negativeFeedbackTags = new Set(),
+  rankOptions = {},
+  deckConfig,
+) {
+  const weights = deckConfig?.weights || mergePivotDeckConfig().weights;
+  const friendGoing = (social.friendRegisteredCount || 0) * (Number(weights.friendGoing) || 0);
+  const friendInterested =
+    (social.friendInterestedCount || 0) * (Number(weights.friendInterested) || 0);
+  const crewSignal = Number(weights.crewSignal) || 0;
+  const crew =
+    crewSignal *
+    (1.5 * (social.crewRegisteredCount || 0) + (social.crewInterestedCount || 0));
+  const personal =
+    (Number(weights.personalInterest) || 0) * countInterestOverlap(event, userInterestTags);
+  const bleed = rankOptions.interestBleed?.enabled
+    ? countCrewInterestBleedScore(
+        event,
+        rankOptions.crewBleedTags,
+        rankOptions.interestBleed.maxWeight,
+      )
+    : 0;
+  const negative =
+    (Number(weights.negativeTag) || 0) * countNegativeTagOverlap(event, negativeFeedbackTags);
+  const total = friendGoing + friendInterested + crew + personal + bleed - negative;
+  return {
+    total,
+    friendGoing,
+    friendInterested,
+    crew,
+    personal,
+    bleed,
+    negative,
+  };
+}
+
+function roundDropDeckScoreParts(parts) {
+  const rounded = {};
+  for (const [key, value] of Object.entries(parts || {})) {
+    rounded[key] = Math.round((Number(value) || 0) * 1000) / 1000;
+  }
+  return rounded;
+}
+
+function computeDropDeckScore(
+  event,
+  social = {},
+  userInterestTags,
+  negativeFeedbackTags = new Set(),
+  rankOptions = {},
+  deckConfig,
+) {
+  return explainDropDeckScore(
+    event,
+    social,
+    userInterestTags,
+    negativeFeedbackTags,
+    rankOptions,
+    deckConfig,
+  ).total;
+}
+
+function compareByDropDeckScore(
+  socialByEvent,
+  userInterestTags,
+  negativeFeedbackTags = new Set(),
+  rankOptions = {},
+  deckConfig,
+) {
+  return (a, b) => {
+    const aSocial = socialByEvent.get(String(a._id)) || {};
+    const bSocial = socialByEvent.get(String(b._id)) || {};
+    const aScore = computeDropDeckScore(
+      a,
+      aSocial,
+      userInterestTags,
+      negativeFeedbackTags,
+      rankOptions,
+      deckConfig,
+    );
+    const bScore = computeDropDeckScore(
+      b,
+      bSocial,
+      userInterestTags,
+      negativeFeedbackTags,
+      rankOptions,
+      deckConfig,
+    );
+    if (aScore !== bScore) {
+      return bScore - aScore;
+    }
+    const aStart = new Date(a.start_time).getTime() || 0;
+    const bStart = new Date(b.start_time).getTime() || 0;
+    return aStart - bStart;
+  };
+}
+
+function selectDropDeckEvents(
+  events,
+  socialByEvent,
+  userInterestTags,
+  negativeFeedbackTags = new Set(),
+  rankOptions = {},
+  deckConfig,
+) {
+  const config = deckConfig || mergePivotDeckConfig();
+  const ranked = [...events].sort(
+    compareByDropDeckScore(
+      socialByEvent,
+      userInterestTags,
+      negativeFeedbackTags,
+      rankOptions,
+      config,
+    ),
+  );
+
+  if (ranked.length <= config.softMax) {
+    return ranked;
+  }
+
+  const selected = ranked.slice(0, config.softMax);
+  const cutoffEvent = selected[selected.length - 1];
+  const cutoffScore = computeDropDeckScore(
+    cutoffEvent,
+    socialByEvent.get(String(cutoffEvent._id)) || {},
+    userInterestTags,
+    negativeFeedbackTags,
+    rankOptions,
+    config,
+  );
+  const cutoff = Math.max(cutoffScore * config.leewayRatio, config.highScoreFloor);
+
+  for (let index = config.softMax; index < ranked.length && selected.length < config.hardMax; index += 1) {
+    const event = ranked[index];
+    const score = computeDropDeckScore(
+      event,
+      socialByEvent.get(String(event._id)) || {},
+      userInterestTags,
+      negativeFeedbackTags,
+      rankOptions,
+      config,
+    );
+    if (score < cutoff) {
+      break;
+    }
+    selected.push(event);
+  }
+
+  return selected;
+}
+
+function applyFrozenDeckOrder(events, orderedEventIds) {
+  if (!Array.isArray(orderedEventIds) || !orderedEventIds.length) {
+    return events;
+  }
+
+  const byId = new Map(events.map((event) => [String(event._id), event]));
+  const frozen = [];
+  for (const rawId of orderedEventIds) {
+    const event = byId.get(String(rawId));
+    if (event) {
+      frozen.push(event);
+    }
+  }
+  return frozen;
+}
+
+/** Ops preview: reload snapshot IDs even if they already left the 7-day window. */
+async function hydrateFrozenPreviewEvents(Event, knownEvents, orderedEventIds) {
+  const byId = new Map((knownEvents || []).map((event) => [String(event._id), event]));
+  const missing = [];
+  for (const rawId of orderedEventIds || []) {
+    const id = String(rawId || '').trim();
+    if (id && !byId.has(id) && mongoose.Types.ObjectId.isValid(id)) {
+      missing.push(id);
+    }
+  }
+  if (!missing.length) {
+    return applyFrozenDeckOrder(knownEvents, orderedEventIds);
+  }
+
+  const extra = await Event.find({
+    _id: { $in: missing },
+    isDeleted: { $ne: true },
+  })
+    .select(PUBLIC_EVENT_FIELDS)
+    .lean();
+
+  return applyFrozenDeckOrder([...(knownEvents || []), ...extra], orderedEventIds);
+}
+
 function compareByFeedRank(
   socialByEvent,
   userInterestTags,
@@ -928,12 +1149,31 @@ async function getPivotFeed(req, options = {}) {
     .sort({ registrationCount: -1, start_time: 1 })
     .lean();
 
+  const isPreview = options.preview === true;
+  const ignoreSnapshot = isPreview && options.ignoreSnapshot === true;
+  const forceRefresh = isPreview
+    ? false
+    : normalizeDeckSnapshotRefresh(options.refresh, req.user?.roles);
+  const existingSnapshot =
+    forceRefresh || ignoreSnapshot
+      ? null
+      : await getPivotDeckSnapshot(req, { userId, batchWeek });
+  const frozen = Boolean(existingSnapshot?.orderedEventIds?.length);
+
   const validEvents = events.filter(
     (event) =>
       resolveDisplayHost(event.customFields?.pivot) &&
       isUpcomingPivotEvent(event, now),
   );
-  const eventIds = validEvents.map((event) => event._id);
+  const catalogEvents =
+    frozen && isPreview
+      ? await hydrateFrozenPreviewEvents(
+          Event,
+          validEvents,
+          existingSnapshot.orderedEventIds,
+        )
+      : validEvents;
+  const eventIds = catalogEvents.map((event) => event._id);
   const [
     { userIntents, socialByEvent, socialByEventAndSlot },
     userInterestTags,
@@ -959,17 +1199,39 @@ async function getPivotFeed(req, options = {}) {
     crewBleedTags = subtractInterestTags(crewTagUnion, userInterestTags);
   }
 
-  validEvents.sort(
-    compareByFeedRank(socialByEvent, userInterestTags, negativeFeedbackTags, {
-      crewSignalWeight: crewRankConfig.crewSignalWeight,
-      interestBleed: crewRankConfig.interestBleed,
-      crewBleedTags,
-    }),
-  );
+  const rankOptions = {
+    crewSignalWeight: crewRankConfig.crewSignalWeight,
+    interestBleed: crewRankConfig.interestBleed,
+    crewBleedTags,
+  };
+  const deckConfig = getFeedDeckConfigFromTenant(tenant);
+
+  let deckEvents = catalogEvents;
+  if (frozen) {
+    deckEvents = applyFrozenDeckOrder(catalogEvents, existingSnapshot.orderedEventIds);
+  } else {
+    deckEvents = selectDropDeckEvents(
+      catalogEvents,
+      socialByEvent,
+      userInterestTags,
+      negativeFeedbackTags,
+      rankOptions,
+      deckConfig,
+    );
+    if (!isPreview) {
+      await recordPivotDeckSnapshot(req, {
+        userId,
+        batchWeek,
+        orderedEventIds: deckEvents.map((event) => event._id),
+        rankerVersion: PIVOT_FEED_RANKER_VERSION,
+        forceRefresh,
+      });
+    }
+  }
 
   const cityDisplayName = tenant?.location || tenant?.name || req.school;
 
-  const multiSlotEventCount = validEvents.filter(
+  const multiSlotEventCount = deckEvents.filter(
     (event) => normalizePivotTimeSlots(event.customFields?.pivot?.timeSlots).length > 0,
   ).length;
 
@@ -979,12 +1241,16 @@ async function getPivotFeed(req, options = {}) {
     batchWeek,
     cityDisplayName,
     candidateCount: events.length,
-    eventCount: validEvents.length,
+    eventCount: deckEvents.length,
+    catalogEligibleCount: validEvents.length,
     droppedBeforeCatalog: events.length - validEvents.length,
     multiSlotEventCount,
     excludedCount: excludeEventIds.length,
     interestTagCount: userInterestTags.size,
     negativeTagPenaltyCount: negativeFeedbackTags.size,
+    deckSoftMax: deckConfig.softMax,
+    deckHardMax: deckConfig.hardMax,
+    frozenDeck: frozen,
   });
 
   if (validEvents.length === 0 && typeof Event.distinct === 'function') {
@@ -998,20 +1264,12 @@ async function getPivotFeed(req, options = {}) {
     });
   }
 
-  await recordPivotDeckSnapshot(req, {
-    userId,
-    batchWeek,
-    orderedEventIds: validEvents.map((event) => event._id),
-    rankerVersion: PIVOT_FEED_RANKER_VERSION,
-    forceRefresh: normalizeDeckSnapshotRefresh(options.refresh, req.user?.roles),
-  });
-
   return {
     data: {
       batchWeek,
       cityDisplayName,
       rankerVersion: PIVOT_FEED_RANKER_VERSION,
-      events: validEvents.map((event, rankInFeed) => {
+      events: deckEvents.map((event, rankInFeed) => {
         const id = String(event._id);
         const social = socialByEvent.get(id) || {
           friendsInterested: [],
@@ -1045,8 +1303,24 @@ async function getPivotFeed(req, options = {}) {
           crewInterestedCount: social.crewInterestedCount || 0,
           crewRegisteredCount: social.crewRegisteredCount || 0,
           rankInFeed,
+          ...(options.includeScores
+            ? {
+                dropDeckScore: roundDropDeckScoreParts(
+                  explainDropDeckScore(
+                    event,
+                    social,
+                    userInterestTags,
+                    negativeFeedbackTags,
+                    rankOptions,
+                    deckConfig,
+                  ),
+                ),
+              }
+            : {}),
         });
       }),
+      frozen,
+      eligibleCount: catalogEvents.length,
     },
   };
 }
@@ -1122,6 +1396,11 @@ module.exports = {
   countInterestOverlap,
   countCrewInterestBleedScore,
   computeInterestRankScore,
+  computeDropDeckScore,
+  explainDropDeckScore,
+  compareByDropDeckScore,
+  selectDropDeckEvents,
+  applyFrozenDeckOrder,
   subtractInterestTags,
   countNegativeTagOverlap,
   compareByFeedRank,

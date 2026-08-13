@@ -53,6 +53,24 @@ const pivotCrewConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const pivotDeckConfigSchema = new mongoose.Schema(
+  {
+    version: { type: Number, default: null, min: 1 },
+    softMax: { type: Number, default: null, min: 1, max: 40 },
+    hardMax: { type: Number, default: null, min: 1, max: 40 },
+    leewayRatio: { type: Number, default: null, min: 0, max: 1 },
+    highScoreFloor: { type: Number, default: null, min: 0, max: 5 },
+    weights: {
+      friendGoing: { type: Number, default: null, min: 0, max: 5 },
+      friendInterested: { type: Number, default: null, min: 0, max: 5 },
+      personalInterest: { type: Number, default: null, min: 0, max: 1 },
+      crewSignal: { type: Number, default: null, min: 0, max: 1 },
+      negativeTag: { type: Number, default: null, min: 0, max: 5 },
+    },
+  },
+  { _id: false }
+);
+
 const pivotMobileConfigSchema = new mongoose.Schema(
   {
     minAppVersion: { type: String, default: null, trim: true },
@@ -116,6 +134,7 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotDropPushBody: { type: String, default: null, trim: true, maxlength: 240 },
     pivotDropOverrides: { type: [pivotDropOverrideSchema], default: undefined },
     pivotCrewConfig: { type: pivotCrewConfigSchema, default: undefined },
+    pivotDeckConfig: { type: pivotDeckConfigSchema, default: undefined },
     pivotMobileConfig: { type: pivotMobileConfigSchema, default: undefined },
     creatorPublish: { type: creatorPublishConfigSchema, default: undefined },
     provisioningConfirmations: {

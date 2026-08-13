@@ -9,12 +9,13 @@ jest.mock('../../services/pivotDeckSnapshotService', () => ({
   normalizeDeckSnapshotRefresh: jest.requireActual('../../services/pivotDeckSnapshotService')
     .normalizeDeckSnapshotRefresh,
   recordPivotDeckSnapshot: jest.fn().mockResolvedValue({ skipped: false }),
+  getPivotDeckSnapshot: jest.fn().mockResolvedValue(null),
 }));
 
 const getModels = require('../../services/getModelService');
 const { getTenantByKey } = require('../../services/tenantConfigService');
 const { getPivotConfig } = require('../../services/pivotConfigService');
-const { recordPivotDeckSnapshot } = require('../../services/pivotDeckSnapshotService');
+const { recordPivotDeckSnapshot, getPivotDeckSnapshot } = require('../../services/pivotDeckSnapshotService');
 const {
   getPivotFeed,
   getPivotEventFriends,
@@ -28,6 +29,9 @@ const {
   countInterestOverlap,
   countCrewInterestBleedScore,
   computeInterestRankScore,
+  computeDropDeckScore,
+  selectDropDeckEvents,
+  applyFrozenDeckOrder,
   subtractInterestTags,
   countNegativeTagOverlap,
   compareByFeedRank,
@@ -548,6 +552,164 @@ describe('pivotFeedService helpers', () => {
       countNegativeTagOverlap({ customFields: { pivot: {} } }, negativeTags),
     ).toBe(0);
   });
+
+  it('computeDropDeckScore prefers friend going over a single personal tag', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const deckConfig = mergePivotDeckConfig();
+    const personal = {
+      customFields: { pivot: { tags: ['live-music'] } },
+    };
+    const social = {
+      customFields: { pivot: { tags: [] } },
+    };
+    const tags = normalizeInterestTagSet(['live-music']);
+
+    expect(
+      computeDropDeckScore(personal, {}, tags, new Set(), {}, deckConfig),
+    ).toBe(0.7);
+    expect(
+      computeDropDeckScore(
+        social,
+        { friendRegisteredCount: 1, friendInterestedCount: 1 },
+        tags,
+        new Set(),
+        {},
+        deckConfig,
+      ),
+    ).toBe(2);
+  });
+
+  it('computeDropDeckScore subtracts negative-tag penalty', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const deckConfig = mergePivotDeckConfig();
+    const event = { customFields: { pivot: { tags: ['board-games'] } } };
+    const tags = normalizeInterestTagSet(['board-games']);
+    const negative = normalizeInterestTagSet(['board-games']);
+
+    expect(
+      computeDropDeckScore(event, {}, tags, negative, {}, deckConfig),
+    ).toBeCloseTo(0.3);
+  });
+
+  it('selectDropDeckEvents does not pad below softMax', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const events = [
+      { _id: '1', start_time: new Date('2026-05-28T18:00:00.000Z'), customFields: { pivot: { tags: [] } } },
+      { _id: '2', start_time: new Date('2026-05-28T19:00:00.000Z'), customFields: { pivot: { tags: [] } } },
+    ];
+    const selected = selectDropDeckEvents(
+      events,
+      new Map(),
+      new Set(),
+      new Set(),
+      {},
+      mergePivotDeckConfig(),
+    );
+    expect(selected.map((event) => event._id)).toEqual(['1', '2']);
+  });
+
+  it('selectDropDeckEvents caps at softMax unless leftover scores clear the leeway floor', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const deckConfig = mergePivotDeckConfig({
+      softMax: 2,
+      hardMax: 4,
+      leewayRatio: 0.85,
+      highScoreFloor: 0.7,
+    });
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { tags: ['live-music', 'comedy'] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { tags: ['live-music'] } },
+      },
+      {
+        _id: '3',
+        start_time: new Date('2026-05-28T20:00:00.000Z'),
+        customFields: { pivot: { tags: ['live-music'] } },
+      },
+      {
+        _id: '4',
+        start_time: new Date('2026-05-28T21:00:00.000Z'),
+        customFields: { pivot: { tags: [] } },
+      },
+    ];
+    const selected = selectDropDeckEvents(
+      events,
+      new Map(),
+      normalizeInterestTagSet(['live-music', 'comedy']),
+      new Set(),
+      {},
+      deckConfig,
+    );
+    expect(selected.map((event) => event._id)).toEqual(['1', '2', '3']);
+  });
+
+  it('selectDropDeckEvents never exceeds hardMax', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const deckConfig = mergePivotDeckConfig({
+      softMax: 2,
+      hardMax: 3,
+      leewayRatio: 0,
+      highScoreFloor: 0,
+    });
+    const events = Array.from({ length: 6 }, (_, index) => ({
+      _id: String(index + 1),
+      start_time: new Date(`2026-05-28T${18 + index}:00:00.000Z`),
+      customFields: { pivot: { tags: ['live-music'] } },
+    }));
+    const selected = selectDropDeckEvents(
+      events,
+      new Map(),
+      normalizeInterestTagSet(['live-music']),
+      new Set(),
+      {},
+      deckConfig,
+    );
+    expect(selected).toHaveLength(3);
+  });
+
+  it('selectDropDeckEvents can drop negatively tagged events out of a tight cap', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const deckConfig = mergePivotDeckConfig({ softMax: 1, hardMax: 1 });
+    const events = [
+      {
+        _id: '1',
+        start_time: new Date('2026-05-28T18:00:00.000Z'),
+        customFields: { pivot: { tags: ['board-games'] } },
+      },
+      {
+        _id: '2',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: { pivot: { tags: ['live-music'] } },
+      },
+    ];
+    const selected = selectDropDeckEvents(
+      events,
+      new Map(),
+      normalizeInterestTagSet(['board-games', 'live-music']),
+      normalizeInterestTagSet(['board-games']),
+      {},
+      deckConfig,
+    );
+    expect(selected.map((event) => event._id)).toEqual(['2']);
+  });
+
+  it('applyFrozenDeckOrder preserves snapshot order and drops missing ids', () => {
+    const events = [
+      { _id: 'a' },
+      { _id: 'b' },
+      { _id: 'c' },
+    ];
+    expect(applyFrozenDeckOrder(events, ['c', 'missing', 'a']).map((event) => event._id)).toEqual([
+      'c',
+      'a',
+    ]);
+  });
 });
 
 describe('getPivotFeed', () => {
@@ -560,6 +722,8 @@ describe('getPivotFeed', () => {
     getTenantByKey.mockReset();
     getPivotConfig.mockReset();
     recordPivotDeckSnapshot.mockClear();
+    getPivotDeckSnapshot.mockReset();
+    getPivotDeckSnapshot.mockResolvedValue(null);
     clearFeedCrewConfigCacheForTests();
     getTenantByKey.mockResolvedValue({
       tenantKey: 'nyc',
@@ -635,7 +799,7 @@ describe('getPivotFeed', () => {
 
     expect(result.data.batchWeek).toBe('2026-W22');
     expect(result.data.cityDisplayName).toBe('New York City');
-    expect(result.data.rankerVersion).toBe('rules_v0');
+    expect(result.data.rankerVersion).toBe('rules_v1');
     expect(result.data.events).toHaveLength(1);
     expect(result.data.events[0].displayHost).toEqual({ name: 'Roof Records' });
     expect(result.data.events[0].userIntent).toBeNull();
@@ -933,7 +1097,7 @@ describe('getPivotFeed', () => {
       'No Friends (popular)',
     ]);
     expect(result.data.events.map((event) => event.rankInFeed)).toEqual([0, 1, 2]);
-    expect(result.data.rankerVersion).toBe('rules_v0');
+    expect(result.data.rankerVersion).toBe('rules_v1');
     const registered = result.data.events[0];
     expect(registered.friendsGoing).toHaveLength(1);
     expect(registered.friendsInterested).toHaveLength(1);
@@ -1214,6 +1378,15 @@ describe('getPivotFeed', () => {
             crewSignalWeight: 0,
           },
         },
+      },
+    });
+    getTenantByKey.mockResolvedValue({
+      tenantKey: 'nyc',
+      name: 'New York City Pilot',
+      location: 'New York City',
+      pivotPilot: true,
+      pivotDeckConfig: {
+        weights: { crewSignal: 0 },
       },
     });
 
@@ -1772,7 +1945,7 @@ describe('getPivotFeed', () => {
           events[1]._id,
           events[0]._id,
         ],
-        rankerVersion: 'rules_v0',
+        rankerVersion: 'rules_v1',
         forceRefresh: false,
       }),
     );
@@ -1812,6 +1985,297 @@ describe('getPivotFeed', () => {
       req,
       expect.objectContaining({ forceRefresh: false }),
     );
+  });
+
+  it('freezes membership from an existing deck snapshot', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Later Match',
+        start_time: new Date('2026-05-29T23:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Earlier Generic',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: [] },
+        },
+      },
+    ];
+
+    getPivotDeckSnapshot.mockResolvedValue({
+      orderedEventIds: ['665a000000000000000000b2', '665a000000000000000000a1'],
+    });
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['live-music']),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Earlier Generic',
+      'Later Match',
+    ]);
+    expect(recordPivotDeckSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds a frozen deck when an admin refreshes', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Later Match',
+        start_time: new Date('2026-05-29T23:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Earlier Generic',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: [] },
+        },
+      },
+    ];
+
+    getPivotDeckSnapshot.mockResolvedValue({
+      orderedEventIds: ['665a000000000000000000b2', '665a000000000000000000a1'],
+    });
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['live-music']),
+    }));
+
+    const adminReq = { user: { userId, roles: ['admin'] }, school: 'nyc' };
+    const result = await getPivotFeed(adminReq, {
+      batchWeek: '2026-W22',
+      now,
+      refresh: true,
+    });
+
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Later Match',
+      'Earlier Generic',
+    ]);
+    expect(recordPivotDeckSnapshot).toHaveBeenCalledWith(
+      adminReq,
+      expect.objectContaining({
+        forceRefresh: true,
+        orderedEventIds: [
+          events[0]._id,
+          events[1]._id,
+        ],
+      }),
+    );
+  });
+
+  it('does not write a snapshot for ops preview', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Later Match',
+        start_time: new Date('2026-05-29T23:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Earlier Generic',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: [] },
+        },
+      },
+    ];
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['live-music']),
+    }));
+
+    const result = await getPivotFeed(req, {
+      batchWeek: '2026-W22',
+      now,
+      preview: true,
+      includeScores: true,
+    });
+
+    expect(result.data.frozen).toBe(false);
+    expect(result.data.events[0].name).toBe('Later Match');
+    expect(result.data.events[0].dropDeckScore.total).toBeGreaterThan(0);
+    expect(recordPivotDeckSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('ops rebuild ignores a frozen snapshot without writing a new one', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Later Match',
+        start_time: new Date('2026-05-29T23:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Earlier Generic',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: [] },
+        },
+      },
+    ];
+
+    getPivotDeckSnapshot.mockResolvedValue({
+      orderedEventIds: ['665a000000000000000000b2', '665a000000000000000000a1'],
+    });
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['live-music']),
+    }));
+
+    const result = await getPivotFeed(req, {
+      batchWeek: '2026-W22',
+      now,
+      preview: true,
+      ignoreSnapshot: true,
+    });
+
+    expect(getPivotDeckSnapshot).not.toHaveBeenCalled();
+    expect(result.data.frozen).toBe(false);
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Later Match',
+      'Earlier Generic',
+    ]);
+    expect(recordPivotDeckSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('ops preview of a frozen deck still returns snapshot events that already ended', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Later Match',
+        start_time: new Date('2026-05-29T23:00:00.000Z'),
+        end_time: new Date('2026-05-30T02:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+    ];
+
+    getPivotDeckSnapshot.mockResolvedValue({
+      orderedEventIds: ['665a000000000000000000a1'],
+    });
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['live-music']),
+    }));
+
+    const result = await getPivotFeed(req, {
+      batchWeek: '2026-W22',
+      now: new Date('2026-08-12T19:00:00.000Z'),
+      preview: true,
+      includeScores: true,
+    });
+
+    expect(result.data.frozen).toBe(true);
+    expect(result.data.events.map((event) => event.name)).toEqual(['Later Match']);
+    expect(recordPivotDeckSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('applies tenant deck-config weights when scoring a new deck', async () => {
+    getTenantByKey.mockResolvedValue({
+      tenantKey: 'nyc',
+      name: 'New York City Pilot',
+      location: 'New York City',
+      pivotPilot: true,
+      pivotDeckConfig: {
+        weights: { personalInterest: 0, friendGoing: 0, friendInterested: 0, crewSignal: 0, negativeTag: 0 },
+      },
+    });
+
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Later Match',
+        start_time: new Date('2026-05-29T23:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue B' }, tags: ['live-music'] },
+        },
+      },
+      {
+        _id: '665a000000000000000000b2',
+        name: 'Earlier Generic',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        customFields: {
+          pivot: { host: { name: 'Venue A' }, tags: [] },
+        },
+      },
+    ];
+
+    getModels.mockReturnValue(withFeedModels({
+      Event: { find: jest.fn(() => mockEventFind(events)) },
+      Friendship: {
+        find: jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue([]),
+        })),
+      },
+      PivotEventIntent: { find: jest.fn(() => mockIntentFind()) },
+      User: mockUserModel(['live-music']),
+    }));
+
+    const result = await getPivotFeed(req, { batchWeek: '2026-W22', now });
+    expect(result.data.events.map((event) => event.name)).toEqual([
+      'Earlier Generic',
+      'Later Match',
+    ]);
   });
 });
 

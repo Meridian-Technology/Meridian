@@ -53,6 +53,7 @@ const {
   wipeUserWeekIntents,
 } = require('../services/pivotTenantJourneyService');
 const { getTenantOpsBundle } = require('../services/pivotTenantOpsService');
+const { previewAdminDropDeck } = require('../services/pivotAdminDropDeckService');
 const { getPivotExplorePreview } = require('../services/pivotExploreService');
 const { getPivotRetention } = require('../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../services/pivotLabEventsService');
@@ -1259,6 +1260,60 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load journey path.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/drop-deck/preview',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await previewAdminDropDeck(req, {
+        tenantKey: req.params.tenantKey,
+        userId: req.query?.userId,
+        batchWeek: req.query?.batchWeek,
+        rebuild: req.query?.rebuild,
+      });
+      if (result.error) {
+        logPivotServiceReject(
+          'GET /admin/pivot/tenants/:tenantKey/drop-deck/preview',
+          result,
+          req,
+          { tenantKey: req.params.tenantKey, userId: req.query?.userId },
+        );
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      logPivotServiceSuccess(
+        'GET /admin/pivot/tenants/:tenantKey/drop-deck/preview',
+        req,
+        {
+          tenantKey: result.data?.tenantKey,
+          userId: result.data?.user?.userId,
+          eventCount: result.data?.events?.length ?? 0,
+          frozen: result.data?.frozen,
+        },
+      );
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/drop-deck/preview',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to preview drop deck.',
       });
     }
   },

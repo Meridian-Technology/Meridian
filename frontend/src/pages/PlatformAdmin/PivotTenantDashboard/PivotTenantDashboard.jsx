@@ -7,6 +7,7 @@ import { isPivotTenant } from '../TenantManagement/tenantPivotUtils';
 import PivotTenantOverviewPage from './PivotTenantOverviewPage';
 import PivotTenantCurationPage from './PivotTenantCurationPage';
 import PivotTenantJourneysPage from './PivotTenantJourneysPage';
+import PivotTenantDropDeckPage from './PivotTenantDropDeckPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -38,7 +39,7 @@ function PivotTenantGate({ title, body, onBack }) {
 
 /**
  * Per-tenant Just Go ops shell.
- * Route: /platform-admin/pivot/:tenantKey?page=0|1|2
+ * Route: /platform-admin/pivot/:tenantKey?page=0|1|2|3
  */
 function PivotTenantDashboard() {
   const navigate = useNavigate();
@@ -48,7 +49,7 @@ function PivotTenantDashboard() {
 
   const goToTenants = () => navigate('/platform-admin?page=0');
 
-  const { data, loading, error } = useFetch('/admin/platform/tenants', {
+  const { data, loading, error, refetch } = useFetch('/admin/platform/tenants', {
     cache: NO_FETCH_CACHE,
   });
 
@@ -96,8 +97,21 @@ function PivotTenantDashboard() {
           />
         ),
       },
+      {
+        label: 'Drop deck',
+        icon: 'mdi:cards-playing-outline',
+        element: (
+          <PivotTenantDropDeckPage
+            key={tenantKey}
+            tenantKey={tenantKey}
+            cityDisplayName={cityDisplayName}
+            storedOverrides={tenant?.pivotDeckConfig}
+            onSaved={refetch}
+          />
+        ),
+      },
     ],
-    [tenantKey, cityDisplayName],
+    [tenantKey, cityDisplayName, tenant?.pivotDeckConfig, refetch],
   );
 
   if (!tenantKey) {

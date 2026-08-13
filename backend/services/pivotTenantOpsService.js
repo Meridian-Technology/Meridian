@@ -56,7 +56,7 @@ function curationSectionsForStage(stage, { releaseWindow = false } = {}) {
     return ['overview', 'performance', 'journey', 'readiness', 'catalog', 'jobs'];
   }
   if (stage === 'post-mortem') {
-    return ['overview', 'performance', 'journey'];
+    return ['overview', 'performance', 'journey', 'catalog'];
   }
   return ['overview', 'readiness', 'catalog', 'jobs'];
 }

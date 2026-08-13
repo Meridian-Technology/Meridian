@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import { formatEventWhen } from '../../../utils/pivotIsoWeek';
@@ -41,6 +41,7 @@ export default function PivotJsonImportPanel({
   onBeforeStage,
 }) {
   const { addNotification } = useNotification();
+  const fileInputRef = useRef(null);
   const [importJsonDraft, setImportJsonDraft] = useState('');
   const [jsonImportPreview, setJsonImportPreview] = useState(null);
   const [tmdbMatchLoadingKey, setTmdbMatchLoadingKey] = useState(null);
@@ -386,6 +387,36 @@ export default function PivotJsonImportPanel({
     }
   }, [addNotification]);
 
+  const handleLoadJsonFile = useCallback(
+    (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = typeof reader.result === 'string' ? reader.result : '';
+        setImportJsonDraft(text);
+        setJsonImportPreview(null);
+        addNotification({
+          title: 'JSON loaded',
+          message: `${file.name} is in the import box. Preview, then ${
+            mode === 'stage' ? 'stage' : 'load'
+          }.`,
+          type: 'success',
+        });
+      };
+      reader.onerror = () => {
+        addNotification({
+          title: 'Could not read file',
+          message: 'Pick a .json catalog export or agent payload.',
+          type: 'error',
+        });
+      };
+      reader.readAsText(file);
+    },
+    [addNotification, mode],
+  );
+
   const jsonImportPreviewDocument = useMemo(
     () => buildJsonImportPreviewDocument(jsonImportPreview),
     [jsonImportPreview],
@@ -408,7 +439,7 @@ export default function PivotJsonImportPanel({
   return (
     <details className="pivot-lab__json-import">
       <summary className="pivot-lab__json-import-summary">
-        JSON import (agents)
+        JSON import
         {mode === 'stage' && batchWeek && forceBatchWeek ? ` · pins to ${batchWeek}` : null}
       </summary>
       <div className="pivot-lab__json-import-body">
@@ -420,7 +451,7 @@ export default function PivotJsonImportPanel({
           </p>
         ) : null}
         <p className="pivot-lab__json-import-hint">
-          For Just Go weekly ops: give agents the prompt below, paste their JSON here, then review
+          Paste agent JSON or load a catalog export from another Curation panel, then review
           before {mode === 'stage' ? 'staging' : 'loading'}.
           {mode === 'stage' && batchWeek ? (
             <>
@@ -433,6 +464,21 @@ export default function PivotJsonImportPanel({
           <code>film-and-tv</code> auto-match TMDB on preview and load.
         </p>
         <div className="pivot-lab__json-import-actions">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={handleLoadJsonFile}
+          />
+          <button
+            type="button"
+            className="linear-btn linear-btn--ghost"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+          >
+            Load JSON file
+          </button>
           <button
             type="button"
             className="linear-btn linear-btn--ghost"
@@ -445,7 +491,7 @@ export default function PivotJsonImportPanel({
           {PIVOT_JSON_IMPORT_AGENT_PROMPT}
         </pre>
         <label className="linear-field pivot-lab__json-import-field">
-          <span className="linear-field__label">Agent JSON</span>
+          <span className="linear-field__label">Agent or catalog JSON</span>
           <textarea
             className="linear-input pivot-lab__json-import-textarea"
             value={importJsonDraft}

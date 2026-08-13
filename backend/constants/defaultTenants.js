@@ -5,6 +5,10 @@ const {
   validatePivotCrewConfigPatch,
 } = require('../utilities/pivotCrewConfig');
 const {
+  mergePivotDeckConfigOverrides,
+  validatePivotDeckConfigPatch,
+} = require('../utilities/pivotDeckConfig');
+const {
   mergeCreatorPublishConfigOverrides,
   validateCreatorPublishConfigPatch,
 } = require('../utilities/pivotCreatorPublishConfig');
@@ -218,6 +222,16 @@ function normalizeTenantOverride(row = {}) {
     }
   }
 
+  if (row.pivotDeckConfig !== undefined && row.pivotDeckConfig !== null) {
+    const deckValidation = validatePivotDeckConfigPatch(row.pivotDeckConfig);
+    if (deckValidation.error) {
+      return null;
+    }
+    if (deckValidation.patch && Object.keys(deckValidation.patch).length > 0) {
+      out.pivotDeckConfig = deckValidation.patch;
+    }
+  }
+
   if (row.creatorPublish !== undefined && row.creatorPublish !== null) {
     const creatorValidation = validateCreatorPublishConfigPatch(row.creatorPublish);
     if (creatorValidation.error) {
@@ -243,6 +257,13 @@ function mergeSparseTenantOverrides(existing = {}, delta = {}) {
       ...(delta.provisioningConfirmations || {}),
     };
   }
+  if (Object.prototype.hasOwnProperty.call(delta, 'pivotDeckConfig')) {
+    if (delta.pivotDeckConfig === null) {
+      delete merged.pivotDeckConfig;
+    } else {
+      merged.pivotDeckConfig = delta.pivotDeckConfig;
+    }
+  }
   return merged;
 }
 
@@ -254,6 +275,7 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
     const {
       provisioningConfirmations: pcPatch,
       pivotCrewConfig: crewPatch,
+      pivotDeckConfig: deckPatch,
       creatorPublish: creatorPublishPatch,
       ...rest
     } = row;
@@ -271,6 +293,12 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
       next.pivotCrewConfig = mergePivotCrewConfigOverrides(
         base.pivotCrewConfig,
         crewPatch,
+      );
+    }
+    if (deckPatch) {
+      next.pivotDeckConfig = mergePivotDeckConfigOverrides(
+        base.pivotDeckConfig,
+        deckPatch,
       );
     }
     if (creatorPublishPatch) {

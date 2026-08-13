@@ -433,3 +433,108 @@ export function serializeJsonImportDraft(label, entries) {
     2,
   );
 }
+
+function trimExportString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function compactExport(value) {
+  if (value == null) return undefined;
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (Array.isArray(value)) return value.length ? value : undefined;
+  return value;
+}
+
+function exportTimeSlots(timeSlots) {
+  if (!Array.isArray(timeSlots) || !timeSlots.length) return undefined;
+  const slots = timeSlots
+    .map((slot) => {
+      if (!slot || typeof slot !== 'object') return null;
+      const start_time = trimExportString(slot.start_time);
+      if (!start_time) return null;
+      return {
+        ...(trimExportString(slot.id) ? { id: trimExportString(slot.id) } : {}),
+        ...(trimExportString(slot.label) ? { label: trimExportString(slot.label) } : {}),
+        start_time,
+        ...(trimExportString(slot.end_time) ? { end_time: trimExportString(slot.end_time) } : {}),
+      };
+    })
+    .filter(Boolean);
+  return slots.length ? slots : undefined;
+}
+
+/** Map a catalog queue row to the JSON import schema (prod → local). */
+export function catalogEventToJsonExport(event) {
+  if (!event || typeof event !== 'object') return null;
+  const name = trimExportString(event.name);
+  const hostName = trimExportString(event.organizerName || event.hostName);
+  const location = trimExportString(event.location);
+  const start_time = trimExportString(event.start_time);
+  const timeSlots = exportTimeSlots(event.timeSlots);
+  if (!name && !hostName && !location && !start_time && !timeSlots) return null;
+
+  const exported = {
+    source: trimExportString(event.source) || 'manual',
+    sourceUrl: compactExport(event.sourceUrl || event.externalLink),
+    name: compactExport(name),
+    hostName: compactExport(hostName),
+    location: compactExport(location),
+    start_time: compactExport(start_time),
+    end_time: compactExport(event.end_time),
+    description: compactExport(event.description),
+    image: compactExport(event.image),
+    tags: compactExport(Array.isArray(event.tags) ? event.tags : []),
+    ...(timeSlots ? { timeSlots } : {}),
+    ...(event.movie ? { movie: event.movie } : {}),
+  };
+
+  return Object.fromEntries(
+    Object.entries(exported).filter(([, value]) => value !== undefined),
+  );
+}
+
+export function buildCurationJsonExport({
+  events,
+  tenantKey,
+  batchWeek,
+  cityLabel,
+  exportedAt,
+} = {}) {
+  const list = Array.isArray(events)
+    ? events.map(catalogEventToJsonExport).filter(Boolean)
+    : [];
+  const label =
+    [trimExportString(cityLabel) || trimExportString(tenantKey), trimExportString(batchWeek)]
+      .filter(Boolean)
+      .join(' · ') || 'Catalog export';
+
+  return {
+    label,
+    ...(exportedAt ? { exportedAt } : { exportedAt: new Date().toISOString() }),
+    ...(trimExportString(tenantKey) ? { tenantKey: trimExportString(tenantKey) } : {}),
+    ...(trimExportString(batchWeek) ? { batchWeek: trimExportString(batchWeek) } : {}),
+    events: list,
+  };
+}
+
+export function curationJsonExportFilename({ tenantKey, batchWeek } = {}) {
+  const slug = ['pivot-catalog', tenantKey, batchWeek]
+    .filter(Boolean)
+    .join('-')
+    .replace(/[^\w.-]+/g, '-');
+  return `${slug || 'pivot-catalog'}.json`;
+}
+
+export function downloadCurationJsonExport(payload, filename) {
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || 'pivot-catalog.json';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
