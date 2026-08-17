@@ -17,6 +17,10 @@ jest.mock('../../services/pivotEntryService', () => ({
   redeemPivotEntry: jest.fn(),
 }));
 
+jest.mock('../../services/pivotLandingDropService', () => ({
+  getPivotLandingDrop: jest.fn(),
+}));
+
 jest.mock('../../services/pivotReferralCodeService', () => ({
   validateReferralCode: jest.fn(),
   redeemReferralCode: jest.fn(),
@@ -84,6 +88,7 @@ const {
   resolvePivotEntry,
   redeemPivotEntry,
 } = require('../../services/pivotEntryService');
+const { getPivotLandingDrop } = require('../../services/pivotLandingDropService');
 const { validateReferralCode, redeemReferralCode } = require('../../services/pivotReferralCodeService');
 const { getPivotFeed } = require('../../services/pivotFeedService');
 const { getPivotEventCrossCrewOverlap } = require('../../services/pivotCrossCrewService');
@@ -146,6 +151,56 @@ describe('pivotRoutes GET /pivot/cities', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
     expect(response.body.data.cities).toHaveLength(1);
+  });
+});
+
+describe('pivotRoutes GET /pivot/landing/drop', () => {
+  beforeEach(() => {
+    getPivotLandingDrop.mockReset();
+  });
+
+  it('returns 200 with card-only drop events', async () => {
+    getPivotLandingDrop.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        cityDisplayName: 'New York City',
+        batchWeek: '2026-W33',
+        dropAt: '2026-08-13T22:00:00.000Z',
+        events: [
+          {
+            id: 'fri',
+            name: 'friday night market',
+            hostName: 'public records',
+            startTime: '2026-08-14T23:00:00.000Z',
+            location: 'brooklyn',
+            tag: 'live-music',
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/drop?tenantKey=nyc');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.events).toHaveLength(1);
+    expect(response.body.data.events[0]).not.toHaveProperty('description');
+    expect(response.body.data.events[0]).not.toHaveProperty('externalLink');
+    expect(getPivotLandingDrop).toHaveBeenCalledWith(
+      expect.anything(),
+      { tenantKey: 'nyc' },
+    );
+  });
+
+  it('returns 404 when the city is missing', async () => {
+    getPivotLandingDrop.mockResolvedValue({
+      error: 'City not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/drop?tenantKey=missing');
+    expect(response.statusCode).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
   });
 });
 

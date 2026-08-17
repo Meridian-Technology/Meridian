@@ -46,9 +46,13 @@ const {
   resolvePivotEntry,
   redeemPivotEntry,
 } = require('../services/pivotEntryService');
+const { getPivotLandingDrop } = require('../services/pivotLandingDropService');
 const {
   pivotReferralValidateRateLimit,
 } = require('../middlewares/pivotReferralValidateRateLimit');
+const {
+  pivotLandingDropRateLimit,
+} = require('../middlewares/pivotLandingDropRateLimit');
 const pivotCrewRoutes = require('./pivotCrewRoutes');
 const pivotCreatorRoutes = require('./pivotCreatorRoutes');
 
@@ -79,6 +83,31 @@ router.get('/cities', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load just go cities.',
+    });
+  }
+});
+
+router.get('/landing/drop', pivotLandingDropRateLimit, async (req, res) => {
+  try {
+    const result = await getPivotLandingDrop(req, { tenantKey: req.query.tenantKey });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    res.set('Cache-Control', 'public, max-age=60');
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/landing/drop', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load this week’s drop.',
     });
   }
 });

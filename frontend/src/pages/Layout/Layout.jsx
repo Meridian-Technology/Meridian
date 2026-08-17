@@ -62,7 +62,11 @@ function Layout() {
     return <Navigate to="/events-dashboard" replace />;
   }
   
-  const hideCampusChrome = location.pathname === '/invite' || location.pathname.startsWith('/invite/');
+  const hideCampusChrome =
+    location.pathname === '/invite' ||
+    location.pathname.startsWith('/invite/') ||
+    location.pathname === '/justgo' ||
+    location.pathname.startsWith('/justgo/');
 
   return (
     <div style={{minHeight: viewport, position: 'relative', overflowX: 'clip', width: '100%'}}>
