@@ -64,6 +64,10 @@ jest.mock('../../services/pivotTenantOpsService', () => ({
   getTenantOpsBundle: jest.fn(),
 }));
 
+jest.mock('../../services/pivotFleetOpsService', () => ({
+  getFleetOpsBundle: jest.fn(),
+}));
+
 jest.mock('../../services/pivotAdminDropDeckService', () => ({
   previewAdminDropDeck: jest.fn(),
 }));
@@ -140,6 +144,7 @@ const {
   wipeUserWeekIntents,
 } = require('../../services/pivotTenantJourneyService');
 const { getTenantOpsBundle } = require('../../services/pivotTenantOpsService');
+const { getFleetOpsBundle } = require('../../services/pivotFleetOpsService');
 const { previewAdminDropDeck } = require('../../services/pivotAdminDropDeckService');
 const { getPivotRetention } = require('../../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../../services/pivotLabEventsService');
@@ -275,6 +280,63 @@ describe('pivotAdminRoutes overview', () => {
 
     const response = await request(buildApp()).get('/admin/pivot/overview');
     expect(response.status).toBe(403);
+    expect(getPivotOverview).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes fleet ops', () => {
+  beforeEach(() => {
+    getFleetOpsBundle.mockReset();
+    getPivotOverview.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/ops returns rolled-up fleet payload', async () => {
+    getFleetOpsBundle.mockResolvedValue({
+      data: {
+        cityDisplayName: 'All cities',
+        batchWeek: '2026-W28',
+        overview: { kpis: { activeUsers: 16 } },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/ops?batchWeek=2026-W28&include=overview',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.overview.kpis.activeUsers).toBe(16);
+    expect(getFleetOpsBundle).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        batchWeek: '2026-W28',
+        include: 'overview',
+      }),
+    );
+    expect(getPivotOverview).not.toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/ops returns 400 for invalid week', async () => {
+    getFleetOpsBundle.mockResolvedValue({
+      error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
+      status: 400,
+      code: 'INVALID_BATCH_WEEK',
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/ops?batchWeek=nope&include=overview');
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_BATCH_WEEK');
+  });
+
+  it('GET /admin/pivot/ops returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/ops?include=overview');
+    expect(response.status).toBe(403);
+    expect(getFleetOpsBundle).not.toHaveBeenCalled();
     expect(getPivotOverview).not.toHaveBeenCalled();
   });
 });

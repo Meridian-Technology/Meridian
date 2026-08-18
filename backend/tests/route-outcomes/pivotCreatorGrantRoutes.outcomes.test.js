@@ -65,6 +65,9 @@ jest.mock('../../services/pivotTenantJourneyService', () => ({
 jest.mock('../../services/pivotTenantOpsService', () => ({
   getTenantOpsBundle: jest.fn(),
 }));
+jest.mock('../../services/pivotFleetOpsService', () => ({
+  getFleetOpsBundle: jest.fn(),
+}));
 jest.mock('../../services/pivotAdminDropDeckService', () => ({
   previewAdminDropDeck: jest.fn(),
 }));

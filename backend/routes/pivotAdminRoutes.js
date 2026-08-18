@@ -54,6 +54,7 @@ const {
   wipeUserWeekIntents,
 } = require('../services/pivotTenantJourneyService');
 const { getTenantOpsBundle } = require('../services/pivotTenantOpsService');
+const { getFleetOpsBundle } = require('../services/pivotFleetOpsService');
 const { previewAdminDropDeck } = require('../services/pivotAdminDropDeckService');
 const { getPivotExplorePreview } = require('../services/pivotExploreService');
 const { getPivotRetention } = require('../services/pivotRetentionService');
@@ -249,6 +250,35 @@ router.get('/overview', verifyToken, requirePlatformAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot overview.',
+    });
+  }
+});
+
+router.get('/ops', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await getFleetOpsBundle(req, {
+      batchWeek: req.query?.batchWeek,
+      include: req.query?.include,
+      performanceLimit: req.query?.performanceLimit ?? req.query?.limit,
+      retentionWeeks: req.query?.retentionWeeks ?? req.query?.weeks,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/ops', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load fleet ops bundle.',
     });
   }
 });
