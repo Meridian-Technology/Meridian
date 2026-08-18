@@ -15,6 +15,7 @@ import './Dashboard.scss'
 
 function Dashboard({ 
     menuItems, 
+    extraNavItems = [],
     children, 
     additionalClass = '', 
     middleItem=null, 
@@ -480,14 +481,22 @@ function Dashboard({
     }, [currentDisplay]);
 
     const renderNavItems = (items, isSubMenu = false) => {
+        const extras = !isSubMenu && extraNavItems?.length ? extraNavItems : [];
+        const allItems = extras.length ? [...items, ...extras] : items;
         return (
             <ul>
-                {items.map((item, index) => (
-                    <li key={index} 
-                        className={`${currentDisplay === index ? "selected" : ""} ${item.comingSoon ? "coming-soon" : ""}`} 
+                {allItems.map((item, index) => (
+                    <li key={item.href || item.label || index} 
+                        className={`${!item.href && currentDisplay === index ? "selected" : ""} ${item.comingSoon ? "coming-soon" : ""}`} 
                         onClick={() => {
                             // Don't allow clicking on coming soon items
                             if (item.comingSoon) return;
+                            if (item.href) {
+                                handleMobileNavigation(() => {
+                                    navigate(item.href);
+                                });
+                                return;
+                            }
                             
                             if (isSubMenu) {
                                 // Handle sub-sub items if they exist

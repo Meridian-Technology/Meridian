@@ -40,6 +40,13 @@ function PlatformAdmin() {
   return (
     <Dashboard
       menuItems={menuItems}
+      extraNavItems={[
+        {
+          label: 'Just Go',
+          icon: 'ic:round-dashboard',
+          href: '/platform-admin/pivot',
+        },
+      ]}
       additionalClass={`admin platform-admin${isDark ? ' platform-admin--dark' : ''}`}
       logo={AdminLogo}
       onBack={() => navigate('/select-school')}

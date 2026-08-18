@@ -18,8 +18,9 @@ function cityLabel(tenant) {
 }
 
 /**
- * Pivot-only city switcher for the per-tenant ops dashboard.
- * Navigates within /platform-admin/pivot/:tenantKey and preserves ?page= (+ filters).
+ * Pivot-only city switcher for Just Go ops dashboards.
+ * Navigates between /platform-admin/pivot (all cities) and
+ * /platform-admin/pivot/:tenantKey, preserving ?page= when switching cities.
  */
 function PivotTenantDropdown({
   tenants = [],
@@ -53,16 +54,25 @@ function PivotTenantDropdown({
     return () => clearTimeout(timer);
   }, [showDrop]);
 
+  const isAllCities = !currentKey;
+
   const displayLabel =
     cityDisplayName ||
-    cityLabel(pivotTenants.find((row) => normalizeTenantKey(row.tenantKey) === currentKey)) ||
+    (isAllCities
+      ? 'All cities'
+      : cityLabel(pivotTenants.find((row) => normalizeTenantKey(row.tenantKey) === currentKey))) ||
     currentKey ||
     (loading ? 'Loading…' : 'Pivot city');
 
   const handleSelectTenant = useCallback(
     (tenantKey) => {
       const nextKey = normalizeTenantKey(tenantKey);
-      if (!nextKey || nextKey === currentKey) {
+      if (nextKey === currentKey) {
+        setShowDrop(false);
+        return;
+      }
+      if (!nextKey) {
+        navigate('/platform-admin/pivot');
         setShowDrop(false);
         return;
       }
@@ -123,6 +133,24 @@ function PivotTenantDropdown({
                 <p>No pivot cities</p>
               </div>
             ) : null}
+            <div
+              className={`drop-option ${isAllCities ? 'selected' : ''}`}
+              role="option"
+              aria-selected={isAllCities}
+              onClick={() => handleSelectTenant('')}
+            >
+              <Icon
+                icon="mdi:earth"
+                width={22}
+                height={22}
+                className="admin-tenant-dropdown__row-icon"
+                aria-hidden
+              />
+              <div className="admin-tenant-dropdown__option-text">
+                <p>All cities</p>
+                <span className="admin-tenant-dropdown__meta">Fleet overview</span>
+              </div>
+            </div>
             {pivotTenants.map((tenant) => {
               const key = normalizeTenantKey(tenant.tenantKey);
               const selected = key === currentKey;
