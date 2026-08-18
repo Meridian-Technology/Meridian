@@ -46,6 +46,9 @@ function ListingRow({ event }) {
             >
               {status.label}
             </span>
+            {event.readOnly ? (
+              <span className="jg-status jg-status--unknown">{copy.claimedLabel}</span>
+            ) : null}
           </div>
 
           <p className="jg-listings__row-meta">
@@ -96,6 +99,7 @@ function JustGoCreatorHome() {
     : fetched;
 
   const events = useMemo(() => data?.data?.events ?? [], [data]);
+  const claimedOrganizerCount = data?.data?.claimedOrganizerCount ?? 0;
   const counts = useMemo(() => countListingsByStatus(events), [events]);
 
   const visibleEvents = useMemo(() => {
@@ -159,17 +163,26 @@ function JustGoCreatorHome() {
   }
 
   // Flare register: first-run empty state, before any filtering exists to explain.
+  // Claimed catalog with no events is not a blank start — don't lead with "create your first".
   if (events.length === 0) {
+    const claimedEmpty = claimedOrganizerCount > 0;
     return (
       <section className="jg-listings">
         {header}
         <div className="jg-listings__empty">
-          <PivotScrapbookTitle title={copy.emptyTitle} as="h2" />
-          <p className="jg-listings__empty-body">{copy.emptyBody}</p>
-          <Link className="justgo-creator__cta" to={JUSTGO_CREATOR_ROUTES.newListing}>
-            <Icon icon="mdi:plus" />
-            {copy.emptyCta}
-          </Link>
+          <PivotScrapbookTitle
+            title={claimedEmpty ? copy.claimedEmptyTitle : copy.emptyTitle}
+            as="h2"
+          />
+          <p className="jg-listings__empty-body">
+            {claimedEmpty ? copy.claimedEmptyBody : copy.emptyBody}
+          </p>
+          {claimedEmpty ? null : (
+            <Link className="justgo-creator__cta" to={JUSTGO_CREATOR_ROUTES.newListing}>
+              <Icon icon="mdi:plus" />
+              {copy.emptyCta}
+            </Link>
+          )}
         </div>
       </section>
     );

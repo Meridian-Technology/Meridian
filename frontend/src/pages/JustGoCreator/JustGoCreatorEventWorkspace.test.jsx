@@ -244,6 +244,37 @@ describe('JustGoCreatorEventWorkspace — tabs', () => {
     expect(within(activePanel()).getByText(copy.explainer.parity)).toBeInTheDocument();
   });
 
+  it('hides the edit form on a claimed scraped listing and still renders insights', () => {
+    mockDetail(
+      {
+        ...PUBLISHED_FUTURE,
+        source: 'luma',
+        readOnly: true,
+        access: 'claimed',
+        createdByUserId: null,
+      },
+      {
+        ...STATS,
+        daily: [
+          { date: '2026-06-14', views: 5, interested: 1, registered: 0 },
+          { date: '2026-06-15', views: 9, interested: 2, registered: 1 },
+        ],
+      },
+    );
+    renderWorkspace();
+
+    expect(header().queryByRole('button', { name: copy.header.updateListing })).not.toBeInTheDocument();
+    expect(header().getByText(copy.header.claimedNote)).toBeInTheDocument();
+
+    fireEvent.click(nav().getByRole('button', { name: copy.tabs.details }));
+    expect(within(activePanel()).getByText(copy.detailsReadOnly.body)).toBeInTheDocument();
+    expect(within(activePanel()).queryByTestId('listing-form')).not.toBeInTheDocument();
+
+    fireEvent.click(nav().getByRole('button', { name: copy.tabs.insights }));
+    expect(within(activePanel()).getByText(copy.insights.funnelTitle)).toBeInTheDocument();
+    expect(within(activePanel()).getByRole('img', { name: copy.insights.chartAlt })).toBeInTheDocument();
+  });
+
   it('renders the insights funnel from the detail stats', () => {
     mockDetail(PUBLISHED_FUTURE, {
       ...STATS,

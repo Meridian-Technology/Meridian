@@ -137,14 +137,23 @@ function JustGoCreatorEventWorkspace() {
     [WORKSPACE_TAB_IDS.OVERVIEW]: <WorkspaceOverviewTab event={event} stats={stats} />,
     [WORKSPACE_TAB_IDS.DETAILS]: (
       <div className="jg-workspace-tab">
-        <JustGoCreatorListingForm
-          mode="edit"
-          event={event}
-          onSaved={() => refetch({ silent: true })}
-          saveDisabledReason={
-            demoEvent ? 'Demo data — this listing has no server record, so edits are not saved.' : undefined
-          }
-        />
+        {event.readOnly ? (
+          <div className="justgo-creator__panel">
+            <h2 className="justgo-creator__panel-title">{copy.detailsReadOnly.title}</h2>
+            <p className="justgo-creator__panel-body">{copy.detailsReadOnly.body}</p>
+          </div>
+        ) : (
+          <JustGoCreatorListingForm
+            mode="edit"
+            event={event}
+            onSaved={() => refetch({ silent: true })}
+            saveDisabledReason={
+              demoEvent
+                ? 'Demo data — this listing has no server record, so edits are not saved.'
+                : undefined
+            }
+          />
+        )}
       </div>
     ),
     [WORKSPACE_TAB_IDS.INSIGHTS]: <WorkspaceInsightsTab event={event} stats={stats} />,

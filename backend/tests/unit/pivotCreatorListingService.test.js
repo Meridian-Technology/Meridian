@@ -23,6 +23,14 @@ jest.mock('../../services/pivotLabEventsService', () => {
 jest.mock('../../services/pivotCreatorAdminNotifyService', () => ({
   notifyAdminsOnCreatorListingCreate: jest.fn().mockResolvedValue({ skipped: false }),
 }));
+jest.mock('../../services/pivotOrganizerResolveService', () => ({
+  resolveOrganizers: jest.fn().mockResolvedValue({
+    organizerIds: [],
+    created: [],
+    attached: [],
+    ambiguous: [],
+  }),
+}));
 
 const getModels = require('../../services/getModelService');
 const { connectToDatabase } = require('../../connectionsManager');
@@ -35,6 +43,7 @@ const { loadIntentStatsByEventId } = require('../../services/pivotLabEventsServi
 const {
   notifyAdminsOnCreatorListingCreate,
 } = require('../../services/pivotCreatorAdminNotifyService');
+const { resolveOrganizers } = require('../../services/pivotOrganizerResolveService');
 const { toIsoWeek } = require('../../utilities/pivotIsoWeek');
 const { PIVOT_FEED_INGEST_STATUS } = require('../../utilities/pivotIngestStatus');
 const {
@@ -51,6 +60,8 @@ const GLOBAL_USER_ID = '507f191e810c19729de860ea';
 const OTHER_USER_ID = '507f191e810c19729de860eb';
 const CATALOG_ORG_ID = '507f1f77bcf86cd799439011';
 const EVENT_ID = '507f1f77bcf86cd799439099';
+const ORGANIZER_ID = '665a1b2c3d4e5f6789012ccc';
+const CLAIMED_EVENT_ID = '507f1f77bcf86cd799439088';
 
 const TENANT = {
   tenantKey: 'brooklyn',
@@ -95,6 +106,7 @@ describe('pivotCreatorListingService', () => {
   let Event;
   let PivotEventIntent;
   let EventAnalytics;
+  let PivotOrganizer;
 
   beforeEach(() => {
     Event = {
@@ -110,13 +122,30 @@ describe('pivotCreatorListingService', () => {
         lean: jest.fn().mockResolvedValue(null),
       })),
     };
-    getModels.mockReturnValue({ Event, PivotEventIntent, EventAnalytics });
+    PivotOrganizer = {
+      find: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      })),
+    };
+    getModels.mockReturnValue({
+      Event,
+      PivotEventIntent,
+      EventAnalytics,
+      PivotOrganizer,
+    });
     connectToDatabase.mockResolvedValue({});
     resolvePivotTenant.mockResolvedValue({ tenant: TENANT });
     resolveCatalogOrgId.mockResolvedValue({ orgId: CATALOG_ORG_ID });
     validatePivotEventTags.mockResolvedValue({ tags: ['live-music'] });
     loadIntentStatsByEventId.mockResolvedValue(new Map());
     notifyAdminsOnCreatorListingCreate.mockResolvedValue({ skipped: false });
+    resolveOrganizers.mockResolvedValue({
+      organizerIds: [],
+      created: [],
+      attached: [],
+      ambiguous: [],
+    });
   });
 
   describe('rejectCreatorLifecycleOverrides', () => {
@@ -187,11 +216,63 @@ describe('pivotCreatorListingService', () => {
               ingestStatus: 'draft',
               batchWeek: toIsoWeek(start),
               createdByUserId: GLOBAL_USER_ID,
-              host: expect.objectContaining({ name: 'Just Go Host' }),
+              host: expect.objectContaining({
+                name: 'Just Go Host',
+                identities: [{ provider: 'justgo', name: 'Just Go Host' }],
+              }),
             }),
           },
         }),
       );
+    });
+
+    it('stamps host.organizerIds via justgo + createdByUserId', async () => {
+      resolveOrganizers.mockResolvedValue({
+        organizerIds: ['665a1b2c3d4e5f6789012ccc'],
+        created: [{ organizerId: '665a1b2c3d4e5f6789012ccc' }],
+        attached: [],
+        ambiguous: [],
+      });
+      Event.create.mockImplementation(async (payload) => ({
+        ...payload,
+        _id: EVENT_ID,
+        toObject() {
+          return this;
+        },
+      }));
+
+      await createListing(makeReq(), basePayload());
+
+      expect(resolveOrganizers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantKey: 'brooklyn',
+          displayName: 'Just Go Host',
+          identities: expect.arrayContaining([
+            expect.objectContaining({
+              provider: 'justgo',
+              externalId: GLOBAL_USER_ID,
+              name: 'Just Go Host',
+            }),
+          ]),
+        }),
+      );
+      expect(Event.create.mock.calls[0][0].customFields.pivot.host.organizerIds).toEqual([
+        '665a1b2c3d4e5f6789012ccc',
+      ]);
+    });
+
+    it('accepts an explicit empty identities array', async () => {
+      Event.create.mockImplementation(async (payload) => ({
+        ...payload,
+        _id: EVENT_ID,
+        toObject() {
+          return this;
+        },
+      }));
+
+      await createListing(makeReq(), basePayload({ hostIdentities: [] }));
+
+      expect(Event.create.mock.calls[0][0].customFields.pivot.host.identities).toBeUndefined();
     });
 
     it('still yields draft when submitting into a live/released week (no auto-publish)', async () => {
@@ -507,6 +588,60 @@ describe('pivotCreatorListingService', () => {
         'customFields.pivot.ingestStatus': { $in: ['draft', 'staged'] },
       });
     });
+
+    it('includes scraped events whose organizerIds match a claimed organizer', async () => {
+      PivotOrganizer.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{ _id: ORGANIZER_ID }]),
+      });
+      const scraped = {
+        _id: CLAIMED_EVENT_ID,
+        name: 'Luma Listening',
+        location: 'The Chapel',
+        start_time: new Date('2026-05-23T19:00:00.000Z'),
+        customFields: {
+          pivot: {
+            source: 'luma',
+            ingestStatus: 'published',
+            batchWeek: '2026-W21',
+            host: { name: 'Alice Chen', organizerIds: [ORGANIZER_ID] },
+          },
+        },
+      };
+      Event.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([existingEvent(), scraped]),
+      });
+
+      const result = await listListings(makeReq());
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.total).toBe(2);
+      expect(result.data.claimedOrganizerCount).toBe(1);
+      expect(result.data.events[0].readOnly).toBe(false);
+      expect(result.data.events[0].access).toBe('owner');
+      expect(result.data.events[1].source).toBe('luma');
+      expect(result.data.events[1].readOnly).toBe(true);
+      expect(result.data.events[1].access).toBe('claimed');
+      expect(result.data.events[1].createdByUserId).toBeNull();
+      expect(Event.find).toHaveBeenCalledWith({
+        isDeleted: { $ne: true },
+        $or: [
+          {
+            isDeleted: { $ne: true },
+            'customFields.pivot.source': 'justgo',
+            'customFields.pivot.createdByUserId': GLOBAL_USER_ID,
+          },
+          {
+            isDeleted: { $ne: true },
+            'customFields.pivot.host.organizerIds': {
+              $in: [ORGANIZER_ID, expect.any(Object)],
+            },
+          },
+        ],
+      });
+    });
   });
 
   describe('getListing', () => {
@@ -701,6 +836,153 @@ describe('pivotCreatorListingService', () => {
       const result = await getListing(makeReq(), EVENT_ID);
 
       expect(result.code).toBe('CREATOR_NOT_OWNER');
+    });
+
+    it('returns a claimed scraped listing with the same intent/view series', async () => {
+      PivotOrganizer.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{ _id: ORGANIZER_ID }]),
+      });
+      Event.findOne.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({
+          _id: CLAIMED_EVENT_ID,
+          name: 'Luma Listening',
+          location: 'The Chapel',
+          start_time: new Date('2026-05-23T19:00:00.000Z'),
+          customFields: {
+            pivot: {
+              source: 'luma',
+              ingestStatus: 'published',
+              batchWeek: '2026-W21',
+              host: { name: 'Alice Chen', organizerIds: [ORGANIZER_ID] },
+            },
+          },
+        }),
+      });
+      loadIntentStatsByEventId.mockResolvedValue(
+        new Map([
+          [
+            CLAIMED_EVENT_ID,
+            {
+              interested: 5,
+              registered: 2,
+              passed: 1,
+              externalOpens: 8,
+              externalOpenUsers: 4,
+            },
+          ],
+        ]),
+      );
+      EventAnalytics.findOne.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({
+          views: 22,
+          uniqueViews: 18,
+          anonymousViews: 3,
+          uniqueAnonymousViews: 3,
+          registrations: 2,
+          uniqueRegistrations: 2,
+        }),
+      });
+      EventAnalytics.aggregate = jest
+        .fn()
+        .mockResolvedValue([{ _id: '2026-06-14', views: 6 }]);
+      PivotEventIntent.aggregate = jest
+        .fn()
+        .mockResolvedValue([{ _id: '2026-06-14', interested: 2, registered: 1 }]);
+
+      const result = await getListing(makeReq(), CLAIMED_EVENT_ID, {
+        now: new Date('2026-06-15T09:00:00.000Z'),
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.event.source).toBe('luma');
+      expect(result.data.event.readOnly).toBe(true);
+      expect(result.data.event.access).toBe('claimed');
+      expect(result.data.event.createdByUserId).toBeNull();
+      expect(result.data.stats.intents.interested).toBe(5);
+      expect(result.data.stats.analytics.views).toBe(22);
+      expect(result.data.stats.daily).toHaveLength(14);
+      const byDate = new Map(result.data.stats.daily.map((day) => [day.date, day]));
+      expect(byDate.get('2026-06-14')).toEqual({
+        date: '2026-06-14',
+        views: 6,
+        interested: 2,
+        registered: 1,
+      });
+    });
+
+    it('forbids reading an unclaimed scraped event', async () => {
+      Event.findOne.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({
+          _id: CLAIMED_EVENT_ID,
+          name: 'Someone Else',
+          customFields: {
+            pivot: {
+              source: 'partiful',
+              host: { name: 'Bob', organizerIds: [ORGANIZER_ID] },
+            },
+          },
+        }),
+      });
+
+      const result = await getListing(makeReq(), CLAIMED_EVENT_ID);
+
+      expect(result.code).toBe('CREATOR_NOT_OWNER');
+    });
+  });
+
+  describe('updateListing claimed catalog', () => {
+    function claimedScraped() {
+      return {
+        _id: CLAIMED_EVENT_ID,
+        name: 'Luma Listening',
+        customFields: {
+          pivot: {
+            source: 'luma',
+            ingestStatus: 'published',
+            host: { name: 'Alice Chen', organizerIds: [ORGANIZER_ID] },
+          },
+        },
+      };
+    }
+
+    it('rejects content edits on a claimed scraped listing', async () => {
+      PivotOrganizer.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{ _id: ORGANIZER_ID }]),
+      });
+      Event.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue(claimedScraped()),
+      });
+
+      const result = await updateListing(makeReq(), CLAIMED_EVENT_ID, {
+        name: 'Renamed',
+      });
+
+      expect(result.code).toBe('CREATOR_CLAIMED_READ_ONLY');
+      expect(result.status).toBe(403);
+      expect(Event.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects ingestStatus changes on a claimed scraped listing', async () => {
+      const published = await updateListing(makeReq(), CLAIMED_EVENT_ID, {
+        ingestStatus: 'published',
+      });
+      expect(published.code).toBe('CREATOR_PUBLISH_FORBIDDEN');
+
+      PivotOrganizer.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{ _id: ORGANIZER_ID }]),
+      });
+      Event.findOne.mockResolvedValue(claimedScraped());
+      const staged = await updateListing(makeReq(), CLAIMED_EVENT_ID, {
+        ingestStatus: 'staged',
+      });
+      expect(staged.code).toBe('CREATOR_INGEST_STATUS_LOCKED');
+      expect(Event.findByIdAndUpdate).not.toHaveBeenCalled();
     });
   });
 });
