@@ -24,6 +24,14 @@ jest.mock('../../services/pivotSiteScrapeService', () => ({
 jest.mock('../../services/pivotBatchService', () => ({
   ensurePivotBatch: jest.fn(),
 }));
+jest.mock('../../services/pivotOrganizerResolveService', () => ({
+  attachOrganizerIdsToDrafts: jest.fn().mockResolvedValue({
+    cacheSize: 0,
+    resolved: 0,
+    ambiguous: 0,
+    unlinked: 0,
+  }),
+}));
 
 const getGlobalModels = require('../../services/getGlobalModelService');
 const {
@@ -37,6 +45,7 @@ const {
 const { previewIngestUrl } = require('../../services/pivotIngestPreviewService');
 const { isSiteScrapeConfigured } = require('../../services/pivotSiteScrapeService');
 const { ensurePivotBatch } = require('../../services/pivotBatchService');
+const { attachOrganizerIdsToDrafts } = require('../../services/pivotOrganizerResolveService');
 const {
   startCurationJobRun,
   getCurationRun,
@@ -99,6 +108,12 @@ describe('pivotCurationRunService', () => {
     connectToGlobalDatabase.mockResolvedValue({});
     ensurePivotBatch.mockResolvedValue({ data: { batchWeek: '2026-W28', status: 'curating' } });
     isSiteScrapeConfigured.mockReturnValue(true);
+    attachOrganizerIdsToDrafts.mockResolvedValue({
+      cacheSize: 0,
+      resolved: 0,
+      ambiguous: 0,
+      unlinked: 0,
+    });
   });
 
   describe('resolveRunBatchWeek', () => {
@@ -173,6 +188,80 @@ describe('pivotCurationRunService', () => {
       );
     });
 
+    it('resolves organizers once after showtime rollup and stamps publish overrides', async () => {
+      attachOrganizerIdsToDrafts.mockImplementation(async ({ drafts, stats }) => {
+        const organizerId = '665a1b2c3d4e5f6789012aaa';
+        for (const row of drafts) {
+          if (row.draft) row.draft.organizerIds = [organizerId];
+        }
+        stats.organizerResolved = drafts.length;
+        stats.organizerUniqueIdentities = 1;
+        return { cacheSize: 1, resolved: drafts.length, ambiguous: 0, unlinked: 0 };
+      });
+      publishIngestEvent.mockResolvedValue({
+        data: { batchWeek: '2026-W28', event: { _id: 'e1' } },
+      });
+
+      const result = await ingestEntries(
+        { ...mockReq(), db: { models: {} } },
+        {
+          tenantKey: 'nyc',
+          batchWeek: '2026-W28',
+          entries: [
+            entry('Alice Night', 'https://partiful.com/e/one'),
+            entry('Alice Again', 'https://partiful.com/e/two'),
+          ],
+          defaultTags: [],
+        },
+      );
+
+      expect(attachOrganizerIdsToDrafts).toHaveBeenCalledTimes(1);
+      expect(attachOrganizerIdsToDrafts).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantKey: 'nyc',
+          drafts: expect.any(Array),
+        }),
+      );
+      expect(result.stats.organizerResolved).toBe(2);
+      expect(result.stats.organizerUniqueIdentities).toBe(1);
+      expect(publishIngestEvent).toHaveBeenCalledTimes(2);
+      expect(publishIngestEvent.mock.calls[0][1].overrides.organizerIds).toEqual([
+        '665a1b2c3d4e5f6789012aaa',
+      ]);
+      expect(publishIngestEvent.mock.calls[1][1].overrides.organizerIds).toEqual([
+        '665a1b2c3d4e5f6789012aaa',
+      ]);
+    });
+
+    it('still upserts when organizer resolve is ambiguous', async () => {
+      attachOrganizerIdsToDrafts.mockImplementation(async ({ drafts, stats }) => {
+        for (const row of drafts) {
+          if (row.draft) row.draft.organizerIds = [];
+        }
+        stats.organizerAmbiguous = 1;
+        return { cacheSize: 1, resolved: 0, ambiguous: 1, unlinked: 0 };
+      });
+      publishIngestEvent.mockResolvedValue({
+        data: { batchWeek: '2026-W28', event: { _id: 'e1' } },
+      });
+
+      const result = await ingestEntries(
+        { ...mockReq(), db: { models: {} } },
+        {
+          tenantKey: 'nyc',
+          batchWeek: '2026-W28',
+          entries: [entry('Alice', 'https://partiful.com/e/alice')],
+          defaultTags: [],
+        },
+      );
+
+      expect(result.stats.upserted).toBe(1);
+      expect(result.stats.failed).toBe(0);
+      expect(result.stats.organizerAmbiguous).toBe(1);
+      expect(result.stats.message).toMatch(/ambiguous organizer name/);
+      expect(publishIngestEvent.mock.calls[0][1].overrides.organizerIds).toEqual([]);
+    });
+
     it('counts a duplicate as skipped rather than failed', async () => {
       publishIngestEvent.mockResolvedValue({
         error: 'Event already exists.',
@@ -189,6 +278,28 @@ describe('pivotCurationRunService', () => {
       expect(result.stats.skipped).toBe(1);
       expect(result.stats.failed).toBe(0);
       expect(result.failures[0].code).toBe('DUPLICATE_EVENT');
+    });
+
+    it('splits catalog refreshes by sourceUrl vs fingerprint match', async () => {
+      publishIngestEvent
+        .mockResolvedValueOnce({
+          data: { batchWeek: '2026-W28', event: { _id: 'e1' }, updated: true, duplicateMatch: 'sourceUrl' },
+        })
+        .mockResolvedValueOnce({
+          data: { batchWeek: '2026-W28', event: { _id: 'e2' }, updated: true, duplicateMatch: 'fingerprint' },
+        });
+
+      const result = await ingestEntries(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entries: [entry('A', 'https://luma.com/e/a'), entry('B', 'https://venue.example/cal#b')],
+        defaultTags: [],
+      });
+
+      expect(result.stats.upserted).toBe(2);
+      expect(result.stats.updated).toBe(2);
+      expect(result.stats.updatedBySourceUrl).toBe(1);
+      expect(result.stats.updatedByFingerprint).toBe(1);
     });
 
     it('lets one bad entry fail without ending the batch', async () => {
@@ -268,9 +379,10 @@ describe('pivotCurationRunService', () => {
         refreshed: 19,
         phrase: '19 refreshed',
       });
-      expect(summarizeIngest({ upserted: 6, updated: 2 })).toMatchObject({
+      expect(summarizeIngest({ upserted: 6, updated: 2, updatedByFingerprint: 2 })).toMatchObject({
         added: 4,
         refreshed: 2,
+        updatedByFingerprint: 2,
         phrase: '4 new, 2 refreshed',
       });
       expect(summarizeIngest({ upserted: 3, updated: 0 })).toMatchObject({

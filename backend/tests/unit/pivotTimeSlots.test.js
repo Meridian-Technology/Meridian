@@ -4,6 +4,8 @@ const {
   findTimeSlotById,
   isUpcomingWithTimeSlots,
   resolveTimeSlotLabel,
+  unionPivotTimeSlots,
+  slotFromStart,
 } = require('../../utilities/pivotTimeSlots');
 
 describe('pivotTimeSlots', () => {
@@ -58,5 +60,13 @@ describe('pivotTimeSlots', () => {
         friendsGoing: [{ id: 'a', name: 'Alex', picture: null }],
       }),
     ]);
+  });
+
+  it('unions slots from several lists and drops duplicate ids', () => {
+    const first = slotFromStart('2026-08-14T01:00:00.000Z');
+    const second = slotFromStart('2026-08-14T03:30:00.000Z');
+    const slots = unionPivotTimeSlots([first], [first, second]);
+    expect(slots).toHaveLength(2);
+    expect(slots[0].id).toBe(first.id);
   });
 });

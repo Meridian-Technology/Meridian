@@ -54,6 +54,30 @@ function normalizePivotTimeSlots(rawSlots) {
   return slots;
 }
 
+function slotIdFromStart(value) {
+  const parsed = parseDate(value);
+  if (!parsed) return null;
+  return parsed.toISOString().slice(0, 16).replace(/[-:T]/g, '').toLowerCase();
+}
+
+function slotFromStart(start, end = null, label = null) {
+  const startDate = parseDate(start);
+  if (!startDate) return null;
+  const id = slotIdFromStart(startDate);
+  if (!id) return null;
+  const endDate = parseDate(end);
+  return {
+    id,
+    start_time: startDate,
+    end_time: endDate,
+    label: trimString(label) || null,
+  };
+}
+
+function unionPivotTimeSlots(...lists) {
+  return normalizePivotTimeSlots(lists.flatMap((list) => (Array.isArray(list) ? list : [])));
+}
+
 function resolveTimeSlotLabel(slot) {
   if (slot.label) {
     return slot.label;
@@ -146,4 +170,7 @@ module.exports = {
   isUpcomingWithTimeSlots,
   resolveEventEarliestStart,
   resolveEventLatestEnd,
+  slotIdFromStart,
+  slotFromStart,
+  unionPivotTimeSlots,
 };

@@ -17,6 +17,8 @@ const {
   resolvePivotDropConfig,
 } = require('../utilities/pivotDropSchedule');
 const { logPivot } = require('../utilities/pivotLogger');
+const { rollupShowtimeDrafts } = require('./pivotIngestDuplicateService');
+const { attachOrganizerIdsToDrafts } = require('./pivotOrganizerResolveService');
 
 const MAX_FAILURES_STORED = 50;
 const MAX_EVENTS_STORED = 100;
@@ -73,6 +75,10 @@ function serializeCurationRun(doc) {
       failed: row.stats?.failed || 0,
       updated: row.stats?.updated || 0,
       byBatchWeek: row.stats?.byBatchWeek || null,
+      organizerResolved: row.stats?.organizerResolved || 0,
+      organizerAmbiguous: row.stats?.organizerAmbiguous || 0,
+      organizerUnlinked: row.stats?.organizerUnlinked || 0,
+      organizerUniqueIdentities: row.stats?.organizerUniqueIdentities || 0,
       message: row.stats?.message || null,
     },
     failures: Array.isArray(row.failures)
@@ -126,7 +132,16 @@ function emptyStats(message = null) {
     skipped: 0,
     failed: 0,
     updated: 0,
+    updatedBySourceUrl: 0,
+    updatedByFingerprint: 0,
+    updatedByShowtime: 0,
+    updatedBySimilarity: 0,
+    showtimesRolledUp: 0,
     byBatchWeek: null,
+    organizerResolved: 0,
+    organizerAmbiguous: 0,
+    organizerUnlinked: 0,
+    organizerUniqueIdentities: 0,
     message,
   };
 }
@@ -281,10 +296,16 @@ async function upsertDiscoveredEntry(
       start_time: draft.start_time,
       end_time: draft.end_time,
       hostName: draft.hostName,
+      hostImageUrl: draft.hostImageUrl,
+      hostProfileUrl: draft.hostProfileUrl,
+      hostIdentities: draft.hostIdentities,
+      organizerIds: Array.isArray(draft.organizerIds) ? draft.organizerIds : undefined,
       source: draft.source,
       sourceUrl,
       tags,
       ingestStatus,
+      timeSlots: draft.timeSlots,
+      parsed: draft.parsed,
     },
   });
 
@@ -315,6 +336,7 @@ async function upsertDiscoveredEntry(
   return {
     upserted: true,
     updated: Boolean(result.data?.updated),
+    duplicateMatch: result.data?.duplicateMatch || null,
     eventId: result.data?.event?._id || result.data?.event?.id || null,
     name: draft.name || result.data?.event?.name || null,
     batchWeek: result.data?.batchWeek || result.data?.event?.batchWeek || null,
@@ -354,6 +376,33 @@ async function ingestEntries(req, options = {}) {
   const stats = options.stats || emptyStats();
   if (!stats.byBatchWeek) stats.byBatchWeek = {};
 
+  const rolled = rollupShowtimeDrafts(entries);
+  const ingestList = rolled.drafts;
+  stats.showtimesRolledUp = (stats.showtimesRolledUp || 0) + (rolled.rolledUpCount || 0);
+
+  const tenantDb = req?.db || options.db;
+  if (tenantDb && tenantKey) {
+    try {
+      await attachOrganizerIdsToDrafts({
+        db: tenantDb,
+        tenantKey,
+        drafts: ingestList,
+        stats,
+      });
+    } catch (err) {
+      logPivot('warn', 'organizer resolve-once failed; ingest continues unlinked', {
+        ...logContext,
+        tenantKey,
+        message: err.message,
+      });
+    }
+  }
+
+  if (stats.organizerAmbiguous) {
+    const warn = `${stats.organizerAmbiguous} event(s) left unlinked (ambiguous organizer name).`;
+    stats.message = stats.message ? `${stats.message} ${warn}` : warn;
+  }
+
   const failures = [];
   const events = [];
   const tags = Array.isArray(defaultTags) ? defaultTags : [];
@@ -366,7 +415,7 @@ async function ingestEntries(req, options = {}) {
     ensuredWeeks.add(batchWeek);
   }
 
-  for (const entry of entries) {
+  for (const entry of ingestList) {
     try {
       const outcome = await upsertDiscoveredEntry(req, {
         tenantKey,
@@ -378,7 +427,13 @@ async function ingestEntries(req, options = {}) {
 
       if (outcome.upserted) {
         stats.upserted += 1;
-        if (outcome.updated) stats.updated += 1;
+        if (outcome.updated) {
+          stats.updated += 1;
+          if (outcome.duplicateMatch === 'sourceUrl') stats.updatedBySourceUrl += 1;
+          else if (outcome.duplicateMatch === 'fingerprint') stats.updatedByFingerprint += 1;
+          else if (outcome.duplicateMatch === 'showtime') stats.updatedByShowtime += 1;
+          else if (outcome.duplicateMatch === 'similarity') stats.updatedBySimilarity += 1;
+        }
         const week = outcome.batchWeek || batchWeek;
         if (week) {
           stats.byBatchWeek[week] = (stats.byBatchWeek[week] || 0) + 1;
@@ -481,6 +536,11 @@ function summarizeIngest(stats = {}) {
     written,
     skipped: stats.skipped || 0,
     failed: stats.failed || 0,
+    updatedBySourceUrl: stats.updatedBySourceUrl || 0,
+    updatedByFingerprint: stats.updatedByFingerprint || 0,
+    updatedByShowtime: stats.updatedByShowtime || 0,
+    updatedBySimilarity: stats.updatedBySimilarity || 0,
+    showtimesRolledUp: stats.showtimesRolledUp || 0,
     phrase: parts.length ? parts.join(', ') : 'nothing new',
   };
 }
