@@ -1,6 +1,7 @@
 const {
   PIVOT_MOBILE_CONFIG_DEFAULTS,
   PIVOT_MOBILE_STORE_URLS,
+  JUSTGO_MOBILE_STORE_URLS,
   mergePivotMobileConfig,
   validatePivotMobileConfigPatch,
   readEnvMobileOverrides,
@@ -57,6 +58,21 @@ describe('pivotMobileConfig', () => {
     expect(validatePivotMobileConfigPatch({ minAppVersion: '1.2.3' }).ok).toBe(true);
     expect(validatePivotMobileConfigPatch({ minAppVersion: 'bad' }).error).toMatch(/semver/i);
     expect(validatePivotMobileConfigPatch({ forceUpdate: 'yes' }).error).toMatch(/boolean/i);
+  });
+
+  it('rewrites campus store URLs for justgo product requests', () => {
+    const mobile = mergePivotMobileConfig(
+      {
+        storeUrls: {
+          ios: 'https://apps.apple.com/us/app/meridian-go/id6755217537',
+          android: 'market://details?id=com.meridian.mobile',
+        },
+      },
+      { product: 'justgo' },
+    );
+
+    expect(mobile.storeUrls.ios).toBe(JUSTGO_MOBILE_STORE_URLS.ios);
+    expect(mobile.storeUrls.android).toBe('market://details?id=app.justgo');
   });
 
   it('reads env overrides independently', () => {

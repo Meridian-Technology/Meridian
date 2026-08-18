@@ -199,6 +199,7 @@ async function authenticateWithGoogleIdToken(idToken, url, req) {
                 process.env.GOOGLE_WEB_CLIENT_ID,
                 process.env.GOOGLE_IOS_CLIENT_ID,
                 process.env.GOOGLE_ANDROID_CLIENT_ID,
+                process.env.GOOGLE_JUSTGO_IOS_CLIENT_ID,
             ].filter(Boolean), // Remove undefined values
         });
     
@@ -389,16 +390,10 @@ async function authenticateWithApple(idToken, user, req) {
     const { User } = getModels(req, 'User');
 
     try {
-        // Verify the Apple ID token
-        // For web: uses Service ID (com.meridian.auth)
-        // For mobile iOS: uses Bundle Identifier (com.meridian.mobile)
-        // Accept both to support both web and mobile clients
-        const serviceId = 'com.meridian.auth'; // Apple Service ID (web)
-        const bundleId = 'com.meridian.mobile'; // Bundle Identifier (iOS mobile)
-
-        // Verify and decode the ID token
-        // apple-signin-auth automatically fetches Apple's public keys from JWKS endpoint
-        // Try service ID first (web), then bundle ID (mobile)
+        // Apple identity tokens use:
+        //   com.meridian.auth     — web Services ID
+        //   com.meridian.mobile   — Meridian Go iOS bundle
+        //   app.justgo            — Just Go iOS bundle
         const tokenParts = idToken.split('.');
         if (tokenParts.length !== 3) {
             throw new Error('Malformed Apple ID token');
@@ -410,11 +405,13 @@ async function authenticateWithApple(idToken, user, req) {
         
         const aud = payload.aud;
         
-        // Allowed Apple client identifiers
-        const SERVICE_ID = 'com.meridian.auth';     // Web
-        const BUNDLE_ID  = 'com.meridian.mobile';   // iOS
+        const allowedAppleAudiences = [
+            'com.meridian.auth',
+            'com.meridian.mobile',
+            process.env.APPLE_JUSTGO_BUNDLE_ID || 'app.justgo',
+        ];
         
-        if (![SERVICE_ID, BUNDLE_ID].includes(aud)) {
+        if (!allowedAppleAudiences.includes(aud)) {
             throw new Error(`Unexpected Apple token audience: ${aud}`);
         }
         

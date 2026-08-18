@@ -69,7 +69,9 @@ async function getPivotConfig(req, options = {}) {
       dropSchedule: buildDropSchedulePayload(tenant, dropScheduleBatchWeek, now),
       liveDropSchedule: buildDropSchedulePayload(tenant, liveBatchWeek, now),
       crew: mergePivotCrewConfig(tenant.pivotCrewConfig),
-      mobile: mergePivotMobileConfig(tenant.pivotMobileConfig),
+      mobile: mergePivotMobileConfig(tenant.pivotMobileConfig, {
+        product: String(req.headers?.['x-app-product'] || '').toLowerCase(),
+      }),
     },
   };
 }

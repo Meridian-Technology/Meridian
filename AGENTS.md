@@ -2,6 +2,10 @@
 
 ## Cursor Cloud specific instructions
 
+### Just Go vs Meridian Go
+
+The sibling package `Meridian-Mobile` builds two store apps (campus Meridian Go and standalone Just Go) against this backend. Token audiences, invite landing, and AASA/assetlinks must accept **both** `com.meridian.mobile` and `app.justgo`. Do not assume one bundle ID. See `../Meridian-Mobile/JUSTGO_STANDALONE.md`.
+
 ### Project overview
 
 Meridian (formerly Study Compass) is a full-stack web app for university campus engagement: study rooms, events, organizations, and social features. It is a monorepo with three packages:

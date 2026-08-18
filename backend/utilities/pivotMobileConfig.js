@@ -12,6 +12,15 @@ const PIVOT_MOBILE_STORE_URLS = Object.freeze({
   android: 'market://details?id=com.meridian.mobile',
 });
 
+const JUSTGO_MOBILE_STORE_URLS = Object.freeze({
+  ios:
+    process.env.PIVOT_JUSTGO_STORE_URL_IOS?.trim() ||
+    PIVOT_MOBILE_STORE_URLS.ios,
+  android:
+    process.env.PIVOT_JUSTGO_STORE_URL_ANDROID?.trim() ||
+    'market://details?id=app.justgo',
+});
+
 const PIVOT_MOBILE_CONFIG_DEFAULTS = Object.freeze({
   minAppVersion: '1.0.0',
   forceUpdate: false,
@@ -157,10 +166,28 @@ function validatePivotMobileConfigPatch(body = {}) {
 /**
  * Resolve mobile config for GET /pivot/config: defaults → tenant override → env override.
  */
-function mergePivotMobileConfig(stored) {
+function mergePivotMobileConfig(stored, options = {}) {
   const merged = deepMerge(cloneDefaults(), isPlainObject(stored) ? stored : {});
   const envOverrides = readEnvMobileOverrides();
-  return deepMerge(merged, envOverrides);
+  const resolved = deepMerge(merged, envOverrides);
+  if (options.product === 'justgo') {
+    const ios =
+      process.env.PIVOT_JUSTGO_STORE_URL_IOS?.trim() || resolved.storeUrls?.ios;
+    const android =
+      process.env.PIVOT_JUSTGO_STORE_URL_ANDROID?.trim() ||
+      resolved.storeUrls?.android;
+    resolved.storeUrls = {
+      ios:
+        ios && !/meridian-go|id6755217537/i.test(ios)
+          ? ios
+          : JUSTGO_MOBILE_STORE_URLS.ios,
+      android:
+        android && !String(android).includes('com.meridian.mobile')
+          ? android
+          : JUSTGO_MOBILE_STORE_URLS.android,
+    };
+  }
+  return resolved;
 }
 
 function isAppVersionAllowed(appVersion, mobileConfig) {
@@ -171,6 +198,7 @@ module.exports = {
   PIVOT_MOBILE_CONFIG_DEFAULTS,
   PIVOT_MOBILE_DEFAULT_MESSAGE,
   PIVOT_MOBILE_STORE_URLS,
+  JUSTGO_MOBILE_STORE_URLS,
   mergePivotMobileConfig,
   validatePivotMobileConfigPatch,
   isAppVersionAllowed,

@@ -3,8 +3,12 @@
     "apps": [],
     "details": [
       {
-        "appID": "APPLE_TEAM_ID.com.meridian.mobile",
-        "paths": ["/invite", "/invite/*"]
+        "appID": "S22WF3L7P9.com.meridian.mobile",
+        "paths": ["/invite", "/invite/*", "/pivot/*"]
+      },
+      {
+        "appID": "S22WF3L7P9.app.justgo",
+        "paths": ["/invite", "/invite/*", "/pivot/*"]
       }
     ]
   }
