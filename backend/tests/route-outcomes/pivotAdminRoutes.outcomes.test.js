@@ -109,6 +109,19 @@ jest.mock('../../services/pivotTagCatalogService', () => ({
   seedPivotTagCatalog: jest.fn(),
 }));
 
+jest.mock('../../services/pivotOrganizerBackfillService', () => ({
+  backfillOrganizers: jest.fn(),
+}));
+
+jest.mock('../../services/pivotOrganizerCatalogService', () => ({
+  listOrganizers: jest.fn(),
+  getOrganizer: jest.fn(),
+  listUnlinkedOrganizerEvents: jest.fn(),
+  mergeOrganizers: jest.fn(),
+  splitOrganizer: jest.fn(),
+  claimOrganizer: jest.fn(),
+}));
+
 const { requirePlatformAdmin } = require('../../middlewares/requirePlatformAdmin');
 const {
   rebuildWeeklySnapshot,
@@ -164,6 +177,15 @@ const {
 } = require('../../services/pivotTagSuggestService');
 const { purgePivotCatalog } = require('../../services/pivotCatalogPurgeService');
 const { listPivotTags, seedPivotTagCatalog } = require('../../services/pivotTagCatalogService');
+const { backfillOrganizers } = require('../../services/pivotOrganizerBackfillService');
+const {
+  listOrganizers,
+  getOrganizer,
+  listUnlinkedOrganizerEvents,
+  mergeOrganizers,
+  splitOrganizer,
+  claimOrganizer,
+} = require('../../services/pivotOrganizerCatalogService');
 const pivotAdminRoutes = require('../../routes/pivotAdminRoutes');
 
 function buildApp() {
@@ -1590,5 +1612,506 @@ describe('pivotAdminRoutes drop deck preview', () => {
       expect.anything(),
       expect.objectContaining({ userId: USER_ID, rebuild: 'true' }),
     );
+  });
+});
+
+describe('pivotAdminRoutes organizer list', () => {
+  beforeEach(() => {
+    listOrganizers.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/organizers returns the city catalog', async () => {
+    listOrganizers.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        organizers: [
+          {
+            id: '507f1f77bcf86cd799439011',
+            canonicalName: 'Alice Chen',
+            aliases: ['Alice'],
+            providers: ['partiful'],
+            eventCount: 4,
+            weeksActive: ['2026-W33', '2026-W30'],
+            claimStatus: 'unclaimed',
+            imageUrl: null,
+          },
+        ],
+        total: 1,
+        limit: 100,
+        offset: 0,
+        sort: 'events',
+        audience: 'detail-only',
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/organizers?q=alice&sort=events',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.organizers).toHaveLength(1);
+    expect(response.body.data.audience).toBe('detail-only');
+    expect(listOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        q: 'alice',
+        sort: 'events',
+      }),
+    );
+  });
+
+  it('GET /tenants/:tenantKey/organizers returns 404 for unknown tenant', async () => {
+    listOrganizers.mockResolvedValue({
+      error: 'Pivot tenant not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/missing/organizers');
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+
+  it('GET /tenants/:tenantKey/organizers returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/organizers');
+    expect(response.status).toBe(403);
+    expect(listOrganizers).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer unlinked', () => {
+  beforeEach(() => {
+    listUnlinkedOrganizerEvents.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/organizers/unlinked returns leftovers and proposals', async () => {
+    listUnlinkedOrganizerEvents.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        events: [
+          {
+            id: 'evt-1',
+            name: 'Soup night',
+            hostName: 'Alice & Bob',
+            kind: 'leftover',
+            batchWeek: '2026-W30',
+          },
+        ],
+        total: 1,
+        leftover: 1,
+        ambiguous: 0,
+        proposals: [],
+        lastBackfill: { linked: 6, ambiguous: 1, unlinked: 2 },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/organizers/unlinked?kind=leftover',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.events[0].kind).toBe('leftover');
+    expect(listUnlinkedOrganizerEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', kind: 'leftover' }),
+    );
+  });
+
+  it('GET unlinked returns 404 for unknown tenant', async () => {
+    listUnlinkedOrganizerEvents.mockResolvedValue({
+      error: 'Pivot tenant not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/missing/organizers/unlinked',
+    );
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+
+  it('GET unlinked returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/organizers/unlinked',
+    );
+    expect(response.status).toBe(403);
+    expect(listUnlinkedOrganizerEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer detail', () => {
+  const organizerId = '507f1f77bcf86cd799439011';
+
+  beforeEach(() => {
+    getOrganizer.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/organizers/:organizerId returns the dossier', async () => {
+    getOrganizer.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        organizer: { id: organizerId, canonicalName: 'Alice Chen' },
+        events: [{ id: 'evt-1', name: 'August set', batchWeek: '2026-W33' }],
+        audience: {
+          interested: 2,
+          registered: 1,
+          passed: 1,
+          externalOpens: 3,
+          repeatUsers: 1,
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/organizers/${organizerId}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.audience.interested).toBe(2);
+    expect(getOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', organizerId }),
+    );
+  });
+
+  it('GET detail returns 404 when the organizer is missing', async () => {
+    getOrganizer.mockResolvedValue({
+      error: 'Organizer not found.',
+      status: 404,
+      code: 'ORGANIZER_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/organizers/${organizerId}`,
+    );
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('ORGANIZER_NOT_FOUND');
+  });
+
+  it('GET detail returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/organizers/${organizerId}`,
+    );
+    expect(response.status).toBe(403);
+    expect(getOrganizer).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer backfill', () => {
+  beforeEach(() => {
+    backfillOrganizers.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('POST /tenants/:tenantKey/organizers/backfill returns outcome counts', async () => {
+    backfillOrganizers.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        scanned: 10,
+        linked: 6,
+        skipped: 2,
+        ambiguous: 1,
+        unlinked: 1,
+        createdOrganizers: 4,
+      },
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/nyc/organizers/backfill')
+      .send({ force: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.linked).toBe(6);
+    expect(response.body.data.createdOrganizers).toBe(4);
+    expect(backfillOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', force: false }),
+    );
+  });
+
+  it('POST /tenants/:tenantKey/organizers/backfill returns 404 for unknown tenant', async () => {
+    backfillOrganizers.mockResolvedValue({
+      error: 'Pivot tenant not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/missing/organizers/backfill')
+      .send({});
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+
+  it('POST /tenants/:tenantKey/organizers/backfill returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).post(
+      '/admin/pivot/tenants/nyc/organizers/backfill',
+    );
+    expect(response.status).toBe(403);
+    expect(backfillOrganizers).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer merge / split', () => {
+  const targetId = '507f1f77bcf86cd799439011';
+  const sourceId = '507f1f77bcf86cd799439012';
+
+  beforeEach(() => {
+    mergeOrganizers.mockReset();
+    splitOrganizer.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('POST /tenants/:tenantKey/organizers/:organizerId/merge returns the rewritten target', async () => {
+    mergeOrganizers.mockResolvedValue({
+      data: {
+        alreadyMerged: false,
+        eventsRewritten: 3,
+        target: { id: targetId, canonicalName: 'Alice Chen' },
+        source: { id: sourceId, status: 'merged', mergedInto: targetId },
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/merge`)
+      .send({ sourceOrganizerId: sourceId });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.eventsRewritten).toBe(3);
+    expect(mergeOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        organizerId: targetId,
+        sourceOrganizerId: sourceId,
+      }),
+    );
+  });
+
+  it('POST merge returns 409 when two claimed organizers conflict', async () => {
+    mergeOrganizers.mockResolvedValue({
+      error: 'Cannot merge two organizers claimed by different users.',
+      status: 409,
+      code: 'ORGANIZER_ALREADY_CLAIMED',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/merge`)
+      .send({ sourceOrganizerId: sourceId });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('ORGANIZER_ALREADY_CLAIMED');
+  });
+
+  it('POST merge returns 404 when an organizer is missing', async () => {
+    mergeOrganizers.mockResolvedValue({
+      error: 'Organizer not found.',
+      status: 404,
+      code: 'ORGANIZER_NOT_FOUND',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/merge`)
+      .send({ sourceOrganizerId: sourceId });
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('ORGANIZER_NOT_FOUND');
+  });
+
+  it('POST merge returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/merge`)
+      .send({ sourceOrganizerId: sourceId });
+
+    expect(response.status).toBe(403);
+    expect(mergeOrganizers).not.toHaveBeenCalled();
+  });
+
+  it('POST /tenants/:tenantKey/organizers/:organizerId/split returns the new organizer', async () => {
+    splitOrganizer.mockResolvedValue({
+      data: {
+        eventsRewritten: 1,
+        created: { id: sourceId, canonicalName: 'Alice Partiful' },
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/split`)
+      .send({ eventIds: ['507f1f77bcf86cd799439099'], newCanonicalName: 'Alice Partiful' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.created.canonicalName).toBe('Alice Partiful');
+    expect(splitOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        organizerId: targetId,
+        eventIds: ['507f1f77bcf86cd799439099'],
+        newCanonicalName: 'Alice Partiful',
+      }),
+    );
+  });
+
+  it('POST split returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/split`)
+      .send({ eventIds: ['507f1f77bcf86cd799439099'] });
+
+    expect(response.status).toBe(403);
+    expect(splitOrganizer).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer claim', () => {
+  const organizerId = '507f1f77bcf86cd799439011';
+  const globalUserId = '507f191e810c19729de860ea';
+
+  beforeEach(() => {
+    claimOrganizer.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('POST /tenants/:tenantKey/organizers/:organizerId/claim attaches the grant user', async () => {
+    claimOrganizer.mockResolvedValue({
+      data: {
+        alreadyClaimed: false,
+        organizer: {
+          id: organizerId,
+          claimStatus: 'claimed',
+          claimedByUserId: globalUserId,
+        },
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.organizer.claimStatus).toBe('claimed');
+    expect(claimOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        organizerId,
+        globalUserId,
+        unclaim: false,
+      }),
+    );
+  });
+
+  it('POST claim returns 409 when another user already claimed', async () => {
+    claimOrganizer.mockResolvedValue({
+      error: 'Organizer is already claimed by another user.',
+      status: 409,
+      code: 'ORGANIZER_ALREADY_CLAIMED',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('ORGANIZER_ALREADY_CLAIMED');
+  });
+
+  it('POST claim returns 409 when the user has no active grant', async () => {
+    claimOrganizer.mockResolvedValue({
+      error: 'An active creator grant is required for this user and city.',
+      status: 409,
+      code: 'CREATOR_GRANT_REQUIRED',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('CREATOR_GRANT_REQUIRED');
+  });
+
+  it('POST claim with unclaim:true clears the claim', async () => {
+    claimOrganizer.mockResolvedValue({
+      data: {
+        unclaimed: true,
+        organizer: { id: organizerId, claimStatus: 'unclaimed', claimedByUserId: null },
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ unclaim: true });
+
+    expect(response.status).toBe(200);
+    expect(claimOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        organizerId,
+        unclaim: true,
+      }),
+    );
+  });
+
+  it('POST claim returns 404 when the organizer is missing', async () => {
+    claimOrganizer.mockResolvedValue({
+      error: 'Organizer not found.',
+      status: 404,
+      code: 'ORGANIZER_NOT_FOUND',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('ORGANIZER_NOT_FOUND');
+  });
+
+  it('POST claim returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(403);
+    expect(claimOrganizer).not.toHaveBeenCalled();
   });
 });
