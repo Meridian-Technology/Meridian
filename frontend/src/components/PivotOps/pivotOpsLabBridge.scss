@@ -242,7 +242,8 @@
   }
 
   .pivot-lab__empty,
-  .pivot-lab__error {
+  .pivot-lab__error,
+  .pivot-lab__warning {
     margin: 0 0 12px;
     font-size: 13px;
     line-height: 1.45;
@@ -250,6 +251,13 @@
 
   .pivot-lab__error {
     color: var(--pivot-ops-danger);
+  }
+
+  .pivot-lab__warning {
+    color: var(--pivot-ops-warning, #f59e0b);
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
   }
 
   .pivot-lab__empty {

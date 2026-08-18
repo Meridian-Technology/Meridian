@@ -84,6 +84,13 @@
     color: var(--la-text-muted, rgba(0, 0, 0, 0.55));
   }
 
+  &__cadence {
+    margin: 4px 0 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--la-text-tertiary, rgba(0, 0, 0, 0.45));
+  }
+
   &__agent-actions {
     display: flex;
     flex-wrap: wrap;

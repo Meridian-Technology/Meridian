@@ -83,4 +83,35 @@ describe('PivotDiscoveryConsole', () => {
 
     expect(container.querySelector('.pivot-discovery__step--good')).not.toBeNull();
   });
+
+  it('explains skipped native hits without implying fewer search queries', () => {
+    renderConsole({
+      ...RUN,
+      phase: 'filtering',
+      counters: { ...RUN.counters, skippedNative: 2 },
+      steps: [
+        {
+          at: '2026-07-17T10:00:08.000Z',
+          kind: 'filter',
+          tone: 'info',
+          title: 'Skipped partiful.com',
+          detail: 'Native parser — already covered before Firecrawl search',
+        },
+      ],
+    });
+
+    expect(
+      screen.getByText(
+        '2 Luma/Partiful hit(s) dropped from search results — searches still ran.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Native parser — already covered before Firecrawl search'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Dropping Luma/Partiful and known hosts from search hits — not fewer queries',
+      ),
+    ).toBeInTheDocument();
+  });
 });

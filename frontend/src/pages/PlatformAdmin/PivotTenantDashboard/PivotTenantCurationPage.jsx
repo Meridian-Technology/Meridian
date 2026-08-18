@@ -1944,7 +1944,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         </div>
       ) : null}
 
-      {/* Upstream of Saved jobs: discovery is what produces the jobs below. */}
+      {/* Upstream of Saved jobs: discovery finds sources; Refresh all recrawls them. */}
       <PivotTenantSourcesPanel
         tenantKey={tenantKey}
         cityDisplayName={displayCity}
@@ -1987,12 +1987,13 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
                 || !runnableJobCount
               }
               onClick={handleRunAllJobs}
+              title="Recrawl saved jobs for this week. Discovery above finds new sources — it is not the weekly refresh."
             >
               {batchStarting
                 ? 'Starting…'
                 : batchRunning
                   ? 'Refreshing…'
-                  : `Run all ${runnableJobCount || ''}`.trim()}
+                  : `Refresh all ${runnableJobCount || ''}`.trim()}
             </button>
             <button
               type="button"
@@ -2007,8 +2008,9 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         {jobsExpanded ? (
           <>
             <p className="pivot-lab__section-hint pivot-tenant-curation__collapse-hint">
-              Persist Partiful/Luma explore URLs for this tenant. “Run for week” targets{' '}
-              <strong>{committedWeek}</strong>. By default each discovered event lands in the ISO
+              Weekly refresh: recrawl saved jobs for this week's catalog. Discovery above
+              finds new sources — do not re-run it just to refresh Luma. “Run for week”
+              targets <strong>{committedWeek}</strong>. By default each event lands in the ISO
               week of its start date. Enable “Force into review week” to pin everything to{' '}
               {committedWeek}.
             </p>

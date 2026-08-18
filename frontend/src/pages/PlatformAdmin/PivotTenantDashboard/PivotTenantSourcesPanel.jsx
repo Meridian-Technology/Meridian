@@ -45,12 +45,12 @@ const FLOW_OPTIONS = [
   {
     value: 'native-then-firecrawl',
     label: 'Native, then websites',
-    hint: 'Crawl Luma and Partiful first, then Firecrawl search for the long tail',
+    hint: 'Crawl Luma and Partiful natively, then Firecrawl search. Those hosts are dropped from results — search queries still cost credits.',
   },
   {
     value: 'native-only',
     label: 'Native only',
-    hint: 'Luma and Partiful city indexes — no Firecrawl credits',
+    hint: 'Luma and Partiful city indexes only — no Firecrawl search, $0 credits.',
   },
   {
     value: 'firecrawl-only',
@@ -100,12 +100,13 @@ function SourceStatusCell({ source }) {
 /**
  * Autonomous source discovery for a city.
  *
- * Discovery finds the websites a city's events actually live on, so this panel
- * sits upstream of Saved jobs. A qualifying scrape already returns the whole
- * page, so a run publishes those events itself and the job it creates is the
- * source's refresh mechanism rather than its initial load. Rejected hosts are
- * shown too — they are the reason a second run is cheaper than the first, and
- * hiding them would make the registry look like it had simply missed things.
+ * Discovery finds and registers sources (native indexes first, then venue
+ * sites). It sits upstream of Saved jobs. A qualifying scrape already returns
+ * the whole page, so a run publishes those events itself and the job it creates
+ * is the weekly refresh mechanism — recrawl those jobs with Refresh all, do not
+ * re-run discovery expecting a Luma update. Rejected hosts are shown too —
+ * they are the reason a second run is cheaper than the first, and hiding them
+ * would make the registry look like it had simply missed things.
  */
 function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMPTY_LIST, onJobsChanged }) {
   const { addNotification } = useNotification();
@@ -348,6 +349,7 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
   }, [addNotification, options.flow, options.lumaSlug, options.partifulSlug, tenantKey]);
 
   const notConfigured = Boolean(plan) && plan.runFirecrawl !== false && plan.configured === false;
+  const nativeWarning = Boolean(plan) && plan.nativeWarning;
 
   const handleRunFinished = useCallback(
     (run) => {
@@ -507,21 +509,33 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
               ) : plan && !planError ? (
                 <>
                   {plan.runNative && plan.runFirecrawl
-                    ? 'Luma/Partiful first, then websites'
+                    ? 'Luma/Partiful first, then websites — search queries still cost credits'
                     : plan.runNative
                       ? 'Luma and Partiful only'
                       : 'Website search only'}
                   {plan.runFirecrawl
                     ? ` · ${plan.queries} searches · up to ${plan.maxCandidates} sites · ${plan.maxOutboundCalls} call ceiling`
-                    : ' · no Firecrawl credits'}
+                    : ' · $0 Firecrawl'}
                 </>
               ) : (
-                <>Finds event websites from the city name alone, then registers refresh jobs.</>
+                <>Finds and registers sources — native indexes first, then venue sites.</>
               )}
             </p>
+            {!running ? (
+              <p className="pivot-sources__cadence">
+                Discovery finds sources. Recrawl this week with Refresh all on Saved
+                jobs — not by running discovery again.
+              </p>
+            ) : null}
             {notConfigured ? (
               <p className="pivot-lab__error">
                 FIRECRAWL_API_KEY is not set — rehearse for free, or add a key for a real run.
+              </p>
+            ) : null}
+            {nativeWarning ? (
+              <p className="pivot-lab__warning">
+                <Icon icon="mdi:alert-outline" aria-hidden="true" style={{ marginRight: '4px' }} />
+                {plan.nativeWarning}
               </p>
             ) : null}
             {planError ? <p className="pivot-lab__error">{planError}</p> : null}
@@ -543,9 +557,10 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
                 type="button"
                 className="linear-btn linear-btn--primary"
                 onClick={handleDiscover}
-                disabled={starting || notConfigured || !tenantKey}
+                disabled={starting || running || notConfigured || !tenantKey}
+                title="Find and register sources. Recrawl Luma, Partiful, and saved sites with Refresh all on Saved jobs."
               >
-                {starting ? 'Starting…' : 'Run'}
+                {starting ? 'Starting…' : 'Discover'}
               </button>
             )}
             <button

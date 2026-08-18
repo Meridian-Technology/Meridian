@@ -27,11 +27,11 @@ const PHASE_META = {
   },
   searching: {
     label: 'Searching the web',
-    hint: 'Running seed queries built from the tag catalog',
+    hint: 'Running seed queries built from the tag catalog. Query count is unchanged by native skip.',
   },
   filtering: {
     label: 'Filtering candidates',
-    hint: 'Dropping social platforms, reference sites, and hosts already on record',
+    hint: 'Dropping Luma/Partiful and known hosts from search hits — not fewer queries',
   },
   qualifying: {
     label: 'Checking sites',
@@ -375,6 +375,13 @@ function PivotDiscoveryConsole({
           </>
         )}
       </div>
+
+      {kind !== 'curation-batch' && (counters.skippedNative || 0) > 0 ? (
+        <p className="pivot-discovery__skip-note" role="note">
+          {counters.skippedNative} Luma/Partiful hit(s) dropped from search results — searches
+          still ran.
+        </p>
+      ) : null}
 
       {runError ? (
         <p className="pivot-discovery__error">
