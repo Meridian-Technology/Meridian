@@ -357,12 +357,80 @@ function watchDiscoveryRunCancel(req, runId, onCancel, { intervalMs = 400 } = {}
   };
 }
 
+/**
+ * How long a `running` doc may sit before we treat the process as dead.
+ *
+ * Discovery and refresh share the web dyno. An R14 or deploy leaves the
+ * document open; without a cutoff the next Discover would 409 forever.
+ */
+const STALE_RUNNING_MS = 2 * 60 * 60 * 1000;
+
+const PIPELINE_BUSY = {
+  error:
+    'A discovery or refresh run is already in progress. Wait for it to finish, or Stop it.',
+  status: 409,
+  code: 'PIPELINE_BUSY',
+};
+
+/**
+ * The one in-process Firecrawl pipeline allowed on this dyno, if any.
+ *
+ * Closes leftovers whose `startedAt` is older than `STALE_RUNNING_MS` so a
+ * crashed run cannot hold the slot. Returns null when the slot is free.
+ */
+async function findActiveOrchestrationRun(req) {
+  const { PivotSourceDiscoveryRun } = getGlobalModels(req, 'PivotSourceDiscoveryRun');
+  if (!PivotSourceDiscoveryRun?.findOne) return null;
+
+  const cutoff = new Date(Date.now() - STALE_RUNNING_MS);
+  if (typeof PivotSourceDiscoveryRun.updateMany === 'function') {
+    await PivotSourceDiscoveryRun.updateMany(
+      { status: 'running', startedAt: { $lt: cutoff } },
+      {
+        $set: {
+          status: 'failed',
+          phase: 'done',
+          finishedAt: new Date(),
+          error: 'Marked failed because the process died while the run was still open.',
+          aborted: {
+            code: 'STALE_RUN',
+            error: 'Run was still open after a dyno restart or crash.',
+          },
+        },
+      },
+    );
+  }
+
+  return PivotSourceDiscoveryRun.findOne({ status: 'running' })
+    .select('-steps')
+    .sort({ startedAt: -1 })
+    .lean();
+}
+
+async function refuseIfPipelineBusy(req) {
+  const active = await findActiveOrchestrationRun(req);
+  if (!active) return null;
+  return {
+    ...PIPELINE_BUSY,
+    data: {
+      runId: String(active._id),
+      tenantKey: active.tenantKey || null,
+      kind: active.kind || 'discovery',
+      city: active.city || null,
+    },
+  };
+}
+
 module.exports = {
   createDiscoveryRun,
   nullRecorder,
   serializeDiscoveryRun,
   findOrchestrationRun,
   findLatestOrchestrationRun,
+  findActiveOrchestrationRun,
+  refuseIfPipelineBusy,
   watchDiscoveryRunCancel,
   FLUSH_MS,
+  STALE_RUNNING_MS,
+  PIPELINE_BUSY,
 };

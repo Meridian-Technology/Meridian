@@ -14,10 +14,16 @@ const NATIVE_SKIP_HOSTS = ['partiful.com', 'luma.com', 'lu.ma'];
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
+const {
+  mergeDuplicateThresholds,
+  PIVOT_DUPLICATE_THRESHOLD_DEFAULTS,
+} = require('./pivotEventSimilarityUtils');
+
 const PIVOT_DISCOVERY_CONFIG_DEFAULTS = Object.freeze({
   flow: DEFAULT_DISCOVERY_FLOW,
   lumaSlug: null,
   partifulSlug: null,
+  duplicate: { ...PIVOT_DUPLICATE_THRESHOLD_DEFAULTS },
 });
 
 function isPlainObject(value) {
@@ -37,7 +43,10 @@ function normalizeDiscoverySlug(raw) {
 }
 
 function mergePivotDiscoveryConfig(stored) {
-  const merged = { ...PIVOT_DISCOVERY_CONFIG_DEFAULTS };
+  const merged = {
+    ...PIVOT_DISCOVERY_CONFIG_DEFAULTS,
+    duplicate: mergeDuplicateThresholds(PIVOT_DISCOVERY_CONFIG_DEFAULTS.duplicate),
+  };
   if (!isPlainObject(stored)) return merged;
 
   if (DISCOVERY_FLOWS.includes(stored.flow)) {
@@ -50,6 +59,12 @@ function mergePivotDiscoveryConfig(stored) {
   if (Object.prototype.hasOwnProperty.call(stored, 'partifulSlug')) {
     const slug = normalizeDiscoverySlug(stored.partifulSlug);
     if (slug !== undefined) merged.partifulSlug = slug;
+  }
+  if (Object.prototype.hasOwnProperty.call(stored, 'duplicate')) {
+    merged.duplicate = mergeDuplicateThresholds({
+      ...merged.duplicate,
+      ...(isPlainObject(stored.duplicate) ? stored.duplicate : {}),
+    });
   }
   return merged;
 }
@@ -133,6 +148,19 @@ function validatePivotDiscoveryConfigPatch(raw) {
       patch.partifulSlug = slug;
     }
   }
+  if (raw.duplicate !== undefined) {
+    if (raw.duplicate === null) {
+      patch.duplicate = { ...PIVOT_DUPLICATE_THRESHOLD_DEFAULTS };
+    } else if (!isPlainObject(raw.duplicate)) {
+      return {
+        error: 'duplicate must be an object of similarity thresholds.',
+        status: 400,
+        code: 'INVALID_DUPLICATE_THRESHOLDS',
+      };
+    } else {
+      patch.duplicate = mergeDuplicateThresholds(raw.duplicate);
+    }
+  }
   return { patch };
 }
 
@@ -209,4 +237,6 @@ module.exports = {
   isNativeIndexUrl,
   persistPivotDiscoveryConfig,
   normalizeDiscoverySlug,
+  mergeDuplicateThresholds,
+  PIVOT_DUPLICATE_THRESHOLD_DEFAULTS,
 };

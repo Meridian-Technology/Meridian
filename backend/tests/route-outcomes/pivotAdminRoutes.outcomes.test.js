@@ -109,6 +109,17 @@ jest.mock('../../services/pivotTagCatalogService', () => ({
   seedPivotTagCatalog: jest.fn(),
 }));
 
+jest.mock('../../services/pivotSourceDiscoveryService', () => ({
+  listCitySources: jest.fn(),
+  startCitySourceDiscovery: jest.fn(),
+  stopCitySourceDiscoveryRun: jest.fn(),
+  previewCitySourceDiscovery: jest.fn(),
+  updateCitySource: jest.fn(),
+  updateCityDiscoveryConfig: jest.fn(),
+  getCitySourceDiscoveryRun: jest.fn(),
+  getLatestCitySourceDiscoveryRun: jest.fn(),
+}));
+
 jest.mock('../../services/pivotOrganizerBackfillService', () => ({
   backfillOrganizers: jest.fn(),
 }));
@@ -177,6 +188,11 @@ const {
 } = require('../../services/pivotTagSuggestService');
 const { purgePivotCatalog } = require('../../services/pivotCatalogPurgeService');
 const { listPivotTags, seedPivotTagCatalog } = require('../../services/pivotTagCatalogService');
+const {
+  updateCityDiscoveryConfig,
+  previewCitySourceDiscovery,
+  startCitySourceDiscovery,
+} = require('../../services/pivotSourceDiscoveryService');
 const { backfillOrganizers } = require('../../services/pivotOrganizerBackfillService');
 const {
   listOrganizers,
@@ -1612,6 +1628,108 @@ describe('pivotAdminRoutes drop deck preview', () => {
       expect.anything(),
       expect.objectContaining({ userId: USER_ID, rebuild: 'true' }),
     );
+  });
+});
+
+describe('pivotAdminRoutes discovery-config', () => {
+  beforeEach(() => {
+    updateCityDiscoveryConfig.mockReset();
+    previewCitySourceDiscovery.mockReset();
+    startCitySourceDiscovery.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('PATCH /tenants/:tenantKey/sources/discovery-config saves a flow patch', async () => {
+    updateCityDiscoveryConfig.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        discovery: {
+          flow: 'native-only',
+          lumaSlug: 'nyc',
+          runFirecrawl: false,
+          maxOutboundCalls: 0,
+        },
+      },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/sources/discovery-config')
+      .send({ flow: 'native-only' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.discovery.flow).toBe('native-only');
+    expect(updateCityDiscoveryConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', flow: 'native-only' }),
+    );
+  });
+
+  it('PATCH /tenants/:tenantKey/sources/discovery-config rejects a bad flow', async () => {
+    updateCityDiscoveryConfig.mockResolvedValue({
+      error: 'flow must be one of: native-then-firecrawl, native-only, firecrawl-only.',
+      status: 400,
+      code: 'INVALID_DISCOVERY_FLOW',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/sources/discovery-config')
+      .send({ flow: 'agentic' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_DISCOVERY_FLOW');
+  });
+
+  it('PATCH /tenants/:tenantKey/sources/discovery-config returns NO_CHANGES', async () => {
+    updateCityDiscoveryConfig.mockResolvedValue({
+      error: 'No discovery config changes.',
+      status: 400,
+      code: 'NO_CHANGES',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/sources/discovery-config')
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('NO_CHANGES');
+  });
+
+  it('GET /tenants/:tenantKey/sources/discovery-plan returns a native-only zero-credit plan', async () => {
+    previewCitySourceDiscovery.mockResolvedValue({
+      data: {
+        plan: {
+          flow: 'native-only',
+          runFirecrawl: false,
+          maxOutboundCalls: 0,
+          queries: 0,
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/sources/discovery-plan?flow=native-only',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.plan.maxOutboundCalls).toBe(0);
+    expect(response.body.data.plan.runFirecrawl).toBe(false);
+  });
+
+  it('POST /tenants/:tenantKey/sources/discover still 503s hybrid without a scrape key', async () => {
+    startCitySourceDiscovery.mockResolvedValue({
+      error:
+        'Website scraping is not configured. Set FIRECRAWL_API_KEY in the backend environment to run generic-site curation jobs.',
+      status: 503,
+      code: 'SITE_SCRAPE_NOT_CONFIGURED',
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/nyc/sources/discover')
+      .send({ flow: 'native-then-firecrawl' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('SITE_SCRAPE_NOT_CONFIGURED');
   });
 });
 

@@ -3,9 +3,11 @@ const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { buildDiscoveryQueries } = require('../constants/pivotDiscoverySeeds');
 const {
   createDiscoveryRun,
+  refuseIfPipelineBusy,
   watchDiscoveryRunCancel,
 } = require('./pivotDiscoveryRunRecorder');
 const { logPivot } = require('../utilities/pivotLogger');
+const { resolvePivotDiscoveryConfig } = require('../utilities/pivotDiscoveryConfig');
 
 class RehearsalCancelled extends Error {
   constructor() {
@@ -348,17 +350,26 @@ async function playRehearsal(recorder, context) {
  * same run document, same polling route, same step shapes.
  */
 async function startCitySourceDiscoveryRehearsal(req, options = {}) {
+  const busy = await refuseIfPipelineBusy(req);
+  if (busy) return busy;
+
   const tenantResult = await resolvePivotTenant(req, options.tenantKey);
   if (tenantResult.error) return tenantResult;
 
   const tenant = tenantResult.tenant;
   const city = String(tenant.name || tenant.tenantKey).trim();
+  
+  // Resolve discovery config first to check if Firecrawl is needed
+  const discovery = resolvePivotDiscoveryConfig(tenant, options);
+  
   const queries = buildDiscoveryQueries({
     city,
     tags: options.tags,
     maxQueries: options.maxQueries,
   });
-  if (!queries.length) {
+  
+  // Only require queries when Firecrawl is enabled
+  if (!queries.length && discovery.runFirecrawl) {
     return {
       error: 'No discovery queries matched the requested tags.',
       status: 400,
@@ -378,11 +389,14 @@ async function startCitySourceDiscoveryRehearsal(req, options = {}) {
     tags: options.tags,
     createJobs: false,
     plan: {
-      queries: queries.length,
+      queries: discovery.runFirecrawl ? queries.length : 0,
       categories: new Set(queries.map((row) => row.tag).filter(Boolean)).size,
-      maxCandidates,
+      maxCandidates: discovery.runFirecrawl ? maxCandidates : 0,
       minEvents: 1,
-      maxOutboundCalls: 0,
+      maxOutboundCalls: discovery.runFirecrawl ? queries.length + maxCandidates * 2 : 0,
+      flow: discovery.flow,
+      runNative: discovery.runNative,
+      runFirecrawl: discovery.runFirecrawl,
     },
   });
 
@@ -411,7 +425,7 @@ async function startCitySourceDiscoveryRehearsal(req, options = {}) {
         tenantKey: tenant.tenantKey,
         error: err.message,
       });
-      await recorder.finish({ status: 'failed', error: err.message });
+      await recorder.finish?.({ status: 'failed', error: err.message });
     }
   });
 

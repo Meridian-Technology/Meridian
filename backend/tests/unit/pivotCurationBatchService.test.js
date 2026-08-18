@@ -43,6 +43,7 @@ jest.mock('../../services/pivotDiscoveryRunRecorder', () => ({
   serializeDiscoveryRun: jest.fn((doc) => doc),
   findOrchestrationRun: jest.fn(),
   findLatestOrchestrationRun: jest.fn(),
+  refuseIfPipelineBusy: jest.fn().mockResolvedValue(null),
   watchDiscoveryRunCancel: jest.fn(() => ({ stop: jest.fn() })),
 }));
 jest.mock('../../utilities/pivotLogger', () => ({ logPivot: jest.fn() }));
@@ -57,6 +58,7 @@ const {
 const {
   createDiscoveryRun,
   findLatestOrchestrationRun,
+  refuseIfPipelineBusy,
 } = require('../../services/pivotDiscoveryRunRecorder');
 const {
   startCurationBatch,
@@ -166,6 +168,27 @@ describe('pivotCurationBatchService', () => {
       expect(jobs.map((row) => row._id)).toEqual(['a']);
     });
 
+    it('includes luma and partiful jobs alongside generic-site', async () => {
+      jobList = [
+        job({ _id: 'site', provider: 'generic-site' }),
+        job({
+          _id: 'luma',
+          provider: 'luma',
+          url: 'https://luma.com/iowa-city',
+        }),
+        job({
+          _id: 'partiful',
+          provider: 'partiful',
+          url: 'https://partiful.com/explore/iowa-city',
+        }),
+        job({ _id: 'paste', provider: 'manual-json', url: null }),
+      ];
+
+      const jobs = await selectBatchJobs(mockReq(), { tenantKey: 'iowacity' });
+
+      expect(jobs.map((row) => row._id)).toEqual(['site', 'luma', 'partiful']);
+    });
+
     it('asks the database for enabled jobs, oldest run first', async () => {
       const sort = jest.fn(() => ({ lean: jest.fn().mockResolvedValue([]) }));
       PivotCurationJob.find.mockReturnValue({ sort });
@@ -194,6 +217,19 @@ describe('pivotCurationBatchService', () => {
   });
 
   describe('startCurationBatch', () => {
+    it('refuses while another discovery or refresh is still open', async () => {
+      refuseIfPipelineBusy.mockResolvedValueOnce({
+        error: 'A discovery or refresh run is already in progress. Wait for it to finish, or Stop it.',
+        status: 409,
+        code: 'PIPELINE_BUSY',
+      });
+
+      const result = await startCurationBatch(mockReq(), { tenantKey: 'iowacity' });
+
+      expect(result.code).toBe('PIPELINE_BUSY');
+      expect(createDiscoveryRun).not.toHaveBeenCalled();
+    });
+
     it('returns a run id to watch without waiting for the crawl', async () => {
       const result = await startCurationBatch(mockReq(), { tenantKey: 'iowacity' });
 
@@ -229,11 +265,47 @@ describe('pivotCurationBatchService', () => {
 
     it('allows native-only batches without a scrape key', async () => {
       isSiteScrapeConfigured.mockReturnValue(false);
-      jobList = [job({ provider: 'partiful' })];
+      jobList = [
+        job({ _id: 'luma', provider: 'luma', url: 'https://luma.com/iowa-city' }),
+        job({
+          _id: 'partiful',
+          provider: 'partiful',
+          url: 'https://partiful.com/explore/iowa-city',
+        }),
+      ];
 
       const result = await startCurationBatch(mockReq(), { tenantKey: 'iowacity' });
 
       expect(result.error).toBeUndefined();
+      expect(result.data.jobs).toBe(2);
+      expect(result.data.skippedGenericSite).toBe(0);
+    });
+
+    it('skips generic-site in a mixed batch when the scrape key is missing', async () => {
+      isSiteScrapeConfigured.mockReturnValue(false);
+      jobList = [
+        job({ _id: 'site', provider: 'generic-site' }),
+        job({ _id: 'luma', provider: 'luma', url: 'https://luma.com/iowa-city' }),
+      ];
+
+      const result = await startCurationBatch(mockReq(), { tenantKey: 'iowacity' });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.jobs).toBe(1);
+      expect(result.data.skippedGenericSite).toBe(1);
+    });
+
+    it('crawls generic-site and native together when scraping is configured', async () => {
+      jobList = [
+        job({ _id: 'site', provider: 'generic-site' }),
+        job({ _id: 'luma', provider: 'luma', url: 'https://luma.com/iowa-city' }),
+      ];
+
+      const result = await startCurationBatch(mockReq(), { tenantKey: 'iowacity' });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.jobs).toBe(2);
+      expect(result.data.skippedGenericSite).toBe(0);
     });
   });
 
@@ -259,6 +331,35 @@ describe('pivotCurationBatchService', () => {
       // exactly as they would from a single Run click.
       expect(PivotCurationJob.findByIdAndUpdate).toHaveBeenCalled();
       expect(executeCurationRun).toHaveBeenCalledTimes(1);
+    });
+
+    it('recrawls native jobs without a scrape key and skips generic-site', async () => {
+      isSiteScrapeConfigured.mockReturnValue(false);
+      jobList = [
+        job({ _id: 'site', provider: 'generic-site' }),
+        job({ _id: 'luma', provider: 'luma', url: 'https://luma.com/iowa-city' }),
+      ];
+      const recorder = fakeRecorder();
+
+      await executeCurationBatch({
+        tenantKey: 'iowacity',
+        batchWeek: '2026-W33',
+        recorder,
+      });
+
+      expect(PivotCurationRun.create).toHaveBeenCalledTimes(1);
+      expect(PivotCurationRun.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: 'luma',
+          provider: 'luma',
+          url: 'https://luma.com/iowa-city',
+        }),
+      );
+      expect(recorder.steps[0]).toMatchObject({
+        kind: 'plan',
+        tone: 'warn',
+      });
+      expect(recorder.steps[0].detail).toMatch(/website job/);
     });
 
     it('totals what the jobs published', async () => {

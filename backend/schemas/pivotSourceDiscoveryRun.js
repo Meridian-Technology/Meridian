@@ -169,6 +169,9 @@ const pivotSourceDiscoveryRunSchema = new mongoose.Schema(
       eventsUpserted: { type: Number, default: 0 },
       eventsSkipped: { type: Number, default: 0 },
       eventsFailed: { type: Number, default: 0 },
+      /** Rows written that matched an existing catalog event (sourceUrl or fingerprint). */
+      eventsUpdated: { type: Number, default: 0 },
+      eventsUpdatedByFingerprint: { type: Number, default: 0 },
       /** Batch curation only. */
       jobsRun: { type: Number, default: 0 },
       jobsFailed: { type: Number, default: 0 },

@@ -9,6 +9,9 @@ const {
   serializeDiscoveryRun,
   findOrchestrationRun,
   findLatestOrchestrationRun,
+  findActiveOrchestrationRun,
+  refuseIfPipelineBusy,
+  STALE_RUNNING_MS,
 } = require('../../services/pivotDiscoveryRunRecorder');
 const { MAX_STEPS } = require('../../schemas/pivotSourceDiscoveryRun');
 
@@ -387,6 +390,54 @@ describe('pivotDiscoveryRunRecorder', () => {
       // genuinely recorded no decisions.
       expect('steps' in run).toBe(false);
       expect(run.counters).toEqual({ searches: 3 });
+    });
+  });
+
+  describe('findActiveOrchestrationRun', () => {
+    beforeEach(() => {
+      PivotSourceDiscoveryRun.updateMany = jest.fn().mockResolvedValue({ acknowledged: true });
+      PivotSourceDiscoveryRun.findOne = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(null),
+      });
+    });
+
+    it('closes leftovers older than the stale window so they cannot hold the slot', async () => {
+      await findActiveOrchestrationRun(mockReq());
+
+      expect(PivotSourceDiscoveryRun.updateMany).toHaveBeenCalledWith(
+        {
+          status: 'running',
+          startedAt: { $lt: expect.any(Date) },
+        },
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            status: 'failed',
+            aborted: expect.objectContaining({ code: 'STALE_RUN' }),
+          }),
+        }),
+      );
+      const cutoff = PivotSourceDiscoveryRun.updateMany.mock.calls[0][0].startedAt.$lt;
+      expect(Date.now() - cutoff.getTime()).toBeGreaterThan(STALE_RUNNING_MS - 1000);
+    });
+
+    it('refuses a start when a fresh run is still open', async () => {
+      PivotSourceDiscoveryRun.findOne.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({
+          _id: RUN_ID,
+          tenantKey: 'iowacity',
+          kind: 'discovery',
+          city: 'Iowa City',
+        }),
+      });
+
+      const busy = await refuseIfPipelineBusy(mockReq());
+      expect(busy.code).toBe('PIPELINE_BUSY');
+      expect(busy.status).toBe(409);
+      expect(busy.data.runId).toBe(RUN_ID);
     });
   });
 });
