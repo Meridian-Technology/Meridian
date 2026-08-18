@@ -3,9 +3,71 @@ import {
   decorateFlyers,
   detectStorePlatform,
   formatIsoWeekToken,
+  formatLandingDropSpoken,
   formatLandingWhen,
+  padDropUnit,
   pickLandingCity,
+  landingPosterStack,
+  landingSwipeRotate,
+  landingSwipeTint,
+  resolveDeckSwipeAxis,
+  resolveNextLandingDropAt,
+  smearFromVelocity,
+  splitLandingDropCountdown,
 } from './justGoLandingUtils';
+
+describe('smearFromVelocity', () => {
+  it('leans the court with scroll and clamps hard flicks', () => {
+    expect(smearFromVelocity(0)).toEqual({ x: 0, skew: 0 });
+    expect(smearFromVelocity(80)).toEqual({ x: 9.6, skew: -1.44 });
+    expect(smearFromVelocity(400).x).toBe(36);
+    expect(smearFromVelocity(-400).skew).toBe(1.6);
+  });
+});
+
+describe('resolveDeckSwipeAxis', () => {
+  it('stays undecided until the finger travels far enough', () => {
+    expect(resolveDeckSwipeAxis(4, 2)).toBeNull();
+    expect(resolveDeckSwipeAxis(0, 0)).toBeNull();
+  });
+
+  it('locks to x only when the swipe is clearly horizontal', () => {
+    expect(resolveDeckSwipeAxis(24, 6)).toBe('x');
+    expect(resolveDeckSwipeAxis(-30, 10)).toBe('x');
+  });
+
+  it('prefers vertical scroll on vertical and diagonal moves', () => {
+    expect(resolveDeckSwipeAxis(6, 24)).toBe('y');
+    expect(resolveDeckSwipeAxis(20, 20)).toBe('y');
+  });
+});
+
+describe('landingPosterStack', () => {
+  it('keeps the focused card straight', () => {
+    expect(landingPosterStack(0, 2)).toEqual({ rotateDeg: 0, scale: 1 });
+  });
+
+  it('tilts peek cards around center like the app stack', () => {
+    expect(landingPosterStack(1, 0)).toEqual({ rotateDeg: 2.6, scale: 0.992 });
+    expect(landingPosterStack(1, 1)).toEqual({ rotateDeg: -2.6, scale: 0.992 });
+    expect(landingPosterStack(2, 0).scale).toBe(0.984);
+  });
+});
+
+describe('landingSwipeRotate', () => {
+  it('caps at nine degrees a third of the way across the screen', () => {
+    expect(landingSwipeRotate(125, 375)).toBeCloseTo(9);
+    expect(landingSwipeRotate(-125, 375)).toBeCloseTo(-9);
+    expect(landingSwipeRotate(0, 375)).toBe(0);
+  });
+});
+
+describe('landingSwipeTint', () => {
+  it('fills the overlay across a sixth of the screen', () => {
+    expect(landingSwipeTint(60, 375)).toBeCloseTo(1);
+    expect(landingSwipeTint(0, 375)).toBe(0);
+  });
+});
 
 describe('formatIsoWeekToken', () => {
   it('returns the ISO week token the drop uses', () => {
@@ -68,5 +130,67 @@ describe('formatLandingWhen', () => {
   it('formats a compact weekday and clock', () => {
     const localFriday = new Date(2026, 7, 14, 19, 0, 0);
     expect(formatLandingWhen(localFriday)).toBe('fri · 7pm');
+  });
+});
+
+describe('resolveNextLandingDropAt', () => {
+  it('counts down to this week’s Thursday 6pm ET before the drop', () => {
+    expect(resolveNextLandingDropAt(new Date('2026-08-12T16:00:00.000Z')).toISOString()).toBe(
+      '2026-08-13T22:00:00.000Z',
+    );
+    expect(resolveNextLandingDropAt(new Date('2026-08-13T21:59:00.000Z')).toISOString()).toBe(
+      '2026-08-13T22:00:00.000Z',
+    );
+  });
+
+  it('rolls to next Thursday once this week’s drop has fired', () => {
+    expect(resolveNextLandingDropAt(new Date('2026-08-13T22:00:00.000Z')).toISOString()).toBe(
+      '2026-08-20T22:00:00.000Z',
+    );
+  });
+
+  it('keeps 6pm local across the fall DST change', () => {
+    expect(resolveNextLandingDropAt(new Date('2026-11-04T16:00:00.000Z')).toISOString()).toBe(
+      '2026-11-05T23:00:00.000Z',
+    );
+  });
+});
+
+describe('splitLandingDropCountdown', () => {
+  it('splits remaining time into scoreboard units', () => {
+    expect(splitLandingDropCountdown(2 * 86400000 + 14 * 3600000 + 8 * 60000 + 32000)).toEqual({
+      days: 2,
+      hours: 14,
+      minutes: 8,
+      seconds: 32,
+      live: false,
+      soon: false,
+      imminent: false,
+    });
+  });
+
+  it('marks the last day and last hour', () => {
+    expect(splitLandingDropCountdown(23 * 3600000).soon).toBe(true);
+    expect(splitLandingDropCountdown(59 * 60000).imminent).toBe(true);
+    expect(splitLandingDropCountdown(0).live).toBe(true);
+  });
+});
+
+describe('formatLandingDropSpoken', () => {
+  it('speaks the remaining time without ticking seconds', () => {
+    expect(
+      formatLandingDropSpoken({ days: 2, hours: 14, minutes: 8, seconds: 32, live: false }),
+    ).toBe('next drop in 2 days 14 hours');
+    expect(
+      formatLandingDropSpoken({ days: 0, hours: 0, minutes: 3, seconds: 12, live: false }),
+    ).toBe('next drop in 3 minutes');
+    expect(formatLandingDropSpoken({ live: true })).toBe('the drop is live');
+  });
+});
+
+describe('padDropUnit', () => {
+  it('keeps the scoreboard two digits wide', () => {
+    expect(padDropUnit(4)).toBe('04');
+    expect(padDropUnit(14)).toBe('14');
   });
 });
