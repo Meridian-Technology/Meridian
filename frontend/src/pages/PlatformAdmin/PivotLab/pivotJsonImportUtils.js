@@ -174,6 +174,9 @@ export function buildBatchPublishOverrides(row) {
 
   return {
     hostName: row.organizerName.trim(),
+    ...(Array.isArray(row.hostIdentities) && row.hostIdentities.length
+      ? { hostIdentities: row.hostIdentities }
+      : {}),
     name: row.name.trim(),
     location: row.location.trim(),
     ...(startTime ? { start_time: startTime } : {}),
@@ -197,6 +200,11 @@ export function buildBatchPublishOverridesFromEntry(entry) {
 
   return {
     hostName: trimImportString(draft.hostName),
+    ...(Array.isArray(draft.hostIdentities) && draft.hostIdentities.length
+      ? { hostIdentities: draft.hostIdentities }
+      : Array.isArray(draft.identities) && draft.identities.length
+        ? { hostIdentities: draft.identities }
+        : {}),
     name: trimImportString(draft.name),
     location: trimImportString(draft.location),
     ...(startTime ? { start_time: startTime } : {}),
@@ -259,6 +267,17 @@ function normalizeJsonImportEvent(raw) {
       : [];
   const timeSlots = normalizeImportTimeSlots(raw.timeSlots ?? nestedDraft?.timeSlots);
   const movie = raw.movie ?? nestedDraft?.movie ?? null;
+  const hostIdentities = Array.isArray(raw.hostIdentities)
+    ? raw.hostIdentities
+    : Array.isArray(raw.identities)
+      ? raw.identities
+      : Array.isArray(host?.identities)
+        ? host.identities
+        : Array.isArray(nestedDraft?.hostIdentities)
+          ? nestedDraft.hostIdentities
+          : Array.isArray(nestedDraft?.identities)
+            ? nestedDraft.identities
+            : [];
 
   let resolvedStartTime = start_time;
   let resolvedEndTime = end_time;
@@ -298,6 +317,7 @@ function normalizeJsonImportEvent(raw) {
     draft: {
       name,
       hostName,
+      ...(hostIdentities.length ? { hostIdentities } : {}),
       location,
       start_time: resolvedStartTime,
       end_time: resolvedEndTime || undefined,
@@ -420,6 +440,8 @@ export function duplicateBadgeLabel(duplicate) {
   if (duplicate.matchType === 'batchSourceUrl' || duplicate.matchType === 'batchFingerprint') {
     return 'Batch duplicate';
   }
+  if (duplicate.matchType === 'showtime') return 'Showtimes merged';
+  if (duplicate.matchType === 'similarity') return 'Will merge';
   return 'Will update';
 }
 
@@ -478,6 +500,9 @@ export function catalogEventToJsonExport(event) {
     sourceUrl: compactExport(event.sourceUrl || event.externalLink),
     name: compactExport(name),
     hostName: compactExport(hostName),
+    hostIdentities: compactExport(
+      Array.isArray(event.hostIdentities) ? event.hostIdentities : event.host?.identities,
+    ),
     location: compactExport(location),
     start_time: compactExport(start_time),
     end_time: compactExport(event.end_time),

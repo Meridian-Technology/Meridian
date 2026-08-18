@@ -101,6 +101,24 @@ describe('buildCurationJsonExport', () => {
     expect(parsed.entries[0].draft.name).toBe('Board Game Night');
     expect(parsed.entries[0].draft.hostName).toBe('Cafe');
   });
+
+  it('round-trips hostIdentities on import and export', () => {
+    const identities = [
+      { provider: 'partiful', name: 'Cafe', profileUrl: 'https://partiful.com/u/cafe' },
+    ];
+    const exported = catalogEventToJsonExport({
+      name: 'Board Game Night',
+      organizerName: 'Cafe',
+      location: 'Brooklyn',
+      start_time: '2026-05-28T19:00:00.000Z',
+      tags: ['board-games'],
+      hostIdentities: identities,
+    });
+    expect(exported.hostIdentities).toEqual(identities);
+
+    const parsed = parsePivotJsonImport(JSON.stringify({ events: [exported] }));
+    expect(parsed.entries[0].draft.hostIdentities).toEqual(identities);
+  });
 });
 
 describe('curationJsonExportFilename', () => {

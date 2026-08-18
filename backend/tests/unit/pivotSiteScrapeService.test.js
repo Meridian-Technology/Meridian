@@ -128,6 +128,26 @@ describe('pivotSiteScrapeService', () => {
       expect(draft.end_time).toBe('2026-07-11T04:00:00.000Z');
       expect(draft.source).toBe('generic-site');
       expect(draft.sourceTags).toEqual(['music', 'live']);
+      expect(draft.parsed.startTimeRaw).toBe('2026-07-10T20:00:00-05:00');
+    });
+
+    it('parses casual listing times in the city timezone', () => {
+      const { draft } = buildSiteEventDraft(
+        {
+          name: 'Open Mic',
+          startTime: 'Friday at 8pm',
+          location: "Gabe's",
+          hostName: "Gabe's",
+        },
+        {
+          pageUrl: PAGE_URL,
+          timezone: 'America/Chicago',
+          now: new Date('2026-08-13T17:00:00.000Z'),
+        },
+      );
+
+      expect(draft.start_time).toBe('2026-08-15T01:00:00.000Z');
+      expect(draft.parsed.startTimeRaw).toBe('Friday at 8pm');
     });
 
     it('resolves relative image and event URLs against the page', () => {

@@ -15,6 +15,9 @@ const axios = require('axios');
  * extract path runs on a single vendor credential.
  */
 
+const { enrichIngestDraft, parseEventDateTime } = require('../utilities/pivotFieldParsingUtils');
+const { identityFromDisplayName } = require('../utilities/pivotHostIdentity');
+
 const FIRECRAWL_SCRAPE_URL = 'https://api.firecrawl.dev/v2/scrape';
 const FIRECRAWL_SEARCH_URL = 'https://api.firecrawl.dev/v2/search';
 const FIRECRAWL_MAP_URL = 'https://api.firecrawl.dev/v2/map';
@@ -74,11 +77,13 @@ const SITE_EVENT_SCHEMA = {
           description: { type: 'string', description: 'Short listing copy, if present.' },
           startTime: {
             type: 'string',
-            description: 'ISO-8601 start datetime with timezone offset.',
+            description:
+              'Start datetime. Prefer ISO-8601 with a timezone offset; casual strings like "Friday at 8pm" are also accepted.',
           },
           endTime: {
             type: 'string',
-            description: 'ISO-8601 end datetime with timezone offset, if stated.',
+            description:
+              'End datetime if stated. Prefer ISO-8601 with a timezone offset; casual strings are also accepted.',
           },
           location: {
             type: 'string',
@@ -94,6 +99,14 @@ const SITE_EVENT_SCHEMA = {
             type: 'array',
             items: { type: 'string' },
             description: 'Category or genre labels shown on the listing.',
+          },
+          price: {
+            type: 'string',
+            description: 'Ticket price as shown, e.g. Free, $10-15, $25 suggested donation.',
+          },
+          ageRestriction: {
+            type: 'string',
+            description: 'Age limit as shown, e.g. 21+, All ages, 18+ after 9pm.',
           },
         },
         required: ['name'],
@@ -305,12 +318,13 @@ function slugForFragment(value) {
  * every event on it would make them overwrite one another. When a listing has no
  * per-event link, derive a stable fragment from the event itself.
  */
-function resolveDraftSourceUrl(row, pageUrl) {
+function resolveDraftSourceUrl(row, pageUrl, options = {}) {
   const direct = absoluteUrl(row?.eventUrl, pageUrl);
   if (direct) return direct;
 
   const slug = slugForFragment(row?.name);
-  const day = normalizeIsoDateTime(row?.startTime)?.slice(0, 10) || '';
+  const parsedStart = parseEventDateTime(row?.startTime, options);
+  const day = (parsedStart.iso || normalizeIsoDateTime(row?.startTime) || '').slice(0, 10);
   const fragment = [slug, day].filter(Boolean).join('-');
   if (!fragment) return pageUrl;
 
@@ -333,21 +347,27 @@ function normalizeSourceTags(raw) {
  * Map one extracted row onto the draft shape produced by the Partiful/Luma
  * parsers, so downstream publish/duplicate handling is provider-agnostic.
  */
-function buildSiteEventDraft(row, { pageUrl }) {
-  const sourceUrl = resolveDraftSourceUrl(row, pageUrl);
-  const draft = {
-    name: trimString(row?.name) || null,
-    description: trimString(row?.description) || null,
-    image: absoluteUrl(row?.imageUrl, pageUrl),
-    start_time: normalizeIsoDateTime(row?.startTime),
-    end_time: normalizeIsoDateTime(row?.endTime),
-    location: trimString(row?.location) || null,
-    hostName: trimString(row?.hostName) || null,
-    hostImageUrl: null,
-    sourceUrl,
-    source: 'generic-site',
-    sourceTags: normalizeSourceTags(row?.tags),
-  };
+function buildSiteEventDraft(row, { pageUrl, timezone, now } = {}) {
+  const sourceUrl = resolveDraftSourceUrl(row, pageUrl, { timezone, now });
+  const draft = enrichIngestDraft(
+    {
+      name: trimString(row?.name) || null,
+      description: trimString(row?.description) || null,
+      image: absoluteUrl(row?.imageUrl, pageUrl),
+      start_time: trimString(row?.startTime) || null,
+      end_time: trimString(row?.endTime) || null,
+      location: trimString(row?.location) || null,
+      hostName: trimString(row?.hostName) || null,
+      hostImageUrl: null,
+      hostIdentities: [identityFromDisplayName(row?.hostName, 'generic-site')].filter(Boolean),
+      sourceUrl,
+      source: 'generic-site',
+      sourceTags: normalizeSourceTags(row?.tags),
+      price: trimString(row?.price) || null,
+      ageRestriction: trimString(row?.ageRestriction) || null,
+    },
+    { timezone, now },
+  );
 
   return { draft, sourceUrl };
 }
@@ -486,7 +506,11 @@ async function scrapeSiteEvents(options = {}) {
   const seen = new Set();
   const deduped = [];
   for (const row of named) {
-    const built = buildSiteEventDraft(row, { pageUrl: normalized.url });
+    const built = buildSiteEventDraft(row, {
+      pageUrl: normalized.url,
+      timezone: options.timezone,
+      now: options.now,
+    });
     if (seen.has(built.sourceUrl)) continue;
     seen.add(built.sourceUrl);
     deduped.push(built);
