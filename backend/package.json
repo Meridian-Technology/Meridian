@@ -60,7 +60,8 @@
     "send:pivot-weekly-push": "node migrations/sendPivotWeeklyPush.js",
     "dry-run:pivot-crew-ritual": "node migrations/pivotCrewRitualDryRun.js",
     "discover:pivot-city-sources": "node migrations/discoverPivotCitySources.js",
-    "cluster:pivot-host-names": "node migrations/clusterPivotHostNames.js"
+    "cluster:pivot-host-names": "node migrations/clusterPivotHostNames.js",
+    "backfill:pivot-organizers": "node migrations/backfillPivotOrganizers.js"
   },
   "devDependencies": {
     "jest": "^30.3.0",
