@@ -30,6 +30,7 @@ import EventQRRedirect from './pages/QR/EventQRRedirect';
 import Admin  from './pages/Admin/Admin';
 import PlatformAdmin from './pages/PlatformAdmin/PlatformAdmin';
 import PivotTenantDashboard from './pages/PlatformAdmin/PivotTenantDashboard/PivotTenantDashboard';
+import PivotFleetDashboard from './pages/PlatformAdmin/PivotTenantDashboard/PivotFleetDashboard';
 import PlatformProtectedRoute from './components/PlatformProtectedRoute/PlatformProtectedRoute';
 import JustGoCreatorProtectedRoute from './components/JustGoCreatorProtectedRoute/JustGoCreatorProtectedRoute';
 import JustGoCreatorShell from './pages/JustGoCreator/JustGoCreatorShell';
@@ -238,6 +239,7 @@ function App() {
                                             <Route path="/tenant-status" element={<AnimatedPageWrapper><TenantStatus /></AnimatedPageWrapper>}/>
                                             <Route element={<PlatformProtectedRoute />}>
                                                 <Route path="/platform-admin" element={<AnimatedPageWrapper><PlatformAdmin /></AnimatedPageWrapper>} />
+                                                <Route path="/platform-admin/pivot" element={<AnimatedPageWrapper><PivotFleetDashboard /></AnimatedPageWrapper>} />
                                                 <Route path="/platform-admin/pivot/:tenantKey" element={<AnimatedPageWrapper><PivotTenantDashboard /></AnimatedPageWrapper>} />
                                                 <Route path="/admin/pivot" element={<Navigate to="/platform-admin?page=1" replace />} />
                                             </Route>
