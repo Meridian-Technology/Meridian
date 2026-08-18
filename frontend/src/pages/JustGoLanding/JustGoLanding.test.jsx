@@ -11,8 +11,8 @@ jest.mock('../../utils/postRequest', () => (...args) => mockApi(...args));
 jest.mock('../../services/analytics/analytics', () => ({
   analytics: { screen: (...args) => mockScreen(...args) },
 }));
-jest.mock('qrcode.react', () => ({
-  QRCodeSVG: ({ value }) => <div data-testid="store-qr" data-value={value} />,
+jest.mock('./justGoLandingMotion', () => ({
+  useJustGoLandingMotion: () => ({ slap: true }),
 }));
 
 const CITIES = [
@@ -86,11 +86,8 @@ async function renderLanding({ desktop = true } = {}) {
       </Routes>
     </MemoryRouter>,
   );
-  if (desktop) {
-    await screen.findByText('brooklyn');
-  } else {
-    await screen.findByRole('option', { name: 'brooklyn' });
-  }
+  await screen.findByRole('heading', { name: /what are you doing this week/i });
+  await screen.findByText(/live in brooklyn/i);
   return view;
 }
 
@@ -129,11 +126,11 @@ describe('JustGoLanding', () => {
     expect(
       screen.getByRole('heading', { name: /what are you doing this week/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(justGoLandingCopy.subhead)).toBeInTheDocument();
+    expect(screen.getByText(justGoLandingCopy.story[2])).toBeInTheDocument();
     expect(screen.queryByText(/Welcome Back/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Meridian Go/i)).not.toBeInTheDocument();
     expect(mockScreen).toHaveBeenCalledWith('Just Go Landing');
-    expect(screen.getByText('troy')).toBeInTheDocument();
+    expect(await screen.findByText(/live in brooklyn/i)).toBeInTheDocument();
     expect(mockApi).toHaveBeenCalledWith('/pivot/cities', null, { method: 'GET' });
     expect(mockApi).not.toHaveBeenCalledWith(
       '/pivot/landing/drop',
@@ -142,13 +139,23 @@ describe('JustGoLanding', () => {
     );
   });
 
+  it('puts a next-drop countdown in the top bar', async () => {
+    await renderLanding();
+
+    const countdown = screen.getByRole('link', { name: /next drop/i });
+    expect(countdown).toHaveAttribute('href', '#drop');
+    expect(countdown).toHaveTextContent(/next drop/i);
+    expect(countdown).toHaveTextContent(/in/i);
+    expect(countdown).toHaveTextContent(/^\s*next drop\s*in\s*\d{2}d\d{2}h\d{2}m\d{2}s\s*$/i);
+  });
+
   it('puts the week’s flyer wall on the desktop page', async () => {
     await renderLanding({ desktop: true });
 
-    expect(screen.getByText(justGoLandingCopy.flyersTitle)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: justGoLandingCopy.flyersTitle })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'night market' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'board game night' })).toBeInTheDocument();
-    expect(screen.getByText(/fri night · brooklyn/i)).toBeInTheDocument();
+    expect(screen.getByText(/fri night/i)).toBeInTheDocument();
   });
 
   it('keeps a host path into the creator console', async () => {
@@ -157,6 +164,8 @@ describe('JustGoLanding', () => {
     expect(
       screen.getByRole('link', { name: justGoLandingCopy.footerHostLink }),
     ).toHaveAttribute('href', '/justgo/creator/login');
+    expect(screen.getByText(justGoLandingCopy.contactLead)).toBeInTheDocument();
+    expect(screen.getByText(justGoLandingCopy.footerStamp)).toBeInTheDocument();
   });
 
   it('points android visitors at play', async () => {
@@ -183,7 +192,7 @@ describe('JustGoLanding', () => {
     await renderLanding({ desktop: false });
 
     expect(await screen.findByRole('heading', { name: justGoLandingCopy.deckTitle })).toBeInTheDocument();
-    expect(screen.queryByText(justGoLandingCopy.flyersTitle)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'night market' })).not.toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'friday night market' })).toBeInTheDocument();
     expect(screen.queryByText('should never render')).not.toBeInTheDocument();
     expect(screen.queryByText('https://partiful.com/e/secret')).not.toBeInTheDocument();

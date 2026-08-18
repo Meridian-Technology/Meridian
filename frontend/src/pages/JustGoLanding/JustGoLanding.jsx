@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
 import apiRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
 import justGoWordmark from '../../assets/pivot/just-go-wordmark.svg';
-import justGoBurst from '../../assets/pivot/just-go-burst.svg';
+import dandelions from '../../assets/pivot/pivot-hero-dandelions.jpg';
+import meadow from '../../assets/pivot/pivot-hero-meadow.jpg';
 import { JUSTGO_CREATOR_ROUTES } from '../JustGoCreator/justGoCreatorRoutes';
 import justGoLandingCopy, {
   JUSTGO_IOS_STORE_URL,
-  JUSTGO_LANDING_PATH,
   JUSTGO_PLAY_STORE_URL,
 } from './justGoLandingCopy';
 import { JUSTGO_LANDING_FLYERS } from './justGoLandingFlyers';
@@ -17,12 +16,21 @@ import {
   cityChipLabel,
   decorateFlyers,
   detectStorePlatform,
-  formatIsoWeekToken,
+  formatLandingDropSpoken,
+  padDropUnit,
+  resolveNextLandingDropAt,
+  splitLandingDropCountdown,
 } from './justGoLandingUtils';
+import { useJustGoLandingMotion } from './justGoLandingMotion';
 import './JustGoLanding.scss';
 
 const APP_STORE_BADGE =
   'https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg';
+
+const STORY_PRINTS = [
+  { src: dandelions, alt: '' },
+  { src: meadow, alt: '' },
+];
 
 function useStorePlatform() {
   return useMemo(() => {
@@ -77,6 +85,73 @@ function storeUrlFor(platform) {
   return platform === 'android' ? JUSTGO_PLAY_STORE_URL : JUSTGO_IOS_STORE_URL;
 }
 
+function useJustGoDropCountdown() {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'test') return undefined;
+    const tick = () => setNowMs(Date.now());
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return useMemo(() => {
+    const dropAt = resolveNextLandingDropAt(new Date(nowMs));
+    const remaining = dropAt ? dropAt.getTime() - nowMs : 0;
+    const parts = splitLandingDropCountdown(remaining);
+    return {
+      ...parts,
+      spoken: formatLandingDropSpoken(parts),
+    };
+  }, [nowMs]);
+}
+
+const COUNTDOWN_UNITS = [
+  { key: 'days', label: justGoLandingCopy.countdownUnitDays },
+  { key: 'hours', label: justGoLandingCopy.countdownUnitHours },
+  { key: 'minutes', label: justGoLandingCopy.countdownUnitMinutes },
+  { key: 'seconds', label: justGoLandingCopy.countdownUnitSeconds },
+];
+
+function DropCountdown({ countdown }) {
+  const tone = countdown.imminent ? 'imminent' : countdown.soon ? 'soon' : 'week';
+  return (
+    <a
+      className={`justgo-landing__countdown justgo-landing__countdown--${tone}${
+        countdown.live ? ' justgo-landing__countdown--live' : ''
+      }`}
+      href="#drop"
+      aria-label={countdown.spoken}
+    >
+      <span className="justgo-landing__countdown-kicker">
+        {countdown.live ? (
+          justGoLandingCopy.countdownLive
+        ) : (
+          <>
+            <span>{justGoLandingCopy.countdownKicker}</span>
+            <span className="justgo-landing__countdown-in">{justGoLandingCopy.countdownKickerIn}</span>
+          </>
+        )}
+      </span>
+      {countdown.live ? null : (
+        <span className="justgo-landing__countdown-units" aria-hidden="true">
+          {COUNTDOWN_UNITS.map((unit) => (
+            <span key={unit.key} className="justgo-landing__countdown-cell">
+              <span
+                key={countdown[unit.key]}
+                className={`justgo-landing__countdown-value justgo-landing__countdown-value--${unit.key}`}
+              >
+                {padDropUnit(countdown[unit.key])}
+              </span>
+              <span className="justgo-landing__countdown-unit">{unit.label}</span>
+            </span>
+          ))}
+        </span>
+      )}
+    </a>
+  );
+}
+
 function FlyerCard({ flyer }) {
   const isPhoto = flyer.tone === 'photo' && flyer.cover;
   return (
@@ -107,10 +182,12 @@ function JustGoLanding() {
   const desktop = useIsDesktop();
   const storeUrl = storeUrlFor(platform);
   const { ref: ctaRef, visible: ctaVisible } = useHeroCtaVisible();
-  const week = useMemo(() => formatIsoWeekToken(), []);
+  const photoRef = useRef(null);
+  const flyersRef = useRef(null);
   const [cities, setCities] = useState([]);
   const [citiesState, setCitiesState] = useState('loading');
-  const [qrValue, setQrValue] = useState('');
+  const { slap } = useJustGoLandingMotion({ desktop, photoRef, flyersRef });
+  const countdown = useJustGoDropCountdown();
 
   useEffect(() => {
     document.title = justGoLandingCopy.documentTitle;
@@ -130,11 +207,6 @@ function JustGoLanding() {
         description.setAttribute('content', previousDescription);
       }
     };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    setQrValue(`${window.location.origin}${JUSTGO_LANDING_PATH}`);
   }, []);
 
   useEffect(() => {
@@ -162,46 +234,42 @@ function JustGoLanding() {
     () => cities.map(cityChipLabel).filter(Boolean),
     [cities],
   );
+  const proofLine = cityLabels.length
+    ? `${justGoLandingCopy.proofPrefix} ${cityLabels.join(' · ')}`
+    : citiesState === 'empty'
+      ? justGoLandingCopy.citiesEmpty
+      : justGoLandingCopy.proofFallback;
 
   const showSticky = !ctaVisible;
 
   return (
-    <div className="justgo-landing">
+    <div className={`justgo-landing${slap ? ' justgo-landing--slap' : ''}`}>
       <a className="justgo-landing__skip" href="#drop">
         {justGoLandingCopy.skip}
       </a>
 
-      <div className="justgo-landing__ticker">
-        <p className="justgo-landing__ticker-track" aria-hidden="true">
-          {[0, 1, 2].map((pass) => (
-            <span className="justgo-landing__ticker-segment" key={pass}>
-              {justGoLandingCopy.ticker}
-            </span>
-          ))}
-        </p>
-        <span className="justgo-landing__ticker-label">{justGoLandingCopy.ticker}</span>
-      </div>
-
       <header className="justgo-landing__hero">
+        <div className="justgo-landing__hero-photo" ref={photoRef} aria-hidden="true" />
+        <span className="justgo-landing__hero-wash" aria-hidden="true" />
         <span className="justgo-landing__grain" aria-hidden="true" />
         <nav className="justgo-landing__nav" aria-label="just go">
+          <div className="justgo-landing__nav-links">
+            <a href="#drop">{justGoLandingCopy.navDrop}</a>
+            <a href="#story">{justGoLandingCopy.navStory}</a>
+          </div>
+          <DropCountdown countdown={countdown} />
+          <a className="justgo-landing__nav-cta" href={storeUrl}>
+            {justGoLandingCopy.cta}
+          </a>
+        </nav>
+
+        <div className="justgo-landing__hero-stage" ref={ctaRef} id="download">
           <img
             className="justgo-landing__wordmark"
             src={justGoWordmark}
             alt={justGoLandingCopy.wordmarkAlt}
             draggable={false}
           />
-          <a className="justgo-landing__nav-cta" href={storeUrl}>
-            {justGoLandingCopy.cta}
-          </a>
-        </nav>
-
-        <p className="justgo-landing__stamp">
-          <span>{justGoLandingCopy.stampLabel}</span>
-          <strong>{week}</strong>
-        </p>
-
-        <div className="justgo-landing__hero-copy">
           <h1 className="justgo-landing__headline">
             <span className="justgo-landing__strip justgo-landing__strip--cream">
               {justGoLandingCopy.headlineLead}
@@ -210,74 +278,33 @@ function JustGoLanding() {
               {justGoLandingCopy.headlinePop}
             </span>
           </h1>
-          <p className="justgo-landing__subhead">{justGoLandingCopy.subhead}</p>
-
-          <div className="justgo-landing__cta-row" ref={ctaRef} id="download">
+          {platform === 'android' ? (
             <a
-              className="justgo-landing__cta"
-              href={storeUrl}
-              aria-label={
-                platform === 'android'
-                  ? justGoLandingCopy.ctaAriaAndroid
-                  : justGoLandingCopy.ctaAriaIos
-              }
+              className="justgo-landing__store"
+              href={JUSTGO_PLAY_STORE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={justGoLandingCopy.ctaAriaAndroid}
             >
-              {justGoLandingCopy.cta}
+              get it on google play
             </a>
-            {platform === 'android' ? (
-              <a
-                className="justgo-landing__store"
-                href={JUSTGO_PLAY_STORE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                get it on google play
-              </a>
-            ) : (
-              <a
-                className="justgo-landing__store justgo-landing__store--badge"
-                href={JUSTGO_IOS_STORE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={justGoLandingCopy.ctaAriaIos}
-              >
-                <img src={APP_STORE_BADGE} alt="Download on the App Store" height="40" />
-              </a>
-            )}
-            {desktop && qrValue ? (
-              <div className="justgo-landing__qr">
-                <QRCodeSVG
-                  value={qrValue}
-                  size={88}
-                  bgColor="#FAF6EF"
-                  fgColor="#1A1714"
-                  level="M"
-                />
-                <span>{justGoLandingCopy.storeEyebrow}</span>
-              </div>
-            ) : null}
-          </div>
+          ) : (
+            <a
+              className="justgo-landing__store justgo-landing__store--badge"
+              href={JUSTGO_IOS_STORE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={justGoLandingCopy.ctaAriaIos}
+            >
+              <img src={APP_STORE_BADGE} alt="Download on the App Store" height="52" />
+            </a>
+          )}
         </div>
       </header>
 
-      {desktop ? (
-        <section className="justgo-landing__cities" aria-live="polite">
-          <p className="justgo-landing__eyebrow">{justGoLandingCopy.citiesEyebrow}</p>
-          {citiesState === 'loading' ? (
-            <p className="justgo-landing__muted">{justGoLandingCopy.citiesLoading}</p>
-          ) : null}
-          {citiesState === 'empty' ? (
-            <p className="justgo-landing__muted">{justGoLandingCopy.citiesEmpty}</p>
-          ) : null}
-          {cityLabels.length ? (
-            <ul className="justgo-landing__city-list">
-              {cityLabels.map((label) => (
-                <li key={label}>{label}</li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-      ) : null}
+      <p className="justgo-landing__proof" aria-live="polite">
+        {citiesState === 'loading' ? justGoLandingCopy.citiesLoading : proofLine}
+      </p>
 
       <section className="justgo-landing__drop" id="drop">
         {desktop ? (
@@ -287,14 +314,7 @@ function JustGoLanding() {
               <h2>{justGoLandingCopy.flyersTitle}</h2>
               <p>{justGoLandingCopy.flyersBody}</p>
             </div>
-            <img
-              className="justgo-landing__burst"
-              src={justGoBurst}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-            />
-            <div className="justgo-landing__flyers">
+            <div className="justgo-landing__flyers" ref={flyersRef}>
               {flyers.map((flyer) => (
                 <FlyerCard key={flyer.id} flyer={flyer} />
               ))}
@@ -309,25 +329,36 @@ function JustGoLanding() {
         )}
       </section>
 
-      <section className="justgo-landing__loop">
-        <p className="justgo-landing__eyebrow">{justGoLandingCopy.loopEyebrow}</p>
-        <ul>
-          {justGoLandingCopy.loop.map((step) => (
-            <li key={step.chip}>
-              <span>{step.chip}</span>
-              <p>{step.body}</p>
-            </li>
+      <section className="justgo-landing__story" id="story">
+        <p className="justgo-landing__eyebrow">{justGoLandingCopy.storyEyebrow}</p>
+        <h2>
+          <span className="justgo-landing__strip justgo-landing__strip--cream">
+            {justGoLandingCopy.storyTitle}
+          </span>
+        </h2>
+        {justGoLandingCopy.story.map((graf) => (
+          <p key={graf}>{graf}</p>
+        ))}
+        <div className="justgo-landing__story-prints" aria-hidden="true">
+          {STORY_PRINTS.map((print) => (
+            <img key={print.src} src={print.src} alt="" draggable={false} />
           ))}
-        </ul>
+        </div>
       </section>
 
-      <footer className="justgo-landing__footer">
+      <footer className="justgo-landing__footer" id="contact">
         <img
           className="justgo-landing__footer-mark"
           src={justGoWordmark}
           alt={justGoLandingCopy.wordmarkAlt}
           draggable={false}
         />
+        <p className="justgo-landing__footer-stamp">{justGoLandingCopy.footerStamp}</p>
+        <p className="justgo-landing__contact-lead">
+          <span className="justgo-landing__strip justgo-landing__strip--pop">
+            {justGoLandingCopy.contactLead}
+          </span>
+        </p>
         <a className="justgo-landing__cta justgo-landing__cta--footer" href={storeUrl}>
           {justGoLandingCopy.cta}
         </a>
