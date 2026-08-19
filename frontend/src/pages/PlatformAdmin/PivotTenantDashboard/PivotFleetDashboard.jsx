@@ -4,6 +4,7 @@ import Dashboard from '../../../components/Dashboard/Dashboard';
 import { useFetch } from '../../../hooks/useFetch';
 import useAdminDashboardTheme from '../../../hooks/useAdminDashboardTheme';
 import PivotFleetOverviewPage from './PivotFleetOverviewPage';
+import PivotVoicePage from './PivotVoicePage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -33,6 +34,11 @@ function PivotFleetDashboard() {
         label: 'Overview',
         icon: 'ic:round-dashboard',
         element: <PivotFleetOverviewPage />,
+      },
+      {
+        label: 'Voice',
+        icon: 'mdi:format-quote-close-outline',
+        element: <PivotVoicePage scope="platform" />,
       },
     ],
     [],

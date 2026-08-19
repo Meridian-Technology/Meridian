@@ -9,6 +9,7 @@ import PivotTenantCurationPage from './PivotTenantCurationPage';
 import PivotTenantJourneysPage from './PivotTenantJourneysPage';
 import PivotTenantDropDeckPage from './PivotTenantDropDeckPage';
 import PivotTenantCatalogPage from './PivotTenantCatalogPage';
+import PivotVoicePage from './PivotVoicePage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -40,8 +41,8 @@ function PivotTenantGate({ title, body, onBack }) {
 
 /**
  * Per-tenant Just Go ops shell.
- * Route: /platform-admin/pivot/:tenantKey?page=0|1|2|3|4
- * Catalog is page=4 (appended — do not insert or existing bookmarks shift).
+ * Route: /platform-admin/pivot/:tenantKey?page=0|1|2|3|4|5
+ * Catalog is page=4; Voice is page=5 (appended — do not insert).
  */
 function PivotTenantDashboard() {
   const navigate = useNavigate();
@@ -118,6 +119,18 @@ function PivotTenantDashboard() {
         element: (
           <PivotTenantCatalogPage
             key={tenantKey}
+            tenantKey={tenantKey}
+            cityDisplayName={cityDisplayName}
+          />
+        ),
+      },
+      {
+        label: 'Voice',
+        icon: 'mdi:format-quote-close-outline',
+        element: (
+          <PivotVoicePage
+            key={tenantKey}
+            scope="tenant"
             tenantKey={tenantKey}
             cityDisplayName={cityDisplayName}
           />
