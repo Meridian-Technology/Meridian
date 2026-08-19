@@ -20,6 +20,12 @@ const {
 } = require('../services/pivotFeedbackService');
 const { getPivotConfig } = require('../services/pivotConfigService');
 const {
+  getPivotCopy,
+  getPlatformLandingCopy,
+  copyRevisionEtag,
+  copyRevisionNotModified,
+} = require('../services/pivotCopyService');
+const {
   getPivotWeekRitual,
   RITUAL_MIN_APP_VERSION,
 } = require('../services/pivotWeekRitualService');
@@ -52,6 +58,7 @@ const {
 } = require('../middlewares/pivotReferralValidateRateLimit');
 const {
   pivotLandingDropRateLimit,
+  pivotLandingCopyRateLimit,
 } = require('../middlewares/pivotLandingDropRateLimit');
 const pivotCrewRoutes = require('./pivotCrewRoutes');
 const pivotCreatorRoutes = require('./pivotCreatorRoutes');
@@ -83,6 +90,30 @@ router.get('/cities', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load just go cities.',
+    });
+  }
+});
+
+router.get('/landing/copy', pivotLandingCopyRateLimit, async (req, res) => {
+  try {
+    const result = await getPlatformLandingCopy(req, {
+      schemaVersion: req.query.schemaVersion,
+    });
+    res.set('Cache-Control', 'public, max-age=60');
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/landing/copy', err, req);
+    return res.status(200).json({
+      success: true,
+      data: {
+        revision: 'p0:t0',
+        schemaVersion: 1,
+        tokens: {},
+        entries: {},
+      },
     });
   }
 });
@@ -386,6 +417,40 @@ router.get('/config', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot config.',
+    });
+  }
+});
+
+router.get('/copy', verifyToken, async (req, res) => {
+  try {
+    const result = await getPivotCopy(req, {
+      schemaVersion: req.query.schemaVersion,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    const etag = copyRevisionEtag(result.data.revision);
+    res.set('ETag', etag);
+    res.set('Cache-Control', 'private, must-revalidate');
+
+    if (copyRevisionNotModified(req.headers['if-none-match'], result.data.revision)) {
+      return res.status(304).end();
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/copy', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load pivot copy.',
     });
   }
 });

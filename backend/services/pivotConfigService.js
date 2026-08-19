@@ -9,6 +9,7 @@ const {
 } = require('../utilities/pivotDropSchedule');
 const { mergePivotCrewConfig } = require('../utilities/pivotCrewConfig');
 const { mergePivotMobileConfig } = require('../utilities/pivotMobileConfig');
+const { getCopyPointer, EMPTY_COPY_POINTER } = require('./pivotCopyService');
 
 function buildDropSchedulePayload(tenant, batchWeek, now = new Date()) {
   const resolved = resolvePivotDropInstant(tenant, batchWeek, now);
@@ -26,6 +27,21 @@ function buildDropSchedulePayload(tenant, batchWeek, now = new Date()) {
     source: resolved.source,
     usingPilotDefaults: resolved.usingPilotDefaults,
   };
+}
+
+async function resolveCopyPointer(req, tenantKey) {
+  try {
+    const result = await getCopyPointer(req, { tenantKey });
+    if (!result.error && result.data?.revision != null) {
+      return {
+        revision: result.data.revision,
+        schemaVersion: result.data.schemaVersion,
+      };
+    }
+  } catch (err) {
+    console.warn('[pivot] GET /pivot/config copy pointer failed', err);
+  }
+  return { ...EMPTY_COPY_POINTER };
 }
 
 async function getPivotConfig(req, options = {}) {
@@ -72,6 +88,7 @@ async function getPivotConfig(req, options = {}) {
       mobile: mergePivotMobileConfig(tenant.pivotMobileConfig, {
         product: String(req.headers?.['x-app-product'] || '').toLowerCase(),
       }),
+      copy: await resolveCopyPointer(req, tenant.tenantKey),
     },
   };
 }

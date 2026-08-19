@@ -133,6 +133,14 @@ jest.mock('../../services/pivotOrganizerCatalogService', () => ({
   claimOrganizer: jest.fn(),
 }));
 
+jest.mock('../../services/pivotCopyService', () => ({
+  getCopyCatalog: jest.fn(),
+  getCopyLayers: jest.fn(),
+  getPlatformCopyLayers: jest.fn(),
+  patchCopyPack: jest.fn(),
+  resetCopyPack: jest.fn(),
+}));
+
 const { requirePlatformAdmin } = require('../../middlewares/requirePlatformAdmin');
 const {
   rebuildWeeklySnapshot,
@@ -202,6 +210,13 @@ const {
   splitOrganizer,
   claimOrganizer,
 } = require('../../services/pivotOrganizerCatalogService');
+const {
+  getCopyCatalog,
+  getCopyLayers,
+  getPlatformCopyLayers,
+  patchCopyPack,
+  resetCopyPack,
+} = require('../../services/pivotCopyService');
 const pivotAdminRoutes = require('../../routes/pivotAdminRoutes');
 
 function buildApp() {
@@ -2231,5 +2246,283 @@ describe('pivotAdminRoutes organizer claim', () => {
 
     expect(response.status).toBe(403);
     expect(claimOrganizer).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes copy (Task 4.1)', () => {
+  beforeEach(() => {
+    getCopyCatalog.mockReset();
+    getPlatformCopyLayers.mockReset();
+    patchCopyPack.mockReset();
+    resetCopyPack.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/copy/catalog returns shipped keys', async () => {
+    getCopyCatalog.mockReturnValue({
+      data: {
+        schemaVersion: 1,
+        tokens: [{ name: 'group.singular', shipped: 'circle' }],
+        keys: [{ path: 'ticker.week', kind: 'string', shipped: 'swipe' }],
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/copy/catalog');
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.keys[0].path).toBe('ticker.week');
+    expect(getCopyCatalog).toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/copy/catalog returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/copy/catalog');
+    expect(response.status).toBe(403);
+    expect(getCopyCatalog).not.toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/copy returns platform layers', async () => {
+    getPlatformCopyLayers.mockResolvedValue({
+      data: {
+        scope: 'platform',
+        revision: 1,
+        entries: {
+          'ticker.week': {
+            shipped: 'swipe',
+            platform: 'override',
+            effective: 'override',
+          },
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/copy');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.revision).toBe(1);
+    expect(getPlatformCopyLayers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+    );
+  });
+
+  it('PATCH /admin/pivot/copy writes a sparse platform pack', async () => {
+    patchCopyPack.mockResolvedValue({
+      data: { scope: 'platform', revision: 1, entries: { 'ticker.week': 'this week' } },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/copy')
+      .send({ entries: { 'ticker.week': 'this week' } });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.revision).toBe(1);
+    expect(patchCopyPack).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        scope: 'platform',
+        entries: { 'ticker.week': 'this week' },
+      }),
+    );
+  });
+
+  it('PATCH /admin/pivot/copy returns 400 for an unknown key', async () => {
+    patchCopyPack.mockResolvedValue({
+      error: 'entries key is not in the shipped catalog: ticker.notARealKey',
+      status: 400,
+      code: 'UNKNOWN_COPY_KEY',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/copy')
+      .send({ entries: { 'ticker.notARealKey': 'nope' } });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('UNKNOWN_COPY_KEY');
+  });
+
+  it('PATCH /admin/pivot/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/copy')
+      .send({ entries: { 'ticker.week': 'nope' } });
+
+    expect(response.status).toBe(403);
+    expect(patchCopyPack).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /admin/pivot/copy resets a stored key', async () => {
+    resetCopyPack.mockResolvedValue({
+      data: { scope: 'platform', revision: 2, entries: {} },
+    });
+
+    const response = await request(buildApp())
+      .delete('/admin/pivot/copy')
+      .send({ keys: ['ticker.week'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.revision).toBe(2);
+    expect(resetCopyPack).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        scope: 'platform',
+        entries: ['ticker.week'],
+      }),
+    );
+  });
+
+  it('DELETE /admin/pivot/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .delete('/admin/pivot/copy')
+      .send({ keys: ['ticker.week'] });
+
+    expect(response.status).toBe(403);
+    expect(resetCopyPack).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes tenant copy (Task 5.1)', () => {
+  beforeEach(() => {
+    getCopyLayers.mockReset();
+    patchCopyPack.mockReset();
+    resetCopyPack.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/copy returns tenant layers', async () => {
+    getCopyLayers.mockResolvedValue({
+      data: {
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        revision: 1,
+        compositeRevision: 'p1:t1',
+        entries: {
+          'ticker.week': {
+            shipped: 'swipe',
+            platform: 'all cities',
+            tenant: 'nyc week',
+            effective: 'nyc week',
+          },
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/copy');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.tenantKey).toBe('nyc');
+    expect(response.body.data.entries['ticker.week'].tenant).toBe('nyc week');
+    expect(getCopyLayers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ scope: 'tenant', tenantKey: 'nyc' }),
+    );
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/copy');
+    expect(response.status).toBe(403);
+    expect(getCopyLayers).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/copy writes a sparse tenant pack', async () => {
+    patchCopyPack.mockResolvedValue({
+      data: {
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        revision: 1,
+        entries: { 'ticker.week': 'nyc week' },
+      },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/copy')
+      .send({ entries: { 'ticker.week': 'nyc week' } });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.tenantKey).toBe('nyc');
+    expect(patchCopyPack).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        entries: { 'ticker.week': 'nyc week' },
+      }),
+    );
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/copy returns 400 for an unknown key', async () => {
+    patchCopyPack.mockResolvedValue({
+      error: 'entries key is not in the shipped catalog: ticker.notARealKey',
+      status: 400,
+      code: 'UNKNOWN_COPY_KEY',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/copy')
+      .send({ entries: { 'ticker.notARealKey': 'nope' } });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('UNKNOWN_COPY_KEY');
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/copy')
+      .send({ entries: { 'ticker.week': 'nope' } });
+
+    expect(response.status).toBe(403);
+    expect(patchCopyPack).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /admin/pivot/tenants/:tenantKey/copy resets a stored key', async () => {
+    resetCopyPack.mockResolvedValue({
+      data: { scope: 'tenant', tenantKey: 'nyc', revision: 2, entries: {} },
+    });
+
+    const response = await request(buildApp())
+      .delete('/admin/pivot/tenants/nyc/copy')
+      .send({ keys: ['ticker.week'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.revision).toBe(2);
+    expect(resetCopyPack).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        entries: ['ticker.week'],
+      }),
+    );
+  });
+
+  it('DELETE /admin/pivot/tenants/:tenantKey/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .delete('/admin/pivot/tenants/nyc/copy')
+      .send({ keys: ['ticker.week'] });
+
+    expect(response.status).toBe(403);
+    expect(resetCopyPack).not.toHaveBeenCalled();
   });
 });

@@ -2,13 +2,13 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('../../middlewares/verifyToken', () => ({
-  verifyToken: (req, res, next) => {
+  verifyToken: jest.fn((req, res, next) => {
     req.user = {
       globalUserId: '507f191e810c19729de860ea',
       userId: '507f191e810c19729de860eb',
     };
     next();
-  },
+  }),
 }));
 
 jest.mock('../../services/pivotEntryService', () => ({
@@ -60,6 +60,15 @@ jest.mock('../../services/pivotConfigService', () => ({
   getPivotConfig: jest.fn(),
 }));
 
+jest.mock('../../services/pivotCopyService', () => {
+  const actual = jest.requireActual('../../services/pivotCopyService');
+  return {
+    ...actual,
+    getPivotCopy: jest.fn(),
+    getPlatformLandingCopy: jest.fn(),
+  };
+});
+
 jest.mock('../../services/pivotWeekRitualService', () => ({
   getPivotWeekRitual: jest.fn(),
   RITUAL_MIN_APP_VERSION: '2.0.0',
@@ -106,6 +115,8 @@ const {
   submitEventFeedback,
 } = require('../../services/pivotFeedbackService');
 const { getPivotConfig } = require('../../services/pivotConfigService');
+const { getPivotCopy, getPlatformLandingCopy } = require('../../services/pivotCopyService');
+const { verifyToken } = require('../../middlewares/verifyToken');
 const { getPivotWeekRitual } = require('../../services/pivotWeekRitualService');
 const { listPivotTags } = require('../../services/pivotTagCatalogService');
 const {
@@ -201,6 +212,44 @@ describe('pivotRoutes GET /pivot/landing/drop', () => {
     const response = await request(buildBaseApp()).get('/pivot/landing/drop?tenantKey=missing');
     expect(response.statusCode).toBe(404);
     expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+});
+
+describe('pivotRoutes GET /pivot/landing/copy', () => {
+  beforeEach(() => {
+    getPlatformLandingCopy.mockReset();
+    getPlatformLandingCopy.mockResolvedValue({
+      data: {
+        revision: 'p0:t0',
+        schemaVersion: 1,
+        tokens: {},
+        entries: {},
+      },
+    });
+  });
+
+  it('returns 200 sparse overlay without auth', async () => {
+    getPlatformLandingCopy.mockResolvedValue({
+      data: {
+        revision: 'p2:t0',
+        schemaVersion: 1,
+        tokens: { 'brand.name': 'block' },
+        entries: { 'landing.cta': 'get block' },
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/copy');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.entries).toEqual({ 'landing.cta': 'get block' });
+    expect(response.body.data.entries).not.toHaveProperty('ticker.week');
+    expect(getPlatformLandingCopy).toHaveBeenCalled();
+  });
+
+  it('returns 200 empty overlay when the pack is missing', async () => {
+    const response = await request(buildBaseApp()).get('/pivot/landing/copy');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.entries).toEqual({});
   });
 });
 
@@ -1029,6 +1078,10 @@ describe('pivotRoutes GET /pivot/config', () => {
           nextDropAt: '2026-06-04T22:00:00.000Z',
           nextDropFormatted: 'Thu Jun 4, 6:00 PM EDT',
         },
+        copy: {
+          revision: 'p1:t0',
+          schemaVersion: 1,
+        },
       },
     });
 
@@ -1039,6 +1092,12 @@ describe('pivotRoutes GET /pivot/config', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
     expect(response.body.data.dropSchedule.batchWeek).toBe('2026-W23');
+    expect(response.body.data.copy).toEqual({
+      revision: 'p1:t0',
+      schemaVersion: 1,
+    });
+    expect(response.body.data.copy.entries).toBeUndefined();
+    expect(response.body.data.entries).toBeUndefined();
     expect(getPivotConfig).toHaveBeenCalledWith(
       expect.objectContaining({ school: 'nyc' }),
       expect.objectContaining({ batchWeek: '2026-W23' }),
@@ -1057,6 +1116,154 @@ describe('pivotRoutes GET /pivot/config', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body.success).toBe(false);
+  });
+});
+
+describe('pivotRoutes GET /pivot/copy', () => {
+  const sparsePack = {
+    revision: 'p1:t0',
+    schemaVersion: 1,
+    tokens: { 'group.singular': 'crew' },
+    entries: { 'ticker.week': 'this week' },
+  };
+
+  beforeEach(() => {
+    getPivotCopy.mockReset();
+    verifyToken.mockImplementation((req, _res, next) => {
+      req.user = {
+        globalUserId: '507f191e810c19729de860ea',
+        userId: '507f191e810c19729de860eb',
+      };
+      next();
+    });
+  });
+
+  afterEach(() => {
+    verifyToken.mockImplementation((req, _res, next) => {
+      req.user = {
+        globalUserId: '507f191e810c19729de860ea',
+        userId: '507f191e810c19729de860eb',
+      };
+      next();
+    });
+  });
+
+  it('returns 200 with a sparse overlay (no catalog dump)', async () => {
+    getPivotCopy.mockResolvedValue({ data: sparsePack });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy?schemaVersion=1')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toEqual(sparsePack);
+    expect(Object.keys(response.body.data).sort()).toEqual([
+      'entries',
+      'revision',
+      'schemaVersion',
+      'tokens',
+    ]);
+    expect(response.headers.etag).toBe('"p1:t0"');
+    expect(getPivotCopy).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      expect.objectContaining({ schemaVersion: '1' }),
+    );
+  });
+
+  it('returns 200 for an empty overlay', async () => {
+    getPivotCopy.mockResolvedValue({
+      data: {
+        revision: 'p0:t0',
+        schemaVersion: 1,
+        tokens: {},
+        entries: {},
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.entries).toEqual({});
+    expect(response.body.data.tokens).toEqual({});
+    expect(response.headers.etag).toBe('"p0:t0"');
+  });
+
+  it('returns 304 when If-None-Match matches the revision ETag', async () => {
+    getPivotCopy.mockResolvedValue({ data: sparsePack });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy')
+      .set('Authorization', 'Bearer test-token')
+      .set('If-None-Match', '"p1:t0"');
+
+    expect(response.statusCode).toBe(304);
+    expect(response.body).toEqual({});
+    expect(response.headers.etag).toBe('"p1:t0"');
+  });
+
+  it('returns 400 when copy service rejects a non-pivot tenant', async () => {
+    getPivotCopy.mockResolvedValue({
+      error: 'Pivot copy is only available for pivot city tenants.',
+      status: 400,
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+  });
+
+  it('returns 400 when schemaVersion is invalid', async () => {
+    getPivotCopy.mockResolvedValue({
+      error: 'schemaVersion must be a positive integer.',
+      status: 400,
+      code: 'INVALID_SCHEMA_VERSION',
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy?schemaVersion=nope')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('INVALID_SCHEMA_VERSION');
+  });
+
+  it('returns 401 when verifyToken rejects a missing token', async () => {
+    verifyToken.mockImplementation((_req, res) =>
+      res.status(401).json({
+        success: false,
+        message: 'No access token provided',
+        code: 'NO_TOKEN',
+      }),
+    );
+
+    const response = await request(buildBaseApp()).get('/pivot/copy');
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body.code).toBe('NO_TOKEN');
+    expect(getPivotCopy).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when verifyToken rejects a bad token', async () => {
+    verifyToken.mockImplementation((_req, res) =>
+      res.status(403).json({
+        success: false,
+        message: 'Invalid access token',
+        code: 'INVALID_TOKEN',
+      }),
+    );
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy')
+      .set('Authorization', 'Bearer bad');
+
+    expect(response.statusCode).toBe(403);
+    expect(getPivotCopy).not.toHaveBeenCalled();
   });
 });
 

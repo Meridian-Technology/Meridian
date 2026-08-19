@@ -110,10 +110,56 @@ const {
   grantCreator,
   revokeCreator,
 } = require('../services/pivotCreatorGrantService');
+const {
+  getCopyCatalog,
+  getCopyLayers,
+  getPlatformCopyLayers,
+  patchCopyPack,
+  resetCopyPack,
+} = require('../services/pivotCopyService');
 
 const router = express.Router();
 
 router.use(pivotRequestLogger);
+
+function sendCopyAdminResult(res, result) {
+  if (result.error) {
+    return res.status(result.status || 400).json({
+      success: false,
+      message: result.error,
+      code: result.code,
+    });
+  }
+  return res.status(200).json({
+    success: true,
+    data: result.data,
+  });
+}
+
+function parseCopyPatchBody(body = {}) {
+  if (typeof body.key === 'string' && body.value !== undefined) {
+    return { entries: { [body.key]: body.value } };
+  }
+  if (typeof body.token === 'string' && body.value !== undefined) {
+    return { tokens: { [body.token]: body.value } };
+  }
+  return { entries: body.entries, tokens: body.tokens };
+}
+
+function asCopyKeyList(value) {
+  if (value == null || value === '') {
+    return undefined;
+  }
+  return Array.isArray(value) ? value : [value];
+}
+
+function parseCopyResetKeys(req) {
+  const body = req.body || {};
+  return {
+    entries: asCopyKeyList(body.entries ?? body.keys ?? req.query?.key),
+    tokens: asCopyKeyList(body.tokens ?? req.query?.token),
+  };
+}
 
 router.get('/tags', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
@@ -162,6 +208,136 @@ router.post('/tags/seed', verifyToken, requirePlatformAdmin, async (req, res) =>
     });
   }
 });
+
+router.get('/copy/catalog', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    return sendCopyAdminResult(res, getCopyCatalog());
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/copy/catalog', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load pivot copy catalog.',
+    });
+  }
+});
+
+router.get('/copy', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await getPlatformCopyLayers(req);
+    return sendCopyAdminResult(res, result);
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/copy', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load pivot copy pack.',
+    });
+  }
+});
+
+router.patch('/copy', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const patch = parseCopyPatchBody(req.body);
+    const result = await patchCopyPack(req, {
+      scope: 'platform',
+      entries: patch.entries,
+      tokens: patch.tokens,
+    });
+    return sendCopyAdminResult(res, result);
+  } catch (err) {
+    logPivotRouteError('PATCH /admin/pivot/copy', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to update pivot copy pack.',
+    });
+  }
+});
+
+router.delete('/copy', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const reset = parseCopyResetKeys(req);
+    const result = await resetCopyPack(req, {
+      scope: 'platform',
+      entries: reset.entries,
+      tokens: reset.tokens,
+    });
+    return sendCopyAdminResult(res, result);
+  } catch (err) {
+    logPivotRouteError('DELETE /admin/pivot/copy', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to reset pivot copy key.',
+    });
+  }
+});
+
+router.get(
+  '/tenants/:tenantKey/copy',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getCopyLayers(req, {
+        scope: 'tenant',
+        tenantKey: req.params.tenantKey,
+      });
+      return sendCopyAdminResult(res, result);
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/copy', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant copy pack.',
+      });
+    }
+  },
+);
+
+router.patch(
+  '/tenants/:tenantKey/copy',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const patch = parseCopyPatchBody(req.body);
+      const result = await patchCopyPack(req, {
+        scope: 'tenant',
+        tenantKey: req.params.tenantKey,
+        entries: patch.entries,
+        tokens: patch.tokens,
+      });
+      return sendCopyAdminResult(res, result);
+    } catch (err) {
+      logPivotRouteError('PATCH /admin/pivot/tenants/:tenantKey/copy', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to update tenant copy pack.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/tenants/:tenantKey/copy',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const reset = parseCopyResetKeys(req);
+      const result = await resetCopyPack(req, {
+        scope: 'tenant',
+        tenantKey: req.params.tenantKey,
+        entries: reset.entries,
+        tokens: reset.tokens,
+      });
+      return sendCopyAdminResult(res, result);
+    } catch (err) {
+      logPivotRouteError('DELETE /admin/pivot/tenants/:tenantKey/copy', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to reset tenant copy key.',
+      });
+    }
+  },
+);
 
 router.get('/events', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {

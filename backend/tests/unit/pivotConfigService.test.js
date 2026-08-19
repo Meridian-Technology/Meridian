@@ -2,7 +2,16 @@ jest.mock('../../services/tenantConfigService', () => ({
   getTenantByKey: jest.fn(),
 }));
 
+jest.mock('../../services/pivotCopyService', () => ({
+  getCopyPointer: jest.fn(),
+  EMPTY_COPY_POINTER: Object.freeze({
+    revision: 'p0:t0',
+    schemaVersion: 1,
+  }),
+}));
+
 const { getTenantByKey } = require('../../services/tenantConfigService');
+const { getCopyPointer } = require('../../services/pivotCopyService');
 const { getPivotConfig, buildDropSchedulePayload } = require('../../services/pivotConfigService');
 const { PIVOT_CREW_CONFIG_VERSION } = require('../../utilities/pivotCrewConfig');
 const { PIVOT_MOBILE_STORE_URLS } = require('../../utilities/pivotMobileConfig');
@@ -44,6 +53,10 @@ describe('pivotConfigService', () => {
   describe('getPivotConfig', () => {
     beforeEach(() => {
       getTenantByKey.mockReset();
+      getCopyPointer.mockReset();
+      getCopyPointer.mockResolvedValue({
+        data: { revision: 'p0:t0', schemaVersion: 1 },
+      });
     });
 
     it('includes merged crew defaults when tenant has no overrides', async () => {
@@ -98,6 +111,42 @@ describe('pivotConfigService', () => {
 
       expect(result.data.mobile.minAppVersion).toBe('2.0.0');
       expect(result.data.mobile.forceUpdate).toBe(true);
+    });
+
+    it('includes a copy pointer without overlay entries', async () => {
+      getTenantByKey.mockResolvedValue(nycTenant);
+      getCopyPointer.mockResolvedValue({
+        data: { revision: 'p2:t1', schemaVersion: 1 },
+      });
+
+      const result = await getPivotConfig({ school: 'nyc' });
+
+      expect(getCopyPointer).toHaveBeenCalledWith(
+        expect.objectContaining({ school: 'nyc' }),
+        { tenantKey: 'nyc' },
+      );
+      expect(result.data.copy).toEqual({
+        revision: 'p2:t1',
+        schemaVersion: 1,
+      });
+      expect(result.data.copy.entries).toBeUndefined();
+      expect(result.data.copy.tokens).toBeUndefined();
+    });
+
+    it('keeps config successful when the copy pointer lookup fails', async () => {
+      getTenantByKey.mockResolvedValue(nycTenant);
+      getCopyPointer.mockResolvedValue({
+        error: 'Global database context required.',
+        status: 500,
+      });
+
+      const result = await getPivotConfig({ school: 'nyc' });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.copy).toEqual({
+        revision: 'p0:t0',
+        schemaVersion: 1,
+      });
     });
   });
 });
