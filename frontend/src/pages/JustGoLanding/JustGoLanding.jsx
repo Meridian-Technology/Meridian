@@ -9,6 +9,9 @@ import { JUSTGO_CREATOR_ROUTES } from '../JustGoCreator/justGoCreatorRoutes';
 import justGoLandingCopy, {
   JUSTGO_IOS_STORE_URL,
   JUSTGO_PLAY_STORE_URL,
+  JustGoLandingCopyContext,
+  resolveJustGoLandingCopy,
+  useJustGoLandingCopy,
 } from './justGoLandingCopy';
 import { JUSTGO_LANDING_FLYERS } from './justGoLandingFlyers';
 import JustGoLandingDeck from './JustGoLandingDeck';
@@ -106,14 +109,14 @@ function useJustGoDropCountdown() {
   }, [nowMs]);
 }
 
-const COUNTDOWN_UNITS = [
-  { key: 'days', label: justGoLandingCopy.countdownUnitDays },
-  { key: 'hours', label: justGoLandingCopy.countdownUnitHours },
-  { key: 'minutes', label: justGoLandingCopy.countdownUnitMinutes },
-  { key: 'seconds', label: justGoLandingCopy.countdownUnitSeconds },
-];
-
 function DropCountdown({ countdown }) {
+  const copy = useJustGoLandingCopy();
+  const units = [
+    { key: 'days', label: copy.countdownUnitDays },
+    { key: 'hours', label: copy.countdownUnitHours },
+    { key: 'minutes', label: copy.countdownUnitMinutes },
+    { key: 'seconds', label: copy.countdownUnitSeconds },
+  ];
   const tone = countdown.imminent ? 'imminent' : countdown.soon ? 'soon' : 'week';
   return (
     <a
@@ -125,17 +128,17 @@ function DropCountdown({ countdown }) {
     >
       <span className="justgo-landing__countdown-kicker">
         {countdown.live ? (
-          justGoLandingCopy.countdownLive
+          copy.countdownLive
         ) : (
           <>
-            <span>{justGoLandingCopy.countdownKicker}</span>
-            <span className="justgo-landing__countdown-in">{justGoLandingCopy.countdownKickerIn}</span>
+            <span>{copy.countdownKicker}</span>
+            <span className="justgo-landing__countdown-in">{copy.countdownKickerIn}</span>
           </>
         )}
       </span>
       {countdown.live ? null : (
         <span className="justgo-landing__countdown-units" aria-hidden="true">
-          {COUNTDOWN_UNITS.map((unit) => (
+          {units.map((unit) => (
             <span key={unit.key} className="justgo-landing__countdown-cell">
               <span
                 key={countdown[unit.key]}
@@ -186,20 +189,17 @@ function JustGoLanding() {
   const flyersRef = useRef(null);
   const [cities, setCities] = useState([]);
   const [citiesState, setCitiesState] = useState('loading');
+  const [copy, setCopy] = useState(justGoLandingCopy);
   const { slap } = useJustGoLandingMotion({ desktop, photoRef, flyersRef });
   const countdown = useJustGoDropCountdown();
 
   useEffect(() => {
-    document.title = justGoLandingCopy.documentTitle;
+    analytics.screen('Just Go Landing');
     const theme = document.querySelector('meta[name="theme-color"]');
     const description = document.querySelector('meta[name="description"]');
     const previousTheme = theme?.getAttribute('content');
     const previousDescription = description?.getAttribute('content');
     if (theme) theme.setAttribute('content', '#1E1A16');
-    if (description) {
-      description.setAttribute('content', justGoLandingCopy.metaDescription);
-    }
-    analytics.screen('Just Go Landing');
     return () => {
       document.title = 'Meridian';
       if (theme && previousTheme != null) theme.setAttribute('content', previousTheme);
@@ -208,6 +208,14 @@ function JustGoLanding() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    document.title = copy.documentTitle;
+    const description = document.querySelector('meta[name="description"]');
+    if (description) {
+      description.setAttribute('content', copy.metaDescription);
+    }
+  }, [copy.documentTitle, copy.metaDescription]);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,23 +237,39 @@ function JustGoLanding() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    apiRequest('/pivot/landing/copy', null, { method: 'GET' })
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.success && res.data && typeof res.data === 'object') {
+          setCopy(resolveJustGoLandingCopy(res.data));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const flyers = useMemo(() => decorateFlyers(JUSTGO_LANDING_FLYERS, cities), [cities]);
   const cityLabels = useMemo(
     () => cities.map(cityChipLabel).filter(Boolean),
     [cities],
   );
   const proofLine = cityLabels.length
-    ? `${justGoLandingCopy.proofPrefix} ${cityLabels.join(' · ')}`
+    ? `${copy.proofPrefix} ${cityLabels.join(' · ')}`
     : citiesState === 'empty'
-      ? justGoLandingCopy.citiesEmpty
-      : justGoLandingCopy.proofFallback;
+      ? copy.citiesEmpty
+      : copy.proofFallback;
 
   const showSticky = !ctaVisible;
 
   return (
+    <JustGoLandingCopyContext.Provider value={copy}>
     <div className={`justgo-landing${slap ? ' justgo-landing--slap' : ''}`}>
       <a className="justgo-landing__skip" href="#drop">
-        {justGoLandingCopy.skip}
+        {copy.skip}
       </a>
 
       <header className="justgo-landing__hero">
@@ -254,12 +278,12 @@ function JustGoLanding() {
         <span className="justgo-landing__grain" aria-hidden="true" />
         <nav className="justgo-landing__nav" aria-label="just go">
           <div className="justgo-landing__nav-links">
-            <a href="#drop">{justGoLandingCopy.navDrop}</a>
-            <a href="#story">{justGoLandingCopy.navStory}</a>
+            <a href="#drop">{copy.navDrop}</a>
+            <a href="#story">{copy.navStory}</a>
           </div>
           <DropCountdown countdown={countdown} />
           <a className="justgo-landing__nav-cta" href={storeUrl}>
-            {justGoLandingCopy.cta}
+            {copy.cta}
           </a>
         </nav>
 
@@ -267,15 +291,15 @@ function JustGoLanding() {
           <img
             className="justgo-landing__wordmark"
             src={justGoWordmark}
-            alt={justGoLandingCopy.wordmarkAlt}
+            alt={copy.wordmarkAlt}
             draggable={false}
           />
           <h1 className="justgo-landing__headline">
             <span className="justgo-landing__strip justgo-landing__strip--cream">
-              {justGoLandingCopy.headlineLead}
+              {copy.headlineLead}
             </span>
             <span className="justgo-landing__strip justgo-landing__strip--pop">
-              {justGoLandingCopy.headlinePop}
+              {copy.headlinePop}
             </span>
           </h1>
           {platform === 'android' ? (
@@ -284,7 +308,7 @@ function JustGoLanding() {
               href={JUSTGO_PLAY_STORE_URL}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={justGoLandingCopy.ctaAriaAndroid}
+              aria-label={copy.ctaAriaAndroid}
             >
               get it on google play
             </a>
@@ -294,7 +318,7 @@ function JustGoLanding() {
               href={JUSTGO_IOS_STORE_URL}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={justGoLandingCopy.ctaAriaIos}
+              aria-label={copy.ctaAriaIos}
             >
               <img src={APP_STORE_BADGE} alt="Download on the App Store" height="52" />
             </a>
@@ -303,16 +327,16 @@ function JustGoLanding() {
       </header>
 
       <p className="justgo-landing__proof" aria-live="polite">
-        {citiesState === 'loading' ? justGoLandingCopy.citiesLoading : proofLine}
+        {citiesState === 'loading' ? copy.citiesLoading : proofLine}
       </p>
 
       <section className="justgo-landing__drop" id="drop">
         {desktop ? (
           <>
             <div className="justgo-landing__drop-copy">
-              <p className="justgo-landing__eyebrow">{justGoLandingCopy.flyersEyebrow}</p>
-              <h2>{justGoLandingCopy.flyersTitle}</h2>
-              <p>{justGoLandingCopy.flyersBody}</p>
+              <p className="justgo-landing__eyebrow">{copy.flyersEyebrow}</p>
+              <h2>{copy.flyersTitle}</h2>
+              <p>{copy.flyersBody}</p>
             </div>
             <div className="justgo-landing__flyers" ref={flyersRef}>
               {flyers.map((flyer) => (
@@ -330,13 +354,13 @@ function JustGoLanding() {
       </section>
 
       <section className="justgo-landing__story" id="story">
-        <p className="justgo-landing__eyebrow">{justGoLandingCopy.storyEyebrow}</p>
+        <p className="justgo-landing__eyebrow">{copy.storyEyebrow}</p>
         <h2>
           <span className="justgo-landing__strip justgo-landing__strip--cream">
-            {justGoLandingCopy.storyTitle}
+            {copy.storyTitle}
           </span>
         </h2>
-        {justGoLandingCopy.story.map((graf) => (
+        {copy.story.map((graf) => (
           <p key={graf}>{graf}</p>
         ))}
         <div className="justgo-landing__story-prints" aria-hidden="true">
@@ -350,39 +374,40 @@ function JustGoLanding() {
         <img
           className="justgo-landing__footer-mark"
           src={justGoWordmark}
-          alt={justGoLandingCopy.wordmarkAlt}
+          alt={copy.wordmarkAlt}
           draggable={false}
         />
-        <p className="justgo-landing__footer-stamp">{justGoLandingCopy.footerStamp}</p>
+        <p className="justgo-landing__footer-stamp">{copy.footerStamp}</p>
         <p className="justgo-landing__contact-lead">
           <span className="justgo-landing__strip justgo-landing__strip--pop">
-            {justGoLandingCopy.contactLead}
+            {copy.contactLead}
           </span>
         </p>
         <a className="justgo-landing__cta justgo-landing__cta--footer" href={storeUrl}>
-          {justGoLandingCopy.cta}
+          {copy.cta}
         </a>
         <p className="justgo-landing__host">
-          {justGoLandingCopy.footerHost}{' '}
-          <Link to={JUSTGO_CREATOR_ROUTES.login}>{justGoLandingCopy.footerHostLink}</Link>
+          {copy.footerHost}{' '}
+          <Link to={JUSTGO_CREATOR_ROUTES.login}>{copy.footerHostLink}</Link>
         </p>
         <p className="justgo-landing__note">
-          {justGoLandingCopy.footerNote}{' '}
-          <a href={`mailto:${justGoLandingCopy.footerEmail}`}>{justGoLandingCopy.footerEmail}</a>
+          {copy.footerNote}{' '}
+          <a href={`mailto:${copy.footerEmail}`}>{copy.footerEmail}</a>
         </p>
         <p className="justgo-landing__legal">
-          <Link to="/privacy-policy">{justGoLandingCopy.footerPrivacy}</Link>
+          <Link to="/privacy-policy">{copy.footerPrivacy}</Link>
           <span aria-hidden="true"> · </span>
-          <Link to="/terms-of-service">{justGoLandingCopy.footerTerms}</Link>
+          <Link to="/terms-of-service">{copy.footerTerms}</Link>
         </p>
       </footer>
 
       {showSticky ? (
         <div className="justgo-landing__sticky">
-          <a href={storeUrl}>{justGoLandingCopy.stickyCta}</a>
+          <a href={storeUrl}>{copy.stickyCta}</a>
         </div>
       ) : null}
     </div>
+    </JustGoLandingCopyContext.Provider>
   );
 }
 

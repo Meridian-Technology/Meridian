@@ -227,4 +227,72 @@ describe('JustGoLanding', () => {
     });
     expect(window.localStorage.getItem('justgo.landing.city')).toBe('troy');
   });
+
+  it('renders bundled copy when the landing copy API is down', async () => {
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/copy') {
+        return Promise.reject(new Error('down'));
+      }
+      if (url === '/pivot/cities') {
+        return Promise.resolve({ success: true, data: { cities: CITIES } });
+      }
+      if (url === '/pivot/landing/drop') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            tenantKey: 'brooklyn',
+            cityDisplayName: 'Brooklyn',
+            batchWeek: '2026-W33',
+            events: DROP_EVENTS.slice(0, 4),
+          },
+        });
+      }
+      return Promise.resolve({ success: false });
+    });
+
+    await renderLanding();
+    expect(screen.getAllByText(justGoLandingCopy.cta).length).toBeGreaterThan(0);
+    expect(screen.getByText(justGoLandingCopy.story[2])).toBeInTheDocument();
+  });
+
+  it('applies a platform overlay without blocking first paint', async () => {
+    let resolveCopy;
+    const copyPromise = new Promise((resolve) => {
+      resolveCopy = resolve;
+    });
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/copy') {
+        return copyPromise;
+      }
+      if (url === '/pivot/cities') {
+        return Promise.resolve({ success: true, data: { cities: CITIES } });
+      }
+      return Promise.resolve({ success: false });
+    });
+
+    mockMatchMedia(true);
+    render(
+      <MemoryRouter initialEntries={['/justgo']}>
+        <Routes>
+          <Route path="/justgo" element={<JustGoLanding />} />
+          <Route path="/justgo/creator/login" element={<p>creator login</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: /what are you doing this week/i }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(justGoLandingCopy.cta).length).toBeGreaterThan(0);
+
+    resolveCopy({
+      success: true,
+      data: {
+        entries: { 'landing.cta': 'grab the app' },
+        tokens: {},
+      },
+    });
+
+    expect(await screen.findAllByText('grab the app')).not.toHaveLength(0);
+  });
 });

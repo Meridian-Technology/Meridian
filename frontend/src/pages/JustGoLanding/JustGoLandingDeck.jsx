@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { animated, useSpring } from 'react-spring';
 import apiRequest from '../../utils/postRequest';
-import justGoLandingCopy, {
+import {
   JUSTGO_IOS_STORE_URL,
   JUSTGO_PLAY_STORE_URL,
+  useJustGoLandingCopy,
 } from './justGoLandingCopy';
 import {
   cityChipLabel,
@@ -99,28 +100,29 @@ function storeUrlFor(platform) {
 }
 
 function DownloadFace({ storeUrl, platform, empty }) {
+  const copy = useJustGoLandingCopy();
   return (
     <article
       className="justgo-landing-card justgo-landing-card--download"
-      aria-label={justGoLandingCopy.deckDownloadTitle}
+      aria-label={copy.deckDownloadTitle}
     >
       <div className="justgo-landing-card__hero justgo-landing-card__hero--download" />
       <div className="justgo-landing-card__body">
-        <span className="justgo-landing-card__tag">just go</span>
+        <span className="justgo-landing-card__tag">{copy.productName}</span>
         <h3 className="justgo-landing-card__title">
-          {empty ? justGoLandingCopy.deckEmpty : justGoLandingCopy.deckDownloadTitle}
+          {empty ? copy.deckEmpty : copy.deckDownloadTitle}
         </h3>
-        <p className="justgo-landing-card__host">{justGoLandingCopy.deckDownloadBody}</p>
+        <p className="justgo-landing-card__host">{copy.deckDownloadBody}</p>
         <a
           className="justgo-landing__cta justgo-landing__cta--deck"
           href={storeUrl}
           aria-label={
             platform === 'android'
-              ? justGoLandingCopy.ctaAriaAndroid
-              : justGoLandingCopy.ctaAriaIos
+              ? copy.ctaAriaAndroid
+              : copy.ctaAriaIos
           }
         >
-          {justGoLandingCopy.cta}
+          {copy.cta}
         </a>
         {platform === 'android' ? (
           <a className="justgo-landing-card__store" href={JUSTGO_PLAY_STORE_URL}>
@@ -130,7 +132,7 @@ function DownloadFace({ storeUrl, platform, empty }) {
           <a
             className="justgo-landing-card__store justgo-landing-card__store--badge"
             href={JUSTGO_IOS_STORE_URL}
-            aria-label={justGoLandingCopy.ctaAriaIos}
+            aria-label={copy.ctaAriaIos}
           >
             <img src={APP_STORE_BADGE} alt="Download on the App Store" height="32" />
           </a>
@@ -141,6 +143,7 @@ function DownloadFace({ storeUrl, platform, empty }) {
 }
 
 function LeavingCard({ card, empty, storeUrl, platform, x: startX, rot: startRot, direction, onDone }) {
+  const copy = useJustGoLandingCopy();
   const [{ x, rot }, api] = useSpring(() => ({
     x: startX,
     rot: startRot,
@@ -167,10 +170,10 @@ function LeavingCard({ card, empty, storeUrl, platform, x: startX, rot: startRot
     >
       <div className={`justgo-landing-deck__overlay justgo-landing-deck__overlay--${overlay}`}>
         <span className="justgo-landing-deck__overlay-chip">
-          {overlay === 'pass' ? justGoLandingCopy.deckPass : justGoLandingCopy.deckInterested}
+          {overlay === 'pass' ? copy.deckPass : copy.deckInterested}
         </span>
         <span className="justgo-landing-deck__overlay-hint">
-          {overlay === 'pass' ? justGoLandingCopy.deckPassHint : justGoLandingCopy.deckInterestedHint}
+          {overlay === 'pass' ? copy.deckPassHint : copy.deckInterestedHint}
         </span>
       </div>
       {card.kind === 'event' ? (
@@ -183,6 +186,7 @@ function LeavingCard({ card, empty, storeUrl, platform, x: startX, rot: startRot
 }
 
 function SwipeTopCard({ card, empty, storeUrl, platform, stackIndex, onSwiped }) {
+  const copy = useJustGoLandingCopy();
   const locked = card.kind === 'download';
   const rest = landingPosterStack(1, stackIndex);
   const [{ x, rot, scale }, api] = useSpring(() => ({
@@ -333,16 +337,16 @@ function SwipeTopCard({ card, empty, storeUrl, platform, stackIndex, onSwiped })
           className="justgo-landing-deck__overlay justgo-landing-deck__overlay--pass"
           style={{ opacity: passOpacity }}
         >
-          <span className="justgo-landing-deck__overlay-chip">{justGoLandingCopy.deckPass}</span>
-          <span className="justgo-landing-deck__overlay-hint">{justGoLandingCopy.deckPassHint}</span>
+          <span className="justgo-landing-deck__overlay-chip">{copy.deckPass}</span>
+          <span className="justgo-landing-deck__overlay-hint">{copy.deckPassHint}</span>
         </animated.div>
         <animated.div
           className="justgo-landing-deck__overlay justgo-landing-deck__overlay--save"
           style={{ opacity: saveOpacity }}
         >
-          <span className="justgo-landing-deck__overlay-chip">{justGoLandingCopy.deckInterested}</span>
+          <span className="justgo-landing-deck__overlay-chip">{copy.deckInterested}</span>
           <span className="justgo-landing-deck__overlay-hint">
-            {justGoLandingCopy.deckInterestedHint}
+            {copy.deckInterestedHint}
           </span>
         </animated.div>
         {card.kind === 'event' ? (
@@ -354,14 +358,14 @@ function SwipeTopCard({ card, empty, storeUrl, platform, stackIndex, onSwiped })
       {!locked ? (
         <div className="justgo-landing-deck__actions">
           <button type="button" onClick={() => commit(-1)}>
-            {justGoLandingCopy.deckPass}
+            {copy.deckPass}
           </button>
           <button
             type="button"
             className="justgo-landing-deck__actions-save"
             onClick={() => commit(1)}
           >
-            {justGoLandingCopy.deckInterested}
+            {copy.deckInterested}
           </button>
         </div>
       ) : null}
@@ -370,6 +374,7 @@ function SwipeTopCard({ card, empty, storeUrl, platform, stackIndex, onSwiped })
 }
 
 export default function JustGoLandingDeck({ cities, citiesState, platform }) {
+  const copy = useJustGoLandingCopy();
   const storeUrl = storeUrlFor(platform);
   const [tenantKey, setTenantKey] = useState('');
   const [events, setEvents] = useState([]);
@@ -431,23 +436,23 @@ export default function JustGoLandingDeck({ cities, citiesState, platform }) {
   return (
     <div className="justgo-landing-deck">
       <div className="justgo-landing__drop-copy">
-        <p className="justgo-landing__eyebrow">{justGoLandingCopy.deckEyebrow}</p>
-        <h2>{justGoLandingCopy.deckTitle}</h2>
-        <p>{justGoLandingCopy.deckBody}</p>
+        <p className="justgo-landing__eyebrow">{copy.deckEyebrow}</p>
+        <h2>{copy.deckTitle}</h2>
+        <p>{copy.deckBody}</p>
       </div>
 
       {citiesState === 'loading' ? (
-        <p className="justgo-landing__muted">{justGoLandingCopy.citiesLoading}</p>
+        <p className="justgo-landing__muted">{copy.citiesLoading}</p>
       ) : null}
       {citiesState === 'empty' ? (
-        <p className="justgo-landing__muted">{justGoLandingCopy.citiesEmpty}</p>
+        <p className="justgo-landing__muted">{copy.citiesEmpty}</p>
       ) : null}
 
       {cities.length ? (
         <div
           className="justgo-landing-deck__cities"
           role="listbox"
-          aria-label={justGoLandingCopy.cityPickerLabel}
+          aria-label={copy.cityPickerLabel}
         >
           {cities.map((city) => {
             const label = cityChipLabel(city);
@@ -474,7 +479,7 @@ export default function JustGoLandingDeck({ cities, citiesState, platform }) {
       ) : null}
 
       {waiting ? (
-        <p className="justgo-landing__muted">{justGoLandingCopy.deckLoading}</p>
+        <p className="justgo-landing__muted">{copy.deckLoading}</p>
       ) : (
         <div className="justgo-landing-deck__stage">
           {peek.map((card, peekIndex) => {
@@ -529,7 +534,7 @@ export default function JustGoLandingDeck({ cities, citiesState, platform }) {
       )}
 
       {current?.kind === 'event' ? (
-        <p className="justgo-landing-deck__hint">{justGoLandingCopy.deckHint}</p>
+        <p className="justgo-landing-deck__hint">{copy.deckHint}</p>
       ) : null}
     </div>
   );
