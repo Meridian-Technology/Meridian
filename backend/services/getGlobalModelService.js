@@ -16,6 +16,7 @@ const pivotCitySourceSchema = require('../schemas/pivotCitySource');
 const pivotSourceDiscoveryRunSchema = require('../schemas/pivotSourceDiscoveryRun');
 const pivotContactHashSchema = require('../schemas/pivotContactHash');
 const pivotCreatorGrantSchema = require('../schemas/pivotCreatorGrant');
+const pivotCopyPackSchema = require('../schemas/pivotCopyPack');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -23,7 +24,7 @@ const pivotCreatorGrantSchema = require('../schemas/pivotCreatorGrant');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', …
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -90,6 +91,11 @@ const getGlobalModels = (req, ...names) => {
             'PivotCreatorGrant',
             pivotCreatorGrantSchema,
             'pivot_creator_grants'
+        ),
+        PivotCopyPack: db.model(
+            'PivotCopyPack',
+            pivotCopyPackSchema,
+            'pivot_copy_packs'
         ),
     };
 
