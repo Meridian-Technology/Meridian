@@ -17,6 +17,7 @@ const {
   resolveCrewWeeklyDropBody,
   resolveCrewWeeklyDropVariant,
 } = require('../utilities/pivotCrewPushCopy');
+const { getMergedCopyPackOrEmpty } = require('./pivotCopyService');
 const { computeRitualPhase } = require('../utilities/pivotRitualPhase');
 const { buildDecideQueueOrder } = require('../utilities/pivotCrewDecideQueue');
 const { buildRitualPushData } = require('../utilities/pivotRitualNudge');
@@ -85,7 +86,7 @@ function toObjectId(value) {
   return null;
 }
 
-function resolveWeeklyDropPushCopyForRecipient(baseCopy, crewContext = {}) {
+function resolveWeeklyDropPushCopyForRecipient(baseCopy, crewContext = {}, copyPack) {
   const variant = resolveCrewWeeklyDropVariant(crewContext);
   if (!variant) {
     return {
@@ -99,7 +100,7 @@ function resolveWeeklyDropPushCopyForRecipient(baseCopy, crewContext = {}) {
     };
   }
 
-  const crewBody = resolveCrewWeeklyDropBody(variant);
+  const crewBody = resolveCrewWeeklyDropBody(variant, copyPack);
   return {
     title: baseCopy.title,
     body: trimPushField(crewBody, PUSH_BODY_MAX) || baseCopy.body,
@@ -407,6 +408,9 @@ async function loadPivotPushRecipients(tenantKey) {
 
 async function buildWeeklyDropPushMessages(tenant, batchWeek, recipients, options = {}) {
   const baseCopy = resolveWeeklyDropPushCopy(tenant, batchWeek, options);
+  const copyPack =
+    options.copyPack ||
+    (await getMergedCopyPackOrEmpty(options.req, { tenantKey: tenant.tenantKey }));
   const crewContextByUserId = await loadWeeklyDropCrewContext(
     tenant.tenantKey,
     batchWeek,
@@ -424,7 +428,7 @@ async function buildWeeklyDropPushMessages(tenant, batchWeek, recipients, option
       decideCrewId: null,
       ritualPhase: 'solo',
     };
-    const copy = resolveWeeklyDropPushCopyForRecipient(baseCopy, crewContext);
+    const copy = resolveWeeklyDropPushCopyForRecipient(baseCopy, crewContext, copyPack);
     return buildWeeklyDropPushMessage(recipient.pushToken, batchWeek, copy);
   });
 }
@@ -613,6 +617,7 @@ async function sendWeeklyDropPush(req, tenantKey, options = {}) {
   const messages = await buildWeeklyDropPushMessages(tenant, batchWeek, recipients, {
     pushTitle: options.pushTitle,
     pushBody: options.pushBody,
+    req,
   });
   const pushCopyBreakdown = summarizePushCopyBreakdown(messages);
 
