@@ -5,7 +5,7 @@ import './assets/Fonts/Montserrat/Montserrat.css';
 import './assets/Fonts/OpenSauce/OpenSauce.css';    
 import AnimatedPageWrapper, { StaticFullBleedPage } from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
-import { isWww, setLastTenant, setTenantConfigCache } from './config/tenantRedirect';
+import { isWww, isJustGoHost, setLastTenant, setTenantConfigCache } from './config/tenantRedirect';
 
 import Room from './pages/Room/Room';
 import Room1 from './pages/Room/Room1';
@@ -23,6 +23,8 @@ import Landing from './pages/Landing/Landing';
 import MobileLanding from './pages/MobileLanding/MobileLanding';
 import InviteLanding from './pages/InviteLanding/InviteLanding';
 import JustGoLanding from './pages/JustGoLanding/JustGoLanding';
+import JustGoQrHop from './pages/JustGoLanding/JustGoQrHop';
+import { JustGoApexCityLanding } from './pages/JustGoLanding/justGoHostRoutes';
 import Events from './pages/Events/Events';
 import DeveloperOnboard from './pages/DeveloperOnboarding/DeveloperOnboarding';
 import QR from './pages/QR/QR';
@@ -116,16 +118,16 @@ function App() {
 
     // Remember tenant for next time user visits www (single-tenant: no picker)
     useEffect(() => {
-        if (typeof window !== 'undefined' && !isWww() && window.location.hostname) {
+        if (typeof window !== 'undefined' && !isWww() && !isJustGoHost() && window.location.hostname) {
             const sub = window.location.hostname.split('.')[0];
-            if (sub && sub !== 'www') setLastTenant(sub);
+            if (sub && sub !== 'www' && sub !== 'justgo') setLastTenant(sub);
         }
     }, []);
 
     useEffect(() => {
         // check if the user has already visited
         //don't do anything if /qr
-        if (window.location.pathname === '/qr') {
+        if (isJustGoHost() || window.location.pathname === '/qr') {
             return;
         }
         const hasVisited = localStorage.getItem('hasVisited');
@@ -200,6 +202,7 @@ function App() {
         };
     }, []);
     // document.documentElement.classList.add('dark-mode');
+    const justGoHost = isJustGoHost();
     return (
         <GoogleOAuthProvider clientId="639818062398-k4qnm9l320phu967ctc2l1jt1sp9ib7p.apps.googleusercontent.com">
             <RebrandingNotice />
@@ -214,11 +217,17 @@ function App() {
                                     <Routes>
                                         <Route path='/' element={<Layout/>}>
                                             {/* publicly accessible pages */}
-                                            <Route path="/qr/e/:shortId" element={<EventQRRedirect/>}/>
-                                            <Route path="/qr/:id" element={<QR/>}/>
+                                            {justGoHost ? (
+                                                <Route path="/qr/:name" element={<JustGoQrHop />} />
+                                            ) : (
+                                                <>
+                                                    <Route path="/qr/e/:shortId" element={<EventQRRedirect/>}/>
+                                                    <Route path="/qr/:id" element={<QR/>}/>
+                                                </>
+                                            )}
                                             <Route path="/check-in/:eventId/:token" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route path="/check-in/:eventId" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
-                                            <Route index element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />
+                                            <Route index element={justGoHost ? <JustGoLanding /> : <AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />
                                             <Route path="/room/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/room1/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/register" element={<AnimatedPageWrapper><Register /></AnimatedPageWrapper>}/>
@@ -258,7 +267,11 @@ function App() {
                                             <Route path="/landing" element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>}/>
                                             <Route path="/mobile" element={<AnimatedPageWrapper><MobileLanding /></AnimatedPageWrapper>}/>
                                             <Route path="/invite" element={<AnimatedPageWrapper><InviteLanding /></AnimatedPageWrapper>}/>
+                                            <Route path="/justgo/:tenantKey" element={<JustGoLanding />} />
                                             <Route path="/justgo" element={<JustGoLanding />} />
+                                            {justGoHost ? (
+                                                <Route path="/:tenantKey" element={<JustGoApexCityLanding />} />
+                                            ) : null}
                                             <Route path="/org" element={<AnimatedPageWrapper><Org/></AnimatedPageWrapper>}/>
                                             <Route path="/documentation" element={<Redirect/>}/>
                                             <Route path="/new-badge/:hash" element={<AnimatedPageWrapper><NewBadge/></AnimatedPageWrapper>}/>

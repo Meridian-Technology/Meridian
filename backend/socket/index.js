@@ -5,6 +5,7 @@
  */
 
 const { Server } = require('socket.io');
+const { STATIC_PRODUCTION_ORIGINS } = require('../utilities/corsOrigins');
 
 const ROOM_PREFIX_EVENT = 'event:';
 const ROOM_PREFIX_ORG_APPROVAL = 'org-approval:';
@@ -30,7 +31,7 @@ function initSocket(server, corsOptions = {}) {
             ? { origin: corsOptions.origin, credentials: true, methods: ['GET', 'POST'] }
             : {
                 origin: process.env.NODE_ENV === 'production'
-                    ? ['https://www.meridian.study', 'https://meridian.study']
+                    ? [...STATIC_PRODUCTION_ORIGINS]
                     : 'http://localhost:3000',
                 credentials: true,
                 methods: ['GET', 'POST'],

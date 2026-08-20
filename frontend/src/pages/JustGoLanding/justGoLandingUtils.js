@@ -104,13 +104,6 @@ export function formatLandingDropSpoken(parts) {
   return `next drop in ${bits.join(' ')}`;
 }
 
-/** Horizontal smear for the court photo, driven by Lenis velocity. */
-export function smearFromVelocity(velocity) {
-  const x = Math.max(-36, Math.min(36, Number(velocity) * 0.12));
-  const skew = Math.max(-1.6, Math.min(1.6, Number(velocity) * -0.018));
-  return { x: x || 0, skew: skew || 0 };
-}
-
 export const DECK_SWIPE_AXIS_PX = 12;
 
 /**
@@ -180,6 +173,62 @@ export function cityChipLabel(city) {
   return name || null;
 }
 
+export const JUSTGO_LANDING_RESERVED_SLUGS = Object.freeze([
+  'qr',
+  'creator',
+  'invite',
+  'privacy-policy',
+  'terms-of-service',
+  'login',
+  'platform-admin',
+  'admin',
+  'justgo',
+]);
+
+export function normalizeLandingTenantKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+/** Empty when the slug is missing or reserved (`qr`, `creator`, …). */
+export function landingTenantKeyFromParam(value) {
+  const key = normalizeLandingTenantKey(value);
+  if (!key || JUSTGO_LANDING_RESERVED_SLUGS.includes(key)) return '';
+  return key;
+}
+
+/** Campus Banner is school chrome — hide it on Just Go public surfaces. */
+export function shouldHideCampusBanner(pathname, justGoHost = false) {
+  const path = String(pathname || '/').split('?')[0] || '/';
+  if (path === '/invite' || path.startsWith('/invite/')) return true;
+  if (path === '/justgo' || path.startsWith('/justgo/')) return true;
+  if (!justGoHost) return false;
+  if (path === '/') return true;
+  if (path === '/privacy-policy' || path === '/terms-of-service') return true;
+  if (path === '/qr' || path.startsWith('/qr/')) return true;
+  if (path === '/creator' || path.startsWith('/creator/')) return true;
+  const segments = path.split('/').filter(Boolean);
+  return segments.length === 1 && Boolean(landingTenantKeyFromParam(segments[0]));
+}
+
+export function findLandingCity(cities = [], tenantKey = '') {
+  const locked = normalizeLandingTenantKey(tenantKey);
+  if (!locked || !Array.isArray(cities)) return null;
+  return (
+    cities.find(
+      (city) => normalizeLandingTenantKey(city?.tenantKey) === locked,
+    ) || null
+  );
+}
+
+/** General landing keeps every city. A tenant URL keeps only that city. */
+export function scopeLandingCities(cities = [], lockedTenantKey = '') {
+  const list = Array.isArray(cities) ? cities : [];
+  const locked = landingTenantKeyFromParam(lockedTenantKey);
+  if (!locked) return list;
+  const match = findLandingCity(list, locked);
+  return match ? [match] : [];
+}
+
 export const JUSTGO_LANDING_CITY_KEY = 'justgo.landing.city';
 
 export function readStoredLandingCity() {
@@ -201,8 +250,14 @@ export function writeStoredLandingCity(tenantKey) {
 
 export function pickLandingCity(cities = [], storedKey = '') {
   if (!Array.isArray(cities) || cities.length === 0) return null;
-  const stored = String(storedKey || '').trim();
-  return cities.find((city) => city?.tenantKey === stored) || cities[0];
+  const match = findLandingCity(cities, storedKey);
+  return match || cities[0];
+}
+
+/** Missing mode is waitlist (same as tenant config). No city → not waitlist (don’t flash the form). */
+export function isWaitlistLandingMode(city) {
+  if (!city) return false;
+  return String(city.landingMode || 'waitlist').toLowerCase() !== 'launched';
 }
 
 function formatLandingClock(date) {

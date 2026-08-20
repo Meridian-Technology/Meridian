@@ -7,23 +7,17 @@ import {
   formatLandingWhen,
   padDropUnit,
   pickLandingCity,
+  isWaitlistLandingMode,
   landingPosterStack,
   landingSwipeRotate,
   landingSwipeTint,
+  landingTenantKeyFromParam,
   resolveDeckSwipeAxis,
   resolveNextLandingDropAt,
-  smearFromVelocity,
+  scopeLandingCities,
+  shouldHideCampusBanner,
   splitLandingDropCountdown,
 } from './justGoLandingUtils';
-
-describe('smearFromVelocity', () => {
-  it('leans the court with scroll and clamps hard flicks', () => {
-    expect(smearFromVelocity(0)).toEqual({ x: 0, skew: 0 });
-    expect(smearFromVelocity(80)).toEqual({ x: 9.6, skew: -1.44 });
-    expect(smearFromVelocity(400).x).toBe(36);
-    expect(smearFromVelocity(-400).skew).toBe(1.6);
-  });
-});
 
 describe('resolveDeckSwipeAxis', () => {
   it('stays undecided until the finger travels far enough', () => {
@@ -110,6 +104,58 @@ describe('cityChipLabel', () => {
   });
 });
 
+describe('landingTenantKeyFromParam', () => {
+  it('normalizes a city slug and ignores creator', () => {
+    expect(landingTenantKeyFromParam(' Troy ')).toBe('troy');
+    expect(landingTenantKeyFromParam('creator')).toBe('');
+    expect(landingTenantKeyFromParam('')).toBe('');
+  });
+
+  it('ignores reserved apex slugs so they are not treated as cities', () => {
+    expect(landingTenantKeyFromParam('qr')).toBe('');
+    expect(landingTenantKeyFromParam('invite')).toBe('');
+    expect(landingTenantKeyFromParam('justgo')).toBe('');
+    expect(landingTenantKeyFromParam('platform-admin')).toBe('');
+  });
+});
+
+describe('shouldHideCampusBanner', () => {
+  it('hides campus chrome on /justgo and /invite on any host', () => {
+    expect(shouldHideCampusBanner('/justgo', false)).toBe(true);
+    expect(shouldHideCampusBanner('/justgo/troy', false)).toBe(true);
+    expect(shouldHideCampusBanner('/invite', false)).toBe(true);
+    expect(shouldHideCampusBanner('/', false)).toBe(false);
+    expect(shouldHideCampusBanner('/privacy-policy', false)).toBe(false);
+  });
+
+  it('hides the banner on Just Go landing, city, qr, and legal pages', () => {
+    expect(shouldHideCampusBanner('/', true)).toBe(true);
+    expect(shouldHideCampusBanner('/troy', true)).toBe(true);
+    expect(shouldHideCampusBanner('/qr/poster-night', true)).toBe(true);
+    expect(shouldHideCampusBanner('/privacy-policy', true)).toBe(true);
+    expect(shouldHideCampusBanner('/terms-of-service', true)).toBe(true);
+  });
+});
+
+describe('scopeLandingCities', () => {
+  const cities = [
+    { tenantKey: 'brooklyn', cityDisplayName: 'Brooklyn' },
+    { tenantKey: 'troy', cityDisplayName: 'Troy' },
+  ];
+
+  it('keeps every city on the general landing', () => {
+    expect(scopeLandingCities(cities, '')).toEqual(cities);
+  });
+
+  it('keeps only the locked tenant', () => {
+    expect(scopeLandingCities(cities, 'TROY')).toEqual([cities[1]]);
+  });
+
+  it('returns none when that city is not live', () => {
+    expect(scopeLandingCities(cities, 'paris')).toEqual([]);
+  });
+});
+
 describe('pickLandingCity', () => {
   const cities = [
     { tenantKey: 'brooklyn', cityDisplayName: 'Brooklyn' },
@@ -123,6 +169,19 @@ describe('pickLandingCity', () => {
   it('falls back to the first city', () => {
     expect(pickLandingCity(cities, 'missing').tenantKey).toBe('brooklyn');
     expect(pickLandingCity([], 'troy')).toBeNull();
+  });
+});
+
+describe('isWaitlistLandingMode', () => {
+  it('treats a missing city as not waitlist so the form does not flash', () => {
+    expect(isWaitlistLandingMode(null)).toBe(false);
+    expect(isWaitlistLandingMode(undefined)).toBe(false);
+  });
+
+  it('defaults missing landingMode to waitlist and only launched is store CTAs', () => {
+    expect(isWaitlistLandingMode({ tenantKey: 'troy' })).toBe(true);
+    expect(isWaitlistLandingMode({ tenantKey: 'troy', landingMode: 'waitlist' })).toBe(true);
+    expect(isWaitlistLandingMode({ tenantKey: 'brooklyn', landingMode: 'launched' })).toBe(false);
   });
 });
 
