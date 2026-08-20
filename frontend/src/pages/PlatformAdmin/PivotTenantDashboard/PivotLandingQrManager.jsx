@@ -1,18 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Icon } from '@iconify-icon/react';
 import { useFetch, authenticatedRequest } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
+import { PivotOpsSection } from '../../../components/PivotOps';
+import StyledJustGoQr from '../../../components/JustGoQr/StyledJustGoQr';
 import {
-  PivotOpsBanner,
-  PivotOpsSection,
-  PivotOpsStatus,
-} from '../../../components/PivotOps';
-import {
+  JUSTGO_QR_DEFAULT_BG,
   JUSTGO_QR_DEFAULT_FG,
   downloadJustGoQr,
   justGoQrFilename,
 } from '../../../components/JustGoQr/justGoQrTheme';
 import { justGoPublicUrl } from '../../JustGoLanding/justGoLandingCopy';
 import PivotLandingQrModal from './PivotLandingQrModal';
+import './PivotLandingQrManager.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
 
@@ -25,11 +25,21 @@ function qrPayloadUrl(qr) {
   return qr?.payloadUrl || justGoPublicUrl(`/qr/${encodeURIComponent(qr?.name || '')}`);
 }
 
-function formatTimestamp(value) {
-  if (!value) return '—';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '—';
-  return parsed.toLocaleString();
+function formatSemanticDate(value) {
+  if (!value) return null;
+  const parsed = String(value).includes('T') ? new Date(value) : new Date(`${value}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(parsed);
+  day.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today - day) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays > 1 && diffDays < 7) {
+    return parsed.toLocaleDateString('en-US', { weekday: 'short' });
+  }
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function jsonHeaders() {
@@ -42,6 +52,7 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [downloading, setDownloading] = useState('');
+  const [downloadMenu, setDownloadMenu] = useState('');
 
   const qrsUrl = tenantKey
     ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/landing-qrs`
@@ -75,6 +86,23 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
     setFormError('');
   }, [saving]);
 
+  useEffect(() => {
+    if (!downloadMenu) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') setDownloadMenu('');
+    };
+    const onPointer = (event) => {
+      if (event.target?.closest?.('[data-qr-download]')) return;
+      setDownloadMenu('');
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointer);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointer);
+    };
+  }, [downloadMenu]);
+
   const handleCopy = useCallback(
     async (qr) => {
       const url = qrPayloadUrl(qr);
@@ -100,7 +128,10 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
           fgColor: qr.fgColor || JUSTGO_QR_DEFAULT_FG,
           bgColor: qr.bgColor,
           transparentBg: qr.transparentBg !== false,
+          dotType: qr.dotType,
+          cornerType: qr.cornerType,
         });
+        setDownloadMenu('');
       } catch {
         addNotification({
           title: 'Download failed',
@@ -151,6 +182,8 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
           bgColor: body.bgColor,
           transparentBg: body.transparentBg,
           isActive: body.isActive,
+          dotType: body.dotType,
+          cornerType: body.cornerType,
         },
         headers: jsonHeaders(),
       },
@@ -219,92 +252,119 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
       ) : !items.length ? (
         <p className="pivot-lab__empty">No tracking QRs yet.</p>
       ) : (
-        <div className="pivot-tenant-launch__table-wrap">
-          <table className="pivot-tenant-launch__table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Scans</th>
-                <th>Unique</th>
-                <th>Last scan</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((qr) => {
-                const url = qrPayloadUrl(qr);
-                const pngKey = `${qr.name}:png`;
-                const svgKey = `${qr.name}:svg`;
-                return (
-                  <tr key={qr.name}>
-                    <td>
-                      <code className="linear-code linear-code--inline">{qr.name}</code>
-                    </td>
-                    <td>{qr.description || '—'}</td>
-                    <td>{qr.scans ?? 0}</td>
-                    <td>{qr.uniqueScans ?? 0}</td>
-                    <td>{formatTimestamp(qr.lastScannedAt)}</td>
-                    <td>
-                      <PivotOpsStatus tone={qr.isActive ? 'success' : 'warn'}>
-                        {qr.isActive ? 'Active' : 'Inactive'}
-                      </PivotOpsStatus>
-                    </td>
-                    <td>
-                      <div className="pivot-tenant-launch__qr-actions">
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--ghost linear-btn--sm"
-                          onClick={() => handleCopy(qr)}
+        <div className="pivot-landing-qr-list">
+          {items.map((qr) => {
+            const url = qrPayloadUrl(qr);
+            const lastScan = formatSemanticDate(qr.lastScannedAt);
+            return (
+              <div
+                key={qr.name}
+                className={`pivot-landing-qr-item${qr.isActive === false ? ' is-inactive' : ''}`}
+              >
+                <div className="pivot-landing-qr-item__main">
+                  <div className="pivot-landing-qr-item__preview">
+                    <StyledJustGoQr
+                      url={url}
+                      fgColor={qr.fgColor || JUSTGO_QR_DEFAULT_FG}
+                      bgColor={qr.bgColor || JUSTGO_QR_DEFAULT_BG}
+                      transparentBg={qr.transparentBg !== false}
+                      dotType={qr.dotType}
+                      cornerType={qr.cornerType}
+                      size={80}
+                    />
+                  </div>
+                  <div className="pivot-landing-qr-item__info">
+                    <span className="pivot-landing-qr-item__name">{qr.name}</span>
+                    {qr.description ? (
+                      <span className="pivot-landing-qr-item__desc">{qr.description}</span>
+                    ) : null}
+                    <span className="pivot-landing-qr-item__redirect" title={url}>
+                      → {url}
+                    </span>
+                    <span className="pivot-landing-qr-item__stats">
+                      {qr.scans ?? 0} scans
+                      {qr.uniqueScans != null ? ` · ${qr.uniqueScans} unique` : ''}
+                    </span>
+                    {lastScan ? (
+                      <span className="pivot-landing-qr-item__meta">Last scan: {lastScan}</span>
+                    ) : null}
+                  </div>
+                  <div className="pivot-landing-qr-item__actions">
+                    <button
+                      type="button"
+                      className="pivot-landing-qr-item__action"
+                      title="Edit"
+                      aria-label="Edit"
+                      onClick={() => {
+                        setFormError('');
+                        setModal({ mode: 'edit', qr });
+                      }}
+                    >
+                      <Icon icon="material-symbols:edit" />
+                    </button>
+                    <button
+                      type="button"
+                      className="pivot-landing-qr-item__action"
+                      title="Copy link"
+                      aria-label="Copy link"
+                      onClick={() => handleCopy(qr)}
+                    >
+                      <Icon icon="material-symbols:content-copy" />
+                    </button>
+                    <div className="pivot-landing-qr-item__download" data-qr-download>
+                      {downloadMenu === qr.name ? (
+                        <div
+                          className="pivot-landing-qr-item__formats"
+                          role="group"
+                          aria-label="Download format"
                         >
-                          Copy link
-                        </button>
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--ghost linear-btn--sm"
-                          onClick={() => handleDownload(qr, 'png')}
-                          disabled={downloading === pngKey}
-                        >
-                          {downloading === pngKey ? 'Preparing…' : 'Download PNG'}
-                        </button>
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--ghost linear-btn--sm"
-                          onClick={() => handleDownload(qr, 'svg')}
-                          disabled={downloading === svgKey}
-                        >
-                          {downloading === svgKey ? 'Preparing…' : 'Download SVG'}
-                        </button>
-                        <button
-                          type="button"
-                          className="linear-btn linear-btn--ghost linear-btn--sm"
-                          onClick={() => {
-                            setFormError('');
-                            setModal({ mode: 'edit', qr });
-                          }}
-                        >
-                          Edit
-                        </button>
-                        {qr.isActive ? (
                           <button
                             type="button"
-                            className="linear-btn linear-btn--ghost linear-btn--sm"
-                            onClick={() => handleDeactivate(qr)}
+                            className="pivot-landing-qr-item__format"
+                            onClick={() => handleDownload(qr, 'png')}
+                            disabled={downloading === `${qr.name}:png`}
                           >
-                            Deactivate
+                            {downloading === `${qr.name}:png` ? '…' : 'PNG'}
                           </button>
-                        ) : null}
-                      </div>
-                      <div className="pivot-tenant-launch__qr-url" title={url}>
-                        {url}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          <button
+                            type="button"
+                            className="pivot-landing-qr-item__format"
+                            onClick={() => handleDownload(qr, 'svg')}
+                            disabled={downloading === `${qr.name}:svg`}
+                          >
+                            {downloading === `${qr.name}:svg` ? '…' : 'SVG'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="pivot-landing-qr-item__action"
+                          title="Download"
+                          aria-label="Download"
+                          aria-haspopup="true"
+                          aria-expanded={false}
+                          onClick={() => setDownloadMenu(qr.name)}
+                        >
+                          <Icon icon="mingcute:download-fill" />
+                        </button>
+                      )}
+                    </div>
+                    {qr.isActive ? (
+                      <button
+                        type="button"
+                        className="pivot-landing-qr-item__action pivot-landing-qr-item__action--danger"
+                        title="Deactivate"
+                        aria-label="Deactivate"
+                        onClick={() => handleDeactivate(qr)}
+                      >
+                        <Icon icon="material-symbols:delete" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

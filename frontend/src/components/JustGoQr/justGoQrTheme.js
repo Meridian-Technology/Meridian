@@ -61,6 +61,8 @@ export async function downloadJustGoQr(
     fgColor = JUSTGO_QR_DEFAULT_FG,
     bgColor = JUSTGO_QR_DEFAULT_BG,
     transparentBg = true,
+    dotType = 'extra-rounded',
+    cornerType = 'extra-rounded',
     size = 1024,
   } = {},
 ) {
@@ -73,6 +75,8 @@ export async function downloadJustGoQr(
       fgColor,
       bgColor,
       transparentBg,
+      dotType,
+      cornerType,
     }),
   );
   const blob = await qr.getRawData(type);

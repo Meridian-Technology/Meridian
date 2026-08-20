@@ -119,13 +119,15 @@ describe('PivotLandingQrManager', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create QR' }));
 
     const dialog = screen.getByRole('dialog');
-    fireEvent.change(screen.getByPlaceholderText('poster-night'), {
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Create' })).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText('e.g. poster-night'), {
       target: { value: 'poster-night' },
     });
-    fireEvent.change(screen.getByPlaceholderText('Union Square posters'), {
+    fireEvent.change(screen.getByPlaceholderText('Optional campaign notes'), {
       target: { value: 'Union Square posters' },
     });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Create QR' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
 
     await waitFor(() => {
       expect(mockAuthenticatedRequest).toHaveBeenCalledWith(
@@ -137,6 +139,8 @@ describe('PivotLandingQrManager', () => {
             description: 'Union Square posters',
             fgColor: '#1A1714',
             transparentBg: true,
+            dotType: 'extra-rounded',
+            cornerType: 'extra-rounded',
           }),
         }),
       );
@@ -145,14 +149,17 @@ describe('PivotLandingQrManager', () => {
 
     rerender(<PivotLandingQrManager tenantKey="nyc" />);
     expect(screen.getByText('poster-night')).toBeInTheDocument();
-    expect(screen.getByText('https://justgo.lol/qr/poster-night')).toBeInTheDocument();
+    expect(screen.getByText('→ https://justgo.lol/qr/poster-night')).toBeInTheDocument();
   });
 
-  it('downloads PNG and SVG with Just Go ink and the public hop URL', async () => {
+  it('prompts for PNG or SVG in place, then downloads with Just Go ink', async () => {
     stubQrs({ items: [qrItem()] });
     renderManager();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Download PNG' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    expect(screen.getByRole('group', { name: 'Download format' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'PNG' }));
     await waitFor(() => {
       expect(mockDownloadJustGoQr).toHaveBeenCalledWith(
         'https://justgo.lol/qr/poster-night',
@@ -164,10 +171,11 @@ describe('PivotLandingQrManager', () => {
       );
     });
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Download PNG' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Download SVG' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    fireEvent.click(screen.getByRole('button', { name: 'SVG' }));
     await waitFor(() => {
       expect(mockDownloadJustGoQr).toHaveBeenCalledWith(
         'https://justgo.lol/qr/poster-night',
@@ -177,9 +185,6 @@ describe('PivotLandingQrManager', () => {
           filename: 'justgo-qr-poster-night.svg',
         }),
       );
-    });
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Download SVG' })).toBeEnabled();
     });
   });
 

@@ -11,6 +11,8 @@ function StyledJustGoQr({
   fgColor = JUSTGO_QR_DEFAULT_FG,
   bgColor = JUSTGO_QR_DEFAULT_BG,
   transparentBg = true,
+  dotType = 'extra-rounded',
+  cornerType = 'extra-rounded',
   size = 240,
   className = '',
 }) {
@@ -30,6 +32,8 @@ function StyledJustGoQr({
           fgColor,
           bgColor,
           transparentBg,
+          dotType,
+          cornerType,
         }),
       );
       node.innerHTML = '';
@@ -39,7 +43,7 @@ function StyledJustGoQr({
       cancelled = true;
       node.innerHTML = '';
     };
-  }, [url, fgColor, bgColor, transparentBg, size]);
+  }, [url, fgColor, bgColor, transparentBg, dotType, cornerType, size]);
 
   return (
     <div
