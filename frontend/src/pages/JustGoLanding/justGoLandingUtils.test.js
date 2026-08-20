@@ -14,9 +14,13 @@ import {
   landingTenantKeyFromParam,
   resolveDeckSwipeAxis,
   resolveNextLandingDropAt,
+  parseLandingNextDropAt,
+  resolveLandingCountdownDropAt,
   scopeLandingCities,
   applyJustGoTabIcon,
   restoreCampusTabIcon,
+  justGoLegalPath,
+  isJustGoLegalPath,
   shouldHideCampusBanner,
   splitLandingDropCountdown,
 } from './justGoLandingUtils';
@@ -141,6 +145,22 @@ describe('shouldHideCampusBanner', () => {
   });
 });
 
+describe('justGo legal paths', () => {
+  it('uses apex routes on justgo.lol and prefixed routes on campus', () => {
+    expect(justGoLegalPath('privacy', true)).toBe('/privacy-policy');
+    expect(justGoLegalPath('terms', true)).toBe('/terms-of-service');
+    expect(justGoLegalPath('privacy', false)).toBe('/justgo/privacy-policy');
+    expect(justGoLegalPath('terms', false)).toBe('/justgo/terms-of-service');
+  });
+
+  it('treats both hosts’ legal URLs as Just Go surfaces', () => {
+    expect(isJustGoLegalPath('/privacy-policy', true)).toBe(true);
+    expect(isJustGoLegalPath('/terms-of-service', true)).toBe(true);
+    expect(isJustGoLegalPath('/justgo/privacy-policy', false)).toBe(true);
+    expect(isJustGoLegalPath('/privacy-policy', false)).toBe(false);
+  });
+});
+
 describe('applyJustGoTabIcon', () => {
   function iconHref() {
     return document.querySelector('link[rel="icon"]')?.getAttribute('href') || '';
@@ -240,6 +260,36 @@ describe('resolveNextLandingDropAt', () => {
   it('keeps 6pm local across the fall DST change', () => {
     expect(resolveNextLandingDropAt(new Date('2026-11-04T16:00:00.000Z')).toISOString()).toBe(
       '2026-11-05T23:00:00.000Z',
+    );
+  });
+});
+
+describe('parseLandingNextDropAt', () => {
+  it('parses an ISO instant from landing config', () => {
+    expect(parseLandingNextDropAt('2026-08-15T02:30:00.000Z').toISOString()).toBe(
+      '2026-08-15T02:30:00.000Z',
+    );
+  });
+
+  it('returns null when the value is missing or junk', () => {
+    expect(parseLandingNextDropAt(null)).toBeNull();
+    expect(parseLandingNextDropAt('')).toBeNull();
+    expect(parseLandingNextDropAt('not-a-date')).toBeNull();
+  });
+});
+
+describe('resolveLandingCountdownDropAt', () => {
+  const now = new Date('2026-08-12T16:00:00.000Z');
+
+  it('prefers the server instant over the bundled Thursday clock', () => {
+    expect(
+      resolveLandingCountdownDropAt('2026-08-15T02:30:00.000Z', now).toISOString(),
+    ).toBe('2026-08-15T02:30:00.000Z');
+  });
+
+  it('falls back to the bundled clock when config omitted nextDropAt', () => {
+    expect(resolveLandingCountdownDropAt(undefined, now).toISOString()).toBe(
+      '2026-08-13T22:00:00.000Z',
     );
   });
 });

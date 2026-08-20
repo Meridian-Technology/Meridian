@@ -72,6 +72,22 @@ export function resolveNextLandingDropAt(now = new Date()) {
   return resolveLandingDropAt(shiftIsoWeek(calendarWeek, 1));
 }
 
+/** ISO instant from landing config. Null when missing or unparseable. */
+export function parseLandingNextDropAt(value) {
+  if (value == null || value === '') return null;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms);
+}
+
+/**
+ * Server `nextDropAt` when present; otherwise the bundled Thursday 6pm ET clock
+ * so first paint / older APIs still have a countdown.
+ */
+export function resolveLandingCountdownDropAt(nextDropAtIso, now = new Date()) {
+  return parseLandingNextDropAt(nextDropAtIso) || resolveNextLandingDropAt(now);
+}
+
 export function splitLandingDropCountdown(ms) {
   const clamped = Math.max(0, Number(ms) || 0);
   const totalSeconds = Math.floor(clamped / 1000);
@@ -197,6 +213,20 @@ export function landingTenantKeyFromParam(value) {
 }
 
 /** Campus Banner is school chrome — hide it on Just Go public surfaces. */
+export function justGoLegalPath(kind, justGoHost = false) {
+  const slug = kind === 'terms' ? 'terms-of-service' : 'privacy-policy';
+  return justGoHost ? `/${slug}` : `/justgo/${slug}`;
+}
+
+/** True on justgo.lol legal routes and on meridian.study/justgo/privacy|terms. */
+export function isJustGoLegalPath(pathname, justGoHost = false) {
+  const path = String(pathname || '/').replace(/\/$/, '') || '/';
+  if (path === '/justgo/privacy-policy' || path === '/justgo/terms-of-service') {
+    return true;
+  }
+  return Boolean(justGoHost) && (path === '/privacy-policy' || path === '/terms-of-service');
+}
+
 export function shouldHideCampusBanner(pathname, justGoHost = false) {
   const path = String(pathname || '/').split('?')[0] || '/';
   if (path === '/invite' || path.startsWith('/invite/')) return true;

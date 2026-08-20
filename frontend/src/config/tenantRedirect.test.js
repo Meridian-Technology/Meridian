@@ -98,6 +98,10 @@ describe('isPathAllowedOnJustGoHost', () => {
     expect(isPathAllowedOnJustGoHost('/qr/poster-night')).toBe(true);
     expect(isPathAllowedOnJustGoHost('/justgo/creator/login')).toBe(true);
     expect(isPathAllowedOnJustGoHost('/privacy-policy')).toBe(true);
+    expect(isPathAllowedOnJustGoHost('/terms-of-service')).toBe(true);
+    expect(isPathAllowedOnJustGoHost('/justgo/privacy-policy')).toBe(true);
+    expect(isPathAllowedOnWww('/justgo/privacy-policy')).toBe(true);
+    expect(isPathAllowedOnWww('/justgo/terms-of-service')).toBe(true);
   });
 
   it('does not open campus www to city slugs', () => {

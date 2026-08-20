@@ -1,12 +1,18 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import './TermsOfService.scss';
 import Header from '../../components/Header/Header';
 import { isJustGoHost } from '../../config/tenantRedirect';
+import JustGoTermsOfService from '../JustGoLanding/JustGoTermsOfService';
+import { isJustGoLegalPath } from '../JustGoLanding/justGoLandingUtils';
 
 function TermsOfService() {
     const navigate = useNavigate();
+    const { pathname } = useLocation();
     const justGoHost = isJustGoHost();
+    if (isJustGoLegalPath(pathname, justGoHost)) {
+        return <JustGoTermsOfService />;
+    }
     const lastUpdated = new Date().toLocaleDateString('en-US', { 
         year: 'numeric', 
         month: 'long', 

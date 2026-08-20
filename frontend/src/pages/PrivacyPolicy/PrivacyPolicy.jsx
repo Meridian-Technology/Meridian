@@ -1,12 +1,18 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import './PrivacyPolicy.scss';
 import Header from '../../components/Header/Header';
 import { isJustGoHost } from '../../config/tenantRedirect';
+import JustGoPrivacyPolicy from '../JustGoLanding/JustGoPrivacyPolicy';
+import { isJustGoLegalPath } from '../JustGoLanding/justGoLandingUtils';
 
 function PrivacyPolicy() {
     const navigate = useNavigate();
+    const { pathname } = useLocation();
     const justGoHost = isJustGoHost();
+    if (isJustGoLegalPath(pathname, justGoHost)) {
+        return <JustGoPrivacyPolicy />;
+    }
     const lastUpdated = new Date().toLocaleDateString('en-US', { 
         year: 'numeric', 
         month: 'long', 

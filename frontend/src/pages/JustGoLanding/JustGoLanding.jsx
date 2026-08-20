@@ -25,10 +25,11 @@ import {
   padDropUnit,
   pickLandingCity,
   readStoredLandingCity,
-  resolveNextLandingDropAt,
+  resolveLandingCountdownDropAt,
   scopeLandingCities,
   splitLandingDropCountdown,
   writeStoredLandingCity,
+  justGoLegalPath,
 } from './justGoLandingUtils';
 import { useJustGoLandingMotion } from './justGoLandingMotion';
 import { isJustGoHost } from '../../config/tenantRedirect';
@@ -80,7 +81,7 @@ function useHeroCtaVisible() {
   return { ref, visible };
 }
 
-function useJustGoDropCountdown() {
+function useJustGoDropCountdown(nextDropAtIso) {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -91,14 +92,14 @@ function useJustGoDropCountdown() {
   }, []);
 
   return useMemo(() => {
-    const dropAt = resolveNextLandingDropAt(new Date(nowMs));
+    const dropAt = resolveLandingCountdownDropAt(nextDropAtIso, new Date(nowMs));
     const remaining = dropAt ? dropAt.getTime() - nowMs : 0;
     const parts = splitLandingDropCountdown(remaining);
     return {
       ...parts,
       spoken: formatLandingDropSpoken(parts),
     };
-  }, [nowMs]);
+  }, [nowMs, nextDropAtIso]);
 }
 
 function DropCountdown({ countdown }) {
@@ -203,7 +204,6 @@ function JustGoLanding() {
   const [copy, setCopy] = useState(justGoLandingCopy);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const { slap } = useJustGoLandingMotion({ desktop, flyersRef });
-  const countdown = useJustGoDropCountdown();
   const srcQuery = searchParams.get('src');
   const qrQuery = searchParams.get('qr');
   const refQuery = searchParams.get('ref');
@@ -339,6 +339,7 @@ function JustGoLanding() {
     () => findLandingCity(scopedCities, lockedTenantKey || selectedTenantKey),
     [scopedCities, lockedTenantKey, selectedTenantKey],
   );
+  const countdown = useJustGoDropCountdown(activeCity?.nextDropAt);
   const waitlistMode = isWaitlistLandingMode(activeCity);
   const ctaReady = Boolean(activeCity);
 
@@ -583,9 +584,9 @@ function JustGoLanding() {
           <a href={`mailto:${copy.footerEmail}`}>{copy.footerEmail}</a>
         </p>
         <p className="justgo-landing__legal">
-          <Link to="/privacy-policy">{copy.footerPrivacy}</Link>
+          <Link to={justGoLegalPath('privacy', isJustGoHost())}>{copy.footerPrivacy}</Link>
           <span aria-hidden="true"> · </span>
-          <Link to="/terms-of-service">{copy.footerTerms}</Link>
+          <Link to={justGoLegalPath('terms', isJustGoHost())}>{copy.footerTerms}</Link>
         </p>
       </footer>
 

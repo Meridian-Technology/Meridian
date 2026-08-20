@@ -240,6 +240,64 @@ describe('JustGoLanding', () => {
     expect(countdown).toHaveTextContent(/^\s*next drop\s*in\s*\d{2}d\d{2}h\d{2}m\d{2}s\s*$/i);
   });
 
+  it('counts down to the selected city’s server drop time, not the bundled Thursday clock', async () => {
+    jest.useFakeTimers({ advanceTimers: true });
+    jest.setSystemTime(new Date('2026-08-12T16:00:00.000Z'));
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/config') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            cities: [
+              {
+                tenantKey: 'brooklyn',
+                cityDisplayName: 'Brooklyn',
+                landingMode: 'launched',
+                nextDropAt: '2026-08-13T22:00:00.000Z',
+              },
+              {
+                tenantKey: 'troy',
+                cityDisplayName: 'Troy',
+                landingMode: 'waitlist',
+                nextDropAt: '2026-08-15T02:30:00.000Z',
+              },
+            ],
+          },
+        });
+      }
+      if (url === '/pivot/landing/drop') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            tenantKey: 'brooklyn',
+            cityDisplayName: 'Brooklyn',
+            batchWeek: '2026-W33',
+            events: DROP_EVENTS.slice(0, 4),
+          },
+        });
+      }
+      if (url === '/pivot/landing/event') {
+        return Promise.resolve({ success: true });
+      }
+      return Promise.resolve({ success: false });
+    });
+
+    try {
+      await renderLanding({ desktop: false });
+      await screen.findByRole('heading', { name: 'friday night market' });
+      expect(screen.getByRole('link', { name: /next drop/i })).toHaveTextContent(
+        /^\s*next drop\s*in\s*01d06h00m00s\s*$/i,
+      );
+
+      fireEvent.click(screen.getByRole('option', { name: 'troy' }));
+      expect(screen.getByRole('link', { name: /next drop/i })).toHaveTextContent(
+        /^\s*next drop\s*in\s*02d10h30m00s\s*$/i,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('puts the week’s flyer wall on the desktop page', async () => {
     await renderLanding({ desktop: true });
 
@@ -663,11 +721,11 @@ describe('JustGoLanding', () => {
     expect(within(form).getByText(justGoLandingCopy.waitlistConsent, { exact: false })).toBeInTheDocument();
     expect(within(form).getByRole('link', { name: justGoLandingCopy.footerPrivacy })).toHaveAttribute(
       'href',
-      '/privacy-policy',
+      '/justgo/privacy-policy',
     );
     expect(within(form).getByRole('link', { name: justGoLandingCopy.footerTerms })).toHaveAttribute(
       'href',
-      '/terms-of-service',
+      '/justgo/terms-of-service',
     );
     const consent = within(form).getByText(justGoLandingCopy.waitlistConsent, { exact: false });
     const submit = screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit });
