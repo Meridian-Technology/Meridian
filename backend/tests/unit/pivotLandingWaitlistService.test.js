@@ -68,11 +68,11 @@ describe('joinWaitlist (Task 2.2)', () => {
     getMergedTenants.mockResolvedValue([NYC_TENANT, SF_TENANT]);
   });
 
-  it('mints shareCode and returns shareUrl without echoing the phone', async () => {
+  it('mints shareCode and returns shareUrl without echoing the email', async () => {
     const { create } = mockWaitlist();
 
     const result = await joinWaitlist(mockReq(), {
-      phone: '(415) 555-0100',
+      email: 'Alex@Example.com',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
     });
@@ -83,10 +83,10 @@ describe('joinWaitlist (Task 2.2)', () => {
       friendsJoined: 0,
       tenantKey: 'nyc',
     });
-    expect(JSON.stringify(result.data)).not.toMatch(/4155550100|\+14155550100|phone/i);
+    expect(JSON.stringify(result.data)).not.toMatch(/alex@example\.com/i);
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        phoneE164: '+14155550100',
+        email: 'alex@example.com',
         tenantKey: 'nyc',
         cityLabel: 'New York City',
         visitorId: 'visitor-abc',
@@ -102,7 +102,7 @@ describe('joinWaitlist (Task 2.2)', () => {
     mockWaitlist();
 
     const result = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'NYC',
       visitorId: 'visitor-abc',
     });
@@ -115,7 +115,7 @@ describe('joinWaitlist (Task 2.2)', () => {
     mockWaitlist();
 
     const missing = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       visitorId: 'visitor-abc',
     });
     expect(missing).toEqual({
@@ -126,45 +126,45 @@ describe('joinWaitlist (Task 2.2)', () => {
     expect(getGlobalModels).not.toHaveBeenCalled();
 
     const byName = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       city: 'San Francisco',
       visitorId: 'visitor-abc',
     });
     expect(byName.data.tenantKey).toBe('sf');
   });
 
-  it('returns 409 WAITLIST_DUPLICATE for the same phone+city', async () => {
+  it('returns 409 WAITLIST_DUPLICATE for the same email+city', async () => {
     mockWaitlist({
-      existing: { tenantKey: 'nyc', phoneE164: '+14155550100' },
+      existing: { tenantKey: 'nyc', email: 'alex@example.com' },
     });
 
     const result = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
     });
 
     expect(result).toEqual({
-      error: 'This number is already on the waitlist for this city.',
+      error: 'This email is already on the waitlist for this city.',
       status: 409,
       code: 'WAITLIST_DUPLICATE',
     });
   });
 
-  it('rejects garbage phones with INVALID_PHONE', async () => {
+  it('rejects garbage emails with INVALID_EMAIL', async () => {
     const result = await joinWaitlist(mockReq(), {
-      phone: 'nope',
+      email: 'nope',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
     });
-    expect(result.code).toBe('INVALID_PHONE');
+    expect(result.code).toBe('INVALID_EMAIL');
     expect(getGlobalModels).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown tenantKey', async () => {
     getTenantByKey.mockResolvedValue(null);
     const result = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'missing',
       visitorId: 'visitor-abc',
     });
@@ -178,17 +178,17 @@ describe('joinWaitlist (Task 2.2)', () => {
       status: 'active',
     });
     const result = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'rpi',
       visitorId: 'visitor-abc',
     });
     expect(result.code).toBe('TENANT_NOT_FOUND');
   });
 
-  it('does not include Mixpanel-style phone props in the public payload', async () => {
+  it('does not include Mixpanel-style email props in the public payload', async () => {
     mockWaitlist();
     const result = await joinWaitlist(mockReq(), {
-      phone: '+1 415 555 0100',
+      email: '  Alex@Example.COM  ',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
       source: 'share',
@@ -196,6 +196,7 @@ describe('joinWaitlist (Task 2.2)', () => {
     });
 
     expect(Object.keys(result.data).sort()).toEqual(['friendsJoined', 'shareUrl', 'tenantKey']);
+    expect(result.data).not.toHaveProperty('email');
     expect(result.data).not.toHaveProperty('phone');
     expect(result.data).not.toHaveProperty('phoneE164');
   });
@@ -203,7 +204,7 @@ describe('joinWaitlist (Task 2.2)', () => {
   it('stores ios or android from the signup body', async () => {
     const { create } = mockWaitlist();
     const result = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
       store: 'android',
@@ -229,7 +230,7 @@ describe('joinWaitlist (Task 2.2)', () => {
     });
 
     await joinWaitlist(req, {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
     });
@@ -239,7 +240,7 @@ describe('joinWaitlist (Task 2.2)', () => {
 
   it('rejects an unknown store', async () => {
     const result = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
       store: 'web',
@@ -254,12 +255,12 @@ describe('joinWaitlist (Task 2.2)', () => {
 });
 
 describe('waitlist ref attribution (Task 3.1)', () => {
-  const FRIEND_PHONE = '+14155550999';
-  const SELF_PHONE = '+14155550100';
+  const FRIEND_EMAIL = 'friend@example.com';
+  const SELF_EMAIL = 'alex@example.com';
   const NYC_REFERRER = {
     _id: 'nyc-referrer-id',
     tenantKey: 'nyc',
-    phoneE164: FRIEND_PHONE,
+    email: FRIEND_EMAIL,
     shareCode: 'friendcode1',
     friendsJoined: 0,
   };
@@ -282,7 +283,7 @@ describe('waitlist ref attribution (Task 3.1)', () => {
     const model = mockModel();
     const attributed = await attributeWaitlistShareRef(model, {
       tenantKey: 'nyc',
-      phoneE164: SELF_PHONE,
+      email: SELF_EMAIL,
       refCode: 'FriendCode1',
       createdId: 'new-waitlist-id',
     });
@@ -301,7 +302,7 @@ describe('waitlist ref attribution (Task 3.1)', () => {
     });
     const attributed = await attributeWaitlistShareRef(model, {
       tenantKey: 'nyc',
-      phoneE164: SELF_PHONE,
+      email: SELF_EMAIL,
       refCode: 'friendcode1',
       createdId: 'new-waitlist-id',
     });
@@ -310,19 +311,19 @@ describe('waitlist ref attribution (Task 3.1)', () => {
     expect(model.updateOne).not.toHaveBeenCalled();
   });
 
-  it('does not increment for a self-ref (same phone or same waitlist id)', async () => {
-    const samePhone = mockModel({
-      referrer: { ...NYC_REFERRER, phoneE164: SELF_PHONE },
+  it('does not increment for a self-ref (same email or same waitlist id)', async () => {
+    const sameEmail = mockModel({
+      referrer: { ...NYC_REFERRER, email: SELF_EMAIL },
     });
     expect(
-      await attributeWaitlistShareRef(samePhone, {
+      await attributeWaitlistShareRef(sameEmail, {
         tenantKey: 'nyc',
-        phoneE164: SELF_PHONE,
+        email: SELF_EMAIL,
         refCode: 'friendcode1',
         createdId: 'new-waitlist-id',
       }),
     ).toBe(false);
-    expect(samePhone.updateOne).not.toHaveBeenCalled();
+    expect(sameEmail.updateOne).not.toHaveBeenCalled();
 
     const sameId = mockModel({
       referrer: { ...NYC_REFERRER, _id: 'new-waitlist-id' },
@@ -330,7 +331,7 @@ describe('waitlist ref attribution (Task 3.1)', () => {
     expect(
       await attributeWaitlistShareRef(sameId, {
         tenantKey: 'nyc',
-        phoneE164: SELF_PHONE,
+        email: SELF_EMAIL,
         refCode: 'friendcode1',
         createdId: 'new-waitlist-id',
       }),
@@ -342,7 +343,7 @@ describe('waitlist ref attribution (Task 3.1)', () => {
     const model = mockModel({ referrer: null });
     const attributed = await attributeWaitlistShareRef(model, {
       tenantKey: 'nyc',
-      phoneE164: SELF_PHONE,
+      email: SELF_EMAIL,
       refCode: 'no-such-ref',
       createdId: 'new-waitlist-id',
     });
@@ -357,7 +358,7 @@ describe('waitlist ref attribution (Task 3.1)', () => {
     const { updateOne, create } = mockWaitlist({ referrer: NYC_REFERRER });
 
     const result = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
       ref: 'friendcode1',
@@ -381,12 +382,12 @@ describe('waitlist ref attribution (Task 3.1)', () => {
   it('does not credit a friend when the signup is a duplicate', async () => {
     getTenantByKey.mockResolvedValue(NYC_TENANT);
     const { updateOne, create } = mockWaitlist({
-      existing: { tenantKey: 'nyc', phoneE164: '+14155550100' },
+      existing: { tenantKey: 'nyc', email: 'alex@example.com' },
       referrer: NYC_REFERRER,
     });
 
     const result = await joinWaitlist(mockReq(), {
-      phone: '4155550100',
+      email: 'alex@example.com',
       tenantKey: 'nyc',
       visitorId: 'visitor-abc',
       ref: 'friendcode1',
@@ -419,14 +420,14 @@ describe('admin waitlist list + CSV (Task 4.1)', () => {
   const sampleRow = {
     _id: WAITLIST_ID,
     createdAt: new Date('2026-08-10T12:00:00.000Z'),
-    phoneE164: '+14155550100',
+    email: 'alex@example.com',
     source: 'share',
     qrName: 'poster-night',
     refCode: 'abc12',
     friendsJoined: 3,
   };
 
-  it('returns a paginated table with phones for platform-admin consumers', async () => {
+  it('returns a paginated table with emails for platform-admin consumers', async () => {
     const { find, skip, limit, countDocuments } = mockWaitlistQuery({
       rows: [sampleRow],
       total: 21,
@@ -444,7 +445,7 @@ describe('admin waitlist list + CSV (Task 4.1)', () => {
         {
           id: WAITLIST_ID,
           createdAt: '2026-08-10T12:00:00.000Z',
-          phoneE164: '+14155550100',
+          email: 'alex@example.com',
           source: 'share',
           qrName: 'poster-night',
           refCode: 'abc12',
@@ -465,7 +466,7 @@ describe('admin waitlist list + CSV (Task 4.1)', () => {
         sampleRow,
         {
           createdAt: new Date('2026-08-09T00:00:00.000Z'),
-          phoneE164: '+14155550101',
+          email: 'blair@example.com',
           source: 'direct',
           qrName: null,
           refCode: 'say "hi", friend',
@@ -479,9 +480,9 @@ describe('admin waitlist list + CSV (Task 4.1)', () => {
     expect(result.contentType).toBe('text/csv; charset=utf-8');
     expect(result.filename).toBe('justgo-waitlist-nyc.csv');
     expect(result.body.split('\n')[0]).toBe(
-      'createdAt,phoneE164,source,qrName,refCode,friendsJoined',
+      'createdAt,email,source,qrName,refCode,friendsJoined',
     );
-    expect(result.body).toContain('+14155550100');
+    expect(result.body).toContain('alex@example.com');
     expect(result.body).toContain('"say ""hi"", friend"');
   });
 
@@ -489,7 +490,7 @@ describe('admin waitlist list + CSV (Task 4.1)', () => {
     const csv = waitlistRowsToCsv([
       {
         createdAt: '2026-08-10T12:00:00.000Z',
-        phoneE164: '+14155550100',
+        email: 'alex@example.com',
         source: 'direct',
         qrName: null,
         refCode: 'a,b',
@@ -521,9 +522,9 @@ describe('deleteTenantWaitlistRow (Task 6.1)', () => {
     return { findOneAndDelete, lean };
   }
 
-  it('deletes a row in that city and does not echo the phone', async () => {
+  it('deletes a row in that city and does not echo the email', async () => {
     const { findOneAndDelete } = mockWaitlistDelete({
-      row: { _id: WAITLIST_ID, tenantKey: 'nyc', phoneE164: '+14155550100' },
+      row: { _id: WAITLIST_ID, tenantKey: 'nyc', email: 'alex@example.com' },
     });
 
     const result = await deleteTenantWaitlistRow(mockReq(), {
@@ -537,9 +538,8 @@ describe('deleteTenantWaitlistRow (Task 6.1)', () => {
       id: WAITLIST_ID,
       deleted: true,
     });
-    expect(result.data).not.toHaveProperty('phone');
-    expect(result.data).not.toHaveProperty('phoneE164');
-    expect(JSON.stringify(result.data)).not.toMatch(/4155550100|\+14155550100/i);
+    expect(result.data).not.toHaveProperty('email');
+    expect(JSON.stringify(result.data)).not.toMatch(/alex@example\.com/i);
   });
 
   it('returns WAITLIST_NOT_FOUND when the id is missing or belongs to another city', async () => {

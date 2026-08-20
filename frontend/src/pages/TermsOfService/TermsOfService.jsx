@@ -29,7 +29,7 @@ function TermsOfService() {
                             (the "Platform") and mobile application (the "App," collectively the "Services"), 
                             you agree to be bound by these Terms of Service ("Terms"). If you do not agree to 
                             these Terms, please do not access or use our Services. Joining a Just Go city waitlist
-                            (phone number + city) is optional; by submitting it you agree we may store that number
+                            (email + city) is optional; by submitting it you agree we may store that email
                             as described in our Privacy Policy.
                         </p>
                         <p>

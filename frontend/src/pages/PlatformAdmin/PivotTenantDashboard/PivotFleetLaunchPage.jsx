@@ -125,7 +125,7 @@ function PivotFleetLaunchPage() {
       <PivotOpsSection
         title="Cities"
         titleId="pivot-fleet-launch-cities"
-        description="Open a city to toggle landing mode, export waitlist phones, and copy the public URL."
+        description="Open a city to toggle landing mode, export waitlist emails, and copy the public URL."
       >
         {loading && !launch ? (
           <p className="pivot-lab__empty">Loading cities…</p>

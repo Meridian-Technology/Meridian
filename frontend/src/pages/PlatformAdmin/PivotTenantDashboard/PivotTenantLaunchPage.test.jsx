@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import PivotTenantLaunchPage, { maskWaitlistPhone } from './PivotTenantLaunchPage';
+import PivotTenantLaunchPage, { maskWaitlistEmail } from './PivotTenantLaunchPage';
 
 const mockUseFetch = jest.fn();
 const mockAuthenticatedRequest = jest.fn();
@@ -96,7 +96,7 @@ function waitlistPayload(overrides = {}) {
         {
           id: '507f1f77bcf86cd799439011',
           createdAt: '2026-08-10T12:00:00.000Z',
-          phoneE164: '+14155550100',
+          email: 'alex@example.com',
           source: 'share',
           qrName: 'poster-night',
           refCode: 'abc12',
@@ -188,7 +188,7 @@ describe('PivotTenantLaunchPage', () => {
     URL.revokeObjectURL = originalRevokeObjectURL;
   });
 
-  it('renders waitlist mode KPIs, public URL, and waitlist phones', () => {
+  it('renders waitlist mode KPIs, public URL, and waitlist emails', () => {
     stubFetch();
     renderLaunch();
 
@@ -197,7 +197,7 @@ describe('PivotTenantLaunchPage', () => {
     expect(screen.getByRole('button', { name: 'Switch to launched' })).toBeInTheDocument();
     expect(screen.getByText('20%')).toBeInTheDocument();
     expect(screen.getByText('signups / views')).toBeInTheDocument();
-    expect(screen.getByText('+14155550100')).toBeInTheDocument();
+    expect(screen.getByText('alex@example.com')).toBeInTheDocument();
     expect(screen.getAllByText('poster-night').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('https://justgo.lol/nyc')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Landing views by source' })).toBeInTheDocument();
@@ -293,11 +293,11 @@ describe('PivotTenantLaunchPage', () => {
     expect(mockAuthenticatedRequest).not.toHaveBeenCalled();
   });
 
-  it('downloads waitlist CSV without logging phones', async () => {
+  it('downloads waitlist CSV without logging emails', async () => {
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     stubFetch();
     mockAuthenticatedRequest.mockResolvedValue({
-      data: 'createdAt,phoneE164\n2026-08-10T12:00:00.000Z,+14155550100',
+      data: 'createdAt,email\n2026-08-10T12:00:00.000Z,alex@example.com',
     });
     global.URL.createObjectURL = jest.fn(() => 'blob:waitlist');
     global.URL.revokeObjectURL = jest.fn();
@@ -320,17 +320,17 @@ describe('PivotTenantLaunchPage', () => {
     expect(mockAuthenticatedRequest).toHaveBeenCalledWith(
       '/admin/pivot/tenants/nyc/waitlist.csv',
     );
-    expect(logSpy).not.toHaveBeenCalledWith(expect.stringMatching(/\+14155550100/));
+    expect(logSpy).not.toHaveBeenCalledWith(expect.stringMatching(/alex@example\.com/));
     logSpy.mockRestore();
     createSpy.mockRestore();
   });
 
-  it('maskWaitlistPhone keeps only the last four digits', () => {
-    expect(maskWaitlistPhone('+14155550100')).toBe('ending in 0100');
-    expect(maskWaitlistPhone('')).toBe('this signup');
+  it('maskWaitlistEmail keeps only the first character and domain', () => {
+    expect(maskWaitlistEmail('alex@example.com')).toBe('a***@example.com');
+    expect(maskWaitlistEmail('')).toBe('this signup');
   });
 
-  it('removes a waitlist row without logging or toasting the full phone', async () => {
+  it('removes a waitlist row without logging or toasting the full email', async () => {
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     const { refetchWaitlist, refetchLaunch } = stubFetch();
     window.confirm = jest.fn(() => true);
@@ -341,8 +341,8 @@ describe('PivotTenantLaunchPage', () => {
     renderLaunch();
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('ending in 0100'));
-    expect(window.confirm.mock.calls[0][0]).not.toMatch(/\+14155550100/);
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('a***@example.com'));
+    expect(window.confirm.mock.calls[0][0]).not.toMatch(/alex@example\.com/);
 
     await waitFor(() => {
       expect(refetchWaitlist).toHaveBeenCalled();
@@ -352,8 +352,8 @@ describe('PivotTenantLaunchPage', () => {
       '/admin/pivot/tenants/nyc/waitlist/507f1f77bcf86cd799439011',
       { method: 'DELETE' },
     );
-    expect(JSON.stringify(mockAddNotification.mock.calls)).not.toMatch(/\+14155550100/);
-    expect(logSpy).not.toHaveBeenCalledWith(expect.stringMatching(/\+14155550100/));
+    expect(JSON.stringify(mockAddNotification.mock.calls)).not.toMatch(/alex@example\.com/);
+    expect(logSpy).not.toHaveBeenCalledWith(expect.stringMatching(/alex@example\.com/));
     logSpy.mockRestore();
   });
 

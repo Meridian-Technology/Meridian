@@ -368,7 +368,7 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
 
     const response = await request(buildBaseApp())
       .post('/pivot/landing/waitlist')
-      .send({ phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+      .send({ email: 'alex@example.com', tenantKey: 'nyc', visitorId: 'visitor-abc' });
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
@@ -379,43 +379,43 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
         tenantKey: 'nyc',
       },
     });
-    expect(JSON.stringify(response.body)).not.toMatch(/4155550100|\+1/);
+    expect(JSON.stringify(response.body)).not.toMatch(/alex@example\.com/i);
     expect(verifyToken).not.toHaveBeenCalled();
     expect(joinWaitlist).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({ phone: '4155550100', tenantKey: 'nyc' }),
+      expect.objectContaining({ email: 'alex@example.com', tenantKey: 'nyc' }),
     );
   });
 
-  it('returns 409 WAITLIST_DUPLICATE for the same phone+city', async () => {
+  it('returns 409 WAITLIST_DUPLICATE for the same email+city', async () => {
     joinWaitlist.mockResolvedValue({
-      error: 'This number is already on the waitlist for this city.',
+      error: 'This email is already on the waitlist for this city.',
       status: 409,
       code: 'WAITLIST_DUPLICATE',
     });
 
     const response = await request(buildBaseApp())
       .post('/pivot/landing/waitlist')
-      .send({ phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+      .send({ email: 'alex@example.com', tenantKey: 'nyc', visitorId: 'visitor-abc' });
 
     expect(response.statusCode).toBe(409);
     expect(response.body.success).toBe(false);
     expect(response.body.code).toBe('WAITLIST_DUPLICATE');
   });
 
-  it('returns 400 INVALID_PHONE for garbage numbers', async () => {
+  it('returns 400 INVALID_EMAIL for garbage addresses', async () => {
     joinWaitlist.mockResolvedValue({
-      error: 'Enter a valid US phone number.',
+      error: 'Enter a valid email address.',
       status: 400,
-      code: 'INVALID_PHONE',
+      code: 'INVALID_EMAIL',
     });
 
     const response = await request(buildBaseApp())
       .post('/pivot/landing/waitlist')
-      .send({ phone: 'nope', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+      .send({ email: 'nope', tenantKey: 'nyc', visitorId: 'visitor-abc' });
 
     expect(response.statusCode).toBe(400);
-    expect(response.body.code).toBe('INVALID_PHONE');
+    expect(response.body.code).toBe('INVALID_EMAIL');
   });
 
   it('returns 400 CITY_REQUIRED when generic signup omits city', async () => {
@@ -427,7 +427,7 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
 
     const response = await request(buildBaseApp())
       .post('/pivot/landing/waitlist')
-      .send({ phone: '4155550100', visitorId: 'visitor-abc' });
+      .send({ email: 'alex@example.com', visitorId: 'visitor-abc' });
 
     expect(response.statusCode).toBe(400);
     expect(response.body.code).toBe('CITY_REQUIRED');
@@ -438,7 +438,7 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
       data: { shareUrl: 'https://justgo.lol/nyc?ref=abc', friendsJoined: 0, tenantKey: 'nyc' },
     });
     const app = buildBaseApp();
-    const payload = { phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' };
+    const payload = { email: 'alex@example.com', tenantKey: 'nyc', visitorId: 'visitor-abc' };
 
     for (let i = 0; i < WAITLIST_MAX_PER_WINDOW; i += 1) {
       const ok = await request(app).post('/pivot/landing/waitlist').send(payload);

@@ -117,7 +117,7 @@ function compactBody(body) {
 }
 
 /**
- * Mixpanel props for landing events. Allowlist only — never phone, visitorId, or UA.
+ * Mixpanel props for landing events. Allowlist only — never email, visitorId, or UA.
  */
 export function justGoLandingAnalyticsProps(body = {}) {
   return compactBody({
@@ -194,11 +194,11 @@ export function handleLandingStoreClick(event, { tenantKey, store = 'ios' } = {}
   recordLandingStoreClick({ tenantKey, store });
 }
 
-export function buildWaitlistPayload({ phone, tenantKey, search } = {}) {
+export function buildWaitlistPayload({ email, tenantKey, search } = {}) {
   const attribution = readLandingAttribution(search ?? window.location?.search);
   const userAgent = typeof navigator === 'undefined' ? null : navigator.userAgent;
   return compactBody({
-    phone: String(phone || '').trim(),
+    email: String(email || '').trim().toLowerCase(),
     tenantKey: landingTenantKeyFromParam(tenantKey),
     visitorId: getOrMintLandingVisitorId(),
     source: attribution.source,
@@ -210,18 +210,18 @@ export function buildWaitlistPayload({ phone, tenantKey, search } = {}) {
 }
 
 /**
- * Public waitlist signup. Mixpanel props never include phone.
+ * Public waitlist signup. Mixpanel props never include email.
  * Returns `{ data }` or `{ error, errorCode, status }`.
  */
-export async function submitLandingWaitlist({ phone, tenantKey, search } = {}) {
+export async function submitLandingWaitlist({ email, tenantKey, search } = {}) {
   persistLandingAttribution(search ?? window.location?.search);
   const key = landingTenantKeyFromParam(tenantKey);
   if (!key) {
     return { error: true, errorCode: 'CITY_REQUIRED', status: 400 };
   }
-  const payload = buildWaitlistPayload({ phone, tenantKey: key, search });
-  if (!payload.phone) {
-    return { error: true, errorCode: 'INVALID_PHONE', status: 400 };
+  const payload = buildWaitlistPayload({ email, tenantKey: key, search });
+  if (!payload.email) {
+    return { error: true, errorCode: 'INVALID_EMAIL', status: 400 };
   }
 
   analytics.track('justgo_landing_waitlist_submit', justGoLandingAnalyticsProps(payload));

@@ -143,7 +143,7 @@ describe('PivotTenantDashboard Catalog + Voice + Launch shell', () => {
     expect(screen.queryByText(/city-voice-page/)).toBeNull();
   });
 
-  it('does not show Launch (or waitlist phones) on Overview', () => {
+  it('does not show Launch (or waitlist emails) on Overview', () => {
     renderDashboard('/platform-admin/pivot/nyc?page=0');
 
     expect(screen.getByText('overview-page')).toBeInTheDocument();

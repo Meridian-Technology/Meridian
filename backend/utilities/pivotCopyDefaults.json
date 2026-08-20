@@ -3505,7 +3505,7 @@
       "path": "landing.web.waitlist.consent",
       "kind": "string",
       "params": [],
-      "shipped": "by joining you agree to our"
+      "shipped": "we keep your email to let you into this city. by joining you agree to our"
     },
     {
       "path": "landing.web.waitlist.copied",
@@ -3532,6 +3532,24 @@
       "shipped": "you're already on this city's list"
     },
     {
+      "path": "landing.web.waitlist.emailLabel",
+      "kind": "string",
+      "params": [],
+      "shipped": "email"
+    },
+    {
+      "path": "landing.web.waitlist.emailPlaceholder",
+      "kind": "string",
+      "params": [],
+      "shipped": "you@email.com"
+    },
+    {
+      "path": "landing.web.waitlist.emailRequired",
+      "kind": "string",
+      "params": [],
+      "shipped": "need a real email"
+    },
+    {
       "path": "landing.web.waitlist.error",
       "kind": "string",
       "params": [],
@@ -3553,24 +3571,6 @@
       "kind": "string",
       "params": [],
       "shipped": "1 friend joined"
-    },
-    {
-      "path": "landing.web.waitlist.phoneLabel",
-      "kind": "string",
-      "params": [],
-      "shipped": "phone"
-    },
-    {
-      "path": "landing.web.waitlist.phonePlaceholder",
-      "kind": "string",
-      "params": [],
-      "shipped": "(555) 555-0100"
-    },
-    {
-      "path": "landing.web.waitlist.phoneRequired",
-      "kind": "string",
-      "params": [],
-      "shipped": "need a real phone number"
     },
     {
       "path": "landing.web.waitlist.share",

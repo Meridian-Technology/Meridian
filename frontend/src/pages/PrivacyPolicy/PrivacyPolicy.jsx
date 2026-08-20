@@ -43,7 +43,7 @@ function PrivacyPolicy() {
                             <li><strong>Account Information:</strong> Name, email address, username, and password</li>
                             <li><strong>Profile Information:</strong> Profile picture, bio, and other profile details you choose to provide</li>
                             <li><strong>Academic Information:</strong> School affiliation, student status, and academic-related information</li>
-                            <li><strong>Contact Information:</strong> Phone number (if provided) and email address. If you join a Just Go city waitlist on justgo.lol, we store the phone number you submit together with the city you selected.</li>
+                            <li><strong>Contact Information:</strong> Email address (and phone number if you provide one). If you join a Just Go city waitlist on justgo.lol, we store the email you submit together with the city you selected.</li>
                             <li><strong>Organization Information:</strong> Organizations you join, events you create or attend, and related activity</li>
                         </ul>
 
@@ -165,10 +165,10 @@ function PrivacyPolicy() {
                             it for legal purposes.
                         </p>
                         <p>
-                            <strong>Just Go waitlist:</strong> Phone numbers submitted on the Just Go landing waitlist
+                            <strong>Just Go waitlist:</strong> Emails submitted on the Just Go landing waitlist
                             are kept until a platform administrator deletes that signup. There is no self-serve delete
-                            from the landing page in this version. We do not send waitlist confirmation texts. Contact
-                            us if you need a number removed.
+                            from the landing page in this version. We may email you when that city launches. Contact
+                            us if you need an address removed.
                         </p>
                         <p>
                             <strong>Note:</strong> Data stored locally on your mobile device (such as cached content or 

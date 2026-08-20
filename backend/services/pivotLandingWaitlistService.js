@@ -1,7 +1,7 @@
 /**
- * Public Just Go waitlist signup. Stores phone + city globally; mints shareCode.
+ * Public Just Go waitlist signup. Stores email + city globally; mints shareCode.
  * Inbound `ref` matching another row’s shareCode increments friendsJoined
- * (same city only; unknown/self refs are ignored). Response never echoes the phone.
+ * (same city only; unknown/self refs are ignored). Response never echoes the email.
  */
 
 const { randomBytes } = require('crypto');
@@ -9,7 +9,7 @@ const mongoose = require('mongoose');
 const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey, getMergedTenants } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
-const { normalizeWaitlistPhoneE164 } = require('../utilities/justGoWaitlistPhone');
+const { normalizeWaitlistEmail } = require('../utilities/justGoWaitlistEmail');
 const { justGoWaitlistShareUrl } = require('../utilities/justGoPublicUrl');
 const {
   JUSTGO_WAITLIST_SOURCES,
@@ -56,7 +56,7 @@ function normalizeWaitlistShareCode(value) {
  */
 async function attributeWaitlistShareRef(
   JustGoWaitlist,
-  { tenantKey, phoneE164, refCode, createdId } = {},
+  { tenantKey, email, refCode, createdId } = {},
 ) {
   const shareCode = normalizeWaitlistShareCode(refCode);
   if (!shareCode || !JustGoWaitlist) return false;
@@ -64,7 +64,7 @@ async function attributeWaitlistShareRef(
   const referrer = await JustGoWaitlist.findOne({ shareCode }).lean();
   if (!referrer) return false;
   if (String(referrer.tenantKey || '') !== String(tenantKey || '')) return false;
-  if (referrer.phoneE164 === phoneE164) return false;
+  if (referrer.email === email) return false;
   if (createdId != null && String(referrer._id) === String(createdId)) return false;
 
   await JustGoWaitlist.updateOne({ _id: referrer._id }, { $inc: { friendsJoined: 1 } });
@@ -94,7 +94,7 @@ function isMongoDup(err, fields) {
 
 function waitlistDuplicate() {
   return {
-    error: 'This number is already on the waitlist for this city.',
+    error: 'This email is already on the waitlist for this city.',
     status: 409,
     code: 'WAITLIST_DUPLICATE',
   };
@@ -177,12 +177,12 @@ function publicWaitlistPayload(row, req) {
 }
 
 async function joinWaitlist(req, body = {}) {
-  const phoneE164 = normalizeWaitlistPhoneE164(body.phone);
-  if (!phoneE164) {
+  const email = normalizeWaitlistEmail(body.email);
+  if (!email) {
     return {
-      error: 'Enter a valid US phone number.',
+      error: 'Enter a valid email address.',
       status: 400,
-      code: 'INVALID_PHONE',
+      code: 'INVALID_EMAIL',
     };
   }
 
@@ -217,13 +217,13 @@ async function joinWaitlist(req, body = {}) {
 
   const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
 
-  const existing = await JustGoWaitlist.findOne({ tenantKey, phoneE164 }).lean();
+  const existing = await JustGoWaitlist.findOne({ tenantKey, email }).lean();
   if (existing) {
     return waitlistDuplicate();
   }
 
   const doc = {
-    phoneE164,
+    email,
     tenantKey,
     cityLabel: cityLabelFor(tenant),
     visitorId,
@@ -244,7 +244,7 @@ async function joinWaitlist(req, body = {}) {
       });
       break;
     } catch (err) {
-      if (isMongoDup(err, ['tenantKey', 'phoneE164'])) {
+      if (isMongoDup(err, ['tenantKey', 'email'])) {
         return waitlistDuplicate();
       }
       if (isMongoDup(err, ['shareCode']) && attempt < SHARE_CODE_ATTEMPTS - 1) {
@@ -260,7 +260,7 @@ async function joinWaitlist(req, body = {}) {
 
   await attributeWaitlistShareRef(JustGoWaitlist, {
     tenantKey,
-    phoneE164,
+    email,
     refCode,
     createdId: created._id,
   });
@@ -273,7 +273,7 @@ const WAITLIST_PAGE_MAX = 100;
 
 const WAITLIST_CSV_COLUMNS = Object.freeze([
   'createdAt',
-  'phoneE164',
+  'email',
   'source',
   'qrName',
   'refCode',
@@ -324,7 +324,7 @@ function serializeWaitlistAdminRow(row) {
   return {
     id: row._id != null ? String(row._id) : null,
     createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
-    phoneE164: row.phoneE164 || null,
+    email: row.email || null,
     source: row.source || 'direct',
     qrName: row.qrName || null,
     refCode: row.refCode || null,
@@ -396,7 +396,7 @@ async function exportTenantWaitlistCsv(req, options = {}) {
 
 /**
  * Hard-delete one waitlist row for ops mistakes. No self-serve public delete.
- * Response never echoes the phone.
+ * Response never echoes the email.
  */
 async function deleteTenantWaitlistRow(req, options = {}) {
   const resolved = await resolveAdminWaitlistTenant(req, options.tenantKey);

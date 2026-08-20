@@ -38,7 +38,7 @@ describe('PrivacyPolicy (Task 6.1)', () => {
     mockIsJustGoHost.mockReturnValue(false);
   });
 
-  it('documents Just Go waitlist phone retention', () => {
+  it('documents Just Go waitlist email retention', () => {
     renderPolicy();
     expect(
       screen.getByText(/kept until a platform administrator deletes/i),

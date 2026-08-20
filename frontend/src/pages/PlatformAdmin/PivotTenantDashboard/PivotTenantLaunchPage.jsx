@@ -59,11 +59,14 @@ function downloadTextFile(filename, text) {
   URL.revokeObjectURL(href);
 }
 
-/** Last-4 only — never put the full E.164 in confirms, toasts, or logs. */
-export function maskWaitlistPhone(phoneE164) {
-  const digits = String(phoneE164 || '').replace(/\D/g, '');
-  if (digits.length < 4) return 'this signup';
-  return `ending in ${digits.slice(-4)}`;
+/** First character + domain — never put the full email in confirms, toasts, or logs. */
+export function maskWaitlistEmail(email) {
+  const value = String(email || '').trim().toLowerCase();
+  const at = value.indexOf('@');
+  if (at < 1 || at === value.length - 1) return 'this signup';
+  const local = value.slice(0, at);
+  const domain = value.slice(at);
+  return `${local.slice(0, 1)}***${domain}`;
 }
 
 function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
@@ -180,7 +183,7 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
     const confirmed = window.confirm(
       nextMode === 'launched'
         ? `Switch ${displayCity} to launched? The public landing will show App Store install instead of the waitlist form.`
-        : `Switch ${displayCity} to waitlist? The public landing will collect phone numbers instead of install CTAs.`,
+        : `Switch ${displayCity} to waitlist? The public landing will collect emails instead of install CTAs.`,
     );
     if (!confirmed) return;
 
@@ -268,7 +271,7 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
       const id = String(row?.id || '').trim();
       if (!tenantKey || !id || deletingId) return;
       const confirmed = window.confirm(
-        `Remove waitlist signup ${maskWaitlistPhone(row.phoneE164)}? This cannot be undone.`,
+        `Remove waitlist signup ${maskWaitlistEmail(row.email)}? This cannot be undone.`,
       );
       if (!confirmed) return;
 
@@ -290,7 +293,7 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
 
       addNotification({
         title: 'Waitlist signup removed',
-        message: `Removed ${maskWaitlistPhone(row.phoneE164)}.`,
+        message: `Removed ${maskWaitlistEmail(row.email)}.`,
         type: 'success',
       });
       if (items.length === 1 && waitlistPage > 1) {
@@ -340,7 +343,7 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
       <PivotOpsSection
         title="Landing mode"
         titleId="pivot-launch-mode"
-        description="Waitlist shows a phone form. Launched shows App Store install. Independent of tenant status."
+        description="Waitlist shows an email form. Launched shows App Store install. Independent of tenant status."
         actions={
           <PivotOpsStatus tone={launched ? 'success' : 'warn'}>
             {launched ? 'Launched' : 'Waitlist'}
@@ -479,7 +482,7 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
                 <thead>
                   <tr>
                     <th>Signed up</th>
-                    <th>Phone</th>
+                    <th>Email</th>
                     <th>Source</th>
                     <th>QR</th>
                     <th>Ref</th>
@@ -489,9 +492,9 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
                 </thead>
                 <tbody>
                   {items.map((row) => (
-                    <tr key={row.id || `${row.phoneE164}-${row.createdAt}`}>
+                    <tr key={row.id || `${row.email}-${row.createdAt}`}>
                       <td>{formatTimestamp(row.createdAt)}</td>
-                      <td className="pivot-tenant-launch__phone">{row.phoneE164 || '—'}</td>
+                      <td className="pivot-tenant-launch__email">{row.email || '—'}</td>
                       <td>{row.source || 'direct'}</td>
                       <td>{row.qrName || '—'}</td>
                       <td>{row.refCode || '—'}</td>

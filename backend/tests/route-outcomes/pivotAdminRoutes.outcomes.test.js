@@ -2623,11 +2623,11 @@ describe('pivotAdminRoutes launch APIs (Task 4.1)', () => {
     expect(response.body.code).toBe('TENANT_NOT_FOUND');
   });
 
-  it('GET /admin/pivot/tenants/:tenantKey/waitlist returns phones for platform admin', async () => {
+  it('GET /admin/pivot/tenants/:tenantKey/waitlist returns emails for platform admin', async () => {
     listTenantWaitlist.mockResolvedValue({
       data: {
         tenantKey: 'nyc',
-        items: [{ phoneE164: '+14155550100', source: 'direct', friendsJoined: 0 }],
+        items: [{ email: 'alex@example.com', source: 'direct', friendsJoined: 0 }],
         pagination: { page: 1, limit: 50, total: 1 },
       },
     });
@@ -2635,7 +2635,7 @@ describe('pivotAdminRoutes launch APIs (Task 4.1)', () => {
     const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/waitlist?page=1');
 
     expect(response.status).toBe(200);
-    expect(response.body.data.items[0].phoneE164).toBe('+14155550100');
+    expect(response.body.data.items[0].email).toBe('alex@example.com');
     expect(response.headers['cache-control']).toMatch(/no-store/);
   });
 
@@ -2654,7 +2654,7 @@ describe('pivotAdminRoutes launch APIs (Task 4.1)', () => {
     exportTenantWaitlistCsv.mockResolvedValue({
       contentType: 'text/csv; charset=utf-8',
       filename: 'justgo-waitlist-nyc.csv',
-      body: 'createdAt,phoneE164,source,qrName,refCode,friendsJoined\n2026-08-10T12:00:00.000Z,+14155550100,direct,,,0',
+      body: 'createdAt,email,source,qrName,refCode,friendsJoined\n2026-08-10T12:00:00.000Z,alex@example.com,direct,,,0',
     });
 
     const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/waitlist.csv');
@@ -2663,7 +2663,7 @@ describe('pivotAdminRoutes launch APIs (Task 4.1)', () => {
     expect(response.headers['content-type']).toMatch(/text\/csv/);
     expect(response.headers['content-disposition']).toContain('justgo-waitlist-nyc.csv');
     expect(response.headers['cache-control']).toMatch(/no-store/);
-    expect(response.text).toContain('+14155550100');
+    expect(response.text).toContain('alex@example.com');
     expect(response.body).not.toEqual(expect.objectContaining({ success: true }));
   });
 
@@ -2678,7 +2678,7 @@ describe('pivotAdminRoutes launch APIs (Task 4.1)', () => {
     expect(exportTenantWaitlistCsv).not.toHaveBeenCalled();
   });
 
-  it('DELETE /admin/pivot/tenants/:tenantKey/waitlist/:id removes a row without echoing the phone', async () => {
+  it('DELETE /admin/pivot/tenants/:tenantKey/waitlist/:id removes a row without echoing the email', async () => {
     deleteTenantWaitlistRow.mockResolvedValue({
       data: { tenantKey: 'nyc', id: '507f1f77bcf86cd799439011', deleted: true },
     });
@@ -2694,7 +2694,7 @@ describe('pivotAdminRoutes launch APIs (Task 4.1)', () => {
       id: '507f1f77bcf86cd799439011',
       deleted: true,
     });
-    expect(JSON.stringify(response.body)).not.toMatch(/phone|\+1/i);
+    expect(JSON.stringify(response.body)).not.toMatch(/alex@example\.com/i);
     expect(response.headers['cache-control']).toMatch(/no-store/);
     expect(deleteTenantWaitlistRow).toHaveBeenCalledWith(
       expect.objectContaining({ globalDb: {} }),
