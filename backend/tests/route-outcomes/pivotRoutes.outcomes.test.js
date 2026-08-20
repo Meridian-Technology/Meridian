@@ -463,14 +463,14 @@ describe('pivotRoutes GET /pivot/landing/copy', () => {
         revision: 'p2:t0',
         schemaVersion: 1,
         tokens: { 'brand.name': 'block' },
-        entries: { 'landing.cta': 'get block' },
+        entries: { 'landing.web.cta': 'get block' },
       },
     });
 
     const response = await request(buildBaseApp()).get('/pivot/landing/copy');
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.data.entries).toEqual({ 'landing.cta': 'get block' });
+    expect(response.body.data.entries).toEqual({ 'landing.web.cta': 'get block' });
     expect(response.body.data.entries).not.toHaveProperty('ticker.week');
     expect(getPlatformLandingCopy).toHaveBeenCalled();
   });

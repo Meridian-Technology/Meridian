@@ -85,6 +85,7 @@ describe('joinWaitlist (Task 2.2)', () => {
         visitorId: 'visitor-abc',
         source: 'direct',
         friendsJoined: 0,
+        store: 'ios',
         shareCode: expect.stringMatching(/^[0-9a-z]{10}$/),
       }),
     );
@@ -190,6 +191,58 @@ describe('joinWaitlist (Task 2.2)', () => {
     expect(Object.keys(result.data).sort()).toEqual(['friendsJoined', 'shareUrl', 'tenantKey']);
     expect(result.data).not.toHaveProperty('phone');
     expect(result.data).not.toHaveProperty('phoneE164');
+  });
+
+  it('stores ios or android from the signup body', async () => {
+    const { create } = mockWaitlist();
+    const result = await joinWaitlist(mockReq(), {
+      phone: '4155550100',
+      tenantKey: 'nyc',
+      visitorId: 'visitor-abc',
+      store: 'android',
+      userAgent: 'Mozilla/5.0 (Linux; Android 14)',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        store: 'android',
+        userAgent: 'Mozilla/5.0 (Linux; Android 14)',
+      }),
+    );
+  });
+
+  it('infers android from the request user-agent when store is omitted', async () => {
+    const { create } = mockWaitlist();
+    const req = mockReq();
+    req.get.mockImplementation((header) => {
+      if (header === 'host') return 'justgo.lol';
+      if (header === 'user-agent') return 'Mozilla/5.0 (Linux; Android 14)';
+      return undefined;
+    });
+
+    await joinWaitlist(req, {
+      phone: '4155550100',
+      tenantKey: 'nyc',
+      visitorId: 'visitor-abc',
+    });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ store: 'android' }));
+  });
+
+  it('rejects an unknown store', async () => {
+    const result = await joinWaitlist(mockReq(), {
+      phone: '4155550100',
+      tenantKey: 'nyc',
+      visitorId: 'visitor-abc',
+      store: 'web',
+    });
+    expect(result).toEqual({
+      error: 'store must be ios or android.',
+      status: 400,
+      code: 'INVALID_STORE',
+    });
+    expect(getGlobalModels).not.toHaveBeenCalled();
   });
 });
 

@@ -110,6 +110,34 @@ describe('pivotVoiceCatalog', () => {
     ]);
   });
 
+  it('nests landing.web keys into waitlist, deck, and page folders', () => {
+    const landingRows = buildVoiceRows({
+      tokens: [],
+      keys: [
+        { path: 'landing.web.cta', kind: 'string', shipped: 'get just go' },
+        { path: 'landing.web.deck.title', kind: 'string', shipped: 'the drop' },
+        { path: 'landing.web.waitlist.cta', kind: 'string', shipped: 'save my spot' },
+        { path: 'landing.web.footer.stamp', kind: 'string', shipped: 'monday drop' },
+        { path: 'landing.web.story.graf0', kind: 'string', shipped: 'when did going out' },
+      ],
+      layers: { tokens: {}, entries: {} },
+      scope: 'platform',
+    });
+    const [landing] = groupVoiceRows(landingRows);
+    expect(landing.id).toBe('landing');
+    expect(landing.label).toBe('Web landing');
+    expect(landing.groups.map((group) => group.label)).toEqual([
+      'Overview',
+      'Deck',
+      'Story',
+      'Waitlist',
+      'Footer',
+    ]);
+    expect(landing.groups.find((group) => group.section === 'waitlist').items.map((row) => row.path)).toEqual([
+      'landing.web.waitlist.cta',
+    ]);
+  });
+
   it('applies a sparse overlay after save', () => {
     const rows = buildVoiceRows({ ...catalog, layers, scope: 'platform' });
     const overlay = sparseOverlayFromLayers(layers, 'platform');

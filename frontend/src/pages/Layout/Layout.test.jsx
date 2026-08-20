@@ -62,6 +62,8 @@ describe('Layout banner on Just Go host', () => {
     mockIsWww.mockReset();
     mockIsJustGoHost.mockReturnValue(false);
     mockIsWww.mockReturnValue(true);
+    document.head.innerHTML =
+      '<link rel="icon" href="/icon.svg" /><link rel="apple-touch-icon" href="/Logo.svg" />';
   });
 
   it('hides the campus banner on Just Go landing', () => {
@@ -84,5 +86,24 @@ describe('Layout banner on Just Go host', () => {
     mockIsWww.mockReturnValue(true);
     renderLayout('/justgo');
     expect(screen.queryByTestId('campus-banner')).not.toBeInTheDocument();
+  });
+
+  it('uses justgo-icon.svg as the tab icon on Just Go pages', () => {
+    mockIsJustGoHost.mockReturnValue(false);
+    mockIsWww.mockReturnValue(true);
+    renderLayout('/justgo');
+    expect(document.querySelector('link[rel="icon"]').getAttribute('href')).toContain(
+      'justgo-icon.svg',
+    );
+  });
+
+  it('keeps the campus tab icon off Just Go pages', () => {
+    mockIsJustGoHost.mockReturnValue(false);
+    mockIsWww.mockReturnValue(true);
+    renderLayout('/');
+    expect(document.querySelector('link[rel="icon"]').getAttribute('href')).toContain('icon.svg');
+    expect(document.querySelector('link[rel="icon"]').getAttribute('href')).not.toContain(
+      'justgo-icon.svg',
+    );
   });
 });

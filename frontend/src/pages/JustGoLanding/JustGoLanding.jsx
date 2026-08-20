@@ -2,10 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import apiRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
+import Popup from '../../components/Popup/Popup';
 import justGoWordmark from '../../assets/pivot/just-go-wordmark.svg';
 import appStoreBadge from '../../assets/pivot/download-on-the-app-store.svg';
-import dandelions from '../../assets/pivot/pivot-hero-dandelions.jpg';
-import meadow from '../../assets/pivot/pivot-hero-meadow.jpg';
 import { JUSTGO_CREATOR_ROUTES } from '../JustGoCreator/justGoCreatorRoutes';
 import justGoLandingCopy, {
   JUSTGO_IOS_STORE_URL,
@@ -37,11 +36,6 @@ import JustGoLandingCityPicker from './JustGoLandingCityPicker';
 import JustGoLandingStoreLink from './JustGoLandingStoreLink';
 import JustGoLandingWaitlist from './JustGoLandingWaitlist';
 import './JustGoLanding.scss';
-
-const STORY_PRINTS = [
-  { src: dandelions, alt: '' },
-  { src: meadow, alt: '' },
-];
 
 function useIsDesktop() {
   const [desktop, setDesktop] = useState(() => {
@@ -177,6 +171,23 @@ function FlyerCard({ flyer }) {
   );
 }
 
+function JustGoWaitlistDialog({ copy, children, handleClose }) {
+  return (
+    <div
+      id="waitlist"
+      role="dialog"
+      aria-modal="true"
+      aria-label={copy.waitlistCta}
+    >
+      {React.isValidElement(children)
+        ? React.cloneElement(children, {
+            onClose: handleClose || children.props.onClose,
+          })
+        : children}
+    </div>
+  );
+}
+
 function JustGoLanding() {
   const { tenantKey: tenantKeyParam } = useParams();
   const [searchParams] = useSearchParams();
@@ -189,6 +200,7 @@ function JustGoLanding() {
   const [citiesState, setCitiesState] = useState('loading');
   const [selectedTenantKey, setSelectedTenantKey] = useState('');
   const [copy, setCopy] = useState(justGoLandingCopy);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
   const { slap } = useJustGoLandingMotion({ desktop, flyersRef });
   const countdown = useJustGoDropCountdown();
   const srcQuery = searchParams.get('src');
@@ -309,6 +321,49 @@ function JustGoLanding() {
   );
   const waitlistMode = isWaitlistLandingMode(activeCity);
   const ctaReady = Boolean(activeCity);
+
+  function openWaitlist(event) {
+    event?.preventDefault?.();
+    setWaitlistOpen(true);
+  }
+
+  function closeWaitlist() {
+    setWaitlistOpen(false);
+    if (typeof window === 'undefined') return;
+    if (window.location.hash.replace(/^#/, '') === 'waitlist') {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+  }
+
+  useEffect(() => {
+    const syncHash = () => {
+      if (window.location.hash.replace(/^#/, '') === 'waitlist') {
+        setWaitlistOpen(true);
+      }
+    };
+    syncHash();
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
+  }, []);
+
+  useEffect(() => {
+    if (!waitlistMode) setWaitlistOpen(false);
+  }, [waitlistMode]);
+
+  useEffect(() => {
+    if (!waitlistOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') closeWaitlist();
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [waitlistOpen]);
+
   const scopedCitiesState =
     lockedTenantKey && citiesState === 'ready' && scopedCities.length === 0
       ? 'empty'
@@ -346,11 +401,7 @@ function JustGoLanding() {
             <a href="#story">{copy.navStory}</a>
           </div>
           <DropCountdown countdown={countdown} />
-          {ctaReady && waitlistMode ? (
-            <a className="justgo-landing__nav-cta" href="#waitlist">
-              {copy.waitlistCta}
-            </a>
-          ) : ctaReady ? (
+          {ctaReady && !waitlistMode ? (
             <JustGoLandingStoreLink
               className="justgo-landing__nav-cta"
               href={storeUrl}
@@ -378,12 +429,25 @@ function JustGoLanding() {
             </span>
           </h1>
           {ctaReady && waitlistMode ? (
-            <JustGoLandingWaitlist
-              cities={scopedCities}
-              selectedTenantKey={selectedTenantKey}
-              cityLocked={Boolean(lockedTenantKey)}
-              onCityChange={setSelectedTenantKey}
-            />
+            <>
+              {desktop && !lockedTenantKey && !waitlistOpen ? (
+                <JustGoLandingCityPicker
+                  cities={scopedCities}
+                  selectedTenantKey={selectedTenantKey}
+                  onChange={setSelectedTenantKey}
+                  className="justgo-landing-deck__cities justgo-landing__hero-cities"
+                />
+              ) : null}
+              <div className="justgo-landing__waitlist-gate">
+                <a
+                  className="justgo-landing__cta"
+                  href="#waitlist"
+                  onClick={openWaitlist}
+                >
+                  {copy.waitlistCta}
+                </a>
+              </div>
+            </>
           ) : ctaReady ? (
             <>
               {desktop && !lockedTenantKey ? (
@@ -441,6 +505,7 @@ function JustGoLanding() {
             lockedTenantKey={lockedTenantKey}
             selectedTenantKey={selectedTenantKey}
             onCityChange={setSelectedTenantKey}
+            onWaitlistOpen={openWaitlist}
           />
         )}
       </section>
@@ -454,11 +519,6 @@ function JustGoLanding() {
         {copy.story.map((graf) => (
           <p key={graf}>{graf}</p>
         ))}
-        <div className="justgo-landing__story-prints" aria-hidden="true">
-          {STORY_PRINTS.map((print) => (
-            <img key={print.src} src={print.src} alt="" draggable={false} />
-          ))}
-        </div>
       </section>
 
       <footer className="justgo-landing__footer" id="contact">
@@ -475,7 +535,11 @@ function JustGoLanding() {
           </span>
         </p>
         {ctaReady && waitlistMode ? (
-          <a className="justgo-landing__cta justgo-landing__cta--footer" href="#waitlist">
+          <a
+            className="justgo-landing__cta justgo-landing__cta--footer"
+            href="#waitlist"
+            onClick={openWaitlist}
+          >
             {copy.waitlistCta}
           </a>
         ) : ctaReady ? (
@@ -488,10 +552,12 @@ function JustGoLanding() {
             {copy.cta}
           </JustGoLandingStoreLink>
         ) : null}
-        <p className="justgo-landing__host">
-          {copy.footerHost}{' '}
-          <Link to={JUSTGO_CREATOR_ROUTES.login}>{copy.footerHostLink}</Link>
-        </p>
+        {!waitlistMode ? (
+          <p className="justgo-landing__host">
+            {copy.footerHost}{' '}
+            <Link to={JUSTGO_CREATOR_ROUTES.login}>{copy.footerHostLink}</Link>
+          </p>
+        ) : null}
         <p className="justgo-landing__note">
           {copy.footerNote}{' '}
           <a href={`mailto:${copy.footerEmail}`}>{copy.footerEmail}</a>
@@ -503,21 +569,35 @@ function JustGoLanding() {
         </p>
       </footer>
 
-      {showSticky && ctaReady ? (
+      {showSticky && ctaReady && !waitlistMode ? (
         <div className="justgo-landing__sticky">
-          {waitlistMode ? (
-            <a href="#waitlist">{copy.waitlistCta}</a>
-          ) : (
-            <JustGoLandingStoreLink
-              href={storeUrl}
-              tenantKey={lockedTenantKey || selectedTenantKey}
-              store="ios"
-            >
-              {copy.stickyCta}
-            </JustGoLandingStoreLink>
-          )}
+          <JustGoLandingStoreLink
+            href={storeUrl}
+            tenantKey={lockedTenantKey || selectedTenantKey}
+            store="ios"
+          >
+            {copy.stickyCta}
+          </JustGoLandingStoreLink>
         </div>
       ) : null}
+
+      <Popup
+        isOpen={Boolean(waitlistOpen && ctaReady && waitlistMode)}
+        onClose={closeWaitlist}
+        defaultStyling={false}
+        hideCloseButton
+        customClassName="justgo-landing__waitlist-dialog"
+      >
+        <JustGoWaitlistDialog copy={copy}>
+          <JustGoLandingWaitlist
+            cities={scopedCities}
+            selectedTenantKey={selectedTenantKey}
+            cityLocked={Boolean(lockedTenantKey)}
+            onCityChange={setSelectedTenantKey}
+            onClose={closeWaitlist}
+          />
+        </JustGoWaitlistDialog>
+      </Popup>
     </div>
     </JustGoLandingCopyContext.Provider>
   );

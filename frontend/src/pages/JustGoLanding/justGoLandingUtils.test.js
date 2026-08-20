@@ -15,6 +15,8 @@ import {
   resolveDeckSwipeAxis,
   resolveNextLandingDropAt,
   scopeLandingCities,
+  applyJustGoTabIcon,
+  restoreCampusTabIcon,
   shouldHideCampusBanner,
   splitLandingDropCountdown,
 } from './justGoLandingUtils';
@@ -134,6 +136,31 @@ describe('shouldHideCampusBanner', () => {
     expect(shouldHideCampusBanner('/qr/poster-night', true)).toBe(true);
     expect(shouldHideCampusBanner('/privacy-policy', true)).toBe(true);
     expect(shouldHideCampusBanner('/terms-of-service', true)).toBe(true);
+  });
+});
+
+describe('applyJustGoTabIcon', () => {
+  function iconHref() {
+    return document.querySelector('link[rel="icon"]')?.getAttribute('href') || '';
+  }
+
+  beforeEach(() => {
+    document.head.innerHTML = '<link rel="icon" href="/icon.svg" /><link rel="apple-touch-icon" href="/Logo.svg" />';
+  });
+
+  it('points the tab icon at justgo-icon.svg', () => {
+    applyJustGoTabIcon();
+    expect(iconHref()).toContain('justgo-icon.svg');
+    expect(document.querySelector('link[rel="apple-touch-icon"]').getAttribute('href')).toContain(
+      'justgo-icon.svg',
+    );
+  });
+
+  it('restores the campus icon', () => {
+    applyJustGoTabIcon();
+    restoreCampusTabIcon();
+    expect(iconHref()).toContain('icon.svg');
+    expect(iconHref()).not.toContain('justgo-icon.svg');
   });
 });
 

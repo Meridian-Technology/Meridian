@@ -280,6 +280,22 @@ const CREW_SUBGROUP_LABELS = {
   profile: 'Profile',
 };
 
+const LANDING_SUBGROUP_LABELS = {
+  overview: 'Overview',
+  nav: 'Nav',
+  countdown: 'Countdown',
+  headline: 'Headline',
+  cities: 'Cities',
+  flyers: 'Flyers',
+  deck: 'Deck',
+  story: 'Story',
+  waitlist: 'Waitlist',
+  footer: 'Footer',
+  qr: 'QR',
+};
+
+const LANDING_SUBGROUP_ORDER = Object.keys(LANDING_SUBGROUP_LABELS);
+
 const FAMILY_BY_SECTION = new Map(
   VOICE_FAMILY_ORDER.flatMap((family) =>
     family.sections.map((section) => [section, family]),
@@ -290,6 +306,9 @@ function titleCaseSegment(segment, familyId) {
   if (familyId === 'crew' && CREW_SUBGROUP_LABELS[segment]) {
     return CREW_SUBGROUP_LABELS[segment];
   }
+  if (familyId === 'landing' && LANDING_SUBGROUP_LABELS[segment]) {
+    return LANDING_SUBGROUP_LABELS[segment];
+  }
   if (SECTION_LABELS[segment]) return SECTION_LABELS[segment];
   return String(segment || 'Other')
     .replace(/([A-Z])/g, ' $1')
@@ -299,16 +318,31 @@ function titleCaseSegment(segment, familyId) {
 }
 
 function rowSubgroup(row) {
+  const parts = String(row.path || '').split('.');
   if (row.section === 'crew') {
-    const parts = String(row.path || '').split('.');
     if (parts.length >= 3) return parts[1];
+    return 'overview';
+  }
+  if (row.section === 'landing') {
+    // landing.web.waitlist.cta → Waitlist. landing.web.cta → Overview.
+    const start = parts[1] === 'web' ? 2 : 1;
+    if (parts.length > start + 1) return parts[start];
     return 'overview';
   }
   return row.section;
 }
 
+function sortLandingGroups(groups) {
+  const rank = new Map(LANDING_SUBGROUP_ORDER.map((id, index) => [id, index]));
+  return [...groups].sort((a, b) => {
+    const left = rank.has(a.section) ? rank.get(a.section) : 99;
+    const right = rank.has(b.section) ? rank.get(b.section) : 99;
+    return left - right || a.label.localeCompare(b.label);
+  });
+}
+
 /**
- * Product-area folders with optional nested subgroups (crew).
+ * Product-area folders with nested subgroups (crew, landing web).
  * Unknown sections land in Other.
  */
 export function groupVoiceRows(rows) {
@@ -362,7 +396,12 @@ export function groupVoiceRows(rows) {
   }
   if (buckets.has('other')) ordered.push(buckets.get('other'));
 
-  return ordered.map(({ groupIndex, ...family }) => family);
+  return ordered.map(({ groupIndex, ...family }) => {
+    if (family.id === 'landing') {
+      return { ...family, groups: sortLandingGroups(family.groups) };
+    }
+    return family;
+  });
 }
 
 export { VOICE_FAMILY_ORDER };

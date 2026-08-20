@@ -12,9 +12,11 @@ const { normalizeWaitlistPhoneE164 } = require('../utilities/justGoWaitlistPhone
 const { justGoWaitlistShareUrl } = require('../utilities/justGoPublicUrl');
 const {
   JUSTGO_WAITLIST_SOURCES,
+  JUSTGO_WAITLIST_STORES,
   VISITOR_ID_MAX_LENGTH,
   SHARE_CODE_MAX_LENGTH,
   ATTR_MAX_LENGTH,
+  USER_AGENT_MAX_LENGTH,
 } = require('../schemas/justGoWaitlist');
 
 const SHARE_CODE_LENGTH = 10;
@@ -95,6 +97,30 @@ function waitlistDuplicate() {
     status: 409,
     code: 'WAITLIST_DUPLICATE',
   };
+}
+
+function requestUserAgent(req) {
+  return trimToNull(req.get?.('user-agent'), USER_AGENT_MAX_LENGTH);
+}
+
+function detectStoreFromUserAgent(userAgent) {
+  return /android/i.test(String(userAgent || '')) ? 'android' : 'ios';
+}
+
+function resolveWaitlistStore(body = {}, req) {
+  const store = trimToNull(body.store, 16);
+  if (store) {
+    if (!JUSTGO_WAITLIST_STORES.includes(store)) {
+      return {
+        error: 'store must be ios or android.',
+        status: 400,
+        code: 'INVALID_STORE',
+      };
+    }
+    return { store };
+  }
+  const userAgent = trimToNull(body.userAgent, USER_AGENT_MAX_LENGTH) || requestUserAgent(req);
+  return { store: detectStoreFromUserAgent(userAgent) };
 }
 
 function cityLabelFor(tenant) {
@@ -184,6 +210,10 @@ async function joinWaitlist(req, body = {}) {
     };
   }
 
+  const storeResult = resolveWaitlistStore(body, req);
+  if (storeResult.error) return storeResult;
+  const userAgent = trimToNull(body.userAgent, USER_AGENT_MAX_LENGTH) || requestUserAgent(req);
+
   const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
 
   const existing = await JustGoWaitlist.findOne({ tenantKey, phoneE164 }).lean();
@@ -200,6 +230,8 @@ async function joinWaitlist(req, body = {}) {
     qrName: trimToNull(body.qrName ?? body.qr, ATTR_MAX_LENGTH),
     refCode,
     friendsJoined: 0,
+    store: storeResult.store,
+    userAgent,
   };
 
   let created;
@@ -238,6 +270,7 @@ async function joinWaitlist(req, body = {}) {
 module.exports = {
   joinWaitlist,
   resolveWaitlistCity,
+  resolveWaitlistStore,
   mintShareCode,
   normalizeWaitlistShareCode,
   attributeWaitlistShareRef,

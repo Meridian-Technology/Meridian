@@ -1,6 +1,6 @@
 import apiRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
-import { landingTenantKeyFromParam, readStoredLandingCity } from './justGoLandingUtils';
+import { landingTenantKeyFromParam, readStoredLandingCity, detectStorePlatform } from './justGoLandingUtils';
 
 export const JUSTGO_LANDING_VISITOR_KEY = 'justgo.landing.visitor';
 export const JUSTGO_LANDING_SRC_KEY = 'justgo.landing.src';
@@ -188,11 +188,13 @@ function waitlistAnalyticsProps(body) {
   return compactBody({
     tenantKey: body.tenantKey,
     source: body.source,
+    store: body.store,
   });
 }
 
 export function buildWaitlistPayload({ phone, tenantKey, search } = {}) {
   const attribution = readLandingAttribution(search ?? window.location?.search);
+  const userAgent = typeof navigator === 'undefined' ? null : navigator.userAgent;
   return compactBody({
     phone: String(phone || '').trim(),
     tenantKey: landingTenantKeyFromParam(tenantKey),
@@ -200,6 +202,8 @@ export function buildWaitlistPayload({ phone, tenantKey, search } = {}) {
     source: attribution.source,
     qrName: attribution.qrName,
     ref: attribution.refCode,
+    store: detectStorePlatform(userAgent || ''),
+    userAgent,
   });
 }
 

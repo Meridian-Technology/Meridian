@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const {
   JUSTGO_LANDING_EVENT_SOURCES,
+  JUSTGO_LANDING_EVENT_STORES,
   VISITOR_ID_MAX_LENGTH,
 } = require('./justGoLandingEvent');
 
@@ -10,7 +11,8 @@ const {
  * Global collection via getGlobalModelService — not campus/school getModels.
  * Unique (tenantKey, phoneE164). Unique outbound shareCode (minted at insert).
  * Inbound refCode matching another row’s shareCode increments friendsJoined
- * (same city, not self).
+ * (same city, not self). Available on iOS and Android; `store` records which
+ * client signed up.
  *
  * Indexes:
  * - `justgo_waitlist_tenant_phone_unique` — `{ tenantKey, phoneE164 }` unique
@@ -26,6 +28,7 @@ const SHARE_CODE_MAX_LENGTH = 16;
 const PHONE_E164_MAX_LENGTH = 16;
 const CITY_LABEL_MAX_LENGTH = 120;
 const ATTR_MAX_LENGTH = 64;
+const USER_AGENT_MAX_LENGTH = 512;
 
 function emptyToNull(value) {
   if (value == null) return null;
@@ -92,6 +95,18 @@ const justGoWaitlistSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    store: {
+      type: String,
+      required: true,
+      enum: JUSTGO_LANDING_EVENT_STORES,
+    },
+    userAgent: {
+      type: String,
+      required: false,
+      default: null,
+      trim: true,
+      maxlength: USER_AGENT_MAX_LENGTH,
+    },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
@@ -119,6 +134,8 @@ justGoWaitlistSchema.pre('validate', function normalizeWaitlistRow() {
   if (this.refCode) {
     this.refCode = String(this.refCode).trim().toLowerCase();
   }
+  this.userAgent = emptyToNull(this.userAgent);
+  this.store = emptyToNull(this.store);
 });
 
 justGoWaitlistSchema.index(
@@ -137,5 +154,7 @@ module.exports.SHARE_CODE_MAX_LENGTH = SHARE_CODE_MAX_LENGTH;
 module.exports.PHONE_E164_MAX_LENGTH = PHONE_E164_MAX_LENGTH;
 module.exports.CITY_LABEL_MAX_LENGTH = CITY_LABEL_MAX_LENGTH;
 module.exports.ATTR_MAX_LENGTH = ATTR_MAX_LENGTH;
+module.exports.USER_AGENT_MAX_LENGTH = USER_AGENT_MAX_LENGTH;
 module.exports.VISITOR_ID_MAX_LENGTH = VISITOR_ID_MAX_LENGTH;
 module.exports.JUSTGO_WAITLIST_SOURCES = JUSTGO_LANDING_EVENT_SOURCES;
+module.exports.JUSTGO_WAITLIST_STORES = JUSTGO_LANDING_EVENT_STORES;

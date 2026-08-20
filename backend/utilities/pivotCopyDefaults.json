@@ -3169,394 +3169,441 @@
       "shipped": "changed your mind?"
     },
     {
-      "path": "landing.citiesEmpty",
+      "path": "landing.web.cities.empty",
       "kind": "string",
       "params": [],
       "shipped": "{brand.name} isn’t live in your area yet. check back soon",
       "usesTokens": true
     },
     {
-      "path": "landing.citiesLoading",
+      "path": "landing.web.cities.loading",
       "kind": "string",
       "params": [],
       "shipped": "loading cities"
     },
     {
-      "path": "landing.cityPickerLabel",
+      "path": "landing.web.cityPickerLabel",
       "kind": "string",
       "params": [],
       "shipped": "your city"
     },
     {
-      "path": "landing.contactLead",
+      "path": "landing.web.contactLead",
       "kind": "string",
       "params": [],
       "shipped": "don't be a stranger"
     },
     {
-      "path": "landing.countdownKicker",
+      "path": "landing.web.countdown.kicker",
       "kind": "string",
       "params": [],
       "shipped": "next drop"
     },
     {
-      "path": "landing.countdownKickerIn",
+      "path": "landing.web.countdown.kickerIn",
       "kind": "string",
       "params": [],
       "shipped": "in"
     },
     {
-      "path": "landing.countdownLive",
+      "path": "landing.web.countdown.live",
       "kind": "string",
       "params": [],
       "shipped": "it's live"
     },
     {
-      "path": "landing.countdownUnitDays",
+      "path": "landing.web.countdown.unitDays",
       "kind": "string",
       "params": [],
       "shipped": "d"
     },
     {
-      "path": "landing.countdownUnitHours",
+      "path": "landing.web.countdown.unitHours",
       "kind": "string",
       "params": [],
       "shipped": "h"
     },
     {
-      "path": "landing.countdownUnitMinutes",
+      "path": "landing.web.countdown.unitMinutes",
       "kind": "string",
       "params": [],
       "shipped": "m"
     },
     {
-      "path": "landing.countdownUnitSeconds",
+      "path": "landing.web.countdown.unitSeconds",
       "kind": "string",
       "params": [],
       "shipped": "s"
     },
     {
-      "path": "landing.cta",
+      "path": "landing.web.cta",
       "kind": "string",
       "params": [],
       "shipped": "get {brand.name}",
       "usesTokens": true
     },
     {
-      "path": "landing.ctaAriaAndroid",
+      "path": "landing.web.ctaAriaAndroid",
       "kind": "string",
       "params": [],
       "shipped": "get {brand.name} on google play",
       "usesTokens": true
     },
     {
-      "path": "landing.ctaAriaIos",
+      "path": "landing.web.ctaAriaIos",
       "kind": "string",
       "params": [],
       "shipped": "download {brand.name} on the app store",
       "usesTokens": true
     },
     {
-      "path": "landing.deckBody",
+      "path": "landing.web.deck.body",
       "kind": "string",
       "params": [],
       "shipped": "swipe what’s on."
     },
     {
-      "path": "landing.deckDownloadBody",
+      "path": "landing.web.deck.downloadBody",
       "kind": "string",
       "params": [],
       "shipped": "the full week, and the people going. get {brand.name}.",
       "usesTokens": true
     },
     {
-      "path": "landing.deckDownloadTitle",
+      "path": "landing.web.deck.downloadTitle",
       "kind": "string",
       "params": [],
       "shipped": "the rest is in the app"
     },
     {
-      "path": "landing.deckEmpty",
+      "path": "landing.web.deck.empty",
       "kind": "string",
       "params": [],
       "shipped": "this week’s drop is still cooking. get the app"
     },
     {
-      "path": "landing.deckEyebrow",
+      "path": "landing.web.deck.eyebrow",
       "kind": "string",
       "params": [],
       "shipped": "this week"
     },
     {
-      "path": "landing.deckHint",
+      "path": "landing.web.deck.hint",
       "kind": "string",
       "params": [],
       "shipped": "left to pass · right to save"
     },
     {
-      "path": "landing.deckInterested",
+      "path": "landing.web.deck.interested",
       "kind": "string",
       "params": [],
       "shipped": "interested"
     },
     {
-      "path": "landing.deckInterestedHint",
+      "path": "landing.web.deck.interestedHint",
       "kind": "string",
       "params": [],
       "shipped": "release to save"
     },
     {
-      "path": "landing.deckLoading",
+      "path": "landing.web.deck.loading",
       "kind": "string",
       "params": [],
       "shipped": "loading this week’s drop"
     },
     {
-      "path": "landing.deckPass",
+      "path": "landing.web.deck.pass",
       "kind": "string",
       "params": [],
       "shipped": "pass"
     },
     {
-      "path": "landing.deckPassHint",
+      "path": "landing.web.deck.passHint",
       "kind": "string",
       "params": [],
       "shipped": "release to skip"
     },
     {
-      "path": "landing.deckTitle",
+      "path": "landing.web.deck.title",
       "kind": "string",
       "params": [],
       "shipped": "the drop"
     },
     {
-      "path": "landing.documentTitle",
+      "path": "landing.web.documentTitle",
       "kind": "string",
       "params": [],
       "shipped": "{brand.name}. this week in your city",
       "usesTokens": true
     },
     {
-      "path": "landing.flyersBody",
+      "path": "landing.web.flyers.body",
       "kind": "string",
       "params": [],
       "shipped": "a new week, a new deck."
     },
     {
-      "path": "landing.flyersEyebrow",
+      "path": "landing.web.flyers.eyebrow",
       "kind": "string",
       "params": [],
       "shipped": "this week"
     },
     {
-      "path": "landing.flyersTitle",
+      "path": "landing.web.flyers.title",
       "kind": "string",
       "params": [],
       "shipped": "the drop"
     },
     {
-      "path": "landing.footerEmail",
+      "path": "landing.web.footer.email",
       "kind": "string",
       "params": [],
       "shipped": "raven@meridian.study"
     },
     {
-      "path": "landing.footerHost",
+      "path": "landing.web.footer.host",
       "kind": "string",
       "params": [],
       "shipped": "hosting?"
     },
     {
-      "path": "landing.footerHostLink",
+      "path": "landing.web.footer.hostLink",
       "kind": "string",
       "params": [],
       "shipped": "put a night in the drop"
     },
     {
-      "path": "landing.footerNote",
+      "path": "landing.web.footer.note",
       "kind": "string",
       "params": [],
       "shipped": "a night we missed? a bone to pick?"
     },
     {
-      "path": "landing.footerPrivacy",
+      "path": "landing.web.footer.privacy",
       "kind": "string",
       "params": [],
       "shipped": "privacy"
     },
     {
-      "path": "landing.footerStamp",
+      "path": "landing.web.footer.stamp",
       "kind": "string",
       "params": [],
       "shipped": "monday drop"
     },
     {
-      "path": "landing.footerTerms",
+      "path": "landing.web.footer.terms",
       "kind": "string",
       "params": [],
       "shipped": "terms"
     },
     {
-      "path": "landing.headlineLead",
+      "path": "landing.web.headline.lead",
       "kind": "string",
       "params": [],
       "shipped": "what are you"
     },
     {
-      "path": "landing.headlinePop",
+      "path": "landing.web.headline.pop",
       "kind": "string",
       "params": [],
       "shipped": "doing this week?"
     },
     {
-      "path": "landing.metaDescription",
+      "path": "landing.web.metaDescription",
       "kind": "string",
       "params": [],
       "shipped": "stop planning. swipe what's on in your city this week. {brand.name}.",
       "usesTokens": true
     },
     {
-      "path": "landing.navDrop",
+      "path": "landing.web.nav.drop",
       "kind": "string",
       "params": [],
       "shipped": "the drop"
     },
     {
-      "path": "landing.navStory",
+      "path": "landing.web.nav.story",
       "kind": "string",
       "params": [],
       "shipped": "our story"
     },
     {
-      "path": "landing.proofFallback",
+      "path": "landing.web.proofFallback",
       "kind": "string",
       "params": [],
       "shipped": "no plans? {brand.name}. this week in your city",
       "usesTokens": true
     },
     {
-      "path": "landing.proofPrefix",
+      "path": "landing.web.proofPrefix",
       "kind": "string",
       "params": [],
       "shipped": "live in"
     },
     {
-      "path": "landing.skip",
+      "path": "landing.web.qr.back",
+      "kind": "string",
+      "params": [],
+      "shipped": "back to just go"
+    },
+    {
+      "path": "landing.web.qr.missingBody",
+      "kind": "string",
+      "params": [],
+      "shipped": "this poster link doesn’t go anywhere yet. head back to just go."
+    },
+    {
+      "path": "landing.web.qr.missingTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "that code isn’t live"
+    },
+    {
+      "path": "landing.web.skip",
       "kind": "string",
       "params": [],
       "shipped": "skip to drop"
     },
     {
-      "path": "landing.stickyCta",
+      "path": "landing.web.stickyCta",
       "kind": "string",
       "params": [],
       "shipped": "get {brand.name}",
       "usesTokens": true
     },
     {
-      "path": "landing.story0",
+      "path": "landing.web.story.graf0",
       "kind": "string",
       "params": [],
       "shipped": "when did going out get so complicated?"
     },
     {
-      "path": "landing.story1",
+      "path": "landing.web.story.graf1",
       "kind": "string",
       "params": [],
       "shipped": "nowadays, plans don't fail at the door. they die in the group chat, in \"maybes\""
     },
     {
-      "path": "landing.story2",
+      "path": "landing.web.story.graf2",
       "kind": "string",
       "params": [],
       "shipped": "we built a weekly drop for people who’d rather just go."
     },
     {
-      "path": "landing.storyTitle",
+      "path": "landing.web.story.title",
       "kind": "string",
       "params": [],
       "shipped": "the movement"
     },
     {
-      "path": "landing.waitlistCityRequired",
+      "path": "landing.web.waitlist.cityRequired",
       "kind": "string",
       "params": [],
       "shipped": "pick a city first"
     },
     {
-      "path": "landing.waitlistConsent",
+      "path": "landing.web.waitlist.consent",
       "kind": "string",
       "params": [],
       "shipped": "by joining you agree to our"
     },
     {
-      "path": "landing.waitlistCopied",
+      "path": "landing.web.waitlist.copied",
       "kind": "string",
       "params": [],
       "shipped": "copied"
     },
     {
-      "path": "landing.waitlistCopyLink",
+      "path": "landing.web.waitlist.copyLink",
       "kind": "string",
       "params": [],
       "shipped": "copy link"
     },
     {
-      "path": "landing.waitlistCta",
+      "path": "landing.web.waitlist.cta",
       "kind": "string",
       "params": [],
       "shipped": "save my spot"
     },
     {
-      "path": "landing.waitlistDuplicate",
+      "path": "landing.web.waitlist.duplicate",
       "kind": "string",
       "params": [],
       "shipped": "you're already on this city's list"
     },
     {
-      "path": "landing.waitlistError",
+      "path": "landing.web.waitlist.error",
       "kind": "string",
       "params": [],
       "shipped": "couldn't save that. try again"
     },
     {
-      "path": "landing.waitlistPhoneLabel",
+      "path": "landing.web.waitlist.friendsJoined",
+      "kind": "template",
+      "params": [
+        "count"
+      ],
+      "shipped": "{count} friends joined",
+      "sampleArgs": {
+        "count": 2
+      }
+    },
+    {
+      "path": "landing.web.waitlist.friendsJoinedOne",
+      "kind": "string",
+      "params": [],
+      "shipped": "1 friend joined"
+    },
+    {
+      "path": "landing.web.waitlist.phoneLabel",
       "kind": "string",
       "params": [],
       "shipped": "phone"
     },
     {
-      "path": "landing.waitlistPhonePlaceholder",
+      "path": "landing.web.waitlist.phonePlaceholder",
       "kind": "string",
       "params": [],
       "shipped": "(555) 555-0100"
     },
     {
-      "path": "landing.waitlistPhoneRequired",
+      "path": "landing.web.waitlist.phoneRequired",
       "kind": "string",
       "params": [],
       "shipped": "need a real phone number"
     },
     {
-      "path": "landing.waitlistSubmit",
+      "path": "landing.web.waitlist.share",
+      "kind": "string",
+      "params": [],
+      "shipped": "share with a friend"
+    },
+    {
+      "path": "landing.web.waitlist.shareText",
+      "kind": "string",
+      "params": [],
+      "shipped": "friends who join help you get in earlier."
+    },
+    {
+      "path": "landing.web.waitlist.submit",
       "kind": "string",
       "params": [],
       "shipped": "save my spot"
     },
     {
-      "path": "landing.waitlistSubmitting",
+      "path": "landing.web.waitlist.submitting",
       "kind": "string",
       "params": [],
       "shipped": "saving…"
     },
     {
-      "path": "landing.waitlistSuccessBody",
+      "path": "landing.web.waitlist.successBody",
       "kind": "string",
       "params": [],
-      "shipped": "tell a friend. the more who join, the sooner you get in."
+      "shipped": "friends who join help you get in earlier."
     },
     {
-      "path": "landing.waitlistSuccessTitle",
+      "path": "landing.web.waitlist.successTitle",
       "kind": "string",
       "params": [],
       "shipped": "you're on the list"

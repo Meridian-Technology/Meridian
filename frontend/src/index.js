@@ -5,6 +5,11 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { isWww, isPathAllowedOnWww, isJustGoHost } from './config/tenantRedirect';
+import { applyJustGoTabIcon } from './pages/JustGoLanding/justGoLandingUtils';
+
+if (typeof document !== 'undefined' && isJustGoHost()) {
+  applyJustGoTabIcon();
+}
 
 if (process.env.NODE_ENV !== 'production') {
   axios.interceptors.request.use((config) => {

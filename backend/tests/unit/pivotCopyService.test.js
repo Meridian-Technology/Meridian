@@ -70,7 +70,7 @@ describe('pivotCopyDefaults catalog (Task 4.1)', () => {
     expect(isCatalogCopyKey('crew.push.weeklyDrop.ritualBody')).toBe(true);
     expect(isCatalogCopyKey('crew.push.weeklyDrop.decideBody')).toBe(true);
     expect(isCatalogCopyKey('crew.push.ritual.quorumWaitingBody')).toBe(true);
-    expect(isCatalogCopyKey('landing.cta')).toBe(true);
+    expect(isCatalogCopyKey('landing.web.cta')).toBe(true);
     expect(isCopyTokenName('group.singular')).toBe(true);
 
     const catalog = getCopyCatalog().data;
@@ -111,7 +111,7 @@ describe('pivotCopyDefaults catalog (Task 4.1)', () => {
         tokens: { 'group.singular': 'crew' },
         entries: {
           'ticker.week': 'nope',
-          'landing.cta': 'yes',
+          'landing.web.cta': 'yes',
           'brand.name': 'block',
         },
       }),
@@ -120,7 +120,7 @@ describe('pivotCopyDefaults catalog (Task 4.1)', () => {
       schemaVersion: 1,
       tokens: { 'group.singular': 'crew' },
       entries: {
-        'landing.cta': 'yes',
+        'landing.web.cta': 'yes',
         'brand.name': 'block',
       },
     });
@@ -293,7 +293,7 @@ describe('pivotCopyService (Task 2.2)', () => {
         scope: 'platform',
         entries: {
           'ticker.week': 'secret week',
-          'landing.cta': 'get overlay',
+          'landing.web.cta': 'get overlay',
           'brand.name': 'block',
         },
         tokens: { 'group.singular': 'block' },
@@ -301,11 +301,11 @@ describe('pivotCopyService (Task 2.2)', () => {
       await patchCopyPack(req, {
         scope: 'tenant',
         tenantKey: 'nyc',
-        entries: { 'landing.cta': 'nyc only' },
+        entries: { 'landing.web.cta': 'nyc only' },
       });
 
       const result = await getPlatformLandingCopy(req);
-      expect(result.data.entries['landing.cta']).toBe('get overlay');
+      expect(result.data.entries['landing.web.cta']).toBe('get overlay');
       expect(result.data.entries['brand.name']).toBe('block');
       expect(result.data.entries).not.toHaveProperty('ticker.week');
       expect(result.data.tokens['group.singular']).toBe('block');

@@ -210,6 +210,42 @@ export function shouldHideCampusBanner(pathname, justGoHost = false) {
   return segments.length === 1 && Boolean(landingTenantKeyFromParam(segments[0]));
 }
 
+export const JUSTGO_TAB_ICON_PATH = '/justgo-icon.svg';
+const CAMPUS_TAB_ICON_PATH = '/icon.svg';
+const CAMPUS_APPLE_TOUCH_ICON_PATH = '/Logo.svg';
+
+function publicAsset(path) {
+  const base = String(process.env.PUBLIC_URL || '').replace(/\/$/, '');
+  return `${base}${path}`;
+}
+
+function setHeadIconHref(root, rel, href, type) {
+  if (!root?.head) return null;
+  let link = root.querySelector(`link[rel="${rel}"]`);
+  if (!link) {
+    link = root.createElement('link');
+    link.setAttribute('rel', rel);
+    root.head.appendChild(link);
+  }
+  if (type) link.setAttribute('type', type);
+  link.setAttribute('href', href);
+  return link;
+}
+
+/** Tab / home-screen icon for Just Go pages. Campus keeps `icon.svg`. */
+export function applyJustGoTabIcon(root = typeof document !== 'undefined' ? document : null) {
+  const href = publicAsset(JUSTGO_TAB_ICON_PATH);
+  setHeadIconHref(root, 'icon', href, 'image/svg+xml');
+  const apple = root?.querySelector?.('link[rel="apple-touch-icon"]');
+  if (apple) apple.setAttribute('href', href);
+}
+
+export function restoreCampusTabIcon(root = typeof document !== 'undefined' ? document : null) {
+  setHeadIconHref(root, 'icon', publicAsset(CAMPUS_TAB_ICON_PATH), 'image/svg+xml');
+  const apple = root?.querySelector?.('link[rel="apple-touch-icon"]');
+  if (apple) apple.setAttribute('href', publicAsset(CAMPUS_APPLE_TOUCH_ICON_PATH));
+}
+
 export function findLandingCity(cities = [], tenantKey = '') {
   const locked = normalizeLandingTenantKey(tenantKey);
   if (!locked || !Array.isArray(cities)) return null;

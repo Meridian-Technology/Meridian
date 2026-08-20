@@ -1,7 +1,5 @@
 import canopy from '../../assets/pivot/pivot-hero-canopy.webp';
 import coast from '../../assets/pivot/pivot-hero-coast.jpg';
-import dandelions from '../../assets/pivot/pivot-hero-dandelions.jpg';
-import meadow from '../../assets/pivot/pivot-hero-meadow.jpg';
 
 /**
  * Brand artifacts for the flyer wall — nights the product is for, not a live catalog.
@@ -45,8 +43,8 @@ export const JUSTGO_LANDING_FLYERS = Object.freeze([
     title: 'sunrise hike',
     when: 'sun · 6am',
     tag: 'outdoors',
-    tone: 'photo',
-    cover: meadow,
+    tone: 'accent',
+    cover: null,
   }),
   Object.freeze({
     id: 'rooftop-film',
@@ -61,8 +59,8 @@ export const JUSTGO_LANDING_FLYERS = Object.freeze([
     title: 'dinner in the park',
     when: 'fri · 7pm',
     tag: 'food',
-    tone: 'photo',
-    cover: dandelions,
+    tone: 'pop',
+    cover: null,
   }),
   Object.freeze({
     id: 'comedy',

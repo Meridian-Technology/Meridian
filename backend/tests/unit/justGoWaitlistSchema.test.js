@@ -19,6 +19,7 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
       source: 'direct',
       shareCode: 'shareabc12',
       friendsJoined: 0,
+      store: 'ios',
       ...overrides,
     };
   }
@@ -96,6 +97,8 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
       expect(row.source).toBe('direct');
       expect(row.shareCode).toBe('shareabc12');
       expect(row.friendsJoined).toBe(0);
+      expect(row.store).toBe('ios');
+      expect(row.userAgent).toBeNull();
       expect(row.qrName).toBeNull();
       expect(row.refCode).toBeNull();
       expect(row.createdAt).toBeInstanceOf(Date);
@@ -145,6 +148,18 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
       await expect(
         JustGoWaitlist.create(baseRow({ tenantKey: undefined, shareCode: 'othercode1' })),
       ).rejects.toThrow(/tenantKey/);
+    });
+
+    it('stores android or ios and rejects an unknown store', async () => {
+      const android = await JustGoWaitlist.create(
+        baseRow({ shareCode: 'androidrow1', store: 'android', userAgent: 'Mozilla/5.0 (Linux; Android 14)' }),
+      );
+      expect(android.store).toBe('android');
+      expect(android.userAgent).toMatch(/Android/);
+
+      await expect(
+        JustGoWaitlist.create(baseRow({ shareCode: 'badstore01', store: 'web' })),
+      ).rejects.toThrow(/store/);
     });
 
     it('rejects an invalid source', async () => {

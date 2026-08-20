@@ -24,9 +24,9 @@ describe('resolveJustGoLandingCopy', () => {
   it('overlays landing keys and brand.name', () => {
     const copy = resolveJustGoLandingCopy({
       entries: {
-        'landing.cta': 'get {brand.name}',
+        'landing.web.cta': 'get {brand.name}',
         'brand.name': 'block',
-        'landing.story2': 'overlay story',
+        'landing.web.story.graf2': 'overlay story',
       },
       tokens: { 'brand.name': 'block' },
     });
@@ -38,10 +38,22 @@ describe('resolveJustGoLandingCopy', () => {
 
   it('overlays waitlist keys', () => {
     const copy = resolveJustGoLandingCopy({
-      entries: { 'landing.waitlistCta': 'hold my spot' },
+      entries: { 'landing.web.waitlist.cta': 'hold my spot' },
     });
     expect(copy.waitlistCta).toBe('hold my spot');
     expect(copy.waitlistSubmit).toBe(justGoLandingCopy.waitlistSubmit);
+  });
+
+  it('keeps {count} in waitlist friends-joined overlays', () => {
+    const copy = resolveJustGoLandingCopy({
+      entries: {
+        'landing.web.waitlist.friendsJoined': '{count} people in',
+        'landing.web.qr.missingTitle': 'no poster',
+      },
+    });
+    expect(copy.waitlistFriendsJoined).toBe('{count} people in');
+    expect(formatWaitlistFriendsJoined(copy, 3)).toBe('3 people in');
+    expect(copy.qrMissingTitle).toBe('no poster');
   });
 
   it('uses a brand.name token overlay for productName', () => {
@@ -55,7 +67,7 @@ describe('resolveJustGoLandingCopy', () => {
 
   it('falls back when a template is broken', () => {
     const copy = resolveJustGoLandingCopy({
-      entries: { 'landing.cta': '{unterminated' },
+      entries: { 'landing.web.cta': '{unterminated' },
     });
     expect(copy.cta).toBe(justGoLandingCopy.cta);
   });

@@ -207,6 +207,7 @@ describe('justGoLandingTracking (Task 1.3)', () => {
       expect(mockTrack).toHaveBeenCalledWith('justgo_landing_waitlist_submit', {
         tenantKey: 'troy',
         source: 'share',
+        store: 'ios',
       });
       const props = mockTrack.mock.calls[0][1];
       expect(props).not.toHaveProperty('phone');
@@ -218,6 +219,7 @@ describe('justGoLandingTracking (Task 1.3)', () => {
           source: 'share',
           ref: 'code-1',
           visitorId: expect.any(String),
+          store: 'ios',
         }),
       );
     });
@@ -260,8 +262,22 @@ describe('justGoLandingTracking (Task 1.3)', () => {
           tenantKey: 'troy',
           source: 'share',
           ref: 'friendcode1',
+          store: 'ios',
         }),
       );
+    });
+
+    it('stamps android from the user agent', () => {
+      const original = window.navigator.userAgent;
+      Object.defineProperty(window.navigator, 'userAgent', {
+        configurable: true,
+        value: 'Mozilla/5.0 (Linux; Android 14)',
+      });
+      expect(buildWaitlistPayload({ phone: '555-0100', tenantKey: 'troy' }).store).toBe('android');
+      Object.defineProperty(window.navigator, 'userAgent', {
+        configurable: true,
+        value: original,
+      });
     });
   });
 });

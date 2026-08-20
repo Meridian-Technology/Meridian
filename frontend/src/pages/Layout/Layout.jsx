@@ -6,7 +6,11 @@ import OrgInviteModal from '../../components/OrgInviteModal/OrgInviteModal';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
 import { isWww, isPathAllowedOnWww, isJustGoHost, isPathAllowedOnJustGoHost, hasDevTenantOverride, getLastTenant, getTenantKeys, getTenantRedirectUrl } from '../../config/tenantRedirect';
-import { shouldHideCampusBanner } from '../JustGoLanding/justGoLandingUtils';
+import {
+  applyJustGoTabIcon,
+  restoreCampusTabIcon,
+  shouldHideCampusBanner,
+} from '../JustGoLanding/justGoLandingUtils';
 
 function Layout() {
   const [visible, setVisible] = useState(false);
@@ -26,6 +30,17 @@ function Layout() {
       //add listener
   },[]);
 
+  const justGoHost = isJustGoHost();
+  const hideCampusChrome = shouldHideCampusBanner(location.pathname, justGoHost);
+  const pathAllowedOnHost = justGoHost
+    ? isPathAllowedOnJustGoHost(location.pathname)
+    : isPathAllowedOnWww(location.pathname);
+
+  useEffect(() => {
+    if (hideCampusChrome) applyJustGoTabIcon();
+    else restoreCampusTabIcon();
+  }, [hideCampusChrome]);
+
   const handleOrgInviteAccept = (invite) => {
     setPendingOrgInvites(prev => prev.filter(inv => inv._id !== invite._id));
   };
@@ -33,11 +48,6 @@ function Layout() {
   const handleOrgInviteDecline = (invite) => {
     setPendingOrgInvites(prev => prev.filter(inv => inv._id !== invite._id));
   };
-
-  const justGoHost = isJustGoHost();
-  const pathAllowedOnHost = justGoHost
-    ? isPathAllowedOnJustGoHost(location.pathname)
-    : isPathAllowedOnWww(location.pathname);
 
   // On www: if user has a saved tenant from a previous domain selection, auto-redirect there
   // Just Go apex is not campus www — never bounce it to a school subdomain.
@@ -69,8 +79,6 @@ function Layout() {
   if (!justGoHost && !isWww() && location.pathname === '/') {
     return <Navigate to="/events-dashboard" replace />;
   }
-
-  const hideCampusChrome = shouldHideCampusBanner(location.pathname, justGoHost);
 
   return (
     <div style={{minHeight: viewport, position: 'relative', overflowX: 'clip', width: '100%'}}>

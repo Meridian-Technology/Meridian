@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   formatWaitlistFriendsJoined,
   resolveWaitlistShareUrl,
   useJustGoLandingCopy,
 } from './justGoLandingCopy';
-import { cityChipLabel } from './justGoLandingUtils';
 import { submitLandingWaitlist } from './justGoLandingTracking';
 import JustGoLandingCityPicker from './JustGoLandingCityPicker';
 
@@ -24,7 +23,25 @@ function canUseWebShare() {
   }
 }
 
-function WaitlistSharePanel({ copy, shareUrl, friendsJoined }) {
+function WaitlistCloseButton({ onClose }) {
+  if (!onClose) return null;
+  return (
+    <button
+      type="button"
+      className="justgo-landing__waitlist-close"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }}
+      aria-label="close"
+    >
+      ×
+    </button>
+  );
+}
+
+function WaitlistSharePanel({ copy, shareUrl, friendsJoined, onClose }) {
   const [copied, setCopied] = useState(false);
   const canShare = canUseWebShare();
   const friendsLabel = formatWaitlistFriendsJoined(copy, friendsJoined);
@@ -53,28 +70,31 @@ function WaitlistSharePanel({ copy, shareUrl, friendsJoined }) {
   }
 
   return (
-    <div className="justgo-landing__waitlist" id="waitlist">
+    <div className="justgo-landing__waitlist">
+      <WaitlistCloseButton onClose={onClose} />
       <p className="justgo-landing__waitlist-kicker">{copy.waitlistSuccessTitle}</p>
       <p className="justgo-landing__waitlist-body">{copy.waitlistSuccessBody}</p>
       <p className="justgo-landing__waitlist-friends">{friendsLabel}</p>
       {shareUrl ? (
         <div className="justgo-landing__waitlist-actions">
-          <button
-            type="button"
-            className="justgo-landing__cta justgo-landing__cta--waitlist"
-            onClick={onCopyLink}
-          >
-            {copied ? copy.waitlistCopied : copy.waitlistCopyLink}
-          </button>
           {canShare ? (
             <button
               type="button"
-              className="justgo-landing__cta justgo-landing__cta--waitlist justgo-landing__cta--waitlist-share"
+              className="justgo-landing__cta justgo-landing__cta--waitlist"
               onClick={onShare}
             >
               {copy.waitlistShare}
             </button>
           ) : null}
+          <button
+            type="button"
+            className={`justgo-landing__cta justgo-landing__cta--waitlist${
+              canShare ? ' justgo-landing__cta--waitlist-secondary' : ''
+            }`}
+            onClick={onCopyLink}
+          >
+            {copied ? copy.waitlistCopied : copy.waitlistCopyLink}
+          </button>
         </div>
       ) : null}
     </div>
@@ -86,16 +106,30 @@ export default function JustGoLandingWaitlist({
   selectedTenantKey = '',
   cityLocked = false,
   onCityChange,
+  onClose,
 }) {
   const copy = useJustGoLandingCopy();
+  const phoneRef = useRef(null);
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorCode, setErrorCode] = useState('');
   const [success, setSuccess] = useState(null);
 
-  const cityLabel = cityChipLabel(
-    cities.find((city) => city.tenantKey === selectedTenantKey),
-  );
+  useLayoutEffect(() => {
+    phoneRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
+    const node = phoneRef.current;
+    if (!node) return undefined;
+    const focus = () => node.focus({ preventScroll: true });
+    const frame = requestAnimationFrame(focus);
+    const timer = window.setTimeout(focus, 50);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   async function onSubmit(event) {
     event.preventDefault();
@@ -127,27 +161,26 @@ export default function JustGoLandingWaitlist({
         copy={copy}
         shareUrl={success.shareUrl}
         friendsJoined={success.friendsJoined}
+        onClose={onClose}
       />
     );
   }
 
   return (
-    <form className="justgo-landing__waitlist" id="waitlist" onSubmit={onSubmit}>
-      {cityLocked ? (
-        cityLabel ? (
-          <p className="justgo-landing__waitlist-kicker">{cityLabel}</p>
-        ) : null
-      ) : (
+    <form className="justgo-landing__waitlist" onSubmit={onSubmit}>
+      <WaitlistCloseButton onClose={onClose} />
+      {!cityLocked ? (
         <JustGoLandingCityPicker
           cities={cities}
           selectedTenantKey={selectedTenantKey}
           onChange={onCityChange}
           className="justgo-landing-deck__cities justgo-landing__waitlist-cities"
         />
-      )}
+      ) : null}
       <label className="justgo-landing__waitlist-field">
         <span className="justgo-landing__waitlist-label">{copy.waitlistPhoneLabel}</span>
         <input
+          ref={phoneRef}
           type="tel"
           name="phone"
           autoComplete="tel"

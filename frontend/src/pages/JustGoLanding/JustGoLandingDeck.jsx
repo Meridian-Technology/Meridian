@@ -95,7 +95,7 @@ function EventFace({ event }) {
   );
 }
 
-function DownloadFace({ empty, tenantKey, waitlistMode }) {
+function DownloadFace({ empty, tenantKey, waitlistMode, onWaitlistOpen }) {
   const copy = useJustGoLandingCopy();
   if (waitlistMode) {
     return (
@@ -108,7 +108,11 @@ function DownloadFace({ empty, tenantKey, waitlistMode }) {
           <span className="justgo-landing-card__tag">{copy.productName}</span>
           <h3 className="justgo-landing-card__title">{copy.waitlistCta}</h3>
           <p className="justgo-landing-card__host">{copy.waitlistSuccessBody}</p>
-          <a className="justgo-landing__cta justgo-landing__cta--deck" href="#waitlist">
+          <a
+            className="justgo-landing__cta justgo-landing__cta--deck"
+            href="#waitlist"
+            onClick={onWaitlistOpen}
+          >
             {copy.waitlistCta}
           </a>
         </div>
@@ -155,7 +159,17 @@ function DownloadFace({ empty, tenantKey, waitlistMode }) {
   );
 }
 
-function LeavingCard({ card, empty, tenantKey, waitlistMode, x: startX, rot: startRot, direction, onDone }) {
+function LeavingCard({
+  card,
+  empty,
+  tenantKey,
+  waitlistMode,
+  onWaitlistOpen,
+  x: startX,
+  rot: startRot,
+  direction,
+  onDone,
+}) {
   const copy = useJustGoLandingCopy();
   const [{ x, rot }, api] = useSpring(() => ({
     x: startX,
@@ -192,13 +206,26 @@ function LeavingCard({ card, empty, tenantKey, waitlistMode, x: startX, rot: sta
         {card.kind === 'event' ? (
           <EventFace event={card.event} />
         ) : (
-          <DownloadFace empty={empty} tenantKey={tenantKey} waitlistMode={waitlistMode} />
+          <DownloadFace
+            empty={empty}
+            tenantKey={tenantKey}
+            waitlistMode={waitlistMode}
+            onWaitlistOpen={onWaitlistOpen}
+          />
         )}
       </animated.div>
   );
 }
 
-function SwipeTopCard({ card, empty, tenantKey, waitlistMode, stackIndex, onSwiped }) {
+function SwipeTopCard({
+  card,
+  empty,
+  tenantKey,
+  waitlistMode,
+  onWaitlistOpen,
+  stackIndex,
+  onSwiped,
+}) {
   const copy = useJustGoLandingCopy();
   const locked = card.kind === 'download';
   const rest = landingPosterStack(1, stackIndex);
@@ -365,7 +392,12 @@ function SwipeTopCard({ card, empty, tenantKey, waitlistMode, stackIndex, onSwip
         {card.kind === 'event' ? (
           <EventFace event={card.event} />
         ) : (
-          <DownloadFace empty={empty} tenantKey={tenantKey} waitlistMode={waitlistMode} />
+          <DownloadFace
+            empty={empty}
+            tenantKey={tenantKey}
+            waitlistMode={waitlistMode}
+            onWaitlistOpen={onWaitlistOpen}
+          />
         )}
       </animated.div>
       {!locked ? (
@@ -393,6 +425,7 @@ export default function JustGoLandingDeck({
   lockedTenantKey = '',
   selectedTenantKey = '',
   onCityChange,
+  onWaitlistOpen,
 }) {
   const copy = useJustGoLandingCopy();
   const [internalTenantKey, setInternalTenantKey] = useState('');
@@ -508,6 +541,7 @@ export default function JustGoLandingDeck({
                     empty={empty}
                     tenantKey={storeTenantKey}
                     waitlistMode={waitlistMode}
+                    onWaitlistOpen={onWaitlistOpen}
                   />
                 )}
               </div>
@@ -520,6 +554,7 @@ export default function JustGoLandingDeck({
               empty={empty && current.kind === 'download'}
               tenantKey={storeTenantKey}
               waitlistMode={waitlistMode}
+              onWaitlistOpen={onWaitlistOpen}
               stackIndex={index}
               onSwiped={(snapshot) => {
                 if (!skipDeckMotion()) setLeaving(snapshot);
@@ -534,6 +569,7 @@ export default function JustGoLandingDeck({
               empty={empty && leaving.card.kind === 'download'}
               tenantKey={storeTenantKey}
               waitlistMode={waitlistMode}
+              onWaitlistOpen={onWaitlistOpen}
               x={leaving.x}
               rot={leaving.rot}
               direction={leaving.direction}
