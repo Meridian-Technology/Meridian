@@ -130,8 +130,15 @@ async function renderLanding({ desktop = true, path = '/justgo', proof = /live i
     </MemoryRouter>,
   );
   await screen.findByRole('heading', { name: /what are you doing this week/i });
-  if ((path === '/justgo' || path === '/') && proof) {
+  const isGeneric = path === '/justgo' || path === '/';
+  if (isGeneric && proof) {
     await screen.findByText(proof);
+  }
+  if (isGeneric) {
+    await waitFor(() => {
+      const stage = document.querySelector('.justgo-landing__hero-stage');
+      expect(stage?.querySelector('a')).toBeTruthy();
+    });
   }
   return view;
 }
@@ -205,7 +212,7 @@ describe('JustGoLanding', () => {
       screen.getByRole('heading', { name: justGoLandingCopy.storyTitle }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('img', { name: 'Download on the App Store' }),
+      await screen.findByRole('img', { name: 'Download on the App Store' }),
     ).toBeInTheDocument();
     expect(screen.getByText(justGoLandingCopy.story[2])).toBeInTheDocument();
     expect(screen.queryByText(/why just go/i)).not.toBeInTheDocument();
@@ -278,7 +285,7 @@ describe('JustGoLanding', () => {
 
     await renderLanding();
 
-    const badge = screen.getByRole('img', { name: 'Download on the App Store' });
+    const badge = await screen.findByRole('img', { name: 'Download on the App Store' });
     expect(badge.closest('a')).toHaveAttribute('href', JUSTGO_IOS_STORE_URL);
     expect(screen.queryByText(/google play/i)).not.toBeInTheDocument();
 
