@@ -1,6 +1,11 @@
 import apiRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
 import { landingTenantKeyFromParam, readStoredLandingCity, detectStorePlatform } from './justGoLandingUtils';
+import {
+  applyPosterTzHop,
+  getBrowserTimeZone,
+  getBrowserUtcOffsetMinutes,
+} from './justGoPosterTzHop';
 
 export const JUSTGO_LANDING_VISITOR_KEY = 'justgo.landing.visitor';
 export const JUSTGO_LANDING_SRC_KEY = 'justgo.landing.src';
@@ -275,18 +280,22 @@ export function buildLandingQrHopTo({ tenantKey, name, search, justGoHost = true
  * Record a named QR scan then return the city hop payload.
  * Unique is first scan of this code for justgo.landing.visitor.
  */
-export async function scanLandingQr({ name, search } = {}) {
+export async function scanLandingQr({ name, search, timeZone, utcOffsetMinutes } = {}) {
   const slug = String(name || '').trim().toLowerCase();
   if (!slug) {
     return { error: true, errorCode: 'QR_NOT_FOUND', status: 404 };
   }
   const visitorId = getOrMintLandingVisitorId();
   const unique = !hasSeenLandingQr(slug);
+  const tz = timeZone ?? getBrowserTimeZone();
+  const offset = utcOffsetMinutes ?? getBrowserUtcOffsetMinutes();
   const res = await apiRequest(JUSTGO_LANDING_QR_SCAN_PATH, {
     name: slug,
     visitorId,
     unique,
     search: search ?? (typeof window !== 'undefined' ? window.location.search : ''),
+    ...(tz ? { timeZone: tz } : {}),
+    ...(offset != null && Number.isFinite(Number(offset)) ? { utcOffsetMinutes: offset } : {}),
   });
   if (res?.error || !res?.data?.tenantKey) {
     return {
@@ -296,5 +305,10 @@ export async function scanLandingQr({ name, search } = {}) {
     };
   }
   markLandingQrSeen(slug);
-  return { data: res.data };
+  return {
+    data: applyPosterTzHop(res.data, {
+      timeZone: tz,
+      utcOffsetMinutes: offset,
+    }),
+  };
 }

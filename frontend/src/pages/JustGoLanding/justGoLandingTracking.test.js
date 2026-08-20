@@ -366,5 +366,29 @@ describe('justGoLandingTracking (Task 1.3)', () => {
       markLandingQrSeen('poster-a');
       expect(hasSeenLandingQr('poster-a')).toBe(true);
     });
+
+    it('sends the phone timezone and remaps an SF poster QR in Central time to iowacity', async () => {
+      mockApi.mockResolvedValue({
+        success: true,
+        data: { name: 'sf-1', tenantKey: 'sf', path: '/sf' },
+      });
+      const result = await scanLandingQr({
+        name: 'sf-1',
+        search: '',
+        timeZone: 'America/Chicago',
+        utcOffsetMinutes: 300,
+      });
+      expect(result.data.tenantKey).toBe('iowacity');
+      expect(result.data.name).toBe('iowa-1');
+      expect(result.data.posterTzHop).toBe(true);
+      expect(mockApi).toHaveBeenCalledWith(
+        JUSTGO_LANDING_QR_SCAN_PATH,
+        expect.objectContaining({
+          name: 'sf-1',
+          timeZone: 'America/Chicago',
+          utcOffsetMinutes: 300,
+        }),
+      );
+    });
   });
 });

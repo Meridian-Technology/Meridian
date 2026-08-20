@@ -7,6 +7,7 @@ const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
 const { justGoLandingQrUrl, justGoLandingQrHopUrl } = require('../utilities/justGoPublicUrl');
+const { IOWA_TENANT_KEY, resolvePosterTzHop } = require('../utilities/justGoPosterTzHop');
 const { VISITOR_ID_MAX_LENGTH } = require('../schemas/justGoLandingEvent');
 const {
   JUSTGO_LANDING_QR_DOT_TYPES,
@@ -330,6 +331,61 @@ function parseHopUnique(value) {
   return false;
 }
 
+function asQrRow(doc) {
+  if (!doc) return null;
+  if (typeof doc.toObject === 'function') return doc.toObject();
+  return doc;
+}
+
+function iowaSiblingCreateDoc(printed, siblingName) {
+  return {
+    name: siblingName,
+    tenantKey: IOWA_TENANT_KEY,
+    description: printed.description
+      || `Iowa poster (printed as ${printed.name})`,
+    isActive: true,
+    fgColor: printed.fgColor || JUSTGO_LANDING_QR_DEFAULT_FG,
+    bgColor: printed.bgColor || JUSTGO_LANDING_QR_DEFAULT_BG,
+    transparentBg: printed.transparentBg !== false,
+    dotType: printed.dotType || 'extra-rounded',
+    cornerType: printed.cornerType || 'extra-rounded',
+    scans: 0,
+    uniqueScans: 0,
+    lastScannedAt: null,
+    scanDays: new Map(),
+  };
+}
+
+/**
+ * Attribute an Iowa-timezone scan of a printed SF QR to the Iowa sibling row
+ * (`sf-1` → `iowa-1`) before incrementing. Creates the Iowa row if missing.
+ */
+async function resolveIowaSiblingQr(JustGoLandingQr, printed, siblingName) {
+  const name = normalizeLandingQrName(siblingName);
+  if (!name || name === printed.name) {
+    return { row: printed, remapped: false };
+  }
+
+  const existingSibling = await JustGoLandingQr.findOne({ name }).lean();
+  if (existingSibling) {
+    const siblingTenant = String(existingSibling.tenantKey || '').trim().toLowerCase();
+    if (siblingTenant && siblingTenant !== IOWA_TENANT_KEY) {
+      return { row: printed, remapped: false };
+    }
+    return { row: existingSibling, remapped: true };
+  }
+
+  try {
+    const created = await JustGoLandingQr.create(iowaSiblingCreateDoc(printed, name));
+    return { row: asQrRow(created), remapped: true, created: true };
+  } catch (err) {
+    if (!isMongoDup(err, ['name'])) throw err;
+    const raced = await JustGoLandingQr.findOne({ name }).lean();
+    if (!raced) return { row: printed, remapped: false };
+    return { row: raced, remapped: true };
+  }
+}
+
 /**
  * Public scan hop: increment daily totals, return the city landing URL.
  * Unique is client-reported from justgo.landing.visitor (no unbounded scanHistory).
@@ -343,6 +399,23 @@ async function hopLandingQr(req, body = {}) {
   if (!existing) return qrNotFound();
   if (existing.isActive === false) return qrInactive();
 
+  const hop = resolvePosterTzHop({
+    tenantKey: existing.tenantKey,
+    name: existing.name,
+    timeZone: trimToNull(body.timeZone, 64),
+    utcOffsetMinutes: body.utcOffsetMinutes,
+  });
+
+  let target = existing;
+  let attributed = hop;
+  if (hop.remapped) {
+    const sibling = await resolveIowaSiblingQr(JustGoLandingQr, existing, hop.name);
+    target = sibling.row;
+    if (!sibling.remapped) {
+      attributed = { tenantKey: hop.tenantKey, name: existing.name, remapped: true };
+    }
+  }
+
   const visitorId = trimToNull(body.visitorId, VISITOR_ID_MAX_LENGTH + 1);
   const unique = Boolean(visitorId && visitorId.length <= VISITOR_ID_MAX_LENGTH && parseHopUnique(body.unique));
   const at = new Date();
@@ -350,26 +423,38 @@ async function hopLandingQr(req, body = {}) {
   const inc = { scans: 1, [`scanDays.${day}`]: 1 };
   if (unique) inc.uniqueScans = 1;
 
+  const set = { lastScannedAt: at };
+  if (hop.remapped && attributed.name !== existing.name) {
+    set.isActive = true;
+    set.tenantKey = IOWA_TENANT_KEY;
+  }
+
   const updated = await JustGoLandingQr.findOneAndUpdate(
-    { _id: existing._id, isActive: true },
-    { $inc: inc, $set: { lastScannedAt: at } },
+    hop.remapped && attributed.name !== existing.name
+      ? { _id: target._id }
+      : { _id: existing._id, isActive: true },
+    { $inc: inc, $set: set },
     { new: true },
   );
   if (!updated) return qrInactive();
 
+  const posterTzHop = attributed.tenantKey !== existing.tenantKey
+    || attributed.name !== existing.name;
+
   const redirectUrl = justGoLandingQrHopUrl(
-    updated.tenantKey,
-    updated.name,
+    attributed.tenantKey,
+    attributed.name,
     req,
     body.search,
   );
 
   return {
     data: {
-      name: updated.name,
-      tenantKey: updated.tenantKey,
+      name: attributed.name,
+      tenantKey: attributed.tenantKey,
       redirectUrl,
-      path: `/${updated.tenantKey}`,
+      path: `/${attributed.tenantKey}`,
+      ...(posterTzHop ? { posterTzHop: true } : {}),
     },
   };
 }
