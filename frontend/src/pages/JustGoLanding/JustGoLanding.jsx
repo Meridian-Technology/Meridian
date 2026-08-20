@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import apiRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
 import justGoWordmark from '../../assets/pivot/just-go-wordmark.svg';
+import appStoreBadge from '../../assets/pivot/download-on-the-app-store.svg';
 import dandelions from '../../assets/pivot/pivot-hero-dandelions.jpg';
 import meadow from '../../assets/pivot/pivot-hero-meadow.jpg';
 import { JUSTGO_CREATOR_ROUTES } from '../JustGoCreator/justGoCreatorRoutes';
 import justGoLandingCopy, {
   JUSTGO_IOS_STORE_URL,
-  JUSTGO_PLAY_STORE_URL,
   JustGoLandingCopyContext,
+  justGoPublicLandingUrl,
   resolveJustGoLandingCopy,
   useJustGoLandingCopy,
 } from './justGoLandingCopy';
@@ -18,29 +19,29 @@ import JustGoLandingDeck from './JustGoLandingDeck';
 import {
   cityChipLabel,
   decorateFlyers,
-  detectStorePlatform,
+  findLandingCity,
   formatLandingDropSpoken,
+  isWaitlistLandingMode,
+  landingTenantKeyFromParam,
   padDropUnit,
+  pickLandingCity,
+  readStoredLandingCity,
   resolveNextLandingDropAt,
+  scopeLandingCities,
   splitLandingDropCountdown,
+  writeStoredLandingCity,
 } from './justGoLandingUtils';
 import { useJustGoLandingMotion } from './justGoLandingMotion';
+import { recordLandingView } from './justGoLandingTracking';
+import JustGoLandingCityPicker from './JustGoLandingCityPicker';
+import JustGoLandingStoreLink from './JustGoLandingStoreLink';
+import JustGoLandingWaitlist from './JustGoLandingWaitlist';
 import './JustGoLanding.scss';
-
-const APP_STORE_BADGE =
-  'https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg';
 
 const STORY_PRINTS = [
   { src: dandelions, alt: '' },
   { src: meadow, alt: '' },
 ];
-
-function useStorePlatform() {
-  return useMemo(() => {
-    if (typeof navigator === 'undefined') return 'ios';
-    return detectStorePlatform(navigator.userAgent || navigator.vendor || '');
-  }, []);
-}
 
 function useIsDesktop() {
   const [desktop, setDesktop] = useState(() => {
@@ -82,10 +83,6 @@ function useHeroCtaVisible() {
   }, []);
 
   return { ref, visible };
-}
-
-function storeUrlFor(platform) {
-  return platform === 'android' ? JUSTGO_PLAY_STORE_URL : JUSTGO_IOS_STORE_URL;
 }
 
 function useJustGoDropCountdown() {
@@ -181,17 +178,33 @@ function FlyerCard({ flyer }) {
 }
 
 function JustGoLanding() {
-  const platform = useStorePlatform();
+  const { tenantKey: tenantKeyParam } = useParams();
+  const [searchParams] = useSearchParams();
+  const lockedTenantKey = landingTenantKeyFromParam(tenantKeyParam);
   const desktop = useIsDesktop();
-  const storeUrl = storeUrlFor(platform);
+  const storeUrl = JUSTGO_IOS_STORE_URL;
   const { ref: ctaRef, visible: ctaVisible } = useHeroCtaVisible();
-  const photoRef = useRef(null);
   const flyersRef = useRef(null);
   const [cities, setCities] = useState([]);
   const [citiesState, setCitiesState] = useState('loading');
+  const [selectedTenantKey, setSelectedTenantKey] = useState('');
   const [copy, setCopy] = useState(justGoLandingCopy);
-  const { slap } = useJustGoLandingMotion({ desktop, photoRef, flyersRef });
+  const { slap } = useJustGoLandingMotion({ desktop, flyersRef });
   const countdown = useJustGoDropCountdown();
+  const srcQuery = searchParams.get('src');
+  const qrQuery = searchParams.get('qr');
+  const refQuery = searchParams.get('ref');
+
+  useEffect(() => {
+    const search = new URLSearchParams();
+    if (srcQuery) search.set('src', srcQuery);
+    if (qrQuery) search.set('qr', qrQuery);
+    if (refQuery) search.set('ref', refQuery);
+    recordLandingView({
+      tenantKey: lockedTenantKey,
+      search,
+    });
+  }, [lockedTenantKey, srcQuery, qrQuery, refQuery]);
 
   useEffect(() => {
     analytics.screen('Just Go Landing');
@@ -218,8 +231,26 @@ function JustGoLanding() {
   }, [copy.documentTitle, copy.metaDescription]);
 
   useEffect(() => {
+    const href = justGoPublicLandingUrl(lockedTenantKey);
+    let link = document.querySelector('link[rel="canonical"][data-justgo-canonical]');
+    if (!link) {
+      link = document.createElement('link');
+      link.setAttribute('rel', 'canonical');
+      link.setAttribute('data-justgo-canonical', '1');
+      document.head.appendChild(link);
+    }
+    link.setAttribute('href', href);
+    return () => {
+      link.remove();
+    };
+  }, [lockedTenantKey]);
+
+  useEffect(() => {
     let cancelled = false;
-    apiRequest('/pivot/cities', null, { method: 'GET' })
+    const options = lockedTenantKey
+      ? { method: 'GET', params: { tenantKey: lockedTenantKey } }
+      : { method: 'GET' };
+    apiRequest('/pivot/landing/config', null, options)
       .then((res) => {
         if (cancelled) return;
         const next = Array.isArray(res?.data?.cities) ? res.data.cities : [];
@@ -235,7 +266,7 @@ function JustGoLanding() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [lockedTenantKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -252,14 +283,47 @@ function JustGoLanding() {
     };
   }, []);
 
-  const flyers = useMemo(() => decorateFlyers(JUSTGO_LANDING_FLYERS, cities), [cities]);
+  const scopedCities = useMemo(
+    () => scopeLandingCities(cities, lockedTenantKey),
+    [cities, lockedTenantKey],
+  );
+
+  useEffect(() => {
+    if (lockedTenantKey) {
+      setSelectedTenantKey(lockedTenantKey);
+      return;
+    }
+    const picked = pickLandingCity(scopedCities, readStoredLandingCity());
+    setSelectedTenantKey(picked?.tenantKey || '');
+  }, [scopedCities, lockedTenantKey]);
+
+  useEffect(() => {
+    if (selectedTenantKey && !lockedTenantKey) {
+      writeStoredLandingCity(selectedTenantKey);
+    }
+  }, [selectedTenantKey, lockedTenantKey]);
+
+  const activeCity = useMemo(
+    () => findLandingCity(scopedCities, lockedTenantKey || selectedTenantKey),
+    [scopedCities, lockedTenantKey, selectedTenantKey],
+  );
+  const waitlistMode = isWaitlistLandingMode(activeCity);
+  const ctaReady = Boolean(activeCity);
+  const scopedCitiesState =
+    lockedTenantKey && citiesState === 'ready' && scopedCities.length === 0
+      ? 'empty'
+      : citiesState;
+  const flyers = useMemo(
+    () => decorateFlyers(JUSTGO_LANDING_FLYERS, scopedCities),
+    [scopedCities],
+  );
   const cityLabels = useMemo(
-    () => cities.map(cityChipLabel).filter(Boolean),
-    [cities],
+    () => scopedCities.map(cityChipLabel).filter(Boolean),
+    [scopedCities],
   );
   const proofLine = cityLabels.length
     ? `${copy.proofPrefix} ${cityLabels.join(' · ')}`
-    : citiesState === 'empty'
+    : scopedCitiesState === 'empty'
       ? copy.citiesEmpty
       : copy.proofFallback;
 
@@ -273,7 +337,7 @@ function JustGoLanding() {
       </a>
 
       <header className="justgo-landing__hero">
-        <div className="justgo-landing__hero-photo" ref={photoRef} aria-hidden="true" />
+        <div className="justgo-landing__hero-photo" aria-hidden="true" />
         <span className="justgo-landing__hero-wash" aria-hidden="true" />
         <span className="justgo-landing__grain" aria-hidden="true" />
         <nav className="justgo-landing__nav" aria-label="just go">
@@ -282,9 +346,20 @@ function JustGoLanding() {
             <a href="#story">{copy.navStory}</a>
           </div>
           <DropCountdown countdown={countdown} />
-          <a className="justgo-landing__nav-cta" href={storeUrl}>
-            {copy.cta}
-          </a>
+          {ctaReady && waitlistMode ? (
+            <a className="justgo-landing__nav-cta" href="#waitlist">
+              {copy.waitlistCta}
+            </a>
+          ) : ctaReady ? (
+            <JustGoLandingStoreLink
+              className="justgo-landing__nav-cta"
+              href={storeUrl}
+              tenantKey={lockedTenantKey || selectedTenantKey}
+              store="ios"
+            >
+              {copy.cta}
+            </JustGoLandingStoreLink>
+          ) : null}
         </nav>
 
         <div className="justgo-landing__hero-stage" ref={ctaRef} id="download">
@@ -302,32 +377,46 @@ function JustGoLanding() {
               {copy.headlinePop}
             </span>
           </h1>
-          {platform === 'android' ? (
-            <a
-              className="justgo-landing__store"
-              href={JUSTGO_PLAY_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={copy.ctaAriaAndroid}
-            >
-              get it on google play
-            </a>
-          ) : (
-            <a
-              className="justgo-landing__store justgo-landing__store--badge"
-              href={JUSTGO_IOS_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={copy.ctaAriaIos}
-            >
-              <img src={APP_STORE_BADGE} alt="Download on the App Store" height="52" />
-            </a>
-          )}
+          {ctaReady && waitlistMode ? (
+            <JustGoLandingWaitlist
+              cities={scopedCities}
+              selectedTenantKey={selectedTenantKey}
+              cityLocked={Boolean(lockedTenantKey)}
+              onCityChange={setSelectedTenantKey}
+            />
+          ) : ctaReady ? (
+            <>
+              {desktop && !lockedTenantKey ? (
+                <JustGoLandingCityPicker
+                  cities={scopedCities}
+                  selectedTenantKey={selectedTenantKey}
+                  onChange={setSelectedTenantKey}
+                  className="justgo-landing-deck__cities justgo-landing__hero-cities"
+                />
+              ) : null}
+              <JustGoLandingStoreLink
+                className="justgo-landing__app-store"
+                href={JUSTGO_IOS_STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={copy.ctaAriaIos}
+                tenantKey={lockedTenantKey || selectedTenantKey}
+                store="ios"
+              >
+                <img
+                  src={appStoreBadge}
+                  alt="Download on the App Store"
+                  height="52"
+                  width="156"
+                />
+              </JustGoLandingStoreLink>
+            </>
+          ) : null}
         </div>
       </header>
 
       <p className="justgo-landing__proof" aria-live="polite">
-        {citiesState === 'loading' ? copy.citiesLoading : proofLine}
+        {scopedCitiesState === 'loading' ? copy.citiesLoading : proofLine}
       </p>
 
       <section className="justgo-landing__drop" id="drop">
@@ -346,15 +435,17 @@ function JustGoLanding() {
           </>
         ) : (
           <JustGoLandingDeck
-            cities={cities}
-            citiesState={citiesState}
-            platform={platform}
+            cities={scopedCities}
+            citiesState={scopedCitiesState}
+            cityLocked={Boolean(lockedTenantKey)}
+            lockedTenantKey={lockedTenantKey}
+            selectedTenantKey={selectedTenantKey}
+            onCityChange={setSelectedTenantKey}
           />
         )}
       </section>
 
       <section className="justgo-landing__story" id="story">
-        <p className="justgo-landing__eyebrow">{copy.storyEyebrow}</p>
         <h2>
           <span className="justgo-landing__strip justgo-landing__strip--cream">
             {copy.storyTitle}
@@ -383,9 +474,20 @@ function JustGoLanding() {
             {copy.contactLead}
           </span>
         </p>
-        <a className="justgo-landing__cta justgo-landing__cta--footer" href={storeUrl}>
-          {copy.cta}
-        </a>
+        {ctaReady && waitlistMode ? (
+          <a className="justgo-landing__cta justgo-landing__cta--footer" href="#waitlist">
+            {copy.waitlistCta}
+          </a>
+        ) : ctaReady ? (
+          <JustGoLandingStoreLink
+            className="justgo-landing__cta justgo-landing__cta--footer"
+            href={storeUrl}
+            tenantKey={lockedTenantKey || selectedTenantKey}
+            store="ios"
+          >
+            {copy.cta}
+          </JustGoLandingStoreLink>
+        ) : null}
         <p className="justgo-landing__host">
           {copy.footerHost}{' '}
           <Link to={JUSTGO_CREATOR_ROUTES.login}>{copy.footerHostLink}</Link>
@@ -401,9 +503,19 @@ function JustGoLanding() {
         </p>
       </footer>
 
-      {showSticky ? (
+      {showSticky && ctaReady ? (
         <div className="justgo-landing__sticky">
-          <a href={storeUrl}>{copy.stickyCta}</a>
+          {waitlistMode ? (
+            <a href="#waitlist">{copy.waitlistCta}</a>
+          ) : (
+            <JustGoLandingStoreLink
+              href={storeUrl}
+              tenantKey={lockedTenantKey || selectedTenantKey}
+              store="ios"
+            >
+              {copy.stickyCta}
+            </JustGoLandingStoreLink>
+          )}
         </div>
       ) : null}
     </div>

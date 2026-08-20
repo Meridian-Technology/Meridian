@@ -1,23 +1,42 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import JustGoLanding from './JustGoLanding';
-import justGoLandingCopy, { JUSTGO_PLAY_STORE_URL } from './justGoLandingCopy';
+import JustGoLandingWaitlist from './JustGoLandingWaitlist';
+import JustGoQrHop from './JustGoQrHop';
+import { JustGoApexCityLanding } from './justGoHostRoutes';
+import justGoLandingCopy, {
+  JUSTGO_IOS_STORE_URL,
+  justGoPublicLandingUrl,
+  justGoPublicUrl,
+} from './justGoLandingCopy';
 
 const mockApi = jest.fn();
 const mockScreen = jest.fn();
+const mockTrack = jest.fn();
+const mockIsJustGoHost = jest.fn(() => false);
 
 jest.mock('../../utils/postRequest', () => (...args) => mockApi(...args));
 jest.mock('../../services/analytics/analytics', () => ({
-  analytics: { screen: (...args) => mockScreen(...args) },
+  analytics: {
+    screen: (...args) => mockScreen(...args),
+    track: (...args) => mockTrack(...args),
+  },
 }));
 jest.mock('./justGoLandingMotion', () => ({
   useJustGoLandingMotion: () => ({ slap: true }),
 }));
+jest.mock('../../config/tenantRedirect', () => {
+  const actual = jest.requireActual('../../config/tenantRedirect');
+  return {
+    ...actual,
+    isJustGoHost: (...args) => mockIsJustGoHost(...args),
+  };
+});
 
 const CITIES = [
-  { tenantKey: 'brooklyn', cityDisplayName: 'Brooklyn' },
-  { tenantKey: 'troy', cityDisplayName: 'Troy' },
+  { tenantKey: 'brooklyn', cityDisplayName: 'Brooklyn', landingMode: 'launched' },
+  { tenantKey: 'troy', cityDisplayName: 'Troy', landingMode: 'waitlist' },
 ];
 
 const DROP_EVENTS = [
@@ -76,27 +95,57 @@ function mockMatchMedia(desktop) {
   }));
 }
 
-async function renderLanding({ desktop = true } = {}) {
+function landingRoutes() {
+  const justGoHost = mockIsJustGoHost();
+  return (
+    <Routes>
+      <Route path="/justgo/:tenantKey" element={<JustGoLanding />} />
+      <Route path="/justgo" element={<JustGoLanding />} />
+      <Route path="/justgo/creator/login" element={<p>creator login</p>} />
+      <Route path="/justgo/creator" element={<p>creator home</p>} />
+      {justGoHost ? (
+        <>
+          <Route path="/" element={<JustGoLanding />} />
+          <Route path="/qr/:name" element={<JustGoQrHop />} />
+          <Route path="/:tenantKey" element={<JustGoApexCityLanding />} />
+        </>
+      ) : (
+        <>
+          <Route path="/" element={<p>campus landing</p>} />
+          <Route path="/qr/:id" element={<p>campus qr</p>} />
+        </>
+      )}
+    </Routes>
+  );
+}
+
+async function renderLanding({ desktop = true, path = '/justgo', proof = /live in brooklyn/i } = {}) {
   mockMatchMedia(desktop);
   const view = render(
-    <MemoryRouter initialEntries={['/justgo']}>
-      <Routes>
-        <Route path="/justgo" element={<JustGoLanding />} />
-        <Route path="/justgo/creator/login" element={<p>creator login</p>} />
-      </Routes>
+    <MemoryRouter initialEntries={[path]}>
+      {landingRoutes()}
     </MemoryRouter>,
   );
   await screen.findByRole('heading', { name: /what are you doing this week/i });
-  await screen.findByText(/live in brooklyn/i);
+  if ((path === '/justgo' || path === '/') && proof) {
+    await screen.findByText(proof);
+  }
   return view;
 }
 
 beforeEach(() => {
   mockApi.mockReset();
   mockScreen.mockReset();
+  mockTrack.mockReset();
+  mockIsJustGoHost.mockReset();
+  mockIsJustGoHost.mockReturnValue(false);
   window.localStorage.clear();
+  window.sessionStorage.clear();
+  if (Object.prototype.hasOwnProperty.call(navigator, 'share')) {
+    delete navigator.share;
+  }
   mockApi.mockImplementation((url) => {
-    if (url === '/pivot/cities') {
+    if (url === '/pivot/landing/config') {
       return Promise.resolve({ success: true, data: { cities: CITIES } });
     }
     if (url === '/pivot/landing/drop') {
@@ -107,6 +156,19 @@ beforeEach(() => {
           cityDisplayName: 'Brooklyn',
           batchWeek: '2026-W33',
           events: DROP_EVENTS.slice(0, 4),
+        },
+      });
+    }
+    if (url === '/pivot/landing/event') {
+      return Promise.resolve({ success: true });
+    }
+    if (url === '/pivot/landing/waitlist') {
+      return Promise.resolve({
+        success: true,
+        data: {
+          shareUrl: 'https://justgo.lol/troy?ref=abc12',
+          friendsJoined: 0,
+          tenantKey: 'troy',
         },
       });
     }
@@ -126,12 +188,19 @@ describe('JustGoLanding', () => {
     expect(
       screen.getByRole('heading', { name: /what are you doing this week/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: justGoLandingCopy.storyTitle }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Download on the App Store' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(justGoLandingCopy.story[2])).toBeInTheDocument();
+    expect(screen.queryByText(/why just go/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Welcome Back/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Meridian Go/i)).not.toBeInTheDocument();
     expect(mockScreen).toHaveBeenCalledWith('Just Go Landing');
     expect(await screen.findByText(/live in brooklyn/i)).toBeInTheDocument();
-    expect(mockApi).toHaveBeenCalledWith('/pivot/cities', null, { method: 'GET' });
+    expect(mockApi).toHaveBeenCalledWith('/pivot/landing/config', null, { method: 'GET' });
     expect(mockApi).not.toHaveBeenCalledWith(
       '/pivot/landing/drop',
       null,
@@ -168,7 +237,26 @@ describe('JustGoLanding', () => {
     expect(screen.getByText(justGoLandingCopy.footerStamp)).toBeInTheDocument();
   });
 
-  it('points android visitors at play', async () => {
+  it('keeps the creator footer relative on a Just Go host', async () => {
+    mockIsJustGoHost.mockReturnValue(true);
+    await renderLanding({ path: '/' });
+
+    expect(
+      screen.getByRole('link', { name: justGoLandingCopy.footerHostLink }),
+    ).toHaveAttribute('href', '/justgo/creator/login');
+  });
+
+  it('points canonical at the public landing URL', async () => {
+    mockIsJustGoHost.mockReturnValue(true);
+    await renderLanding({ path: '/troy' });
+
+    expect(document.querySelector('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      justGoPublicLandingUrl('troy'),
+    );
+  });
+
+  it('keeps the app store badge on android visitors', async () => {
     const original = window.navigator.userAgent;
     Object.defineProperty(window.navigator, 'userAgent', {
       configurable: true,
@@ -177,10 +265,9 @@ describe('JustGoLanding', () => {
 
     await renderLanding();
 
-    expect(screen.getByRole('link', { name: justGoLandingCopy.ctaAriaAndroid })).toHaveAttribute(
-      'href',
-      JUSTGO_PLAY_STORE_URL,
-    );
+    const badge = screen.getByRole('img', { name: 'Download on the App Store' });
+    expect(badge.closest('a')).toHaveAttribute('href', JUSTGO_IOS_STORE_URL);
+    expect(screen.queryByText(/google play/i)).not.toBeInTheDocument();
 
     Object.defineProperty(window.navigator, 'userAgent', {
       configurable: true,
@@ -233,7 +320,7 @@ describe('JustGoLanding', () => {
       if (url === '/pivot/landing/copy') {
         return Promise.reject(new Error('down'));
       }
-      if (url === '/pivot/cities') {
+      if (url === '/pivot/landing/config') {
         return Promise.resolve({ success: true, data: { cities: CITIES } });
       }
       if (url === '/pivot/landing/drop') {
@@ -246,6 +333,9 @@ describe('JustGoLanding', () => {
             events: DROP_EVENTS.slice(0, 4),
           },
         });
+      }
+      if (url === '/pivot/landing/event') {
+        return Promise.resolve({ success: true });
       }
       return Promise.resolve({ success: false });
     });
@@ -264,8 +354,11 @@ describe('JustGoLanding', () => {
       if (url === '/pivot/landing/copy') {
         return copyPromise;
       }
-      if (url === '/pivot/cities') {
+      if (url === '/pivot/landing/config') {
         return Promise.resolve({ success: true, data: { cities: CITIES } });
+      }
+      if (url === '/pivot/landing/event') {
+        return Promise.resolve({ success: true });
       }
       return Promise.resolve({ success: false });
     });
@@ -273,16 +366,11 @@ describe('JustGoLanding', () => {
     mockMatchMedia(true);
     render(
       <MemoryRouter initialEntries={['/justgo']}>
-        <Routes>
-          <Route path="/justgo" element={<JustGoLanding />} />
-          <Route path="/justgo/creator/login" element={<p>creator login</p>} />
-        </Routes>
+        {landingRoutes()}
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByRole('heading', { name: /what are you doing this week/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/live in brooklyn/i)).toBeInTheDocument();
     expect(screen.getAllByText(justGoLandingCopy.cta).length).toBeGreaterThan(0);
 
     resolveCopy({
@@ -294,5 +382,439 @@ describe('JustGoLanding', () => {
     });
 
     expect(await screen.findAllByText('grab the app')).not.toHaveLength(0);
+  });
+
+  it('locks the drop to one city on a tenant landing', async () => {
+    await renderLanding({ path: '/justgo/troy' });
+
+    expect(await screen.findByText(/^live in troy$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/live in brooklyn/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/· troy$/i).length).toBeGreaterThan(0);
+    expect(mockApi).toHaveBeenCalledWith('/pivot/landing/config', null, {
+      method: 'GET',
+      params: { tenantKey: 'troy' },
+    });
+  });
+
+  it('swipes only that city’s drop on a tenant landing', async () => {
+    await renderLanding({ desktop: false, path: '/justgo/troy' });
+
+    expect(await screen.findByRole('heading', { name: 'friday night market' })).toBeInTheDocument();
+    expect(mockApi).toHaveBeenCalledWith('/pivot/landing/drop', null, {
+      method: 'GET',
+      params: { tenantKey: 'troy' },
+    });
+    expect(screen.queryByRole('listbox', { name: justGoLandingCopy.cityPickerLabel })).not.toBeInTheDocument();
+  });
+
+  it('treats an unknown city slug as not live yet', async () => {
+    await renderLanding({ path: '/justgo/paris' });
+
+    expect(await screen.findByText(justGoLandingCopy.citiesEmpty)).toBeInTheDocument();
+    expect(screen.queryByText(/live in brooklyn/i)).not.toBeInTheDocument();
+  });
+
+  it('renders Just Go on / under a Just Go host', async () => {
+    mockIsJustGoHost.mockReturnValue(true);
+    await renderLanding({ path: '/' });
+
+    expect(
+      screen.getByRole('heading', { name: /what are you doing this week/i }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/live in brooklyn/i)).toBeInTheDocument();
+  });
+
+  it('locks the drop on /:tenantKey under a Just Go host', async () => {
+    mockIsJustGoHost.mockReturnValue(true);
+    await renderLanding({ path: '/troy' });
+
+    expect(await screen.findByText(/^live in troy$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/live in brooklyn/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps campus / as campus landing when not a Just Go host', () => {
+    mockIsJustGoHost.mockReturnValue(false);
+    mockMatchMedia(true);
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        {landingRoutes()}
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('campus landing')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /what are you doing this week/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps /justgo on a campus host', async () => {
+    mockIsJustGoHost.mockReturnValue(false);
+    await renderLanding({ path: '/justgo' });
+    expect(
+      screen.getByRole('heading', { name: /what are you doing this week/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('does not treat /qr/:name as a city on a Just Go host', () => {
+    mockIsJustGoHost.mockReturnValue(true);
+    mockMatchMedia(true);
+    render(
+      <MemoryRouter initialEntries={['/qr/poster-night']}>
+        {landingRoutes()}
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('justgo-qr-hop')).toBeInTheDocument();
+    expect(screen.getByText(justGoLandingCopy.qrMissingTitle)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /what are you doing this week/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('aliases /creator to the creator console on a Just Go host', () => {
+    mockIsJustGoHost.mockReturnValue(true);
+    mockMatchMedia(true);
+    render(
+      <MemoryRouter initialEntries={['/creator']}>
+        {landingRoutes()}
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('creator home')).toBeInTheDocument();
+  });
+
+  it('posts a landing view on render without tenantKey on the generic page', async () => {
+    await renderLanding();
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/pivot/landing/event',
+        expect.objectContaining({
+          type: 'view',
+          source: 'direct',
+          visitorId: expect.any(String),
+        }),
+      );
+    });
+    const [, body] = mockApi.mock.calls.find((call) => call[0] === '/pivot/landing/event');
+    expect(body).not.toHaveProperty('tenantKey');
+    expect(mockTrack).toHaveBeenCalledWith('justgo_landing_view', { source: 'direct' });
+    expect(window.localStorage.getItem('justgo.landing.visitor')).toBe(body.visitorId);
+  });
+
+  it('includes tenantKey on a city landing view', async () => {
+    await renderLanding({ path: '/justgo/troy?src=qr&qr=poster-night' });
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/pivot/landing/event',
+        expect.objectContaining({
+          type: 'view',
+          tenantKey: 'troy',
+          source: 'qr',
+          qr: 'poster-night',
+        }),
+      );
+    });
+    expect(mockTrack).toHaveBeenCalledWith('justgo_landing_view', {
+      tenantKey: 'troy',
+      source: 'qr',
+    });
+    expect(window.sessionStorage.getItem('justgo.landing.src')).toBe('qr');
+    expect(window.sessionStorage.getItem('justgo.landing.qr')).toBe('poster-night');
+  });
+
+  it('persists ref from a share URL and implies source=share', async () => {
+    await renderLanding({ path: '/justgo/troy?ref=AbC123xyzz' });
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/pivot/landing/event',
+        expect.objectContaining({
+          type: 'view',
+          tenantKey: 'troy',
+          source: 'share',
+          ref: 'abc123xyzz',
+        }),
+      );
+    });
+    expect(window.sessionStorage.getItem('justgo.landing.ref')).toBe('abc123xyzz');
+    expect(window.sessionStorage.getItem('justgo.landing.src')).toBe('share');
+  });
+
+  it('posts store_click when the app store CTA is pressed', async () => {
+    await renderLanding();
+
+    fireEvent.click(screen.getByRole('link', { name: justGoLandingCopy.ctaAriaIos }));
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/pivot/landing/event',
+        expect.objectContaining({
+          type: 'store_click',
+          store: 'ios',
+          source: 'direct',
+        }),
+      );
+    });
+    expect(mockTrack).toHaveBeenCalledWith(
+      'justgo_landing_store_click',
+      expect.objectContaining({ store: 'ios', source: 'direct' }),
+    );
+    const [, body] = mockApi.mock.calls.find(
+      (call) => call[0] === '/pivot/landing/event' && call[1]?.type === 'store_click',
+    );
+    expect(body).not.toHaveProperty('phone');
+  });
+
+  it('keeps the app store CTA for a launched city', async () => {
+    await renderLanding();
+
+    expect(
+      screen.getByRole('img', { name: 'Download on the App Store' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(justGoLandingCopy.waitlistPhoneLabel)).not.toBeInTheDocument();
+    expect(screen.getAllByText(justGoLandingCopy.cta).length).toBeGreaterThan(0);
+  });
+
+  it('shows a waitlist form instead of the app store on a waitlist city', async () => {
+    await renderLanding({ path: '/justgo/troy' });
+
+    const phone = await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel);
+    const form = phone.closest('form');
+    expect(phone).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(justGoLandingCopy.waitlistPhonePlaceholder)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit })).toBeInTheDocument();
+    expect(within(form).getByText(justGoLandingCopy.waitlistConsent, { exact: false })).toBeInTheDocument();
+    expect(within(form).getByRole('link', { name: justGoLandingCopy.footerPrivacy })).toHaveAttribute(
+      'href',
+      '/privacy-policy',
+    );
+    expect(within(form).getByRole('link', { name: justGoLandingCopy.footerTerms })).toHaveAttribute(
+      'href',
+      '/terms-of-service',
+    );
+    expect(screen.queryByRole('img', { name: 'Download on the App Store' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: justGoLandingCopy.ctaAriaIos })).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox', { name: justGoLandingCopy.cityPickerLabel })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/^troy$/i).length).toBeGreaterThan(0);
+  });
+
+  it('swaps the generic landing to waitlist when a waitlist city is selected', async () => {
+    await renderLanding();
+    fireEvent.click(screen.getByRole('option', { name: 'troy' }));
+
+    expect(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel)).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Download on the App Store' })).not.toBeInTheDocument();
+  });
+
+  it('lets the generic landing pick a waitlist city before posting', async () => {
+    const waitlistCities = [
+      { tenantKey: 'troy', cityDisplayName: 'Troy', landingMode: 'waitlist' },
+      { tenantKey: 'hudson', cityDisplayName: 'Hudson', landingMode: 'waitlist' },
+    ];
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/config') {
+        return Promise.resolve({ success: true, data: { cities: waitlistCities } });
+      }
+      if (url === '/pivot/landing/drop') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            tenantKey: 'troy',
+            cityDisplayName: 'Troy',
+            batchWeek: '2026-W33',
+            events: DROP_EVENTS.slice(0, 4),
+          },
+        });
+      }
+      if (url === '/pivot/landing/event') {
+        return Promise.resolve({ success: true });
+      }
+      if (url === '/pivot/landing/waitlist') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            shareUrl: 'https://justgo.lol/troy?ref=abc12',
+            friendsJoined: 0,
+            tenantKey: 'troy',
+          },
+        });
+      }
+      return Promise.resolve({ success: false });
+    });
+
+    await renderLanding({ proof: /live in troy/i });
+
+    expect(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel)).toBeInTheDocument();
+    expect(screen.getByRole('listbox', { name: justGoLandingCopy.cityPickerLabel })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(justGoLandingCopy.waitlistPhoneLabel), {
+      target: { value: '555-0100' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
+    });
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/pivot/landing/waitlist',
+        expect.objectContaining({
+          phone: '555-0100',
+          tenantKey: 'troy',
+          visitorId: expect.any(String),
+          source: 'direct',
+        }),
+      );
+    });
+  });
+
+  it('cannot submit waitlist without a city', () => {
+    render(
+      <MemoryRouter>
+        <JustGoLandingWaitlist
+          cities={CITIES}
+          selectedTenantKey=""
+          onCityChange={() => {}}
+        />
+      </MemoryRouter>,
+    );
+
+    const submit = screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit });
+    expect(submit).toBeDisabled();
+    fireEvent.submit(submit.closest('form'));
+    expect(screen.getByRole('alert')).toHaveTextContent(justGoLandingCopy.waitlistCityRequired);
+    expect(mockApi).not.toHaveBeenCalledWith('/pivot/landing/waitlist', expect.anything());
+  });
+
+  it('posts waitlist, shows confirmation with friendsJoined, and copies the public share URL', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    await renderLanding({ path: '/justgo/troy' });
+    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel), {
+      target: { value: '555-0100' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
+    });
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/pivot/landing/waitlist',
+        expect.objectContaining({
+          phone: '555-0100',
+          tenantKey: 'troy',
+        }),
+      );
+    });
+    expect(mockTrack).toHaveBeenCalledWith('justgo_landing_waitlist_submit', {
+      tenantKey: 'troy',
+      source: 'direct',
+    });
+    const trackProps = mockTrack.mock.calls.find(
+      (call) => call[0] === 'justgo_landing_waitlist_submit',
+    )[1];
+    expect(trackProps).not.toHaveProperty('phone');
+    expect(await screen.findByText(justGoLandingCopy.waitlistSuccessTitle)).toBeInTheDocument();
+    const panel = document.getElementById('waitlist');
+    expect(within(panel).getByText(justGoLandingCopy.waitlistSuccessBody)).toBeInTheDocument();
+    expect(within(panel).getByText('0 friends joined')).toBeInTheDocument();
+    expect(within(panel).queryByText(/position|#\d/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(justGoLandingCopy.waitlistPhoneLabel)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: justGoLandingCopy.waitlistShare })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistCopyLink }));
+    expect(await screen.findByRole('button', { name: justGoLandingCopy.waitlistCopied })).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(justGoPublicUrl('/troy?ref=abc12'));
+  });
+
+  it('offers Web Share when available', async () => {
+    const share = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: share,
+    });
+
+    await renderLanding({ path: '/justgo/troy' });
+    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel), {
+      target: { value: '555-0100' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
+    });
+
+    expect(await screen.findByText(justGoLandingCopy.waitlistSuccessTitle)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistShare }));
+    });
+    expect(share).toHaveBeenCalledWith({
+      title: justGoLandingCopy.productName,
+      text: justGoLandingCopy.waitlistShareText,
+      url: justGoPublicUrl('/troy?ref=abc12'),
+    });
+  });
+
+  it('shows friendsJoined from the signup response without a second fetch', async () => {
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/config') {
+        return Promise.resolve({ success: true, data: { cities: CITIES } });
+      }
+      if (url === '/pivot/landing/drop') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            tenantKey: 'troy',
+            cityDisplayName: 'Troy',
+            batchWeek: '2026-W33',
+            events: DROP_EVENTS.slice(0, 4),
+          },
+        });
+      }
+      if (url === '/pivot/landing/event') {
+        return Promise.resolve({ success: true });
+      }
+      if (url === '/pivot/landing/waitlist') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            shareUrl: 'https://justgo.lol/troy?ref=abc12',
+            friendsJoined: 3,
+            tenantKey: 'troy',
+          },
+        });
+      }
+      return Promise.resolve({ success: false });
+    });
+
+    await renderLanding({ path: '/justgo/troy' });
+    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel), {
+      target: { value: '555-0100' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
+    });
+
+    expect(await screen.findByText('3 friends joined')).toBeInTheDocument();
+    const waitlistPosts = mockApi.mock.calls.filter((call) => call[0] === '/pivot/landing/waitlist');
+    expect(waitlistPosts).toHaveLength(1);
+  });
+
+  it('swipes a waitlist city drop onto a waitlist prompt, not the app store', async () => {
+    await renderLanding({ desktop: false, path: '/justgo/troy' });
+    expect(await screen.findByRole('heading', { name: 'friday night market' })).toBeInTheDocument();
+
+    for (let i = 0; i < 4; i += 1) {
+      fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.deckPass }));
+    }
+
+    expect(
+      await screen.findByRole('heading', { name: justGoLandingCopy.waitlistCta }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole('link', { name: justGoLandingCopy.waitlistCta }).every(
+        (el) => el.getAttribute('href') === '#waitlist',
+      ),
+    ).toBe(true);
+    expect(screen.queryByRole('img', { name: 'Download on the App Store' })).not.toBeInTheDocument();
   });
 });

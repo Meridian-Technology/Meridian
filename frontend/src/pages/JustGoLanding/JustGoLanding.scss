@@ -87,13 +87,11 @@ $hard-shadow: 3px 4px 0 rgba(0, 0, 0, 0.55);
 
 .justgo-landing__hero-photo {
   position: absolute;
-  inset: -10%;
+  inset: 0;
   z-index: 0;
   background-image: url('../../assets/pivot/pivot-hero-court.jpg');
   background-size: cover;
   background-position: center 38%;
-  transform: scale(1.14);
-  will-change: transform;
 }
 
 .justgo-landing__hero-wash {
@@ -403,19 +401,157 @@ a.justgo-landing__countdown--imminent {
   font-weight: 700;
   text-decoration: none;
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
 
-  &--badge {
-    padding: 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
+a.justgo-landing__app-store {
+  display: inline-block;
+  margin-top: 0.15rem;
+  padding: 0;
+  line-height: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color-scheme: only light;
+  text-decoration: none;
 
-    img {
-      display: block;
-      height: 52px;
-      width: auto;
-    }
+  img {
+    display: block;
+    height: 52px;
+    width: auto;
+    color-scheme: only light;
   }
+}
+
+.justgo-landing__waitlist {
+  width: min(100%, 22rem);
+  padding: 0.9rem 0.95rem 0.85rem;
+  background: var(--jg-sticker);
+  color: var(--jg-sticker-ink);
+  border: 2.5px solid var(--jg-sticker-ink);
+  box-shadow: $hard-shadow;
+  text-align: left;
+  transform: rotate(-0.55deg);
+}
+
+.justgo-landing__waitlist-kicker {
+  margin: 0 0 0.45rem;
+  font-family: var(--jg-font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.justgo-landing__waitlist-body {
+  margin: 0 0 0.7rem;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.justgo-landing__waitlist-cities {
+  margin: 0 0 0.7rem;
+}
+
+.justgo-landing__waitlist .justgo-landing-deck__city {
+  background: #fff;
+  color: var(--jg-sticker-ink);
+  border-color: var(--jg-sticker-ink);
+  box-shadow: 2px 2px 0 var(--jg-accent);
+
+  &--on {
+    background: var(--jg-sticker-ink);
+    color: var(--jg-sticker);
+    box-shadow: 2px 2px 0 var(--jg-accent);
+  }
+}
+
+.justgo-landing__waitlist-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  margin-bottom: 0.7rem;
+}
+
+.justgo-landing__waitlist-label {
+  font-family: var(--jg-font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.justgo-landing__waitlist input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.62rem 0.7rem 0.55rem;
+  background: #fff;
+  color: var(--jg-sticker-ink);
+  border: 2px solid var(--jg-sticker-ink);
+  font-family: var(--jg-font-display);
+  font-size: 1rem;
+  text-transform: none;
+
+  &:focus {
+    outline: 3px solid var(--jg-pop);
+    outline-offset: 2px;
+  }
+}
+
+.justgo-landing__waitlist-error {
+  margin: -0.35rem 0 0.55rem;
+  font-family: var(--jg-font-mono);
+  font-size: 0.72rem;
+  color: var(--jg-accent);
+}
+
+.justgo-landing__waitlist-consent {
+  margin: 0.65rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: rgba(26, 23, 20, 0.72);
+
+  a {
+    color: var(--jg-sticker-ink);
+    font-weight: 700;
+    text-decoration: underline;
+  }
+}
+
+.justgo-landing__waitlist-friends {
+  margin: 0 0 0.75rem;
+  font-family: var(--jg-font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.justgo-landing__waitlist-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+button.justgo-landing__cta {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  text-transform: lowercase;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: 4px 5px 0 var(--jg-ink);
+  }
+}
+
+.justgo-landing__cta--waitlist {
+  width: 100%;
+  box-sizing: border-box;
+  transform: none;
+  margin-top: 0.1rem;
+}
+
+.justgo-landing__cta--waitlist-share {
+  background: #fff;
+  color: var(--jg-sticker-ink);
+  border-color: var(--jg-sticker-ink);
+  box-shadow: 4px 5px 0 var(--jg-sticker-ink);
 }
 
 @keyframes justgo-landing-slap-mark {
@@ -502,6 +638,8 @@ a.justgo-landing__countdown--imminent {
   .justgo-landing:not(.justgo-landing--slap) .justgo-landing__wordmark,
   .justgo-landing:not(.justgo-landing--slap) .justgo-landing__strip,
   .justgo-landing:not(.justgo-landing--slap) .justgo-landing__hero-stage .justgo-landing__store,
+  .justgo-landing:not(.justgo-landing--slap) .justgo-landing__hero-stage .justgo-landing__app-store,
+  .justgo-landing:not(.justgo-landing--slap) .justgo-landing__hero-stage .justgo-landing__waitlist,
   .justgo-landing:not(.justgo-landing--slap) .justgo-landing__countdown {
     opacity: 0;
   }
@@ -522,7 +660,9 @@ a.justgo-landing__countdown--imminent {
     animation: justgo-landing-slap-pop 400ms 160ms var(--jg-ease) backwards;
   }
 
-  .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__store {
+  .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__store,
+  .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__app-store,
+  .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__waitlist {
     animation: justgo-landing-slap-cta 400ms 240ms var(--jg-ease) backwards;
   }
 
@@ -712,12 +852,18 @@ a.justgo-landing__countdown--imminent {
 
 .justgo-landing-deck {
   position: relative;
-  --deck-cream: #faf6ef;
-  --deck-ink: #1a1714;
-  --deck-ink-soft: rgba(26, 23, 20, 0.5);
-  --deck-ticker: #4ab5ff;
-  --deck-accent: #ff4f1f;
-  --deck-pop: #ffd23f;
+  --deck-cream: var(--jg-cream);
+  --deck-ink: var(--jg-ink);
+  --deck-ink-soft: var(--jg-ink-soft);
+  --deck-ticker: var(--jg-ticker);
+  --deck-accent: var(--jg-accent);
+  --deck-pop: var(--jg-pop);
+  --deck-placeholder: #0f0d0b;
+}
+
+.justgo-landing__hero-cities {
+  justify-content: center;
+  margin: 0;
 }
 
 .justgo-landing-deck__cities {
@@ -839,7 +985,7 @@ a.justgo-landing__countdown--imminent {
   background: var(--deck-cream);
   color: var(--deck-ink);
   border: 2.5px solid var(--deck-ink);
-  box-shadow: 2px 3px 0 rgba(26, 23, 20, 0.22);
+  box-shadow: 2px 3px 0 color-mix(in srgb, var(--deck-ink) 22%, transparent);
   pointer-events: none;
 
   &--download {
@@ -850,7 +996,7 @@ a.justgo-landing__countdown--imminent {
     flex: 0 0 60%;
     min-height: 0;
     border-bottom: 2.5px solid var(--deck-ink);
-    background-color: #2a2119;
+    background-color: var(--deck-placeholder);
     background-position: center;
     background-size: cover;
     background-repeat: no-repeat;
@@ -858,13 +1004,17 @@ a.justgo-landing__countdown--imminent {
     &:not(.justgo-landing-card__hero--image):not(.justgo-landing-card__hero--download) {
       opacity: 1;
       background-image:
-        linear-gradient(135deg, rgba(42, 33, 25, 0.15), rgba(42, 33, 25, 0.45)),
+        linear-gradient(
+          135deg,
+          color-mix(in srgb, var(--deck-placeholder) 85%, transparent),
+          color-mix(in srgb, var(--deck-placeholder) 55%, transparent)
+        ),
         repeating-linear-gradient(
           -35deg,
-          rgba(250, 246, 239, 0.08),
-          rgba(250, 246, 239, 0.08) 8px,
-          rgba(26, 23, 20, 0.08) 8px,
-          rgba(26, 23, 20, 0.08) 16px
+          color-mix(in srgb, var(--deck-ink) 8%, transparent),
+          color-mix(in srgb, var(--deck-ink) 8%, transparent) 8px,
+          color-mix(in srgb, var(--deck-cream) 8%, transparent) 8px,
+          color-mix(in srgb, var(--deck-cream) 8%, transparent) 16px
         );
     }
 
@@ -875,11 +1025,15 @@ a.justgo-landing__countdown--imminent {
     &--download {
       opacity: 1;
       background:
-        linear-gradient(135deg, rgba(255, 79, 31, 0.92), rgba(255, 210, 63, 0.85)),
+        linear-gradient(
+          135deg,
+          color-mix(in srgb, var(--deck-accent) 92%, transparent),
+          color-mix(in srgb, var(--deck-pop) 85%, transparent)
+        ),
         repeating-linear-gradient(
           -28deg,
-          rgba(26, 23, 20, 0.08),
-          rgba(26, 23, 20, 0.08) 10px,
+          color-mix(in srgb, var(--jg-sticker-ink) 8%, transparent),
+          color-mix(in srgb, var(--jg-sticker-ink) 8%, transparent) 10px,
           transparent 10px,
           transparent 20px
         );
@@ -900,7 +1054,7 @@ a.justgo-landing__countdown--imminent {
     padding: 0.22rem 0.5rem 0.18rem;
     background: var(--jg-burst);
     border: 1.5px solid var(--deck-ink);
-    color: var(--deck-cream);
+    color: var(--jg-sticker);
     font-family: var(--jg-font-mono);
     font-size: 0.62rem;
     font-weight: 700;
@@ -910,7 +1064,7 @@ a.justgo-landing__countdown--imminent {
   &__title {
     margin: 0 0 0.25rem;
     font-family: var(--jg-font-display);
-    font-size: 1.5rem;
+    font-size: 1.6rem;
     font-weight: 700;
     line-height: 1.05;
     text-transform: none;
@@ -944,7 +1098,7 @@ a.justgo-landing__countdown--imminent {
     background: var(--deck-ink);
     color: var(--deck-cream);
     font-family: var(--jg-font-display);
-    font-size: 0.62rem;
+    font-size: 0.8rem;
     line-height: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -965,9 +1119,15 @@ a.justgo-landing__countdown--imminent {
     font-weight: 700;
     color: var(--deck-ink);
 
-    &--badge img {
-      display: block;
-      height: 2rem;
+    &--badge {
+      color-scheme: only light;
+
+      img {
+        display: block;
+        height: 2rem;
+        width: auto;
+        color-scheme: only light;
+      }
     }
   }
 }
@@ -1058,11 +1218,6 @@ a.justgo-landing__countdown--imminent {
     z-index: 1;
   }
 
-  .justgo-landing__eyebrow {
-    color: var(--jg-ink);
-    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7);
-  }
-
   h2 {
     margin: 0 0 1.4rem;
     font-size: clamp(1.8rem, 4vw, 2.6rem);
@@ -1071,7 +1226,7 @@ a.justgo-landing__countdown--imminent {
     text-shadow: none;
   }
 
-  p:not(.justgo-landing__eyebrow) {
+  p {
     max-width: 28rem;
     margin: 0 auto 1rem;
     font-family: var(--jg-font-display);
@@ -1254,6 +1409,8 @@ a.justgo-landing__countdown--imminent {
   .justgo-landing--slap .justgo-landing__strip--cream,
   .justgo-landing--slap .justgo-landing__strip--pop,
   .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__store,
+  .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__app-store,
+  .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__waitlist,
   .justgo-landing--slap .justgo-landing__countdown {
     animation: none;
   }
@@ -1264,4 +1421,45 @@ a.justgo-landing__countdown--imminent {
   .justgo-landing__flyer {
     transition: none;
   }
+}
+
+.justgo-qr-hop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.justgo-qr-hop__mark {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.justgo-qr-hop__mark img {
+  display: block;
+  height: 2.2rem;
+  width: auto;
+}
+
+.justgo-qr-hop h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.justgo-qr-hop p {
+  margin: 0;
+  max-width: 28rem;
+  color: var(--jg-ink-muted);
+}
+
+.justgo-qr-hop__name {
+  font-family: var(--jg-font-mono);
+  font-size: 0.82rem;
+  color: var(--jg-ink-soft);
 }

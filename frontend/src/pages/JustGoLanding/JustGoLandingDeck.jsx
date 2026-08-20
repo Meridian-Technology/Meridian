@@ -1,25 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { animated, useSpring } from 'react-spring';
 import apiRequest from '../../utils/postRequest';
+import appStoreBadge from '../../assets/pivot/download-on-the-app-store.svg';
 import {
   JUSTGO_IOS_STORE_URL,
-  JUSTGO_PLAY_STORE_URL,
   useJustGoLandingCopy,
 } from './justGoLandingCopy';
+import JustGoLandingStoreLink from './JustGoLandingStoreLink';
 import {
-  cityChipLabel,
   formatLandingWhen,
   landingPosterStack,
   landingSwipeRotate,
   landingSwipeTint,
+  isWaitlistLandingMode,
   pickLandingCity,
   readStoredLandingCity,
   resolveDeckSwipeAxis,
   writeStoredLandingCity,
 } from './justGoLandingUtils';
+import JustGoLandingCityPicker from './JustGoLandingCityPicker';
 
-const APP_STORE_BADGE =
-  'https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg';
 const SWIPE_COMMIT_FRACTION = 0.2;
 const SWIPE_VELOCITY = 0.42;
 const DECK_SPRING = { tension: 50, friction: 20, clamp: true };
@@ -95,12 +95,26 @@ function EventFace({ event }) {
   );
 }
 
-function storeUrlFor(platform) {
-  return platform === 'android' ? JUSTGO_PLAY_STORE_URL : JUSTGO_IOS_STORE_URL;
-}
-
-function DownloadFace({ storeUrl, platform, empty }) {
+function DownloadFace({ empty, tenantKey, waitlistMode }) {
   const copy = useJustGoLandingCopy();
+  if (waitlistMode) {
+    return (
+      <article
+        className="justgo-landing-card justgo-landing-card--download"
+        aria-label={copy.waitlistCta}
+      >
+        <div className="justgo-landing-card__hero justgo-landing-card__hero--download" />
+        <div className="justgo-landing-card__body">
+          <span className="justgo-landing-card__tag">{copy.productName}</span>
+          <h3 className="justgo-landing-card__title">{copy.waitlistCta}</h3>
+          <p className="justgo-landing-card__host">{copy.waitlistSuccessBody}</p>
+          <a className="justgo-landing__cta justgo-landing__cta--deck" href="#waitlist">
+            {copy.waitlistCta}
+          </a>
+        </div>
+      </article>
+    );
+  }
   return (
     <article
       className="justgo-landing-card justgo-landing-card--download"
@@ -113,36 +127,35 @@ function DownloadFace({ storeUrl, platform, empty }) {
           {empty ? copy.deckEmpty : copy.deckDownloadTitle}
         </h3>
         <p className="justgo-landing-card__host">{copy.deckDownloadBody}</p>
-        <a
+        <JustGoLandingStoreLink
           className="justgo-landing__cta justgo-landing__cta--deck"
-          href={storeUrl}
-          aria-label={
-            platform === 'android'
-              ? copy.ctaAriaAndroid
-              : copy.ctaAriaIos
-          }
+          href={JUSTGO_IOS_STORE_URL}
+          aria-label={copy.ctaAriaIos}
+          tenantKey={tenantKey}
+          store="ios"
         >
           {copy.cta}
-        </a>
-        {platform === 'android' ? (
-          <a className="justgo-landing-card__store" href={JUSTGO_PLAY_STORE_URL}>
-            get it on google play
-          </a>
-        ) : (
-          <a
-            className="justgo-landing-card__store justgo-landing-card__store--badge"
-            href={JUSTGO_IOS_STORE_URL}
-            aria-label={copy.ctaAriaIos}
-          >
-            <img src={APP_STORE_BADGE} alt="Download on the App Store" height="32" />
-          </a>
-        )}
+        </JustGoLandingStoreLink>
+        <JustGoLandingStoreLink
+          className="justgo-landing-card__store justgo-landing-card__store--badge"
+          href={JUSTGO_IOS_STORE_URL}
+          aria-label={copy.ctaAriaIos}
+          tenantKey={tenantKey}
+          store="ios"
+        >
+          <img
+            src={appStoreBadge}
+            alt="Download on the App Store"
+            height="32"
+            width="96"
+          />
+        </JustGoLandingStoreLink>
       </div>
     </article>
   );
 }
 
-function LeavingCard({ card, empty, storeUrl, platform, x: startX, rot: startRot, direction, onDone }) {
+function LeavingCard({ card, empty, tenantKey, waitlistMode, x: startX, rot: startRot, direction, onDone }) {
   const copy = useJustGoLandingCopy();
   const [{ x, rot }, api] = useSpring(() => ({
     x: startX,
@@ -176,16 +189,16 @@ function LeavingCard({ card, empty, storeUrl, platform, x: startX, rot: startRot
           {overlay === 'pass' ? copy.deckPassHint : copy.deckInterestedHint}
         </span>
       </div>
-      {card.kind === 'event' ? (
-        <EventFace event={card.event} />
-      ) : (
-        <DownloadFace storeUrl={storeUrl} platform={platform} empty={empty} />
-      )}
-    </animated.div>
+        {card.kind === 'event' ? (
+          <EventFace event={card.event} />
+        ) : (
+          <DownloadFace empty={empty} tenantKey={tenantKey} waitlistMode={waitlistMode} />
+        )}
+      </animated.div>
   );
 }
 
-function SwipeTopCard({ card, empty, storeUrl, platform, stackIndex, onSwiped }) {
+function SwipeTopCard({ card, empty, tenantKey, waitlistMode, stackIndex, onSwiped }) {
   const copy = useJustGoLandingCopy();
   const locked = card.kind === 'download';
   const rest = landingPosterStack(1, stackIndex);
@@ -352,7 +365,7 @@ function SwipeTopCard({ card, empty, storeUrl, platform, stackIndex, onSwiped })
         {card.kind === 'event' ? (
           <EventFace event={card.event} />
         ) : (
-          <DownloadFace storeUrl={storeUrl} platform={platform} empty={empty} />
+          <DownloadFace empty={empty} tenantKey={tenantKey} waitlistMode={waitlistMode} />
         )}
       </animated.div>
       {!locked ? (
@@ -373,19 +386,33 @@ function SwipeTopCard({ card, empty, storeUrl, platform, stackIndex, onSwiped })
   );
 }
 
-export default function JustGoLandingDeck({ cities, citiesState, platform }) {
+export default function JustGoLandingDeck({
+  cities,
+  citiesState,
+  cityLocked = false,
+  lockedTenantKey = '',
+  selectedTenantKey = '',
+  onCityChange,
+}) {
   const copy = useJustGoLandingCopy();
-  const storeUrl = storeUrlFor(platform);
-  const [tenantKey, setTenantKey] = useState('');
+  const [internalTenantKey, setInternalTenantKey] = useState('');
   const [events, setEvents] = useState([]);
   const [dropState, setDropState] = useState('idle');
   const [index, setIndex] = useState(0);
   const [leaving, setLeaving] = useState(null);
+  const controlled = typeof onCityChange === 'function';
 
   useEffect(() => {
+    if (controlled) return undefined;
     const picked = pickLandingCity(cities, readStoredLandingCity());
-    setTenantKey(picked?.tenantKey || '');
-  }, [cities]);
+    setInternalTenantKey(picked?.tenantKey || '');
+    return undefined;
+  }, [cities, controlled]);
+
+  const tenantKey = controlled ? selectedTenantKey : internalTenantKey;
+  const setTenantKey = controlled ? onCityChange : setInternalTenantKey;
+  const activeCity = cities.find((city) => city.tenantKey === tenantKey);
+  const waitlistMode = isWaitlistLandingMode(activeCity);
 
   useEffect(() => {
     if (!tenantKey) return undefined;
@@ -429,6 +456,7 @@ export default function JustGoLandingDeck({ cities, citiesState, platform }) {
   const current = cards[Math.min(index, cards.length - 1)];
   const peek = cards.slice(index + 1, index + 3);
   const empty = dropState === 'empty' || events.length === 0;
+  const storeTenantKey = lockedTenantKey || tenantKey;
   const waiting =
     citiesState === 'loading' ||
     (Boolean(tenantKey) && (dropState === 'idle' || dropState === 'loading'));
@@ -448,34 +476,12 @@ export default function JustGoLandingDeck({ cities, citiesState, platform }) {
         <p className="justgo-landing__muted">{copy.citiesEmpty}</p>
       ) : null}
 
-      {cities.length ? (
-        <div
-          className="justgo-landing-deck__cities"
-          role="listbox"
-          aria-label={copy.cityPickerLabel}
-        >
-          {cities.map((city) => {
-            const label = cityChipLabel(city);
-            if (!label) return null;
-            const selected = city.tenantKey === tenantKey;
-            return (
-              <button
-                key={city.tenantKey}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                className={
-                  selected
-                    ? 'justgo-landing-deck__city justgo-landing-deck__city--on'
-                    : 'justgo-landing-deck__city'
-                }
-                onClick={() => setTenantKey(city.tenantKey)}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+      {cities.length && !cityLocked ? (
+        <JustGoLandingCityPicker
+          cities={cities}
+          selectedTenantKey={tenantKey}
+          onChange={setTenantKey}
+        />
       ) : null}
 
       {waiting ? (
@@ -498,7 +504,11 @@ export default function JustGoLandingDeck({ cities, citiesState, platform }) {
                 {card.kind === 'event' ? (
                   <EventFace event={card.event} />
                 ) : (
-                  <DownloadFace storeUrl={storeUrl} platform={platform} empty={empty} />
+                  <DownloadFace
+                    empty={empty}
+                    tenantKey={storeTenantKey}
+                    waitlistMode={waitlistMode}
+                  />
                 )}
               </div>
             );
@@ -508,8 +518,8 @@ export default function JustGoLandingDeck({ cities, citiesState, platform }) {
               key={`${tenantKey}-${current.id}-${index}`}
               card={current}
               empty={empty && current.kind === 'download'}
-              storeUrl={storeUrl}
-              platform={platform}
+              tenantKey={storeTenantKey}
+              waitlistMode={waitlistMode}
               stackIndex={index}
               onSwiped={(snapshot) => {
                 if (!skipDeckMotion()) setLeaving(snapshot);
@@ -522,8 +532,8 @@ export default function JustGoLandingDeck({ cities, citiesState, platform }) {
               key={`leaving-${leaving.card.id}`}
               card={leaving.card}
               empty={empty && leaving.card.kind === 'download'}
-              storeUrl={storeUrl}
-              platform={platform}
+              tenantKey={storeTenantKey}
+              waitlistMode={waitlistMode}
               x={leaving.x}
               rot={leaving.rot}
               direction={leaving.direction}

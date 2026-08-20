@@ -5,7 +5,7 @@ import meadow from '../../assets/pivot/pivot-hero-meadow.jpg';
 
 /**
  * Brand artifacts for the flyer wall — nights the product is for, not a live catalog.
- * City names are stamped on at render time from GET /pivot/cities.
+ * City names are stamped on at render time from GET /pivot/landing/config.
  */
 export const JUSTGO_LANDING_FLYERS = Object.freeze([
   Object.freeze({
