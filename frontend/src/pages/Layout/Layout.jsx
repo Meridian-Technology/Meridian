@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { Outlet, useLocation, Navigate } from 'react-router-dom'; // Allows for nested routes to be rendered within this layout
 import { updateReferrerOnNavigation } from '../../utils/referrerContext';
 import Banner from '../../components/Banner/Banner'; // Import your Banner component
@@ -109,7 +109,9 @@ function Layout() {
       {/* This will render the content of the page (children) */}
       <main style={{minHeight: viewport, overflowX: 'clip', width: '100%'}}>
         <div className="out" style={{minHeight: viewport, overflowX: 'clip', width: '100%'}}>
-            <Outlet />      
+            <Suspense fallback={null}>
+              <Outlet />
+            </Suspense>
         </div>
       </main>
     </div>

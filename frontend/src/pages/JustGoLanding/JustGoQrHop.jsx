@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import justGoWordmark from '../../assets/pivot/just-go-wordmark.svg';
 import { isJustGoHost } from '../../config/tenantRedirect';
+import { JUSTGO_WORDMARK_1298, JUSTGO_WORDMARK_SRCSET } from './justGoHeroAssets';
 import { useJustGoLandingCopy } from './justGoLandingCopy';
 import { buildLandingQrHopTo, scanLandingQr } from './justGoLandingTracking';
 import './JustGoLanding.scss';
@@ -52,7 +52,16 @@ function JustGoQrHop() {
       aria-busy={!failed}
     >
       <Link to={homeTo} className="justgo-qr-hop__mark">
-        <img src={justGoWordmark} alt={copy.wordmarkAlt} draggable={false} />
+        <img
+          src={JUSTGO_WORDMARK_1298}
+          srcSet={JUSTGO_WORDMARK_SRCSET}
+          sizes="7rem"
+          alt={copy.wordmarkAlt}
+          width={1298}
+          height={782}
+          decoding="async"
+          draggable={false}
+        />
       </Link>
       {failed ? (
         <>

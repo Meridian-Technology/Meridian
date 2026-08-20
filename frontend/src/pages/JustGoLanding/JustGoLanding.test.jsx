@@ -230,6 +230,16 @@ describe('JustGoLanding', () => {
     );
   });
 
+  it('loads a compressed hero photo as a real image', async () => {
+    await renderLanding();
+    const photo = document.querySelector('.justgo-landing__hero-photo img');
+    expect(photo).toHaveAttribute('src', '/justgo/hero-court.webp');
+    expect(photo).toHaveAttribute('fetchpriority', 'high');
+    expect(
+      document.querySelector('.justgo-landing__hero-photo source[media="(max-width: 899px)"]'),
+    ).toHaveAttribute('srcset', '/justgo/hero-court-mobile.webp');
+  });
+
   it('puts a next-drop countdown in the top bar', async () => {
     await renderLanding();
 
