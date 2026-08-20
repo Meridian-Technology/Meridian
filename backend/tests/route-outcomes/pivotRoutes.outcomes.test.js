@@ -199,8 +199,18 @@ describe('pivotRoutes GET /pivot/landing/config', () => {
     getLandingConfig.mockResolvedValue({
       data: {
         cities: [
-          { tenantKey: 'nyc', cityDisplayName: 'New York City', landingMode: 'waitlist' },
-          { tenantKey: 'sf', cityDisplayName: 'San Francisco', landingMode: 'launched' },
+          {
+            tenantKey: 'nyc',
+            cityDisplayName: 'New York City',
+            landingMode: 'waitlist',
+            nextDropAt: '2026-08-13T22:00:00.000Z',
+          },
+          {
+            tenantKey: 'sf',
+            cityDisplayName: 'San Francisco',
+            landingMode: 'launched',
+            nextDropAt: '2026-08-15T02:30:00.000Z',
+          },
         ],
       },
     });
@@ -209,8 +219,18 @@ describe('pivotRoutes GET /pivot/landing/config', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
     expect(response.body.data.cities).toEqual([
-      { tenantKey: 'nyc', cityDisplayName: 'New York City', landingMode: 'waitlist' },
-      { tenantKey: 'sf', cityDisplayName: 'San Francisco', landingMode: 'launched' },
+      {
+        tenantKey: 'nyc',
+        cityDisplayName: 'New York City',
+        landingMode: 'waitlist',
+        nextDropAt: '2026-08-13T22:00:00.000Z',
+      },
+      {
+        tenantKey: 'sf',
+        cityDisplayName: 'San Francisco',
+        landingMode: 'launched',
+        nextDropAt: '2026-08-15T02:30:00.000Z',
+      },
     ]);
     expect(verifyToken).not.toHaveBeenCalled();
     expect(getLandingConfig).toHaveBeenCalledWith(expect.any(Object), { tenantKey: undefined });

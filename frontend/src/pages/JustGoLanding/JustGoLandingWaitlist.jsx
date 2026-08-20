@@ -7,6 +7,8 @@ import {
 } from './justGoLandingCopy';
 import { submitLandingWaitlist } from './justGoLandingTracking';
 import JustGoLandingCityPicker from './JustGoLandingCityPicker';
+import { isJustGoHost } from '../../config/tenantRedirect';
+import { justGoLegalPath } from './justGoLandingUtils';
 
 function waitlistMessage(copy, errorCode) {
   if (errorCode === 'CITY_REQUIRED') return copy.waitlistCityRequired;
@@ -201,9 +203,9 @@ export default function JustGoLandingWaitlist({
       ) : null}
       <p className="justgo-landing__waitlist-consent">
         {copy.waitlistConsent}{' '}
-        <Link to="/privacy-policy">{copy.footerPrivacy}</Link>
+        <Link to={justGoLegalPath('privacy', isJustGoHost())}>{copy.footerPrivacy}</Link>
         <span aria-hidden="true"> · </span>
-        <Link to="/terms-of-service">{copy.footerTerms}</Link>
+        <Link to={justGoLegalPath('terms', isJustGoHost())}>{copy.footerTerms}</Link>
       </p>
       <button
         type="submit"

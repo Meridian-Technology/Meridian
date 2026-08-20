@@ -9,7 +9,11 @@ const {
   getMergedTenants,
   upsertStoredTenantRow,
 } = require('./tenantConfigService');
-const { isPivotTenant } = require('../utilities/pivotDropSchedule');
+const {
+  isPivotTenant,
+  resolvePivotDropInstant,
+  resolvePivotUpcomingDropBatchWeek,
+} = require('../utilities/pivotDropSchedule');
 const { LANDING_MODES, resolveLandingMode } = require('../constants/defaultTenants');
 const { justGoPublicUrl } = require('../utilities/justGoPublicUrl');
 const {
@@ -120,11 +124,23 @@ async function recordLandingEvent(req, body = {}) {
 /** Public listing: pivot cities that are not hidden. `coming_soon` waitlist cities are included. */
 const LANDING_LIST_STATUSES = new Set(['active', 'coming_soon']);
 
-function serializeLandingCity(tenant) {
+function resolveLandingNextDropAt(tenant, now = new Date()) {
+  try {
+    const batchWeek = resolvePivotUpcomingDropBatchWeek(tenant, now);
+    const resolved = resolvePivotDropInstant(tenant, batchWeek, now);
+    return resolved.dropAt.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function serializeLandingCity(tenant, now = new Date()) {
+  const nextDropAt = resolveLandingNextDropAt(tenant, now);
   return {
     tenantKey: tenant.tenantKey,
     cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
     landingMode: resolveLandingMode(tenant.landingMode),
+    ...(nextDropAt ? { nextDropAt } : {}),
   };
 }
 
@@ -136,16 +152,19 @@ function sortLandingCities(cities) {
 
 /**
  * Public Just Go landing config. No admin fields (mongoUri, drop knobs, status, …).
+ * Includes each city's upcoming drop instant so the marketing countdown follows
+ * the live schedule (overrides included), not a hardcoded Thursday clock.
  * Optional tenantKey includes that pivot city even when it is outside the default list.
  */
 async function getLandingConfig(req, options = {}) {
+  const now = options.now || new Date();
   const tenants = await getMergedTenants(req);
   const byKey = new Map();
 
   tenants
     .filter((row) => isPivotTenant(row) && LANDING_LIST_STATUSES.has(row.status))
     .forEach((row) => {
-      byKey.set(row.tenantKey, serializeLandingCity(row));
+      byKey.set(row.tenantKey, serializeLandingCity(row, now));
     });
 
   const tenantKeyRaw = trimToNull(options.tenantKey, ATTR_MAX_LENGTH);
@@ -158,7 +177,7 @@ async function getLandingConfig(req, options = {}) {
         code: 'TENANT_NOT_FOUND',
       };
     }
-    byKey.set(tenant.tenantKey, serializeLandingCity(tenant));
+    byKey.set(tenant.tenantKey, serializeLandingCity(tenant, now));
   }
 
   return { data: { cities: sortLandingCities([...byKey.values()]) } };

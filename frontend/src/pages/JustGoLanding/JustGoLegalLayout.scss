@@ -1,0 +1,196 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+
+.justgo-legal {
+  --jg-cream: #faf6ef;
+  --jg-cream-deep: #f3eee6;
+  --jg-ink: #1a1714;
+  --jg-ink-muted: rgba(26, 23, 20, 0.72);
+  --jg-accent: #ff4f1f;
+  --jg-proof: #1a1714;
+  --jg-proof-ink: #faf6ef;
+  --jg-border: #1a1714;
+  --jg-font-display: 'Instrument Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --jg-font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  color-scheme: light;
+  box-sizing: border-box;
+  min-height: 100%;
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--jg-cream);
+  color: var(--jg-ink);
+  font-family: var(--jg-font-display);
+  -webkit-font-smoothing: antialiased;
+}
+
+.justgo-legal *,
+.justgo-legal *::before,
+.justgo-legal *::after {
+  box-sizing: inherit;
+}
+
+.justgo-legal__proof {
+  margin: 0;
+  padding: 0.7rem 1.1rem;
+  background: var(--jg-proof);
+  border-bottom: 2px solid var(--jg-border);
+  font-family: var(--jg-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: var(--jg-proof-ink);
+}
+
+.justgo-legal__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem 0;
+}
+
+.justgo-legal__wordmark {
+  display: block;
+  height: 1.7rem;
+  width: auto;
+}
+
+.justgo-legal__back {
+  font-family: var(--jg-font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--jg-ink);
+  text-decoration: none;
+  border-bottom: 2px solid var(--jg-accent);
+  padding-bottom: 0.1rem;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--jg-accent);
+  }
+}
+
+.justgo-legal__article {
+  width: min(44rem, calc(100% - 2.5rem));
+  margin: 1.75rem auto 4rem;
+  color: var(--jg-ink);
+}
+
+.justgo-legal__kicker {
+  margin: 0 0 0.45rem;
+  font-family: var(--jg-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--jg-ink-muted);
+}
+
+.justgo-legal__title {
+  margin: 0 0 0.5rem;
+  font-family: var(--jg-font-display);
+  font-size: clamp(2.2rem, 5vw, 3rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  text-transform: lowercase;
+  color: var(--jg-ink);
+}
+
+.justgo-legal__updated {
+  margin: 0 0 2rem;
+  font-family: var(--jg-font-mono);
+  font-size: 0.78rem;
+  color: var(--jg-ink-muted);
+}
+
+.justgo-legal__section {
+  margin: 0 0 2.1rem;
+  color: var(--jg-ink);
+
+  h2 {
+    margin: 0 0 0.8rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid var(--jg-border);
+    font-family: var(--jg-font-display);
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    text-transform: lowercase;
+    color: var(--jg-ink);
+  }
+
+  h3 {
+    margin: 1.35rem 0 0.5rem;
+    font-size: 1.02rem;
+    font-weight: 700;
+    line-height: 1.3;
+    text-transform: lowercase;
+    color: var(--jg-ink);
+  }
+
+  p,
+  li,
+  strong {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: var(--jg-ink);
+  }
+
+  p {
+    margin: 0 0 0.95rem;
+  }
+
+  ul {
+    margin: 0 0 1rem;
+    padding-left: 1.25rem;
+  }
+
+  li {
+    margin: 0.4rem 0;
+  }
+
+  a {
+    color: var(--jg-ink);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+    text-decoration-thickness: 2px;
+    text-decoration-color: var(--jg-accent);
+
+    &:hover,
+    &:focus-visible {
+      color: var(--jg-accent);
+    }
+  }
+}
+
+.justgo-legal__contact {
+  margin-top: 1rem;
+  padding: 1.1rem 1.2rem;
+  background: var(--jg-cream-deep);
+  border: 2px solid var(--jg-border);
+  color: var(--jg-ink);
+
+  p,
+  a,
+  strong {
+    color: var(--jg-ink);
+  }
+
+  p {
+    margin: 0.35rem 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .justgo-legal__article {
+    width: calc(100% - 2rem);
+    margin-top: 1.25rem;
+  }
+
+  .justgo-legal__section p,
+  .justgo-legal__section li {
+    font-size: 1rem;
+  }
+}

@@ -207,6 +207,11 @@ describe('recordLandingEvent (Task 1.2)', () => {
 });
 
 describe('getLandingConfig (Task 2.3)', () => {
+  /** Wednesday Aug 12 2026 — before that week's Thursday 6pm ET drop. */
+  const CONFIG_NOW = new Date('2026-08-12T16:00:00.000Z');
+  const NYC_NEXT_DROP_AT = '2026-08-13T22:00:00.000Z';
+  const SF_NEXT_DROP_AT = '2026-08-15T02:30:00.000Z';
+
   const campus = {
     tenantKey: 'rpi',
     tenantType: 'campus',
@@ -224,6 +229,9 @@ describe('getLandingConfig (Task 2.3)', () => {
     landingMode: 'waitlist',
     mongoUri: 'mongodb://nyc-secret',
     pivotDropTimezone: 'America/New_York',
+    pivotDropDayOfWeek: 4,
+    pivotDropHour: 18,
+    pivotDropMinute: 0,
   };
   const launchedCity = {
     tenantKey: 'sf',
@@ -232,6 +240,10 @@ describe('getLandingConfig (Task 2.3)', () => {
     location: 'San Francisco',
     name: 'San Francisco',
     landingMode: 'launched',
+    pivotDropTimezone: 'America/Los_Angeles',
+    pivotDropDayOfWeek: 5,
+    pivotDropHour: 19,
+    pivotDropMinute: 30,
   };
   const hiddenCity = {
     tenantKey: 'hidden-city',
@@ -266,61 +278,79 @@ describe('getLandingConfig (Task 2.3)', () => {
     });
   });
 
+  function loadConfig(options = {}) {
+    return getLandingConfig(mockReq(), { now: CONFIG_NOW, ...options });
+  }
+
   it('returns waitlist and launched cities with landingMode and no admin fields', async () => {
-    const result = await getLandingConfig(mockReq());
+    const result = await loadConfig();
 
     expect(result.data.cities).toEqual([
       {
         tenantKey: 'nyc',
         cityDisplayName: 'New York City',
         landingMode: 'waitlist',
+        nextDropAt: NYC_NEXT_DROP_AT,
       },
       {
         tenantKey: 'sf',
         cityDisplayName: 'San Francisco',
         landingMode: 'launched',
+        nextDropAt: SF_NEXT_DROP_AT,
       },
       {
         tenantKey: 'troy',
         cityDisplayName: 'Troy',
         landingMode: 'waitlist',
+        nextDropAt: NYC_NEXT_DROP_AT,
       },
     ]);
     result.data.cities.forEach((city) => {
       expect(city).not.toHaveProperty('mongoUri');
       expect(city).not.toHaveProperty('status');
       expect(city).not.toHaveProperty('pivotDropTimezone');
+      expect(city).not.toHaveProperty('pivotDropDayOfWeek');
+      expect(city).not.toHaveProperty('pivotDropHour');
     });
   });
 
+  it('resolves each city’s upcoming drop from its stored schedule, not a shared clock', async () => {
+    const result = await loadConfig();
+    const byKey = Object.fromEntries(result.data.cities.map((city) => [city.tenantKey, city]));
+    expect(byKey.nyc.nextDropAt).toBe(NYC_NEXT_DROP_AT);
+    expect(byKey.sf.nextDropAt).toBe(SF_NEXT_DROP_AT);
+    expect(byKey.nyc.nextDropAt).not.toBe(byKey.sf.nextDropAt);
+  });
+
   it('omits hidden tenants from the default listing', async () => {
-    const result = await getLandingConfig(mockReq());
+    const result = await loadConfig();
     expect(result.data.cities.map((city) => city.tenantKey)).not.toContain('hidden-city');
     expect(result.data.cities.map((city) => city.tenantKey)).not.toContain('rpi');
   });
 
   it('includes a scoped tenantKey even when it is hidden from the listing', async () => {
-    const result = await getLandingConfig(mockReq(), { tenantKey: 'hidden-city' });
+    const result = await loadConfig({ tenantKey: 'hidden-city' });
     expect(result.data.cities).toEqual(
       expect.arrayContaining([
         {
           tenantKey: 'hidden-city',
           cityDisplayName: 'Hidden City',
           landingMode: 'waitlist',
+          nextDropAt: NYC_NEXT_DROP_AT,
         },
       ]),
     );
   });
 
   it('returns TENANT_NOT_FOUND for an unknown or campus tenantKey', async () => {
-    const missing = await getLandingConfig(mockReq(), { tenantKey: 'paris' });
+    const missing = await loadConfig({ tenantKey: 'paris' });
     expect(missing).toEqual({
       error: 'City not found.',
       status: 404,
       code: 'TENANT_NOT_FOUND',
     });
 
-    const campusOnly = await getLandingConfig(mockReq(), { tenantKey: 'rpi' });
+    const campusOnly = await loadConfig({ tenantKey: 'rpi' });
     expect(campusOnly.code).toBe('TENANT_NOT_FOUND');
   });
 });

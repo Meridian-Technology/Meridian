@@ -242,6 +242,8 @@ function App() {
                                             <Route path="/booking" element={<AnimatedPageWrapper><Booking /></AnimatedPageWrapper>}/>
                                             <Route path="/privacy-policy" element={<AnimatedPageWrapper><PrivacyPolicy /></AnimatedPageWrapper>}/>
                                             <Route path="/terms-of-service" element={<AnimatedPageWrapper><TermsOfService /></AnimatedPageWrapper>}/>
+                                            <Route path="/justgo/privacy-policy" element={<AnimatedPageWrapper><PrivacyPolicy /></AnimatedPageWrapper>}/>
+                                            <Route path="/justgo/terms-of-service" element={<AnimatedPageWrapper><TermsOfService /></AnimatedPageWrapper>}/>
                                             <Route path="/child-safety-standards" element={<AnimatedPageWrapper><ChildSafetyStandards /></AnimatedPageWrapper>}/>
                                             <Route path="/forgot-password" element={<AnimatedPageWrapper><ForgotPassword /></AnimatedPageWrapper>}/>
                                             <Route path="/reset-password" element={<AnimatedPageWrapper><ResetPassword /></AnimatedPageWrapper>}/>
