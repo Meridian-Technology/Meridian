@@ -8,6 +8,48 @@
   },
   "keys": [
     {
+      "path": "accountSettings.cancel",
+      "kind": "string",
+      "params": [],
+      "shipped": "cancel"
+    },
+    {
+      "path": "accountSettings.deleteAccountConfirm",
+      "kind": "string",
+      "params": [],
+      "shipped": "delete account"
+    },
+    {
+      "path": "accountSettings.deleteAccountError",
+      "kind": "string",
+      "params": [],
+      "shipped": "could not delete account. try again."
+    },
+    {
+      "path": "accountSettings.deleteAccountMessage",
+      "kind": "string",
+      "params": [],
+      "shipped": "this permanently deletes your profile, friends, plans, and all your data. you cannot undo this."
+    },
+    {
+      "path": "accountSettings.deleteAccountTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "delete account?"
+    },
+    {
+      "path": "accountSettings.screenTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "account settings"
+    },
+    {
+      "path": "accountSettings.ticker",
+      "kind": "string",
+      "params": [],
+      "shipped": "your account"
+    },
+    {
       "path": "ageOnboarding.birthYearLabel",
       "kind": "string",
       "params": [],
@@ -1047,6 +1089,12 @@
       "shipped": "remove"
     },
     {
+      "path": "crew.dial.reorderHint",
+      "kind": "string",
+      "params": [],
+      "shipped": "hold and drag to reorder"
+    },
+    {
       "path": "crew.dial.replaceCancelCta",
       "kind": "string",
       "params": [],
@@ -1267,6 +1315,24 @@
       "kind": "string",
       "params": [],
       "shipped": "something your people will recognize"
+    },
+    {
+      "path": "crew.getStarted.rankTutorialGotIt",
+      "kind": "string",
+      "params": [],
+      "shipped": "got it"
+    },
+    {
+      "path": "crew.getStarted.rankTutorialSubtitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "flick a card up into an empty spot. #1 is your top pick."
+    },
+    {
+      "path": "crew.getStarted.rankTutorialTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "swipe up to rank"
     },
     {
       "path": "crew.getStarted.startCta",
@@ -1938,6 +2004,13 @@
         "confirmed": "confirmed",
         "active": "active"
       }
+    },
+    {
+      "path": "crew.week.createAnotherCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "start another {group.singular}",
+      "usesTokens": true
     },
     {
       "path": "crew.week.decidePagerProgress",
@@ -3505,7 +3578,7 @@
       "path": "landing.web.waitlist.consent",
       "kind": "string",
       "params": [],
-      "shipped": "by joining you agree to our"
+      "shipped": "we keep your email to let you into this city. by joining you agree to our"
     },
     {
       "path": "landing.web.waitlist.copied",
@@ -3532,6 +3605,24 @@
       "shipped": "you're already on this city's list"
     },
     {
+      "path": "landing.web.waitlist.emailLabel",
+      "kind": "string",
+      "params": [],
+      "shipped": "email"
+    },
+    {
+      "path": "landing.web.waitlist.emailPlaceholder",
+      "kind": "string",
+      "params": [],
+      "shipped": "you@email.com"
+    },
+    {
+      "path": "landing.web.waitlist.emailRequired",
+      "kind": "string",
+      "params": [],
+      "shipped": "need a real email"
+    },
+    {
       "path": "landing.web.waitlist.error",
       "kind": "string",
       "params": [],
@@ -3553,24 +3644,6 @@
       "kind": "string",
       "params": [],
       "shipped": "1 friend joined"
-    },
-    {
-      "path": "landing.web.waitlist.phoneLabel",
-      "kind": "string",
-      "params": [],
-      "shipped": "phone"
-    },
-    {
-      "path": "landing.web.waitlist.phonePlaceholder",
-      "kind": "string",
-      "params": [],
-      "shipped": "(555) 555-0100"
-    },
-    {
-      "path": "landing.web.waitlist.phoneRequired",
-      "kind": "string",
-      "params": [],
-      "shipped": "need a real phone number"
     },
     {
       "path": "landing.web.waitlist.share",
@@ -3710,6 +3783,18 @@
       "kind": "string",
       "params": [],
       "shipped": "your week"
+    },
+    {
+      "path": "profile.accountSettingsHint",
+      "kind": "string",
+      "params": [],
+      "shipped": "interests · delete account"
+    },
+    {
+      "path": "profile.accountSettingsSectionTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "account settings"
     },
     {
       "path": "profile.appearanceBackdropPhoto",

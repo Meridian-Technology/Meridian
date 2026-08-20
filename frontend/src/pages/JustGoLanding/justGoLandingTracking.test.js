@@ -9,13 +9,19 @@ import {
   buildWaitlistPayload,
   getOrMintLandingVisitorId,
   handleLandingStoreClick,
+  hasSeenLandingQr,
+  markLandingQrSeen,
   normalizeLandingSource,
   persistLandingAttribution,
   readLandingAttribution,
   recordLandingStoreClick,
   recordLandingView,
   resolveLandingEventTenantKey,
+  scanLandingQr,
+  buildLandingQrHopTo,
   submitLandingWaitlist,
+  justGoLandingAnalyticsProps,
+  JUSTGO_LANDING_QR_SCAN_PATH,
 } from './justGoLandingTracking';
 
 const mockApi = jest.fn();
@@ -185,21 +191,40 @@ describe('justGoLandingTracking (Task 1.3)', () => {
     });
   });
 
+  describe('justGoLandingAnalyticsProps', () => {
+    it('allowlists tenantKey, source, and store and never forwards an email', () => {
+      expect(
+        justGoLandingAnalyticsProps({
+          tenantKey: 'nyc',
+          source: 'direct',
+          store: 'ios',
+          email: 'alex@example.com',
+          visitorId: 'visitor-abc',
+          userAgent: 'Mozilla/5.0',
+        }),
+      ).toEqual({
+        tenantKey: 'nyc',
+        source: 'direct',
+        store: 'ios',
+      });
+    });
+  });
+
   describe('submitLandingWaitlist', () => {
     it('does not post without a city', async () => {
-      const result = await submitLandingWaitlist({ phone: '555-0100', tenantKey: '' });
+      const result = await submitLandingWaitlist({ email: 'you@email.com', tenantKey: '' });
       expect(result).toEqual({ error: true, errorCode: 'CITY_REQUIRED', status: 400 });
       expect(mockApi).not.toHaveBeenCalled();
       expect(mockTrack).not.toHaveBeenCalled();
     });
 
-    it('posts waitlist and tracks Mixpanel without a phone', async () => {
+    it('posts waitlist and tracks Mixpanel without an email', async () => {
       mockApi.mockResolvedValue({
         success: true,
         data: { shareUrl: 'https://justgo.lol/troy?ref=abc', friendsJoined: 0, tenantKey: 'troy' },
       });
       persistLandingAttribution('?src=share&ref=code-1');
-      const result = await submitLandingWaitlist({ phone: '555-0100', tenantKey: 'Troy' });
+      const result = await submitLandingWaitlist({ email: 'you@email.com', tenantKey: 'Troy' });
 
       expect(result.data).toEqual(
         expect.objectContaining({ shareUrl: 'https://justgo.lol/troy?ref=abc', tenantKey: 'troy' }),
@@ -210,11 +235,11 @@ describe('justGoLandingTracking (Task 1.3)', () => {
         store: 'ios',
       });
       const props = mockTrack.mock.calls[0][1];
-      expect(props).not.toHaveProperty('phone');
+      expect(props).not.toHaveProperty('email');
       expect(mockApi).toHaveBeenCalledWith(
         JUSTGO_LANDING_WAITLIST_PATH,
         expect.objectContaining({
-          phone: '555-0100',
+          email: 'you@email.com',
           tenantKey: 'troy',
           source: 'share',
           ref: 'code-1',
@@ -230,7 +255,7 @@ describe('justGoLandingTracking (Task 1.3)', () => {
         code: 409,
         errorCode: 'WAITLIST_DUPLICATE',
       });
-      const result = await submitLandingWaitlist({ phone: '555-0100', tenantKey: 'troy' });
+      const result = await submitLandingWaitlist({ email: 'you@email.com', tenantKey: 'troy' });
       expect(result).toEqual(
         expect.objectContaining({
           error: true,
@@ -244,9 +269,9 @@ describe('justGoLandingTracking (Task 1.3)', () => {
   describe('buildWaitlistPayload', () => {
     it('includes attribution and never invents a city', () => {
       persistLandingAttribution('?src=qr&qr=poster-night');
-      expect(buildWaitlistPayload({ phone: '555-0100', tenantKey: 'troy' })).toEqual(
+      expect(buildWaitlistPayload({ email: 'you@email.com', tenantKey: 'troy' })).toEqual(
         expect.objectContaining({
-          phone: '555-0100',
+          email: 'you@email.com',
           tenantKey: 'troy',
           source: 'qr',
           qrName: 'poster-night',
@@ -256,9 +281,9 @@ describe('justGoLandingTracking (Task 1.3)', () => {
 
     it('sends ref from a share URL as source=share', () => {
       persistLandingAttribution('?ref=FriendCode1');
-      expect(buildWaitlistPayload({ phone: '555-0100', tenantKey: 'troy' })).toEqual(
+      expect(buildWaitlistPayload({ email: 'you@email.com', tenantKey: 'troy' })).toEqual(
         expect.objectContaining({
-          phone: '555-0100',
+          email: 'you@email.com',
           tenantKey: 'troy',
           source: 'share',
           ref: 'friendcode1',
@@ -273,11 +298,96 @@ describe('justGoLandingTracking (Task 1.3)', () => {
         configurable: true,
         value: 'Mozilla/5.0 (Linux; Android 14)',
       });
-      expect(buildWaitlistPayload({ phone: '555-0100', tenantKey: 'troy' }).store).toBe('android');
+      expect(buildWaitlistPayload({ email: 'you@email.com', tenantKey: 'troy' }).store).toBe('android');
       Object.defineProperty(window.navigator, 'userAgent', {
         configurable: true,
         value: original,
       });
+    });
+  });
+
+  describe('QR hop (Task 5.2)', () => {
+    it('builds a city path with src=qr and keeps extra query', () => {
+      expect(
+        buildLandingQrHopTo({
+          tenantKey: 'Troy',
+          name: 'Poster-A',
+          search: '?utm=ig',
+          justGoHost: true,
+        }),
+      ).toBe('/troy?utm=ig&src=qr&qr=poster-a');
+    });
+
+    it('uses /justgo/{city} on the meridian alias', () => {
+      expect(
+        buildLandingQrHopTo({
+          tenantKey: 'troy',
+          name: 'poster-a',
+          justGoHost: false,
+        }),
+      ).toBe('/justgo/troy?src=qr&qr=poster-a');
+    });
+
+    it('posts a unique scan once per visitor+code', async () => {
+      mockApi.mockResolvedValue({
+        success: true,
+        data: { name: 'poster-a', tenantKey: 'troy', path: '/troy' },
+      });
+      const first = await scanLandingQr({ name: 'poster-a', search: '' });
+      expect(first.data.tenantKey).toBe('troy');
+      expect(hasSeenLandingQr('poster-a')).toBe(true);
+      expect(mockApi).toHaveBeenCalledWith(
+        JUSTGO_LANDING_QR_SCAN_PATH,
+        expect.objectContaining({ name: 'poster-a', unique: true }),
+      );
+
+      mockApi.mockClear();
+      mockApi.mockResolvedValue({
+        success: true,
+        data: { name: 'poster-a', tenantKey: 'troy', path: '/troy' },
+      });
+      await scanLandingQr({ name: 'poster-a', search: '' });
+      expect(mockApi).toHaveBeenCalledWith(
+        JUSTGO_LANDING_QR_SCAN_PATH,
+        expect.objectContaining({ unique: false }),
+      );
+    });
+
+    it('does not mark seen when the code is inactive', async () => {
+      mockApi.mockResolvedValue({
+        error: 'inactive',
+        code: 400,
+        errorCode: 'QR_INACTIVE',
+      });
+      const result = await scanLandingQr({ name: 'poster-a' });
+      expect(result.errorCode).toBe('QR_INACTIVE');
+      expect(hasSeenLandingQr('poster-a')).toBe(false);
+      markLandingQrSeen('poster-a');
+      expect(hasSeenLandingQr('poster-a')).toBe(true);
+    });
+
+    it('sends the phone timezone and remaps an SF poster QR in Central time to iowacity', async () => {
+      mockApi.mockResolvedValue({
+        success: true,
+        data: { name: 'sf-1', tenantKey: 'sf', path: '/sf' },
+      });
+      const result = await scanLandingQr({
+        name: 'sf-1',
+        search: '',
+        timeZone: 'America/Chicago',
+        utcOffsetMinutes: 300,
+      });
+      expect(result.data.tenantKey).toBe('iowacity');
+      expect(result.data.name).toBe('iowa-1');
+      expect(result.data.posterTzHop).toBe(true);
+      expect(mockApi).toHaveBeenCalledWith(
+        JUSTGO_LANDING_QR_SCAN_PATH,
+        expect.objectContaining({
+          name: 'sf-1',
+          timeZone: 'America/Chicago',
+          utcOffsetMinutes: 300,
+        }),
+      );
     });
   });
 });

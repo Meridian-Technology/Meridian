@@ -267,6 +267,7 @@ function App() {
                                             <Route path="/landing" element={<AnimatedPageWrapper><Landing/></AnimatedPageWrapper>}/>
                                             <Route path="/mobile" element={<AnimatedPageWrapper><MobileLanding /></AnimatedPageWrapper>}/>
                                             <Route path="/invite" element={<AnimatedPageWrapper><InviteLanding /></AnimatedPageWrapper>}/>
+                                            <Route path="/justgo/qr/:name" element={<JustGoQrHop />} />
                                             <Route path="/justgo/:tenantKey" element={<JustGoLanding />} />
                                             <Route path="/justgo" element={<JustGoLanding />} />
                                             {justGoHost ? (

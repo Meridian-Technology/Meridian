@@ -5,6 +5,7 @@ import { useFetch } from '../../../hooks/useFetch';
 import useAdminDashboardTheme from '../../../hooks/useAdminDashboardTheme';
 import PivotFleetOverviewPage from './PivotFleetOverviewPage';
 import PivotVoicePage from './PivotVoicePage';
+import PivotFleetLaunchPage from './PivotFleetLaunchPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -16,7 +17,8 @@ const NO_FETCH_CACHE = { enabled: false };
 
 /**
  * Fleet Just Go ops shell.
- * Route: /platform-admin/pivot
+ * Route: /platform-admin/pivot?page=0|1|2
+ * Voice is page=1; Launch is page=2 (appended — do not insert).
  */
 function PivotFleetDashboard() {
   const navigate = useNavigate();
@@ -39,6 +41,11 @@ function PivotFleetDashboard() {
         label: 'Voice',
         icon: 'mdi:format-quote-close-outline',
         element: <PivotVoicePage scope="platform" />,
+      },
+      {
+        label: 'Launch',
+        icon: 'mdi:rocket-launch-outline',
+        element: <PivotFleetLaunchPage />,
       },
     ],
     [],

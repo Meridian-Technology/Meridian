@@ -110,12 +110,14 @@ function landingRoutes() {
         <>
           <Route path="/" element={<JustGoLanding />} />
           <Route path="/qr/:name" element={<JustGoQrHop />} />
+          <Route path="/justgo/qr/:name" element={<JustGoQrHop />} />
           <Route path="/:tenantKey" element={<JustGoApexCityLanding />} />
         </>
       ) : (
         <>
           <Route path="/" element={<p>campus landing</p>} />
           <Route path="/qr/:id" element={<p>campus qr</p>} />
+          <Route path="/justgo/qr/:name" element={<JustGoQrHop />} />
         </>
       )}
     </Routes>
@@ -147,7 +149,7 @@ async function revealWaitlistForm() {
   const stage = document.querySelector('.justgo-landing__hero-stage');
   const cta = await within(stage).findByRole('link', { name: justGoLandingCopy.waitlistCta });
   fireEvent.click(cta);
-  return screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel);
+  return screen.findByLabelText(justGoLandingCopy.waitlistEmailLabel);
 }
 
 beforeEach(() => {
@@ -273,6 +275,17 @@ describe('JustGoLanding', () => {
     expect(document.querySelector('link[rel="canonical"]')).toHaveAttribute(
       'href',
       justGoPublicLandingUrl('troy'),
+    );
+    expect(document.querySelector('meta[name="robots"][data-justgo-robots]')).toBeNull();
+  });
+
+  it('noindexes the meridian.study/justgo alias', async () => {
+    mockIsJustGoHost.mockReturnValue(false);
+    await renderLanding({ path: '/justgo' });
+
+    expect(document.querySelector('meta[name="robots"][data-justgo-robots]')).toHaveAttribute(
+      'content',
+      'noindex, nofollow',
     );
   });
 
@@ -474,19 +487,43 @@ describe('JustGoLanding', () => {
     ).toBeInTheDocument();
   });
 
-  it('does not treat /qr/:name as a city on a Just Go host', () => {
+  it('does not treat /qr/:name as a city on a Just Go host', async () => {
     mockIsJustGoHost.mockReturnValue(true);
     mockMatchMedia(true);
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/qr-scan') {
+        return Promise.resolve({
+          error: 'QR code not found.',
+          code: 404,
+          errorCode: 'QR_NOT_FOUND',
+        });
+      }
+      return Promise.resolve({ success: false });
+    });
     render(
       <MemoryRouter initialEntries={['/qr/poster-night']}>
         {landingRoutes()}
       </MemoryRouter>,
     );
     expect(screen.getByTestId('justgo-qr-hop')).toBeInTheDocument();
-    expect(screen.getByText(justGoLandingCopy.qrMissingTitle)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(justGoLandingCopy.qrMissingTitle)).toBeInTheDocument();
+    });
     expect(
       screen.queryByRole('heading', { name: /what are you doing this week/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it('keeps campus /qr/:id on a campus host', () => {
+    mockIsJustGoHost.mockReturnValue(false);
+    mockMatchMedia(true);
+    render(
+      <MemoryRouter initialEntries={['/qr/campus-code']}>
+        {landingRoutes()}
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('campus qr')).toBeInTheDocument();
+    expect(screen.queryByTestId('justgo-qr-hop')).not.toBeInTheDocument();
   });
 
   it('aliases /creator to the creator console on a Just Go host', () => {
@@ -590,7 +627,7 @@ describe('JustGoLanding', () => {
     expect(
       await screen.findByRole('img', { name: 'Download on the App Store' }),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText(justGoLandingCopy.waitlistPhoneLabel)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(justGoLandingCopy.waitlistEmailLabel)).not.toBeInTheDocument();
     expect(screen.getAllByText(justGoLandingCopy.cta).length).toBeGreaterThan(0);
   });
 
@@ -601,7 +638,7 @@ describe('JustGoLanding', () => {
     expect(
       await within(stage).findByRole('link', { name: justGoLandingCopy.waitlistCta }),
     ).toHaveAttribute('href', '#waitlist');
-    expect(screen.queryByLabelText(justGoLandingCopy.waitlistPhoneLabel)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(justGoLandingCopy.waitlistEmailLabel)).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Download on the App Store' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: justGoLandingCopy.ctaAriaIos })).not.toBeInTheDocument();
     expect(screen.queryByRole('listbox', { name: justGoLandingCopy.cityPickerLabel })).not.toBeInTheDocument();
@@ -611,17 +648,17 @@ describe('JustGoLanding', () => {
 
   it('opens the waitlist form from the hero CTA', async () => {
     await renderLanding({ path: '/justgo/troy' });
-    const phone = await revealWaitlistForm();
+    const email = await revealWaitlistForm();
     const dialog = screen.getByRole('dialog', { name: justGoLandingCopy.waitlistCta });
-    const form = phone.closest('form');
+    const form = email.closest('form');
     const stage = document.querySelector('.justgo-landing__hero-stage');
-    expect(phone).toBeInTheDocument();
+    expect(email).toBeInTheDocument();
     await waitFor(() => {
-      expect(phone).toHaveFocus();
+      expect(email).toHaveFocus();
     });
     expect(dialog).toBeInTheDocument();
     expect(within(stage).getByRole('link', { name: justGoLandingCopy.waitlistCta })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(justGoLandingCopy.waitlistPhonePlaceholder)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(justGoLandingCopy.waitlistEmailPlaceholder)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit })).toBeInTheDocument();
     expect(within(form).getByText(justGoLandingCopy.waitlistConsent, { exact: false })).toBeInTheDocument();
     expect(within(form).getByRole('link', { name: justGoLandingCopy.footerPrivacy })).toHaveAttribute(
@@ -632,6 +669,9 @@ describe('JustGoLanding', () => {
       'href',
       '/terms-of-service',
     );
+    const consent = within(form).getByText(justGoLandingCopy.waitlistConsent, { exact: false });
+    const submit = screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit });
+    expect(consent.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(dialog).queryByRole('listbox', { name: justGoLandingCopy.cityPickerLabel })).not.toBeInTheDocument();
     expect(screen.queryByRole('listbox', { name: justGoLandingCopy.cityPickerLabel })).not.toBeInTheDocument();
   });
@@ -644,7 +684,7 @@ describe('JustGoLanding', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
-    expect(screen.queryByLabelText(justGoLandingCopy.waitlistPhoneLabel)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(justGoLandingCopy.waitlistEmailLabel)).not.toBeInTheDocument();
     const stage = document.querySelector('.justgo-landing__hero-stage');
     expect(within(stage).getByRole('link', { name: justGoLandingCopy.waitlistCta })).toBeInTheDocument();
   });
@@ -657,7 +697,7 @@ describe('JustGoLanding', () => {
     expect(
       await within(stage).findByRole('link', { name: justGoLandingCopy.waitlistCta }),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText(justGoLandingCopy.waitlistPhoneLabel)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(justGoLandingCopy.waitlistEmailLabel)).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Download on the App Store' })).not.toBeInTheDocument();
   });
 
@@ -705,15 +745,15 @@ describe('JustGoLanding', () => {
       }),
     ).toBeInTheDocument();
     await revealWaitlistForm();
-    expect(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel)).toBeInTheDocument();
+    expect(await screen.findByLabelText(justGoLandingCopy.waitlistEmailLabel)).toBeInTheDocument();
     expect(
       within(screen.getByRole('dialog', { name: justGoLandingCopy.waitlistCta })).getByRole(
         'listbox',
         { name: justGoLandingCopy.cityPickerLabel },
       ),
     ).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(justGoLandingCopy.waitlistPhoneLabel), {
-      target: { value: '555-0100' },
+    fireEvent.change(screen.getByLabelText(justGoLandingCopy.waitlistEmailLabel), {
+      target: { value: 'you@email.com' },
     });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
@@ -723,7 +763,7 @@ describe('JustGoLanding', () => {
       expect(mockApi).toHaveBeenCalledWith(
         '/pivot/landing/waitlist',
         expect.objectContaining({
-          phone: '555-0100',
+          email: 'you@email.com',
           tenantKey: 'troy',
           visitorId: expect.any(String),
           source: 'direct',
@@ -759,8 +799,8 @@ describe('JustGoLanding', () => {
 
     await renderLanding({ path: '/justgo/troy' });
     await revealWaitlistForm();
-    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel), {
-      target: { value: '555-0100' },
+    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistEmailLabel), {
+      target: { value: 'you@email.com' },
     });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
@@ -770,7 +810,7 @@ describe('JustGoLanding', () => {
       expect(mockApi).toHaveBeenCalledWith(
         '/pivot/landing/waitlist',
         expect.objectContaining({
-          phone: '555-0100',
+          email: 'you@email.com',
           tenantKey: 'troy',
         }),
       );
@@ -783,13 +823,13 @@ describe('JustGoLanding', () => {
     const trackProps = mockTrack.mock.calls.find(
       (call) => call[0] === 'justgo_landing_waitlist_submit',
     )[1];
-    expect(trackProps).not.toHaveProperty('phone');
+    expect(trackProps).not.toHaveProperty('email');
     expect(await screen.findByText(justGoLandingCopy.waitlistSuccessTitle)).toBeInTheDocument();
     const panel = screen.getByRole('dialog', { name: justGoLandingCopy.waitlistCta });
     expect(within(panel).getByText(justGoLandingCopy.waitlistSuccessBody)).toBeInTheDocument();
     expect(within(panel).getByText('0 friends joined')).toBeInTheDocument();
     expect(within(panel).queryByText(/position|#\d/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(justGoLandingCopy.waitlistPhoneLabel)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(justGoLandingCopy.waitlistEmailLabel)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: justGoLandingCopy.waitlistShare })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistCopyLink }));
@@ -806,8 +846,8 @@ describe('JustGoLanding', () => {
 
     await renderLanding({ path: '/justgo/troy' });
     await revealWaitlistForm();
-    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel), {
-      target: { value: '555-0100' },
+    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistEmailLabel), {
+      target: { value: 'you@email.com' },
     });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
@@ -858,8 +898,8 @@ describe('JustGoLanding', () => {
 
     await renderLanding({ path: '/justgo/troy' });
     await revealWaitlistForm();
-    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistPhoneLabel), {
-      target: { value: '555-0100' },
+    fireEvent.change(await screen.findByLabelText(justGoLandingCopy.waitlistEmailLabel), {
+      target: { value: 'you@email.com' },
     });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));

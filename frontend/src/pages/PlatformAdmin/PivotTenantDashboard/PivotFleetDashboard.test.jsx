@@ -43,11 +43,13 @@ jest.mock('./PivotFleetOverviewPage', () => () => <div>fleet-overview-page</div>
 jest.mock('./PivotVoicePage', () => ({ scope }) => (
   <div>fleet-voice-page:{scope}</div>
 ));
+jest.mock('./PivotFleetLaunchPage', () => () => <div>fleet-launch-page</div>);
 jest.mock('./PivotTenantOverviewPage', () => () => <div>overview-page</div>);
 jest.mock('./PivotTenantCurationPage', () => () => <div>curation-page</div>);
 jest.mock('./PivotTenantJourneysPage', () => () => <div>journeys-page</div>);
 jest.mock('./PivotTenantDropDeckPage', () => () => <div>drop-deck-page</div>);
 jest.mock('./PivotTenantCatalogPage', () => () => <div>catalog-page</div>);
+jest.mock('./PivotTenantLaunchPage', () => () => <div>city-launch-page</div>);
 jest.mock('./PivotTenantDropdown', () => ({ cityDisplayName }) => (
   <div>{cityDisplayName || 'city-switcher'}</div>
 ));
@@ -102,17 +104,28 @@ describe('PivotFleetDashboard', () => {
     expect(screen.queryByText('overview-page')).not.toBeInTheDocument();
   });
 
-  it('appends Voice as page 1 without reordering Overview', () => {
+  it('appends Voice as page 1 and Launch as page 2 without reordering Overview', () => {
     renderFleet('/platform-admin/pivot');
 
     expect(screen.getByTestId('menu-0')).toHaveTextContent('Overview');
     expect(screen.getByTestId('menu-1')).toHaveTextContent('Voice');
+    expect(screen.getByTestId('menu-2')).toHaveTextContent('Launch');
+    expect(screen.queryByTestId('menu-3')).toBeNull();
   });
 
   it('shows Voice at /platform-admin/pivot?page=1', () => {
     renderFleet('/platform-admin/pivot?page=1');
 
     expect(screen.getByText('fleet-voice-page:platform')).toBeInTheDocument();
+    expect(screen.queryByText('fleet-overview-page')).not.toBeInTheDocument();
+    expect(screen.queryByText('fleet-launch-page')).not.toBeInTheDocument();
+  });
+
+  it('shows Launch at /platform-admin/pivot?page=2', () => {
+    renderFleet('/platform-admin/pivot?page=2');
+
+    expect(screen.getByText('fleet-launch-page')).toBeInTheDocument();
+    expect(screen.queryByText('fleet-voice-page:platform')).not.toBeInTheDocument();
     expect(screen.queryByText('fleet-overview-page')).not.toBeInTheDocument();
   });
 });

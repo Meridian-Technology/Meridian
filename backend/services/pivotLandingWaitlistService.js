@@ -1,14 +1,15 @@
 /**
- * Public Just Go waitlist signup. Stores phone + city globally; mints shareCode.
+ * Public Just Go waitlist signup. Stores email + city globally; mints shareCode.
  * Inbound `ref` matching another row’s shareCode increments friendsJoined
- * (same city only; unknown/self refs are ignored). Response never echoes the phone.
+ * (same city only; unknown/self refs are ignored). Response never echoes the email.
  */
 
 const { randomBytes } = require('crypto');
+const mongoose = require('mongoose');
 const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey, getMergedTenants } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
-const { normalizeWaitlistPhoneE164 } = require('../utilities/justGoWaitlistPhone');
+const { normalizeWaitlistEmail } = require('../utilities/justGoWaitlistEmail');
 const { justGoWaitlistShareUrl } = require('../utilities/justGoPublicUrl');
 const {
   JUSTGO_WAITLIST_SOURCES,
@@ -55,7 +56,7 @@ function normalizeWaitlistShareCode(value) {
  */
 async function attributeWaitlistShareRef(
   JustGoWaitlist,
-  { tenantKey, phoneE164, refCode, createdId } = {},
+  { tenantKey, email, refCode, createdId } = {},
 ) {
   const shareCode = normalizeWaitlistShareCode(refCode);
   if (!shareCode || !JustGoWaitlist) return false;
@@ -63,7 +64,7 @@ async function attributeWaitlistShareRef(
   const referrer = await JustGoWaitlist.findOne({ shareCode }).lean();
   if (!referrer) return false;
   if (String(referrer.tenantKey || '') !== String(tenantKey || '')) return false;
-  if (referrer.phoneE164 === phoneE164) return false;
+  if (referrer.email === email) return false;
   if (createdId != null && String(referrer._id) === String(createdId)) return false;
 
   await JustGoWaitlist.updateOne({ _id: referrer._id }, { $inc: { friendsJoined: 1 } });
@@ -93,7 +94,7 @@ function isMongoDup(err, fields) {
 
 function waitlistDuplicate() {
   return {
-    error: 'This number is already on the waitlist for this city.',
+    error: 'This email is already on the waitlist for this city.',
     status: 409,
     code: 'WAITLIST_DUPLICATE',
   };
@@ -176,12 +177,12 @@ function publicWaitlistPayload(row, req) {
 }
 
 async function joinWaitlist(req, body = {}) {
-  const phoneE164 = normalizeWaitlistPhoneE164(body.phone);
-  if (!phoneE164) {
+  const email = normalizeWaitlistEmail(body.email);
+  if (!email) {
     return {
-      error: 'Enter a valid US phone number.',
+      error: 'Enter a valid email address.',
       status: 400,
-      code: 'INVALID_PHONE',
+      code: 'INVALID_EMAIL',
     };
   }
 
@@ -216,13 +217,13 @@ async function joinWaitlist(req, body = {}) {
 
   const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
 
-  const existing = await JustGoWaitlist.findOne({ tenantKey, phoneE164 }).lean();
+  const existing = await JustGoWaitlist.findOne({ tenantKey, email }).lean();
   if (existing) {
     return waitlistDuplicate();
   }
 
   const doc = {
-    phoneE164,
+    email,
     tenantKey,
     cityLabel: cityLabelFor(tenant),
     visitorId,
@@ -243,7 +244,7 @@ async function joinWaitlist(req, body = {}) {
       });
       break;
     } catch (err) {
-      if (isMongoDup(err, ['tenantKey', 'phoneE164'])) {
+      if (isMongoDup(err, ['tenantKey', 'email'])) {
         return waitlistDuplicate();
       }
       if (isMongoDup(err, ['shareCode']) && attempt < SHARE_CODE_ATTEMPTS - 1) {
@@ -259,12 +260,175 @@ async function joinWaitlist(req, body = {}) {
 
   await attributeWaitlistShareRef(JustGoWaitlist, {
     tenantKey,
-    phoneE164,
+    email,
     refCode,
     createdId: created._id,
   });
 
   return { data: publicWaitlistPayload(created, req) };
+}
+
+const WAITLIST_PAGE_DEFAULT = 50;
+const WAITLIST_PAGE_MAX = 100;
+
+const WAITLIST_CSV_COLUMNS = Object.freeze([
+  'createdAt',
+  'email',
+  'source',
+  'qrName',
+  'refCode',
+  'friendsJoined',
+]);
+
+function cityNotFound() {
+  return {
+    error: 'City not found.',
+    status: 404,
+    code: 'TENANT_NOT_FOUND',
+  };
+}
+
+async function resolveAdminWaitlistTenant(req, tenantKeyRaw) {
+  const tenantKey = String(tenantKeyRaw || '').trim().toLowerCase();
+  if (!tenantKey) return cityNotFound();
+  const tenant = await getTenantByKey(req, tenantKey);
+  if (!tenant || !isPivotTenant(tenant)) return cityNotFound();
+  return { tenant };
+}
+
+function parsePage(value) {
+  const parsed = Number.parseInt(String(value ?? 1), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return parsed;
+}
+
+function parseLimit(value) {
+  const parsed = Number.parseInt(String(value ?? WAITLIST_PAGE_DEFAULT), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return WAITLIST_PAGE_DEFAULT;
+  return Math.min(WAITLIST_PAGE_MAX, parsed);
+}
+
+function parseWaitlistId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (!mongoose.Types.ObjectId.isValid(raw)) return null;
+  try {
+    if (String(new mongoose.Types.ObjectId(raw)) !== raw) return null;
+  } catch {
+    return null;
+  }
+  return raw;
+}
+
+function serializeWaitlistAdminRow(row) {
+  return {
+    id: row._id != null ? String(row._id) : null,
+    createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
+    email: row.email || null,
+    source: row.source || 'direct',
+    qrName: row.qrName || null,
+    refCode: row.refCode || null,
+    friendsJoined: Number(row.friendsJoined) || 0,
+  };
+}
+
+function csvEscape(value) {
+  const s = value == null ? '' : String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function waitlistRowsToCsv(rows) {
+  const header = WAITLIST_CSV_COLUMNS.join(',');
+  const lines = rows.map((row) =>
+    WAITLIST_CSV_COLUMNS.map((key) => csvEscape(row[key])).join(','),
+  );
+  return [header, ...lines].join('\n');
+}
+
+async function listTenantWaitlist(req, options = {}) {
+  const resolved = await resolveAdminWaitlistTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+
+  const page = parsePage(options.page);
+  const limit = parseLimit(options.limit);
+  const skip = (page - 1) * limit;
+  const tenantKey = resolved.tenant.tenantKey;
+  const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
+
+  const [total, docs] = await Promise.all([
+    JustGoWaitlist.countDocuments({ tenantKey }),
+    JustGoWaitlist.find({ tenantKey })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+  ]);
+
+  return {
+    data: {
+      tenantKey,
+      items: (docs || []).map(serializeWaitlistAdminRow),
+      pagination: {
+        page,
+        limit,
+        total,
+      },
+    },
+  };
+}
+
+async function exportTenantWaitlistCsv(req, options = {}) {
+  const resolved = await resolveAdminWaitlistTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+
+  const tenantKey = resolved.tenant.tenantKey;
+  const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
+  const docs = await JustGoWaitlist.find({ tenantKey }).sort({ createdAt: -1 }).lean();
+  const rows = (docs || []).map(serializeWaitlistAdminRow);
+
+  return {
+    contentType: 'text/csv; charset=utf-8',
+    filename: `justgo-waitlist-${tenantKey}.csv`,
+    body: waitlistRowsToCsv(rows),
+  };
+}
+
+/**
+ * Hard-delete one waitlist row for ops mistakes. No self-serve public delete.
+ * Response never echoes the email.
+ */
+async function deleteTenantWaitlistRow(req, options = {}) {
+  const resolved = await resolveAdminWaitlistTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+
+  const id = parseWaitlistId(options.id);
+  if (!id) {
+    return {
+      error: 'Waitlist id is invalid.',
+      status: 400,
+      code: 'INVALID_WAITLIST_ID',
+    };
+  }
+
+  const tenantKey = resolved.tenant.tenantKey;
+  const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
+  const deleted = await JustGoWaitlist.findOneAndDelete({ _id: id, tenantKey }).lean();
+  if (!deleted) {
+    return {
+      error: 'Waitlist signup not found.',
+      status: 404,
+      code: 'WAITLIST_NOT_FOUND',
+    };
+  }
+
+  return {
+    data: {
+      tenantKey,
+      id: String(deleted._id),
+      deleted: true,
+    },
+  };
 }
 
 module.exports = {
@@ -275,4 +439,13 @@ module.exports = {
   normalizeWaitlistShareCode,
   attributeWaitlistShareRef,
   publicWaitlistPayload,
+  listTenantWaitlist,
+  exportTenantWaitlistCsv,
+  deleteTenantWaitlistRow,
+  parseWaitlistId,
+  serializeWaitlistAdminRow,
+  waitlistRowsToCsv,
+  WAITLIST_CSV_COLUMNS,
+  WAITLIST_PAGE_DEFAULT,
+  WAITLIST_PAGE_MAX,
 };

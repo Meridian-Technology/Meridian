@@ -2,9 +2,11 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import './TermsOfService.scss';
 import Header from '../../components/Header/Header';
+import { isJustGoHost } from '../../config/tenantRedirect';
 
 function TermsOfService() {
     const navigate = useNavigate();
+    const justGoHost = isJustGoHost();
     const lastUpdated = new Date().toLocaleDateString('en-US', { 
         year: 'numeric', 
         month: 'long', 
@@ -12,8 +14,8 @@ function TermsOfService() {
     });
 
     return (
-        <div className="terms-of-service-page">
-            <Header />
+        <div className={`terms-of-service-page${justGoHost ? ' terms-of-service-page--justgo' : ''}`}>
+            {justGoHost ? null : <Header />}
             <div className="terms-of-service-container">
                 <div className="terms-of-service-content">
                     <h1>Terms of Service</h1>
@@ -26,7 +28,9 @@ function TermsOfService() {
                             By accessing or using Meridian ("we," "our," or "us"), including our web platform 
                             (the "Platform") and mobile application (the "App," collectively the "Services"), 
                             you agree to be bound by these Terms of Service ("Terms"). If you do not agree to 
-                            these Terms, please do not access or use our Services.
+                            these Terms, please do not access or use our Services. Joining a Just Go city waitlist
+                            (email + city) is optional; by submitting it you agree we may store that email
+                            as described in our Privacy Policy.
                         </p>
                         <p>
                             These Terms constitute a legally binding agreement between you and Meridian. 
@@ -325,7 +329,10 @@ function TermsOfService() {
                     </section>
 
                     <div className="terms-footer">
-                        <button className="back-button" onClick={() => navigate(-1)}>
+                        <button
+                            className="back-button"
+                            onClick={() => (justGoHost ? navigate('/') : navigate(-1))}
+                        >
                             ← Back
                         </button>
                     </div>

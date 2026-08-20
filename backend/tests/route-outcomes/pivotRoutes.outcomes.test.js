@@ -30,6 +30,10 @@ jest.mock('../../services/pivotLandingWaitlistService', () => ({
   joinWaitlist: jest.fn(),
 }));
 
+jest.mock('../../services/pivotLandingQrService', () => ({
+  hopLandingQr: jest.fn(),
+}));
+
 jest.mock('../../services/pivotReferralCodeService', () => ({
   validateReferralCode: jest.fn(),
   redeemReferralCode: jest.fn(),
@@ -109,10 +113,14 @@ const {
 const { getPivotLandingDrop } = require('../../services/pivotLandingDropService');
 const { recordLandingEvent, getLandingConfig } = require('../../services/pivotLandingService');
 const { joinWaitlist } = require('../../services/pivotLandingWaitlistService');
+const { hopLandingQr } = require('../../services/pivotLandingQrService');
 const {
   pivotLandingEventRateLimit,
   pivotLandingWaitlistRateLimit,
-  MAX_REQUESTS_PER_WINDOW,
+  pivotLandingQrHopRateLimit,
+  LANDING_EVENT_MAX_PER_WINDOW,
+  WAITLIST_MAX_PER_WINDOW,
+  QR_HOP_MAX_PER_WINDOW,
 } = require('../../middlewares/pivotLandingDropRateLimit');
 const { validateReferralCode, redeemReferralCode } = require('../../services/pivotReferralCodeService');
 const { getPivotFeed } = require('../../services/pivotFeedService');
@@ -330,7 +338,7 @@ describe('pivotRoutes POST /pivot/landing/event', () => {
     const app = buildBaseApp();
     const payload = { type: 'view', visitorId: 'visitor-abc' };
 
-    for (let i = 0; i < MAX_REQUESTS_PER_WINDOW; i += 1) {
+    for (let i = 0; i < LANDING_EVENT_MAX_PER_WINDOW; i += 1) {
       const ok = await request(app).post('/pivot/landing/event').send(payload);
       expect(ok.statusCode).toBe(200);
     }
@@ -360,7 +368,7 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
 
     const response = await request(buildBaseApp())
       .post('/pivot/landing/waitlist')
-      .send({ phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+      .send({ email: 'alex@example.com', tenantKey: 'nyc', visitorId: 'visitor-abc' });
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
@@ -371,43 +379,43 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
         tenantKey: 'nyc',
       },
     });
-    expect(JSON.stringify(response.body)).not.toMatch(/4155550100|\+1/);
+    expect(JSON.stringify(response.body)).not.toMatch(/alex@example\.com/i);
     expect(verifyToken).not.toHaveBeenCalled();
     expect(joinWaitlist).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({ phone: '4155550100', tenantKey: 'nyc' }),
+      expect.objectContaining({ email: 'alex@example.com', tenantKey: 'nyc' }),
     );
   });
 
-  it('returns 409 WAITLIST_DUPLICATE for the same phone+city', async () => {
+  it('returns 409 WAITLIST_DUPLICATE for the same email+city', async () => {
     joinWaitlist.mockResolvedValue({
-      error: 'This number is already on the waitlist for this city.',
+      error: 'This email is already on the waitlist for this city.',
       status: 409,
       code: 'WAITLIST_DUPLICATE',
     });
 
     const response = await request(buildBaseApp())
       .post('/pivot/landing/waitlist')
-      .send({ phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+      .send({ email: 'alex@example.com', tenantKey: 'nyc', visitorId: 'visitor-abc' });
 
     expect(response.statusCode).toBe(409);
     expect(response.body.success).toBe(false);
     expect(response.body.code).toBe('WAITLIST_DUPLICATE');
   });
 
-  it('returns 400 INVALID_PHONE for garbage numbers', async () => {
+  it('returns 400 INVALID_EMAIL for garbage addresses', async () => {
     joinWaitlist.mockResolvedValue({
-      error: 'Enter a valid US phone number.',
+      error: 'Enter a valid email address.',
       status: 400,
-      code: 'INVALID_PHONE',
+      code: 'INVALID_EMAIL',
     });
 
     const response = await request(buildBaseApp())
       .post('/pivot/landing/waitlist')
-      .send({ phone: 'nope', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+      .send({ email: 'nope', tenantKey: 'nyc', visitorId: 'visitor-abc' });
 
     expect(response.statusCode).toBe(400);
-    expect(response.body.code).toBe('INVALID_PHONE');
+    expect(response.body.code).toBe('INVALID_EMAIL');
   });
 
   it('returns 400 CITY_REQUIRED when generic signup omits city', async () => {
@@ -419,7 +427,7 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
 
     const response = await request(buildBaseApp())
       .post('/pivot/landing/waitlist')
-      .send({ phone: '4155550100', visitorId: 'visitor-abc' });
+      .send({ email: 'alex@example.com', visitorId: 'visitor-abc' });
 
     expect(response.statusCode).toBe(400);
     expect(response.body.code).toBe('CITY_REQUIRED');
@@ -430,9 +438,9 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
       data: { shareUrl: 'https://justgo.lol/nyc?ref=abc', friendsJoined: 0, tenantKey: 'nyc' },
     });
     const app = buildBaseApp();
-    const payload = { phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' };
+    const payload = { email: 'alex@example.com', tenantKey: 'nyc', visitorId: 'visitor-abc' };
 
-    for (let i = 0; i < MAX_REQUESTS_PER_WINDOW; i += 1) {
+    for (let i = 0; i < WAITLIST_MAX_PER_WINDOW; i += 1) {
       const ok = await request(app).post('/pivot/landing/waitlist').send(payload);
       expect(ok.statusCode).toBe(200);
     }
@@ -441,6 +449,94 @@ describe('pivotRoutes POST /pivot/landing/waitlist', () => {
     expect(limited.statusCode).toBe(429);
     expect(limited.body.success).toBe(false);
     expect(limited.body.code).toBe('WAITLIST_RATE_LIMIT');
+  });
+});
+
+describe('pivotRoutes POST /pivot/landing/qr-scan (Task 5.2)', () => {
+  beforeEach(() => {
+    hopLandingQr.mockReset();
+    pivotLandingQrHopRateLimit.reset();
+    verifyToken.mockClear();
+  });
+
+  it('returns 200 with city redirect and src=qr without auth', async () => {
+    hopLandingQr.mockResolvedValue({
+      data: {
+        name: 'poster-a',
+        tenantKey: 'troy',
+        redirectUrl: 'https://justgo.lol/troy?src=qr&qr=poster-a',
+        path: '/troy',
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/qr-scan')
+      .send({ name: 'poster-a', visitorId: 'visitor-abc', unique: true });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.redirectUrl).toContain('src=qr');
+    expect(response.body.data.redirectUrl).toContain('qr=poster-a');
+    expect(verifyToken).not.toHaveBeenCalled();
+    expect(hopLandingQr).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ name: 'poster-a', visitorId: 'visitor-abc' }),
+    );
+  });
+
+  it('returns 404 QR_NOT_FOUND when the code is missing', async () => {
+    hopLandingQr.mockResolvedValue({
+      error: 'QR code not found.',
+      status: 404,
+      code: 'QR_NOT_FOUND',
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/qr-scan')
+      .send({ name: 'missing' });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('QR_NOT_FOUND');
+  });
+
+  it('returns 400 QR_INACTIVE and does not look like a redirect', async () => {
+    hopLandingQr.mockResolvedValue({
+      error: 'QR code is inactive.',
+      status: 400,
+      code: 'QR_INACTIVE',
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/qr-scan')
+      .send({ name: 'poster-a', visitorId: 'visitor-abc' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('QR_INACTIVE');
+    expect(response.body.data).toBeUndefined();
+  });
+
+  it('returns 429 after the per-IP burst', async () => {
+    hopLandingQr.mockResolvedValue({
+      data: {
+        name: 'poster-a',
+        tenantKey: 'troy',
+        redirectUrl: 'https://justgo.lol/troy?src=qr&qr=poster-a',
+        path: '/troy',
+      },
+    });
+    const app = buildBaseApp();
+    const payload = { name: 'poster-a', visitorId: 'visitor-abc', unique: true };
+
+    for (let i = 0; i < QR_HOP_MAX_PER_WINDOW; i += 1) {
+      const ok = await request(app).post('/pivot/landing/qr-scan').send(payload);
+      expect(ok.statusCode).toBe(200);
+    }
+
+    const limited = await request(app).post('/pivot/landing/qr-scan').send(payload);
+    expect(limited.statusCode).toBe(429);
+    expect(limited.body.success).toBe(false);
+    expect(limited.body.code).toBe('LANDING_QR_RATE_LIMIT');
   });
 });
 

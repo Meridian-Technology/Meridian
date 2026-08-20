@@ -1,0 +1,12 @@
+.pivot-fleet-launch {
+  &__city-link {
+    font-weight: 600;
+    color: var(--pivot-ops-ink, #1a1714);
+    text-decoration: none;
+
+    &:hover {
+      color: var(--pivot-ops-accent, #ff4f1f);
+      text-decoration: underline;
+    }
+  }
+}

@@ -21,7 +21,9 @@ function cityLabel(tenant) {
 export const PIVOT_OPS_PAGES = Object.freeze({
   overview: 0,
   fleetVoice: 1,
+  fleetLaunch: 2,
   cityVoice: 5,
+  cityLaunch: 6,
 });
 
 function parsePageParam(searchParams) {
@@ -35,6 +37,8 @@ function pageLabelForShell(shell, page) {
   if (page === PIVOT_OPS_PAGES.overview) return 'overview';
   if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetVoice) return 'voice';
   if (shell === 'city' && page === PIVOT_OPS_PAGES.cityVoice) return 'voice';
+  if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetLaunch) return 'launch';
+  if (shell === 'city' && page === PIVOT_OPS_PAGES.cityLaunch) return 'launch';
   return null;
 }
 
@@ -42,13 +46,16 @@ function pageForLabel(shell, label) {
   if (label === 'voice') {
     return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetVoice : PIVOT_OPS_PAGES.cityVoice;
   }
+  if (label === 'launch') {
+    return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetLaunch : PIVOT_OPS_PAGES.cityLaunch;
+  }
   return PIVOT_OPS_PAGES.overview;
 }
 
 /**
  * Remap `?page=` by menu label when switching fleet ↔ city.
- * City → city keeps the query. City-only pages (Curation, Catalog, …)
- * have no fleet equivalent and drop to Overview.
+ * Shared labels (Voice, Launch) keep their tab. City-only pages
+ * (Curation, Catalog, …) have no fleet equivalent and drop to Overview.
  */
 export function remapPivotOpsSearch(searchParams, { from, to }) {
   const params = new URLSearchParams(searchParams);
@@ -72,7 +79,7 @@ export function remapPivotOpsSearch(searchParams, { from, to }) {
  * Pivot-only city switcher for Just Go ops dashboards.
  * Navigates between /platform-admin/pivot (all cities) and
  * /platform-admin/pivot/:tenantKey. City → city keeps ?page=;
- * fleet ↔ city remaps Voice by label (fleet 1 ↔ city 5).
+ * fleet ↔ city remaps shared tabs by label (Voice 1↔5, Launch 2↔6).
  */
 function PivotTenantDropdown({
   tenants = [],

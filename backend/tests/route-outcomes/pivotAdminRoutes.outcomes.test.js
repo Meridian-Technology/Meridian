@@ -141,6 +141,25 @@ jest.mock('../../services/pivotCopyService', () => ({
   resetCopyPack: jest.fn(),
 }));
 
+jest.mock('../../services/pivotLandingService', () => ({
+  getTenantLaunchStats: jest.fn(),
+  getFleetLaunchStats: jest.fn(),
+  updateTenantLandingMode: jest.fn(),
+}));
+
+jest.mock('../../services/pivotLandingWaitlistService', () => ({
+  listTenantWaitlist: jest.fn(),
+  exportTenantWaitlistCsv: jest.fn(),
+  deleteTenantWaitlistRow: jest.fn(),
+}));
+
+jest.mock('../../services/pivotLandingQrService', () => ({
+  listTenantLandingQrs: jest.fn(),
+  createTenantLandingQr: jest.fn(),
+  updateLandingQr: jest.fn(),
+  deactivateLandingQr: jest.fn(),
+}));
+
 const { requirePlatformAdmin } = require('../../middlewares/requirePlatformAdmin');
 const {
   rebuildWeeklySnapshot,
@@ -217,6 +236,22 @@ const {
   patchCopyPack,
   resetCopyPack,
 } = require('../../services/pivotCopyService');
+const {
+  getTenantLaunchStats,
+  getFleetLaunchStats,
+  updateTenantLandingMode,
+} = require('../../services/pivotLandingService');
+const {
+  listTenantWaitlist,
+  exportTenantWaitlistCsv,
+  deleteTenantWaitlistRow,
+} = require('../../services/pivotLandingWaitlistService');
+const {
+  listTenantLandingQrs,
+  createTenantLandingQr,
+  updateLandingQr,
+  deactivateLandingQr,
+} = require('../../services/pivotLandingQrService');
 const pivotAdminRoutes = require('../../routes/pivotAdminRoutes');
 
 function buildApp() {
@@ -2524,5 +2559,406 @@ describe('pivotAdminRoutes tenant copy (Task 5.1)', () => {
 
     expect(response.status).toBe(403);
     expect(resetCopyPack).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes launch APIs (Task 4.1)', () => {
+  beforeEach(() => {
+    getTenantLaunchStats.mockReset();
+    getFleetLaunchStats.mockReset();
+    updateTenantLandingMode.mockReset();
+    listTenantWaitlist.mockReset();
+    exportTenantWaitlistCsv.mockReset();
+    deleteTenantWaitlistRow.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/launch returns KPI payload', async () => {
+    getTenantLaunchStats.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        landingMode: 'waitlist',
+        totals: { views: 10, waitlistSignups: 2, storeClicks: 5, conversionRate: 0.2 },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/launch?from=2026-08-01&to=2026-08-19',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.totals.conversionRate).toBe(0.2);
+    expect(getTenantLaunchStats).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        from: '2026-08-01',
+        to: '2026-08-19',
+      }),
+    );
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/launch returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/launch');
+
+    expect(response.status).toBe(403);
+    expect(getTenantLaunchStats).not.toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/launch returns 404 for unknown city', async () => {
+    getTenantLaunchStats.mockResolvedValue({
+      error: 'City not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/missing/launch');
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/waitlist returns emails for platform admin', async () => {
+    listTenantWaitlist.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        items: [{ email: 'alex@example.com', source: 'direct', friendsJoined: 0 }],
+        pagination: { page: 1, limit: 50, total: 1 },
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/waitlist?page=1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.items[0].email).toBe('alex@example.com');
+    expect(response.headers['cache-control']).toMatch(/no-store/);
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/waitlist returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/waitlist');
+
+    expect(response.status).toBe(403);
+    expect(listTenantWaitlist).not.toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/waitlist.csv is an admin CSV, not JSON', async () => {
+    exportTenantWaitlistCsv.mockResolvedValue({
+      contentType: 'text/csv; charset=utf-8',
+      filename: 'justgo-waitlist-nyc.csv',
+      body: 'createdAt,email,source,qrName,refCode,friendsJoined\n2026-08-10T12:00:00.000Z,alex@example.com,direct,,,0',
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/waitlist.csv');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toMatch(/text\/csv/);
+    expect(response.headers['content-disposition']).toContain('justgo-waitlist-nyc.csv');
+    expect(response.headers['cache-control']).toMatch(/no-store/);
+    expect(response.text).toContain('alex@example.com');
+    expect(response.body).not.toEqual(expect.objectContaining({ success: true }));
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/waitlist.csv returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/waitlist.csv');
+
+    expect(response.status).toBe(403);
+    expect(exportTenantWaitlistCsv).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /admin/pivot/tenants/:tenantKey/waitlist/:id removes a row without echoing the email', async () => {
+    deleteTenantWaitlistRow.mockResolvedValue({
+      data: { tenantKey: 'nyc', id: '507f1f77bcf86cd799439011', deleted: true },
+    });
+
+    const response = await request(buildApp()).delete(
+      '/admin/pivot/tenants/nyc/waitlist/507f1f77bcf86cd799439011',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toEqual({
+      tenantKey: 'nyc',
+      id: '507f1f77bcf86cd799439011',
+      deleted: true,
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(/alex@example\.com/i);
+    expect(response.headers['cache-control']).toMatch(/no-store/);
+    expect(deleteTenantWaitlistRow).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        id: '507f1f77bcf86cd799439011',
+      }),
+    );
+  });
+
+  it('DELETE /admin/pivot/tenants/:tenantKey/waitlist/:id returns 404 WAITLIST_NOT_FOUND', async () => {
+    deleteTenantWaitlistRow.mockResolvedValue({
+      error: 'Waitlist signup not found.',
+      status: 404,
+      code: 'WAITLIST_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).delete(
+      '/admin/pivot/tenants/nyc/waitlist/507f1f77bcf86cd799439011',
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('WAITLIST_NOT_FOUND');
+  });
+
+  it('DELETE /admin/pivot/tenants/:tenantKey/waitlist/:id returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp()).delete(
+      '/admin/pivot/tenants/nyc/waitlist/507f1f77bcf86cd799439011',
+    );
+
+    expect(response.status).toBe(403);
+    expect(deleteTenantWaitlistRow).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/landing-mode updates mode', async () => {
+    updateTenantLandingMode.mockResolvedValue({
+      data: { tenantKey: 'nyc', landingMode: 'launched', publicUrl: 'https://justgo.lol/nyc' },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/landing-mode')
+      .send({ landingMode: 'launched' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.landingMode).toBe('launched');
+    expect(updateTenantLandingMode).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantKey: 'nyc', landingMode: 'launched' }),
+    );
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/landing-mode returns 400 for invalid mode', async () => {
+    updateTenantLandingMode.mockResolvedValue({
+      error: 'landingMode must be waitlist or launched.',
+      status: 400,
+      code: 'INVALID_LANDING_MODE',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/landing-mode')
+      .send({ landingMode: 'preview' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_LANDING_MODE');
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/landing-mode returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/landing-mode')
+      .send({ landingMode: 'launched' });
+
+    expect(response.status).toBe(403);
+    expect(updateTenantLandingMode).not.toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/launch returns fleet rollup', async () => {
+    getFleetLaunchStats.mockResolvedValue({
+      data: {
+        totals: { views: 30, conversionRate: 0.4 },
+        cities: [{ tenantKey: 'nyc' }, { tenantKey: 'sf' }],
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/launch');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.cities).toHaveLength(2);
+    expect(getFleetLaunchStats).toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/launch returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/launch');
+
+    expect(response.status).toBe(403);
+    expect(getFleetLaunchStats).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes landing QRs (Task 5.1)', () => {
+  beforeEach(() => {
+    listTenantLandingQrs.mockReset();
+    createTenantLandingQr.mockReset();
+    updateLandingQr.mockReset();
+    deactivateLandingQr.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/landing-qrs returns city QRs', async () => {
+    listTenantLandingQrs.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        items: [
+          {
+            name: 'poster-a',
+            tenantKey: 'nyc',
+            payloadUrl: 'https://justgo.lol/qr/poster-a',
+            isActive: true,
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/landing-qrs');
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.items[0].payloadUrl).toBe('https://justgo.lol/qr/poster-a');
+    expect(listTenantLandingQrs).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc' }),
+    );
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/landing-qrs returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/landing-qrs');
+
+    expect(response.status).toBe(403);
+    expect(listTenantLandingQrs).not.toHaveBeenCalled();
+  });
+
+  it('POST /admin/pivot/tenants/:tenantKey/landing-qrs creates a named QR', async () => {
+    createTenantLandingQr.mockResolvedValue({
+      status: 201,
+      data: {
+        name: 'troy',
+        tenantKey: 'troy',
+        payloadUrl: 'https://justgo.lol/qr/troy',
+        fgColor: '#1A1714',
+      },
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/troy/landing-qrs')
+      .send({ name: 'troy', description: 'City posters' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.name).toBe('troy');
+    expect(createTenantLandingQr).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantKey: 'troy', name: 'troy' }),
+    );
+  });
+
+  it('POST /admin/pivot/tenants/:tenantKey/landing-qrs returns 409 on duplicate name', async () => {
+    createTenantLandingQr.mockResolvedValue({
+      error: 'That QR name is already taken.',
+      status: 409,
+      code: 'QR_NAME_TAKEN',
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/nyc/landing-qrs')
+      .send({ name: 'poster-a' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('QR_NAME_TAKEN');
+  });
+
+  it('POST /admin/pivot/tenants/:tenantKey/landing-qrs returns 404 for a campus school', async () => {
+    createTenantLandingQr.mockResolvedValue({
+      error: 'City not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/rpi/landing-qrs')
+      .send({ name: 'union-poster' });
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+
+  it('POST /admin/pivot/tenants/:tenantKey/landing-qrs returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/nyc/landing-qrs')
+      .send({ name: 'poster-a' });
+
+    expect(response.status).toBe(403);
+    expect(createTenantLandingQr).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /admin/pivot/landing-qrs/:name updates style and deactivates', async () => {
+    updateLandingQr.mockResolvedValue({
+      data: { name: 'poster-a', isActive: false, fgColor: '#FFD23F' },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/landing-qrs/poster-a')
+      .send({ isActive: false, fgColor: '#FFD23F' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.isActive).toBe(false);
+    expect(updateLandingQr).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'poster-a', isActive: false, fgColor: '#FFD23F' }),
+    );
+  });
+
+  it('DELETE /admin/pivot/landing-qrs/:name deactivates instead of deleting', async () => {
+    deactivateLandingQr.mockResolvedValue({
+      data: { name: 'poster-a', isActive: false },
+    });
+
+    const response = await request(buildApp()).delete('/admin/pivot/landing-qrs/poster-a');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.isActive).toBe(false);
+    expect(deactivateLandingQr).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'poster-a' }),
+    );
+  });
+
+  it('PATCH /admin/pivot/landing-qrs/:name returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/landing-qrs/poster-a')
+      .send({ isActive: false });
+
+    expect(response.status).toBe(403);
+    expect(updateLandingQr).not.toHaveBeenCalled();
   });
 });

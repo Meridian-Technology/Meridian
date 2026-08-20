@@ -10,7 +10,7 @@ import JustGoLandingCityPicker from './JustGoLandingCityPicker';
 
 function waitlistMessage(copy, errorCode) {
   if (errorCode === 'CITY_REQUIRED') return copy.waitlistCityRequired;
-  if (errorCode === 'INVALID_PHONE') return copy.waitlistPhoneRequired;
+  if (errorCode === 'INVALID_EMAIL') return copy.waitlistEmailRequired;
   if (errorCode === 'WAITLIST_DUPLICATE') return copy.waitlistDuplicate;
   return copy.waitlistError;
 }
@@ -109,18 +109,18 @@ export default function JustGoLandingWaitlist({
   onClose,
 }) {
   const copy = useJustGoLandingCopy();
-  const phoneRef = useRef(null);
-  const [phone, setPhone] = useState('');
+  const emailRef = useRef(null);
+  const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorCode, setErrorCode] = useState('');
   const [success, setSuccess] = useState(null);
 
   useLayoutEffect(() => {
-    phoneRef.current?.focus({ preventScroll: true });
+    emailRef.current?.focus({ preventScroll: true });
   }, []);
 
   useEffect(() => {
-    const node = phoneRef.current;
+    const node = emailRef.current;
     if (!node) return undefined;
     const focus = () => node.focus({ preventScroll: true });
     const frame = requestAnimationFrame(focus);
@@ -141,7 +141,7 @@ export default function JustGoLandingWaitlist({
     setSubmitting(true);
     setErrorCode('');
     const result = await submitLandingWaitlist({
-      phone,
+      email,
       tenantKey: selectedTenantKey,
     });
     setSubmitting(false);
@@ -178,17 +178,20 @@ export default function JustGoLandingWaitlist({
         />
       ) : null}
       <label className="justgo-landing__waitlist-field">
-        <span className="justgo-landing__waitlist-label">{copy.waitlistPhoneLabel}</span>
+        <span className="justgo-landing__waitlist-label">{copy.waitlistEmailLabel}</span>
         <input
-          ref={phoneRef}
-          type="tel"
-          name="phone"
-          autoComplete="tel"
-          inputMode="tel"
-          placeholder={copy.waitlistPhonePlaceholder}
-          value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-          aria-invalid={errorCode === 'INVALID_PHONE' ? 'true' : undefined}
+          ref={emailRef}
+          type="email"
+          name="email"
+          autoComplete="email"
+          inputMode="email"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck="false"
+          placeholder={copy.waitlistEmailPlaceholder}
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          aria-invalid={errorCode === 'INVALID_EMAIL' ? 'true' : undefined}
         />
       </label>
       {errorCode ? (
@@ -196,6 +199,12 @@ export default function JustGoLandingWaitlist({
           {waitlistMessage(copy, errorCode)}
         </p>
       ) : null}
+      <p className="justgo-landing__waitlist-consent">
+        {copy.waitlistConsent}{' '}
+        <Link to="/privacy-policy">{copy.footerPrivacy}</Link>
+        <span aria-hidden="true"> · </span>
+        <Link to="/terms-of-service">{copy.footerTerms}</Link>
+      </p>
       <button
         type="submit"
         className="justgo-landing__cta justgo-landing__cta--waitlist"
@@ -203,12 +212,6 @@ export default function JustGoLandingWaitlist({
       >
         {submitting ? copy.waitlistSubmitting : copy.waitlistSubmit}
       </button>
-      <p className="justgo-landing__waitlist-consent">
-        {copy.waitlistConsent}{' '}
-        <Link to="/privacy-policy">{copy.footerPrivacy}</Link>
-        <span aria-hidden="true"> · </span>
-        <Link to="/terms-of-service">{copy.footerTerms}</Link>
-      </p>
     </form>
   );
 }

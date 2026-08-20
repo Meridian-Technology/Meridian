@@ -2,9 +2,11 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import './PrivacyPolicy.scss';
 import Header from '../../components/Header/Header';
+import { isJustGoHost } from '../../config/tenantRedirect';
 
 function PrivacyPolicy() {
     const navigate = useNavigate();
+    const justGoHost = isJustGoHost();
     const lastUpdated = new Date().toLocaleDateString('en-US', { 
         year: 'numeric', 
         month: 'long', 
@@ -12,8 +14,8 @@ function PrivacyPolicy() {
     });
 
     return (
-        <div className="privacy-policy-page">
-            <Header />
+        <div className={`privacy-policy-page${justGoHost ? ' privacy-policy-page--justgo' : ''}`}>
+            {justGoHost ? null : <Header />}
             <div className="privacy-policy-container">
                 <div className="privacy-policy-content">
                     <h1>Privacy Policy</h1>
@@ -41,7 +43,7 @@ function PrivacyPolicy() {
                             <li><strong>Account Information:</strong> Name, email address, username, and password</li>
                             <li><strong>Profile Information:</strong> Profile picture, bio, and other profile details you choose to provide</li>
                             <li><strong>Academic Information:</strong> School affiliation, student status, and academic-related information</li>
-                            <li><strong>Contact Information:</strong> Phone number (if provided) and email address</li>
+                            <li><strong>Contact Information:</strong> Email address (and phone number if you provide one). If you join a Just Go city waitlist on justgo.lol, we store the email you submit together with the city you selected.</li>
                             <li><strong>Organization Information:</strong> Organizations you join, events you create or attend, and related activity</li>
                         </ul>
 
@@ -163,6 +165,12 @@ function PrivacyPolicy() {
                             it for legal purposes.
                         </p>
                         <p>
+                            <strong>Just Go waitlist:</strong> Emails submitted on the Just Go landing waitlist
+                            are kept until a platform administrator deletes that signup. There is no self-serve delete
+                            from the landing page in this version. We may email you when that city launches. Contact
+                            us if you need an address removed.
+                        </p>
+                        <p>
                             <strong>Note:</strong> Data stored locally on your mobile device (such as cached content or 
                             biometric authentication data) may persist until you uninstall the App or clear the App's data.
                         </p>
@@ -190,7 +198,10 @@ function PrivacyPolicy() {
                     </section>
 
                     <div className="privacy-footer">
-                        <button className="back-button" onClick={() => navigate(-1)}>
+                        <button
+                            className="back-button"
+                            onClick={() => (justGoHost ? navigate('/') : navigate(-1))}
+                        >
                             ← Back
                         </button>
                     </div>

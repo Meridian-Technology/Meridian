@@ -12,7 +12,7 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
 
   function baseRow(overrides = {}) {
     return {
-      phoneE164: '+14155550100',
+      email: 'alex@example.com',
       tenantKey: 'nyc',
       cityLabel: 'New York',
       visitorId: 'visitor-abc',
@@ -63,9 +63,9 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
   });
 
   describe('schema indexes', () => {
-    it('documents unique tenant+phone and unique shareCode indexes', () => {
+    it('documents unique tenant+email and unique shareCode indexes', () => {
       expect(JUSTGO_WAITLIST_INDEX_NAMES).toEqual([
-        'justgo_waitlist_tenant_phone_unique',
+        'justgo_waitlist_tenant_email_unique',
         'justgo_waitlist_share_code_unique',
       ]);
 
@@ -74,10 +74,10 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
         indexes.map(([keys, options]) => [options?.name, { keys, options }]),
       );
 
-      const byPhone = byName.get('justgo_waitlist_tenant_phone_unique');
-      expect(byPhone).toBeDefined();
-      expect(byPhone.keys).toEqual({ tenantKey: 1, phoneE164: 1 });
-      expect(byPhone.options.unique).toBe(true);
+      const byEmail = byName.get('justgo_waitlist_tenant_email_unique');
+      expect(byEmail).toBeDefined();
+      expect(byEmail.keys).toEqual({ tenantKey: 1, email: 1 });
+      expect(byEmail.options.unique).toBe(true);
 
       const byShare = byName.get('justgo_waitlist_share_code_unique');
       expect(byShare).toBeDefined();
@@ -87,10 +87,10 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
   });
 
   describe('fields', () => {
-    it('creates a waitlist row with createdAt and no phone-shaped shareCode', async () => {
+    it('creates a waitlist row with createdAt and no email-shaped shareCode', async () => {
       const row = await JustGoWaitlist.create(baseRow());
 
-      expect(row.phoneE164).toBe('+14155550100');
+      expect(row.email).toBe('alex@example.com');
       expect(row.tenantKey).toBe('nyc');
       expect(row.cityLabel).toBe('New York');
       expect(row.visitorId).toBe('visitor-abc');
@@ -112,14 +112,14 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
       expect(row.refCode).toBe('friendcode1');
     });
 
-    it('rejects the same phone+city twice', async () => {
+    it('rejects the same email+city twice', async () => {
       await JustGoWaitlist.create(baseRow());
       await expect(
         JustGoWaitlist.create(baseRow({ shareCode: 'othercode1' })),
       ).rejects.toThrow(/duplicate key/i);
     });
 
-    it('allows the same phone on a different city', async () => {
+    it('allows the same email on a different city', async () => {
       await JustGoWaitlist.create(baseRow());
       const other = await JustGoWaitlist.create(
         baseRow({ tenantKey: 'sf', cityLabel: 'San Francisco', shareCode: 'othercode1' }),
@@ -132,7 +132,7 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
       await expect(
         JustGoWaitlist.create(
           baseRow({
-            phoneE164: '+14155550101',
+            email: 'blair@example.com',
             shareCode: 'shareabc12',
           }),
         ),
@@ -141,10 +141,10 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
   });
 
   describe('validation', () => {
-    it('requires phoneE164 and tenantKey', async () => {
+    it('requires email and tenantKey', async () => {
       await expect(
-        JustGoWaitlist.create(baseRow({ phoneE164: undefined })),
-      ).rejects.toThrow(/phoneE164/);
+        JustGoWaitlist.create(baseRow({ email: undefined })),
+      ).rejects.toThrow(/email/);
       await expect(
         JustGoWaitlist.create(baseRow({ tenantKey: undefined, shareCode: 'othercode1' })),
       ).rejects.toThrow(/tenantKey/);
@@ -164,7 +164,7 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
 
     it('rejects an invalid source', async () => {
       await expect(
-        JustGoWaitlist.create(baseRow({ source: 'email', shareCode: 'othercode1' })),
+        JustGoWaitlist.create(baseRow({ source: 'sms', shareCode: 'othercode1' })),
       ).rejects.toThrow(/source/);
     });
   });

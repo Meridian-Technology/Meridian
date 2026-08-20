@@ -9,6 +9,8 @@ const mockIsWww = jest.fn(() => true);
 jest.mock('../../config/tenantRedirect', () => ({
   isWww: (...args) => mockIsWww(...args),
   isJustGoHost: (...args) => mockIsJustGoHost(...args),
+  isJustGoWwwHost: () => false,
+  justGoApexUrl: (path) => `https://justgo.lol${path || '/'}`,
   isPathAllowedOnWww: () => true,
   isPathAllowedOnJustGoHost: () => true,
   hasDevTenantOverride: () => false,

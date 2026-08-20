@@ -2,11 +2,25 @@ jest.mock('../../services/getGlobalModelService', () => jest.fn());
 jest.mock('../../services/tenantConfigService', () => ({
   getTenantByKey: jest.fn(),
   getMergedTenants: jest.fn(),
+  upsertStoredTenantRow: jest.fn(),
 }));
 
 const getGlobalModels = require('../../services/getGlobalModelService');
-const { getTenantByKey, getMergedTenants } = require('../../services/tenantConfigService');
-const { recordLandingEvent, getLandingConfig } = require('../../services/pivotLandingService');
+const {
+  getTenantByKey,
+  getMergedTenants,
+  upsertStoredTenantRow,
+} = require('../../services/tenantConfigService');
+const {
+  recordLandingEvent,
+  getLandingConfig,
+  getTenantLaunchStats,
+  getFleetLaunchStats,
+  updateTenantLandingMode,
+  parseLaunchRange,
+  conversionRateForMode,
+  CONVERSION_USES_CURRENT_MODE_NOTE,
+} = require('../../services/pivotLandingService');
 
 const NYC_TENANT = {
   tenantKey: 'nyc',
@@ -308,6 +322,329 @@ describe('getLandingConfig (Task 2.3)', () => {
 
     const campusOnly = await getLandingConfig(mockReq(), { tenantKey: 'rpi' });
     expect(campusOnly.code).toBe('TENANT_NOT_FOUND');
+  });
+});
+
+function mockLaunchAggregates({ eventFacet = {}, waitlistFacet = {}, qrScanRows = [] } = {}) {
+  const eventAggregate = jest.fn().mockResolvedValue([eventFacet]);
+  const waitlistAggregate = jest.fn().mockResolvedValue([waitlistFacet]);
+  const qrAggregate = jest.fn().mockResolvedValue(qrScanRows);
+  getGlobalModels.mockReturnValue({
+    JustGoLandingEvent: { aggregate: eventAggregate },
+    JustGoWaitlist: { aggregate: waitlistAggregate },
+    JustGoLandingQr: { aggregate: qrAggregate },
+  });
+  return { eventAggregate, waitlistAggregate, qrAggregate };
+}
+
+describe('launch admin metrics (Task 4.1)', () => {
+  const waitlistCity = {
+    tenantKey: 'nyc',
+    tenantType: 'pivot',
+    status: 'coming_soon',
+    location: 'New York City',
+    name: 'New York',
+    landingMode: 'waitlist',
+  };
+  const launchedCity = {
+    tenantKey: 'sf',
+    tenantType: 'pivot',
+    status: 'active',
+    location: 'San Francisco',
+    name: 'San Francisco',
+    landingMode: 'launched',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getTenantByKey.mockResolvedValue(waitlistCity);
+    getMergedTenants.mockResolvedValue([waitlistCity, launchedCity]);
+    upsertStoredTenantRow.mockResolvedValue({ ...waitlistCity, landingMode: 'launched' });
+  });
+
+  it('conversionRateForMode uses current mode (waitlist signups vs launched clicks)', () => {
+    const mixed = { views: 10, waitlistSignups: 2, storeClicks: 5 };
+    expect(conversionRateForMode('waitlist', mixed)).toBe(0.2);
+    expect(conversionRateForMode('launched', mixed)).toBe(0.5);
+    expect(conversionRateForMode('waitlist', { views: 0, waitlistSignups: 4 })).toBe(0);
+  });
+
+  it('parseLaunchRange defaults to the last 28 days', () => {
+    const now = new Date('2026-08-19T18:00:00.000Z');
+    const range = parseLaunchRange({}, now);
+    expect(range.from.toISOString()).toBe('2026-07-22T18:00:00.000Z');
+    expect(range.to.toISOString()).toBe('2026-08-19T18:00:00.000Z');
+  });
+
+  it('parseLaunchRange treats date-only to as end of UTC day', () => {
+    const range = parseLaunchRange({ from: '2026-08-01', to: '2026-08-02' });
+    expect(range.from.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(range.to.toISOString()).toBe('2026-08-02T23:59:59.999Z');
+  });
+
+  it('city launch KPIs use current waitlist mode even if clicks outnumber signups', async () => {
+    mockLaunchAggregates({
+      eventFacet: {
+        byType: [
+          { _id: 'view', count: 10 },
+          { _id: 'store_click', count: 5 },
+        ],
+        uniqueVisitors: [{ count: 7 }],
+        bySourceType: [
+          { _id: { source: 'direct', type: 'view' }, count: 8 },
+          { _id: { source: 'share', type: 'view' }, count: 2 },
+          { _id: { source: 'direct', type: 'store_click' }, count: 5 },
+        ],
+        uniqueBySource: [
+          { _id: 'direct', visitors: ['a', 'b', 'c'] },
+          { _id: 'share', visitors: ['d'] },
+        ],
+        series: [
+          {
+            _id: { day: '2026-08-18', type: 'view' },
+            count: 10,
+            visitors: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+          },
+        ],
+      },
+      waitlistFacet: {
+        total: [{ count: 2 }],
+        bySource: [{ _id: 'direct', count: 2 }],
+        series: [{ _id: '2026-08-18', count: 2 }],
+        lastSignup: [{ createdAt: new Date('2026-08-18T12:00:00.000Z') }],
+      },
+    });
+
+    const result = await getTenantLaunchStats(mockReq(), {
+      tenantKey: 'nyc',
+      from: '2026-08-18',
+      to: '2026-08-18',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.data.landingMode).toBe('waitlist');
+    expect(result.data.publicUrl).toMatch(/\/nyc$/);
+    expect(result.data.conversionNote).toBe(CONVERSION_USES_CURRENT_MODE_NOTE);
+    expect(result.data.totals).toEqual({
+      views: 10,
+      uniqueVisitors: 7,
+      waitlistSignups: 2,
+      storeClicks: 5,
+      conversionRate: 0.2,
+    });
+    expect(result.data.sources.direct.views).toBe(8);
+    expect(result.data.sources.share.views).toBe(2);
+    expect(result.data.sources.qr.views).toBe(0);
+    expect(result.data.qr).toEqual({ scans: 0, views: 0, byName: [] });
+    expect(result.data.series).toHaveLength(1);
+    expect(result.data.series[0]).toEqual({
+      date: '2026-08-18',
+      views: 10,
+      uniqueVisitors: 7,
+      waitlistSignups: 2,
+      storeClicks: 0,
+    });
+  });
+
+  it('city launch KPIs switch conversion to store clicks when currently launched', async () => {
+    getTenantByKey.mockResolvedValue(launchedCity);
+    mockLaunchAggregates({
+      eventFacet: {
+        byType: [
+          { _id: 'view', count: 10 },
+          { _id: 'store_click', count: 5 },
+        ],
+        uniqueVisitors: [{ count: 4 }],
+        bySourceType: [],
+        uniqueBySource: [],
+        series: [],
+      },
+      waitlistFacet: {
+        total: [{ count: 2 }],
+        bySource: [],
+        series: [],
+        lastSignup: [],
+      },
+    });
+
+    const result = await getTenantLaunchStats(mockReq(), {
+      tenantKey: 'sf',
+      from: '2026-08-01',
+      to: '2026-08-19',
+    });
+
+    expect(result.data.landingMode).toBe('launched');
+    expect(result.data.totals.conversionRate).toBe(0.5);
+  });
+
+  it('returns TENANT_NOT_FOUND for campus or missing cities', async () => {
+    getTenantByKey.mockResolvedValue({ tenantKey: 'rpi', tenantType: 'campus' });
+    const campus = await getTenantLaunchStats(mockReq(), { tenantKey: 'rpi' });
+    expect(campus.code).toBe('TENANT_NOT_FOUND');
+    expect(getGlobalModels).not.toHaveBeenCalled();
+  });
+
+  it('fleet rollup uses each city current mode and does not crash when empty', async () => {
+    mockLaunchAggregates({
+      eventFacet: {
+        byTenantType: [
+          { _id: { tenantKey: 'nyc', type: 'view' }, count: 10 },
+          { _id: { tenantKey: 'nyc', type: 'store_click' }, count: 1 },
+          { _id: { tenantKey: 'sf', type: 'view' }, count: 20 },
+          { _id: { tenantKey: 'sf', type: 'store_click' }, count: 8 },
+        ],
+        uniqueByTenant: [
+          { _id: 'nyc', count: 6 },
+          { _id: 'sf', count: 9 },
+        ],
+        uniqueTotal: [{ count: 14 }],
+      },
+      waitlistFacet: {
+        byTenant: [
+          { _id: 'nyc', count: 4 },
+          { _id: 'sf', count: 1 },
+        ],
+        lastSignupByTenant: [
+          { _id: 'nyc', lastSignupAt: new Date('2026-08-10T00:00:00.000Z') },
+        ],
+      },
+    });
+
+    const result = await getFleetLaunchStats(mockReq(), {
+      from: '2026-08-01',
+      to: '2026-08-19',
+    });
+
+    expect(result.data.cities.map((row) => row.tenantKey)).toEqual(['nyc', 'sf']);
+    expect(result.data.cities[0]).toEqual(
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        landingMode: 'waitlist',
+        views: 10,
+        waitlistSignups: 4,
+        storeClicks: 1,
+        conversionRate: 0.4,
+        lastSignupAt: '2026-08-10T00:00:00.000Z',
+      }),
+    );
+    expect(result.data.cities[1]).toEqual(
+      expect.objectContaining({
+        tenantKey: 'sf',
+        landingMode: 'launched',
+        views: 20,
+        waitlistSignups: 1,
+        storeClicks: 8,
+        conversionRate: 0.4,
+      }),
+    );
+    expect(result.data.totals.views).toBe(30);
+    expect(result.data.totals.uniqueVisitors).toBe(14);
+    expect(result.data.totals.waitlistSignups).toBe(5);
+    expect(result.data.totals.storeClicks).toBe(9);
+    // nyc waitlist 4 + sf launched 8 = 12 / 30 views
+    expect(result.data.totals.conversionRate).toBe(0.4);
+
+    getMergedTenants.mockResolvedValue([]);
+    const empty = await getFleetLaunchStats(mockReq());
+    expect(empty.data.cities).toEqual([]);
+    expect(empty.data.totals.views).toBe(0);
+  });
+
+  it('joins QR hop scans with source=qr landing views without treating scans as conversion', async () => {
+    mockLaunchAggregates({
+      eventFacet: {
+        byType: [
+          { _id: 'view', count: 10 },
+          { _id: 'store_click', count: 5 },
+        ],
+        uniqueVisitors: [{ count: 7 }],
+        bySourceType: [
+          { _id: { source: 'direct', type: 'view' }, count: 6 },
+          { _id: { source: 'qr', type: 'view' }, count: 4 },
+          { _id: { source: 'qr', type: 'store_click' }, count: 1 },
+        ],
+        uniqueBySource: [
+          { _id: 'direct', visitors: ['a', 'b'] },
+          { _id: 'qr', visitors: ['c', 'd', 'e'] },
+        ],
+        byQrNameType: [
+          { _id: { qrName: 'poster-night', type: 'view' }, count: 4 },
+          { _id: { qrName: 'poster-night', type: 'store_click' }, count: 1 },
+        ],
+        uniqueByQrName: [{ _id: 'poster-night', visitors: ['c', 'd', 'e'] }],
+        series: [],
+      },
+      waitlistFacet: {
+        total: [{ count: 2 }],
+        bySource: [{ _id: 'qr', count: 2 }],
+        byQrName: [{ _id: 'poster-night', count: 2 }],
+        series: [],
+        lastSignup: [],
+      },
+      qrScanRows: [{ _id: 'poster-night', scans: 6 }],
+    });
+
+    const result = await getTenantLaunchStats(mockReq(), {
+      tenantKey: 'nyc',
+      from: '2026-08-18',
+      to: '2026-08-18',
+    });
+
+    expect(result.data.totals).toEqual({
+      views: 10,
+      uniqueVisitors: 7,
+      waitlistSignups: 2,
+      storeClicks: 5,
+      conversionRate: 0.2,
+    });
+    expect(result.data.sources.qr).toEqual(
+      expect.objectContaining({
+        views: 4,
+        waitlistSignups: 2,
+        storeClicks: 1,
+      }),
+    );
+    expect(result.data.qr).toEqual({
+      scans: 6,
+      views: 4,
+      byName: [
+        {
+          qrName: 'poster-night',
+          scans: 6,
+          views: 4,
+          uniqueVisitors: 3,
+          waitlistSignups: 2,
+          storeClicks: 1,
+        },
+      ],
+    });
+  });
+
+  it('PATCH landingMode persists waitlist or launched', async () => {
+    const result = await updateTenantLandingMode(mockReq(), {
+      tenantKey: 'nyc',
+      landingMode: 'launched',
+    });
+    expect(result.data).toEqual({
+      tenantKey: 'nyc',
+      landingMode: 'launched',
+      publicUrl: expect.stringMatching(/\/nyc$/),
+    });
+    expect(upsertStoredTenantRow).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tenantKey: 'nyc', landingMode: 'launched' }),
+      null,
+    );
+
+    const invalid = await updateTenantLandingMode(mockReq(), {
+      tenantKey: 'nyc',
+      landingMode: 'preview',
+    });
+    expect(invalid).toEqual({
+      error: 'landingMode must be waitlist or launched.',
+      status: 400,
+      code: 'INVALID_LANDING_MODE',
+    });
   });
 });
 

@@ -5,7 +5,7 @@ import Banner from '../../components/Banner/Banner'; // Import your Banner compo
 import OrgInviteModal from '../../components/OrgInviteModal/OrgInviteModal';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
-import { isWww, isPathAllowedOnWww, isJustGoHost, isPathAllowedOnJustGoHost, hasDevTenantOverride, getLastTenant, getTenantKeys, getTenantRedirectUrl } from '../../config/tenantRedirect';
+import { isWww, isPathAllowedOnWww, isJustGoHost, isJustGoWwwHost, isPathAllowedOnJustGoHost, hasDevTenantOverride, getLastTenant, getTenantKeys, getTenantRedirectUrl, justGoApexUrl } from '../../config/tenantRedirect';
 import {
   applyJustGoTabIcon,
   restoreCampusTabIcon,
@@ -35,6 +35,14 @@ function Layout() {
   const pathAllowedOnHost = justGoHost
     ? isPathAllowedOnJustGoHost(location.pathname)
     : isPathAllowedOnWww(location.pathname);
+
+  useEffect(() => {
+    if (!isJustGoWwwHost()) return undefined;
+    window.location.replace(
+      justGoApexUrl(`${location.pathname}${location.search || ''}${location.hash || ''}`),
+    );
+    return undefined;
+  }, [location.hash, location.pathname, location.search]);
 
   useEffect(() => {
     if (hideCampusChrome) applyJustGoTabIcon();
