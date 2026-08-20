@@ -19,6 +19,7 @@ const pivotCreatorGrantSchema = require('../schemas/pivotCreatorGrant');
 const pivotCopyPackSchema = require('../schemas/pivotCopyPack');
 const justGoLandingEventSchema = require('../schemas/justGoLandingEvent');
 const justGoWaitlistSchema = require('../schemas/justGoWaitlist');
+const justGoLandingQrSchema = require('../schemas/justGoLandingQr');
 
 /**
  * Get models from the global/platform DB (cross-tenant data).
@@ -26,7 +27,7 @@ const justGoWaitlistSchema = require('../schemas/justGoWaitlist');
  * Requires req.globalDb to be set (see app.js middleware).
  *
  * @param {object} req - request with req.globalDb
- * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'JustGoLandingEvent', 'JustGoWaitlist', …
+ * @param {...string} names - model names including 'GlobalUser', 'PlatformRole', 'PlatformAdminInvite', 'PivotCitySource', 'PivotCreatorGrant', 'PivotCopyPack', 'JustGoLandingEvent', 'JustGoWaitlist', 'JustGoLandingQr', …
  * @returns {object} map of requested models
  */
 const getGlobalModels = (req, ...names) => {
@@ -108,6 +109,11 @@ const getGlobalModels = (req, ...names) => {
             'JustGoWaitlist',
             justGoWaitlistSchema,
             'justgo_waitlist'
+        ),
+        JustGoLandingQr: db.model(
+            'JustGoLandingQr',
+            justGoLandingQrSchema,
+            'justgo_landing_qrs'
         ),
     };
 

@@ -196,6 +196,12 @@ export default function JustGoLandingWaitlist({
           {waitlistMessage(copy, errorCode)}
         </p>
       ) : null}
+      <p className="justgo-landing__waitlist-consent">
+        {copy.waitlistConsent}{' '}
+        <Link to="/privacy-policy">{copy.footerPrivacy}</Link>
+        <span aria-hidden="true"> · </span>
+        <Link to="/terms-of-service">{copy.footerTerms}</Link>
+      </p>
       <button
         type="submit"
         className="justgo-landing__cta justgo-landing__cta--waitlist"
@@ -203,12 +209,6 @@ export default function JustGoLandingWaitlist({
       >
         {submitting ? copy.waitlistSubmitting : copy.waitlistSubmit}
       </button>
-      <p className="justgo-landing__waitlist-consent">
-        {copy.waitlistConsent}{' '}
-        <Link to="/privacy-policy">{copy.footerPrivacy}</Link>
-        <span aria-hidden="true"> · </span>
-        <Link to="/terms-of-service">{copy.footerTerms}</Link>
-      </p>
     </form>
   );
 }

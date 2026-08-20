@@ -9,13 +9,19 @@ import {
   buildWaitlistPayload,
   getOrMintLandingVisitorId,
   handleLandingStoreClick,
+  hasSeenLandingQr,
+  markLandingQrSeen,
   normalizeLandingSource,
   persistLandingAttribution,
   readLandingAttribution,
   recordLandingStoreClick,
   recordLandingView,
   resolveLandingEventTenantKey,
+  scanLandingQr,
+  buildLandingQrHopTo,
   submitLandingWaitlist,
+  justGoLandingAnalyticsProps,
+  JUSTGO_LANDING_QR_SCAN_PATH,
 } from './justGoLandingTracking';
 
 const mockApi = jest.fn();
@@ -185,6 +191,26 @@ describe('justGoLandingTracking (Task 1.3)', () => {
     });
   });
 
+  describe('justGoLandingAnalyticsProps', () => {
+    it('allowlists tenantKey, source, and store and never forwards a phone', () => {
+      expect(
+        justGoLandingAnalyticsProps({
+          tenantKey: 'nyc',
+          source: 'direct',
+          store: 'ios',
+          phone: '+14155550100',
+          phoneE164: '+14155550100',
+          visitorId: 'visitor-abc',
+          userAgent: 'Mozilla/5.0',
+        }),
+      ).toEqual({
+        tenantKey: 'nyc',
+        source: 'direct',
+        store: 'ios',
+      });
+    });
+  });
+
   describe('submitLandingWaitlist', () => {
     it('does not post without a city', async () => {
       const result = await submitLandingWaitlist({ phone: '555-0100', tenantKey: '' });
@@ -278,6 +304,67 @@ describe('justGoLandingTracking (Task 1.3)', () => {
         configurable: true,
         value: original,
       });
+    });
+  });
+
+  describe('QR hop (Task 5.2)', () => {
+    it('builds a city path with src=qr and keeps extra query', () => {
+      expect(
+        buildLandingQrHopTo({
+          tenantKey: 'Troy',
+          name: 'Poster-A',
+          search: '?utm=ig',
+          justGoHost: true,
+        }),
+      ).toBe('/troy?utm=ig&src=qr&qr=poster-a');
+    });
+
+    it('uses /justgo/{city} on the meridian alias', () => {
+      expect(
+        buildLandingQrHopTo({
+          tenantKey: 'troy',
+          name: 'poster-a',
+          justGoHost: false,
+        }),
+      ).toBe('/justgo/troy?src=qr&qr=poster-a');
+    });
+
+    it('posts a unique scan once per visitor+code', async () => {
+      mockApi.mockResolvedValue({
+        success: true,
+        data: { name: 'poster-a', tenantKey: 'troy', path: '/troy' },
+      });
+      const first = await scanLandingQr({ name: 'poster-a', search: '' });
+      expect(first.data.tenantKey).toBe('troy');
+      expect(hasSeenLandingQr('poster-a')).toBe(true);
+      expect(mockApi).toHaveBeenCalledWith(
+        JUSTGO_LANDING_QR_SCAN_PATH,
+        expect.objectContaining({ name: 'poster-a', unique: true }),
+      );
+
+      mockApi.mockClear();
+      mockApi.mockResolvedValue({
+        success: true,
+        data: { name: 'poster-a', tenantKey: 'troy', path: '/troy' },
+      });
+      await scanLandingQr({ name: 'poster-a', search: '' });
+      expect(mockApi).toHaveBeenCalledWith(
+        JUSTGO_LANDING_QR_SCAN_PATH,
+        expect.objectContaining({ unique: false }),
+      );
+    });
+
+    it('does not mark seen when the code is inactive', async () => {
+      mockApi.mockResolvedValue({
+        error: 'inactive',
+        code: 400,
+        errorCode: 'QR_INACTIVE',
+      });
+      const result = await scanLandingQr({ name: 'poster-a' });
+      expect(result.errorCode).toBe('QR_INACTIVE');
+      expect(hasSeenLandingQr('poster-a')).toBe(false);
+      markLandingQrSeen('poster-a');
+      expect(hasSeenLandingQr('poster-a')).toBe(true);
     });
   });
 });

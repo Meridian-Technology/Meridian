@@ -141,6 +141,20 @@ export function isJustGoHost(hostname = currentHostname()) {
   return host === 'localhost' && readJustGoHostOverride();
 }
 
+/** Canonical public origin. www.justgo.lol should 301 here once DNS exists. */
+export const JUSTGO_APEX_ORIGIN = 'https://justgo.lol';
+
+export function isJustGoWwwHost(hostname = currentHostname()) {
+  return normalizeHostname(hostname) === 'www.justgo.lol';
+}
+
+/** Absolute apex URL for a same-host path (used to drop www). */
+export function justGoApexUrl(pathWithSearch = '/') {
+  const next = pathWithSearch == null || pathWithSearch === '' ? '/' : String(pathWithSearch);
+  if (next.startsWith('http')) return next;
+  return `${JUSTGO_APEX_ORIGIN}${next.startsWith('/') ? next : `/${next}`}`;
+}
+
 export function isWww(hostname = currentHostname()) {
   const host = normalizeHostname(hostname);
   if (!host) return false;

@@ -117,6 +117,22 @@ const {
   patchCopyPack,
   resetCopyPack,
 } = require('../services/pivotCopyService');
+const {
+  getTenantLaunchStats,
+  getFleetLaunchStats,
+  updateTenantLandingMode,
+} = require('../services/pivotLandingService');
+const {
+  listTenantWaitlist,
+  exportTenantWaitlistCsv,
+  deleteTenantWaitlistRow,
+} = require('../services/pivotLandingWaitlistService');
+const {
+  listTenantLandingQrs,
+  createTenantLandingQr,
+  updateLandingQr,
+  deactivateLandingQr,
+} = require('../services/pivotLandingQrService');
 
 const router = express.Router();
 
@@ -470,6 +486,33 @@ router.get('/ops', verifyToken, requirePlatformAdmin, async (req, res) => {
   }
 });
 
+router.get('/launch', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await getFleetLaunchStats(req, {
+      from: req.query?.from,
+      to: req.query?.to,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/launch', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load fleet launch stats.',
+    });
+  }
+});
+
 router.get(
   '/tenants/:tenantKey/overview',
   verifyToken,
@@ -497,6 +540,308 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load tenant pivot overview.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/launch',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getTenantLaunchStats(req, {
+        tenantKey: req.params.tenantKey,
+        from: req.query?.from,
+        to: req.query?.to,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/launch', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant launch stats.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/waitlist.csv',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await exportTenantWaitlistCsv(req, {
+        tenantKey: req.params.tenantKey,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      res.set('Content-Type', result.contentType);
+      res.set('Content-Disposition', `attachment; filename="${result.filename}"`);
+      res.set('Cache-Control', 'no-store');
+      return res.status(200).send(result.body);
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/waitlist.csv', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to export waitlist.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/waitlist',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listTenantWaitlist(req, {
+        tenantKey: req.params.tenantKey,
+        page: req.query?.page,
+        limit: req.query?.limit,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      res.set('Cache-Control', 'no-store');
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/waitlist', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load waitlist.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/tenants/:tenantKey/waitlist/:id',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await deleteTenantWaitlistRow(req, {
+        tenantKey: req.params.tenantKey,
+        id: req.params.id,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      res.set('Cache-Control', 'no-store');
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('DELETE /admin/pivot/tenants/:tenantKey/waitlist/:id', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to delete waitlist signup.',
+      });
+    }
+  },
+);
+
+router.patch(
+  '/tenants/:tenantKey/landing-mode',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateTenantLandingMode(req, {
+        tenantKey: req.params.tenantKey,
+        landingMode: req.body?.landingMode,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('PATCH /admin/pivot/tenants/:tenantKey/landing-mode', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to update landing mode.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/landing-qrs',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listTenantLandingQrs(req, {
+        tenantKey: req.params.tenantKey,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/landing-qrs', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to list landing QRs.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/landing-qrs',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await createTenantLandingQr(req, {
+        tenantKey: req.params.tenantKey,
+        name: req.body?.name,
+        description: req.body?.description,
+        fgColor: req.body?.fgColor,
+        bgColor: req.body?.bgColor,
+        transparentBg: req.body?.transparentBg,
+        dotType: req.body?.dotType,
+        cornerType: req.body?.cornerType,
+        isActive: req.body?.isActive,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(result.status || 201).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/tenants/:tenantKey/landing-qrs', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to create landing QR.',
+      });
+    }
+  },
+);
+
+router.patch(
+  '/landing-qrs/:name',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateLandingQr(req, {
+        name: req.params.name,
+        description: req.body?.description,
+        fgColor: req.body?.fgColor,
+        bgColor: req.body?.bgColor,
+        transparentBg: req.body?.transparentBg,
+        dotType: req.body?.dotType,
+        cornerType: req.body?.cornerType,
+        isActive: req.body?.isActive,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('PATCH /admin/pivot/landing-qrs/:name', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to update landing QR.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/landing-qrs/:name',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await deactivateLandingQr(req, {
+        name: req.params.name,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('DELETE /admin/pivot/landing-qrs/:name', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to deactivate landing QR.',
       });
     }
   },

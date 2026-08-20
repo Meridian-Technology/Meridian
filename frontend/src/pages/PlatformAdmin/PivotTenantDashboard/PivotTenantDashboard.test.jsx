@@ -51,6 +51,9 @@ jest.mock('./PivotVoicePage', () => ({ scope, tenantKey }) => (
     city-voice-page:{scope}:{tenantKey}
   </div>
 ));
+jest.mock('./PivotTenantLaunchPage', () => ({ tenantKey }) => (
+  <div>city-launch-page:{tenantKey}</div>
+));
 jest.mock('./PivotTenantDropdown', () => () => <div>city-switcher</div>);
 jest.mock('./PivotJustGoLogo', () => () => <div>logo</div>);
 
@@ -86,12 +89,12 @@ function renderDashboard(path = '/platform-admin/pivot/nyc?page=4') {
   );
 }
 
-describe('PivotTenantDashboard Catalog + Voice shell', () => {
+describe('PivotTenantDashboard Catalog + Voice + Launch shell', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('keeps Catalog as page 4 and appends Voice as page 5', () => {
+  it('keeps Catalog as page 4, Voice as page 5, and appends Launch as page 6', () => {
     renderDashboard('/platform-admin/pivot/nyc');
 
     expect(screen.getByTestId('tenant-dash-shell')).toBeInTheDocument();
@@ -107,7 +110,12 @@ describe('PivotTenantDashboard Catalog + Voice shell', () => {
       'data-icon',
       'mdi:format-quote-close-outline',
     );
-    expect(screen.queryByTestId('menu-6')).toBeNull();
+    expect(screen.getByTestId('menu-6')).toHaveTextContent('Launch');
+    expect(screen.getByTestId('menu-6')).toHaveAttribute(
+      'data-icon',
+      'mdi:rocket-launch-outline',
+    );
+    expect(screen.queryByTestId('menu-7')).toBeNull();
   });
 
   it('keeps ?page=4 Catalog bookmarks on Catalog', () => {
@@ -115,6 +123,7 @@ describe('PivotTenantDashboard Catalog + Voice shell', () => {
 
     expect(screen.getByText('catalog-page')).toBeInTheDocument();
     expect(screen.queryByText(/city-voice-page/)).toBeNull();
+    expect(screen.queryByText(/city-launch-page/)).toBeNull();
     expect(screen.queryByText('curation-page')).toBeNull();
   });
 
@@ -123,5 +132,22 @@ describe('PivotTenantDashboard Catalog + Voice shell', () => {
 
     expect(screen.getByText('city-voice-page:tenant:nyc')).toBeInTheDocument();
     expect(screen.queryByText('catalog-page')).toBeNull();
+    expect(screen.queryByText(/city-launch-page/)).toBeNull();
+  });
+
+  it('shows city Launch at ?page=6 and keeps Overview off that page', () => {
+    renderDashboard('/platform-admin/pivot/nyc?page=6');
+
+    expect(screen.getByText('city-launch-page:nyc')).toBeInTheDocument();
+    expect(screen.queryByText('overview-page')).toBeNull();
+    expect(screen.queryByText(/city-voice-page/)).toBeNull();
+  });
+
+  it('does not show Launch (or waitlist phones) on Overview', () => {
+    renderDashboard('/platform-admin/pivot/nyc?page=0');
+
+    expect(screen.getByText('overview-page')).toBeInTheDocument();
+    expect(screen.queryByText(/city-launch-page/)).toBeNull();
+    expect(screen.queryByText(/\+1/)).toBeNull();
   });
 });

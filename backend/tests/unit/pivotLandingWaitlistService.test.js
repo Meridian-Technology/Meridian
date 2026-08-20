@@ -9,7 +9,14 @@ const { getTenantByKey, getMergedTenants } = require('../../services/tenantConfi
 const {
   joinWaitlist,
   attributeWaitlistShareRef,
+  listTenantWaitlist,
+  exportTenantWaitlistCsv,
+  deleteTenantWaitlistRow,
+  parseWaitlistId,
+  waitlistRowsToCsv,
 } = require('../../services/pivotLandingWaitlistService');
+
+const WAITLIST_ID = '507f1f77bcf86cd799439011';
 
 const NYC_TENANT = {
   tenantKey: 'nyc',
@@ -388,5 +395,185 @@ describe('waitlist ref attribution (Task 3.1)', () => {
     expect(result.code).toBe('WAITLIST_DUPLICATE');
     expect(create).not.toHaveBeenCalled();
     expect(updateOne).not.toHaveBeenCalled();
+  });
+});
+
+function mockWaitlistQuery({ rows = [], total = 0 } = {}) {
+  const lean = jest.fn().mockResolvedValue(rows);
+  const limit = jest.fn().mockReturnValue({ lean });
+  const skip = jest.fn().mockReturnValue({ limit });
+  const sort = jest.fn().mockReturnValue({ skip, lean });
+  const find = jest.fn().mockReturnValue({ sort });
+  const countDocuments = jest.fn().mockResolvedValue(total);
+  getGlobalModels.mockReturnValue({ JustGoWaitlist: { find, countDocuments } });
+  return { find, sort, skip, limit, lean, countDocuments };
+}
+
+describe('admin waitlist list + CSV (Task 4.1)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getTenantByKey.mockResolvedValue(NYC_TENANT);
+    getMergedTenants.mockResolvedValue([NYC_TENANT, SF_TENANT]);
+  });
+
+  const sampleRow = {
+    _id: WAITLIST_ID,
+    createdAt: new Date('2026-08-10T12:00:00.000Z'),
+    phoneE164: '+14155550100',
+    source: 'share',
+    qrName: 'poster-night',
+    refCode: 'abc12',
+    friendsJoined: 3,
+  };
+
+  it('returns a paginated table with phones for platform-admin consumers', async () => {
+    const { find, skip, limit, countDocuments } = mockWaitlistQuery({
+      rows: [sampleRow],
+      total: 21,
+    });
+
+    const result = await listTenantWaitlist(mockReq(), {
+      tenantKey: 'nyc',
+      page: 2,
+      limit: 10,
+    });
+
+    expect(result.data).toEqual({
+      tenantKey: 'nyc',
+      items: [
+        {
+          id: WAITLIST_ID,
+          createdAt: '2026-08-10T12:00:00.000Z',
+          phoneE164: '+14155550100',
+          source: 'share',
+          qrName: 'poster-night',
+          refCode: 'abc12',
+          friendsJoined: 3,
+        },
+      ],
+      pagination: { page: 2, limit: 10, total: 21 },
+    });
+    expect(find).toHaveBeenCalledWith({ tenantKey: 'nyc' });
+    expect(skip).toHaveBeenCalledWith(10);
+    expect(limit).toHaveBeenCalledWith(10);
+    expect(countDocuments).toHaveBeenCalledWith({ tenantKey: 'nyc' });
+  });
+
+  it('exports CSV with the same columns and escaped values', async () => {
+    mockWaitlistQuery({
+      rows: [
+        sampleRow,
+        {
+          createdAt: new Date('2026-08-09T00:00:00.000Z'),
+          phoneE164: '+14155550101',
+          source: 'direct',
+          qrName: null,
+          refCode: 'say "hi", friend',
+          friendsJoined: 0,
+        },
+      ],
+      total: 2,
+    });
+
+    const result = await exportTenantWaitlistCsv(mockReq(), { tenantKey: 'nyc' });
+    expect(result.contentType).toBe('text/csv; charset=utf-8');
+    expect(result.filename).toBe('justgo-waitlist-nyc.csv');
+    expect(result.body.split('\n')[0]).toBe(
+      'createdAt,phoneE164,source,qrName,refCode,friendsJoined',
+    );
+    expect(result.body).toContain('+14155550100');
+    expect(result.body).toContain('"say ""hi"", friend"');
+  });
+
+  it('waitlistRowsToCsv quotes commas and quotes', () => {
+    const csv = waitlistRowsToCsv([
+      {
+        createdAt: '2026-08-10T12:00:00.000Z',
+        phoneE164: '+14155550100',
+        source: 'direct',
+        qrName: null,
+        refCode: 'a,b',
+        friendsJoined: 0,
+      },
+    ]);
+    expect(csv).toContain('"a,b"');
+  });
+
+  it('returns TENANT_NOT_FOUND for campus tenants', async () => {
+    getTenantByKey.mockResolvedValue({ tenantKey: 'rpi', tenantType: 'campus' });
+    const result = await listTenantWaitlist(mockReq(), { tenantKey: 'rpi' });
+    expect(result.code).toBe('TENANT_NOT_FOUND');
+    expect(getGlobalModels).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleteTenantWaitlistRow (Task 6.1)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getTenantByKey.mockResolvedValue(NYC_TENANT);
+    getMergedTenants.mockResolvedValue([NYC_TENANT, SF_TENANT]);
+  });
+
+  function mockWaitlistDelete({ row = null } = {}) {
+    const lean = jest.fn().mockResolvedValue(row);
+    const findOneAndDelete = jest.fn().mockReturnValue({ lean });
+    getGlobalModels.mockReturnValue({ JustGoWaitlist: { findOneAndDelete } });
+    return { findOneAndDelete, lean };
+  }
+
+  it('deletes a row in that city and does not echo the phone', async () => {
+    const { findOneAndDelete } = mockWaitlistDelete({
+      row: { _id: WAITLIST_ID, tenantKey: 'nyc', phoneE164: '+14155550100' },
+    });
+
+    const result = await deleteTenantWaitlistRow(mockReq(), {
+      tenantKey: 'nyc',
+      id: WAITLIST_ID,
+    });
+
+    expect(findOneAndDelete).toHaveBeenCalledWith({ _id: WAITLIST_ID, tenantKey: 'nyc' });
+    expect(result.data).toEqual({
+      tenantKey: 'nyc',
+      id: WAITLIST_ID,
+      deleted: true,
+    });
+    expect(result.data).not.toHaveProperty('phone');
+    expect(result.data).not.toHaveProperty('phoneE164');
+    expect(JSON.stringify(result.data)).not.toMatch(/4155550100|\+14155550100/i);
+  });
+
+  it('returns WAITLIST_NOT_FOUND when the id is missing or belongs to another city', async () => {
+    mockWaitlistDelete({ row: null });
+    const result = await deleteTenantWaitlistRow(mockReq(), {
+      tenantKey: 'nyc',
+      id: WAITLIST_ID,
+    });
+    expect(result.code).toBe('WAITLIST_NOT_FOUND');
+    expect(result.status).toBe(404);
+  });
+
+  it('returns INVALID_WAITLIST_ID for a non-ObjectId', async () => {
+    const result = await deleteTenantWaitlistRow(mockReq(), {
+      tenantKey: 'nyc',
+      id: 'not-an-id',
+    });
+    expect(result.code).toBe('INVALID_WAITLIST_ID');
+    expect(result.status).toBe(400);
+    expect(getGlobalModels).not.toHaveBeenCalled();
+  });
+
+  it('rejects 12-character strings that mongoose would otherwise treat as ObjectIds', () => {
+    expect(parseWaitlistId('abcdefghijkl')).toBeNull();
+    expect(parseWaitlistId(WAITLIST_ID)).toBe(WAITLIST_ID);
+  });
+
+  it('returns TENANT_NOT_FOUND for campus tenants', async () => {
+    getTenantByKey.mockResolvedValue({ tenantKey: 'rpi', tenantType: 'campus' });
+    const result = await deleteTenantWaitlistRow(mockReq(), {
+      tenantKey: 'rpi',
+      id: WAITLIST_ID,
+    });
+    expect(result.code).toBe('TENANT_NOT_FOUND');
+    expect(getGlobalModels).not.toHaveBeenCalled();
   });
 });

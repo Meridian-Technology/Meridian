@@ -5,6 +5,7 @@
  */
 
 const { randomBytes } = require('crypto');
+const mongoose = require('mongoose');
 const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey, getMergedTenants } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
@@ -267,6 +268,169 @@ async function joinWaitlist(req, body = {}) {
   return { data: publicWaitlistPayload(created, req) };
 }
 
+const WAITLIST_PAGE_DEFAULT = 50;
+const WAITLIST_PAGE_MAX = 100;
+
+const WAITLIST_CSV_COLUMNS = Object.freeze([
+  'createdAt',
+  'phoneE164',
+  'source',
+  'qrName',
+  'refCode',
+  'friendsJoined',
+]);
+
+function cityNotFound() {
+  return {
+    error: 'City not found.',
+    status: 404,
+    code: 'TENANT_NOT_FOUND',
+  };
+}
+
+async function resolveAdminWaitlistTenant(req, tenantKeyRaw) {
+  const tenantKey = String(tenantKeyRaw || '').trim().toLowerCase();
+  if (!tenantKey) return cityNotFound();
+  const tenant = await getTenantByKey(req, tenantKey);
+  if (!tenant || !isPivotTenant(tenant)) return cityNotFound();
+  return { tenant };
+}
+
+function parsePage(value) {
+  const parsed = Number.parseInt(String(value ?? 1), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return parsed;
+}
+
+function parseLimit(value) {
+  const parsed = Number.parseInt(String(value ?? WAITLIST_PAGE_DEFAULT), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return WAITLIST_PAGE_DEFAULT;
+  return Math.min(WAITLIST_PAGE_MAX, parsed);
+}
+
+function parseWaitlistId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (!mongoose.Types.ObjectId.isValid(raw)) return null;
+  try {
+    if (String(new mongoose.Types.ObjectId(raw)) !== raw) return null;
+  } catch {
+    return null;
+  }
+  return raw;
+}
+
+function serializeWaitlistAdminRow(row) {
+  return {
+    id: row._id != null ? String(row._id) : null,
+    createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
+    phoneE164: row.phoneE164 || null,
+    source: row.source || 'direct',
+    qrName: row.qrName || null,
+    refCode: row.refCode || null,
+    friendsJoined: Number(row.friendsJoined) || 0,
+  };
+}
+
+function csvEscape(value) {
+  const s = value == null ? '' : String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function waitlistRowsToCsv(rows) {
+  const header = WAITLIST_CSV_COLUMNS.join(',');
+  const lines = rows.map((row) =>
+    WAITLIST_CSV_COLUMNS.map((key) => csvEscape(row[key])).join(','),
+  );
+  return [header, ...lines].join('\n');
+}
+
+async function listTenantWaitlist(req, options = {}) {
+  const resolved = await resolveAdminWaitlistTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+
+  const page = parsePage(options.page);
+  const limit = parseLimit(options.limit);
+  const skip = (page - 1) * limit;
+  const tenantKey = resolved.tenant.tenantKey;
+  const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
+
+  const [total, docs] = await Promise.all([
+    JustGoWaitlist.countDocuments({ tenantKey }),
+    JustGoWaitlist.find({ tenantKey })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+  ]);
+
+  return {
+    data: {
+      tenantKey,
+      items: (docs || []).map(serializeWaitlistAdminRow),
+      pagination: {
+        page,
+        limit,
+        total,
+      },
+    },
+  };
+}
+
+async function exportTenantWaitlistCsv(req, options = {}) {
+  const resolved = await resolveAdminWaitlistTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+
+  const tenantKey = resolved.tenant.tenantKey;
+  const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
+  const docs = await JustGoWaitlist.find({ tenantKey }).sort({ createdAt: -1 }).lean();
+  const rows = (docs || []).map(serializeWaitlistAdminRow);
+
+  return {
+    contentType: 'text/csv; charset=utf-8',
+    filename: `justgo-waitlist-${tenantKey}.csv`,
+    body: waitlistRowsToCsv(rows),
+  };
+}
+
+/**
+ * Hard-delete one waitlist row for ops mistakes. No self-serve public delete.
+ * Response never echoes the phone.
+ */
+async function deleteTenantWaitlistRow(req, options = {}) {
+  const resolved = await resolveAdminWaitlistTenant(req, options.tenantKey);
+  if (resolved.error) return resolved;
+
+  const id = parseWaitlistId(options.id);
+  if (!id) {
+    return {
+      error: 'Waitlist id is invalid.',
+      status: 400,
+      code: 'INVALID_WAITLIST_ID',
+    };
+  }
+
+  const tenantKey = resolved.tenant.tenantKey;
+  const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
+  const deleted = await JustGoWaitlist.findOneAndDelete({ _id: id, tenantKey }).lean();
+  if (!deleted) {
+    return {
+      error: 'Waitlist signup not found.',
+      status: 404,
+      code: 'WAITLIST_NOT_FOUND',
+    };
+  }
+
+  return {
+    data: {
+      tenantKey,
+      id: String(deleted._id),
+      deleted: true,
+    },
+  };
+}
+
 module.exports = {
   joinWaitlist,
   resolveWaitlistCity,
@@ -275,4 +439,13 @@ module.exports = {
   normalizeWaitlistShareCode,
   attributeWaitlistShareRef,
   publicWaitlistPayload,
+  listTenantWaitlist,
+  exportTenantWaitlistCsv,
+  deleteTenantWaitlistRow,
+  parseWaitlistId,
+  serializeWaitlistAdminRow,
+  waitlistRowsToCsv,
+  WAITLIST_CSV_COLUMNS,
+  WAITLIST_PAGE_DEFAULT,
+  WAITLIST_PAGE_MAX,
 };

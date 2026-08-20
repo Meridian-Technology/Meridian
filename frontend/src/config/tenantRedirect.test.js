@@ -2,9 +2,11 @@ import {
   JUSTGO_HOST_OVERRIDE_KEY,
   getCurrentTenantKey,
   isJustGoHost,
+  isJustGoWwwHost,
   isPathAllowedOnJustGoHost,
   isPathAllowedOnWww,
   isWww,
+  justGoApexUrl,
   tenantKeyFromHostname,
 } from './tenantRedirect';
 
@@ -30,6 +32,19 @@ describe('isJustGoHost', () => {
     window.localStorage.setItem(JUSTGO_HOST_OVERRIDE_KEY, '1');
     expect(isJustGoHost('localhost')).toBe(true);
     expect(isJustGoHost('meridian.study')).toBe(false);
+  });
+});
+
+describe('justGo www → apex', () => {
+  it('treats only www.justgo.lol as the www host', () => {
+    expect(isJustGoWwwHost('www.justgo.lol')).toBe(true);
+    expect(isJustGoWwwHost('justgo.lol')).toBe(false);
+    expect(isJustGoWwwHost('www.meridian.study')).toBe(false);
+  });
+
+  it('builds apex URLs for the canonical public origin', () => {
+    expect(justGoApexUrl('/troy?ref=abc')).toBe('https://justgo.lol/troy?ref=abc');
+    expect(justGoApexUrl('/')).toBe('https://justgo.lol/');
   });
 });
 

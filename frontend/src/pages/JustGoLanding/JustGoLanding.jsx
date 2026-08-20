@@ -31,6 +31,7 @@ import {
   writeStoredLandingCity,
 } from './justGoLandingUtils';
 import { useJustGoLandingMotion } from './justGoLandingMotion';
+import { isJustGoHost } from '../../config/tenantRedirect';
 import { recordLandingView } from './justGoLandingTracking';
 import JustGoLandingCityPicker from './JustGoLandingCityPicker';
 import JustGoLandingStoreLink from './JustGoLandingStoreLink';
@@ -256,6 +257,25 @@ function JustGoLanding() {
       link.remove();
     };
   }, [lockedTenantKey]);
+
+  useEffect(() => {
+    const aliasHost = !isJustGoHost();
+    let robots = document.querySelector('meta[name="robots"][data-justgo-robots]');
+    if (!aliasHost) {
+      robots?.remove();
+      return undefined;
+    }
+    if (!robots) {
+      robots = document.createElement('meta');
+      robots.setAttribute('name', 'robots');
+      robots.setAttribute('data-justgo-robots', '1');
+      document.head.appendChild(robots);
+    }
+    robots.setAttribute('content', 'noindex, nofollow');
+    return () => {
+      robots.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

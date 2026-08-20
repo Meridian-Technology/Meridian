@@ -8,6 +8,8 @@ export const JUSTGO_LANDING_QR_KEY = 'justgo.landing.qr';
 export const JUSTGO_LANDING_REF_KEY = 'justgo.landing.ref';
 export const JUSTGO_LANDING_EVENT_PATH = '/pivot/landing/event';
 export const JUSTGO_LANDING_WAITLIST_PATH = '/pivot/landing/waitlist';
+export const JUSTGO_LANDING_QR_SCAN_PATH = '/pivot/landing/qr-scan';
+export const JUSTGO_LANDING_QR_SEEN_KEY = 'justgo.landing.qr.seen';
 
 export const JUSTGO_LANDING_SOURCES = Object.freeze(['direct', 'share', 'qr']);
 
@@ -109,6 +111,17 @@ function compactBody(body) {
   return out;
 }
 
+/**
+ * Mixpanel props for landing events. Allowlist only — never phone, visitorId, or UA.
+ */
+export function justGoLandingAnalyticsProps(body = {}) {
+  return compactBody({
+    tenantKey: body.tenantKey,
+    source: body.source,
+    store: body.store,
+  });
+}
+
 function locationBits() {
   if (typeof window === 'undefined' || !window.location) {
     return { host: 'unknown', path: '/' };
@@ -142,14 +155,6 @@ export function buildLandingEventBody({
   });
 }
 
-function analyticsProps(body) {
-  return compactBody({
-    tenantKey: body.tenantKey,
-    source: body.source,
-    store: body.store,
-  });
-}
-
 export function postLandingEvent(body) {
   return apiRequest(JUSTGO_LANDING_EVENT_PATH, body).catch(() => {});
 }
@@ -161,7 +166,7 @@ export function recordLandingView({ tenantKey, search } = {}) {
     tenantKey: resolveLandingEventTenantKey(tenantKey, { forView: true }),
     search,
   });
-  analytics.track('justgo_landing_view', analyticsProps(body));
+  analytics.track('justgo_landing_view', justGoLandingAnalyticsProps(body));
   void postLandingEvent(body);
   return body;
 }
@@ -174,7 +179,7 @@ export function recordLandingStoreClick({ tenantKey, store = 'ios', search } = {
     store,
     search,
   });
-  analytics.track('justgo_landing_store_click', analyticsProps(body));
+  analytics.track('justgo_landing_store_click', justGoLandingAnalyticsProps(body));
   void postLandingEvent(body);
   return body;
 }
@@ -182,14 +187,6 @@ export function recordLandingStoreClick({ tenantKey, store = 'ios', search } = {
 /** Fire-and-forget. Never preventDefault — a failed POST must not eat the click. */
 export function handleLandingStoreClick(event, { tenantKey, store = 'ios' } = {}) {
   recordLandingStoreClick({ tenantKey, store });
-}
-
-function waitlistAnalyticsProps(body) {
-  return compactBody({
-    tenantKey: body.tenantKey,
-    source: body.source,
-    store: body.store,
-  });
 }
 
 export function buildWaitlistPayload({ phone, tenantKey, search } = {}) {
@@ -222,7 +219,7 @@ export async function submitLandingWaitlist({ phone, tenantKey, search } = {}) {
     return { error: true, errorCode: 'INVALID_PHONE', status: 400 };
   }
 
-  analytics.track('justgo_landing_waitlist_submit', waitlistAnalyticsProps(payload));
+  analytics.track('justgo_landing_waitlist_submit', justGoLandingAnalyticsProps(payload));
   const res = await apiRequest(JUSTGO_LANDING_WAITLIST_PATH, payload);
   if (res?.error) {
     return {
@@ -233,4 +230,71 @@ export async function submitLandingWaitlist({ phone, tenantKey, search } = {}) {
     };
   }
   return { data: res?.data || {} };
+}
+
+function readSeenLandingQrs() {
+  try {
+    const raw = window.localStorage.getItem(JUSTGO_LANDING_QR_SEEN_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function hasSeenLandingQr(name) {
+  const slug = String(name || '').trim().toLowerCase();
+  if (!slug) return false;
+  return Boolean(readSeenLandingQrs()[slug]);
+}
+
+export function markLandingQrSeen(name) {
+  const slug = String(name || '').trim().toLowerCase();
+  if (!slug) return;
+  const seen = readSeenLandingQrs();
+  seen[slug] = true;
+  try {
+    window.localStorage.setItem(JUSTGO_LANDING_QR_SEEN_KEY, JSON.stringify(seen));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+/** Same-app path after a scan. Just Go apex uses `/{city}`; meridian alias uses `/justgo/{city}`. */
+export function buildLandingQrHopTo({ tenantKey, name, search, justGoHost = true } = {}) {
+  const key = String(tenantKey || '').trim().toLowerCase();
+  const slug = String(name || '').trim().toLowerCase();
+  const params = new URLSearchParams(String(search || '').replace(/^\?/, ''));
+  params.set('src', 'qr');
+  params.set('qr', slug);
+  const prefix = justGoHost ? '' : '/justgo';
+  return `${prefix}/${encodeURIComponent(key)}?${params.toString()}`;
+}
+
+/**
+ * Record a named QR scan then return the city hop payload.
+ * Unique is first scan of this code for justgo.landing.visitor.
+ */
+export async function scanLandingQr({ name, search } = {}) {
+  const slug = String(name || '').trim().toLowerCase();
+  if (!slug) {
+    return { error: true, errorCode: 'QR_NOT_FOUND', status: 404 };
+  }
+  const visitorId = getOrMintLandingVisitorId();
+  const unique = !hasSeenLandingQr(slug);
+  const res = await apiRequest(JUSTGO_LANDING_QR_SCAN_PATH, {
+    name: slug,
+    visitorId,
+    unique,
+    search: search ?? (typeof window !== 'undefined' ? window.location.search : ''),
+  });
+  if (res?.error || !res?.data?.tenantKey) {
+    return {
+      error: true,
+      errorCode: res?.errorCode || 'QR_NOT_FOUND',
+      status: typeof res?.code === 'number' ? res.code : 404,
+    };
+  }
+  markLandingQrSeen(slug);
+  return { data: res.data };
 }

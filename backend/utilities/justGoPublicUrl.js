@@ -47,9 +47,34 @@ function justGoWaitlistShareUrl(tenantKey, shareCode, req, options) {
   return `${base}?${params.toString()}`;
 }
 
+function justGoLandingQrUrl(name, req, options) {
+  const slug = String(name || '').trim().toLowerCase();
+  return justGoPublicUrl(`/qr/${encodeURIComponent(slug)}`, req, options);
+}
+
+/** City landing after a scan. Forces src=qr and qr={name}; keeps other query params. */
+function justGoLandingQrHopUrl(tenantKey, name, req, extraSearch, options) {
+  const key = String(tenantKey || '').trim().toLowerCase();
+  const slug = String(name || '').trim().toLowerCase();
+  const params = new URLSearchParams();
+  const raw = extraSearch == null ? '' : String(extraSearch).replace(/^\?/, '');
+  if (raw) {
+    new URLSearchParams(raw).forEach((value, paramKey) => {
+      if (paramKey === 'src' || paramKey === 'qr') return;
+      params.set(paramKey, value);
+    });
+  }
+  params.set('src', 'qr');
+  params.set('qr', slug);
+  const base = justGoPublicUrl(`/${encodeURIComponent(key)}`, req, options);
+  return `${base}?${params.toString()}`;
+}
+
 module.exports = {
   JUSTGO_PUBLIC_ORIGIN,
   justGoPublicOrigin,
   justGoPublicUrl,
   justGoWaitlistShareUrl,
+  justGoLandingQrUrl,
+  justGoLandingQrHopUrl,
 };

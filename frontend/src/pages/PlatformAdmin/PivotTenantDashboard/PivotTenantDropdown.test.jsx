@@ -60,6 +60,21 @@ describe('remapPivotOpsSearch', () => {
     ).toBe('?page=1');
   });
 
+  it('maps fleet Launch to city Launch and back', () => {
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=2'), {
+        from: 'fleet',
+        to: 'city',
+      }),
+    ).toBe('?page=6');
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=6'), {
+        from: 'city',
+        to: 'fleet',
+      }),
+    ).toBe('?page=2');
+  });
+
   it('drops city-only pages to fleet Overview', () => {
     expect(
       remapPivotOpsSearch(new URLSearchParams('page=1'), {
@@ -69,6 +84,13 @@ describe('remapPivotOpsSearch', () => {
     ).toBe('');
     expect(
       remapPivotOpsSearch(new URLSearchParams('page=4'), {
+        from: 'city',
+        to: 'fleet',
+      }),
+    ).toBe('');
+    // City Drop deck is page=2; fleet Launch is also page=2 — do not confuse them.
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=2'), {
         from: 'city',
         to: 'fleet',
       }),
@@ -112,6 +134,22 @@ describe('PivotTenantDropdown switcher remap', () => {
     renderSwitcher('/platform-admin/pivot/nyc?page=1');
     switchTo(/All cities/i);
     expect(screen.getByTestId('path').textContent).toBe('/platform-admin/pivot');
+  });
+
+  it('lands All cities Launch on city Launch (page=6)', () => {
+    renderSwitcher('/platform-admin/pivot?page=2');
+    switchTo(/New York/i);
+    expect(screen.getByTestId('path').textContent).toBe(
+      '/platform-admin/pivot/nyc?page=6',
+    );
+  });
+
+  it('lands NYC Launch on All cities Launch (page=2)', () => {
+    renderSwitcher('/platform-admin/pivot/nyc?page=6');
+    switchTo(/All cities/i);
+    expect(screen.getByTestId('path').textContent).toBe(
+      '/platform-admin/pivot?page=2',
+    );
   });
 
   it('keeps NYC Catalog → Brooklyn Catalog at page=4', () => {

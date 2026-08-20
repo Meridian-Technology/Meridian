@@ -55,6 +55,7 @@ const {
 const { getPivotLandingDrop } = require('../services/pivotLandingDropService');
 const { recordLandingEvent, getLandingConfig } = require('../services/pivotLandingService');
 const { joinWaitlist } = require('../services/pivotLandingWaitlistService');
+const { hopLandingQr } = require('../services/pivotLandingQrService');
 const {
   pivotReferralValidateRateLimit,
 } = require('../middlewares/pivotReferralValidateRateLimit');
@@ -64,6 +65,7 @@ const {
   pivotLandingEventRateLimit,
   pivotLandingWaitlistRateLimit,
   pivotLandingConfigRateLimit,
+  pivotLandingQrHopRateLimit,
 } = require('../middlewares/pivotLandingDropRateLimit');
 const pivotCrewRoutes = require('./pivotCrewRoutes');
 const pivotCreatorRoutes = require('./pivotCreatorRoutes');
@@ -186,6 +188,27 @@ router.post('/landing/waitlist', pivotLandingWaitlistRateLimit, async (req, res)
     return res.status(500).json({
       success: false,
       message: 'Unable to join the waitlist.',
+    });
+  }
+});
+
+router.post('/landing/qr-scan', pivotLandingQrHopRateLimit, async (req, res) => {
+  try {
+    const result = await hopLandingQr(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({ success: true, data: result.data });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/landing/qr-scan', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to process QR scan.',
     });
   }
 });

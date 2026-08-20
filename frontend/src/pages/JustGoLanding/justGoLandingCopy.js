@@ -77,7 +77,7 @@ const justGoLandingCopy = Object.freeze({
   waitlistPhonePlaceholder: '(555) 555-0100',
   waitlistSubmit: 'save my spot',
   waitlistSubmitting: 'saving…',
-  waitlistConsent: 'by joining you agree to our',
+  waitlistConsent: 'we keep your number to let you into this city. by joining you agree to our',
   waitlistCityRequired: 'pick a city first',
   waitlistPhoneRequired: 'need a real phone number',
   waitlistDuplicate: "you're already on this city's list",

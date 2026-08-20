@@ -3,6 +3,8 @@ const {
   justGoPublicOrigin,
   justGoPublicUrl,
   justGoWaitlistShareUrl,
+  justGoLandingQrUrl,
+  justGoLandingQrHopUrl,
 } = require('../../utilities/justGoPublicUrl');
 
 describe('justGoPublicUrl (backend)', () => {
@@ -38,5 +40,20 @@ describe('justGoPublicUrl (backend)', () => {
     const url = justGoWaitlistShareUrl('NYC', 'abc123xyzz', null, { nodeEnv: 'production' });
     expect(url).toBe('https://justgo.lol/nyc?ref=abc123xyzz');
     expect(url).not.toMatch(/415|phone|\+/i);
+  });
+
+  it('builds a landing QR payload URL at /qr/{name}', () => {
+    expect(justGoLandingQrUrl('Poster-A', null, { nodeEnv: 'production' })).toBe(
+      'https://justgo.lol/qr/poster-a',
+    );
+    expect(justGoLandingQrUrl('troy', null, { nodeEnv: 'production' })).toBe(
+      'https://justgo.lol/qr/troy',
+    );
+  });
+
+  it('builds a QR hop URL with src=qr and preserved extra query', () => {
+    expect(justGoLandingQrHopUrl('Troy', 'Poster-A', null, '?utm=ig', { nodeEnv: 'production' })).toBe(
+      'https://justgo.lol/troy?utm=ig&src=qr&qr=poster-a',
+    );
   });
 });

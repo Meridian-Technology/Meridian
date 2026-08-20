@@ -110,12 +110,14 @@ function landingRoutes() {
         <>
           <Route path="/" element={<JustGoLanding />} />
           <Route path="/qr/:name" element={<JustGoQrHop />} />
+          <Route path="/justgo/qr/:name" element={<JustGoQrHop />} />
           <Route path="/:tenantKey" element={<JustGoApexCityLanding />} />
         </>
       ) : (
         <>
           <Route path="/" element={<p>campus landing</p>} />
           <Route path="/qr/:id" element={<p>campus qr</p>} />
+          <Route path="/justgo/qr/:name" element={<JustGoQrHop />} />
         </>
       )}
     </Routes>
@@ -273,6 +275,17 @@ describe('JustGoLanding', () => {
     expect(document.querySelector('link[rel="canonical"]')).toHaveAttribute(
       'href',
       justGoPublicLandingUrl('troy'),
+    );
+    expect(document.querySelector('meta[name="robots"][data-justgo-robots]')).toBeNull();
+  });
+
+  it('noindexes the meridian.study/justgo alias', async () => {
+    mockIsJustGoHost.mockReturnValue(false);
+    await renderLanding({ path: '/justgo' });
+
+    expect(document.querySelector('meta[name="robots"][data-justgo-robots]')).toHaveAttribute(
+      'content',
+      'noindex, nofollow',
     );
   });
 
@@ -474,19 +487,43 @@ describe('JustGoLanding', () => {
     ).toBeInTheDocument();
   });
 
-  it('does not treat /qr/:name as a city on a Just Go host', () => {
+  it('does not treat /qr/:name as a city on a Just Go host', async () => {
     mockIsJustGoHost.mockReturnValue(true);
     mockMatchMedia(true);
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/qr-scan') {
+        return Promise.resolve({
+          error: 'QR code not found.',
+          code: 404,
+          errorCode: 'QR_NOT_FOUND',
+        });
+      }
+      return Promise.resolve({ success: false });
+    });
     render(
       <MemoryRouter initialEntries={['/qr/poster-night']}>
         {landingRoutes()}
       </MemoryRouter>,
     );
     expect(screen.getByTestId('justgo-qr-hop')).toBeInTheDocument();
-    expect(screen.getByText(justGoLandingCopy.qrMissingTitle)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(justGoLandingCopy.qrMissingTitle)).toBeInTheDocument();
+    });
     expect(
       screen.queryByRole('heading', { name: /what are you doing this week/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it('keeps campus /qr/:id on a campus host', () => {
+    mockIsJustGoHost.mockReturnValue(false);
+    mockMatchMedia(true);
+    render(
+      <MemoryRouter initialEntries={['/qr/campus-code']}>
+        {landingRoutes()}
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('campus qr')).toBeInTheDocument();
+    expect(screen.queryByTestId('justgo-qr-hop')).not.toBeInTheDocument();
   });
 
   it('aliases /creator to the creator console on a Just Go host', () => {
@@ -632,6 +669,9 @@ describe('JustGoLanding', () => {
       'href',
       '/terms-of-service',
     );
+    const consent = within(form).getByText(justGoLandingCopy.waitlistConsent, { exact: false });
+    const submit = screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit });
+    expect(consent.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(dialog).queryByRole('listbox', { name: justGoLandingCopy.cityPickerLabel })).not.toBeInTheDocument();
     expect(screen.queryByRole('listbox', { name: justGoLandingCopy.cityPickerLabel })).not.toBeInTheDocument();
   });

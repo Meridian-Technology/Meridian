@@ -14,6 +14,10 @@ const {
  * (same city, not self). Available on iOS and Android; `store` records which
  * client signed up.
  *
+ * Retention: rows are kept until a platform admin deletes them
+ * (`DELETE /admin/pivot/tenants/:tenantKey/waitlist/:id`). No public self-serve
+ * delete in v1. Phones are PII — public APIs and Mixpanel never echo them.
+ *
  * Indexes:
  * - `justgo_waitlist_tenant_phone_unique` — `{ tenantKey, phoneE164 }` unique
  * - `justgo_waitlist_share_code_unique` — `{ shareCode }` unique

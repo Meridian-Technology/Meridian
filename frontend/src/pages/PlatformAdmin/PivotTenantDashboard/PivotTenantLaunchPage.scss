@@ -1,0 +1,115 @@
+.pivot-tenant-launch {
+  max-width: none;
+
+  .pivot-tenant-page__body {
+    max-width: 1100px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .admin-platform-trend-chart .header h2:empty,
+  .admin-platform-trend-chart .header:has(h2:empty):not(:has(.admin-platform-trend-chart__total)) {
+    display: none;
+  }
+
+  .admin-platform-trend-chart.visit-chart {
+    padding: 0;
+  }
+
+  &__mode-row,
+  &__link-row,
+  &__pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+  }
+
+  &__mode-copy {
+    flex: 1 1 220px;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--pivot-ops-ink-muted, rgba(26, 23, 20, 0.72));
+  }
+
+  &__chart {
+    margin: 12px 0;
+  }
+
+  &__qr-kpis {
+    margin-top: 16px;
+  }
+
+  &__bars-label {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__table-wrap {
+    overflow-x: auto;
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+
+    th,
+    td {
+      padding: 8px 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+      white-space: nowrap;
+    }
+
+    th {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+    }
+
+    tbody tr:hover {
+      background: var(--pivot-ops-hover, rgba(26, 23, 20, 0.04));
+    }
+  }
+
+  &__phone {
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  &__pager {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__table td:last-child {
+    width: 1%;
+  }
+
+  &__qr-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  &__qr-url {
+    margin-top: 6px;
+    max-width: 280px;
+    font-family: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+    word-break: break-all;
+    white-space: normal;
+  }
+}

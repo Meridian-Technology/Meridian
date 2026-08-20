@@ -118,6 +118,8 @@ describe('landingTenantKeyFromParam', () => {
     expect(landingTenantKeyFromParam('invite')).toBe('');
     expect(landingTenantKeyFromParam('justgo')).toBe('');
     expect(landingTenantKeyFromParam('platform-admin')).toBe('');
+    expect(landingTenantKeyFromParam('privacy-policy')).toBe('');
+    expect(landingTenantKeyFromParam('terms-of-service')).toBe('');
   });
 });
 
