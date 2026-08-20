@@ -131,6 +131,12 @@ const tenantEntrySchema = new mongoose.Schema(
       default: 'active',
     },
     statusMessage: { type: String, default: '', trim: true, maxlength: 240 },
+    /** Marketing CTA on justgo.lol — independent of `status` (subdomain/app availability). */
+    landingMode: {
+      type: String,
+      enum: ['waitlist', 'launched'],
+      default: 'waitlist',
+    },
     tenantType: {
       type: String,
       enum: ['campus', 'pivot'],

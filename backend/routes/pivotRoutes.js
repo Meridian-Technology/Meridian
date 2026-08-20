@@ -53,12 +53,17 @@ const {
   redeemPivotEntry,
 } = require('../services/pivotEntryService');
 const { getPivotLandingDrop } = require('../services/pivotLandingDropService');
+const { recordLandingEvent, getLandingConfig } = require('../services/pivotLandingService');
+const { joinWaitlist } = require('../services/pivotLandingWaitlistService');
 const {
   pivotReferralValidateRateLimit,
 } = require('../middlewares/pivotReferralValidateRateLimit');
 const {
   pivotLandingDropRateLimit,
   pivotLandingCopyRateLimit,
+  pivotLandingEventRateLimit,
+  pivotLandingWaitlistRateLimit,
+  pivotLandingConfigRateLimit,
 } = require('../middlewares/pivotLandingDropRateLimit');
 const pivotCrewRoutes = require('./pivotCrewRoutes');
 const pivotCreatorRoutes = require('./pivotCreatorRoutes');
@@ -94,6 +99,31 @@ router.get('/cities', async (req, res) => {
   }
 });
 
+router.get('/landing/config', pivotLandingConfigRateLimit, async (req, res) => {
+  try {
+    const result = await getLandingConfig(req, { tenantKey: req.query.tenantKey });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    res.set('Cache-Control', 'public, max-age=60');
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/landing/config', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load landing config.',
+    });
+  }
+});
+
 router.get('/landing/copy', pivotLandingCopyRateLimit, async (req, res) => {
   try {
     const result = await getPlatformLandingCopy(req, {
@@ -114,6 +144,48 @@ router.get('/landing/copy', pivotLandingCopyRateLimit, async (req, res) => {
         tokens: {},
         entries: {},
       },
+    });
+  }
+});
+
+router.post('/landing/event', pivotLandingEventRateLimit, async (req, res) => {
+  try {
+    const result = await recordLandingEvent(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/landing/event', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to record landing event.',
+    });
+  }
+});
+
+router.post('/landing/waitlist', pivotLandingWaitlistRateLimit, async (req, res) => {
+  try {
+    const result = await joinWaitlist(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({ success: true, data: result.data });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/landing/waitlist', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to join the waitlist.',
     });
   }
 });

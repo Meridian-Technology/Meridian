@@ -1,5 +1,14 @@
 const TENANT_STATUSES = new Set(['active', 'coming_soon', 'maintenance', 'hidden']);
 const TENANT_TYPES = new Set(['campus', 'pivot']);
+const LANDING_MODE_VALUES = ['waitlist', 'launched'];
+const LANDING_MODES = new Set(LANDING_MODE_VALUES);
+const DEFAULT_LANDING_MODE = 'waitlist';
+
+/** Sparse-safe: missing or unknown values read as waitlist. Independent of tenant status. */
+function resolveLandingMode(value) {
+  return LANDING_MODES.has(value) ? value : DEFAULT_LANDING_MODE;
+}
+
 const {
   mergePivotCrewConfigOverrides,
   validatePivotCrewConfigPatch,
@@ -138,6 +147,7 @@ function normalizeTenantRow(row = {}) {
     location: String(row?.location || '').trim(),
     status,
     statusMessage: String(row?.statusMessage || '').trim().slice(0, 240),
+    landingMode: resolveLandingMode(row?.landingMode),
     tenantType,
     pivotPilot: row?.pivotPilot === true || tenantType === 'pivot',
     mongoUri: String(row?.mongoUri || '').trim() || undefined,
@@ -178,6 +188,9 @@ function normalizeTenantOverride(row = {}) {
   }
   if (row.statusMessage !== undefined && row.statusMessage !== null) {
     out.statusMessage = String(row.statusMessage).trim().slice(0, 240);
+  }
+  if (row.landingMode !== undefined && LANDING_MODES.has(row.landingMode)) {
+    out.landingMode = row.landingMode;
   }
   if (row.tenantType !== undefined && TENANT_TYPES.has(row.tenantType)) {
     out.tenantType = row.tenantType;
@@ -322,12 +335,19 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
     }
     merged.set(row.tenantKey, next);
   });
-  return Array.from(merged.values());
+  return Array.from(merged.values()).map((row) => ({
+    ...row,
+    landingMode: resolveLandingMode(row.landingMode),
+  }));
 }
 
 module.exports = {
   TENANT_STATUSES,
   TENANT_TYPES,
+  LANDING_MODE_VALUES,
+  LANDING_MODES,
+  DEFAULT_LANDING_MODE,
+  resolveLandingMode,
   DEFAULT_TENANTS,
   normalizePivotDropOverrides,
   normalizePivotDropFields,

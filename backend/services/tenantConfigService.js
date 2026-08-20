@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const getGlobalModels = require('./getGlobalModelService');
 const {
   DEFAULT_TENANTS,
+  LANDING_MODES,
   normalizeTenantRow,
   normalizeTenantRows,
   normalizeTenantOverrides,
@@ -10,6 +11,7 @@ const {
   mergeTenantRows,
   normalizePivotDropFields,
   normalizePivotDropOverrides,
+  resolveLandingMode,
 } = require('../constants/defaultTenants');
 const { PIVOT_DROP_PILOT_DEFAULTS } = require('../utilities/pivotDropSchedule');
 const { validatePivotCrewConfigPatch } = require('../utilities/pivotCrewConfig');
@@ -88,6 +90,7 @@ function toStoredTenantRow(tenant) {
     location: tenant.location,
     status: tenant.status,
     statusMessage: tenant.statusMessage,
+    landingMode: resolveLandingMode(tenant.landingMode),
     tenantType: tenant.tenantType,
     pivotPilot: tenant.pivotPilot,
     mongoUri: tenant.mongoUri,
@@ -117,6 +120,12 @@ function toStoredTenantRow(tenant) {
         const payloadPc = payload.provisioningConfirmations || defaultConfirmations;
         if (JSON.stringify(payloadPc) !== JSON.stringify(defaultConfirmations)) {
           override.provisioningConfirmations = payload.provisioningConfirmations;
+        }
+        return;
+      }
+      if (key === 'landingMode') {
+        if (resolveLandingMode(payload.landingMode) !== resolveLandingMode(base?.[key])) {
+          override.landingMode = payload.landingMode;
         }
         return;
       }
@@ -350,6 +359,13 @@ function validateTenantMetadataUpdate(body = {}) {
     return { error: 'tenantType must be campus or pivot.' };
   }
 
+  if (body.landingMode !== undefined && !LANDING_MODES.has(body.landingMode)) {
+    return {
+      error: 'landingMode must be waitlist or launched.',
+      code: 'INVALID_LANDING_MODE',
+    };
+  }
+
   if (body.pivotDropTimezone !== undefined && !String(body.pivotDropTimezone).trim()) {
     return { error: 'pivotDropTimezone cannot be empty.' };
   }
@@ -409,6 +425,13 @@ function validateNewTenantPayload(body = {}) {
     return { error: 'Could not derive mongoUri. Provide mongoUri or set DEFAULT_MONGO_URI / MONGO_URI_RPI.' };
   }
 
+  if (body.landingMode !== undefined && !LANDING_MODES.has(body.landingMode)) {
+    return {
+      error: 'landingMode must be waitlist or launched.',
+      code: 'INVALID_LANDING_MODE',
+    };
+  }
+
   return {
     row: normalizeTenantRow({
       tenantKey,
@@ -417,6 +440,7 @@ function validateNewTenantPayload(body = {}) {
       location: body.location,
       status: body.status || 'coming_soon',
       statusMessage: body.statusMessage || '',
+      landingMode: body.landingMode,
       tenantType,
       pivotPilot: tenantType === 'pivot' || body.pivotPilot === true,
       mongoUri,
@@ -447,4 +471,6 @@ module.exports = {
   DEFAULT_TENANTS,
   mergeTenantRows,
   normalizeTenantRows,
+  LANDING_MODES,
+  resolveLandingMode,
 };

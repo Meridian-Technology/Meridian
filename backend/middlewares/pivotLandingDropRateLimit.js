@@ -4,7 +4,7 @@ const MAX_REQUESTS_PER_WINDOW = 60;
 
 function createLandingRateLimit({ message, code }) {
   const buckets = new Map();
-  return function pivotLandingRateLimit(req, res, next) {
+  function pivotLandingRateLimit(req, res, next) {
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
     const now = Date.now();
     let bucket = buckets.get(ip);
@@ -25,7 +25,9 @@ function createLandingRateLimit({ message, code }) {
     }
 
     return next();
-  };
+  }
+  pivotLandingRateLimit.reset = () => buckets.clear();
+  return pivotLandingRateLimit;
 }
 
 const pivotLandingDropRateLimit = createLandingRateLimit({
@@ -38,9 +40,27 @@ const pivotLandingCopyRateLimit = createLandingRateLimit({
   code: 'LANDING_COPY_RATE_LIMIT',
 });
 
+const pivotLandingEventRateLimit = createLandingRateLimit({
+  message: 'Too many landing events. Please try again in a minute.',
+  code: 'LANDING_EVENT_RATE_LIMIT',
+});
+
+const pivotLandingWaitlistRateLimit = createLandingRateLimit({
+  message: 'Too many waitlist requests. Please try again in a minute.',
+  code: 'WAITLIST_RATE_LIMIT',
+});
+
+const pivotLandingConfigRateLimit = createLandingRateLimit({
+  message: 'Too many config requests. Please try again in a minute.',
+  code: 'LANDING_CONFIG_RATE_LIMIT',
+});
+
 module.exports = {
   pivotLandingDropRateLimit,
   pivotLandingCopyRateLimit,
+  pivotLandingEventRateLimit,
+  pivotLandingWaitlistRateLimit,
+  pivotLandingConfigRateLimit,
   WINDOW_MS,
   MAX_REQUESTS_PER_WINDOW,
 };
