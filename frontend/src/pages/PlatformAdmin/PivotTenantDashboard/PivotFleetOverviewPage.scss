@@ -1,0 +1,55 @@
+.pivot-fleet-overview {
+  &__city-rail {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    margin: 0 0 12px;
+    padding: 2px 0 6px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  &__city-card {
+    flex: 0 0 168px;
+    scroll-snap-align: start;
+    padding: 12px 14px;
+    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+    border-radius: var(--pivot-ops-radius-control, 14px);
+    background: var(--pivot-ops-surface, #fff);
+    text-decoration: none;
+    color: inherit;
+    min-width: 0;
+  }
+
+  &__city-card:hover,
+  &__city-card:focus-visible {
+    border-color: color-mix(in srgb, var(--pivot-ops-accent, #ff4f1f) 45%, #ccc);
+  }
+
+  &__city-name {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink, #1a1714);
+  }
+
+  &__city-meta {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__event-city {
+    margin: 4px 0 0;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__host-alert {
+    margin-bottom: 12px;
+  }
+}

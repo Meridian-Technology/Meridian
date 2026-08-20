@@ -125,6 +125,30 @@ describe('pivotWeeklyDropService', () => {
     });
   });
 
+  it('resolveWeeklyDropPushCopyForRecipient overlays pack keys', () => {
+    const baseCopy = { title: PUSH_TITLE, body: PUSH_BODY, source: 'default' };
+    expect(
+      resolveWeeklyDropPushCopyForRecipient(
+        baseCopy,
+        {
+          hasCrew: true,
+          userSwiped: true,
+          anyCrewUnfinished: false,
+        },
+        {
+          entries: {
+            'crew.push.weeklyDrop.ritualBody':
+              "where's your {group.singular} going this week?",
+          },
+          tokens: { 'group.singular': 'block' },
+        },
+      ),
+    ).toMatchObject({
+      body: "where's your block going this week?",
+      crewVariant: 'ritual',
+    });
+  });
+
   it('buildWeeklyDropPushMessages personalizes crew and solo recipients', async () => {
     getModels.mockImplementation(() => ({
       PivotCrewMembership: {
@@ -241,6 +265,66 @@ describe('pivotWeeklyDropService', () => {
     expect(messages[0].data.crewVariant).toBe('decide');
     expect(messages[0].data.ritualPhase).toBe('decide');
     expect(messages[0].data.crewId).toBe('crew-1');
+  });
+
+  it('buildWeeklyDropPushMessages overlays crew unfinished copy from the pack', async () => {
+    getModels.mockImplementation(() => ({
+      PivotCrewMembership: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              { userId: '1', crewId: 'crew-1' },
+            ]),
+          }),
+        }),
+      },
+      PivotCrewWeekState: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([
+              {
+                crewId: 'crew-1',
+                swipeProgress: { activeMemberCount: 2, swipedCount: 0 },
+                judgementStatus: 'awaiting_quorum',
+              },
+            ]),
+          }),
+        }),
+      },
+      PivotEventIntent: {
+        distinct: jest.fn().mockResolvedValue([]),
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+      PivotDeckSnapshot: {
+        find: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      },
+    }));
+
+    const messages = await buildWeeklyDropPushMessages(
+      nycTenant,
+      '2026-W23',
+      [{ _id: '1', pushToken: 'ExponentPushToken[a]' }],
+      {
+        copyPack: {
+          entries: {
+            'crew.push.weeklyDrop.unfinishedBody':
+              '{group.singular} still needs to swipe',
+          },
+          tokens: { 'group.singular': 'block' },
+        },
+      },
+    );
+
+    expect(messages[0].body).toBe('block still needs to swipe');
+    expect(messages[0].data.crewVariant).toBe('unfinished');
   });
 
   it('getWeeklyDropStatus returns resolved drop schedule', async () => {

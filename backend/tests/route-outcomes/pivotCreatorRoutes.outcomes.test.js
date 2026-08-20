@@ -140,6 +140,69 @@ describe('pivotCreatorRoutes', () => {
     );
   });
 
+  it('GET /events lists a claimed scraped catalog row as read-only', async () => {
+    listListings.mockResolvedValue({
+      data: {
+        tenantKey: 'brooklyn',
+        events: [
+          {
+            _id: '507f1f77bcf86cd799439088',
+            name: 'Luma Listening',
+            ingestStatus: 'published',
+            source: 'luma',
+            readOnly: true,
+            access: 'claimed',
+            createdByUserId: null,
+          },
+        ],
+        total: 1,
+        claimedOrganizerCount: 1,
+      },
+    });
+
+    const response = await request(buildApp()).get('/pivot/creator/events');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.events[0].readOnly).toBe(true);
+    expect(response.body.data.events[0].source).toBe('luma');
+    expect(response.body.data.claimedOrganizerCount).toBe(1);
+  });
+
+  it('GET /events/:eventId returns claimed scraped detail with insights stats', async () => {
+    getListing.mockResolvedValue({
+      data: {
+        tenantKey: 'brooklyn',
+        event: {
+          _id: '507f1f77bcf86cd799439088',
+          name: 'Luma Listening',
+          source: 'luma',
+          readOnly: true,
+          access: 'claimed',
+        },
+        stats: {
+          intents: {
+            interested: 5,
+            registered: 2,
+            passed: 1,
+            externalOpens: 8,
+            externalOpenUsers: 4,
+          },
+          analytics: { views: 22, uniqueViews: 18 },
+          daily: [{ date: '2026-06-14', views: 6, interested: 2, registered: 1 }],
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/pivot/creator/events/507f1f77bcf86cd799439088',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.event.readOnly).toBe(true);
+    expect(response.body.data.stats.intents.interested).toBe(5);
+    expect(response.body.data.stats.daily).toHaveLength(1);
+  });
+
   it('GET /events/:eventId returns 403 when not owner', async () => {
     getListing.mockResolvedValue({
       error: 'You can only manage your own Just Go listings.',
@@ -217,6 +280,22 @@ describe('pivotCreatorRoutes', () => {
       success: false,
       code: 'CREATOR_PUBLISH_FORBIDDEN',
     });
+  });
+
+  it('PATCH /events/:eventId returns 403 for a claimed scraped listing', async () => {
+    updateListing.mockResolvedValue({
+      error:
+        'Claimed catalog listings are read-only. Just Go ops control their content and ingest status.',
+      status: 403,
+      code: 'CREATOR_CLAIMED_READ_ONLY',
+    });
+
+    const response = await request(buildApp())
+      .patch('/pivot/creator/events/507f1f77bcf86cd799439088')
+      .send({ name: 'Renamed' });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('CREATOR_CLAIMED_READ_ONLY');
   });
 
   it('PATCH /events/:eventId updates a listing', async () => {

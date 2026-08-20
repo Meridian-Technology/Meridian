@@ -1,13 +1,29 @@
 const TENANT_STATUSES = new Set(['active', 'coming_soon', 'maintenance', 'hidden']);
 const TENANT_TYPES = new Set(['campus', 'pivot']);
+const LANDING_MODE_VALUES = ['waitlist', 'launched'];
+const LANDING_MODES = new Set(LANDING_MODE_VALUES);
+const DEFAULT_LANDING_MODE = 'waitlist';
+
+/** Sparse-safe: missing or unknown values read as waitlist. Independent of tenant status. */
+function resolveLandingMode(value) {
+  return LANDING_MODES.has(value) ? value : DEFAULT_LANDING_MODE;
+}
+
 const {
   mergePivotCrewConfigOverrides,
   validatePivotCrewConfigPatch,
 } = require('../utilities/pivotCrewConfig');
 const {
+  mergePivotDeckConfigOverrides,
+  validatePivotDeckConfigPatch,
+} = require('../utilities/pivotDeckConfig');
+const {
   mergeCreatorPublishConfigOverrides,
   validateCreatorPublishConfigPatch,
 } = require('../utilities/pivotCreatorPublishConfig');
+const {
+  validatePivotDiscoveryConfigPatch,
+} = require('../utilities/pivotDiscoveryConfig');
 
 const PIVOT_DROP_PUSH_TITLE_MAX = 100;
 const PIVOT_DROP_PUSH_BODY_MAX = 240;
@@ -131,6 +147,7 @@ function normalizeTenantRow(row = {}) {
     location: String(row?.location || '').trim(),
     status,
     statusMessage: String(row?.statusMessage || '').trim().slice(0, 240),
+    landingMode: resolveLandingMode(row?.landingMode),
     tenantType,
     pivotPilot: row?.pivotPilot === true || tenantType === 'pivot',
     mongoUri: String(row?.mongoUri || '').trim() || undefined,
@@ -171,6 +188,9 @@ function normalizeTenantOverride(row = {}) {
   }
   if (row.statusMessage !== undefined && row.statusMessage !== null) {
     out.statusMessage = String(row.statusMessage).trim().slice(0, 240);
+  }
+  if (row.landingMode !== undefined && LANDING_MODES.has(row.landingMode)) {
+    out.landingMode = row.landingMode;
   }
   if (row.tenantType !== undefined && TENANT_TYPES.has(row.tenantType)) {
     out.tenantType = row.tenantType;
@@ -218,6 +238,16 @@ function normalizeTenantOverride(row = {}) {
     }
   }
 
+  if (row.pivotDeckConfig !== undefined && row.pivotDeckConfig !== null) {
+    const deckValidation = validatePivotDeckConfigPatch(row.pivotDeckConfig);
+    if (deckValidation.error) {
+      return null;
+    }
+    if (deckValidation.patch && Object.keys(deckValidation.patch).length > 0) {
+      out.pivotDeckConfig = deckValidation.patch;
+    }
+  }
+
   if (row.creatorPublish !== undefined && row.creatorPublish !== null) {
     const creatorValidation = validateCreatorPublishConfigPatch(row.creatorPublish);
     if (creatorValidation.error) {
@@ -225,6 +255,16 @@ function normalizeTenantOverride(row = {}) {
     }
     if (creatorValidation.patch && Object.keys(creatorValidation.patch).length > 0) {
       out.creatorPublish = creatorValidation.patch;
+    }
+  }
+
+  if (row.pivotDiscovery !== undefined && row.pivotDiscovery !== null) {
+    const discoveryValidation = validatePivotDiscoveryConfigPatch(row.pivotDiscovery);
+    if (discoveryValidation.error) {
+      return null;
+    }
+    if (discoveryValidation.patch && Object.keys(discoveryValidation.patch).length > 0) {
+      out.pivotDiscovery = discoveryValidation.patch;
     }
   }
 
@@ -243,6 +283,13 @@ function mergeSparseTenantOverrides(existing = {}, delta = {}) {
       ...(delta.provisioningConfirmations || {}),
     };
   }
+  if (Object.prototype.hasOwnProperty.call(delta, 'pivotDeckConfig')) {
+    if (delta.pivotDeckConfig === null) {
+      delete merged.pivotDeckConfig;
+    } else {
+      merged.pivotDeckConfig = delta.pivotDeckConfig;
+    }
+  }
   return merged;
 }
 
@@ -254,6 +301,7 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
     const {
       provisioningConfirmations: pcPatch,
       pivotCrewConfig: crewPatch,
+      pivotDeckConfig: deckPatch,
       creatorPublish: creatorPublishPatch,
       ...rest
     } = row;
@@ -273,6 +321,12 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
         crewPatch,
       );
     }
+    if (deckPatch) {
+      next.pivotDeckConfig = mergePivotDeckConfigOverrides(
+        base.pivotDeckConfig,
+        deckPatch,
+      );
+    }
     if (creatorPublishPatch) {
       next.creatorPublish = mergeCreatorPublishConfigOverrides(
         base.creatorPublish,
@@ -281,12 +335,19 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
     }
     merged.set(row.tenantKey, next);
   });
-  return Array.from(merged.values());
+  return Array.from(merged.values()).map((row) => ({
+    ...row,
+    landingMode: resolveLandingMode(row.landingMode),
+  }));
 }
 
 module.exports = {
   TENANT_STATUSES,
   TENANT_TYPES,
+  LANDING_MODE_VALUES,
+  LANDING_MODES,
+  DEFAULT_LANDING_MODE,
+  resolveLandingMode,
   DEFAULT_TENANTS,
   normalizePivotDropOverrides,
   normalizePivotDropFields,

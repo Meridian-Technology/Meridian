@@ -1,9 +1,15 @@
 /**
  * Tenant / www handling: www.meridian.study is for landing pages only.
  * Subdomain is enforced for auth and app; user must choose school on first login/register.
+ *
+ * justgo.lol is a third host class (Just Go apex) — not campus www, not a school subdomain.
+ * Local/dev: set localStorage justgoHostOverride=1 to treat localhost as that apex
+ * without changing campus `npm start`.
  */
 
 const ROOT_HOSTS = ['www.meridian.study', 'meridian.study'];
+export const JUSTGO_PUBLIC_HOSTS = Object.freeze(['justgo.lol', 'www.justgo.lol']);
+export const JUSTGO_HOST_OVERRIDE_KEY = 'justgoHostOverride';
 const TENANT_CONFIG_CACHE_KEY = 'tenantConfigCache';
 const DEFAULT_TENANTS = [
   {
@@ -104,11 +110,44 @@ export function getTenantDefinitions(options = {}) {
   return merged.filter((tenant) => VISIBLE_STATUSES.has(tenant.status));
 }
 
-export function isWww() {
+function currentHostname() {
+  if (typeof window === 'undefined') return '';
+  return String(window.location.hostname || '').toLowerCase();
+}
+
+function normalizeHostname(hostname) {
+  return String(hostname || '').trim().toLowerCase();
+}
+
+export function isJustGoPublicHostname(hostname) {
+  return JUSTGO_PUBLIC_HOSTS.includes(normalizeHostname(hostname));
+}
+
+export function readJustGoHostOverride() {
+  if (process.env.NODE_ENV === 'production') return false;
   if (typeof window === 'undefined') return false;
-  const host = window.location.hostname || '';
-  if (ROOT_HOSTS.includes(host.toLowerCase())) return true;
-  if (host.toLowerCase().startsWith('www.')) return true;
+  try {
+    return window.localStorage.getItem(JUSTGO_HOST_OVERRIDE_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+/** True on justgo.lol / www.justgo.lol, or localhost with justgoHostOverride=1 (dev only). */
+export function isJustGoHost(hostname = currentHostname()) {
+  const host = normalizeHostname(hostname);
+  if (isJustGoPublicHostname(host)) return true;
+  if (process.env.NODE_ENV === 'production') return false;
+  return host === 'localhost' && readJustGoHostOverride();
+}
+
+export function isWww(hostname = currentHostname()) {
+  const host = normalizeHostname(hostname);
+  if (!host) return false;
+  // Just Go apex is not campus marketing www (www.justgo.lol would otherwise match www.*).
+  if (isJustGoPublicHostname(host)) return false;
+  if (ROOT_HOSTS.includes(host)) return true;
+  if (host.startsWith('www.')) return true;
   if (process.env.NODE_ENV !== 'production' && host === 'localhost') return true;
   return false;
 }
@@ -143,6 +182,35 @@ export function isPathAllowedOnWww(pathname) {
     if (allowed === '/') return path === '/';
     return path === allowed || path.startsWith(allowed + '/');
   });
+}
+
+/** Public paths on justgo.lol — city slugs plus reserved prefixes. Used so Layout never sends this host to /select-school. */
+const JUSTGO_HOST_ALLOWED_PATHS = Object.freeze([
+  '/',
+  '/qr',
+  '/creator',
+  '/invite',
+  '/privacy-policy',
+  '/terms-of-service',
+  '/login',
+  '/platform-admin',
+  '/admin',
+  '/justgo',
+  '/error',
+  '/tenant-status',
+]);
+
+export function isPathAllowedOnJustGoHost(pathname) {
+  const path = (pathname || '/').split('?')[0] || '/';
+  if (path === '/') return true;
+  if (JUSTGO_HOST_ALLOWED_PATHS.some((allowed) => {
+    if (allowed === '/') return false;
+    return path === allowed || path.startsWith(`${allowed}/`);
+  })) {
+    return true;
+  }
+  // justgo.lol/{city} — a single path segment is a tenant slug, not a campus app route.
+  return path.split('/').filter(Boolean).length === 1;
 }
 
 /** Derive base domain from current host (e.g. rpi.pinkpulse.org → pinkpulse.org, www.pinkpulse.org → pinkpulse.org). */
@@ -204,22 +272,31 @@ export function hasDevTenantOverride() {
   }
 }
 
+/** School tenant from hostname. justgo / www are never tenant keys. */
+export function tenantKeyFromHostname(hostname) {
+  const host = normalizeHostname(hostname);
+  if (!host || isJustGoPublicHostname(host)) return null;
+  const sub = host.split('.')[0];
+  if (sub && sub !== 'www' && sub !== 'meridian' && sub !== 'justgo') {
+    return sub;
+  }
+  return null;
+}
+
 /** Get current tenant key from hostname (production) or devTenantOverride (dev). */
-export function getCurrentTenantKey() {
-  if (typeof window === 'undefined') return null;
-  const host = window.location.hostname || '';
+export function getCurrentTenantKey(hostname = currentHostname()) {
+  if (typeof window === 'undefined' && !hostname) return null;
+  const host = normalizeHostname(hostname);
+  if (isJustGoPublicHostname(host)) return null;
   if (process.env.NODE_ENV !== 'production' && host === 'localhost') {
+    if (readJustGoHostOverride()) return null;
     try {
       return localStorage.getItem('devTenantOverride') || getLastTenant() || null;
     } catch (_) {
       return getLastTenant();
     }
   }
-  const sub = host.split('.')[0];
-  if (sub && sub !== 'www' && sub !== 'meridian') {
-    return sub;
-  }
-  return null;
+  return tenantKeyFromHostname(host);
 }
 
 /** Get display name for current tenant. */

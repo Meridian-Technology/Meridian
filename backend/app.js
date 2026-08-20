@@ -12,7 +12,7 @@ const enforce = require('express-sslify');
 const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsManager');
 const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
-const { BASE_DOMAIN } = require('./services/tenantConfigService');
+const { isAllowedCorsOrigin, isJustGoPublicHost } = require('./utilities/corsOrigins');
 
 const s3 = require('./aws-config');
 
@@ -27,26 +27,6 @@ function createApp() {
   let tenantKeysCache = ['rpi', 'tvcog'];
   let tenantKeysLastFetchedAt = 0;
   let tenantBootstrapComplete = false;
-
-  const staticProductionOrigins = [
-    'https://www.meridian.study',
-    'https://meridian.study',
-    'https://rpi.meridian.study',
-    'https://tvcog.meridian.study',
-    'https://rpi.pinkpulse.org',
-    'https://tvcog.pinkpulse.org',
-    'https://www.pinkpulse.org',
-    'https://pinkpulse.org',
-  ];
-
-  function isAllowedCorsOrigin(origin) {
-    if (!origin) return true;
-    if (process.env.NODE_ENV !== 'production') {
-      return origin.startsWith('http://localhost');
-    }
-    if (staticProductionOrigins.includes(origin)) return true;
-    return new RegExp(`^https://[a-z0-9_-]+\\.${BASE_DOMAIN.replace('.', '\\.')}$`).test(origin);
-  }
 
   const corsOptions = {
     origin(origin, callback) {
@@ -143,8 +123,10 @@ function createApp() {
         
         // In development, if host is localhost, a tunnel, or an IP address, default to rpi so tenant
         // features work. Use ?school= or X-Tenant header to override. Production www uses www
-        // subdomain explicitly (e.g. www.meridian.study).
-        if (
+        // subdomain explicitly (e.g. www.meridian.study). justgo.lol is public apex, not a school.
+        if (isJustGoPublicHost(host)) {
+            subdomain = 'www';
+        } else if (
           host.includes('localhost') ||
           isDevTunnelHost ||
           /^\d+\.\d+\.\d+\.\d+/.test(subdomain) ||
@@ -219,6 +201,8 @@ function createApp() {
     '/admin/pivot',
   ];
   app.use((req, res, next) => {
+    // justgo.lol is public apex (city slugs, /qr, /pivot) — not campus www path lock.
+    if (isJustGoPublicHost(req.headers.host)) return next();
     if (req.school !== 'www') return next();
     const rawPath = (req.path || req.url || '').split('?')[0];
     const path = rawPath && rawPath.trim() !== '' ? rawPath : '/';

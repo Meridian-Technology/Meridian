@@ -17,6 +17,12 @@ jest.mock('../../services/pivotIngestDuplicateService', () => ({
   formatDuplicateWarning: jest.fn((duplicate, name) => `${name} is a duplicate.`),
   isBlockingDuplicate: jest.fn(() => false),
   resolveImportDuplicate: jest.fn().mockResolvedValue({ duplicate: null, catalogIndex: [] }),
+  classifyIngestSourceFamily: jest.fn((row) => {
+    const source = typeof row?.source === 'string' ? row.source.toLowerCase() : '';
+    if (source === 'luma' || source === 'partiful' || source === 'generic-site') return source;
+    return 'other';
+  }),
+  isNativeIngestFamily: jest.fn((family) => family === 'luma' || family === 'partiful'),
 }));
 jest.mock('../../services/pivotWeeklySnapshotService', () => ({
   normalizeBatchWeek: (raw, now = new Date()) => {
@@ -30,6 +36,28 @@ jest.mock('../../services/pivotWeeklySnapshotService', () => ({
 jest.mock('../../services/pivotTagCatalogService', () => ({
   validatePivotEventTags: jest.fn(),
 }));
+jest.mock('../../services/pivotOrganizerResolveService', () => ({
+  resolveOrganizers: jest.fn().mockResolvedValue({
+    organizerIds: [],
+    created: [],
+    attached: [],
+    ambiguous: [],
+  }),
+  uniqueOrganizerIds: (...lists) => {
+    const seen = new Set();
+    const out = [];
+    for (const list of lists) {
+      if (!Array.isArray(list)) continue;
+      for (const value of list) {
+        const id = String(value || '').trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        out.push(id);
+      }
+    }
+    return out;
+  },
+}));
 
 const getModels = require('../../services/getModelService');
 const { getMergedTenants, provisionPivotCatalogOrg } = require('../../services/tenantConfigService');
@@ -37,6 +65,7 @@ const { connectToDatabase } = require('../../connectionsManager');
 const { previewIngestUrl } = require('../../services/pivotIngestPreviewService');
 const { resolveImportDuplicate, isBlockingDuplicate } = require('../../services/pivotIngestDuplicateService');
 const { validatePivotEventTags } = require('../../services/pivotTagCatalogService');
+const { resolveOrganizers } = require('../../services/pivotOrganizerResolveService');
 const {
   publishIngestEvent,
   updateIngestEvent,
@@ -64,6 +93,24 @@ describe('pivotIngestPublishService merge helpers', () => {
     expect(merged.location).toBe('Brooklyn, NY');
   });
 
+  it('keeps hostIdentities and does not clobber a known host image with null', () => {
+    const merged = mergeDraftWithOverrides(
+      {
+        hostName: 'Alice & Bob',
+        hostImageUrl: 'https://cdn.example/alice.jpg',
+        hostIdentities: [
+          { provider: 'partiful', name: 'Alice', imageUrl: 'https://cdn.example/alice.jpg' },
+          { provider: 'partiful', name: 'Bob' },
+        ],
+      },
+      { location: 'Brooklyn, NY' },
+    );
+
+    expect(merged.hostIdentities).toHaveLength(2);
+    expect(merged.hostImageUrl).toBe('https://cdn.example/alice.jpg');
+    expect(merged.hostIdentities[0].name).toBe('Alice');
+  });
+
   it('rejects publish when hostName missing after merge', () => {
     const result = validateMergedDraft({
       name: 'Event',
@@ -73,6 +120,25 @@ describe('pivotIngestPublishService merge helpers', () => {
     });
 
     expect(result.code).toBe('MISSING_REQUIRED_FIELDS');
+  });
+
+  it('converts casual start times using the tenant timezone', () => {
+    const result = validateMergedDraft(
+      {
+        name: 'Open Mic',
+        location: "Gabe's",
+        hostName: "Gabe's",
+        start_time: 'Friday at 8pm',
+      },
+      {
+        timezone: 'America/Chicago',
+        now: new Date('2026-08-13T17:00:00.000Z'),
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.merged.startTime.toISOString()).toBe('2026-08-15T01:00:00.000Z');
+    expect(result.merged.parsed.startTimeRaw).toBe('Friday at 8pm');
   });
 
   it('derives event window from showtimes when start_time is omitted', () => {
@@ -119,6 +185,12 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
     resolveImportDuplicate.mockResolvedValue({ duplicate: null, catalogIndex: [] });
     isBlockingDuplicate.mockReturnValue(false);
     validatePivotEventTags.mockResolvedValue({ tags: ['live-music'] });
+    resolveOrganizers.mockResolvedValue({
+      organizerIds: [],
+      created: [],
+      attached: [],
+      ambiguous: [],
+    });
     previewIngestUrl.mockResolvedValue({
       data: {
         draft: {
@@ -194,6 +266,139 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
       expect.objectContaining({ upsert: true }),
     );
     expect(provisionPivotCatalogOrg).not.toHaveBeenCalled();
+  });
+
+  it('persists host.identities from the preview draft and fills image from the primary identity', async () => {
+    previewIngestUrl.mockResolvedValue({
+      data: {
+        draft: {
+          name: 'Sunset Listening Party',
+          description: 'Bring a blanket.',
+          location: 'Brooklyn Bridge Park',
+          start_time: '2026-07-12T18:00:00-04:00',
+          hostName: 'Alice & Bob',
+          hostImageUrl: null,
+          hostIdentities: [
+            {
+              provider: 'partiful',
+              name: 'Alice',
+              externalId: 'alice',
+              profileUrl: 'https://partiful.com/u/alice',
+              imageUrl: 'https://cdn.partiful.com/alice.jpg',
+            },
+            { provider: 'partiful', name: 'Bob', externalId: 'bob' },
+          ],
+          source: 'partiful',
+        },
+      },
+    });
+
+    await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        overrides: { tags: ['board-games'] },
+      },
+    );
+
+    const payload = Event.findOneAndUpdate.mock.calls[0][1].$set;
+    expect(payload.customFields.pivot.host).toEqual({
+      name: 'Alice & Bob',
+      imageUrl: 'https://cdn.partiful.com/alice.jpg',
+      profileUrl: 'https://partiful.com/u/alice',
+      identities: [
+        expect.objectContaining({
+          provider: 'partiful',
+          name: 'Alice',
+          externalId: 'alice',
+        }),
+        expect.objectContaining({ provider: 'partiful', name: 'Bob' }),
+      ],
+    });
+  });
+
+  it('stamps host.organizerIds from crawl overrides and does not re-resolve', async () => {
+    await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        draft: {
+          name: 'Sunset Listening Party',
+          location: 'Brooklyn Bridge Park',
+          start_time: '2026-07-12T18:00:00-04:00',
+          hostName: 'Alice',
+          hostIdentities: [
+            { provider: 'partiful', name: 'Alice', profileUrl: 'https://partiful.com/u/alice' },
+          ],
+          organizerIds: ['665a1b2c3d4e5f6789012aaa'],
+          source: 'partiful',
+        },
+        overrides: {
+          tags: ['board-games'],
+          organizerIds: ['665a1b2c3d4e5f6789012aaa'],
+        },
+      },
+    );
+
+    expect(resolveOrganizers).not.toHaveBeenCalled();
+    const payload = Event.findOneAndUpdate.mock.calls[0][1].$set;
+    expect(payload.customFields.pivot.host.organizerIds).toEqual([
+      '665a1b2c3d4e5f6789012aaa',
+    ]);
+  });
+
+  it('resolves a batch of one for Lab URL publish when organizerIds are missing', async () => {
+    resolveOrganizers.mockResolvedValue({
+      organizerIds: ['665a1b2c3d4e5f6789012bbb'],
+      created: [{ organizerId: '665a1b2c3d4e5f6789012bbb' }],
+      attached: [],
+      ambiguous: [],
+    });
+
+    await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        overrides: { tags: ['board-games'] },
+      },
+    );
+
+    expect(resolveOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        displayName: 'Brooklyn Board Game Cafe',
+      }),
+    );
+    const payload = Event.findOneAndUpdate.mock.calls[0][1].$set;
+    expect(payload.customFields.pivot.host.organizerIds).toEqual([
+      '665a1b2c3d4e5f6789012bbb',
+    ]);
+  });
+
+  it('still publishes when organizer resolve is ambiguous', async () => {
+    resolveOrganizers.mockResolvedValue({
+      organizerIds: [],
+      created: [],
+      attached: [],
+      ambiguous: [{ name: 'Alice', normalizedName: 'alice', candidateIds: ['a', 'b'] }],
+    });
+
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        overrides: { tags: ['board-games'] },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.data.event).toBeDefined();
+    const payload = Event.findOneAndUpdate.mock.calls[0][1].$set;
+    expect(payload.customFields.pivot.host.organizerIds).toBeUndefined();
   });
 
   it('forceBatchWeek pins the event into the provided week', async () => {

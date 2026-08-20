@@ -159,6 +159,51 @@ describe('JustGoCreatorHome', () => {
     ).toHaveAttribute('href', '/justgo/creator/new');
   });
 
+  it('lists a claimed scraped event instead of the first-run empty CTA', () => {
+    mockUseFetch.mockReturnValue(
+      fetchState({
+        data: listingsResponse([
+          {
+            _id: 'evt-luma',
+            name: 'Luma Listening',
+            start_time: '2026-08-15T20:00:00.000Z',
+            location: 'The Chapel',
+            ingestStatus: 'published',
+            batchWeek: '2026-W33',
+            source: 'luma',
+            readOnly: true,
+            access: 'claimed',
+            intentStats: { interested: 9 },
+          },
+        ]),
+      }),
+    );
+
+    renderHome();
+
+    expect(screen.getByText('Luma Listening')).toBeInTheDocument();
+    expect(screen.getByText(justGoCreatorCopy.home.claimedLabel)).toBeInTheDocument();
+    expect(screen.queryByText(justGoCreatorCopy.home.emptyBody)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: new RegExp(justGoCreatorCopy.home.emptyCta, 'i') }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not lead with create-your-first when a claimed catalog is empty', () => {
+    mockUseFetch.mockReturnValue(
+      fetchState({
+        data: { success: true, data: { tenantKey: 'brooklyn', events: [], total: 0, claimedOrganizerCount: 2 } },
+      }),
+    );
+
+    renderHome();
+
+    expect(screen.getByText(justGoCreatorCopy.home.claimedEmptyBody)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: new RegExp(justGoCreatorCopy.home.emptyCta, 'i') }),
+    ).not.toBeInTheDocument();
+  });
+
   it('shows a retryable error panel for a non-gate failure', () => {
     mockUseFetch.mockReturnValue(
       fetchState({ error: 'Network Error', errorStatus: 500 }),

@@ -64,6 +64,14 @@ jest.mock('../../services/pivotTenantOpsService', () => ({
   getTenantOpsBundle: jest.fn(),
 }));
 
+jest.mock('../../services/pivotFleetOpsService', () => ({
+  getFleetOpsBundle: jest.fn(),
+}));
+
+jest.mock('../../services/pivotAdminDropDeckService', () => ({
+  previewAdminDropDeck: jest.fn(),
+}));
+
 jest.mock('../../services/pivotRetentionService', () => ({
   getPivotRetention: jest.fn(),
 }));
@@ -101,6 +109,38 @@ jest.mock('../../services/pivotTagCatalogService', () => ({
   seedPivotTagCatalog: jest.fn(),
 }));
 
+jest.mock('../../services/pivotSourceDiscoveryService', () => ({
+  listCitySources: jest.fn(),
+  startCitySourceDiscovery: jest.fn(),
+  stopCitySourceDiscoveryRun: jest.fn(),
+  previewCitySourceDiscovery: jest.fn(),
+  updateCitySource: jest.fn(),
+  updateCityDiscoveryConfig: jest.fn(),
+  getCitySourceDiscoveryRun: jest.fn(),
+  getLatestCitySourceDiscoveryRun: jest.fn(),
+}));
+
+jest.mock('../../services/pivotOrganizerBackfillService', () => ({
+  backfillOrganizers: jest.fn(),
+}));
+
+jest.mock('../../services/pivotOrganizerCatalogService', () => ({
+  listOrganizers: jest.fn(),
+  getOrganizer: jest.fn(),
+  listUnlinkedOrganizerEvents: jest.fn(),
+  mergeOrganizers: jest.fn(),
+  splitOrganizer: jest.fn(),
+  claimOrganizer: jest.fn(),
+}));
+
+jest.mock('../../services/pivotCopyService', () => ({
+  getCopyCatalog: jest.fn(),
+  getCopyLayers: jest.fn(),
+  getPlatformCopyLayers: jest.fn(),
+  patchCopyPack: jest.fn(),
+  resetCopyPack: jest.fn(),
+}));
+
 const { requirePlatformAdmin } = require('../../middlewares/requirePlatformAdmin');
 const {
   rebuildWeeklySnapshot,
@@ -136,6 +176,8 @@ const {
   wipeUserWeekIntents,
 } = require('../../services/pivotTenantJourneyService');
 const { getTenantOpsBundle } = require('../../services/pivotTenantOpsService');
+const { getFleetOpsBundle } = require('../../services/pivotFleetOpsService');
+const { previewAdminDropDeck } = require('../../services/pivotAdminDropDeckService');
 const { getPivotRetention } = require('../../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../../services/pivotLabEventsService');
 const {
@@ -154,6 +196,27 @@ const {
 } = require('../../services/pivotTagSuggestService');
 const { purgePivotCatalog } = require('../../services/pivotCatalogPurgeService');
 const { listPivotTags, seedPivotTagCatalog } = require('../../services/pivotTagCatalogService');
+const {
+  updateCityDiscoveryConfig,
+  previewCitySourceDiscovery,
+  startCitySourceDiscovery,
+} = require('../../services/pivotSourceDiscoveryService');
+const { backfillOrganizers } = require('../../services/pivotOrganizerBackfillService');
+const {
+  listOrganizers,
+  getOrganizer,
+  listUnlinkedOrganizerEvents,
+  mergeOrganizers,
+  splitOrganizer,
+  claimOrganizer,
+} = require('../../services/pivotOrganizerCatalogService');
+const {
+  getCopyCatalog,
+  getCopyLayers,
+  getPlatformCopyLayers,
+  patchCopyPack,
+  resetCopyPack,
+} = require('../../services/pivotCopyService');
 const pivotAdminRoutes = require('../../routes/pivotAdminRoutes');
 
 function buildApp() {
@@ -270,6 +333,63 @@ describe('pivotAdminRoutes overview', () => {
 
     const response = await request(buildApp()).get('/admin/pivot/overview');
     expect(response.status).toBe(403);
+    expect(getPivotOverview).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes fleet ops', () => {
+  beforeEach(() => {
+    getFleetOpsBundle.mockReset();
+    getPivotOverview.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/ops returns rolled-up fleet payload', async () => {
+    getFleetOpsBundle.mockResolvedValue({
+      data: {
+        cityDisplayName: 'All cities',
+        batchWeek: '2026-W28',
+        overview: { kpis: { activeUsers: 16 } },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/ops?batchWeek=2026-W28&include=overview',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.overview.kpis.activeUsers).toBe(16);
+    expect(getFleetOpsBundle).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        batchWeek: '2026-W28',
+        include: 'overview',
+      }),
+    );
+    expect(getPivotOverview).not.toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/ops returns 400 for invalid week', async () => {
+    getFleetOpsBundle.mockResolvedValue({
+      error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
+      status: 400,
+      code: 'INVALID_BATCH_WEEK',
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/ops?batchWeek=nope&include=overview');
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_BATCH_WEEK');
+  });
+
+  it('GET /admin/pivot/ops returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/ops?include=overview');
+    expect(response.status).toBe(403);
+    expect(getFleetOpsBundle).not.toHaveBeenCalled();
     expect(getPivotOverview).not.toHaveBeenCalled();
   });
 });
@@ -1465,5 +1585,944 @@ describe('pivotAdminRoutes journeys', () => {
 
     expect(response.status).toBe(403);
     expect(getJourneyFunnel).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes drop deck preview', () => {
+  const USER_ID = '507f191e810c19729de860eb';
+
+  beforeEach(() => {
+    previewAdminDropDeck.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/drop-deck/preview returns the scored deck', async () => {
+    previewAdminDropDeck.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        user: { userId: USER_ID, name: 'Ada' },
+        rebuild: false,
+        frozen: true,
+        batchWeek: '2026-W28',
+        events: [{ _id: '665a000000000000000000a1', name: 'Jazz Night', dropDeckScore: { total: 2.2 } }],
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/drop-deck/preview?userId=${USER_ID}&batchWeek=2026-W28`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.frozen).toBe(true);
+    expect(response.body.data.events).toHaveLength(1);
+    expect(previewAdminDropDeck).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        userId: USER_ID,
+        batchWeek: '2026-W28',
+      }),
+    );
+  });
+
+  it('GET /tenants/:tenantKey/drop-deck/preview passes rebuild and service errors', async () => {
+    previewAdminDropDeck.mockResolvedValue({
+      error: 'User not found in this city.',
+      status: 404,
+      code: 'USER_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/drop-deck/preview?userId=${USER_ID}&rebuild=true`,
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('USER_NOT_FOUND');
+    expect(previewAdminDropDeck).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: USER_ID, rebuild: 'true' }),
+    );
+  });
+});
+
+describe('pivotAdminRoutes discovery-config', () => {
+  beforeEach(() => {
+    updateCityDiscoveryConfig.mockReset();
+    previewCitySourceDiscovery.mockReset();
+    startCitySourceDiscovery.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('PATCH /tenants/:tenantKey/sources/discovery-config saves a flow patch', async () => {
+    updateCityDiscoveryConfig.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        discovery: {
+          flow: 'native-only',
+          lumaSlug: 'nyc',
+          runFirecrawl: false,
+          maxOutboundCalls: 0,
+        },
+      },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/sources/discovery-config')
+      .send({ flow: 'native-only' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.discovery.flow).toBe('native-only');
+    expect(updateCityDiscoveryConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', flow: 'native-only' }),
+    );
+  });
+
+  it('PATCH /tenants/:tenantKey/sources/discovery-config rejects a bad flow', async () => {
+    updateCityDiscoveryConfig.mockResolvedValue({
+      error: 'flow must be one of: native-then-firecrawl, native-only, firecrawl-only.',
+      status: 400,
+      code: 'INVALID_DISCOVERY_FLOW',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/sources/discovery-config')
+      .send({ flow: 'agentic' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_DISCOVERY_FLOW');
+  });
+
+  it('PATCH /tenants/:tenantKey/sources/discovery-config returns NO_CHANGES', async () => {
+    updateCityDiscoveryConfig.mockResolvedValue({
+      error: 'No discovery config changes.',
+      status: 400,
+      code: 'NO_CHANGES',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/sources/discovery-config')
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('NO_CHANGES');
+  });
+
+  it('GET /tenants/:tenantKey/sources/discovery-plan returns a native-only zero-credit plan', async () => {
+    previewCitySourceDiscovery.mockResolvedValue({
+      data: {
+        plan: {
+          flow: 'native-only',
+          runFirecrawl: false,
+          maxOutboundCalls: 0,
+          queries: 0,
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/sources/discovery-plan?flow=native-only',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.plan.maxOutboundCalls).toBe(0);
+    expect(response.body.data.plan.runFirecrawl).toBe(false);
+  });
+
+  it('POST /tenants/:tenantKey/sources/discover still 503s hybrid without a scrape key', async () => {
+    startCitySourceDiscovery.mockResolvedValue({
+      error:
+        'Website scraping is not configured. Set FIRECRAWL_API_KEY in the backend environment to run generic-site curation jobs.',
+      status: 503,
+      code: 'SITE_SCRAPE_NOT_CONFIGURED',
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/nyc/sources/discover')
+      .send({ flow: 'native-then-firecrawl' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('SITE_SCRAPE_NOT_CONFIGURED');
+  });
+});
+
+describe('pivotAdminRoutes organizer list', () => {
+  beforeEach(() => {
+    listOrganizers.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/organizers returns the city catalog', async () => {
+    listOrganizers.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        organizers: [
+          {
+            id: '507f1f77bcf86cd799439011',
+            canonicalName: 'Alice Chen',
+            aliases: ['Alice'],
+            providers: ['partiful'],
+            eventCount: 4,
+            weeksActive: ['2026-W33', '2026-W30'],
+            claimStatus: 'unclaimed',
+            imageUrl: null,
+          },
+        ],
+        total: 1,
+        limit: 100,
+        offset: 0,
+        sort: 'events',
+        audience: 'detail-only',
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/organizers?q=alice&sort=events',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.organizers).toHaveLength(1);
+    expect(response.body.data.audience).toBe('detail-only');
+    expect(listOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        q: 'alice',
+        sort: 'events',
+      }),
+    );
+  });
+
+  it('GET /tenants/:tenantKey/organizers returns 404 for unknown tenant', async () => {
+    listOrganizers.mockResolvedValue({
+      error: 'Pivot tenant not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/missing/organizers');
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+
+  it('GET /tenants/:tenantKey/organizers returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/organizers');
+    expect(response.status).toBe(403);
+    expect(listOrganizers).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer unlinked', () => {
+  beforeEach(() => {
+    listUnlinkedOrganizerEvents.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/organizers/unlinked returns leftovers and proposals', async () => {
+    listUnlinkedOrganizerEvents.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        events: [
+          {
+            id: 'evt-1',
+            name: 'Soup night',
+            hostName: 'Alice & Bob',
+            kind: 'leftover',
+            batchWeek: '2026-W30',
+          },
+        ],
+        total: 1,
+        leftover: 1,
+        ambiguous: 0,
+        proposals: [],
+        lastBackfill: { linked: 6, ambiguous: 1, unlinked: 2 },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/organizers/unlinked?kind=leftover',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.events[0].kind).toBe('leftover');
+    expect(listUnlinkedOrganizerEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', kind: 'leftover' }),
+    );
+  });
+
+  it('GET unlinked returns 404 for unknown tenant', async () => {
+    listUnlinkedOrganizerEvents.mockResolvedValue({
+      error: 'Pivot tenant not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/missing/organizers/unlinked',
+    );
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+
+  it('GET unlinked returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get(
+      '/admin/pivot/tenants/nyc/organizers/unlinked',
+    );
+    expect(response.status).toBe(403);
+    expect(listUnlinkedOrganizerEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer detail', () => {
+  const organizerId = '507f1f77bcf86cd799439011';
+
+  beforeEach(() => {
+    getOrganizer.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /tenants/:tenantKey/organizers/:organizerId returns the dossier', async () => {
+    getOrganizer.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        organizer: { id: organizerId, canonicalName: 'Alice Chen' },
+        events: [{ id: 'evt-1', name: 'August set', batchWeek: '2026-W33' }],
+        audience: {
+          interested: 2,
+          registered: 1,
+          passed: 1,
+          externalOpens: 3,
+          repeatUsers: 1,
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/organizers/${organizerId}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.audience.interested).toBe(2);
+    expect(getOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', organizerId }),
+    );
+  });
+
+  it('GET detail returns 404 when the organizer is missing', async () => {
+    getOrganizer.mockResolvedValue({
+      error: 'Organizer not found.',
+      status: 404,
+      code: 'ORGANIZER_NOT_FOUND',
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/organizers/${organizerId}`,
+    );
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('ORGANIZER_NOT_FOUND');
+  });
+
+  it('GET detail returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/organizers/${organizerId}`,
+    );
+    expect(response.status).toBe(403);
+    expect(getOrganizer).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer backfill', () => {
+  beforeEach(() => {
+    backfillOrganizers.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('POST /tenants/:tenantKey/organizers/backfill returns outcome counts', async () => {
+    backfillOrganizers.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        scanned: 10,
+        linked: 6,
+        skipped: 2,
+        ambiguous: 1,
+        unlinked: 1,
+        createdOrganizers: 4,
+      },
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/nyc/organizers/backfill')
+      .send({ force: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.linked).toBe(6);
+    expect(response.body.data.createdOrganizers).toBe(4);
+    expect(backfillOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ tenantKey: 'nyc', force: false }),
+    );
+  });
+
+  it('POST /tenants/:tenantKey/organizers/backfill returns 404 for unknown tenant', async () => {
+    backfillOrganizers.mockResolvedValue({
+      error: 'Pivot tenant not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/tenants/missing/organizers/backfill')
+      .send({});
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+
+  it('POST /tenants/:tenantKey/organizers/backfill returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).post(
+      '/admin/pivot/tenants/nyc/organizers/backfill',
+    );
+    expect(response.status).toBe(403);
+    expect(backfillOrganizers).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer merge / split', () => {
+  const targetId = '507f1f77bcf86cd799439011';
+  const sourceId = '507f1f77bcf86cd799439012';
+
+  beforeEach(() => {
+    mergeOrganizers.mockReset();
+    splitOrganizer.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('POST /tenants/:tenantKey/organizers/:organizerId/merge returns the rewritten target', async () => {
+    mergeOrganizers.mockResolvedValue({
+      data: {
+        alreadyMerged: false,
+        eventsRewritten: 3,
+        target: { id: targetId, canonicalName: 'Alice Chen' },
+        source: { id: sourceId, status: 'merged', mergedInto: targetId },
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/merge`)
+      .send({ sourceOrganizerId: sourceId });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.eventsRewritten).toBe(3);
+    expect(mergeOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        organizerId: targetId,
+        sourceOrganizerId: sourceId,
+      }),
+    );
+  });
+
+  it('POST merge returns 409 when two claimed organizers conflict', async () => {
+    mergeOrganizers.mockResolvedValue({
+      error: 'Cannot merge two organizers claimed by different users.',
+      status: 409,
+      code: 'ORGANIZER_ALREADY_CLAIMED',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/merge`)
+      .send({ sourceOrganizerId: sourceId });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('ORGANIZER_ALREADY_CLAIMED');
+  });
+
+  it('POST merge returns 404 when an organizer is missing', async () => {
+    mergeOrganizers.mockResolvedValue({
+      error: 'Organizer not found.',
+      status: 404,
+      code: 'ORGANIZER_NOT_FOUND',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/merge`)
+      .send({ sourceOrganizerId: sourceId });
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('ORGANIZER_NOT_FOUND');
+  });
+
+  it('POST merge returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/merge`)
+      .send({ sourceOrganizerId: sourceId });
+
+    expect(response.status).toBe(403);
+    expect(mergeOrganizers).not.toHaveBeenCalled();
+  });
+
+  it('POST /tenants/:tenantKey/organizers/:organizerId/split returns the new organizer', async () => {
+    splitOrganizer.mockResolvedValue({
+      data: {
+        eventsRewritten: 1,
+        created: { id: sourceId, canonicalName: 'Alice Partiful' },
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/split`)
+      .send({ eventIds: ['507f1f77bcf86cd799439099'], newCanonicalName: 'Alice Partiful' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.created.canonicalName).toBe('Alice Partiful');
+    expect(splitOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        organizerId: targetId,
+        eventIds: ['507f1f77bcf86cd799439099'],
+        newCanonicalName: 'Alice Partiful',
+      }),
+    );
+  });
+
+  it('POST split returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${targetId}/split`)
+      .send({ eventIds: ['507f1f77bcf86cd799439099'] });
+
+    expect(response.status).toBe(403);
+    expect(splitOrganizer).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes organizer claim', () => {
+  const organizerId = '507f1f77bcf86cd799439011';
+  const globalUserId = '507f191e810c19729de860ea';
+
+  beforeEach(() => {
+    claimOrganizer.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('POST /tenants/:tenantKey/organizers/:organizerId/claim attaches the grant user', async () => {
+    claimOrganizer.mockResolvedValue({
+      data: {
+        alreadyClaimed: false,
+        organizer: {
+          id: organizerId,
+          claimStatus: 'claimed',
+          claimedByUserId: globalUserId,
+        },
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.organizer.claimStatus).toBe('claimed');
+    expect(claimOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        organizerId,
+        globalUserId,
+        unclaim: false,
+      }),
+    );
+  });
+
+  it('POST claim returns 409 when another user already claimed', async () => {
+    claimOrganizer.mockResolvedValue({
+      error: 'Organizer is already claimed by another user.',
+      status: 409,
+      code: 'ORGANIZER_ALREADY_CLAIMED',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('ORGANIZER_ALREADY_CLAIMED');
+  });
+
+  it('POST claim returns 409 when the user has no active grant', async () => {
+    claimOrganizer.mockResolvedValue({
+      error: 'An active creator grant is required for this user and city.',
+      status: 409,
+      code: 'CREATOR_GRANT_REQUIRED',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('CREATOR_GRANT_REQUIRED');
+  });
+
+  it('POST claim with unclaim:true clears the claim', async () => {
+    claimOrganizer.mockResolvedValue({
+      data: {
+        unclaimed: true,
+        organizer: { id: organizerId, claimStatus: 'unclaimed', claimedByUserId: null },
+      },
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ unclaim: true });
+
+    expect(response.status).toBe(200);
+    expect(claimOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        organizerId,
+        unclaim: true,
+      }),
+    );
+  });
+
+  it('POST claim returns 404 when the organizer is missing', async () => {
+    claimOrganizer.mockResolvedValue({
+      error: 'Organizer not found.',
+      status: 404,
+      code: 'ORGANIZER_NOT_FOUND',
+    });
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('ORGANIZER_NOT_FOUND');
+  });
+
+  it('POST claim returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .post(`/admin/pivot/tenants/nyc/organizers/${organizerId}/claim`)
+      .send({ globalUserId });
+
+    expect(response.status).toBe(403);
+    expect(claimOrganizer).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes copy (Task 4.1)', () => {
+  beforeEach(() => {
+    getCopyCatalog.mockReset();
+    getPlatformCopyLayers.mockReset();
+    patchCopyPack.mockReset();
+    resetCopyPack.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/copy/catalog returns shipped keys', async () => {
+    getCopyCatalog.mockReturnValue({
+      data: {
+        schemaVersion: 1,
+        tokens: [{ name: 'group.singular', shipped: 'circle' }],
+        keys: [{ path: 'ticker.week', kind: 'string', shipped: 'swipe' }],
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/copy/catalog');
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.keys[0].path).toBe('ticker.week');
+    expect(getCopyCatalog).toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/copy/catalog returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/copy/catalog');
+    expect(response.status).toBe(403);
+    expect(getCopyCatalog).not.toHaveBeenCalled();
+  });
+
+  it('GET /admin/pivot/copy returns platform layers', async () => {
+    getPlatformCopyLayers.mockResolvedValue({
+      data: {
+        scope: 'platform',
+        revision: 1,
+        entries: {
+          'ticker.week': {
+            shipped: 'swipe',
+            platform: 'override',
+            effective: 'override',
+          },
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/copy');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.revision).toBe(1);
+    expect(getPlatformCopyLayers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+    );
+  });
+
+  it('PATCH /admin/pivot/copy writes a sparse platform pack', async () => {
+    patchCopyPack.mockResolvedValue({
+      data: { scope: 'platform', revision: 1, entries: { 'ticker.week': 'this week' } },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/copy')
+      .send({ entries: { 'ticker.week': 'this week' } });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.revision).toBe(1);
+    expect(patchCopyPack).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        scope: 'platform',
+        entries: { 'ticker.week': 'this week' },
+      }),
+    );
+  });
+
+  it('PATCH /admin/pivot/copy returns 400 for an unknown key', async () => {
+    patchCopyPack.mockResolvedValue({
+      error: 'entries key is not in the shipped catalog: ticker.notARealKey',
+      status: 400,
+      code: 'UNKNOWN_COPY_KEY',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/copy')
+      .send({ entries: { 'ticker.notARealKey': 'nope' } });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('UNKNOWN_COPY_KEY');
+  });
+
+  it('PATCH /admin/pivot/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/copy')
+      .send({ entries: { 'ticker.week': 'nope' } });
+
+    expect(response.status).toBe(403);
+    expect(patchCopyPack).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /admin/pivot/copy resets a stored key', async () => {
+    resetCopyPack.mockResolvedValue({
+      data: { scope: 'platform', revision: 2, entries: {} },
+    });
+
+    const response = await request(buildApp())
+      .delete('/admin/pivot/copy')
+      .send({ keys: ['ticker.week'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.revision).toBe(2);
+    expect(resetCopyPack).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        scope: 'platform',
+        entries: ['ticker.week'],
+      }),
+    );
+  });
+
+  it('DELETE /admin/pivot/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .delete('/admin/pivot/copy')
+      .send({ keys: ['ticker.week'] });
+
+    expect(response.status).toBe(403);
+    expect(resetCopyPack).not.toHaveBeenCalled();
+  });
+});
+
+describe('pivotAdminRoutes tenant copy (Task 5.1)', () => {
+  beforeEach(() => {
+    getCopyLayers.mockReset();
+    patchCopyPack.mockReset();
+    resetCopyPack.mockReset();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/copy returns tenant layers', async () => {
+    getCopyLayers.mockResolvedValue({
+      data: {
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        revision: 1,
+        compositeRevision: 'p1:t1',
+        entries: {
+          'ticker.week': {
+            shipped: 'swipe',
+            platform: 'all cities',
+            tenant: 'nyc week',
+            effective: 'nyc week',
+          },
+        },
+      },
+    });
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/copy');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.tenantKey).toBe('nyc');
+    expect(response.body.data.entries['ticker.week'].tenant).toBe('nyc week');
+    expect(getCopyLayers).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({ scope: 'tenant', tenantKey: 'nyc' }),
+    );
+  });
+
+  it('GET /admin/pivot/tenants/:tenantKey/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).get('/admin/pivot/tenants/nyc/copy');
+    expect(response.status).toBe(403);
+    expect(getCopyLayers).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/copy writes a sparse tenant pack', async () => {
+    patchCopyPack.mockResolvedValue({
+      data: {
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        revision: 1,
+        entries: { 'ticker.week': 'nyc week' },
+      },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/copy')
+      .send({ entries: { 'ticker.week': 'nyc week' } });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.tenantKey).toBe('nyc');
+    expect(patchCopyPack).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        entries: { 'ticker.week': 'nyc week' },
+      }),
+    );
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/copy returns 400 for an unknown key', async () => {
+    patchCopyPack.mockResolvedValue({
+      error: 'entries key is not in the shipped catalog: ticker.notARealKey',
+      status: 400,
+      code: 'UNKNOWN_COPY_KEY',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/copy')
+      .send({ entries: { 'ticker.notARealKey': 'nope' } });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('UNKNOWN_COPY_KEY');
+  });
+
+  it('PATCH /admin/pivot/tenants/:tenantKey/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/copy')
+      .send({ entries: { 'ticker.week': 'nope' } });
+
+    expect(response.status).toBe(403);
+    expect(patchCopyPack).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /admin/pivot/tenants/:tenantKey/copy resets a stored key', async () => {
+    resetCopyPack.mockResolvedValue({
+      data: { scope: 'tenant', tenantKey: 'nyc', revision: 2, entries: {} },
+    });
+
+    const response = await request(buildApp())
+      .delete('/admin/pivot/tenants/nyc/copy')
+      .send({ keys: ['ticker.week'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.revision).toBe(2);
+    expect(resetCopyPack).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        scope: 'tenant',
+        tenantKey: 'nyc',
+        entries: ['ticker.week'],
+      }),
+    );
+  });
+
+  it('DELETE /admin/pivot/tenants/:tenantKey/copy returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp())
+      .delete('/admin/pivot/tenants/nyc/copy')
+      .send({ keys: ['ticker.week'] });
+
+    expect(response.status).toBe(403);
+    expect(resetCopyPack).not.toHaveBeenCalled();
   });
 });

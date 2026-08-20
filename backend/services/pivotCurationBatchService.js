@@ -15,6 +15,7 @@ const {
   serializeDiscoveryRun,
   findOrchestrationRun,
   findLatestOrchestrationRun,
+  refuseIfPipelineBusy,
 } = require('./pivotDiscoveryRunRecorder');
 const { createRunGuard, runPool } = require('./pivotRunGuard');
 const { logPivot } = require('../utilities/pivotLogger');
@@ -37,15 +38,29 @@ const { logPivot } = require('../utilities/pivotLogger');
 /**
  * Jobs crawled at once.
  *
- * Deliberately below the discovery pool: every job here is a full extraction of
- * a whole calendar page, which is the most expensive call the platform makes,
- * and they all land on the same rate-limited Firecrawl account.
+ * One job at a time. Refresh shares the web dyno; two parallel extractions
+ * were enough to hold two full calendars in RAM next to user traffic.
  */
-const BATCH_CONCURRENCY = 2;
+const BATCH_CONCURRENCY = 1;
 
 /** Providers a batch can crawl. `manual-json` has no URL to fetch. */
 function isCrawlable(job) {
   return job?.provider !== 'manual-json' && Boolean(job?.url);
+}
+
+/**
+ * generic-site needs Firecrawl; luma/partiful do not.
+ *
+ * A mixed city must not 503 the whole Refresh all when the key is missing —
+ * skip website jobs and still recrawl native indexes. A batch that is only
+ * generic-site still fails closed (`SITE_SCRAPE_NOT_CONFIGURED`).
+ */
+function jobsReadyForScrapeConfig(jobs) {
+  if (isSiteScrapeConfigured()) {
+    return { jobs, skippedGenericSite: 0 };
+  }
+  const ready = jobs.filter((job) => job.provider !== GENERIC_SITE_PROVIDER);
+  return { jobs: ready, skippedGenericSite: jobs.length - ready.length };
 }
 
 function trimString(value) {
@@ -61,7 +76,8 @@ function actorFromReq(req) {
  *
  * Oldest-run-first, so a batch interrupted by the rate limiter makes progress on
  * a different part of the city next time rather than re-crawling the same head
- * of the list.
+ * of the list. Luma and Partiful are crawlable here the same as generic-site —
+ * do not special-case them out of weekly refresh.
  */
 async function selectBatchJobs(req, { tenantKey, jobIds }) {
   const { PivotCurationJob } = getGlobalModels(req, 'PivotCurationJob');
@@ -88,14 +104,17 @@ async function selectBatchJobs(req, { tenantKey, jobIds }) {
  * caller gets the record to watch rather than the result.
  */
 async function startCurationBatch(req, options = {}) {
+  const busy = await refuseIfPipelineBusy(req);
+  if (busy) return busy;
+
   const tenantResult = await resolvePivotTenant(req, options.tenantKey);
   if (tenantResult.error) return tenantResult;
 
   const tenant = tenantResult.tenant;
   const tenantKey = tenant.tenantKey;
 
-  const jobs = await selectBatchJobs(req, { tenantKey, jobIds: options.jobIds });
-  if (!jobs.length) {
+  const selected = await selectBatchJobs(req, { tenantKey, jobIds: options.jobIds });
+  if (!selected.length) {
     return {
       error: 'No enabled, crawlable curation jobs for this city.',
       status: 400,
@@ -103,8 +122,10 @@ async function startCurationBatch(req, options = {}) {
     };
   }
 
-  // Fail before creating a record that could only end in failure.
-  if (jobs.some((job) => job.provider === GENERIC_SITE_PROVIDER) && !isSiteScrapeConfigured()) {
+  const { jobs, skippedGenericSite } = jobsReadyForScrapeConfig(selected);
+  // Fail before creating a record that could only end in failure. Native jobs
+  // in a mixed city still run; only a generic-site-only set 503s.
+  if (!jobs.length) {
     return {
       error:
         'Website scraping is not configured. Set FIRECRAWL_API_KEY in the backend environment to run generic-site curation jobs.',
@@ -136,6 +157,7 @@ async function startCurationBatch(req, options = {}) {
       jobs: jobs.length,
       batchWeek: weekResult.batchWeek,
       forceBatchWeek,
+      skippedGenericSite,
       // One extraction per job, which for generic-site is the expensive call.
       maxOutboundCalls: jobs.length,
     },
@@ -148,6 +170,7 @@ async function startCurationBatch(req, options = {}) {
     forceBatchWeek,
     actor,
     recorder,
+    skippedGenericSite,
   });
 
   return {
@@ -157,6 +180,7 @@ async function startCurationBatch(req, options = {}) {
       batchWeek: weekResult.batchWeek,
       forceBatchWeek,
       jobs: jobs.length,
+      skippedGenericSite,
     },
   };
 }
@@ -242,6 +266,8 @@ async function runOneJob(ctx, job) {
     eventsUpserted: upserted,
     eventsSkipped: skipped,
     eventsFailed: failed,
+    eventsUpdated: summary.refreshed,
+    eventsUpdatedByFingerprint: summary.updatedByFingerprint,
     scrapes: 1,
   });
 
@@ -305,16 +331,25 @@ async function executeCurationBatch(options = {}) {
     user: options.actor ? { email: options.actor } : {},
   };
 
-  const jobs = await selectBatchJobs(req, { tenantKey, jobIds: options.jobIds });
+  const selected = await selectBatchJobs(req, { tenantKey, jobIds: options.jobIds });
+  const { jobs, skippedGenericSite } = jobsReadyForScrapeConfig(selected);
+  const skipped = skippedGenericSite || options.skippedGenericSite || 0;
 
   recorder.step({
     phase: 'planning',
     kind: 'plan',
-    tone: 'info',
+    tone: skipped ? 'warn' : 'info',
     title: `Refreshing ${jobs.length} source(s) for ${tenantKey}`,
-    detail: options.forceBatchWeek
-      ? `Every event forced into ${options.batchWeek}`
-      : `Events land in the week of their own date · ${options.batchWeek} for anything undated`,
+    detail: [
+      options.forceBatchWeek
+        ? `Every event forced into ${options.batchWeek}`
+        : `Events land in the week of their own date · ${options.batchWeek} for anything undated`,
+      skipped
+        ? `${skipped} website job(s) skipped — FIRECRAWL_API_KEY is not set`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' · '),
   });
 
   if (!jobs.length) {

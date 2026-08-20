@@ -5,7 +5,12 @@ import Banner from '../../components/Banner/Banner'; // Import your Banner compo
 import OrgInviteModal from '../../components/OrgInviteModal/OrgInviteModal';
 import useAuth from '../../hooks/useAuth';
 import { useNotification } from '../../NotificationContext';
-import { isWww, isPathAllowedOnWww, hasDevTenantOverride, getLastTenant, getTenantKeys, getTenantRedirectUrl } from '../../config/tenantRedirect';
+import { isWww, isPathAllowedOnWww, isJustGoHost, isPathAllowedOnJustGoHost, hasDevTenantOverride, getLastTenant, getTenantKeys, getTenantRedirectUrl } from '../../config/tenantRedirect';
+import {
+  applyJustGoTabIcon,
+  restoreCampusTabIcon,
+  shouldHideCampusBanner,
+} from '../JustGoLanding/justGoLandingUtils';
 
 function Layout() {
   const [visible, setVisible] = useState(false);
@@ -25,6 +30,17 @@ function Layout() {
       //add listener
   },[]);
 
+  const justGoHost = isJustGoHost();
+  const hideCampusChrome = shouldHideCampusBanner(location.pathname, justGoHost);
+  const pathAllowedOnHost = justGoHost
+    ? isPathAllowedOnJustGoHost(location.pathname)
+    : isPathAllowedOnWww(location.pathname);
+
+  useEffect(() => {
+    if (hideCampusChrome) applyJustGoTabIcon();
+    else restoreCampusTabIcon();
+  }, [hideCampusChrome]);
+
   const handleOrgInviteAccept = (invite) => {
     setPendingOrgInvites(prev => prev.filter(inv => inv._id !== invite._id));
   };
@@ -34,7 +50,8 @@ function Layout() {
   };
 
   // On www: if user has a saved tenant from a previous domain selection, auto-redirect there
-  if (isWww() && !hasDevTenantOverride() && !isPathAllowedOnWww(location.pathname)) {
+  // Just Go apex is not campus www — never bounce it to a school subdomain.
+  if (!justGoHost && isWww() && !hasDevTenantOverride() && !pathAllowedOnHost) {
     const lastTenant = getLastTenant();
     const validTenants = getTenantKeys();
     if (lastTenant && validTenants.includes(lastTenant)) {
@@ -51,18 +68,17 @@ function Layout() {
   }
 
   // Redirect to domain picker when on www/localhost without tenant and path requires tenant
-  if (isWww() && !hasDevTenantOverride() && !isPathAllowedOnWww(location.pathname)) {
+  if (!justGoHost && isWww() && !hasDevTenantOverride() && !pathAllowedOnHost) {
     const path = location.pathname + (location.search || '');
     const next = path !== '/' ? `?next=${encodeURIComponent(path)}` : '';
     return <Navigate to={`/select-school${next}`} replace />;
   }
 
-  // On tenant subdomain, / goes straight to events dashboard (no landing)
-  if (!isWww() && location.pathname === '/') {
+  // On tenant subdomain, / goes straight to events dashboard (no landing).
+  // justgo.lol is apex, not a school — Task 0.2 maps / to JustGoLanding.
+  if (!justGoHost && !isWww() && location.pathname === '/') {
     return <Navigate to="/events-dashboard" replace />;
   }
-  
-  const hideCampusChrome = location.pathname === '/invite' || location.pathname.startsWith('/invite/');
 
   return (
     <div style={{minHeight: viewport, position: 'relative', overflowX: 'clip', width: '100%'}}>

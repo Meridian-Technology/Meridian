@@ -70,8 +70,11 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     timeSlots,
     ...(movie ? { movie } : {}),
     ...(enrichment ? { enrichment } : {}),
+    ...(pivot.duplicateRollup ? { duplicateRollup: pivot.duplicateRollup } : {}),
     organizerName: host.name || '',
     organizerImageUrl: host.imageUrl || null,
+    organizerProfileUrl: host.profileUrl || null,
+    hostIdentities: Array.isArray(host.identities) ? host.identities : [],
     /** Host-created (Just Go Creator) provenance — ops curation / Task 3.1 */
     platformManaged: pivot.platformManaged === true,
     createdByUserId: pivot.createdByUserId ? String(pivot.createdByUserId) : null,

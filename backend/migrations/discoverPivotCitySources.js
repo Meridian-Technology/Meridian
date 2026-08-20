@@ -32,6 +32,9 @@
  *   --no-jobs              Register sources without creating curation jobs.
  *   --no-ingest            Register sources without publishing the events found.
  *   --recheck-rejected     Re-evaluate hosts previously rejected.
+ *   --flow=<name>          native-then-firecrawl | native-only | firecrawl-only
+ *   --luma-slug=<slug>     City slug for luma.com/{slug}
+ *   --partiful-slug=<slug> City slug for partiful.com/explore/{slug}
  */
 // Events-Backend schemas are symlinked in and resolve bare imports from their own
 // package root, so the module path has to be fixed up before anything pulls the
@@ -90,29 +93,56 @@ function isPivotRow(row) {
   return row?.tenantType === 'pivot' || row?.pivotPilot === true;
 }
 
-function printPlan(city, queries, maxCandidates) {
-  console.log(`\n${TAG} query plan for "${city}"\n`);
-
-  const byTag = new Map();
-  for (const row of queries) {
-    const key = row.tag || '(city-wide)';
-    if (!byTag.has(key)) byTag.set(key, []);
-    byTag.get(key).push(row.query);
+function printEnhancedPlan(data) {
+  const { city, tenantKey, plan } = data;
+  console.log(`\n${TAG} discovery plan for "${city}" (${tenantKey})\n`);
+  
+  // Show flow and configuration
+  console.log(`  flow:                 ${plan.flow}`);
+  if (plan.lumaSlug) console.log(`  luma slug:            ${plan.lumaSlug}`);
+  if (plan.partifulSlug) console.log(`  partiful slug:        ${plan.partifulSlug}`);
+  
+  // Native sources section
+  if (plan.runNative) {
+    console.log(`\n  Native sources:`);
+    if (plan.nativeJobs && plan.nativeJobs.length > 0) {
+      for (const job of plan.nativeJobs) {
+        console.log(`    · ${job.provider}: ${job.url}`);
+      }
+      console.log(`    native jobs:          ${plan.nativeJobs.length}`);
+    } else {
+      console.log(`    (no native sources configured)`);
+    }
+    
+    if (plan.nativeWarning) {
+      console.log(`\n  Warning: ${plan.nativeWarning}`);
+    }
+  } else {
+    console.log(`\n  Native sources:       skipped (${plan.flow})`);
   }
-
-  for (const [tag, rows] of byTag) {
-    console.log(`  ${tag}`);
-    for (const query of rows) console.log(`    · ${query}`);
+  
+  // Firecrawl section  
+  if (plan.runFirecrawl) {
+    console.log(`\n  Firecrawl search:`);
+    console.log(`    queries:              ${plan.queries}`);
+    console.log(`    categories covered:   ${plan.categories}`);
+    console.log(`    max candidates:       ${plan.maxCandidates}`);
+  } else {
+    console.log(`\n  Firecrawl search:     skipped (${plan.flow})`);
   }
-
-  console.log(`\n  queries:              ${queries.length}`);
-  console.log(`  categories covered:   ${[...byTag.keys()].filter((k) => k !== '(city-wide)').length}`);
-  console.log(`  max candidates:       ${maxCandidates}`);
-  console.log(`  max outbound calls:   ${queries.length + maxCandidates * 2}`);
-  console.log(
-    `\n  Upper bound, not a prediction: one search per query, then at most a map\n` +
-      `  plus a qualifying scrape for each candidate that clears the filters.\n`,
-  );
+  
+  // Credit calculation
+  console.log(`\n  max outbound calls:   ${plan.maxOutboundCalls}`);
+  
+  if (plan.maxOutboundCalls === 0) {
+    console.log(`\n  No Firecrawl credits required for this plan.`);
+  } else {
+    console.log(
+      `\n  Upper bound, not a prediction: one search per query, then at most a map\n` +
+        `  plus a qualifying scrape for each candidate that clears the filters.\n` +
+        `  Native sources use $0 credits.`,
+    );
+  }
 }
 
 function printResult(data) {
@@ -219,20 +249,38 @@ async function run() {
   }
 
   if (args.flags.has('plan')) {
-    const tenant = (await loadPivotTenants(globalDb)).find(
-      (row) => row.tenantKey === tenantKey.toLowerCase(),
+    const { previewCitySourceDiscovery } = require('../services/pivotSourceDiscoveryService');
+    
+    // Use the full preview service to get native + Firecrawl plan
+    const planResult = await previewCitySourceDiscovery(
+      { params: { tenantKey } }, 
+      { 
+        tenantKey,
+        flow,
+        lumaSlug,
+        partifulSlug,
+        tags, 
+        maxQueries, 
+        maxCandidates 
+      }
     );
-    if (!tenant) throw new Error(`Tenant "${tenantKey}" not found.`);
-    const city = tenant.name || tenant.tenantKey;
-    const queries = buildDiscoveryQueries({ city, tags, maxQueries });
-    printPlan(city, queries, maxCandidates);
+    
+    if (planResult.error) {
+      throw new Error(`Plan failed: ${planResult.error}`);
+    }
+    
+    printEnhancedPlan(planResult.data);
     return;
   }
 
-  if (!isSiteScrapeConfigured()) {
+  const flow = args.values.flow;
+  const lumaSlug = args.values['luma-slug'];
+  const partifulSlug = args.values['partiful-slug'];
+
+  if (!isSiteScrapeConfigured() && flow !== 'native-only') {
     throw new Error(
       'FIRECRAWL_API_KEY is not set. Every candidate would abort on SITE_SCRAPE_NOT_CONFIGURED.\n' +
-        '  Set it in Meridian/backend/.env, or use --plan to inspect the run without spending credits.',
+        '  Set it in Meridian/backend/.env, use --flow=native-only, or use --plan to inspect the run without spending credits.',
     );
   }
 
@@ -261,6 +309,9 @@ async function run() {
     createJobs: !args.flags.has('no-jobs'),
     ingestEvents: !args.flags.has('no-ingest'),
     recheckRejected: args.flags.has('recheck-rejected'),
+    flow,
+    lumaSlug,
+    partifulSlug,
   });
 
   if (result.error) {

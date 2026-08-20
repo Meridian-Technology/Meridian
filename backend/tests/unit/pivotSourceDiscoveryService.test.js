@@ -4,10 +4,21 @@ jest.mock('../../services/pivotIngestPublishService', () => ({
 }));
 jest.mock('../../services/pivotCurationJobService', () => ({
   createCurationJob: jest.fn(),
+  updateCurationJob: jest.fn(),
 }));
 jest.mock('../../services/pivotCurationRunService', () => ({
   ingestEntries: jest.fn(),
   resolveRunBatchWeek: jest.fn(),
+  executeCurationRun: jest.fn(),
+  emptyStats: (message = null) => ({
+    discovered: 0,
+    upserted: 0,
+    skipped: 0,
+    failed: 0,
+    updated: 0,
+    message,
+    byBatchWeek: null,
+  }),
   // Pure phrasing over the stats above; stubbing it would only restate it.
   summarizeIngest: (stats = {}) => {
     const written = stats.upserted || 0;
@@ -30,6 +41,10 @@ jest.mock('../../connectionsManager', () => ({
   connectToGlobalDatabase: jest.fn(),
 }));
 jest.mock('../../utilities/pivotLogger', () => ({ logPivot: jest.fn() }));
+jest.mock('../../services/tenantConfigService', () => ({
+  getTenantByKey: jest.fn().mockResolvedValue(null),
+  upsertStoredTenantRow: jest.fn().mockResolvedValue({}),
+}));
 // Only the network-bound helpers are stubbed; the URL and host guards stay real
 // so the tests exercise the filtering discovery actually relies on.
 jest.mock('../../services/pivotSiteScrapeService', () => {
@@ -44,12 +59,14 @@ jest.mock('../../services/pivotSiteScrapeService', () => {
 
 const getGlobalModels = require('../../services/getGlobalModelService');
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
-const { createCurationJob } = require('../../services/pivotCurationJobService');
+const { createCurationJob, updateCurationJob } = require('../../services/pivotCurationJobService');
 const {
   ingestEntries,
   resolveRunBatchWeek,
+  executeCurationRun,
 } = require('../../services/pivotCurationRunService');
 const { startCurationBatch } = require('../../services/pivotCurationBatchService');
+const { getTenantByKey, upsertStoredTenantRow } = require('../../services/tenantConfigService');
 const {
   searchSites,
   mapSite,
@@ -61,6 +78,7 @@ const {
   startCitySourceDiscovery,
   previewCitySourceDiscovery,
   updateCitySource,
+  updateCityDiscoveryConfig,
   getCitySourceDiscoveryRun,
   getLatestCitySourceDiscoveryRun,
   scoreEventIndexUrl,
@@ -103,6 +121,8 @@ function upsertedDoc(filter, update) {
 
 describe('pivotSourceDiscoveryService', () => {
   let PivotCitySource;
+  let PivotCurationJob;
+  let PivotCurationRun;
   const originalKey = process.env.FIRECRAWL_API_KEY;
 
   afterAll(() => {
@@ -123,7 +143,37 @@ describe('pivotSourceDiscoveryService', () => {
         Promise.resolve(upsertedDoc(filter, update)),
       ),
     };
-    getGlobalModels.mockReturnValue({ PivotCitySource });
+    PivotCurationJob = {
+      find: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+      findByIdAndUpdate: jest.fn().mockResolvedValue(undefined),
+    };
+    PivotCurationRun = {
+      create: jest.fn().mockResolvedValue({ _id: '665a1b2c3d4e5f6789012301' }),
+      findById: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          status: 'completed',
+          stats: { upserted: 0, skipped: 0, failed: 0, updated: 0, byBatchWeek: {} },
+        }),
+      }),
+    };
+    const PivotSourceDiscoveryRun = {
+      create: jest.fn().mockResolvedValue({ _id: '665a1b2c3d4e5f6789012388' }),
+      updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+      updateMany: jest.fn().mockResolvedValue({ acknowledged: true }),
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(null),
+      }),
+    };
+    getGlobalModels.mockImplementation((req, ...names) => {
+      const all = { PivotCitySource, PivotCurationJob, PivotCurationRun, PivotSourceDiscoveryRun };
+      const out = {};
+      for (const name of names) {
+        if (all[name]) out[name] = all[name];
+      }
+      return out;
+    });
     resolvePivotTenant.mockResolvedValue({
       tenant: {
         tenantKey: 'iowacity',
@@ -133,6 +183,8 @@ describe('pivotSourceDiscoveryService', () => {
       },
     });
     createCurationJob.mockResolvedValue({ data: { job: { _id: JOB_ID } } });
+    updateCurationJob.mockResolvedValue({ data: { job: { _id: JOB_ID } } });
+    executeCurationRun.mockResolvedValue(undefined);
     searchSites.mockResolvedValue({ results: [] });
     mapSite.mockResolvedValue({ links: [] });
     scrapeSiteEvents.mockResolvedValue({ listLabel: null, drafts: [] });
@@ -374,6 +426,7 @@ describe('pivotSourceDiscoveryService', () => {
       const result = await discoverCitySources(mockReq(), {
         tenantKey: 'iowacity',
         maxQueries: 1,
+        flow: 'firecrawl-only',
       });
 
       expect(result.data.qualified[0]).toMatchObject({
@@ -383,6 +436,211 @@ describe('pivotSourceDiscoveryService', () => {
       });
       expect(mapSite).not.toHaveBeenCalled();
       expect(scrapeSiteEvents).not.toHaveBeenCalled();
+    });
+
+    it('drops Luma and Partiful from Firecrawl search when native jobs run first', async () => {
+      searchSites.mockResolvedValue({
+        results: [
+          { url: 'https://partiful.com/explore/iowa-city', title: 'Iowa City' },
+          { url: 'https://englert.org/events', title: 'Englert' },
+        ],
+      });
+      scrapeSiteEvents.mockResolvedValue({
+        listLabel: 'Englert',
+        drafts: [{ draft: { name: 'Show', start_time: '2026-08-14T01:00:00.000Z' } }],
+      });
+
+      const result = await discoverCitySources(mockReq(), {
+        tenantKey: 'iowacity',
+        maxQueries: 1,
+        partifulSlug: 'iowa-city',
+      });
+
+      expect(createCurationJob).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          provider: 'partiful',
+          url: 'https://partiful.com/explore/iowa-city',
+        }),
+      );
+      expect(executeCurationRun).toHaveBeenCalled();
+      expect(result.data.qualified.map((row) => row.host)).toEqual(['englert.org']);
+      expect(mapSite).not.toHaveBeenCalledWith(
+        expect.objectContaining({ url: expect.stringContaining('partiful.com') }),
+      );
+    });
+
+    it('skips Firecrawl entirely on a native-only city', async () => {
+      const result = await discoverCitySources(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        lumaSlug: 'iowa-city',
+      });
+
+      expect(searchSites).not.toHaveBeenCalled();
+      expect(mapSite).not.toHaveBeenCalled();
+      expect(scrapeSiteEvents).not.toHaveBeenCalled();
+      expect(createCurationJob).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          provider: 'luma',
+          url: 'https://luma.com/iowa-city',
+          defaultBatchWeekStrategy: 'next-drop',
+        }),
+      );
+      expect(result.data.candidates.evaluated).toBe(0);
+    });
+
+    it('upserts a qualified registry row when a native job is created', async () => {
+      PivotCurationRun.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          status: 'completed',
+          stats: { upserted: 12, skipped: 0, failed: 0, updated: 0, byBatchWeek: { '2026-W33': 12 } },
+        }),
+      });
+
+      await discoverCitySources(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        lumaSlug: 'iowa-city',
+      });
+
+      const nativeWrites = PivotCitySource.findOneAndUpdate.mock.calls.filter(
+        ([filter]) => filter.host === 'luma.com',
+      );
+      expect(nativeWrites).toHaveLength(1);
+      const [filter, update] = nativeWrites[0];
+      expect(filter).toEqual({ tenantKey: 'iowacity', host: 'luma.com' });
+      expect(update.$set).toMatchObject({
+        provider: 'luma',
+        status: 'qualified',
+        url: 'https://luma.com/iowa-city',
+        curationJobId: JOB_ID,
+        lastEventCount: 12,
+      });
+      expect(update.$setOnInsert).toMatchObject({
+        discoveredVia: 'native-bootstrap',
+        enabled: true,
+      });
+    });
+
+    it('upserts a qualified registry row when an existing native job is reused', async () => {
+      PivotCurationJob.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: JOB_ID,
+            provider: 'partiful',
+            url: 'https://partiful.com/explore/iowa-city',
+            label: 'Partiful · Iowa City',
+            enabled: true,
+          },
+        ]),
+      });
+      PivotCurationRun.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          status: 'completed',
+          stats: { upserted: 7, skipped: 1, failed: 0, updated: 7, byBatchWeek: {} },
+        }),
+      });
+
+      await discoverCitySources(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        partifulSlug: 'iowa-city',
+      });
+
+      expect(createCurationJob).not.toHaveBeenCalled();
+      const nativeWrites = PivotCitySource.findOneAndUpdate.mock.calls.filter(
+        ([filter]) => filter.host === 'partiful.com',
+      );
+      expect(nativeWrites).toHaveLength(1);
+      expect(nativeWrites[0][1].$set).toMatchObject({
+        provider: 'partiful',
+        status: 'qualified',
+        url: 'https://partiful.com/explore/iowa-city',
+        curationJobId: JOB_ID,
+        lastEventCount: 7,
+      });
+    });
+
+    it('does not persist native registry rows in preview', async () => {
+      PivotCurationJob.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: JOB_ID,
+            provider: 'luma',
+            url: 'https://luma.com/iowa-city',
+            enabled: true,
+          },
+        ]),
+      });
+
+      await discoverCitySources(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        lumaSlug: 'iowa-city',
+        createJobs: false,
+        ingestEvents: false,
+      });
+
+      expect(PivotCitySource.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('does not write lastEventCount 0 over a reused native source', async () => {
+      PivotCurationJob.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: JOB_ID,
+            provider: 'luma',
+            url: 'https://lu.ma/iowa-city',
+            enabled: true,
+          },
+        ]),
+      });
+
+      await discoverCitySources(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        lumaSlug: 'iowa-city',
+      });
+
+      const [, update] = PivotCitySource.findOneAndUpdate.mock.calls.find(
+        ([filter]) => filter.host === 'luma.com',
+      );
+      expect(update.$set.lastEventCount).toBeUndefined();
+      expect(update.$set.provider).toBe('luma');
+    });
+
+    it('still skips a host that already has a saved job during Firecrawl search', async () => {
+      PivotCurationJob.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: JOB_ID,
+            provider: 'generic-site',
+            url: 'https://englert.org/events',
+            label: 'Englert',
+            enabled: true,
+          },
+        ]),
+      });
+      searchSites.mockResolvedValue({
+        results: [
+          { url: 'https://englert.org/events' },
+          { url: 'https://gabeslive.com/shows' },
+        ],
+      });
+      scrapeSiteEvents.mockResolvedValue({
+        listLabel: "Gabe's",
+        drafts: [{ draft: { name: 'Show', start_time: '2026-08-14T01:00:00.000Z' } }],
+      });
+
+      const result = await discoverCitySources(mockReq(), {
+        tenantKey: 'iowacity',
+        maxQueries: 1,
+        flow: 'firecrawl-only',
+      });
+
+      expect(result.data.qualified.map((row) => row.host)).toEqual(['gabeslive.com']);
     });
 
     describe('publishing what it extracted', () => {
@@ -405,6 +663,40 @@ describe('pivotSourceDiscoveryService', () => {
         expect(scrapeSiteEvents).toHaveBeenCalledWith(
           expect.not.objectContaining({ maxEvents: expect.anything() }),
         );
+      });
+
+      it('persists and publishes one host before scraping the next', async () => {
+        searchSites.mockResolvedValue({
+          results: [
+            { url: 'https://englert.org/events' },
+            { url: 'https://gabeslive.com/shows' },
+          ],
+        });
+        mapSite.mockImplementation(async ({ url }) => ({
+          links: [{ url: `${new URL(url).origin}/events` }],
+        }));
+        const order = [];
+        scrapeSiteEvents.mockImplementation(async ({ url }) => {
+          order.push(`scrape:${new URL(url).hostname}`);
+          return twoShows;
+        });
+        ingestEntries.mockImplementation(async (_req, { logContext }) => {
+          order.push(`ingest:${logContext.host}`);
+          return {
+            stats: { upserted: 2, skipped: 0, failed: 0, byBatchWeek: {} },
+            events: [],
+            failures: [],
+          };
+        });
+
+        await discoverCitySources(mockReq(), { tenantKey: 'iowacity', maxQueries: 1 });
+
+        expect(order).toEqual([
+          'scrape:englert.org',
+          'ingest:englert.org',
+          'scrape:gabeslive.com',
+          'ingest:gabeslive.com',
+        ]);
       });
 
       it('publishes a qualified source’s events with the tags its job will use', async () => {
@@ -475,6 +767,7 @@ describe('pivotSourceDiscoveryService', () => {
         const result = await discoverCitySources(mockReq(), {
           tenantKey: 'iowacity',
           maxQueries: 1,
+          flow: 'firecrawl-only',
         });
 
         expect(ingestEntries).not.toHaveBeenCalled();
@@ -494,6 +787,7 @@ describe('pivotSourceDiscoveryService', () => {
         const result = await discoverCitySources(mockReq(), {
           tenantKey: 'iowacity',
           maxQueries: 1,
+          flow: 'firecrawl-only',
         });
 
         expect(result.data.qualified).toHaveLength(1);
@@ -769,9 +1063,27 @@ describe('pivotSourceDiscoveryService', () => {
     it('refuses to start when the scrape key is missing', async () => {
       delete process.env.FIRECRAWL_API_KEY;
 
-      const result = await startCitySourceDiscovery(mockReq(), { tenantKey: 'iowacity' });
+      const result = await startCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-then-firecrawl',
+      });
 
       expect(result.code).toBe('SITE_SCRAPE_NOT_CONFIGURED');
+      expect(result.status).toBe(503);
+    });
+
+    it('starts a native-only run without a Firecrawl key', async () => {
+      delete process.env.FIRECRAWL_API_KEY;
+
+      const result = await startCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        lumaSlug: 'iowa-city',
+      });
+
+      expect(result.data.started).toBe(true);
+      expect(result.data.plan.runFirecrawl).toBe(false);
+      expect(result.data.plan.maxOutboundCalls).toBe(0);
     });
 
     it('rejects an unknown tenant before scheduling work', async () => {
@@ -793,6 +1105,162 @@ describe('pivotSourceDiscoveryService', () => {
       });
 
       expect(result.code).toBe('NO_DISCOVERY_QUERIES');
+    });
+
+    it('native-only does not require discovery queries', async () => {
+      const result = await startCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        lumaSlug: 'iowa-city',
+        tags: ['not-a-real-tag'], // No queries match
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data).toBeDefined();
+      // Should succeed even with empty queries when runFirecrawl is false
+    });
+
+    it('refuses a second run while any discovery or refresh is still open', async () => {
+      getGlobalModels.mockImplementation((req, ...names) => {
+        const PivotSourceDiscoveryRun = {
+          updateMany: jest.fn().mockResolvedValue({ acknowledged: true }),
+          findOne: jest.fn().mockReturnValue({
+            select: jest.fn().mockReturnThis(),
+            sort: jest.fn().mockReturnThis(),
+            lean: jest.fn().mockResolvedValue({
+              _id: '665a1b2c3d4e5f6789012999',
+              tenantKey: 'sf',
+              kind: 'curation-batch',
+              city: 'San Francisco',
+              status: 'running',
+            }),
+          }),
+        };
+        const all = { PivotCitySource, PivotCurationJob, PivotCurationRun, PivotSourceDiscoveryRun };
+        const out = {};
+        for (const name of names) {
+          if (all[name]) out[name] = all[name];
+        }
+        return out;
+      });
+
+      const result = await startCitySourceDiscovery(mockReq(), { tenantKey: 'iowacity' });
+
+      expect(result.code).toBe('PIPELINE_BUSY');
+      expect(result.status).toBe(409);
+      expect(result.data.tenantKey).toBe('sf');
+    });
+
+    it('hybrid flow still requires queries when Firecrawl is enabled', async () => {
+      const result = await startCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-then-firecrawl',
+        tags: ['not-a-real-tag'], // No queries match
+      });
+
+      expect(result.code).toBe('NO_DISCOVERY_QUERIES');
+      expect(result.error).toContain('No discovery queries matched');
+    });
+
+    describe('native URL canonicalization', () => {
+      beforeEach(() => {
+        // Mock existing jobs with non-index URLs
+        PivotCurationJob.find.mockReturnValue({
+          lean: jest.fn().mockResolvedValue([
+            {
+              _id: '665a1b2c3d4e5f6789012388',
+              tenantKey: 'iowacity',
+              provider: 'luma',
+              url: 'https://luma.com/e/evt-abc123',
+              enabled: true,
+            },
+            {
+              _id: '665a1b2c3d4e5f6789012389',
+              tenantKey: 'iowacity',
+              provider: 'partiful',
+              url: 'https://partiful.com/e/xyz789',
+              enabled: true,
+            },
+          ]),
+        });
+        
+        updateCurationJob.mockImplementation(async (_req, options) => ({
+          data: { job: { _id: options.jobId, url: options.url } },
+        }));
+        
+        executeCurationRun.mockResolvedValue({ upserted: 2, skipped: 0, failed: 0 });
+      });
+
+      it('rewrites existing non-index URLs when slugs are configured', async () => {
+        await discoverCitySources(mockReq(), {
+          tenantKey: 'iowacity',
+          flow: 'native-only',
+          lumaSlug: 'iowa-city',
+          partifulSlug: 'iowa-city',
+        });
+
+        expect(updateCurationJob).toHaveBeenCalledWith(expect.any(Object), {
+          tenantKey: 'iowacity',
+          jobId: '665a1b2c3d4e5f6789012388',
+          url: 'https://luma.com/iowa-city',
+        });
+        
+        expect(updateCurationJob).toHaveBeenCalledWith(expect.any(Object), {
+          tenantKey: 'iowacity',
+          jobId: '665a1b2c3d4e5f6789012389',
+          url: 'https://partiful.com/explore/iowa-city',
+        });
+
+        expect(PivotCurationRun.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            jobId: '665a1b2c3d4e5f6789012388',
+            url: 'https://luma.com/iowa-city',
+          }),
+        );
+        expect(PivotCurationRun.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            jobId: '665a1b2c3d4e5f6789012389',
+            url: 'https://partiful.com/explore/iowa-city',
+          }),
+        );
+      });
+
+      it('does not rewrite URLs that are already index URLs', async () => {
+        // Mock jobs with index URLs
+        PivotCurationJob.find.mockReturnValue({
+          lean: jest.fn().mockResolvedValue([
+            {
+              _id: '665a1b2c3d4e5f6789012388',
+              tenantKey: 'iowacity',
+              provider: 'luma',
+              url: 'https://luma.com/iowa-city',
+              enabled: true,
+            },
+          ]),
+        });
+
+        await discoverCitySources(mockReq(), {
+          tenantKey: 'iowacity',
+          flow: 'native-only',
+          lumaSlug: 'iowa-city',
+        });
+
+        expect(updateCurationJob).not.toHaveBeenCalled();
+      });
+
+      it('does not rewrite URLs in preview mode', async () => {
+        const result = await previewCitySourceDiscovery(mockReq(), {
+          tenantKey: 'iowacity',
+          flow: 'native-only',
+          lumaSlug: 'iowa-city',
+          partifulSlug: 'iowa-city',
+        });
+
+        expect(result.data.plan).toBeDefined();
+        
+        // Preview mode should not persist URL changes
+        expect(updateCurationJob).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -822,6 +1290,86 @@ describe('pivotSourceDiscoveryService', () => {
       const result = await previewCitySourceDiscovery(mockReq(), { tenantKey: 'iowacity' });
 
       expect(result.data.plan.configured).toBe(false);
+    });
+
+    it('native-only plan succeeds with empty queries', async () => {
+      const result = await previewCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        tags: ['not-a-real-tag'], // No queries match
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.plan).toMatchObject({
+        queries: 0,
+        maxOutboundCalls: 0,
+        runFirecrawl: false,
+        runNative: true,
+        flow: 'native-only',
+      });
+    });
+
+    it('native-only plan with slugs has a zero Firecrawl credit ceiling', async () => {
+      const result = await previewCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        lumaSlug: 'iowa-city',
+        partifulSlug: 'iowa-city',
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.plan).toMatchObject({
+        flow: 'native-only',
+        runFirecrawl: false,
+        runNative: true,
+        queries: 0,
+        maxOutboundCalls: 0,
+        configured: true,
+        nativeReady: true,
+      });
+      expect(result.data.plan.nativeJobs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ url: 'https://luma.com/iowa-city' }),
+          expect.objectContaining({ url: 'https://partiful.com/explore/iowa-city' }),
+        ]),
+      );
+    });
+
+    it('hybrid plan still fails with empty queries', async () => {
+      const result = await previewCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-then-firecrawl',
+        tags: ['not-a-real-tag'], // No queries match
+      });
+
+      expect(result.code).toBe('NO_DISCOVERY_QUERIES');
+      expect(result.error).toContain('No discovery queries matched');
+    });
+
+    it('shows native warning when no slugs configured for native flow', async () => {
+      const result = await previewCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-then-firecrawl',
+        lumaSlug: null,
+        partifulSlug: null,
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.plan.nativeReady).toBe(false);
+      expect(result.data.plan.nativeWarning).toContain('Native discovery requires');
+      expect(result.data.plan.nativeJobs).toHaveLength(0);
+    });
+
+    it('native-only blocks execution when no sources configured', async () => {
+      const result = await startCitySourceDiscovery(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        lumaSlug: null,
+        partifulSlug: null,
+      });
+
+      expect(result.code).toBe('NATIVE_SOURCES_REQUIRED');
+      expect(result.error).toContain('Native-only discovery requires configured city slugs');
     });
   });
 
@@ -878,6 +1426,110 @@ describe('pivotSourceDiscoveryService', () => {
       });
 
       expect(result.code).toBe('SOURCE_NOT_FOUND');
+    });
+  });
+
+  describe('updateCityDiscoveryConfig', () => {
+    beforeEach(() => {
+      getTenantByKey.mockResolvedValue(null);
+      upsertStoredTenantRow.mockImplementation(async (_req, row) => row);
+    });
+
+    it('merges a flow patch onto the stored slugs', async () => {
+      getTenantByKey.mockResolvedValue({
+        tenantKey: 'iowacity',
+        pivotDiscovery: {
+          flow: 'native-then-firecrawl',
+          lumaSlug: 'iowa-city',
+          partifulSlug: 'iowa-city',
+        },
+      });
+
+      const result = await updateCityDiscoveryConfig(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data).toMatchObject({
+        tenantKey: 'iowacity',
+        discovery: {
+          flow: 'native-only',
+          lumaSlug: 'iowa-city',
+          partifulSlug: 'iowa-city',
+          runFirecrawl: false,
+          runNative: true,
+        },
+      });
+      expect(upsertStoredTenantRow).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          tenantKey: 'iowacity',
+          pivotDiscovery: expect.objectContaining({
+            flow: 'native-only',
+            lumaSlug: 'iowa-city',
+            partifulSlug: 'iowa-city',
+          }),
+        }),
+        'ops@meridian.app',
+      );
+    });
+
+    it('rejects an unknown flow', async () => {
+      const result = await updateCityDiscoveryConfig(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'agentic',
+      });
+
+      expect(result.code).toBe('INVALID_DISCOVERY_FLOW');
+      expect(result.status).toBe(400);
+      expect(upsertStoredTenantRow).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid luma slug', async () => {
+      const result = await updateCityDiscoveryConfig(mockReq(), {
+        tenantKey: 'iowacity',
+        lumaSlug: 'NYC!!',
+      });
+
+      expect(result.code).toBe('INVALID_LUMA_SLUG');
+      expect(upsertStoredTenantRow).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid partiful slug', async () => {
+      const result = await updateCityDiscoveryConfig(mockReq(), {
+        tenantKey: 'iowacity',
+        partifulSlug: 'San Francisco',
+      });
+
+      expect(result.code).toBe('INVALID_PARTIFUL_SLUG');
+      expect(upsertStoredTenantRow).not.toHaveBeenCalled();
+    });
+
+    it('returns NO_CHANGES when the patch is empty', async () => {
+      const result = await updateCityDiscoveryConfig(mockReq(), {
+        tenantKey: 'iowacity',
+      });
+
+      expect(result.code).toBe('NO_CHANGES');
+      expect(result.status).toBe(400);
+      expect(upsertStoredTenantRow).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown tenant before writing', async () => {
+      resolvePivotTenant.mockResolvedValue({
+        error: 'Pivot tenant not found.',
+        status: 404,
+        code: 'TENANT_NOT_FOUND',
+      });
+
+      const result = await updateCityDiscoveryConfig(mockReq(), {
+        tenantKey: 'nope',
+        flow: 'native-only',
+      });
+
+      expect(result.code).toBe('TENANT_NOT_FOUND');
+      expect(upsertStoredTenantRow).not.toHaveBeenCalled();
     });
   });
 
@@ -993,9 +1645,21 @@ describe('pivotSourceDiscoveryService', () => {
       PivotSourceDiscoveryRun = {
         create: jest.fn().mockResolvedValue({ _id: '665a1b2c3d4e5f6789012388' }),
         updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
-        findOne: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ acknowledged: true }),
+        findOne: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnThis(),
+          sort: jest.fn().mockReturnThis(),
+          lean: jest.fn().mockResolvedValue(null),
+        }),
       };
-      getGlobalModels.mockReturnValue({ PivotCitySource, PivotSourceDiscoveryRun });
+      getGlobalModels.mockImplementation((req, ...names) => {
+        const all = { PivotCitySource, PivotCurationJob, PivotCurationRun, PivotSourceDiscoveryRun };
+        const out = {};
+        for (const name of names) {
+          if (all[name]) out[name] = all[name];
+        }
+        return out;
+      });
     });
 
     it('narrates the decisions behind a qualified source', async () => {

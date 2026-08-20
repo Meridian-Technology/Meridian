@@ -139,6 +139,19 @@ function buildEntry(raw, seenAliases) {
     overrides: {
       name,
       hostName: trim(raw?.hostName),
+      ...(Array.isArray(raw?.hostIdentities)
+        ? { hostIdentities: raw.hostIdentities }
+        : Array.isArray(raw?.identities)
+          ? { hostIdentities: raw.identities }
+          : Array.isArray(raw?.host?.identities)
+            ? { hostIdentities: raw.host.identities }
+            : {}),
+      ...(trim(raw?.hostImageUrl || raw?.host?.imageUrl)
+        ? { hostImageUrl: trim(raw?.hostImageUrl || raw?.host?.imageUrl) }
+        : {}),
+      ...(trim(raw?.hostProfileUrl || raw?.host?.profileUrl)
+        ? { hostProfileUrl: trim(raw?.hostProfileUrl || raw?.host?.profileUrl) }
+        : {}),
       location: trim(raw?.location),
       ...(startTime ? { start_time: startTime } : {}),
       ...(trim(raw?.end_time) ? { end_time: trim(raw.end_time) } : {}),

@@ -6,8 +6,12 @@
  *
  * Post-publish edits (locked default): content fields OK; ingestStatus / batchWeek
  * locked for creators (ops only).
+ *
+ * Task 5.2: list/detail also include scraped events whose host.organizerIds match
+ * organizers claimed by this grant. Those rows are read-only; justgo stays editable.
  */
 
+const mongoose = require('mongoose');
 const getModels = require('./getModelService');
 const { connectToDatabase } = require('../connectionsManager');
 const {
@@ -37,8 +41,15 @@ const {
 } = require('../utilities/pivotCreatorDailySeries');
 const { logPivot } = require('../utilities/pivotLogger');
 const {
+  unionHostIdentities,
+  identityFromDisplayName,
+  displayFieldsFromIdentities,
+} = require('../utilities/pivotHostIdentity');
+const {
   notifyAdminsOnCreatorListingCreate,
 } = require('./pivotCreatorAdminNotifyService');
+const { resolveOrganizers } = require('./pivotOrganizerResolveService');
+const { activeOrganizerFilter } = require('../schemas/pivotOrganizer');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 const CREATOR_SOURCE = 'justgo';
@@ -306,6 +317,23 @@ function validateListingPayload(payload = {}, { partial = false } = {}) {
         : !partial && hostProfileUrl
           ? { hostProfileUrl }
           : {}),
+      ...(payload.hostIdentities !== undefined ||
+      payload.identities !== undefined ||
+      payload.host?.identities !== undefined
+        ? {
+            hostIdentities: unionHostIdentities(
+              payload.hostIdentities,
+              payload.identities,
+              payload.host?.identities,
+            ),
+          }
+        : !partial
+          ? {
+              hostIdentities: unionHostIdentities([
+                identityFromDisplayName(hostName, 'justgo'),
+              ]),
+            }
+          : {}),
       ...(payload.externalLink !== undefined ||
       payload.ticketUrl !== undefined ||
       payload.sourceUrl !== undefined
@@ -352,16 +380,60 @@ function rejectCreatorLifecycleOverrides(payload = {}) {
   };
 }
 
-function assertListingOwnership(event, creatorUserId) {
-  const ownerId = trimString(event?.customFields?.pivot?.createdByUserId);
-  if (!ownerId || !creatorUserId || ownerId !== String(creatorUserId)) {
-    return {
-      error: 'You can only manage your own Just Go listings.',
-      status: 403,
-      code: 'CREATOR_NOT_OWNER',
-    };
+function isObjectId(value) {
+  const id = String(value || '').trim();
+  return (
+    mongoose.Types.ObjectId.isValid(id) &&
+    String(new mongoose.Types.ObjectId(id)) === id
+  );
+}
+
+function organizerIdQueryValues(ids) {
+  const values = [];
+  for (const id of ids || []) {
+    const asString = String(id || '').trim();
+    if (!asString) continue;
+    values.push(asString);
+    if (isObjectId(asString)) values.push(new mongoose.Types.ObjectId(asString));
   }
-  return null;
+  return values;
+}
+
+function eventOrganizerIds(event) {
+  const ids = event?.customFields?.pivot?.host?.organizerIds;
+  if (!Array.isArray(ids)) return [];
+  return ids.map((id) => String(id || '').trim()).filter(Boolean);
+}
+
+function isOwnJustGoListing(event, creatorUserId) {
+  const pivot = event?.customFields?.pivot || {};
+  if (pivot.source !== CREATOR_SOURCE) return false;
+  const ownerId = trimString(pivot.createdByUserId);
+  if (!creatorUserId) return Boolean(ownerId);
+  return ownerId === String(creatorUserId);
+}
+
+function isClaimedCatalogEvent(event, claimedOrganizerIds) {
+  if (!claimedOrganizerIds?.length) return false;
+  const claimed = new Set(claimedOrganizerIds.map((id) => String(id)));
+  return eventOrganizerIds(event).some((id) => claimed.has(id));
+}
+
+function claimedReadOnlyError() {
+  return {
+    error: 'Claimed catalog listings are read-only. Just Go ops control their content and ingest status.',
+    status: 403,
+    code: 'CREATOR_CLAIMED_READ_ONLY',
+  };
+}
+
+function assertListingOwnership(event, creatorUserId) {
+  if (isOwnJustGoListing(event, creatorUserId)) return null;
+  return {
+    error: 'You can only manage your own Just Go listings.',
+    status: 403,
+    code: 'CREATOR_NOT_OWNER',
+  };
 }
 
 function assertJustGoListing(event) {
@@ -374,6 +446,34 @@ function assertJustGoListing(event) {
     };
   }
   return null;
+}
+
+function assertListingAccess(event, creatorUserId, claimedOrganizerIds) {
+  if (isOwnJustGoListing(event, creatorUserId)) {
+    return { access: 'owner' };
+  }
+  if (isClaimedCatalogEvent(event, claimedOrganizerIds)) {
+    return { access: 'claimed' };
+  }
+  return {
+    error: 'You can only manage your own Just Go listings.',
+    status: 403,
+    code: 'CREATOR_NOT_OWNER',
+  };
+}
+
+async function loadClaimedOrganizerIds({ db, tenantKey, creatorUserId }) {
+  const userId = trimString(creatorUserId);
+  if (!db || !tenantKey || !userId) return [];
+
+  const { PivotOrganizer } = getModels({ db, school: tenantKey }, 'PivotOrganizer');
+  const query = {
+    ...activeOrganizerFilter(tenantKey),
+    claimStatus: 'claimed',
+    claimedByUserId: isObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId,
+  };
+  const rows = await PivotOrganizer.find(query).select('_id').lean();
+  return rows.map((row) => String(row._id));
 }
 
 /**
@@ -456,10 +556,12 @@ function serializeAnalyticsSummary(analyticsDoc) {
   };
 }
 
-function serializeCreatorListing(event, intentStatsByEventId = null) {
+function serializeCreatorListing(event, intentStatsByEventId = null, options = {}) {
   const base = serializeLabEvent(event, intentStatsByEventId);
   const pivot = event?.customFields?.pivot || {};
   const host = pivot.host || {};
+  const creatorUserId = options.creatorUserId;
+  const own = isOwnJustGoListing(event, creatorUserId);
   return {
     ...base,
     platformManaged: pivot.platformManaged === true,
@@ -467,6 +569,8 @@ function serializeCreatorListing(event, intentStatsByEventId = null) {
       ? String(pivot.createdByUserId)
       : null,
     creatorSubmittedAt: pivot.creatorSubmittedAt || null,
+    readOnly: !own,
+    access: own ? 'owner' : 'claimed',
     host: {
       name: host.name || base.organizerName || '',
       ...(host.imageUrl ? { imageUrl: host.imageUrl } : {}),
@@ -509,18 +613,44 @@ function parseIngestStatusFilter(raw) {
   return { statuses };
 }
 
-function ownJustGoListingsQuery(creatorUserId, statuses = null) {
-  const query = {
-    isDeleted: { $ne: true },
-    'customFields.pivot.source': CREATOR_SOURCE,
-    'customFields.pivot.createdByUserId': String(creatorUserId),
-  };
+function applyIngestStatusFilter(query, statuses) {
   if (statuses?.length === 1) {
     query['customFields.pivot.ingestStatus'] = statuses[0];
   } else if (statuses?.length > 1) {
     query['customFields.pivot.ingestStatus'] = { $in: statuses };
   }
   return query;
+}
+
+function ownJustGoListingsQuery(creatorUserId, statuses = null) {
+  return applyIngestStatusFilter(
+    {
+      isDeleted: { $ne: true },
+      'customFields.pivot.source': CREATOR_SOURCE,
+      'customFields.pivot.createdByUserId': String(creatorUserId),
+    },
+    statuses,
+  );
+}
+
+function creatorConsoleListingsQuery(creatorUserId, claimedOrganizerIds, statuses = null) {
+  const own = ownJustGoListingsQuery(creatorUserId, statuses);
+  if (!claimedOrganizerIds?.length) return own;
+
+  const claimed = applyIngestStatusFilter(
+    {
+      isDeleted: { $ne: true },
+      'customFields.pivot.host.organizerIds': {
+        $in: organizerIdQueryValues(claimedOrganizerIds),
+      },
+    },
+    statuses,
+  );
+
+  return {
+    isDeleted: { $ne: true },
+    $or: [own, claimed],
+  };
 }
 
 /**
@@ -552,8 +682,18 @@ async function listListings(req, options = {}) {
     'PivotEventIntent',
   );
 
+  const claimedOrganizerIds = await loadClaimedOrganizerIds({
+    db: tenantReq.db,
+    tenantKey: context.tenantKey,
+    creatorUserId,
+  });
+
   const events = await Event.find(
-    ownJustGoListingsQuery(creatorUserId, statusFilter.statuses),
+    creatorConsoleListingsQuery(
+      creatorUserId,
+      claimedOrganizerIds,
+      statusFilter.statuses,
+    ),
   )
     .select(LISTING_SELECT)
     .sort({ start_time: -1, _id: -1 })
@@ -564,13 +704,16 @@ async function listListings(req, options = {}) {
     events.map((event) => event._id),
   );
 
+  const serializeOptions = { creatorUserId, claimedOrganizerIds };
+
   return {
     data: {
       tenantKey: context.tenantKey,
       events: events.map((event) =>
-        serializeCreatorListing(event, intentStatsByEventId),
+        serializeCreatorListing(event, intentStatsByEventId, serializeOptions),
       ),
       total: events.length,
+      claimedOrganizerCount: claimedOrganizerIds.length,
     },
   };
 }
@@ -624,11 +767,13 @@ async function getListing(req, eventId, options = {}) {
     };
   }
 
-  const justGoCheck = assertJustGoListing(existing);
-  if (justGoCheck) return justGoCheck;
-
-  const ownership = assertListingOwnership(existing, creatorUserId);
-  if (ownership) return ownership;
+  const claimedOrganizerIds = await loadClaimedOrganizerIds({
+    db: tenantReq.db,
+    tenantKey: context.tenantKey,
+    creatorUserId,
+  });
+  const access = assertListingAccess(existing, creatorUserId, claimedOrganizerIds);
+  if (access.error) return access;
 
   let analyticsDoc = null;
   try {
@@ -659,7 +804,10 @@ async function getListing(req, eventId, options = {}) {
   return {
     data: {
       tenantKey: context.tenantKey,
-      event: serializeCreatorListing(existing, intentStatsByEventId),
+      event: serializeCreatorListing(existing, intentStatsByEventId, {
+        creatorUserId,
+        claimedOrganizerIds,
+      }),
       stats: {
         intents: intentStats,
         analytics,
@@ -677,10 +825,16 @@ function buildCreatorPivotMetadata({
   creatorSubmittedAt,
   tags,
 }) {
+  const identities = unionHostIdentities(fields.hostIdentities);
+  const display = displayFieldsFromIdentities(identities, {
+    imageUrl: fields.hostImageUrl,
+    profileUrl: fields.hostProfileUrl,
+  });
   const host = {
     name: fields.hostName,
-    ...(fields.hostImageUrl ? { imageUrl: fields.hostImageUrl } : {}),
-    ...(fields.hostProfileUrl ? { profileUrl: fields.hostProfileUrl } : {}),
+    ...(display.imageUrl ? { imageUrl: display.imageUrl } : {}),
+    ...(display.profileUrl ? { profileUrl: display.profileUrl } : {}),
+    ...(identities.length ? { identities } : {}),
   };
 
   return {
@@ -778,6 +932,28 @@ async function createListing(req, payload = {}) {
     customFields: { pivot },
   };
 
+  try {
+    const justgoIdentity = {
+      provider: 'justgo',
+      externalId: String(creatorUserId),
+      name: fields.hostName,
+    };
+    const resolved = await resolveOrganizers({
+      db: tenantReq.db,
+      tenantKey: context.tenantKey,
+      identities: unionHostIdentities(pivot.host?.identities, [justgoIdentity]),
+      displayName: fields.hostName,
+    });
+    if (resolved.organizerIds.length) {
+      pivot.host.organizerIds = resolved.organizerIds;
+    }
+  } catch (err) {
+    logPivot('warn', 'creator organizer resolve failed; listing still created', {
+      tenantKey: context.tenantKey,
+      message: err?.message,
+    });
+  }
+
   const created = await Event.create(eventPayload);
   const event =
     typeof created.toObject === 'function' ? created.toObject() : created;
@@ -874,6 +1050,15 @@ async function updateListing(req, eventId, payload = {}) {
     };
   }
 
+  const claimedOrganizerIds = await loadClaimedOrganizerIds({
+    db: tenantReq.db,
+    tenantKey: context.tenantKey,
+    creatorUserId,
+  });
+  const access = assertListingAccess(existing, creatorUserId, claimedOrganizerIds);
+  if (access.error) return access;
+  if (access.access === 'claimed') return claimedReadOnlyError();
+
   const justGoCheck = assertJustGoListing(existing);
   if (justGoCheck) return justGoCheck;
 
@@ -920,6 +1105,16 @@ async function updateListing(req, eventId, payload = {}) {
     if (fields.hostProfileUrl) host.profileUrl = fields.hostProfileUrl;
     else delete host.profileUrl;
   }
+  if (fields.hostIdentities !== undefined) {
+    host.identities = unionHostIdentities(fields.hostIdentities, host.identities);
+    if (!host.identities.length) delete host.identities;
+  }
+  const display = displayFieldsFromIdentities(host.identities, {
+    imageUrl: host.imageUrl,
+    profileUrl: host.profileUrl,
+  });
+  if (display.imageUrl && !host.imageUrl) host.imageUrl = display.imageUrl;
+  if (display.profileUrl && !host.profileUrl) host.profileUrl = display.profileUrl;
   if (!host.name) {
     return {
       error: 'hostName cannot be empty.',
@@ -1004,6 +1199,7 @@ module.exports = {
   validateListingPayload,
   rejectCreatorLifecycleOverrides,
   assertListingOwnership,
+  assertListingAccess,
   parseIngestStatusFilter,
   CREATOR_SOURCE,
   EMPTY_INTENT_STATS,

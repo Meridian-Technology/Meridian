@@ -125,6 +125,15 @@
     line-height: 1.45;
   }
 
+  &__skip-note {
+    margin: 0;
+    padding: 8px 26px;
+    border-bottom: 1px solid var(--dash-border, rgba(26, 23, 20, 0.14));
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.55));
+  }
+
   &__counters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));

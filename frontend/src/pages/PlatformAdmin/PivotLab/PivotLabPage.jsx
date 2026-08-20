@@ -253,6 +253,9 @@ function buildBatchPublishOverrides(row) {
 
   return {
     hostName: row.organizerName.trim(),
+    ...(Array.isArray(row.hostIdentities) && row.hostIdentities.length
+      ? { hostIdentities: row.hostIdentities }
+      : {}),
     name: row.name.trim(),
     location: row.location.trim(),
     ...(startTime ? { start_time: startTime } : {}),
@@ -480,7 +483,8 @@ function duplicateBadgeLabel(duplicate) {
   if (duplicate.matchType === 'batchSourceUrl' || duplicate.matchType === 'batchFingerprint') {
     return 'Batch duplicate';
   }
-  // sourceUrl (exact) or fingerprint (fuzzy) → publishing updates the existing row.
+  if (duplicate.matchType === 'showtime') return 'Showtimes merged';
+  if (duplicate.matchType === 'similarity') return 'Will merge';
   return 'Will update';
 }
 
@@ -510,6 +514,7 @@ function createBatchImportRow(entry, index) {
     source: draft.source || 'manual',
     name: draft.name || '',
     organizerName: draft.hostName || '',
+    hostIdentities: Array.isArray(draft.hostIdentities) ? draft.hostIdentities : [],
     location: draft.location || '',
     startTime,
     endTime,
@@ -1017,6 +1022,9 @@ function PivotLabPage() {
           forceBatchWeek,
           overrides: {
             hostName: entry.draft.hostName,
+            ...(Array.isArray(entry.draft.hostIdentities) && entry.draft.hostIdentities.length
+              ? { hostIdentities: entry.draft.hostIdentities }
+              : {}),
             name: entry.draft.name,
             location: entry.draft.location,
             start_time: entry.draft.start_time,

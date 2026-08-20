@@ -3,6 +3,11 @@
  * In production, cookies must be scoped to the base domain so they work across subdomains
  * (e.g. rpi.pinkpulse.org and www.pinkpulse.org share cookies when domain is .pinkpulse.org).
  * Staging (pinkpulse.org) and production (meridian.study) both need correct domain.
+ *
+ * justgo.lol is a different site from meridian.study. The SPA uses relative API URLs
+ * (same pattern as www.meridian.study), so browser calls stay same-origin and
+ * SameSite=strict still applies. This helper then sets Domain=.justgo.lol — never
+ * .meridian.study — because the browser would reject a meridian cookie on justgo.lol.
  */
 function getCookieDomain(req) {
   if (process.env.NODE_ENV !== 'production') return undefined;

@@ -5,7 +5,11 @@ import apiRequest from '../../utils/postRequest';
 import justGoWordmark from '../../assets/pivot/just-go-wordmark.svg';
 import './InviteLanding.scss';
 
-const APP_STORE_URL = 'https://apps.apple.com/us/app/meridian-go/id6755217537';
+const JUSTGO_IOS_STORE_URL =
+  process.env.REACT_APP_JUSTGO_IOS_STORE_URL ||
+  'https://apps.apple.com/us/app/meridian-go/id6755217537';
+const JUSTGO_PLAY_STORE_URL =
+  'https://play.google.com/store/apps/details?id=app.justgo';
 const INVITE_THEME_STORAGE_KEY = 'meridian.invite.theme';
 
 function getSystemTheme() {
@@ -56,14 +60,22 @@ function normalizeInviteCode(raw) {
   return (raw || '').trim().toUpperCase();
 }
 
-function buildDeepLink(code, referredByUserId) {
+function buildInviteQuery(code, referredByUserId) {
   const params = new URLSearchParams();
   params.set('code', normalizeInviteCode(code));
   const ref = (referredByUserId || '').trim();
   if (ref) {
     params.set('ref', ref);
   }
-  return `meridian://invite?${params.toString()}`;
+  return params.toString();
+}
+
+function buildDeepLinks(code, referredByUserId) {
+  const query = buildInviteQuery(code, referredByUserId);
+  return {
+    justgo: `justgo://invite?${query}`,
+    meridian: `meridian://invite?${query}`,
+  };
 }
 
 function InviteLanding() {
@@ -137,22 +149,36 @@ function InviteLanding() {
     }
   }, [code]);
 
-  const deepLink = code ? buildDeepLink(code, referredByUserId) : null;
+  const deepLinks = code ? buildDeepLinks(code, referredByUserId) : null;
 
-  const renderAppStoreBadge = () => (
-    <a
-      className="invite-landing__store-badge invite-landing__store-badge--solo"
-      href={APP_STORE_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Download on the App Store"
-    >
-      <img
-        src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg"
-        alt="Download on the App Store"
-        height="40"
-      />
-    </a>
+  const renderStoreBadges = () => (
+    <div className="invite-landing__store-badges">
+      {isAndroid ? (
+        <a
+          className="invite-landing__store-badge"
+          href={JUSTGO_PLAY_STORE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Get it on Google Play"
+        >
+          Get it on Google Play
+        </a>
+      ) : (
+        <a
+          className="invite-landing__store-badge invite-landing__store-badge--solo"
+          href={JUSTGO_IOS_STORE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Download on the App Store"
+        >
+          <img
+            src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg"
+            alt="Download on the App Store"
+            height="40"
+          />
+        </a>
+      )}
+    </div>
   );
 
   const renderError = (title, body) => (
@@ -193,9 +219,8 @@ function InviteLanding() {
           </div>
           <p className="invite-landing__tagline">don't overthink, just go!</p>
           <p className="invite-landing__experiment">
-            <strong>just go</strong> is an experiment from Meridian. For this pilot
-            you&apos;ll use <strong>Meridian Go</strong> and your invite code unlocks the just go experience inside it. Android
-            isn&apos;t supported yet.
+            <strong>just go</strong> is its own app now. download it, pick your city,
+            and your invite code is optional credit — not a gate.
           </p>
         </header>
 
@@ -255,19 +280,12 @@ function InviteLanding() {
               <li className="invite-landing__step">
                 <span className="invite-landing__step-num">1</span>
                 <div className="invite-landing__step-body">
-                  <h2>download Meridian Go (iPhone)</h2>
+                  <h2>download just go</h2>
                   <p>
-                    grab Meridian Go from the App Store, your invite code switches you into
-                    just go after install.
+                    grab just go from the store. your invite code is optional — pick a
+                    city to start, or paste the code for credit.
                   </p>
-                  {isAndroid ? (
-                    <p className="invite-landing__android-note">
-                      just go is iPhone-only during this pilot. you&apos;ll need an
-                      iPhone with Meridian Go to join.
-                    </p>
-                  ) : (
-                    renderAppStoreBadge()
-                  )}
+                  {renderStoreBadges()}
                 </div>
               </li>
 
@@ -278,9 +296,9 @@ function InviteLanding() {
                   <p>
                     after installing, click the button below to open just go.
                   </p>
-                  {deepLink ? (
-                    <a className="invite-landing__cta" href={deepLink}>
-                      open in app
+                  {deepLinks ? (
+                    <a className="invite-landing__cta" href={deepLinks.justgo}>
+                      open in just go
                     </a>
                   ) : null}
                 </div>
@@ -290,18 +308,18 @@ function InviteLanding() {
             <div className="invite-landing__fallback">
               <h3>or enter the code manually</h3>
               <p>
-                open Meridian Go → tap{' '}
-                <span className="invite-landing__cta-inline" aria-label="try just go">
-                  <span className="invite-landing__cta-inline-prefix">try</span>
-                  <img
-                    className="invite-landing__cta-inline-wordmark"
-                    src={justGoWordmark}
-                    alt=""
-                  />
-                </span>{' '}
-                on the Meridian welcome screen → paste <strong>{code}</strong> to
-                enter just go.
+                open just go → pick your city, or tap{' '}
+                <strong>have an invite code?</strong> and paste{' '}
+                <strong>{code}</strong>.
               </p>
+              {deepLinks ? (
+                <p>
+                  still on Meridian Go from the pilot?{' '}
+                  <a className="invite-landing__cta-inline" href={deepLinks.meridian}>
+                    open with meridian://
+                  </a>
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}

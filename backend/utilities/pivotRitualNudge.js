@@ -1,4 +1,6 @@
-/** Ritual nudge directive + push bodies (Phase 4). */
+/** Ritual nudge directive + push bodies (Phase 4 / Task 6.1). */
+
+const { resolveOverlayPushBody } = require('./pivotCopyPushResolve');
 
 const RITUAL_NUDGE_TYPES = Object.freeze([
   'swipe',
@@ -28,6 +30,17 @@ const RITUAL_NUDGE_PUSH_BODIES = Object.freeze({
   decide_swap: 'new pick — confirm again',
   decide_pending: 'your crew is waiting on your confirm',
   recap: 'see where your crews landed this week',
+});
+
+/** Voice overlay keys. decide/recap share weekly-drop keys (same bundled strings). */
+const RITUAL_NUDGE_PUSH_KEYS = Object.freeze({
+  swipe: 'crew.push.ritual.swipeBody',
+  quorum_waiting: 'crew.push.ritual.quorumWaitingBody',
+  decide: 'crew.push.weeklyDrop.decideBody',
+  decide_started: 'crew.push.ritual.decideStartedBody',
+  decide_swap: 'crew.push.ritual.decideSwapBody',
+  decide_pending: 'crew.push.ritual.decidePendingBody',
+  recap: 'crew.push.weeklyDrop.recapBody',
 });
 
 function hasAnyCrewAwaitingQuorum(crews) {
@@ -70,8 +83,12 @@ function buildRitualNudge({ phase, decideQueueOrder, deck, crews }) {
   return undefined;
 }
 
-function resolveRitualNudgePushBody(nudgeType) {
-  return RITUAL_NUDGE_PUSH_BODIES[nudgeType] || null;
+function resolveRitualNudgePushBody(nudgeType, pack) {
+  const fallback = RITUAL_NUDGE_PUSH_BODIES[nudgeType];
+  if (fallback == null) {
+    return null;
+  }
+  return resolveOverlayPushBody(RITUAL_NUDGE_PUSH_KEYS[nudgeType], pack, fallback);
 }
 
 function buildRitualPushData({
@@ -101,6 +118,7 @@ module.exports = {
   RITUAL_NUDGE_TYPES,
   RITUAL_NUDGE_COPY_KEYS,
   RITUAL_NUDGE_PUSH_BODIES,
+  RITUAL_NUDGE_PUSH_KEYS,
   buildRitualNudge,
   resolveRitualNudgePushBody,
   buildRitualPushData,

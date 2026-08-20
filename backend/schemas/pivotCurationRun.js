@@ -11,6 +11,24 @@ const runStatsSchema = new mongoose.Schema(
     skipped: { type: Number, default: 0 },
     failed: { type: Number, default: 0 },
     updated: { type: Number, default: 0 },
+    /** Catalog rows refreshed because sourceUrl already existed. */
+    updatedBySourceUrl: { type: Number, default: 0 },
+    /** Catalog rows refreshed because title+time+location matched. */
+    updatedByFingerprint: { type: Number, default: 0 },
+    /** Catalog rows that absorbed another showtime of the same night. */
+    updatedByShowtime: { type: Number, default: 0 },
+    /** Catalog rows merged via title+venue+day similarity. */
+    updatedBySimilarity: { type: Number, default: 0 },
+    /** Extra batch rows collapsed into a multi-showtime draft before upsert. */
+    showtimesRolledUp: { type: Number, default: 0 },
+    /** Drafts that received at least one organizerId after resolve-once. */
+    organizerResolved: { type: Number, default: 0 },
+    /** Drafts left unlinked because the city name was ambiguous (tier 2). */
+    organizerAmbiguous: { type: Number, default: 0 },
+    /** Drafts with no stamp (joined leftover / no name). */
+    organizerUnlinked: { type: Number, default: 0 },
+    /** Distinct identities resolved for the run (cache size). */
+    organizerUniqueIdentities: { type: Number, default: 0 },
     /** Plain map of batchWeek → upsert count for multi-week crawls. */
     byBatchWeek: { type: mongoose.Schema.Types.Mixed, default: null },
     message: { type: String, default: null, trim: true },
@@ -117,6 +135,11 @@ const pivotCurationRunSchema = new mongoose.Schema(
         skipped: 0,
         failed: 0,
         updated: 0,
+        updatedBySourceUrl: 0,
+        updatedByFingerprint: 0,
+        updatedByShowtime: 0,
+        updatedBySimilarity: 0,
+        showtimesRolledUp: 0,
         message: null,
       }),
     },

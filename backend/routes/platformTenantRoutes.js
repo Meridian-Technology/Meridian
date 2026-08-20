@@ -23,6 +23,9 @@ const {
   validatePivotCrewConfigPatch,
 } = require('../utilities/pivotCrewConfig');
 const {
+  validatePivotDeckConfigPatch,
+} = require('../utilities/pivotDeckConfig');
+const {
   validatePivotMobileConfigPatch,
 } = require('../utilities/pivotMobileConfig');
 const {
@@ -95,7 +98,11 @@ router.post('/admin/platform/tenants', verifyToken, requirePlatformAdmin, async 
   try {
     const validation = validateNewTenantPayload(req.body);
     if (validation.error) {
-      return res.status(400).json({ success: false, message: validation.error });
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+        ...(validation.code ? { code: validation.code } : {}),
+      });
     }
 
     const existing = await getTenantByKey(req, validation.row.tenantKey);
@@ -167,7 +174,11 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
 
     const metadataValidation = validateTenantMetadataUpdate(req.body);
     if (metadataValidation.error) {
-      return res.status(400).json({ success: false, message: metadataValidation.error });
+      return res.status(400).json({
+        success: false,
+        message: metadataValidation.error,
+        ...(metadataValidation.code ? { code: metadataValidation.code } : {}),
+      });
     }
 
     const confirmations = {
@@ -182,6 +193,7 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       ...(req.body.location !== undefined ? { location: req.body.location } : {}),
       ...(req.body.status !== undefined ? { status: req.body.status } : {}),
       ...(req.body.statusMessage !== undefined ? { statusMessage: req.body.statusMessage } : {}),
+      ...(req.body.landingMode !== undefined ? { landingMode: req.body.landingMode } : {}),
       ...(req.body.tenantType !== undefined ? { tenantType: req.body.tenantType } : {}),
       ...(req.body.pivotPilot !== undefined ? { pivotPilot: req.body.pivotPilot } : {}),
       ...(req.body.mongoUri !== undefined ? { mongoUri: req.body.mongoUri } : {}),
@@ -209,6 +221,23 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       } else {
         updated.pivotCrewConfig = patch;
       }
+    }
+
+    if (req.body.pivotDeckConfig === null) {
+      updated.pivotDeckConfig = null;
+    } else if (req.body.pivotDeckConfig !== undefined) {
+      const deckValidation = validatePivotDeckConfigPatch(req.body.pivotDeckConfig);
+      if (deckValidation.error) {
+        return res.status(400).json({ success: false, message: deckValidation.error });
+      }
+      const patch = deckValidation.patch || {};
+      if (Object.keys(patch).length === 0) {
+        updated.pivotDeckConfig = null;
+      } else {
+        updated.pivotDeckConfig = patch;
+      }
+    } else {
+      delete updated.pivotDeckConfig;
     }
 
     if (req.body.pivotMobileConfig === null) {

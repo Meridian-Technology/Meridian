@@ -3,6 +3,7 @@ jest.mock('../../services/pivotIngestPublishService', () => ({
 }));
 jest.mock('../../services/pivotDiscoveryRunRecorder', () => ({
   createDiscoveryRun: jest.fn(),
+  refuseIfPipelineBusy: jest.fn().mockResolvedValue(null),
   watchDiscoveryRunCancel: jest.fn(() => ({ stop: jest.fn() })),
 }));
 jest.mock('../../services/pivotSiteScrapeService', () => ({
@@ -19,7 +20,10 @@ jest.mock('../../connectionsManager', () => ({
 jest.mock('../../utilities/pivotLogger', () => ({ logPivot: jest.fn() }));
 
 const { resolvePivotTenant } = require('../../services/pivotIngestPublishService');
-const { createDiscoveryRun } = require('../../services/pivotDiscoveryRunRecorder');
+const {
+  createDiscoveryRun,
+  refuseIfPipelineBusy,
+} = require('../../services/pivotDiscoveryRunRecorder');
 const { searchSites, mapSite, scrapeSiteEvents } = require('../../services/pivotSiteScrapeService');
 const { createCurationJob } = require('../../services/pivotCurationJobService');
 const {
@@ -87,7 +91,10 @@ describe('pivotDiscoveryRehearsal', () => {
         expect.objectContaining({
           rehearsal: true,
           createJobs: false,
-          plan: expect.objectContaining({ maxOutboundCalls: 0 }),
+          plan: expect.objectContaining({
+            runFirecrawl: true,
+            maxOutboundCalls: 85,
+          }),
         }),
       );
     });
@@ -98,6 +105,21 @@ describe('pivotDiscoveryRehearsal', () => {
       const [, created] = createDiscoveryRun.mock.calls[0];
       expect(created.plan.queries).toBe(45);
       expect(created.plan.categories).toBe(18);
+    });
+
+    it('refuses while a real run is still open', async () => {
+      refuseIfPipelineBusy.mockResolvedValueOnce({
+        error: 'A discovery or refresh run is already in progress. Wait for it to finish, or Stop it.',
+        status: 409,
+        code: 'PIPELINE_BUSY',
+      });
+
+      const result = await startCitySourceDiscoveryRehearsal(mockReq(), {
+        tenantKey: 'iowacity',
+      });
+
+      expect(result.code).toBe('PIPELINE_BUSY');
+      expect(createDiscoveryRun).not.toHaveBeenCalled();
     });
 
     it('propagates an unknown tenant instead of rehearsing a nonexistent city', async () => {
@@ -120,6 +142,24 @@ describe('pivotDiscoveryRehearsal', () => {
       });
 
       expect(result.code).toBe('NO_DISCOVERY_QUERIES');
+    });
+
+    it('native-only rehearsal succeeds with empty queries', async () => {
+      createDiscoveryRun.mockResolvedValue({
+        ...fakeRecorder(),
+        runId: 'run-456',
+        enabled: true,
+      });
+
+      const result = await startCitySourceDiscoveryRehearsal(mockReq(), {
+        tenantKey: 'iowacity',
+        flow: 'native-only',
+        tags: ['not-a-real-tag'], // No queries match
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data).toBeDefined();
+      // Should succeed even with empty queries when runFirecrawl is false
     });
 
     it('fails loudly when there is nowhere to record, since the console would be blank', async () => {
@@ -157,7 +197,7 @@ describe('pivotDiscoveryRehearsal', () => {
     it('walks the same phases in the same order as a real run', async () => {
       await playRehearsal(recorder, context);
 
-      expect(recorder.phases).toEqual(['filtering', 'qualifying', 'registering']);
+      expect(recorder.phases).toEqual(['native', 'filtering', 'qualifying', 'registering']);
       expect(recorder.finished).toMatchObject({ status: 'completed' });
     });
 
@@ -209,7 +249,8 @@ describe('pivotDiscoveryRehearsal', () => {
       await playRehearsal(recorder, context);
 
       expect(recorder.counters.skippedNonSource).toBe(1);
-      expect(recorder.counters.evaluated).toBe(5);
+      expect(recorder.counters.skippedNative).toBe(1);
+      expect(recorder.counters.evaluated).toBe(4);
       expect(recorder.counters.maps).toBe(4);
     });
   });

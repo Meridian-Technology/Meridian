@@ -1,6 +1,8 @@
 const {
   RITUAL_NUDGE_TYPES,
+  RITUAL_NUDGE_PUSH_BODIES,
   buildRitualNudge,
+  resolveRitualNudgePushBody,
 } = require('../../utilities/pivotRitualNudge');
 
 describe('pivotRitualNudge', () => {
@@ -43,5 +45,23 @@ describe('pivotRitualNudge', () => {
         crews: [{ swipeProgress: { quorumMet: false } }],
       })?.type,
     ).toBe('quorum_waiting');
+  });
+
+  it('keeps bundled push bodies when the pack is empty', () => {
+    expect(resolveRitualNudgePushBody('decide')).toBe(RITUAL_NUDGE_PUSH_BODIES.decide);
+    expect(resolveRitualNudgePushBody('quorum_waiting', { entries: {} })).toBe(
+      RITUAL_NUDGE_PUSH_BODIES.quorum_waiting,
+    );
+  });
+
+  it('overlays ritual decide from the shared weekly-drop key', () => {
+    expect(
+      resolveRitualNudgePushBody('decide', {
+        entries: {
+          'crew.push.weeklyDrop.decideBody': "lock in {group.singular}'s night",
+        },
+        tokens: { 'group.singular': 'block' },
+      }),
+    ).toBe("lock in block's night");
   });
 });

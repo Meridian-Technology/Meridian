@@ -17,9 +17,62 @@ function cityLabel(tenant) {
   return tenant.location || tenant.name || tenant.tenantKey || '';
 }
 
+/** Menu indexes that share a label across fleet vs city shells. */
+export const PIVOT_OPS_PAGES = Object.freeze({
+  overview: 0,
+  fleetVoice: 1,
+  cityVoice: 5,
+});
+
+function parsePageParam(searchParams) {
+  const raw = searchParams.get('page');
+  if (raw == null || raw === '') return PIVOT_OPS_PAGES.overview;
+  const parsed = parseInt(raw, 10);
+  return Number.isInteger(parsed) ? parsed : PIVOT_OPS_PAGES.overview;
+}
+
+function pageLabelForShell(shell, page) {
+  if (page === PIVOT_OPS_PAGES.overview) return 'overview';
+  if (shell === 'fleet' && page === PIVOT_OPS_PAGES.fleetVoice) return 'voice';
+  if (shell === 'city' && page === PIVOT_OPS_PAGES.cityVoice) return 'voice';
+  return null;
+}
+
+function pageForLabel(shell, label) {
+  if (label === 'voice') {
+    return shell === 'fleet' ? PIVOT_OPS_PAGES.fleetVoice : PIVOT_OPS_PAGES.cityVoice;
+  }
+  return PIVOT_OPS_PAGES.overview;
+}
+
 /**
- * Pivot-only city switcher for the per-tenant ops dashboard.
- * Navigates within /platform-admin/pivot/:tenantKey and preserves ?page= (+ filters).
+ * Remap `?page=` by menu label when switching fleet ↔ city.
+ * City → city keeps the query. City-only pages (Curation, Catalog, …)
+ * have no fleet equivalent and drop to Overview.
+ */
+export function remapPivotOpsSearch(searchParams, { from, to }) {
+  const params = new URLSearchParams(searchParams);
+  if (from === to) {
+    const query = params.toString();
+    return query ? `?${query}` : '';
+  }
+
+  const label = pageLabelForShell(from, parsePageParam(params));
+  const nextPage = pageForLabel(to, label);
+  if (!nextPage) {
+    params.delete('page');
+  } else {
+    params.set('page', String(nextPage));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+/**
+ * Pivot-only city switcher for Just Go ops dashboards.
+ * Navigates between /platform-admin/pivot (all cities) and
+ * /platform-admin/pivot/:tenantKey. City → city keeps ?page=;
+ * fleet ↔ city remaps Voice by label (fleet 1 ↔ city 5).
  */
 function PivotTenantDropdown({
   tenants = [],
@@ -53,21 +106,31 @@ function PivotTenantDropdown({
     return () => clearTimeout(timer);
   }, [showDrop]);
 
+  const isAllCities = !currentKey;
+
   const displayLabel =
     cityDisplayName ||
-    cityLabel(pivotTenants.find((row) => normalizeTenantKey(row.tenantKey) === currentKey)) ||
+    (isAllCities
+      ? 'All cities'
+      : cityLabel(pivotTenants.find((row) => normalizeTenantKey(row.tenantKey) === currentKey))) ||
     currentKey ||
     (loading ? 'Loading…' : 'Pivot city');
 
   const handleSelectTenant = useCallback(
     (tenantKey) => {
       const nextKey = normalizeTenantKey(tenantKey);
-      if (!nextKey || nextKey === currentKey) {
+      if (nextKey === currentKey) {
         setShowDrop(false);
         return;
       }
-      const query = searchParams.toString();
-      navigate(`/platform-admin/pivot/${nextKey}${query ? `?${query}` : ''}`);
+      const from = currentKey ? 'city' : 'fleet';
+      const to = nextKey ? 'city' : 'fleet';
+      const query = remapPivotOpsSearch(searchParams, { from, to });
+      navigate(
+        nextKey
+          ? `/platform-admin/pivot/${nextKey}${query}`
+          : `/platform-admin/pivot${query}`,
+      );
       setShowDrop(false);
     },
     [currentKey, navigate, searchParams],
@@ -123,6 +186,24 @@ function PivotTenantDropdown({
                 <p>No pivot cities</p>
               </div>
             ) : null}
+            <div
+              className={`drop-option ${isAllCities ? 'selected' : ''}`}
+              role="option"
+              aria-selected={isAllCities}
+              onClick={() => handleSelectTenant('')}
+            >
+              <Icon
+                icon="mdi:earth"
+                width={22}
+                height={22}
+                className="admin-tenant-dropdown__row-icon"
+                aria-hidden
+              />
+              <div className="admin-tenant-dropdown__option-text">
+                <p>All cities</p>
+                <span className="admin-tenant-dropdown__meta">Fleet overview</span>
+              </div>
+            </div>
             {pivotTenants.map((tenant) => {
               const key = normalizeTenantKey(tenant.tenantKey);
               const selected = key === currentKey;

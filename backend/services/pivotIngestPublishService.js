@@ -12,6 +12,9 @@ const {
   formatDuplicateWarning,
   isBlockingDuplicate,
   resolveImportDuplicate,
+  classifyIngestSourceFamily,
+  isNativeIngestFamily,
+  mergeIngestIntoExisting,
 } = require('./pivotIngestDuplicateService');
 const { serializeLabEvent } = require('./pivotLabEventsService');
 const { validatePivotEventTags } = require('./pivotTagCatalogService');
@@ -21,11 +24,25 @@ const {
   applyMovieListingDefaults,
 } = require('../utilities/pivotMovieMetadata');
 const { normalizePivotEnrichment } = require('../utilities/pivotEnrichment');
+const {
+  parseEventDateTime,
+  enrichIngestDraft,
+  normalizeParsedFields,
+} = require('../utilities/pivotFieldParsingUtils');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const { resolvePivotDiscoveryConfig } = require('../utilities/pivotDiscoveryConfig');
 const {
   normalizeIngestStatus,
   PIVOT_FEED_INGEST_STATUS,
 } = require('../utilities/pivotIngestStatus');
+const {
+  unionHostIdentities,
+  displayFieldsFromIdentities,
+} = require('../utilities/pivotHostIdentity');
+const {
+  resolveOrganizers,
+  uniqueOrganizerIds,
+} = require('./pivotOrganizerResolveService');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 /** Default for new Lab / URL / JSON ingest — not live until Release (Task 3.2). */
@@ -152,8 +169,19 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
     start_time: firstNonEmpty(overrides.start_time, draft.start_time),
     end_time: firstNonEmpty(overrides.end_time, draft.end_time),
     hostName: firstNonEmpty(overrides.hostName, draft.hostName),
-    hostImageUrl: null,
+    hostImageUrl: firstNonEmpty(overrides.hostImageUrl, draft.hostImageUrl),
     hostProfileUrl: firstNonEmpty(overrides.hostProfileUrl, draft.hostProfileUrl),
+    hostIdentities: unionHostIdentities(
+      overrides.hostIdentities,
+      overrides.identities,
+      draft.hostIdentities,
+      draft.identities,
+    ),
+    organizerIds: Array.isArray(overrides.organizerIds)
+      ? uniqueOrganizerIds(overrides.organizerIds)
+      : Array.isArray(draft.organizerIds)
+        ? uniqueOrganizerIds(draft.organizerIds)
+        : undefined,
     source: firstNonEmpty(overrides.source, draft.source),
     sourceUrl: firstNonEmpty(overrides.sourceUrl, draft.sourceUrl),
     tags: Array.isArray(overrides.tags)
@@ -169,10 +197,13 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
       overrides.enrichment !== undefined
         ? overrides.enrichment
         : draft.enrichment,
+    parsed: normalizeParsedFields(
+      overrides.parsed !== undefined ? overrides.parsed : draft.parsed,
+    ),
   };
 }
 
-function validateMergedDraft(merged) {
+function validateMergedDraft(merged, options = {}) {
   const withMovieDefaults = applyMovieListingDefaults(merged);
   const missing = [];
   if (!withMovieDefaults.hostName) missing.push('hostName');
@@ -191,8 +222,14 @@ function validateMergedDraft(merged) {
   }
 
   const slots = normalizePivotTimeSlots(withMovieDefaults.timeSlots);
-  let startTime = parseDateTime(withMovieDefaults.start_time);
-  let endTime = parseDateTime(withMovieDefaults.end_time);
+  const parseOptions = { timezone: options.timezone, now: options.now };
+  const enriched = enrichIngestDraft(withMovieDefaults, parseOptions);
+  let startTime =
+    parseDateTime(enriched.start_time) ||
+    parseEventDateTime(withMovieDefaults.start_time, parseOptions).timestamp;
+  let endTime =
+    parseDateTime(enriched.end_time) ||
+    parseEventDateTime(withMovieDefaults.end_time, parseOptions).timestamp;
 
   if (slots.length) {
     if (!startTime) {
@@ -230,18 +267,29 @@ function validateMergedDraft(merged) {
   return {
     merged: {
       ...withMovieDefaults,
+      ...enriched,
       timeSlots: slots,
       startTime,
       endTime,
+      parsed: normalizeParsedFields(enriched.parsed) || withMovieDefaults.parsed || null,
       ...(enrichmentResult ? { enrichment: enrichmentResult } : {}),
     },
   };
 }
 
 function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, ingestStatus }) {
+  const identities = unionHostIdentities(merged.hostIdentities, merged.identities);
+  const display = displayFieldsFromIdentities(identities, {
+    imageUrl: merged.hostImageUrl,
+    profileUrl: merged.hostProfileUrl,
+  });
+  const organizerIds = uniqueOrganizerIds(merged.organizerIds);
   const host = {
     name: merged.hostName,
-    ...(merged.hostProfileUrl ? { profileUrl: merged.hostProfileUrl } : {}),
+    ...(display.imageUrl ? { imageUrl: display.imageUrl } : {}),
+    ...(display.profileUrl ? { profileUrl: display.profileUrl } : {}),
+    ...(identities.length ? { identities } : {}),
+    ...(organizerIds.length ? { organizerIds } : {}),
   };
 
   return {
@@ -253,6 +301,8 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
     ...(merged.timeSlots?.length ? { timeSlots: merged.timeSlots } : {}),
     ...(merged.movie ? { movie: merged.movie } : {}),
     ...(merged.enrichment ? { enrichment: merged.enrichment } : {}),
+    ...(merged.parsed ? { parsed: merged.parsed } : {}),
+    ...(merged.duplicateRollup ? { duplicateRollup: merged.duplicateRollup } : {}),
     ingestStatus: ingestStatus || DEFAULT_INGEST_STATUS,
     importedAt: new Date().toISOString(),
     importedBy,
@@ -382,7 +432,10 @@ async function publishIngestEvent(req, options = {}) {
     // Crawler / batch path: reuse already-parsed explore drafts (skip per-URL refetch).
     previewDraft = options.draft;
   } else if (urlNormalized.url && urlNormalized.provider) {
-    const previewResult = await previewIngestUrl(req, { url: urlNormalized.url });
+    const previewResult = await previewIngestUrl(req, {
+      url: urlNormalized.url,
+      timezone: tenantResult.tenant.pivotDropTimezone,
+    });
     if (previewResult.error) {
       return previewResult;
     }
@@ -413,7 +466,10 @@ async function publishIngestEvent(req, options = {}) {
   mergedInput.source =
     firstNonEmpty(mergedInput.source, urlNormalized.provider) || 'manual';
 
-  const validated = validateMergedDraft(mergedInput);
+  const validated = validateMergedDraft(mergedInput, {
+    timezone: tenantResult.tenant.pivotDropTimezone,
+    now: options.now,
+  });
   if (validated.error) {
     return validated;
   }
@@ -439,6 +495,8 @@ async function publishIngestEvent(req, options = {}) {
 
   const listingUrl = trimString(mergedInput.sourceUrl) || null;
   const sharedSourceUrl = Boolean(options.sharedSourceUrl);
+  const skipFuzzy = Boolean(options.forceCreate);
+  const thresholds = resolvePivotDiscoveryConfig(tenantResult.tenant).duplicate;
   const { duplicate } = await resolveImportDuplicate(req, {
     tenantKey: tenantResult.tenant.tenantKey,
     candidate: {
@@ -446,8 +504,14 @@ async function publishIngestEvent(req, options = {}) {
       start_time: validated.merged.start_time,
       location: validated.merged.location,
       sourceUrl: listingUrl,
+      description: validated.merged.description,
+      source: mergedInput.source,
+      timeSlots: validated.merged.timeSlots,
+      city: validated.merged.parsed?.address?.city,
     },
     sharedSourceUrl,
+    thresholds,
+    skipFuzzy,
   });
 
   // Batch-internal collisions (two rows of the same import) have nothing to update against.
@@ -476,6 +540,11 @@ async function publishIngestEvent(req, options = {}) {
   const tenantReq = { db };
   const { Event } = getModels(tenantReq, 'Event');
 
+  let existingDoc = null;
+  if (updateEventId) {
+    existingDoc = await Event.findById(updateEventId).lean();
+  }
+
   // Re-import must not demote a live published event back to staged unless ops
   // explicitly asked for draft/staged or emergency releaseNow.
   let ingestStatus = ingestStatusResult.ingestStatus;
@@ -484,10 +553,7 @@ async function publishIngestEvent(req, options = {}) {
     !options.releaseNow &&
     overrides.ingestStatus === undefined
   ) {
-    const existing = await Event.findById(updateEventId)
-      .select('customFields.pivot.ingestStatus')
-      .lean();
-    const existingStatus = existing?.customFields?.pivot?.ingestStatus;
+    const existingStatus = existingDoc?.customFields?.pivot?.ingestStatus;
     if (existingStatus === PIVOT_FEED_INGEST_STATUS || existingStatus === 'draft' || existingStatus === 'staged') {
       ingestStatus = existingStatus;
     }
@@ -509,9 +575,37 @@ async function publishIngestEvent(req, options = {}) {
     }
   }
 
-  const eventPayload = buildEventPayload(validated.merged, {
+  const mergedForSave =
+    existingDoc && updateEventId
+      ? mergeIngestIntoExisting(existingDoc, validated.merged, duplicate, listingUrl)
+      : validated.merged;
+
+  // Crawl path stamps organizerIds on the draft (array, possibly empty).
+  // Lab / JSON / single-URL publish resolve a batch of one when missing.
+  if (!Array.isArray(mergedForSave.organizerIds)) {
+    try {
+      const resolved = await resolveOrganizers({
+        db,
+        tenantKey: tenantResult.tenant.tenantKey,
+        identities: mergedForSave.hostIdentities || mergedForSave.identities,
+        displayName: mergedForSave.hostName,
+      });
+      mergedForSave.organizerIds = resolved.organizerIds;
+    } catch (err) {
+      logPivot('warn', 'organizer resolve on publish failed; event still ingested', {
+        tenantKey: tenantResult.tenant.tenantKey,
+        name: mergedForSave.name,
+        message: err.message,
+      });
+      mergedForSave.organizerIds = [];
+    }
+  }
+
+  const saveUrl = trimString(mergedForSave.sourceUrl) || listingUrl;
+
+  const eventPayload = buildEventPayload(mergedForSave, {
     catalogOrgId: catalogResult.orgId,
-    sourceUrl: listingUrl,
+    sourceUrl: saveUrl,
     batchWeek: resolvedBatchWeek,
     importedBy,
     tags: tagResult.tags,
@@ -521,11 +615,20 @@ async function publishIngestEvent(req, options = {}) {
   const event = await savePublishedCatalogEvent(
     tenantReq,
     eventPayload,
-    listingUrl,
+    saveUrl,
     updateEventId,
     { sharedSourceUrl },
   );
   const updatedExisting = Boolean(updateEventId);
+  const incomingFamily = classifyIngestSourceFamily({
+    source: mergedInput.source,
+    sourceUrl: listingUrl,
+  });
+  const overlappedNative = Boolean(
+    updatedExisting &&
+      incomingFamily === 'generic-site' &&
+      isNativeIngestFamily(duplicate?.existingSourceFamily),
+  );
 
   logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event staged', {
     tenantKey: tenantResult.tenant.tenantKey,
@@ -538,6 +641,10 @@ async function publishIngestEvent(req, options = {}) {
     releaseNow: Boolean(options.releaseNow),
     timeSlotCount: validated.merged.timeSlots?.length ?? 0,
     duplicateMatch: duplicate?.matchType || null,
+    duplicateScore: duplicate?.score || null,
+    existingSource: duplicate?.existingSource || null,
+    existingSourceFamily: duplicate?.existingSourceFamily || null,
+    overlappedNative,
     importedBy,
   });
 
@@ -549,6 +656,8 @@ async function publishIngestEvent(req, options = {}) {
       ingestStatus,
       batchWeek: resolvedBatchWeek,
       batchWeekSource: weekResolved.source,
+      duplicateMatch: duplicate?.matchType || null,
+      duplicateScore: duplicate?.score || null,
     },
   };
 }
@@ -751,6 +860,20 @@ async function updateIngestEvent(req, options = {}) {
     if (profileUrl) host.profileUrl = profileUrl;
     else delete host.profileUrl;
   }
+  if (overrides.hostIdentities !== undefined || overrides.identities !== undefined) {
+    host.identities = unionHostIdentities(
+      overrides.hostIdentities,
+      overrides.identities,
+      host.identities,
+    );
+    if (!host.identities.length) delete host.identities;
+  }
+  const display = displayFieldsFromIdentities(host.identities, {
+    imageUrl: host.imageUrl,
+    profileUrl: host.profileUrl,
+  });
+  if (display.imageUrl && !host.imageUrl) host.imageUrl = display.imageUrl;
+  if (display.profileUrl && !host.profileUrl) host.profileUrl = display.profileUrl;
 
   const pivotPatch = { ...pivot, host };
   if (overrides.ingestStatus !== undefined) {

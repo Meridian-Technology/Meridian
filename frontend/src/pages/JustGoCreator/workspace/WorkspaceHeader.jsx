@@ -97,9 +97,13 @@ function WorkspaceHeader({ event, stats, condensed, onRefresh, onUpdateListing }
               <span>{copy.preview}</span>
             </a>
           ) : null}
-          <button type="button" className="justgo-creator__cta" onClick={onUpdateListing}>
-            {copy.updateListing}
-          </button>
+          {event?.readOnly ? (
+            <span className="jg-workspace-header__claimed">{copy.claimedNote}</span>
+          ) : (
+            <button type="button" className="justgo-creator__cta" onClick={onUpdateListing}>
+              {copy.updateListing}
+            </button>
+          )}
         </div>
       </div>
 

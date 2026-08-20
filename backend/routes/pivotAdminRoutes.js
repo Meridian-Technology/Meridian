@@ -38,6 +38,7 @@ const {
   stopCitySourceDiscoveryRun,
   previewCitySourceDiscovery,
   updateCitySource,
+  updateCityDiscoveryConfig,
   getCitySourceDiscoveryRun,
   getLatestCitySourceDiscoveryRun,
 } = require('../services/pivotSourceDiscoveryService');
@@ -53,6 +54,8 @@ const {
   wipeUserWeekIntents,
 } = require('../services/pivotTenantJourneyService');
 const { getTenantOpsBundle } = require('../services/pivotTenantOpsService');
+const { getFleetOpsBundle } = require('../services/pivotFleetOpsService');
+const { previewAdminDropDeck } = require('../services/pivotAdminDropDeckService');
 const { getPivotExplorePreview } = require('../services/pivotExploreService');
 const { getPivotRetention } = require('../services/pivotRetentionService');
 const { listPivotLabEvents } = require('../services/pivotLabEventsService');
@@ -92,14 +95,71 @@ const { getMergedTenants } = require('../services/tenantConfigService');
 const { isPivotTenant } = require('../services/pivotReferralCodeService');
 const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
 const {
+  backfillOrganizers,
+} = require('../services/pivotOrganizerBackfillService');
+const {
+  listOrganizers,
+  getOrganizer,
+  listUnlinkedOrganizerEvents,
+  mergeOrganizers,
+  splitOrganizer,
+  claimOrganizer,
+} = require('../services/pivotOrganizerCatalogService');
+const {
   listCreatorGrants,
   grantCreator,
   revokeCreator,
 } = require('../services/pivotCreatorGrantService');
+const {
+  getCopyCatalog,
+  getCopyLayers,
+  getPlatformCopyLayers,
+  patchCopyPack,
+  resetCopyPack,
+} = require('../services/pivotCopyService');
 
 const router = express.Router();
 
 router.use(pivotRequestLogger);
+
+function sendCopyAdminResult(res, result) {
+  if (result.error) {
+    return res.status(result.status || 400).json({
+      success: false,
+      message: result.error,
+      code: result.code,
+    });
+  }
+  return res.status(200).json({
+    success: true,
+    data: result.data,
+  });
+}
+
+function parseCopyPatchBody(body = {}) {
+  if (typeof body.key === 'string' && body.value !== undefined) {
+    return { entries: { [body.key]: body.value } };
+  }
+  if (typeof body.token === 'string' && body.value !== undefined) {
+    return { tokens: { [body.token]: body.value } };
+  }
+  return { entries: body.entries, tokens: body.tokens };
+}
+
+function asCopyKeyList(value) {
+  if (value == null || value === '') {
+    return undefined;
+  }
+  return Array.isArray(value) ? value : [value];
+}
+
+function parseCopyResetKeys(req) {
+  const body = req.body || {};
+  return {
+    entries: asCopyKeyList(body.entries ?? body.keys ?? req.query?.key),
+    tokens: asCopyKeyList(body.tokens ?? req.query?.token),
+  };
+}
 
 router.get('/tags', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
@@ -148,6 +208,136 @@ router.post('/tags/seed', verifyToken, requirePlatformAdmin, async (req, res) =>
     });
   }
 });
+
+router.get('/copy/catalog', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    return sendCopyAdminResult(res, getCopyCatalog());
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/copy/catalog', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load pivot copy catalog.',
+    });
+  }
+});
+
+router.get('/copy', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await getPlatformCopyLayers(req);
+    return sendCopyAdminResult(res, result);
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/copy', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load pivot copy pack.',
+    });
+  }
+});
+
+router.patch('/copy', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const patch = parseCopyPatchBody(req.body);
+    const result = await patchCopyPack(req, {
+      scope: 'platform',
+      entries: patch.entries,
+      tokens: patch.tokens,
+    });
+    return sendCopyAdminResult(res, result);
+  } catch (err) {
+    logPivotRouteError('PATCH /admin/pivot/copy', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to update pivot copy pack.',
+    });
+  }
+});
+
+router.delete('/copy', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const reset = parseCopyResetKeys(req);
+    const result = await resetCopyPack(req, {
+      scope: 'platform',
+      entries: reset.entries,
+      tokens: reset.tokens,
+    });
+    return sendCopyAdminResult(res, result);
+  } catch (err) {
+    logPivotRouteError('DELETE /admin/pivot/copy', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to reset pivot copy key.',
+    });
+  }
+});
+
+router.get(
+  '/tenants/:tenantKey/copy',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getCopyLayers(req, {
+        scope: 'tenant',
+        tenantKey: req.params.tenantKey,
+      });
+      return sendCopyAdminResult(res, result);
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/copy', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load tenant copy pack.',
+      });
+    }
+  },
+);
+
+router.patch(
+  '/tenants/:tenantKey/copy',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const patch = parseCopyPatchBody(req.body);
+      const result = await patchCopyPack(req, {
+        scope: 'tenant',
+        tenantKey: req.params.tenantKey,
+        entries: patch.entries,
+        tokens: patch.tokens,
+      });
+      return sendCopyAdminResult(res, result);
+    } catch (err) {
+      logPivotRouteError('PATCH /admin/pivot/tenants/:tenantKey/copy', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to update tenant copy pack.',
+      });
+    }
+  },
+);
+
+router.delete(
+  '/tenants/:tenantKey/copy',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const reset = parseCopyResetKeys(req);
+      const result = await resetCopyPack(req, {
+        scope: 'tenant',
+        tenantKey: req.params.tenantKey,
+        entries: reset.entries,
+        tokens: reset.tokens,
+      });
+      return sendCopyAdminResult(res, result);
+    } catch (err) {
+      logPivotRouteError('DELETE /admin/pivot/tenants/:tenantKey/copy', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to reset tenant copy key.',
+      });
+    }
+  },
+);
 
 router.get('/events', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
@@ -247,6 +437,35 @@ router.get('/overview', verifyToken, requirePlatformAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load pivot overview.',
+    });
+  }
+});
+
+router.get('/ops', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await getFleetOpsBundle(req, {
+      batchWeek: req.query?.batchWeek,
+      include: req.query?.include,
+      performanceLimit: req.query?.performanceLimit ?? req.query?.limit,
+      retentionWeeks: req.query?.retentionWeeks ?? req.query?.weeks,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/ops', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load fleet ops bundle.',
     });
   }
 });
@@ -730,6 +949,44 @@ router.post(
 );
 
 router.patch(
+  '/tenants/:tenantKey/sources/discovery-config',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateCityDiscoveryConfig(req, {
+        tenantKey: req.params.tenantKey,
+        flow: req.body?.flow,
+        lumaSlug: req.body?.lumaSlug,
+        partifulSlug: req.body?.partifulSlug,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'PATCH /admin/pivot/tenants/:tenantKey/sources/discovery-config',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to save discovery flow.',
+      });
+    }
+  },
+);
+
+router.patch(
   '/tenants/:tenantKey/sources/:sourceId',
   verifyToken,
   requirePlatformAdmin,
@@ -774,6 +1031,9 @@ router.get(
         maxQueries: req.query?.maxQueries,
         maxCandidates: req.query?.maxCandidates,
         minEvents: req.query?.minEvents,
+        flow: req.query?.flow,
+        lumaSlug: req.query?.lumaSlug,
+        partifulSlug: req.query?.partifulSlug,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -816,6 +1076,9 @@ router.post(
         minEvents: req.body?.minEvents,
         createJobs: req.body?.createJobs,
         recheckRejected: req.body?.recheckRejected,
+        flow: req.body?.flow,
+        lumaSlug: req.body?.lumaSlug,
+        partifulSlug: req.body?.partifulSlug,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
@@ -1259,6 +1522,60 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load journey path.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/drop-deck/preview',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await previewAdminDropDeck(req, {
+        tenantKey: req.params.tenantKey,
+        userId: req.query?.userId,
+        batchWeek: req.query?.batchWeek,
+        rebuild: req.query?.rebuild,
+      });
+      if (result.error) {
+        logPivotServiceReject(
+          'GET /admin/pivot/tenants/:tenantKey/drop-deck/preview',
+          result,
+          req,
+          { tenantKey: req.params.tenantKey, userId: req.query?.userId },
+        );
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      logPivotServiceSuccess(
+        'GET /admin/pivot/tenants/:tenantKey/drop-deck/preview',
+        req,
+        {
+          tenantKey: result.data?.tenantKey,
+          userId: result.data?.user?.userId,
+          eventCount: result.data?.events?.length ?? 0,
+          frozen: result.data?.frozen,
+        },
+      );
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/drop-deck/preview',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to preview drop deck.',
       });
     }
   },
@@ -1947,6 +2264,267 @@ router.delete(
       return res.status(500).json({
         success: false,
         message: 'Unable to revoke Just Go creator access.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/organizers',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listOrganizers(req, {
+        tenantKey: req.params.tenantKey,
+        q: req.query?.q,
+        claimStatus: req.query?.claimStatus,
+        source: req.query?.source,
+        sort: req.query?.sort,
+        limit: req.query?.limit,
+        offset: req.query?.offset,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('GET /admin/pivot/tenants/:tenantKey/organizers', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to list organizers.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/organizers/unlinked',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await listUnlinkedOrganizerEvents(req, {
+        tenantKey: req.params.tenantKey,
+        kind: req.query?.kind,
+        limit: req.query?.limit,
+        offset: req.query?.offset,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/organizers/unlinked',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to list unlinked events.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/organizers/:organizerId',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getOrganizer(req, {
+        tenantKey: req.params.tenantKey,
+        organizerId: req.params.organizerId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/organizers/:organizerId',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load organizer.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/organizers/backfill',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await backfillOrganizers(req, {
+        tenantKey: req.params.tenantKey,
+        force: req.body?.force === true || req.body?.force === 'true',
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/organizers/backfill',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to backfill organizers.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/organizers/:organizerId/merge',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await mergeOrganizers(req, {
+        tenantKey: req.params.tenantKey,
+        organizerId: req.params.organizerId,
+        sourceOrganizerId: req.body?.sourceOrganizerId,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/organizers/:organizerId/merge',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to merge organizers.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/organizers/:organizerId/split',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await splitOrganizer(req, {
+        tenantKey: req.params.tenantKey,
+        organizerId: req.params.organizerId,
+        eventIds: req.body?.eventIds,
+        newCanonicalName: req.body?.newCanonicalName,
+        identity: req.body?.identity,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/organizers/:organizerId/split',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to split organizer.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/tenants/:tenantKey/organizers/:organizerId/claim',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await claimOrganizer(req, {
+        tenantKey: req.params.tenantKey,
+        organizerId: req.params.organizerId,
+        globalUserId: req.body?.globalUserId || req.body?.userId,
+        unclaim: req.body?.unclaim === true || req.body?.unclaim === 'true',
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/organizers/:organizerId/claim',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to claim organizer.',
       });
     }
   },

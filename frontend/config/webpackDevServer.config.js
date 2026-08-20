@@ -70,17 +70,23 @@ module.exports = function (proxy, allowedHost) {
       },
     },
     client: {
-      webSocketURL: {
-        // Enable custom sockjs pathname for websocket connection to hot reloading server.
-        // Enable custom sockjs hostname, pathname and port for websocket connection
-        // to hot reloading server.
-        hostname: sockHost,
-        pathname: sockPath,
-        port: sockPort,
-      },
+      // `auto://0.0.0.0` follows the page host, so a phone on the LAN
+      // (`http://192.168.x.x:3000`) talks HMR to that IP instead of localhost.
+      webSocketURL:
+        sockHost || sockPath || sockPort
+          ? {
+              hostname: sockHost,
+              pathname: sockPath,
+              port: sockPort,
+            }
+          : 'auto://0.0.0.0:0/ws',
       overlay: {
         errors: true,
         warnings: false,
+        // Safari reports cross-origin eval/HMR failures as a blank "Script error."
+        // when the page is opened via LAN IP. Production has no overlay.
+        runtimeErrors: (error) =>
+          Boolean(error && error.message && error.message !== 'Script error.'),
       },
     },
     devMiddleware: {

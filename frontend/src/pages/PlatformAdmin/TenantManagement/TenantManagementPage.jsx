@@ -409,6 +409,7 @@ function TenantDetail({
 }
 
 function TenantManagementPage() {
+  const navigate = useNavigate();
   const { addNotification } = useNotification();
   const [form, setForm] = useState(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
@@ -687,6 +688,14 @@ function TenantManagementPage() {
             <button type="button" className="linear-btn linear-btn--primary" onClick={openCreate}>
               <Icon icon="mdi:plus" />
               New tenant
+            </button>
+            <button
+              type="button"
+              className="linear-btn linear-btn--secondary"
+              onClick={() => navigate('/platform-admin/pivot')}
+            >
+              <Icon icon="ic:round-dashboard" />
+              All cities
             </button>
           </div>
           <div className="linear-admin__search">

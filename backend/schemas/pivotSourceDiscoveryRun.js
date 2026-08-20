@@ -32,6 +32,7 @@ const RUN_KINDS = ['discovery', 'curation-batch'];
  * qualifying -> registering; batch curation uses planning -> crawling -> done.
  */
 const RUN_PHASES = [
+  'native',
   'searching',
   'filtering',
   'qualifying',
@@ -136,6 +137,11 @@ const pivotSourceDiscoveryRunSchema = new mongoose.Schema(
       maxCandidates: { type: Number, default: 0 },
       minEvents: { type: Number, default: 1 },
       maxOutboundCalls: { type: Number, default: 0 },
+      flow: { type: String, default: null, trim: true },
+      runNative: { type: Boolean, default: false },
+      runFirecrawl: { type: Boolean, default: true },
+      lumaSlug: { type: String, default: null, trim: true },
+      partifulSlug: { type: String, default: null, trim: true },
       /** Batch curation: jobs queued, and the week they publish into. */
       jobs: { type: Number, default: 0 },
       batchWeek: { type: String, default: null, trim: true },
@@ -150,6 +156,7 @@ const pivotSourceDiscoveryRunSchema = new mongoose.Schema(
       candidatesFound: { type: Number, default: 0 },
       skippedKnown: { type: Number, default: 0 },
       skippedNonSource: { type: Number, default: 0 },
+      skippedNative: { type: Number, default: 0 },
       evaluated: { type: Number, default: 0 },
       qualified: { type: Number, default: 0 },
       rejected: { type: Number, default: 0 },
@@ -162,6 +169,9 @@ const pivotSourceDiscoveryRunSchema = new mongoose.Schema(
       eventsUpserted: { type: Number, default: 0 },
       eventsSkipped: { type: Number, default: 0 },
       eventsFailed: { type: Number, default: 0 },
+      /** Rows written that matched an existing catalog event (sourceUrl or fingerprint). */
+      eventsUpdated: { type: Number, default: 0 },
+      eventsUpdatedByFingerprint: { type: Number, default: 0 },
       /** Batch curation only. */
       jobsRun: { type: Number, default: 0 },
       jobsFailed: { type: Number, default: 0 },

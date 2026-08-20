@@ -171,11 +171,12 @@ describe('pivotTenantOpsService', () => {
   });
 
   describe('curationSectionsForStage', () => {
-    it('returns monitor-only sections for post-mortem', () => {
+    it('returns monitor plus catalog for post-mortem so live events stay editable', () => {
       expect(curationSectionsForStage('post-mortem')).toEqual([
         'overview',
         'performance',
         'journey',
+        'catalog',
       ]);
     });
 

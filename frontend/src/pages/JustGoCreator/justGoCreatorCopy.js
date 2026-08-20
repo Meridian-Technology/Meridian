@@ -23,7 +23,7 @@ const justGoCreatorCopy = Object.freeze({
   home: Object.freeze({
     title: 'your listings',
     subtitle:
-      'Everything you’ve sent us, and where it sits. Just Go reviews every listing before it goes into a drop.',
+      'What you’ve sent, and what Just Go already ingested under your name. Ops review every listing before it goes into a drop.',
     loading: 'Loading your listings…',
     errorTitle: 'We couldn’t load your listings',
     errorBody: 'Something went wrong on our side. Try again in a moment.',
@@ -33,6 +33,12 @@ const justGoCreatorCopy = Object.freeze({
     emptyBody:
       'Your first listing goes to Just Go for review, lands in a drop week, and shows up in the app once we publish it.',
     emptyCta: 'Start a listing',
+    /** Claimed catalog exists but none of those organizers have events yet. */
+    claimedEmptyTitle: 'catalog’s quiet',
+    claimedEmptyBody:
+      'Just Go already attached listings we ingested to your name. None of them are on the board this week — this isn’t a blank start.',
+    claimedEmptyCta: 'Start a new listing',
+    claimedLabel: 'catalog',
     /** Reskin register — filtered to a bucket with nothing in it. */
     filteredEmptyTitle: 'Nothing in this bucket',
     filteredEmptyBody: 'No listings match that filter yet.',
@@ -145,6 +151,7 @@ const justGoCreatorCopy = Object.freeze({
       copied: 'Link copied',
       preview: 'Preview',
       updateListing: 'Update listing',
+      claimedNote: 'Ingested by Just Go — insights only.',
       interestedLabel: 'Interested',
       timeUntilLabel: 'Starts in',
       dropWeekLabel: 'Drop week',
@@ -253,6 +260,12 @@ const justGoCreatorCopy = Object.freeze({
       liveZeroTitle: 'no signal yet',
       liveZeroBody:
         'Your listing is live. This fills in as people scroll past it and tap through.',
+    }),
+
+    detailsReadOnly: Object.freeze({
+      title: 'ingested listing',
+      body:
+        'Just Go brought this in from the web. You can see how it’s doing — content and drop status stay with ops.',
     }),
 
     comingSoon: Object.freeze({

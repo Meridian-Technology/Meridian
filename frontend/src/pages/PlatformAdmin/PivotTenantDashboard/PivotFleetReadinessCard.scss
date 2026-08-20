@@ -1,0 +1,36 @@
+.pivot-fleet-readiness {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pivot-fleet-readiness__cities {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.pivot-fleet-readiness__cities li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pivot-fleet-readiness__cities a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 550;
+}
+
+.pivot-fleet-readiness__cities a:hover,
+.pivot-fleet-readiness__cities a:focus-visible {
+  text-decoration: underline;
+}

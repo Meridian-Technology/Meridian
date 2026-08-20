@@ -4,11 +4,14 @@
 
 Backend-only scope for adding **agent jobs that scrape event websites** into the existing Just Go (internal: **Pivot**) curation pipeline.
 
-Web curation UI lives at `/platform-admin/pivot/:tenantKey?page=1` and already drives saved **curation jobs** → async **curation runs**. Today those jobs only crawl **Partiful** and **Luma**; there is no generic website / browser-agent scraper. This task should extend the backend job/run/ingest path — not mobile.
+Web curation UI lives at `/platform-admin/pivot/:tenantKey?page=1` and already drives saved **curation jobs** → async **curation runs**. Jobs now crawl **Partiful**, **Luma**, and **generic websites** via Firecrawl. Additionally, **discovery bootstraps native indexes first** - guaranteed city-index jobs for Luma/Partiful run before Firecrawl search to ensure coverage even when search doesn't return those hosts. This task should extend the backend job/run/ingest path — not mobile.
 
 Related plans:
 - [`Meridian-Mintlify/strategy/pivot-tenant-ops-dashboard-plan.mdx`](../../Meridian-Mintlify/strategy/pivot-tenant-ops-dashboard-plan.mdx) — curation jobs / runs contract
 - [`Meridian-Mintlify/strategy/pivot-metadata-contract.mdx`](../../Meridian-Mintlify/strategy/pivot-metadata-contract.mdx) — `Event.customFields.pivot` shape
+- [`Meridian-Mintlify/strategy/pivot-native-first-discovery-plan.mdx`](../../Meridian-Mintlify/strategy/pivot-native-first-discovery-plan.mdx) — native-first discovery implementation plan
+
+**Native-first discovery:** Discovery flows are now configurable per tenant (`native-then-firecrawl`, `native-only`, `firecrawl-only`) via `utilities/pivotDiscoveryConfig.js`. Native sources (Luma/Partiful city indexes) bootstrap before Firecrawl search to guarantee coverage, with result filtering to prevent `generic-site` treatment of hosts we can parse natively.
 
 ---
 
@@ -28,8 +31,8 @@ Also used for one-shot paste ingest:
 - `POST /admin/pivot/ingest`
 - `POST /admin/pivot/ingest/batch`
 
-Providers today (`CURATION_PROVIDERS`): `partiful` | `luma` | `manual-json`  
-`manual-json` is not crawlable. There is no Playwright / Firecrawl / browser-agent layer.
+Providers today (`CURATION_PROVIDERS`): `partiful` | `luma` | `manual-json` | `generic-site`  
+`manual-json` is not crawlable. `generic-site` uses Firecrawl for browser-agent scraping of arbitrary event websites.
 
 ---
 
@@ -47,6 +50,15 @@ Providers today (`CURATION_PROVIDERS`): `partiful` | `luma` | `manual-json`
 | `services/pivotIngestDuplicateService.js` | Duplicate detection for crawl/import |
 | `utilities/pivotIngestStatus.js` | `draft` \| `staged` \| `published` |
 | `app.js` | Mounts `app.use('/admin/pivot', pivotAdminRoutes)` |
+
+**Native-first discovery additions:**
+
+| File | Role |
+|------|------|
+| `utilities/pivotDiscoveryConfig.js` | Discovery flow configuration (`native-then-firecrawl`, `native-only`, `firecrawl-only`), slug validation, native source specs, skip-host helpers |
+| `schemas/tenantConfig.js` | Tenant `pivotDiscovery` config schema (flow + Luma/Partiful city slugs) |
+| `services/tenantConfigService.js` | Persist discovery config with validation |
+| `services/pivotCurationBatchService.js` | Batch curation for native jobs without entries from bootstrap |
 
 ---
 
@@ -86,6 +98,7 @@ All under `/admin/pivot` (see `pivotAdminRoutes.js`):
 - `POST /ingest/suggest-tags` · `suggest-and-apply-tags`
 - `POST /tenants/:tenantKey/batches/:batchWeek/release|unrelease`
 - `GET /tenants/:tenantKey/batches/:batchWeek/readiness`
+- `PATCH /tenants/:tenantKey/sources/discovery-config` — save flow + city slugs as tenant default
 
 ---
 
@@ -184,15 +197,22 @@ The CLI agent was doing three separable things, and each maps onto a Firecrawl e
 ```text
 POST .../tenants/:tenantKey/sources/discover        → 202 + cost ceiling
   → scheduleCitySourceDiscovery (background)
-      → buildDiscoveryQueries      ← seeded from the tag catalog, not prior results
-      → searchSites per query      ← candidate hosts, deduped, seed tags unioned
-      → filter                     ← known hosts, social/reference hosts, private ranges
-      → mapSite per candidate      ← locate the event index, not the homepage
-      → scrapeSiteEvents           ← qualify: does the index yield dated events?
-      → PivotCitySource upsert     ← qualified *and* rejected
-      → createCurationJob          ← qualified sources get a *refresh* job
-      → ingestEntries              ← publish the events the qualifying scrape already returned
-      → startCurationBatch         ← native hosts only, which qualify without a scrape
+      → phase: native              ← bootstrap Luma/Partiful city indexes FIRST
+          → bootstrapNativeSources ← create/reuse jobs, crawl via executeCurationRun
+          → ingestEntries          ← publish native events
+      → phase: searching           ← only when runFirecrawl === true
+          → buildDiscoveryQueries  ← seeded from tag catalog, not prior results  
+          → searchSites per query  ← candidate hosts, deduped, seed tags unioned
+      → phase: filtering           ← skip native hosts + known hosts + non-sources
+          → filter                 ← result filtering, NOT fewer queries
+      → phase: qualifying          ← map + scrape remaining candidates
+          → mapSite per candidate  ← locate event index, not homepage
+          → scrapeSiteEvents       ← qualify: does index yield dated events?
+      → phase: registering         ← persist outcomes
+          → PivotCitySource upsert ← qualified *and* rejected  
+          → createCurationJob      ← qualified sources get refresh job
+          → ingestEntries          ← publish events qualifying scrape returned
+          → startCurationBatch     ← native hosts without entries from bootstrap
 GET .../tenants/:tenantKey/sources                  → poll the registry
 ```
 
@@ -220,7 +240,7 @@ Publishing goes through the curation run's own `ingestEntries`, so discovered ev
 | `migrations/setPivotDropTimezone.js` | **New.** Sets `pivotDropTimezone`, which anchors relative-date extraction |
 | `frontend/.../PivotTenantSourcesPanel.jsx` | **New.** Registry table, discover trigger, cost preview |
 | `frontend/.../PivotDiscoveryConsole.jsx` | **New.** Live decision timeline with `thinking-orbs` animation; renders both run kinds |
-| `frontend/.../PivotTenantCurationPage.jsx` | “Run all” beside Saved jobs, with a server-derived batch banner and the console |
+| `frontend/.../PivotTenantCurationPage.jsx` | **Refresh all** beside Saved jobs, with a server-derived batch banner and the console |
 
 ### Design notes
 
@@ -238,7 +258,7 @@ Publishing goes through the curation run's own `ingestEntries`, so discovered ev
 
 ### Running it
 
-**Admin UI.** `PivotTenantSourcesPanel` sits above Saved jobs on the tenant Curation page (`/platform-admin/pivot/:tenantKey`), because discovery is what produces those jobs. It shows the registry (qualified and rejected, with rejection reasons), a discover trigger with category/threshold options, and the run's cost ceiling from `GET .../sources/discovery-plan` before you commit.
+**Admin UI.** `PivotTenantSourcesPanel` sits above Saved jobs on the tenant Curation page (`/platform-admin/pivot/:tenantKey`). **Discover** finds and registers sources; **Refresh all** on Saved jobs recrawls them for the week. The panel shows the registry (qualified and rejected, with rejection reasons), a discover trigger with category/threshold options, and the run's cost ceiling from `GET .../sources/discovery-plan` before you commit.
 
 The trigger disables itself when the plan reports `configured: false`, which is how a missing `FIRECRAWL_API_KEY` surfaces in the UI instead of as a run that dies on its first call.
 
@@ -280,7 +300,7 @@ npm run discover:pivot-city-sources -- --tenant=ic
 ### Still open
 
 - **`FIRECRAWL_API_KEY` is not set in `Meridian/backend/.env`.** Neither `generic-site` nor discovery can do anything until it is; the CLI fails fast with that message rather than queueing doomed work.
-- **Nothing is scheduled yet.** Both `POST .../sources/discover` and `POST .../curation-batches` are operator-triggered. A monthly discovery pass per city alongside a weekly batch refresh is the intended cadence; `pivotCrewWeekStateScheduler` is the pattern to follow, but spending Firecrawl credits on a timer is a decision that has not been made.
+- **Nothing is scheduled yet.** Both `POST .../sources/discover` and `POST .../curation-batches` are operator-triggered. **Discover** finds/registers sources (native first, then long tail). **Refresh all** recrawls saved jobs for the week. A monthly discovery pass per city alongside a weekly batch refresh is the intended cadence. Drop-day push does not start either. `pivotCrewWeekStateScheduler` is the pattern to follow *if* crawling is ever put on a timer, but spending Firecrawl credits on a cron is a decision that has not been made — do not wire discovery to drop day.
 - **A batch's concurrency is fixed at 2.** It is not derived from the account's rate limit, so a larger plan is under-used and a smaller one still leans on the streak breaker. Making it configurable per tenant is the obvious next step once real limits are known.
 - **Run history is unbounded and unpruned.** Every discovery run and rehearsal leaves a document in `pivot_source_discovery_runs`. Individual runs are capped (600 steps), but nothing expires old runs; a TTL index is the obvious fix once the cadence is real.
 - **One source per host.** The unique index is `{tenantKey, host}`, so a single hostname cannot hold two calendars. Subdomains count as distinct hosts, which covers the university case, but a site with `/arts` and `/sports` calendars on one host will only ever register the higher-scoring one.

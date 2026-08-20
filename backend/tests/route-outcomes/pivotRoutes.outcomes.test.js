@@ -2,19 +2,32 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('../../middlewares/verifyToken', () => ({
-  verifyToken: (req, res, next) => {
+  verifyToken: jest.fn((req, res, next) => {
     req.user = {
       globalUserId: '507f191e810c19729de860ea',
       userId: '507f191e810c19729de860eb',
     };
     next();
-  },
+  }),
 }));
 
 jest.mock('../../services/pivotEntryService', () => ({
   listPivotCities: jest.fn(),
   resolvePivotEntry: jest.fn(),
   redeemPivotEntry: jest.fn(),
+}));
+
+jest.mock('../../services/pivotLandingDropService', () => ({
+  getPivotLandingDrop: jest.fn(),
+}));
+
+jest.mock('../../services/pivotLandingService', () => ({
+  recordLandingEvent: jest.fn(),
+  getLandingConfig: jest.fn(),
+}));
+
+jest.mock('../../services/pivotLandingWaitlistService', () => ({
+  joinWaitlist: jest.fn(),
 }));
 
 jest.mock('../../services/pivotReferralCodeService', () => ({
@@ -56,6 +69,15 @@ jest.mock('../../services/pivotConfigService', () => ({
   getPivotConfig: jest.fn(),
 }));
 
+jest.mock('../../services/pivotCopyService', () => {
+  const actual = jest.requireActual('../../services/pivotCopyService');
+  return {
+    ...actual,
+    getPivotCopy: jest.fn(),
+    getPlatformLandingCopy: jest.fn(),
+  };
+});
+
 jest.mock('../../services/pivotWeekRitualService', () => ({
   getPivotWeekRitual: jest.fn(),
   RITUAL_MIN_APP_VERSION: '2.0.0',
@@ -84,6 +106,14 @@ const {
   resolvePivotEntry,
   redeemPivotEntry,
 } = require('../../services/pivotEntryService');
+const { getPivotLandingDrop } = require('../../services/pivotLandingDropService');
+const { recordLandingEvent, getLandingConfig } = require('../../services/pivotLandingService');
+const { joinWaitlist } = require('../../services/pivotLandingWaitlistService');
+const {
+  pivotLandingEventRateLimit,
+  pivotLandingWaitlistRateLimit,
+  MAX_REQUESTS_PER_WINDOW,
+} = require('../../middlewares/pivotLandingDropRateLimit');
 const { validateReferralCode, redeemReferralCode } = require('../../services/pivotReferralCodeService');
 const { getPivotFeed } = require('../../services/pivotFeedService');
 const { getPivotEventCrossCrewOverlap } = require('../../services/pivotCrossCrewService');
@@ -101,6 +131,8 @@ const {
   submitEventFeedback,
 } = require('../../services/pivotFeedbackService');
 const { getPivotConfig } = require('../../services/pivotConfigService');
+const { getPivotCopy, getPlatformLandingCopy } = require('../../services/pivotCopyService');
+const { verifyToken } = require('../../middlewares/verifyToken');
 const { getPivotWeekRitual } = require('../../services/pivotWeekRitualService');
 const { listPivotTags } = require('../../services/pivotTagCatalogService');
 const {
@@ -146,6 +178,307 @@ describe('pivotRoutes GET /pivot/cities', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
     expect(response.body.data.cities).toHaveLength(1);
+  });
+});
+
+describe('pivotRoutes GET /pivot/landing/config', () => {
+  beforeEach(() => {
+    getLandingConfig.mockReset();
+    verifyToken.mockClear();
+  });
+
+  it('returns 200 with waitlist and launched cities without auth', async () => {
+    getLandingConfig.mockResolvedValue({
+      data: {
+        cities: [
+          { tenantKey: 'nyc', cityDisplayName: 'New York City', landingMode: 'waitlist' },
+          { tenantKey: 'sf', cityDisplayName: 'San Francisco', landingMode: 'launched' },
+        ],
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/config');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.cities).toEqual([
+      { tenantKey: 'nyc', cityDisplayName: 'New York City', landingMode: 'waitlist' },
+      { tenantKey: 'sf', cityDisplayName: 'San Francisco', landingMode: 'launched' },
+    ]);
+    expect(verifyToken).not.toHaveBeenCalled();
+    expect(getLandingConfig).toHaveBeenCalledWith(expect.any(Object), { tenantKey: undefined });
+  });
+
+  it('passes tenantKey so a scoped city is included', async () => {
+    getLandingConfig.mockResolvedValue({
+      data: {
+        cities: [
+          { tenantKey: 'troy', cityDisplayName: 'Troy', landingMode: 'waitlist' },
+        ],
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/config?tenantKey=troy');
+    expect(response.statusCode).toBe(200);
+    expect(getLandingConfig).toHaveBeenCalledWith(expect.any(Object), { tenantKey: 'troy' });
+  });
+
+  it('returns 404 TENANT_NOT_FOUND for an unknown tenantKey', async () => {
+    getLandingConfig.mockResolvedValue({
+      error: 'City not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/config?tenantKey=paris');
+    expect(response.statusCode).toBe(404);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+});
+
+describe('pivotRoutes GET /pivot/landing/drop', () => {
+  beforeEach(() => {
+    getPivotLandingDrop.mockReset();
+  });
+
+  it('returns 200 with card-only drop events', async () => {
+    getPivotLandingDrop.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        cityDisplayName: 'New York City',
+        batchWeek: '2026-W33',
+        dropAt: '2026-08-13T22:00:00.000Z',
+        events: [
+          {
+            id: 'fri',
+            name: 'friday night market',
+            hostName: 'public records',
+            startTime: '2026-08-14T23:00:00.000Z',
+            location: 'brooklyn',
+            tag: 'live-music',
+          },
+        ],
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/drop?tenantKey=nyc');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.events).toHaveLength(1);
+    expect(response.body.data.events[0]).not.toHaveProperty('description');
+    expect(response.body.data.events[0]).not.toHaveProperty('externalLink');
+    expect(getPivotLandingDrop).toHaveBeenCalledWith(
+      expect.anything(),
+      { tenantKey: 'nyc' },
+    );
+  });
+
+  it('returns 404 when the city is missing', async () => {
+    getPivotLandingDrop.mockResolvedValue({
+      error: 'City not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/drop?tenantKey=missing');
+    expect(response.statusCode).toBe(404);
+    expect(response.body.code).toBe('TENANT_NOT_FOUND');
+  });
+});
+
+describe('pivotRoutes POST /pivot/landing/event', () => {
+  beforeEach(() => {
+    recordLandingEvent.mockReset();
+    pivotLandingEventRateLimit.reset();
+    verifyToken.mockClear();
+  });
+
+  it('returns 200 success on a valid view without auth', async () => {
+    recordLandingEvent.mockResolvedValue({ data: {} });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/event')
+      .send({ type: 'view', visitorId: 'visitor-abc' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({ success: true });
+    expect(verifyToken).not.toHaveBeenCalled();
+    expect(recordLandingEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ type: 'view', visitorId: 'visitor-abc' }),
+    );
+  });
+
+  it('returns 400 with INVALID_TYPE for an invalid type', async () => {
+    recordLandingEvent.mockResolvedValue({
+      error: 'type must be view or store_click.',
+      status: 400,
+      code: 'INVALID_TYPE',
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/event')
+      .send({ type: 'waitlist_submit', visitorId: 'visitor-abc' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('INVALID_TYPE');
+  });
+
+  it('returns 429 after the per-IP burst', async () => {
+    recordLandingEvent.mockResolvedValue({ data: {} });
+    const app = buildBaseApp();
+    const payload = { type: 'view', visitorId: 'visitor-abc' };
+
+    for (let i = 0; i < MAX_REQUESTS_PER_WINDOW; i += 1) {
+      const ok = await request(app).post('/pivot/landing/event').send(payload);
+      expect(ok.statusCode).toBe(200);
+    }
+
+    const limited = await request(app).post('/pivot/landing/event').send(payload);
+    expect(limited.statusCode).toBe(429);
+    expect(limited.body.success).toBe(false);
+    expect(limited.body.code).toBe('LANDING_EVENT_RATE_LIMIT');
+  });
+});
+
+describe('pivotRoutes POST /pivot/landing/waitlist', () => {
+  beforeEach(() => {
+    joinWaitlist.mockReset();
+    pivotLandingWaitlistRateLimit.reset();
+    verifyToken.mockClear();
+  });
+
+  it('returns 200 with shareUrl without auth', async () => {
+    joinWaitlist.mockResolvedValue({
+      data: {
+        shareUrl: 'https://justgo.lol/nyc?ref=abc123xyzz',
+        friendsJoined: 0,
+        tenantKey: 'nyc',
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/waitlist')
+      .send({ phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      success: true,
+      data: {
+        shareUrl: 'https://justgo.lol/nyc?ref=abc123xyzz',
+        friendsJoined: 0,
+        tenantKey: 'nyc',
+      },
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(/4155550100|\+1/);
+    expect(verifyToken).not.toHaveBeenCalled();
+    expect(joinWaitlist).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ phone: '4155550100', tenantKey: 'nyc' }),
+    );
+  });
+
+  it('returns 409 WAITLIST_DUPLICATE for the same phone+city', async () => {
+    joinWaitlist.mockResolvedValue({
+      error: 'This number is already on the waitlist for this city.',
+      status: 409,
+      code: 'WAITLIST_DUPLICATE',
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/waitlist')
+      .send({ phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('WAITLIST_DUPLICATE');
+  });
+
+  it('returns 400 INVALID_PHONE for garbage numbers', async () => {
+    joinWaitlist.mockResolvedValue({
+      error: 'Enter a valid US phone number.',
+      status: 400,
+      code: 'INVALID_PHONE',
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/waitlist')
+      .send({ phone: 'nope', tenantKey: 'nyc', visitorId: 'visitor-abc' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('INVALID_PHONE');
+  });
+
+  it('returns 400 CITY_REQUIRED when generic signup omits city', async () => {
+    joinWaitlist.mockResolvedValue({
+      error: 'City is required.',
+      status: 400,
+      code: 'CITY_REQUIRED',
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/landing/waitlist')
+      .send({ phone: '4155550100', visitorId: 'visitor-abc' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('CITY_REQUIRED');
+  });
+
+  it('returns 429 after the per-IP burst', async () => {
+    joinWaitlist.mockResolvedValue({
+      data: { shareUrl: 'https://justgo.lol/nyc?ref=abc', friendsJoined: 0, tenantKey: 'nyc' },
+    });
+    const app = buildBaseApp();
+    const payload = { phone: '4155550100', tenantKey: 'nyc', visitorId: 'visitor-abc' };
+
+    for (let i = 0; i < MAX_REQUESTS_PER_WINDOW; i += 1) {
+      const ok = await request(app).post('/pivot/landing/waitlist').send(payload);
+      expect(ok.statusCode).toBe(200);
+    }
+
+    const limited = await request(app).post('/pivot/landing/waitlist').send(payload);
+    expect(limited.statusCode).toBe(429);
+    expect(limited.body.success).toBe(false);
+    expect(limited.body.code).toBe('WAITLIST_RATE_LIMIT');
+  });
+});
+
+describe('pivotRoutes GET /pivot/landing/copy', () => {
+  beforeEach(() => {
+    getPlatformLandingCopy.mockReset();
+    getPlatformLandingCopy.mockResolvedValue({
+      data: {
+        revision: 'p0:t0',
+        schemaVersion: 1,
+        tokens: {},
+        entries: {},
+      },
+    });
+  });
+
+  it('returns 200 sparse overlay without auth', async () => {
+    getPlatformLandingCopy.mockResolvedValue({
+      data: {
+        revision: 'p2:t0',
+        schemaVersion: 1,
+        tokens: { 'brand.name': 'block' },
+        entries: { 'landing.web.cta': 'get block' },
+      },
+    });
+
+    const response = await request(buildBaseApp()).get('/pivot/landing/copy');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.entries).toEqual({ 'landing.web.cta': 'get block' });
+    expect(response.body.data.entries).not.toHaveProperty('ticker.week');
+    expect(getPlatformLandingCopy).toHaveBeenCalled();
+  });
+
+  it('returns 200 empty overlay when the pack is missing', async () => {
+    const response = await request(buildBaseApp()).get('/pivot/landing/copy');
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.entries).toEqual({});
   });
 });
 
@@ -974,6 +1307,10 @@ describe('pivotRoutes GET /pivot/config', () => {
           nextDropAt: '2026-06-04T22:00:00.000Z',
           nextDropFormatted: 'Thu Jun 4, 6:00 PM EDT',
         },
+        copy: {
+          revision: 'p1:t0',
+          schemaVersion: 1,
+        },
       },
     });
 
@@ -984,6 +1321,12 @@ describe('pivotRoutes GET /pivot/config', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
     expect(response.body.data.dropSchedule.batchWeek).toBe('2026-W23');
+    expect(response.body.data.copy).toEqual({
+      revision: 'p1:t0',
+      schemaVersion: 1,
+    });
+    expect(response.body.data.copy.entries).toBeUndefined();
+    expect(response.body.data.entries).toBeUndefined();
     expect(getPivotConfig).toHaveBeenCalledWith(
       expect.objectContaining({ school: 'nyc' }),
       expect.objectContaining({ batchWeek: '2026-W23' }),
@@ -1002,6 +1345,154 @@ describe('pivotRoutes GET /pivot/config', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body.success).toBe(false);
+  });
+});
+
+describe('pivotRoutes GET /pivot/copy', () => {
+  const sparsePack = {
+    revision: 'p1:t0',
+    schemaVersion: 1,
+    tokens: { 'group.singular': 'crew' },
+    entries: { 'ticker.week': 'this week' },
+  };
+
+  beforeEach(() => {
+    getPivotCopy.mockReset();
+    verifyToken.mockImplementation((req, _res, next) => {
+      req.user = {
+        globalUserId: '507f191e810c19729de860ea',
+        userId: '507f191e810c19729de860eb',
+      };
+      next();
+    });
+  });
+
+  afterEach(() => {
+    verifyToken.mockImplementation((req, _res, next) => {
+      req.user = {
+        globalUserId: '507f191e810c19729de860ea',
+        userId: '507f191e810c19729de860eb',
+      };
+      next();
+    });
+  });
+
+  it('returns 200 with a sparse overlay (no catalog dump)', async () => {
+    getPivotCopy.mockResolvedValue({ data: sparsePack });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy?schemaVersion=1')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toEqual(sparsePack);
+    expect(Object.keys(response.body.data).sort()).toEqual([
+      'entries',
+      'revision',
+      'schemaVersion',
+      'tokens',
+    ]);
+    expect(response.headers.etag).toBe('"p1:t0"');
+    expect(getPivotCopy).toHaveBeenCalledWith(
+      expect.objectContaining({ school: 'nyc' }),
+      expect.objectContaining({ schemaVersion: '1' }),
+    );
+  });
+
+  it('returns 200 for an empty overlay', async () => {
+    getPivotCopy.mockResolvedValue({
+      data: {
+        revision: 'p0:t0',
+        schemaVersion: 1,
+        tokens: {},
+        entries: {},
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.entries).toEqual({});
+    expect(response.body.data.tokens).toEqual({});
+    expect(response.headers.etag).toBe('"p0:t0"');
+  });
+
+  it('returns 304 when If-None-Match matches the revision ETag', async () => {
+    getPivotCopy.mockResolvedValue({ data: sparsePack });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy')
+      .set('Authorization', 'Bearer test-token')
+      .set('If-None-Match', '"p1:t0"');
+
+    expect(response.statusCode).toBe(304);
+    expect(response.body).toEqual({});
+    expect(response.headers.etag).toBe('"p1:t0"');
+  });
+
+  it('returns 400 when copy service rejects a non-pivot tenant', async () => {
+    getPivotCopy.mockResolvedValue({
+      error: 'Pivot copy is only available for pivot city tenants.',
+      status: 400,
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+  });
+
+  it('returns 400 when schemaVersion is invalid', async () => {
+    getPivotCopy.mockResolvedValue({
+      error: 'schemaVersion must be a positive integer.',
+      status: 400,
+      code: 'INVALID_SCHEMA_VERSION',
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy?schemaVersion=nope')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.code).toBe('INVALID_SCHEMA_VERSION');
+  });
+
+  it('returns 401 when verifyToken rejects a missing token', async () => {
+    verifyToken.mockImplementation((_req, res) =>
+      res.status(401).json({
+        success: false,
+        message: 'No access token provided',
+        code: 'NO_TOKEN',
+      }),
+    );
+
+    const response = await request(buildBaseApp()).get('/pivot/copy');
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body.code).toBe('NO_TOKEN');
+    expect(getPivotCopy).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when verifyToken rejects a bad token', async () => {
+    verifyToken.mockImplementation((_req, res) =>
+      res.status(403).json({
+        success: false,
+        message: 'Invalid access token',
+        code: 'INVALID_TOKEN',
+      }),
+    );
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/copy')
+      .set('Authorization', 'Bearer bad');
+
+    expect(response.statusCode).toBe(403);
+    expect(getPivotCopy).not.toHaveBeenCalled();
   });
 });
 

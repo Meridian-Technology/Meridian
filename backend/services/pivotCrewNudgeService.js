@@ -14,6 +14,7 @@ const {
   buildRitualPushData,
   resolveRitualNudgePushBody,
 } = require('../utilities/pivotRitualNudge');
+const { getMergedCopyPackOrEmpty } = require('./pivotCopyService');
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const EXPO_BATCH_SIZE = 100;
@@ -72,7 +73,7 @@ function buildCrewNudgePushMessage(pushToken, payload = {}) {
   const ritualNudgeType = payload.ritualNudgeType || 'quorum_waiting';
   const body =
     trimPushBody(payload.body) ||
-    resolveRitualNudgePushBody(ritualNudgeType) ||
+    resolveRitualNudgePushBody(ritualNudgeType, payload.copyPack) ||
     buildCrewNudgePushBody(remainingCount);
 
   return {
@@ -286,6 +287,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
     .select('_id name')
     .lean();
   const crewNameById = new Map(crews.map((crew) => [crew._id.toString(), crew.name]));
+  const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey });
 
   let sent = 0;
   let failed = 0;
@@ -312,6 +314,7 @@ async function sendCrewUnfinishedSwipeNudgesForTenant(req, options = {}) {
         remainingCount,
         ritualPhase: 'swiping',
         ritualNudgeType: 'quorum_waiting',
+        copyPack,
       }),
     );
 
@@ -535,13 +538,14 @@ async function notifyCrewConsensusPeers(
       return { data: { sent: 0, failed: 0 } };
     }
 
+    const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey: req.school });
     const messages = recipients.map((recipient) =>
       buildCrewNudgePushMessage(recipient.pushToken, {
         batchWeek,
         crewId,
         ritualPhase: 'decide',
         ritualNudgeType,
-        body: resolveRitualNudgePushBody(ritualNudgeType),
+        copyPack,
       }),
     );
 
@@ -594,13 +598,14 @@ async function notifyPendingConsensusConfirms(
       return { data: { sent: 0, failed: 0 } };
     }
 
+    const copyPack = await getMergedCopyPackOrEmpty(req, { tenantKey: req.school });
     const messages = recipients.map((recipient) =>
       buildCrewNudgePushMessage(recipient.pushToken, {
         batchWeek,
         crewId,
         ritualPhase: 'decide',
         ritualNudgeType: 'decide_pending',
-        body: resolveRitualNudgePushBody('decide_pending'),
+        copyPack,
       }),
     );
 

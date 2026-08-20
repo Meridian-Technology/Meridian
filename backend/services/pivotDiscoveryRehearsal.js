@@ -3,9 +3,11 @@ const { resolvePivotTenant } = require('./pivotIngestPublishService');
 const { buildDiscoveryQueries } = require('../constants/pivotDiscoverySeeds');
 const {
   createDiscoveryRun,
+  refuseIfPipelineBusy,
   watchDiscoveryRunCancel,
 } = require('./pivotDiscoveryRunRecorder');
 const { logPivot } = require('../utilities/pivotLogger');
+const { resolvePivotDiscoveryConfig } = require('../utilities/pivotDiscoveryConfig');
 
 class RehearsalCancelled extends Error {
   constructor() {
@@ -67,7 +69,7 @@ const FIXTURE_HOSTS = [
     undated: 4,
     score: 14,
   },
-  { host: 'partiful.com', outcome: 'native', provider: 'partiful' },
+  { host: 'partiful.com', outcome: 'filtered-native', filterReason: 'Native parser — already covered before Firecrawl search' },
 ];
 
 function sleep(ms) {
@@ -114,12 +116,22 @@ async function playRehearsal(recorder, context) {
 
   try {
   recorder.step({
-    phase: 'searching',
+    phase: 'native',
     kind: 'plan',
     tone: 'info',
     title: `Rehearsing discovery for ${city}`,
     detail:
       'No pages are fetched and nothing is registered. Real queries and real ordering, example hosts.',
+  });
+  await pause();
+
+  recorder.setPhase('native');
+  recorder.step({
+    phase: 'native',
+    kind: 'native',
+    tone: 'good',
+    title: 'Would crawl Partiful and Luma first',
+    detail: 'Native parsers — no Firecrawl credits. Those hosts are then skipped in search.',
   });
   await pause();
 
@@ -161,8 +173,10 @@ async function playRehearsal(recorder, context) {
 
   const evaluating = [];
   for (const fixture of FIXTURE_HOSTS) {
-    if (fixture.outcome === 'filtered') {
-      recorder.bumpCounters({ skippedNonSource: 1 });
+    if (fixture.outcome === 'filtered' || fixture.outcome === 'filtered-native') {
+      recorder.bumpCounters(
+        fixture.outcome === 'filtered-native' ? { skippedNative: 1 } : { skippedNonSource: 1 },
+      );
       recorder.step({
         phase: 'filtering',
         kind: 'filter',
@@ -336,17 +350,26 @@ async function playRehearsal(recorder, context) {
  * same run document, same polling route, same step shapes.
  */
 async function startCitySourceDiscoveryRehearsal(req, options = {}) {
+  const busy = await refuseIfPipelineBusy(req);
+  if (busy) return busy;
+
   const tenantResult = await resolvePivotTenant(req, options.tenantKey);
   if (tenantResult.error) return tenantResult;
 
   const tenant = tenantResult.tenant;
   const city = String(tenant.name || tenant.tenantKey).trim();
+  
+  // Resolve discovery config first to check if Firecrawl is needed
+  const discovery = resolvePivotDiscoveryConfig(tenant, options);
+  
   const queries = buildDiscoveryQueries({
     city,
     tags: options.tags,
     maxQueries: options.maxQueries,
   });
-  if (!queries.length) {
+  
+  // Only require queries when Firecrawl is enabled
+  if (!queries.length && discovery.runFirecrawl) {
     return {
       error: 'No discovery queries matched the requested tags.',
       status: 400,
@@ -366,11 +389,14 @@ async function startCitySourceDiscoveryRehearsal(req, options = {}) {
     tags: options.tags,
     createJobs: false,
     plan: {
-      queries: queries.length,
+      queries: discovery.runFirecrawl ? queries.length : 0,
       categories: new Set(queries.map((row) => row.tag).filter(Boolean)).size,
-      maxCandidates,
+      maxCandidates: discovery.runFirecrawl ? maxCandidates : 0,
       minEvents: 1,
-      maxOutboundCalls: 0,
+      maxOutboundCalls: discovery.runFirecrawl ? queries.length + maxCandidates * 2 : 0,
+      flow: discovery.flow,
+      runNative: discovery.runNative,
+      runFirecrawl: discovery.runFirecrawl,
     },
   });
 
@@ -399,7 +425,7 @@ async function startCitySourceDiscoveryRehearsal(req, options = {}) {
         tenantKey: tenant.tenantKey,
         error: err.message,
       });
-      await recorder.finish({ status: 'failed', error: err.message });
+      await recorder.finish?.({ status: 'failed', error: err.message });
     }
   });
 

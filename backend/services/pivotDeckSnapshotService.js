@@ -136,6 +136,41 @@ async function upsertPivotDeckSnapshot(req, payload = {}) {
   };
 }
 
+async function getPivotDeckSnapshot(req, payload = {}) {
+  const userId = payload.userId || req.user?.userId;
+  const batchWeek = String(payload.batchWeek || '').trim();
+  if (!userId || !batchWeek || !isValidIsoWeek(batchWeek)) {
+    return null;
+  }
+  if (!mongoose.Types.ObjectId.isValid(String(userId))) {
+    return null;
+  }
+
+  const { PivotDeckSnapshot } = getModels(req, 'PivotDeckSnapshot');
+  const doc = await PivotDeckSnapshot.findOne({
+    userId: new mongoose.Types.ObjectId(String(userId)),
+    batchWeek,
+  }).lean();
+
+  return serializePivotDeckSnapshot(doc);
+}
+
+async function getLatestPivotDeckSnapshot(req, payload = {}) {
+  const userId = payload.userId || req.user?.userId;
+  if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+    return null;
+  }
+
+  const { PivotDeckSnapshot } = getModels(req, 'PivotDeckSnapshot');
+  const doc = await PivotDeckSnapshot.findOne({
+    userId: new mongoose.Types.ObjectId(String(userId)),
+  })
+    .sort({ batchWeek: -1, updatedAt: -1 })
+    .lean();
+
+  return serializePivotDeckSnapshot(doc);
+}
+
 async function recordPivotDeckSnapshot(req, payload = {}) {
   try {
     return await upsertPivotDeckSnapshot(req, payload);
@@ -154,6 +189,8 @@ module.exports = {
   normalizeOrderedEventIds,
   serializePivotDeckSnapshot,
   upsertPivotDeckSnapshot,
+  getPivotDeckSnapshot,
+  getLatestPivotDeckSnapshot,
   recordPivotDeckSnapshot,
   DECK_SNAPSHOT_ADMIN_ROLES,
 };

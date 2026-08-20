@@ -12,6 +12,8 @@ const {
   normalizeDeckSnapshotRefresh,
   upsertPivotDeckSnapshot,
   recordPivotDeckSnapshot,
+  getPivotDeckSnapshot,
+  getLatestPivotDeckSnapshot,
 } = require('../../services/pivotDeckSnapshotService');
 
 describe('PivotDeckSnapshot (Task 6.1)', () => {
@@ -126,6 +128,45 @@ describe('PivotDeckSnapshot (Task 6.1)', () => {
       });
 
       expect(result.error).toMatch(/model unavailable/i);
+    });
+
+    it('getPivotDeckSnapshot returns the stored ordered ids', async () => {
+      await upsertPivotDeckSnapshot(req, {
+        userId,
+        batchWeek: '2026-W22',
+        orderedEventIds: [eventA, eventB],
+        rankerVersion: 'rules_v1',
+      });
+
+      const snapshot = await getPivotDeckSnapshot(req, {
+        userId,
+        batchWeek: '2026-W22',
+      });
+
+      expect(snapshot.orderedEventIds).toEqual([
+        String(eventA),
+        String(eventB),
+      ]);
+      expect(snapshot.rankerVersion).toBe('rules_v1');
+    });
+
+    it('getLatestPivotDeckSnapshot returns the newest week for the user', async () => {
+      await upsertPivotDeckSnapshot(req, {
+        userId,
+        batchWeek: '2026-W21',
+        orderedEventIds: [eventA],
+        rankerVersion: 'rules_v1',
+      });
+      await upsertPivotDeckSnapshot(req, {
+        userId,
+        batchWeek: '2026-W22',
+        orderedEventIds: [eventB],
+        rankerVersion: 'rules_v1',
+      });
+
+      const snapshot = await getLatestPivotDeckSnapshot(req, { userId });
+      expect(snapshot.batchWeek).toBe('2026-W22');
+      expect(snapshot.orderedEventIds).toEqual([String(eventB)]);
     });
   });
 });

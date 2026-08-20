@@ -7,6 +7,22 @@ const {
   resolveImportDuplicate,
 } = require('./pivotIngestDuplicateService');
 const { scrapeSiteEvents } = require('./pivotSiteScrapeService');
+const { enrichIngestDraft } = require('../utilities/pivotFieldParsingUtils');
+const {
+  isInvalidHostName,
+  unionHostIdentities,
+  identityFromDisplayName,
+  identitiesFromPartifulHosts,
+  identitiesFromLumaHosts,
+  identitiesFromJsonLdOrganizer,
+} = require('../utilities/pivotHostIdentity');
+
+function fieldParseOptions(options = {}) {
+  return {
+    timezone: options.timezone,
+    now: options.now,
+  };
+}
 
 const FETCH_TIMEOUT_MS = 10_000;
 /**
@@ -168,19 +184,6 @@ function organizerNameFromNode(node) {
   return null;
 }
 
-function isInvalidHostName(name) {
-  if (typeof name !== 'string') return true;
-  const normalized = name.trim().toLowerCase();
-  return (
-    !normalized ||
-    normalized === 'partiful.com' ||
-    normalized === 'luma.com' ||
-    normalized === 'lu.ma' ||
-    normalized === 'partiful' ||
-    normalized === 'luma'
-  );
-}
-
 function firstPlausibleHostName(...values) {
   for (const value of values) {
     if (typeof value === 'string' && value.trim() && !isInvalidHostName(value)) {
@@ -240,7 +243,7 @@ function organizerNamesFromNodes(organizer) {
 
 function hostNamesFromPartifulHosts(hosts) {
   if (!Array.isArray(hosts) || !hosts.length) {
-    return { hostName: null, hostImageUrl: null };
+    return { hostName: null, hostImageUrl: null, hostIdentities: [] };
   }
 
   const normalized = hosts
@@ -252,7 +255,7 @@ function hostNamesFromPartifulHosts(hosts) {
     .filter((entry) => entry.name && !isInvalidHostName(entry.name));
 
   if (!normalized.length) {
-    return { hostName: null, hostImageUrl: null };
+    return { hostName: null, hostImageUrl: null, hostIdentities: [] };
   }
 
   const managed = normalized.filter((entry) => entry.isManaged);
@@ -261,17 +264,17 @@ function hostNamesFromPartifulHosts(hosts) {
     chosen.map((entry) => entry.name),
     managed.length ? 2 : 3,
   );
-  const primary = chosen[0];
 
   return {
     hostName,
     hostImageUrl: null,
+    hostIdentities: identitiesFromPartifulHosts(hosts),
   };
 }
 
 function hostNamesFromLumaHosts(hosts) {
   if (!Array.isArray(hosts) || !hosts.length) {
-    return { hostName: null, hostImageUrl: null };
+    return { hostName: null, hostImageUrl: null, hostIdentities: [] };
   }
 
   const normalized = hosts
@@ -296,7 +299,7 @@ function hostNamesFromLumaHosts(hosts) {
     .filter((entry) => entry.name && !isInvalidHostName(entry.name));
 
   if (!normalized.length) {
-    return { hostName: null, hostImageUrl: null };
+    return { hostName: null, hostImageUrl: null, hostIdentities: [] };
   }
 
   return {
@@ -305,6 +308,7 @@ function hostNamesFromLumaHosts(hosts) {
       3,
     ),
     hostImageUrl: null,
+    hostIdentities: identitiesFromLumaHosts(hosts),
   };
 }
 
@@ -352,7 +356,7 @@ function organizerImageFromNode(node) {
   return null;
 }
 
-function parseJsonLdEvent(nodes) {
+function parseJsonLdEvent(nodes, provider = 'manual') {
   const eventNode = nodes.find((node) => hasType(node, 'Event'));
   if (!eventNode) {
     return {};
@@ -391,10 +395,11 @@ function parseJsonLdEvent(nodes) {
     location,
     hostName: organizerNamesFromNodes(eventNode.organizer),
     hostImageUrl: null,
+    hostIdentities: identitiesFromJsonLdOrganizer(eventNode.organizer, provider),
   };
 }
 
-function parseNextDataHost(html) {
+function parseNextDataHost(html, provider = 'manual') {
   const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   if (!match?.[1]) return {};
 
@@ -407,9 +412,11 @@ function parseNextDataHost(html) {
     const hostImageMatch = serialized.match(/"host(?:Image|Avatar|Photo)(?:Url)?"\s*:\s*"([^"\\]+)"/i);
     const organizerMatch = serialized.match(/"organizerName"\s*:\s*"([^"\\]+)"/);
 
+    const hostName = firstPlausibleHostName(hostNameMatch?.[1], organizerMatch?.[1]);
     return {
-      hostName: firstPlausibleHostName(hostNameMatch?.[1], organizerMatch?.[1]),
+      hostName,
       hostImageUrl: hostImageMatch?.[1] || null,
+      hostIdentities: hostName ? [identityFromDisplayName(hostName, provider)].filter(Boolean) : [],
     };
   } catch {
     return {};
@@ -422,7 +429,7 @@ function parsePartifulHost(html) {
     return fromHosts;
   }
 
-  const fromNext = parseNextDataHost(html);
+  const fromNext = parseNextDataHost(html, 'partiful');
   if (fromNext.hostName) {
     return fromNext;
   }
@@ -432,9 +439,21 @@ function parsePartifulHost(html) {
     const slug = decodeURIComponent(profileMatch[1]).replace(/[-_]/g, ' ');
     const hostName = slug.replace(/\b\w/g, (char) => char.toUpperCase());
     if (!isInvalidHostName(hostName)) {
+      const profileUrl = `https://partiful.com/u/${profileMatch[1]}`;
       return {
         hostName,
         hostImageUrl: fromNext.hostImageUrl || null,
+        hostIdentities: unionHostIdentities(
+          [
+            {
+              provider: 'partiful',
+              name: hostName,
+              externalId: profileMatch[1],
+              profileUrl,
+            },
+          ],
+          fromNext.hostIdentities,
+        ),
       };
     }
   }
@@ -443,8 +462,10 @@ function parsePartifulHost(html) {
 }
 
 function parseLumaHost(html, nodes) {
-  const fromJson = nodes
-    .filter((node) => hasType(node, 'Person') || hasType(node, 'Organization'))
+  const personOrOrg = nodes.filter(
+    (node) => hasType(node, 'Person') || hasType(node, 'Organization'),
+  );
+  const fromJson = personOrOrg
     .map((node) => ({
       hostName: organizerNameFromNode(node),
       hostImageUrl: organizerImageFromNode(node),
@@ -452,15 +473,22 @@ function parseLumaHost(html, nodes) {
     .find((row) => row.hostName);
 
   if (fromJson?.hostName) {
-    return fromJson;
+    return {
+      ...fromJson,
+      hostIdentities: identitiesFromJsonLdOrganizer(personOrOrg, 'luma'),
+    };
   }
 
   const hostLabel = extractMetaContent(html, 'luma:event:host_name');
   if (hostLabel) {
-    return { hostName: hostLabel, hostImageUrl: null };
+    return {
+      hostName: hostLabel,
+      hostImageUrl: null,
+      hostIdentities: [identityFromDisplayName(hostLabel, 'luma')].filter(Boolean),
+    };
   }
 
-  return parseNextDataHost(html);
+  return parseNextDataHost(html, 'luma');
 }
 
 function detectProvider(hostname) {
@@ -585,8 +613,15 @@ function isInaccessiblePartifulImage(url) {
   return typeof url !== 'string' || !url.trim() || url.includes('firebasestorage.googleapis.com');
 }
 
-function buildPartifulExploreDraft(event) {
+function fallbackHostIdentities(hostName, provider, extra = []) {
+  const existing = unionHostIdentities(extra);
+  if (existing.length) return existing;
+  return unionHostIdentities([identityFromDisplayName(hostName, provider)]);
+}
+
+function buildPartifulExploreDraft(event, options = {}) {
   const sourceUrl = event.id ? `https://partiful.com/e/${event.id}` : null;
+  const hostName = typeof event.hostName === 'string' ? event.hostName.trim() : null;
   const draft = {
     name: typeof event.title === 'string' ? event.title.trim() : null,
     description: typeof event.description === 'string' ? event.description.trim() : null,
@@ -594,14 +629,16 @@ function buildPartifulExploreDraft(event) {
     start_time: event.startDate || null,
     end_time: event.endDate || null,
     location: partifulLocationFromInfo(event.locationInfo),
-    hostName: typeof event.hostName === 'string' ? event.hostName.trim() : null,
+    hostName,
     hostImageUrl: null,
+    hostIdentities: fallbackHostIdentities(hostName, 'partiful', event.hostIdentities),
     sourceUrl,
     source: 'partiful',
     sourceTags: extractPartifulSourceTags(event),
   };
 
-  return { draft, warnings: draftWarnings(draft), sourceUrl };
+  const enriched = enrichIngestDraft(draft, fieldParseOptions(options));
+  return { draft: enriched, warnings: draftWarnings(enriched), sourceUrl };
 }
 
 function extractPartifulSourceTags(event) {
@@ -641,7 +678,7 @@ function extractPartifulEventSlugFromUrl(sourceUrl) {
   }
 }
 
-function parsePartifulSingleEventDraft(html, sourceUrl) {
+function parsePartifulSingleEventDraft(html, sourceUrl, options = {}) {
   const pageProps = parsePartifulPageProps(html);
   const event = pageProps?.event;
   if (!event || typeof event !== 'object') {
@@ -649,14 +686,18 @@ function parsePartifulSingleEventDraft(html, sourceUrl) {
   }
 
   const hostFields = hostNamesFromPartifulHosts(pageProps?.hosts);
-  const built = buildPartifulExploreDraft({
-    ...event,
-    id: event.id || extractPartifulEventSlugFromUrl(sourceUrl),
-    hostName: firstPlausibleHostName(
-      typeof event.hostName === 'string' ? event.hostName.trim() : null,
-      hostFields.hostName,
-    ),
-  });
+  const built = buildPartifulExploreDraft(
+    {
+      ...event,
+      id: event.id || extractPartifulEventSlugFromUrl(sourceUrl),
+      hostName: firstPlausibleHostName(
+        typeof event.hostName === 'string' ? event.hostName.trim() : null,
+        hostFields.hostName,
+      ),
+      hostIdentities: hostFields.hostIdentities,
+    },
+    options,
+  );
 
   if (!built.draft.sourceUrl && sourceUrl) {
     built.draft.sourceUrl = sourceUrl;
@@ -701,7 +742,7 @@ function parsePartifulExploreBatch(html, sourceUrl, options = {}) {
   const limit = resolveBatchLimit(options.maxEvents);
   const allEvents = extractPartifulExploreEvents(html);
   const events = sliceToBatchLimit(allEvents, limit);
-  const drafts = events.map((event) => buildPartifulExploreDraft(event));
+  const drafts = events.map((event) => buildPartifulExploreDraft(event, options));
   const listLabel = extractMetaContent(html, 'og:title') || 'Partiful explore';
 
   return {
@@ -748,7 +789,7 @@ function locationFromLumaEvent(eventNode) {
   );
 }
 
-function buildLumaDiscoverDraft(eventNode) {
+function buildLumaDiscoverDraft(eventNode, options = {}) {
   const rawUrl = eventNode.url || eventNode['@id'] || null;
   let sourceUrl = rawUrl;
   if (sourceUrl && sourceUrl.startsWith('/')) {
@@ -766,11 +807,17 @@ function buildLumaDiscoverDraft(eventNode) {
     location: locationFromLumaEvent(eventNode),
     hostName: organizerFromLumaEvent(eventNode),
     hostImageUrl: null,
+    hostIdentities: fallbackHostIdentities(
+      organizerFromLumaEvent(eventNode),
+      'luma',
+      identitiesFromJsonLdOrganizer(eventNode.organizer, 'luma'),
+    ),
     sourceUrl,
     source: 'luma',
   };
 
-  return { draft, warnings: draftWarnings(draft), sourceUrl };
+  const enriched = enrichIngestDraft(draft, fieldParseOptions(options));
+  return { draft: enriched, warnings: draftWarnings(enriched), sourceUrl };
 }
 
 function extractLumaDiscoverEventsFromNextData(html) {
@@ -813,12 +860,14 @@ function hostFieldsFromLumaDiscoverEntry(entry) {
       return {
         hostName: fullName,
         hostImageUrl: null,
+        hostIdentities: identitiesFromLumaHosts([user]),
       };
     }
     if (typeof user.name === 'string' && user.name.trim()) {
       return {
         hostName: user.name.trim(),
         hostImageUrl: null,
+        hostIdentities: identitiesFromLumaHosts([user]),
       };
     }
   }
@@ -829,11 +878,12 @@ function hostFieldsFromLumaDiscoverEntry(entry) {
       return {
         hostName: calendarName,
         hostImageUrl: null,
+        hostIdentities: fallbackHostIdentities(calendarName, 'luma'),
       };
     }
   }
 
-  return { hostName: null, hostImageUrl: null };
+  return { hostName: null, hostImageUrl: null, hostIdentities: [] };
 }
 
 function locationFromLumaDiscoverEvent(event) {
@@ -857,7 +907,7 @@ function imageFromLumaDiscoverEvent(event) {
   );
 }
 
-function buildLumaDiscoverDraftFromNextData(entry) {
+function buildLumaDiscoverDraftFromNextData(entry, options = {}) {
   const event = entry?.event;
   if (!event) {
     return null;
@@ -875,11 +925,17 @@ function buildLumaDiscoverDraftFromNextData(entry) {
     location: locationFromLumaDiscoverEvent(event),
     hostName: hostFields.hostName,
     hostImageUrl: hostFields.hostImageUrl,
+    hostIdentities: fallbackHostIdentities(
+      hostFields.hostName,
+      'luma',
+      hostFields.hostIdentities,
+    ),
     sourceUrl,
     source: 'luma',
   };
 
-  return { draft, warnings: draftWarnings(draft), sourceUrl };
+  const enriched = enrichIngestDraft(draft, fieldParseOptions(options));
+  return { draft: enriched, warnings: draftWarnings(enriched), sourceUrl };
 }
 
 /**
@@ -1027,7 +1083,7 @@ async function fetchLumaDiscoverApiBatch(options = {}) {
         truncated = true;
         break;
       }
-      const built = buildLumaDiscoverDraftFromNextData(entry);
+      const built = buildLumaDiscoverDraftFromNextData(entry, options);
       if (!built?.sourceUrl) continue;
       if (seen.has(built.sourceUrl)) continue;
       seen.add(built.sourceUrl);
@@ -1065,7 +1121,7 @@ function parseLumaDiscoverBatch(html, sourceUrl, options = {}) {
   const nextData = extractLumaDiscoverEventsFromNextData(html);
   if (nextData.events.length) {
     const drafts = sliceToBatchLimit(nextData.events, limit)
-      .map((entry) => buildLumaDiscoverDraftFromNextData(entry))
+      .map((entry) => buildLumaDiscoverDraftFromNextData(entry, options))
       .filter(Boolean);
 
     return {
@@ -1096,7 +1152,7 @@ function parseLumaDiscoverBatch(html, sourceUrl, options = {}) {
     .filter((node) => node && hasType(node, 'Event'));
 
   const drafts = sliceToBatchLimit(eventNodes, limit).map((eventNode) =>
-    buildLumaDiscoverDraft(eventNode),
+    buildLumaDiscoverDraft(eventNode, options),
   );
   const listLabel = itemList.name || extractMetaContent(html, 'og:title') || 'Luma discover';
 
@@ -1151,10 +1207,18 @@ async function enrichPartifulBatchDrafts(entries, options = {}) {
       html: fetched.html,
       provider: 'partiful',
       sourceUrl: entry.sourceUrl,
+      timezone: options.timezone,
+      now: options.now,
     });
 
     if (draft.hostName && !entry.draft.hostName && !isInvalidHostName(draft.hostName)) {
       entry.draft.hostName = draft.hostName;
+    }
+    if (draft.hostIdentities?.length) {
+      entry.draft.hostIdentities = unionHostIdentities(
+        draft.hostIdentities,
+        entry.draft.hostIdentities,
+      );
     }
     if (draft.image && isInaccessiblePartifulImage(entry.draft.image)) {
       entry.draft.image = draft.image;
@@ -1172,9 +1236,9 @@ function firstNonEmpty(...values) {
   return null;
 }
 
-function buildDraft({ html, provider, sourceUrl }) {
+function buildDraft({ html, provider, sourceUrl, timezone, now }) {
   const jsonLdNodes = extractJsonLdBlocks(html).flatMap(flattenJsonLdNodes);
-  const jsonLdEvent = parseJsonLdEvent(jsonLdNodes);
+  const jsonLdEvent = parseJsonLdEvent(jsonLdNodes, provider);
 
   const openGraph = {
     name: extractMetaContent(html, 'og:title'),
@@ -1185,7 +1249,7 @@ function buildDraft({ html, provider, sourceUrl }) {
   let hostFields = {};
   let partifulPageDraft = null;
   if (provider === 'partiful') {
-    partifulPageDraft = parsePartifulSingleEventDraft(html, sourceUrl);
+    partifulPageDraft = parsePartifulSingleEventDraft(html, sourceUrl, { timezone, now });
     hostFields = parsePartifulHost(html);
   } else if (provider === 'luma') {
     hostFields = parseLumaHost(html, jsonLdNodes);
@@ -1206,12 +1270,27 @@ function buildDraft({ html, provider, sourceUrl }) {
       hostFields.hostName,
     ),
     hostImageUrl: null,
+    hostIdentities: fallbackHostIdentities(
+      firstPlausibleHostName(
+        partifulPageDraft?.hostName,
+        jsonLdEvent.hostName,
+        hostFields.hostName,
+      ),
+      provider,
+      unionHostIdentities(
+        partifulPageDraft?.hostIdentities,
+        jsonLdEvent.hostIdentities,
+        hostFields.hostIdentities,
+      ),
+    ),
     sourceUrl: firstNonEmpty(partifulPageDraft?.sourceUrl, sourceUrl),
     source: provider,
     sourceTags: partifulPageDraft?.sourceTags || [],
+    parsed: partifulPageDraft?.parsed || null,
   };
 
-  return { draft, warnings: draftWarnings(draft), providerLabel: PROVIDER_LABELS[provider] || provider };
+  const enriched = enrichIngestDraft(draft, { timezone, now });
+  return { draft: enriched, warnings: draftWarnings(enriched), providerLabel: PROVIDER_LABELS[provider] || provider };
 }
 
 async function fetchEventPage(url) {
@@ -1287,6 +1366,7 @@ async function attachPreviewDuplicates(data, options = {}) {
       drafts: annotated.drafts,
       warnings: [...(data.warnings || []), ...annotated.duplicateWarnings],
       duplicateCount: blockingCount,
+      rolledUpCount: annotated.rolledUpCount || 0,
     };
   }
 
@@ -1346,10 +1426,21 @@ async function previewGenericSiteIngest(options = {}) {
     };
   }
 
-  const drafts = scraped.drafts.map((entry) => ({
-    ...entry,
-    warnings: draftWarnings(entry.draft),
-  }));
+  const drafts = scraped.drafts.map((entry) => {
+    const draft = {
+      ...entry.draft,
+      hostIdentities: fallbackHostIdentities(
+        entry.draft?.hostName,
+        GENERIC_SITE_PROVIDER,
+        entry.draft?.hostIdentities,
+      ),
+    };
+    return {
+      ...entry,
+      draft,
+      warnings: draftWarnings(draft),
+    };
+  });
 
   const warnings = [];
   if (scraped.truncated) {
@@ -1400,7 +1491,10 @@ async function previewIngestUrl(_req, options = {}) {
 
   const batchLimit = resolveBatchLimit(options.maxEvents);
   const classification = classifyIngestUrl(normalized.parsed, normalized.provider);
-  const parseOptions = batchLimit == null ? {} : { maxEvents: batchLimit };
+  const parseOptions = {
+    ...(batchLimit == null ? {} : { maxEvents: batchLimit }),
+    ...fieldParseOptions(options),
+  };
   let batchResult = null;
   let pageHtml = null;
 
@@ -1417,6 +1511,7 @@ async function previewIngestUrl(_req, options = {}) {
       maxEvents: batchLimit,
       latitude: options.latitude,
       longitude: options.longitude,
+      ...fieldParseOptions(options),
     });
     if (!apiBatch.error && apiBatch.drafts?.length) {
       batchResult = apiBatch;
@@ -1506,6 +1601,7 @@ async function previewIngestUrl(_req, options = {}) {
     html: pageHtml,
     provider: normalized.provider,
     sourceUrl: normalized.url,
+    ...fieldParseOptions(options),
   });
 
   return {

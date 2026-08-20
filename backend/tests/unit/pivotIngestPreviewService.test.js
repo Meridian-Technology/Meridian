@@ -114,8 +114,15 @@ describe('pivotIngestPreviewService buildDraft', () => {
     expect(draft.hostName).toBe('Brooklyn Board Game Cafe');
     expect(draft.image).toContain('sunset.jpg');
     expect(draft.hostImageUrl).toBeNull();
+    expect(draft.hostIdentities).toEqual([
+      expect.objectContaining({
+        provider: 'partiful',
+        name: 'Brooklyn Board Game Cafe',
+      }),
+    ]);
     expect(draft.location).toBe('Brooklyn Bridge Park');
     expect(draft.start_time).toContain('2026-07-12');
+    expect(draft.parsed.startTimestamp).toBe('2026-07-12T22:00:00.000Z');
     expect(warnings).toEqual([]);
   });
 
@@ -128,6 +135,12 @@ describe('pivotIngestPreviewService buildDraft', () => {
 
     expect(draft.name).toBe('Open Mic Night');
     expect(draft.hostName).toBe('Luma Host Collective');
+    expect(draft.hostIdentities).toEqual([
+      expect.objectContaining({
+        provider: 'luma',
+        name: 'Luma Host Collective',
+      }),
+    ]);
     expect(draft.location).toBe('East Village Studio');
   });
 
@@ -173,6 +186,11 @@ describe('pivotIngestPreviewService buildDraft', () => {
 
     expect(draft.hostName).toBe('Brooklyn Board Game Cafe');
     expect(draft.hostName).not.toBe('partiful.com');
+    expect(draft.hostIdentities.map((row) => row.name)).toEqual([
+      'basem',
+      'Brooklyn Board Game Cafe',
+    ]);
+    expect(draft.hostIdentities.every((row) => row.provider === 'partiful')).toBe(true);
   });
 
   it('joins multiple JSON-LD organizers when no organization is present', () => {
@@ -202,6 +220,10 @@ describe('pivotIngestPreviewService buildDraft', () => {
     });
 
     expect(draft.hostName).toBe('Alice & Bob');
+    expect(draft.hostIdentities).toEqual([
+      expect.objectContaining({ provider: 'partiful', name: 'Alice' }),
+      expect.objectContaining({ provider: 'partiful', name: 'Bob' }),
+    ]);
   });
 
   it('parses Partiful single-event NEXT_DATA when JSON-LD is absent', () => {
@@ -223,6 +245,12 @@ describe('pivotIngestPreviewService buildDraft', () => {
     expect(draft.name).toBe('Sunset Listening Party');
     expect(draft.location).toBe('Williamsburg, Brooklyn');
     expect(draft.hostName).toBe('Roof Records');
+    expect(draft.hostIdentities).toEqual([
+      expect.objectContaining({
+        provider: 'partiful',
+        name: 'Roof Records',
+      }),
+    ]);
     expect(draft.start_time).toContain('2026-07-12');
     expect(draft.sourceTags).toEqual(['Music', 'Nightlife']);
     expect(warnings).toEqual([]);
@@ -244,6 +272,7 @@ describe('pivotIngestPreviewService buildDraft', () => {
     });
 
     expect(draft.hostName).toBe('(un)PTO');
+    expect(draft.hostIdentities.map((row) => row.name)).toEqual(['(un)PTO', 'basem']);
   });
 });
 
@@ -408,6 +437,10 @@ describe('pivotIngestPreviewService batch parsing', () => {
     expect(result.drafts).toHaveLength(1);
     expect(result.drafts[0].draft.name).toBe('Founders Cowork');
     expect(result.drafts[0].draft.hostName).toBe('Vivian Cai & Adrian Yumul');
+    expect(result.drafts[0].draft.hostIdentities).toEqual([
+      expect.objectContaining({ provider: 'luma', name: 'Vivian Cai' }),
+      expect.objectContaining({ provider: 'luma', name: 'Adrian Yumul' }),
+    ]);
     expect(result.drafts[0].draft.image).toBe('https://images.lumacdn.com/uploads/xr/dc792c6b.jpg');
     expect(result.drafts[0].sourceUrl).toBe('https://luma.com/yg5x8n8b');
   });
@@ -642,6 +675,9 @@ describe('generic-site provider', () => {
     expect(result.data.providerLabel).toBe('Website');
     expect(result.data.discoverSource).toBe('firecrawl-json');
     expect(result.data.drafts).toHaveLength(1);
+    expect(result.data.drafts[0].draft.hostIdentities).toEqual([
+      { provider: 'generic-site', name: 'FilmScene' },
+    ]);
     expect(result.data.warnings).toEqual([]);
     expect(scrapeSiteEvents).toHaveBeenCalledWith(
       expect.objectContaining({ url: SITE_URL, timezone: 'America/Chicago' }),
