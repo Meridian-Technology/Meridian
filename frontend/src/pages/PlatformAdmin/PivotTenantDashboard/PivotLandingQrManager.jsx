@@ -53,6 +53,7 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
   const [formError, setFormError] = useState('');
   const [downloading, setDownloading] = useState('');
   const [downloadMenu, setDownloadMenu] = useState('');
+  const [wiping, setWiping] = useState('');
 
   const qrsUrl = tenantKey
     ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/landing-qrs`
@@ -223,6 +224,37 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
     refetch();
   }, [addNotification, refetch]);
 
+  const handleWipeScans = useCallback(async (qr) => {
+    const confirmed = window.confirm(
+      `Wipe all scans for ${qr.name}? Counters go back to zero. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setWiping(qr.name);
+    const { data: res, error: reqError } = await authenticatedRequest(
+      `/admin/pivot/landing-qrs/${encodeURIComponent(qr.name)}/wipe-scans`,
+      { method: 'POST' },
+    );
+    setWiping('');
+    if (reqError || !res?.success) {
+      addNotification({
+        title: 'Could not wipe scans',
+        message: res?.message || reqError || 'Unable to wipe scans.',
+        type: 'error',
+      });
+      return;
+    }
+    const cleared = res.data?.wiped?.scans;
+    addNotification({
+      title: 'Scans wiped',
+      message:
+        typeof cleared === 'number'
+          ? `${qr.name}: ${cleared} scan${cleared === 1 ? '' : 's'} cleared`
+          : qr.name,
+      type: 'success',
+    });
+    refetch();
+  }, [addNotification, refetch]);
+
   return (
     <PivotOpsSection
       title="Tracking QRs"
@@ -349,6 +381,16 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
                         </button>
                       )}
                     </div>
+                    <button
+                      type="button"
+                      className="pivot-landing-qr-item__action"
+                      title="Wipe scans"
+                      aria-label="Wipe scans"
+                      onClick={() => handleWipeScans(qr)}
+                      disabled={wiping === qr.name}
+                    >
+                      <Icon icon="material-symbols:restart-alt" />
+                    </button>
                     {qr.isActive ? (
                       <button
                         type="button"

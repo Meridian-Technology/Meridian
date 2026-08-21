@@ -132,6 +132,7 @@ const {
   createTenantLandingQr,
   updateLandingQr,
   deactivateLandingQr,
+  wipeLandingQrScans,
 } = require('../services/pivotLandingQrService');
 
 const router = express.Router();
@@ -842,6 +843,37 @@ router.delete(
       return res.status(500).json({
         success: false,
         message: 'Unable to deactivate landing QR.',
+      });
+    }
+  },
+);
+
+router.post(
+  '/landing-qrs/:name/wipe-scans',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await wipeLandingQrScans(req, {
+        name: req.params.name,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/landing-qrs/:name/wipe-scans', err, req);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to wipe landing QR scans.',
       });
     }
   },

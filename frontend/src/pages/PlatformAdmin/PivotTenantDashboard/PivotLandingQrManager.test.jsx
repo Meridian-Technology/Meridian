@@ -82,6 +82,8 @@ function renderManager(props = {}) {
 }
 
 describe('PivotLandingQrManager', () => {
+  const originalConfirm = window.confirm;
+
   beforeEach(() => {
     Object.assign(navigator, {
       clipboard: { writeText: jest.fn().mockResolvedValue(undefined) },
@@ -90,6 +92,7 @@ describe('PivotLandingQrManager', () => {
   });
 
   afterEach(() => {
+    window.confirm = originalConfirm;
     jest.clearAllMocks();
   });
 
@@ -197,5 +200,40 @@ describe('PivotLandingQrManager', () => {
         'https://justgo.lol/qr/poster-night',
       );
     });
+  });
+
+  it('wipes scans after confirm', async () => {
+    window.confirm = jest.fn(() => true);
+    const refetch = jest.fn();
+    stubQrs({ items: [qrItem()], refetch });
+    mockAuthenticatedRequest.mockResolvedValue({
+      data: {
+        success: true,
+        data: qrItem({ scans: 0, uniqueScans: 0, lastScannedAt: null, wiped: { scans: 4 } }),
+      },
+    });
+
+    renderManager();
+    fireEvent.click(screen.getByRole('button', { name: 'Wipe scans' }));
+
+    expect(window.confirm).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(refetch).toHaveBeenCalled();
+    });
+    expect(mockAuthenticatedRequest).toHaveBeenCalledWith(
+      '/admin/pivot/landing-qrs/poster-night/wipe-scans',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(mockAddNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Scans wiped' }),
+    );
+  });
+
+  it('does not wipe scans when confirm is cancelled', () => {
+    window.confirm = jest.fn(() => false);
+    stubQrs({ items: [qrItem()] });
+    renderManager();
+    fireEvent.click(screen.getByRole('button', { name: 'Wipe scans' }));
+    expect(mockAuthenticatedRequest).not.toHaveBeenCalled();
   });
 });

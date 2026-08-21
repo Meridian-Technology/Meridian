@@ -1360,7 +1360,10 @@ button.justgo-landing__cta {
 
 .justgo-landing__footer-mark {
   display: block;
-  width: 8.5rem;
+  width: auto;
+  height: 5rem;
+  max-width: min(11rem, 100%);
+  object-fit: contain;
   transform: rotate(-1deg);
   filter: drop-shadow(#{$hard-shadow});
 }
