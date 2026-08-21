@@ -60,6 +60,7 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     externalLink: event.externalLink || null,
     sourceUrl: pivot.sourceUrl || null,
     ingestStatus: pivot.ingestStatus || null,
+    featured: pivot.featured === true,
     source: pivot.source || null,
     batchWeek: pivot.batchWeek || null,
     outOfReviewRange:

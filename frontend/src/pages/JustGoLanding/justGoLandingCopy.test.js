@@ -1,4 +1,5 @@
 import justGoLandingCopy, {
+  JUSTGO_LANDING_STORY_KEYS,
   JUSTGO_PUBLIC_ORIGIN,
   formatWaitlistFriendsJoined,
   justGoCanonicalLandingPath,
@@ -6,6 +7,7 @@ import justGoLandingCopy, {
   justGoPublicLandingUrl,
   justGoPublicOrigin,
   justGoPublicUrl,
+  landingStoryGrafKey,
   resolveJustGoLandingCopy,
   resolveWaitlistShareUrl,
 } from './justGoLandingCopy';
@@ -34,6 +36,23 @@ describe('resolveJustGoLandingCopy', () => {
     expect(copy.productName).toBe('block');
     expect(copy.story[2]).toBe('overlay story');
     expect(copy.headlineLead).toBe(justGoLandingCopy.headlineLead);
+  });
+
+  it('ships a configurable number of story grafs', () => {
+    expect(justGoLandingCopy.story).toHaveLength(5);
+    expect(JUSTGO_LANDING_STORY_KEYS).toEqual(
+      justGoLandingCopy.story.map((_, index) => landingStoryGrafKey(index)),
+    );
+    expect(resolveJustGoLandingCopy(null).story).toEqual(justGoLandingCopy.story);
+  });
+
+  it('appends extra overlay story grafs past the bundled count', () => {
+    const copy = resolveJustGoLandingCopy({
+      entries: { 'landing.web.story.graf5': 'sixth graf' },
+    });
+    expect(copy.story).toHaveLength(6);
+    expect(copy.story[5]).toBe('sixth graf');
+    expect(copy.story.slice(0, 5)).toEqual([...justGoLandingCopy.story]);
   });
 
   it('overlays waitlist keys', () => {

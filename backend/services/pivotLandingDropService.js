@@ -1,11 +1,14 @@
 /**
- * Public Just Go marketing deck: the current live week's drop, ranked as if
- * the deck was opened at that week's drop instant (anonymous, card-only).
+ * Public Just Go marketing deck: featured cards from the live week,
+ * ranked as if the deck opened at that week's drop instant. Internal-only
+ * `customFields.pivot.featured` — never returned on the public payload.
+ * If this week has no featured segment, fall back to last week's.
  */
 
 const { connectToDatabase } = require('../connectionsManager');
 const getModels = require('./getModelService');
 const { getTenantByKey } = require('./tenantConfigService');
+const { shiftIsoWeek } = require('../utilities/pivotIsoWeek');
 const {
   isPivotTenant,
   resolvePivotLiveBatchWeek,
@@ -42,6 +45,45 @@ function serializeLandingDropEvent(event) {
   };
 }
 
+function buildFeaturedLandingQuery(batchWeek, dropAt) {
+  return {
+    ...buildPublishedCatalogQuery(batchWeek, dropAt),
+    'customFields.pivot.featured': true,
+  };
+}
+
+function rankLandingEvents(events, dropAt, deckConfig) {
+  const validEvents = events.filter(
+    (event) =>
+      resolveDisplayHost(event.customFields?.pivot) &&
+      isUpcomingPivotEvent(event, dropAt),
+  );
+
+  return selectDropDeckEvents(
+    validEvents,
+    new Map(),
+    new Set(),
+    new Set(),
+    {},
+    deckConfig,
+  );
+}
+
+async function loadFeaturedWeek(Event, tenant, batchWeek, now, deckConfig) {
+  const { dropAt } = resolvePivotDropInstant(tenant, batchWeek, now);
+  const events = await Event.find(buildFeaturedLandingQuery(batchWeek, dropAt))
+    .select(LANDING_EVENT_FIELDS)
+    .sort({ start_time: 1 })
+    .lean();
+
+  return {
+    batchWeek,
+    dropAt,
+    segmentCount: events.length,
+    ranked: rankLandingEvents(events, dropAt, deckConfig),
+  };
+}
+
 async function getPivotLandingDrop(req, options = {}) {
   const tenantKey = String(options.tenantKey || '').trim().toLowerCase();
   if (!tenantKey) {
@@ -72,40 +114,37 @@ async function getPivotLandingDrop(req, options = {}) {
   }
 
   const now = options.now || new Date();
-  const batchWeek = resolvePivotLiveBatchWeek(tenant, now);
-  const { dropAt } = resolvePivotDropInstant(tenant, batchWeek, now);
+  const liveWeek = resolvePivotLiveBatchWeek(tenant, now);
+  const deckConfig = mergePivotDeckConfig(tenant.pivotDeckConfig);
 
   const db = await connectToDatabase(tenant.tenantKey);
   const scopedReq = { db, school: tenant.tenantKey };
   const { Event } = getModels(scopedReq, 'Event');
 
-  const events = await Event.find(buildPublishedCatalogQuery(batchWeek, dropAt))
-    .select(LANDING_EVENT_FIELDS)
-    .sort({ start_time: 1 })
-    .lean();
+  const current = await loadFeaturedWeek(Event, tenant, liveWeek, now, deckConfig);
+  let loaded = current;
+  let fallback = false;
 
-  const validEvents = events.filter(
-    (event) =>
-      resolveDisplayHost(event.customFields?.pivot) &&
-      isUpcomingPivotEvent(event, dropAt),
-  );
-
-  const ranked = selectDropDeckEvents(
-    validEvents,
-    new Map(),
-    new Set(),
-    new Set(),
-    {},
-    mergePivotDeckConfig(tenant.pivotDeckConfig),
-  );
+  if (current.segmentCount === 0) {
+    const previousWeek = shiftIsoWeek(liveWeek, -1);
+    if (previousWeek) {
+      const previous = await loadFeaturedWeek(Event, tenant, previousWeek, now, deckConfig);
+      if (previous.segmentCount > 0) {
+        loaded = previous;
+        fallback = true;
+      }
+    }
+  }
 
   return {
     data: {
       tenantKey: tenant.tenantKey,
       cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
-      batchWeek,
-      dropAt: dropAt.toISOString(),
-      events: ranked.slice(0, LANDING_DROP_LIMIT).map(serializeLandingDropEvent),
+      batchWeek: loaded.batchWeek,
+      liveWeek,
+      fallback,
+      dropAt: loaded.dropAt.toISOString(),
+      events: loaded.ranked.slice(0, LANDING_DROP_LIMIT).map(serializeLandingDropEvent),
     },
   };
 }
@@ -113,6 +152,7 @@ async function getPivotLandingDrop(req, options = {}) {
 module.exports = {
   getPivotLandingDrop,
   serializeLandingDropEvent,
+  buildFeaturedLandingQuery,
   LANDING_DROP_LIMIT,
   LANDING_EVENT_FIELDS,
 };

@@ -413,6 +413,33 @@ describe('JustGoLanding', () => {
     expect(screen.getByText(justGoLandingCopy.deckDownloadBody)).toBeInTheDocument();
   });
 
+  it('labels the deck last week when the drop falls back', async () => {
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/config') {
+        return Promise.resolve({ success: true, data: { cities: CITIES } });
+      }
+      if (url === '/pivot/landing/drop') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            tenantKey: 'brooklyn',
+            cityDisplayName: 'Brooklyn',
+            batchWeek: '2026-W32',
+            liveWeek: '2026-W33',
+            fallback: true,
+            events: DROP_EVENTS.slice(0, 1),
+          },
+        });
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    await renderLanding({ desktop: false });
+
+    expect(await screen.findByText(justGoLandingCopy.deckEyebrowFallback)).toBeInTheDocument();
+    expect(screen.queryByText(justGoLandingCopy.deckEyebrow)).not.toBeInTheDocument();
+  });
+
   it('refetches the drop when the city chip changes', async () => {
     await renderLanding({ desktop: false });
     await screen.findByRole('heading', { name: 'friday night market' });
@@ -908,7 +935,9 @@ describe('JustGoLanding', () => {
       (call) => call[0] === 'justgo_landing_waitlist_submit',
     )[1];
     expect(trackProps).not.toHaveProperty('email');
-    expect(await screen.findByText(justGoLandingCopy.waitlistSuccessTitle)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: justGoLandingCopy.waitlistSuccessTitle }),
+    ).toBeInTheDocument();
     const panel = screen.getByRole('dialog', { name: justGoLandingCopy.waitlistCta });
     expect(within(panel).getByText(justGoLandingCopy.waitlistSuccessBody)).toBeInTheDocument();
     expect(within(panel).getByText('0 friends joined')).toBeInTheDocument();
@@ -937,7 +966,9 @@ describe('JustGoLanding', () => {
       fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
     });
 
-    expect(await screen.findByText(justGoLandingCopy.waitlistSuccessTitle)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: justGoLandingCopy.waitlistSuccessTitle }),
+    ).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistShare }));
     });

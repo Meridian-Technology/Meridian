@@ -72,6 +72,21 @@ describe('pivotLabEventsService', () => {
       expect(row.createdByUserId).toBe('user-abc');
       expect(row.creatorSubmittedAt).toBe('2026-08-08T18:00:00.000Z');
       expect(row.organizerName).toBe('Maya');
+      expect(row.featured).toBe(false);
+    });
+
+    it('surfaces featured as an internal curation flag', () => {
+      const row = serializeLabEvent({
+        _id: 'e3',
+        name: 'Flagship night',
+        customFields: {
+          pivot: {
+            featured: true,
+            ingestStatus: 'published',
+          },
+        },
+      });
+      expect(row.featured).toBe(true);
     });
   });
 

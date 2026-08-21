@@ -72,9 +72,11 @@ function WaitlistSharePanel({ copy, shareUrl, friendsJoined, onClose }) {
   }
 
   return (
-    <div className="justgo-landing__waitlist">
+    <div className="justgo-landing__waitlist justgo-landing__waitlist--success">
       <WaitlistCloseButton onClose={onClose} />
-      <p className="justgo-landing__waitlist-kicker">{copy.waitlistSuccessTitle}</p>
+      <h2 className="justgo-landing__waitlist-title">
+        <span>{copy.waitlistSuccessTitle}</span>
+      </h2>
       <p className="justgo-landing__waitlist-body">{copy.waitlistSuccessBody}</p>
       <p className="justgo-landing__waitlist-friends">{friendsLabel}</p>
       {shareUrl ? (

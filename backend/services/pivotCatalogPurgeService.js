@@ -315,6 +315,7 @@ module.exports = {
   purgePivotCatalog,
   purgeTenantPivotCatalog,
   deletePivotCatalogEvent,
+  deletePivotCatalogEventsWithModels,
   purgePivotCatalogOutOfWeek,
   countPivotCatalogOutOfWeek,
   outOfWeekEventsQuery,

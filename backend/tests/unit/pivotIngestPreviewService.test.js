@@ -23,7 +23,10 @@ const {
   fetchLumaDiscoverApiBatch,
   extractMetaContent,
   extractJsonLdBlocks,
+  descriptionFromLumaDetail,
+  textFromLumaAbout,
   LUMA_DISCOVER_API_URL,
+  LUMA_EVENT_API_URL,
 } = require('../../services/pivotIngestPreviewService');
 
 const PARTIFUL_HTML = `<!DOCTYPE html>
@@ -142,6 +145,46 @@ describe('pivotIngestPreviewService buildDraft', () => {
       }),
     ]);
     expect(draft.location).toBe('East Village Studio');
+    expect(draft.description).toBe('Sign-ups at the door.');
+  });
+
+  it('prefers Luma About (description_mirror) over truncated Open Graph', () => {
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta property="og:title" content="Open Mic Night" />
+  <meta property="og:description" content="Sign-ups at the door.…" />
+  <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: {
+      pageProps: {
+        initialData: {
+          data: {
+            event: { name: 'Open Mic Night' },
+            description_mirror: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: 'Bring a poem and stay for the second set.' }],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+  })}</script>
+</head>
+<body></body>
+</html>`;
+
+    const { draft } = buildDraft({
+      html,
+      provider: 'luma',
+      sourceUrl: 'https://lu.ma/open-mic-night',
+    });
+
+    expect(draft.description).toBe('Bring a poem and stay for the second set.');
   });
 
   it('adds warnings when fields are missing', () => {
@@ -443,6 +486,36 @@ describe('pivotIngestPreviewService batch parsing', () => {
     ]);
     expect(result.drafts[0].draft.image).toBe('https://images.lumacdn.com/uploads/xr/dc792c6b.jpg');
     expect(result.drafts[0].sourceUrl).toBe('https://luma.com/yg5x8n8b');
+    expect(result.drafts[0].draft.description).toBeNull();
+  });
+
+  it('reads Luma About copy from discover listing payloads when present', () => {
+    const html = `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: {
+        pageProps: {
+          initialData: {
+            kind: 'discover-place',
+            data: {
+              place: { name: 'San Francisco' },
+              events: [
+                {
+                  event: {
+                    url: 'yg5x8n8b',
+                    name: 'Founders Cowork',
+                    about: 'Laptop-friendly morning at Corgi Cafe.',
+                    start_at: '2026-06-28T21:00:00.000Z',
+                  },
+                  hosts: [{ name: 'Vivian Cai' }],
+                },
+              ],
+            },
+          },
+        },
+      },
+    })}</script></html>`;
+
+    const result = parseLumaDiscoverBatch(html, 'https://luma.com/sf');
+    expect(result.drafts[0].draft.description).toBe('Laptop-friendly morning at Corgi Cafe.');
   });
 
   it('extracts Luma city slugs from discover URLs', () => {
@@ -571,23 +644,28 @@ describe('pivotIngestPreviewService batch parsing', () => {
   });
 
   it('returns batch preview for Luma discover pages via API', async () => {
-    axios.get.mockResolvedValue({
-      status: 200,
-      data: {
-        entries: [
-          {
-            event: {
-              name: 'Founders Cowork',
-              url: 'yg5x8n8b',
-              start_at: '2026-06-28T21:00:00.000Z',
-              cover_url: 'https://images.lumacdn.com/uploads/xr/dc792c6b.jpg',
-              geo_address_info: { full_address: 'Corgi Cafe, San Francisco, CA' },
-            },
-            hosts: [{ name: 'Vivian Cai' }, { name: 'Adrian Yumul' }],
+    axios.get.mockImplementation((url) => {
+      if (url === LUMA_DISCOVER_API_URL) {
+        return {
+          status: 200,
+          data: {
+            entries: [
+              {
+                event: {
+                  name: 'Founders Cowork',
+                  url: 'yg5x8n8b',
+                  start_at: '2026-06-28T21:00:00.000Z',
+                  cover_url: 'https://images.lumacdn.com/uploads/xr/dc792c6b.jpg',
+                  geo_address_info: { full_address: 'Corgi Cafe, San Francisco, CA' },
+                },
+                hosts: [{ name: 'Vivian Cai' }, { name: 'Adrian Yumul' }],
+              },
+            ],
+            has_more: false,
           },
-        ],
-        has_more: false,
-      },
+        };
+      }
+      return { status: 422, data: { message: 'not an event page' } };
     });
 
     const result = await previewIngestUrl({}, { url: 'https://luma.com/sf' });
@@ -604,19 +682,180 @@ describe('pivotIngestPreviewService batch parsing', () => {
     );
   });
 
+  it('fills Luma discover descriptions from the event About field', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === LUMA_DISCOVER_API_URL) {
+        return {
+          status: 200,
+          data: {
+            entries: [
+              {
+                event: {
+                  api_id: 'evt-abc',
+                  name: 'Founders Cowork',
+                  url: 'yg5x8n8b',
+                  start_at: '2026-06-28T21:00:00.000Z',
+                },
+                hosts: [{ name: 'Vivian Cai' }],
+              },
+            ],
+            has_more: false,
+          },
+        };
+      }
+      if (url === LUMA_EVENT_API_URL) {
+        return {
+          status: 200,
+          data: {
+            event: { name: 'Founders Cowork' },
+            about: 'Laptop-friendly morning at Corgi Cafe.',
+          },
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const result = await previewIngestUrl({}, { url: 'https://luma.com/sf' });
+
+    expect(result.data.drafts[0].draft.description).toBe(
+      'Laptop-friendly morning at Corgi Cafe.',
+    );
+    expect(axios.get).toHaveBeenCalledWith(
+      LUMA_EVENT_API_URL,
+      expect.objectContaining({
+        params: expect.objectContaining({ event_api_id: 'evt-abc' }),
+      }),
+    );
+  });
+
+  it('flattens Luma description_mirror ProseMirror into the draft description', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === LUMA_DISCOVER_API_URL) {
+        return {
+          status: 200,
+          data: {
+            entries: [
+              {
+                event: {
+                  api_id: 'evt-mirror',
+                  name: 'Hardware Pitch Night',
+                  url: 's1szlu9h',
+                  start_at: '2026-08-21T01:00:00.000Z',
+                },
+                hosts: [{ name: 'Studio 45' }],
+              },
+            ],
+            has_more: false,
+          },
+        };
+      }
+      if (url === LUMA_EVENT_API_URL) {
+        return {
+          status: 200,
+          data: {
+            description_mirror: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: 'Live pitches from hardware founders.' }],
+                },
+                {
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: 'Doors at 6.' }],
+                },
+              ],
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const result = await previewIngestUrl({}, { url: 'https://luma.com/sf' });
+
+    expect(result.data.drafts[0].draft.description).toBe(
+      'Live pitches from hardware founders.\nDoors at 6.',
+    );
+  });
+
+  it('skips the Luma event API when discover already included About', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === LUMA_DISCOVER_API_URL) {
+        return {
+          status: 200,
+          data: {
+            entries: [
+              {
+                event: {
+                  api_id: 'evt-skip',
+                  name: 'Founders Cowork',
+                  url: 'yg5x8n8b',
+                  about: 'Already on the listing.',
+                  start_at: '2026-06-28T21:00:00.000Z',
+                },
+                hosts: [{ name: 'Vivian Cai' }],
+              },
+            ],
+            has_more: false,
+          },
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const result = await previewIngestUrl({}, { url: 'https://luma.com/sf' });
+
+    expect(result.data.drafts[0].draft.description).toBe('Already on the listing.');
+    expect(axios.get).toHaveBeenCalledTimes(1);
+  });
+
   it('falls back to HTML when Luma discover API misses', async () => {
     axios.get
       .mockResolvedValueOnce({
         status: 404,
         data: { message: 'Sorry, we could not find what you were looking for.', code: null },
       })
-      .mockResolvedValueOnce({ data: LUMA_DISCOVER_NEXT_DATA_HTML });
+      .mockResolvedValueOnce({ data: LUMA_DISCOVER_NEXT_DATA_HTML })
+      .mockResolvedValueOnce({
+        data: `<html><script type="application/ld+json">${JSON.stringify({
+          '@type': 'Event',
+          name: 'Founders Cowork',
+          description: 'Coworking with founders in the Mission.',
+        })}</script></html>`,
+      });
 
     const result = await previewIngestUrl({}, { url: 'https://luma.com/sf' });
 
     expect(result.data.mode).toBe('batch');
     expect(result.data.discoverSource).toBe('luma-html');
     expect(result.data.drafts).toHaveLength(1);
+    expect(result.data.drafts[0].draft.description).toBe(
+      'Coworking with founders in the Mission.',
+    );
+  });
+});
+
+describe('Luma About field parsing', () => {
+  it('reads a plain about string from the event payload', () => {
+    expect(
+      descriptionFromLumaDetail({
+        about: 'Doors at 8.',
+        event: { name: 'Open Mic' },
+      }),
+    ).toBe('Doors at 8.');
+  });
+
+  it('flattens ProseMirror description_mirror', () => {
+    expect(
+      textFromLumaAbout({
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'First graph.' }] },
+          { type: 'paragraph', content: [{ type: 'text', text: 'Second graph.' }] },
+        ],
+      }),
+    ).toBe('First graph.\nSecond graph.');
   });
 });
 

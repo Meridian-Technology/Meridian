@@ -430,6 +430,7 @@ export default function JustGoLandingDeck({
   const copy = useJustGoLandingCopy();
   const [internalTenantKey, setInternalTenantKey] = useState('');
   const [events, setEvents] = useState([]);
+  const [fallback, setFallback] = useState(false);
   const [dropState, setDropState] = useState('idle');
   const [index, setIndex] = useState(0);
   const [leaving, setLeaving] = useState(null);
@@ -455,6 +456,7 @@ export default function JustGoLandingDeck({
     setIndex(0);
     setLeaving(null);
     setEvents([]);
+    setFallback(false);
     apiRequest('/pivot/landing/drop', null, {
       method: 'GET',
       params: { tenantKey },
@@ -463,6 +465,7 @@ export default function JustGoLandingDeck({
         if (cancelled) return;
         const next = Array.isArray(res?.data?.events) ? res.data.events.slice(0, 4) : [];
         setEvents(next);
+        setFallback(Boolean(res?.data?.fallback));
         setDropState(next.length ? 'ready' : 'empty');
       })
       .catch(() => {
@@ -497,7 +500,9 @@ export default function JustGoLandingDeck({
   return (
     <div className="justgo-landing-deck">
       <div className="justgo-landing__drop-copy">
-        <p className="justgo-landing__eyebrow">{copy.deckEyebrow}</p>
+        <p className="justgo-landing__eyebrow">
+          {fallback ? copy.deckEyebrowFallback : copy.deckEyebrow}
+        </p>
         <h2>{copy.deckTitle}</h2>
         <p>{copy.deckBody}</p>
       </div>

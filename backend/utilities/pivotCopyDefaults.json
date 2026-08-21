@@ -3548,19 +3548,31 @@
       "path": "landing.web.story.graf0",
       "kind": "string",
       "params": [],
-      "shipped": "when did going out get so complicated?"
+      "shipped": "we want people to go to one event each week. not users, people."
     },
     {
       "path": "landing.web.story.graf1",
       "kind": "string",
       "params": [],
-      "shipped": "nowadays, plans don't fail at the door. they die in the group chat, in \"maybes\""
+      "shipped": "every person deserves something outside of the 9-5."
     },
     {
       "path": "landing.web.story.graf2",
       "kind": "string",
       "params": [],
-      "shipped": "we built a weekly drop for people who’d rather just go."
+      "shipped": "a time, a place, a group with which they can truly be."
+    },
+    {
+      "path": "landing.web.story.graf3",
+      "kind": "string",
+      "params": [],
+      "shipped": "endless scrolling won't find that space you're looking for, we will."
+    },
+    {
+      "path": "landing.web.story.graf4",
+      "kind": "string",
+      "params": [],
+      "shipped": "give us 5 minutes this monday to prove it."
     },
     {
       "path": "landing.web.story.title",

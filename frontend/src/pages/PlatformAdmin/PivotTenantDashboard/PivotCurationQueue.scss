@@ -327,6 +327,18 @@
   color: var(--pivot-ops-ink-muted);
 }
 
+.pivot-curation-sheet__featured {
+  display: inline-flex;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: var(--pivot-ops-radius-chip);
+  background: var(--pivot-ops-accent-soft, rgba(255, 79, 31, 0.12));
+  border: 1px solid var(--pivot-ops-accent, #ff4f1f);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pivot-ops-accent, #ff4f1f);
+}
+
 .pivot-curation-sheet__meter {
   display: inline-flex;
   align-items: center;
@@ -465,6 +477,10 @@
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+
+  .pivot-curation-sheet__featured {
+    margin-top: 0;
+  }
 }
 
 .pivot-curation-sheet__inspect-kpis {
@@ -489,6 +505,17 @@
     font-variant-numeric: tabular-nums;
     color: var(--pivot-ops-ink);
   }
+}
+
+.pivot-curation-sheet__showtimes {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--pivot-ops-ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .pivot-curation-sheet__inspect-copy {

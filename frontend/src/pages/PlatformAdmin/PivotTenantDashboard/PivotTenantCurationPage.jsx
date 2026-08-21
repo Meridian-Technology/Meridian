@@ -64,7 +64,8 @@ const FILTER_OPTIONS = [
   { value: 'published', label: 'Published' },
   { value: 'untagged', label: 'Untagged' },
   { value: 'missing-host', label: 'Missing host' },
-  { value: 'film', label: 'Film / showtimes' },
+  { value: 'film', label: 'Showtimes' },
+  { value: 'featured', label: 'Featured' },
 ];
 
 const HOST_CREATED_SOURCE = 'justgo';
@@ -102,6 +103,9 @@ function eventMatchesFilter(event, filter) {
   }
   if (filter === 'film') {
     return Boolean(event.movie) || (Array.isArray(event.timeSlots) && event.timeSlots.length > 0);
+  }
+  if (filter === 'featured') {
+    return event.featured === true;
   }
   return true;
 }
@@ -1116,6 +1120,127 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       type: failed ? 'warning' : 'success',
     });
   }, [addNotification, patchEventOverrides, refreshAll, selectedEvents]);
+
+  const handleBulkCollapseShowtimes = useCallback(async () => {
+    if (selectedEvents.length < 2) {
+      addNotification({
+        title: 'Select more than one event',
+        message: 'Pick the nights that belong together, then collapse them into showtimes.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Collapse ${selectedEvents.length} events into one listing with showtimes? Extra catalog rows will be removed.`,
+      )
+    ) {
+      return;
+    }
+
+    setBusyKey('bulk-showtimes');
+    const { data, error } = await authenticatedRequest('/admin/pivot/ingest/collapse-showtimes', {
+      method: 'POST',
+      data: {
+        tenantKey,
+        eventIds: selectedEvents.map((event) => event._id),
+      },
+    });
+    setBusyKey(null);
+
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Could not collapse showtimes',
+        message: error || data?.message || 'Those events could not be merged.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const keptId = data.data?.event?._id;
+    setSelectedIds(keptId ? new Set([keptId]) : new Set());
+    refreshAll();
+    addNotification({
+      title: 'Collapsed into showtimes',
+      message: `${data.data?.event?.name || 'Event'} now has ${data.data?.showtimeCount ?? selectedEvents.length} showtimes.`,
+      type: 'success',
+    });
+  }, [addNotification, refreshAll, selectedEvents, tenantKey]);
+
+  const patchFeatured = useCallback(
+    async (events, featured) => {
+      if (!events.length) {
+        addNotification({
+          title: featured ? 'Nothing to feature' : 'Nothing to unfeature',
+          message: featured
+            ? 'Select events that are not already featured.'
+            : 'Select featured events to remove.',
+          type: 'warning',
+        });
+        return;
+      }
+
+      setBusyKey(featured ? 'bulk-feature' : 'bulk-unfeature');
+      let ok = 0;
+      let failed = 0;
+      for (const event of events) {
+        const result = await patchEventOverrides(event._id, { featured });
+        if (result.error) failed += 1;
+        else ok += 1;
+      }
+      setBusyKey(null);
+      refreshAll();
+      addNotification({
+        title: failed
+          ? featured
+            ? 'Partial feature'
+            : 'Partial unfeature'
+          : featured
+            ? 'Featured'
+            : 'Removed from featured',
+        message: featured
+          ? `${ok} marked for the landing deck${failed ? `, ${failed} failed` : ''}.`
+          : `${ok} removed from the landing deck${failed ? `, ${failed} failed` : ''}.`,
+        type: failed ? 'warning' : 'success',
+      });
+    },
+    [addNotification, patchEventOverrides, refreshAll],
+  );
+
+  const handleBulkFeature = useCallback(async () => {
+    await patchFeatured(
+      selectedEvents.filter((event) => event.featured !== true),
+      true,
+    );
+  }, [patchFeatured, selectedEvents]);
+
+  const handleBulkUnfeature = useCallback(async () => {
+    await patchFeatured(
+      selectedEvents.filter((event) => event.featured === true),
+      false,
+    );
+  }, [patchFeatured, selectedEvents]);
+
+  const handleToggleFeatured = useCallback(
+    async (event) => {
+      if (!event?._id) return;
+      const next = event.featured !== true;
+      setBusyKey(`feature-${event._id}`);
+      const result = await patchEventOverrides(event._id, { featured: next });
+      setBusyKey(null);
+      if (result.error) {
+        addNotification({
+          title: next ? 'Could not feature' : 'Could not unfeature',
+          message: result.error,
+          type: 'error',
+        });
+        return;
+      }
+      refreshAll();
+    },
+    [addNotification, patchEventOverrides, refreshAll],
+  );
 
   const handleBulkApplyTags = useCallback(async () => {
     if (!bulkTags.length) {
@@ -2440,6 +2565,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           onBulkUnpublish={handleBulkUnpublish}
           onBulkApplyTags={handleBulkApplyTags}
           onBulkSuggestTags={handleBulkSuggestTags}
+          onBulkCollapseShowtimes={handleBulkCollapseShowtimes}
+          onBulkFeature={handleBulkFeature}
+          onBulkUnfeature={handleBulkUnfeature}
+          onToggleFeatured={handleToggleFeatured}
           emptyLabel={
             events.length
               ? 'No events match this filter.'

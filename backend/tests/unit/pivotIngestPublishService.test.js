@@ -1039,6 +1039,31 @@ describe('pivotIngestPublishService updateIngestEvent', () => {
     expect(Event.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
+  it('sets featured independently of ingest status', async () => {
+    const result = await updateIngestEvent(
+      { globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        eventId: '507f1f77bcf86cd799439012',
+        overrides: { featured: true },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(Event.findByIdAndUpdate).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439012',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'customFields.pivot': expect.objectContaining({
+            ingestStatus: 'published',
+            featured: true,
+          }),
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
   it('updates tags on existing event', async () => {
     validatePivotEventTags.mockResolvedValue({ tags: ['board-games', 'social'] });
 
