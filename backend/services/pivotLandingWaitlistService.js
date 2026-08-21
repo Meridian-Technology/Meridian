@@ -7,6 +7,7 @@
 const { randomBytes } = require('crypto');
 const mongoose = require('mongoose');
 const getGlobalModels = require('./getGlobalModelService');
+const { ensureJustGoWaitlistIndexes } = require('./ensureJustGoWaitlistIndexes');
 const { getTenantByKey, getMergedTenants } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
 const { normalizeWaitlistEmail } = require('../utilities/justGoWaitlistEmail');
@@ -215,6 +216,8 @@ async function joinWaitlist(req, body = {}) {
   if (storeResult.error) return storeResult;
   const userAgent = trimToNull(body.userAgent, USER_AGENT_MAX_LENGTH) || requestUserAgent(req);
 
+  await ensureJustGoWaitlistIndexes(req);
+
   const { JustGoWaitlist } = getGlobalModels(req, 'JustGoWaitlist');
 
   const existing = await JustGoWaitlist.findOne({ tenantKey, email }).lean();
@@ -236,6 +239,7 @@ async function joinWaitlist(req, body = {}) {
   };
 
   let created;
+  let resyncedLegacyPhoneIndex = false;
   for (let attempt = 0; attempt < SHARE_CODE_ATTEMPTS; attempt += 1) {
     try {
       created = await JustGoWaitlist.create({
@@ -246,6 +250,14 @@ async function joinWaitlist(req, body = {}) {
     } catch (err) {
       if (isMongoDup(err, ['tenantKey', 'email'])) {
         return waitlistDuplicate();
+      }
+      if (
+        isMongoDup(err, ['tenantKey', 'phoneE164']) &&
+        !resyncedLegacyPhoneIndex
+      ) {
+        resyncedLegacyPhoneIndex = true;
+        await ensureJustGoWaitlistIndexes(req, { force: true });
+        continue;
       }
       if (isMongoDup(err, ['shareCode']) && attempt < SHARE_CODE_ATTEMPTS - 1) {
         continue;

@@ -222,13 +222,14 @@ button.active{
 }
 
 .notification-container{
-    position: absolute;
+    position: fixed;
     display:grid;
     width:100%;
     height:100%;
     pointer-events: none;
     top:0;
     left:0;
+    z-index: 11000;
 }
 
 

@@ -864,7 +864,16 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
   const releaseStagedEvents = useCallback(
     async ({ eventIds = null, count, confirmMessage, busy = 'release' } = {}) => {
-      if (!tenantKey || !batchWeekValid || !weekSettled) return false;
+      if (!tenantKey || !batchWeekValid || !weekSettled) {
+        addNotification({
+          title: 'Not ready to publish',
+          message: !weekSettled
+            ? 'The selected week is still updating. Try publish again in a moment.'
+            : 'Pick a valid catalog week before publishing.',
+          type: 'warning',
+        });
+        return false;
+      }
       const releaseCount = count ?? (eventIds?.length || stagedCount);
       if (releaseCount === 0) {
         addNotification({
@@ -960,7 +969,16 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
   const unreleaseEvents = useCallback(
     async ({ eventIds, count, confirmMessage, busy = 'unrelease', skipConfirm = false } = {}) => {
-      if (!tenantKey || !batchWeekValid || !weekSettled) return false;
+      if (!tenantKey || !batchWeekValid || !weekSettled) {
+        addNotification({
+          title: 'Not ready to unpublish',
+          message: !weekSettled
+            ? 'The selected week is still updating. Try again in a moment.'
+            : 'Pick a valid catalog week before unpublishing.',
+          type: 'warning',
+        });
+        return false;
+      }
       const ids = Array.isArray(eventIds) ? eventIds.filter(Boolean) : [];
       const releaseCount = count ?? ids.length;
       if (!ids.length || releaseCount === 0) {
@@ -1212,6 +1230,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           return false;
         }
         const batchWeekForRelease = editingEvent.batchWeek || committedWeek;
+        if (!batchWeekForRelease) {
+          setEditSaving(false);
+          addNotification({
+            title: 'Publish failed',
+            message: 'This event has no catalog week, so it cannot be released.',
+            type: 'error',
+          });
+          return false;
+        }
         const { data, error } = await authenticatedRequest(
           `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(batchWeekForRelease)}/release`,
           { method: 'POST', data: { eventIds: [editingEvent._id] } },

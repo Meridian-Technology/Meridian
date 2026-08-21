@@ -29,6 +29,11 @@ const JUSTGO_WAITLIST_INDEX_NAMES = Object.freeze([
   'justgo_waitlist_share_code_unique',
 ]);
 
+/** Dropped by syncIndexes after the phone → email migration (28d9353b). */
+const JUSTGO_WAITLIST_LEGACY_INDEX_NAMES = Object.freeze([
+  'justgo_waitlist_tenant_phone_unique',
+]);
+
 const SHARE_CODE_MAX_LENGTH = 16;
 const CITY_LABEL_MAX_LENGTH = 120;
 const ATTR_MAX_LENGTH = 64;
@@ -155,6 +160,7 @@ justGoWaitlistSchema.index(
 
 module.exports = justGoWaitlistSchema;
 module.exports.JUSTGO_WAITLIST_INDEX_NAMES = JUSTGO_WAITLIST_INDEX_NAMES;
+module.exports.JUSTGO_WAITLIST_LEGACY_INDEX_NAMES = JUSTGO_WAITLIST_LEGACY_INDEX_NAMES;
 module.exports.SHARE_CODE_MAX_LENGTH = SHARE_CODE_MAX_LENGTH;
 module.exports.EMAIL_MAX_LENGTH = EMAIL_MAX_LENGTH;
 module.exports.CITY_LABEL_MAX_LENGTH = CITY_LABEL_MAX_LENGTH;

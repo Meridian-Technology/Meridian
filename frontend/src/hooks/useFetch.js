@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
+import { isForceLogoutRefreshError, refreshSession } from "../utils/refreshSession";
 
 const DEFAULT_CACHE_TTL_MS = 60 * 1000;
 const fetchResponseCache = new Map();
@@ -17,6 +18,19 @@ function buildFetchCacheKey(url, options) {
   const paramsPart = stableSerialize(options?.params || {});
   const dataPart = stableSerialize(options?.data || null);
   return `${method}|${url}|params:${paramsPart}|data:${dataPart}`;
+}
+
+function authErrorFromAxios(err) {
+  const message = err.response?.data?.message || err.response?.data?.error || err.message;
+  return { error: message, code: err.response?.status };
+}
+
+function refreshFailureResult(refreshError) {
+  if (isForceLogoutRefreshError(refreshError)) {
+    window.location.href = "/login";
+    return { error: "Authentication required", code: refreshError.response?.data?.code };
+  }
+  return { error: "Session refresh temporarily unavailable", code: "REFRESH_TEMPORARY_FAILURE" };
 }
 
 /**
@@ -40,30 +54,22 @@ export const authenticatedRequest = async (url, options = {}) => {
     const response = await axios(reqConfig);
     return { data: response.data };
   } catch (err) {
-    if (
-      err.response?.status === 401 &&
-      (err.response?.data?.code === "TOKEN_EXPIRED" || err.response?.data?.code === "NO_TOKEN")
-    ) {
-      try {
-        await axios.post("/refresh-token", {}, { withCredentials: true });
-        const retryResponse = await axios(reqConfig);
-        return { data: retryResponse.data };
-      } catch (refreshError) {
-        const refreshCode = refreshError.response?.data?.code;
-        const shouldForceLogin =
-          refreshCode === "REFRESH_TOKEN_EXPIRED" ||
-          refreshCode === "INVALID_REFRESH_TOKEN" ||
-          refreshCode === "REFRESH_FAILED";
-        if (shouldForceLogin) {
-          window.location.href = "/login";
-          return { error: "Authentication required", code: refreshCode };
-        }
-        // Preserve current session on transient refresh issues (network/5xx)
-        return { error: "Session refresh temporarily unavailable", code: "REFRESH_TEMPORARY_FAILURE" };
-      }
+    if (err.response?.status !== 401) {
+      return authErrorFromAxios(err);
     }
-    const message = err.response?.data?.message || err.response?.data?.error || err.message;
-    return { error: message, code: err.response?.status };
+    try {
+      await refreshSession();
+    } catch (refreshError) {
+      return refreshFailureResult(refreshError);
+    }
+    try {
+      const retryResponse = await axios(reqConfig);
+      return { data: retryResponse.data };
+    } catch (retryError) {
+      // Retry failures are the real publish/save error — do not report them as
+      // a session-refresh problem (that made curation publish look like a no-op).
+      return authErrorFromAxios(retryError);
+    }
   }
 };
 
@@ -156,11 +162,28 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
       if (axios.isCancel(err) || err.code === "ERR_CANCELED") {
         return;
       }
-      if (err.response?.status === 401 && 
-          (err.response?.data?.code === 'TOKEN_EXPIRED' || err.response?.data?.code === 'NO_TOKEN')) {
+      if (err.response?.status === 401) {
         try {
-          await axios.post('/refresh-token', {}, { withCredentials: true });
-          
+          await refreshSession();
+        } catch (refreshError) {
+          if (axios.isCancel(refreshError) || refreshError.code === "ERR_CANCELED") {
+            return;
+          }
+          if (isForceLogoutRefreshError(refreshError)) {
+            console.log('🚫 Refresh token expired or invalid, redirecting to login');
+            window.location.href = '/login';
+            setError('Authentication required');
+            setErrorCode(refreshError.response?.data?.code || 'REFRESH_FAILED');
+            setErrorStatus(refreshError.response?.status ?? 401);
+          } else {
+            console.log('⚠️ Refresh temporarily unavailable, preserving current auth state');
+            setError('Session refresh temporarily unavailable');
+            setErrorCode('REFRESH_TEMPORARY_FAILURE');
+            setErrorStatus(refreshError.response?.status ?? null);
+          }
+          return;
+        }
+        try {
           const retryResponse = await axios({
             url,
             method: memoizedOptions.method,
@@ -174,25 +197,13 @@ export const useFetch = (url, options = { method: "GET", data: null }) => {
           if (useCache && cacheKey) {
             fetchResponseCache.set(cacheKey, { data: retryResponse.data, timestamp: Date.now() });
           }
-        } catch (refreshError) {
-          const refreshCode = refreshError.response?.data?.code;
-          const shouldForceLogin =
-            refreshCode === 'REFRESH_TOKEN_EXPIRED' ||
-            refreshCode === 'INVALID_REFRESH_TOKEN' ||
-            refreshCode === 'REFRESH_FAILED';
-          if (shouldForceLogin) {
-            console.log('🚫 Refresh token expired or invalid, redirecting to login');
-            window.location.href = '/login';
-            setError('Authentication required');
-            setErrorCode(refreshCode || 'REFRESH_FAILED');
-            setErrorStatus(refreshError.response?.status ?? 401);
-          } else {
-            // Do not hard logout on transient refresh failures.
-            console.log('⚠️ Refresh temporarily unavailable, preserving current auth state');
-            setError('Session refresh temporarily unavailable');
-            setErrorCode('REFRESH_TEMPORARY_FAILURE');
-            setErrorStatus(refreshError.response?.status ?? null);
+        } catch (retryError) {
+          if (axios.isCancel(retryError) || retryError.code === "ERR_CANCELED") {
+            return;
           }
+          setError(retryError.message);
+          setErrorCode(retryError.response?.data?.code ?? null);
+          setErrorStatus(retryError.response?.status ?? null);
         }
       } else {
         setError(err.message);

@@ -1,10 +1,14 @@
 jest.mock('../../services/getGlobalModelService', () => jest.fn());
+jest.mock('../../services/ensureJustGoWaitlistIndexes', () => ({
+  ensureJustGoWaitlistIndexes: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../services/tenantConfigService', () => ({
   getTenantByKey: jest.fn(),
   getMergedTenants: jest.fn(),
 }));
 
 const getGlobalModels = require('../../services/getGlobalModelService');
+const { ensureJustGoWaitlistIndexes } = require('../../services/ensureJustGoWaitlistIndexes');
 const { getTenantByKey, getMergedTenants } = require('../../services/tenantConfigService');
 const {
   joinWaitlist,
@@ -149,6 +153,34 @@ describe('joinWaitlist (Task 2.2)', () => {
       status: 409,
       code: 'WAITLIST_DUPLICATE',
     });
+  });
+
+  it('resyncs legacy phone indexes and retries when tenant+phoneE164 dupes', async () => {
+    const dupErr = Object.assign(new Error('dup'), {
+      code: 11000,
+      keyPattern: { tenantKey: 1, phoneE164: 1 },
+    });
+    const { create } = mockWaitlist({
+      createImpl: jest
+        .fn()
+        .mockRejectedValueOnce(dupErr)
+        .mockResolvedValueOnce({
+          email: 'alex@example.com',
+          tenantKey: 'nyc',
+          shareCode: 'abc1234567',
+          friendsJoined: 0,
+        }),
+    });
+
+    const result = await joinWaitlist(mockReq(), {
+      email: 'alex@example.com',
+      tenantKey: 'nyc',
+      visitorId: 'visitor-abc',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(ensureJustGoWaitlistIndexes).toHaveBeenCalledWith(expect.anything(), { force: true });
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it('rejects garbage emails with INVALID_EMAIL', async () => {

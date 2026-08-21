@@ -5,7 +5,11 @@ const getGlobalModels = require('../services/getGlobalModelService');
  */
 async function requirePlatformAdmin(req, res, next) {
   if (!req.user) {
-    return res.status(401).json({ success: false, message: 'Authentication required' });
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required',
+      code: 'NO_TOKEN',
+    });
   }
 
   const tokenRoles = req.user.platformRoles || [];

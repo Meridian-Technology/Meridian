@@ -84,6 +84,27 @@ describe('JustGoWaitlist schema (Task 2.2)', () => {
       expect(byShare.keys).toEqual({ shareCode: 1 });
       expect(byShare.options.unique).toBe(true);
     });
+
+    it('drops the legacy tenant+phone unique index left from the phone signup era', async () => {
+      await JustGoWaitlist.collection.createIndex(
+        { tenantKey: 1, phoneE164: 1 },
+        { unique: true, name: 'justgo_waitlist_tenant_phone_unique' },
+      );
+
+      await JustGoWaitlist.create(baseRow());
+      await expect(
+        JustGoWaitlist.create(
+          baseRow({ email: 'blair@example.com', shareCode: 'othercode1' }),
+        ),
+      ).rejects.toThrow(/duplicate key/i);
+
+      await JustGoWaitlist.syncIndexes();
+
+      const other = await JustGoWaitlist.create(
+        baseRow({ email: 'blair@example.com', shareCode: 'othercode1' }),
+      );
+      expect(other.email).toBe('blair@example.com');
+    });
   });
 
   describe('fields', () => {
