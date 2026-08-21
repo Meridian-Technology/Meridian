@@ -363,9 +363,25 @@ function createApp() {
   app.use('/proxy-image', require('./routes/proxyImageRoutes.js'));
 
   if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../frontend/build')));
+    const buildDir = path.join(__dirname, '../frontend/build');
+    const indexPath = path.join(buildDir, 'index.html');
+    const {
+      wantsJustGoHtmlMeta,
+      applyJustGoIndexHtml,
+    } = require('./utilities/justGoSpaHtml');
+    let cachedIndexHtml = null;
+    const readIndexHtml = () => {
+      if (cachedIndexHtml == null) {
+        cachedIndexHtml = fs.readFileSync(indexPath, 'utf8');
+      }
+      return cachedIndexHtml;
+    };
+    app.use(express.static(buildDir, { index: false }));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
+      if (wantsJustGoHtmlMeta(req)) {
+        return res.type('html').send(applyJustGoIndexHtml(readIndexHtml(), req));
+      }
+      return res.sendFile(indexPath);
     });
   }
 

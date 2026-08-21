@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import JustGoQrHop from './JustGoQrHop';
 import justGoLandingCopy from './justGoLandingCopy';
-import { JUSTGO_LANDING_QR_SCAN_PATH, JUSTGO_LANDING_VISITOR_KEY } from './justGoLandingTracking';
+import { JUSTGO_LANDING_QR_SCAN_PATH, JUSTGO_LANDING_VISITOR_KEY, resetLandingQrScanMemo } from './justGoLandingTracking';
 
 const mockApi = jest.fn();
 const mockIsJustGoHost = jest.fn(() => true);
@@ -42,6 +42,7 @@ describe('JustGoQrHop (Task 5.2)', () => {
     mockIsJustGoHost.mockReset();
     mockIsJustGoHost.mockReturnValue(true);
     window.localStorage.clear();
+    resetLandingQrScanMemo();
   });
 
   it('redirects an active code to the city landing with src=qr', async () => {
@@ -72,6 +73,39 @@ describe('JustGoQrHop (Task 5.2)', () => {
     expect(window.localStorage.getItem(JUSTGO_LANDING_VISITOR_KEY)).toBeTruthy();
   });
 
+  it('opens the city landing before the scan returns for sf-* posters', async () => {
+    let resolveScan;
+    mockApi.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveScan = resolve;
+        }),
+    );
+
+    renderHop('/qr/sf-1');
+
+    expect(screen.getByTestId('city-landing')).toBeInTheDocument();
+    expect(screen.queryByTestId('justgo-qr-hop')).not.toBeInTheDocument();
+    expect(screen.queryByText(justGoLandingCopy.qrMissingTitle)).not.toBeInTheDocument();
+
+    resolveScan({
+      success: true,
+      data: {
+        name: 'sf-1',
+        tenantKey: 'sf',
+        path: '/sf',
+      },
+    });
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        JUSTGO_LANDING_QR_SCAN_PATH,
+        expect.objectContaining({ name: 'sf-1' }),
+      );
+    });
+    expect(screen.getByTestId('city-landing')).toBeInTheDocument();
+  });
+
   it('shows a Just Go error and does not redirect when the code is inactive', async () => {
     mockApi.mockResolvedValue({
       error: 'QR code is inactive.',
@@ -82,6 +116,7 @@ describe('JustGoQrHop (Task 5.2)', () => {
     renderHop();
 
     expect(screen.getByTestId('justgo-qr-hop')).toBeInTheDocument();
+    expect(document.title).toBe(justGoLandingCopy.documentTitle);
     await waitFor(() => {
       expect(screen.getByText(justGoLandingCopy.qrMissingTitle)).toBeInTheDocument();
     });

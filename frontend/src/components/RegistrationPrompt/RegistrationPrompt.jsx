@@ -4,6 +4,7 @@ import { Icon } from '@iconify-icon/react';
 import { useGoogleLogin } from '@react-oauth/google';
 import useAuth from '../../hooks/useAuth';
 import { generalIcons } from '../../Icons';
+import { ensureAppleIdScript, initAppleIdAuth } from '../../utils/ensureAppleIdScript';
 import './RegistrationPrompt.scss';
 
 /**
@@ -51,18 +52,31 @@ const RegistrationPrompt = ({ onSignUp, onSignUpSuccess, onDismiss, eventName, t
 
     // Apple: init same as RegisterForm; redirect with state so callback sends user back here
     useEffect(() => {
-        if (typeof window !== 'undefined' && window.AppleID) {
-            window.AppleID.auth.init({
-                clientId: 'com.meridian.auth',
-                scope: 'name email',
-                redirectURI: window.location.origin + '/auth/apple/callback',
-                usePopup: false,
-            });
-        }
+        let cancelled = false;
+        ensureAppleIdScript()
+            .then(() => {
+                if (cancelled) return;
+                initAppleIdAuth({
+                    clientId: 'com.meridian.auth',
+                    scope: 'name email',
+                    redirectURI: window.location.origin + '/auth/apple/callback',
+                    usePopup: false,
+                });
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    const handleAppleSignIn = () => {
+    const handleAppleSignIn = async () => {
         setError('');
+        try {
+            await ensureAppleIdScript();
+        } catch (_) {
+            setError('Apple Sign In is not available in this browser.');
+            return;
+        }
         if (!window.AppleID) {
             setError('Apple Sign In is not available in this browser.');
             return;

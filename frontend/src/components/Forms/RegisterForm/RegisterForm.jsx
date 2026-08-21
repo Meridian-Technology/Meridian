@@ -11,6 +11,7 @@ import Flag from '../../Flag/Flag';
 import apiRequest from '../../../utils/postRequest';
 import { isWww } from '../../../config/tenantRedirect';
 import TenantSelectorBanner from '../TenantSelectorBanner/TenantSelectorBanner';
+import { ensureAppleIdScript, initAppleIdAuth } from '../../../utils/ensureAppleIdScript';
 
 function RegisterForm() {
     const { isAuthenticated, googleLogin, appleLogin, validateToken } = useAuth();
@@ -183,17 +184,30 @@ function RegisterForm() {
 
     // Initialize Apple Sign In
     useEffect(() => {
-        if (window.AppleID) {
-            window.AppleID.auth.init({
-                clientId: 'com.meridian.auth',
-                scope: 'name email',
-                redirectURI: window.location.origin + '/auth/apple/callback',
-                usePopup: false // Use redirect mode
-            });
-        }
+        let cancelled = false;
+        ensureAppleIdScript()
+            .then(() => {
+                if (cancelled) return;
+                initAppleIdAuth({
+                    clientId: 'com.meridian.auth',
+                    scope: 'name email',
+                    redirectURI: window.location.origin + '/auth/apple/callback',
+                    usePopup: false
+                });
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    const handleAppleSignIn = () => {
+    const handleAppleSignIn = async () => {
+        try {
+            await ensureAppleIdScript();
+        } catch (_) {
+            failed("Apple Sign In is not available. Please check your browser compatibility.");
+            return;
+        }
         if (!window.AppleID) {
             failed("Apple Sign In is not available. Please check your browser compatibility.");
             return;

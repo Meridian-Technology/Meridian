@@ -265,6 +265,53 @@ export function markLandingQrSeen(name) {
   }
 }
 
+/**
+ * Launch poster names encode the city (`sf-1`, `iowa-2`). Unknown names
+ * (`poster-a`) still need the scan lookup before we know where to go.
+ */
+export const JUSTGO_QR_NAME_CITY_PREFIXES = Object.freeze({
+  sf: 'sf',
+  iowa: 'iowacity',
+});
+
+export function guessLandingQrTenantKey(name) {
+  const slug = String(name || '').trim().toLowerCase();
+  if (!slug) return '';
+  if (JUSTGO_QR_NAME_CITY_PREFIXES[slug]) return JUSTGO_QR_NAME_CITY_PREFIXES[slug];
+  const dash = slug.indexOf('-');
+  if (dash <= 0) return '';
+  return JUSTGO_QR_NAME_CITY_PREFIXES[slug.slice(0, dash)] || '';
+}
+
+/**
+ * City path we can open before the scan POST returns. Keeps the printed
+ * QR name in `qr=` so the later scan still finds the original row.
+ */
+export function guessLandingQrHopTo({
+  name,
+  search,
+  justGoHost = true,
+  timeZone,
+  utcOffsetMinutes,
+} = {}) {
+  const printed = String(name || '').trim().toLowerCase();
+  const tenantKey = guessLandingQrTenantKey(printed);
+  if (!tenantKey) return null;
+  const hopped = applyPosterTzHop(
+    { name: printed, tenantKey, path: `/${tenantKey}` },
+    {
+      timeZone: timeZone ?? getBrowserTimeZone(),
+      utcOffsetMinutes: utcOffsetMinutes ?? getBrowserUtcOffsetMinutes(),
+    },
+  );
+  return buildLandingQrHopTo({
+    tenantKey: hopped.tenantKey,
+    name: printed,
+    search,
+    justGoHost,
+  });
+}
+
 /** Same-app path after a scan. Just Go apex uses `/{city}`; meridian alias uses `/justgo/{city}`. */
 export function buildLandingQrHopTo({ tenantKey, name, search, justGoHost = true } = {}) {
   const key = String(tenantKey || '').trim().toLowerCase();
@@ -276,39 +323,55 @@ export function buildLandingQrHopTo({ tenantKey, name, search, justGoHost = true
   return `${prefix}/${encodeURIComponent(key)}?${params.toString()}`;
 }
 
+const landingQrScanMemo = new Map();
+
+export function resetLandingQrScanMemo() {
+  landingQrScanMemo.clear();
+}
+
 /**
  * Record a named QR scan then return the city hop payload.
  * Unique is first scan of this code for justgo.landing.visitor.
+ * One in-flight POST per name so hop + landing cannot double-count.
  */
-export async function scanLandingQr({ name, search, timeZone, utcOffsetMinutes } = {}) {
+export function scanLandingQr({ name, search, timeZone, utcOffsetMinutes } = {}) {
   const slug = String(name || '').trim().toLowerCase();
   if (!slug) {
-    return { error: true, errorCode: 'QR_NOT_FOUND', status: 404 };
+    return Promise.resolve({ error: true, errorCode: 'QR_NOT_FOUND', status: 404 });
   }
-  const visitorId = getOrMintLandingVisitorId();
-  const unique = !hasSeenLandingQr(slug);
-  const tz = timeZone ?? getBrowserTimeZone();
-  const offset = utcOffsetMinutes ?? getBrowserUtcOffsetMinutes();
-  const res = await apiRequest(JUSTGO_LANDING_QR_SCAN_PATH, {
-    name: slug,
-    visitorId,
-    unique,
-    search: search ?? (typeof window !== 'undefined' ? window.location.search : ''),
-    ...(tz ? { timeZone: tz } : {}),
-    ...(offset != null && Number.isFinite(Number(offset)) ? { utcOffsetMinutes: offset } : {}),
-  });
-  if (res?.error || !res?.data?.tenantKey) {
+  const existing = landingQrScanMemo.get(slug);
+  if (existing) return existing;
+
+  const pending = (async () => {
+    const visitorId = getOrMintLandingVisitorId();
+    const unique = !hasSeenLandingQr(slug);
+    const tz = timeZone ?? getBrowserTimeZone();
+    const offset = utcOffsetMinutes ?? getBrowserUtcOffsetMinutes();
+    const res = await apiRequest(JUSTGO_LANDING_QR_SCAN_PATH, {
+      name: slug,
+      visitorId,
+      unique,
+      search: search ?? (typeof window !== 'undefined' ? window.location.search : ''),
+      ...(tz ? { timeZone: tz } : {}),
+      ...(offset != null && Number.isFinite(Number(offset)) ? { utcOffsetMinutes: offset } : {}),
+    });
+    if (res?.error || !res?.data?.tenantKey) {
+      landingQrScanMemo.delete(slug);
+      return {
+        error: true,
+        errorCode: res?.errorCode || 'QR_NOT_FOUND',
+        status: typeof res?.code === 'number' ? res.code : 404,
+      };
+    }
+    markLandingQrSeen(slug);
     return {
-      error: true,
-      errorCode: res?.errorCode || 'QR_NOT_FOUND',
-      status: typeof res?.code === 'number' ? res.code : 404,
+      data: applyPosterTzHop(res.data, {
+        timeZone: tz,
+        utcOffsetMinutes: offset,
+      }),
     };
-  }
-  markLandingQrSeen(slug);
-  return {
-    data: applyPosterTzHop(res.data, {
-      timeZone: tz,
-      utcOffsetMinutes: offset,
-    }),
-  };
+  })();
+
+  landingQrScanMemo.set(slug, pending);
+  return pending;
 }

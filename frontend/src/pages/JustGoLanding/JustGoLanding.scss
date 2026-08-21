@@ -89,9 +89,25 @@ $hard-shadow: 3px 4px 0 rgba(0, 0, 0, 0.55);
   position: absolute;
   inset: 0;
   z-index: 0;
-  background-image: url('../../assets/pivot/pivot-hero-court.jpg');
-  background-size: cover;
-  background-position: center 38%;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  pointer-events: none;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 38%;
+  }
+}
+
+@media (max-width: 899px) {
+  .justgo-landing__hero-photo img {
+    object-position: center 42%;
+  }
 }
 
 .justgo-landing__hero-wash {
@@ -113,12 +129,15 @@ $hard-shadow: 3px 4px 0 rgba(0, 0, 0, 0.55);
   position: absolute;
   inset: 0;
   z-index: 1;
-  background-image: url('../../assets/pivot/pivot-film-grain.webp');
-  background-size: 200px 200px;
-  background-repeat: repeat;
-  opacity: 0.24;
-  mix-blend-mode: overlay;
   pointer-events: none;
+
+  @media (min-width: 900px) {
+    background-image: url('../../assets/pivot/pivot-film-grain.webp');
+    background-size: 200px 200px;
+    background-repeat: repeat;
+    opacity: 0.24;
+    mix-blend-mode: overlay;
+  }
 }
 
 .justgo-landing__nav {

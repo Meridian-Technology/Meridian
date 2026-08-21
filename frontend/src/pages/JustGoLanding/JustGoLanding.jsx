@@ -3,8 +3,14 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import apiRequest from '../../utils/postRequest';
 import { analytics } from '../../services/analytics/analytics';
 import Popup from '../../components/Popup/Popup';
-import justGoWordmark from '../../assets/pivot/just-go-wordmark.svg';
 import appStoreBadge from '../../assets/pivot/download-on-the-app-store.svg';
+import {
+  JUSTGO_HERO_DESKTOP_WEBP,
+  JUSTGO_HERO_MOBILE_WEBP,
+  JUSTGO_WORDMARK_1298,
+  JUSTGO_WORDMARK_SIZES,
+  JUSTGO_WORDMARK_SRCSET,
+} from './justGoHeroAssets';
 import { JUSTGO_CREATOR_ROUTES } from '../JustGoCreator/justGoCreatorRoutes';
 import justGoLandingCopy, {
   JUSTGO_IOS_STORE_URL,
@@ -33,7 +39,8 @@ import {
 } from './justGoLandingUtils';
 import { useJustGoLandingMotion } from './justGoLandingMotion';
 import { isJustGoHost } from '../../config/tenantRedirect';
-import { recordLandingView } from './justGoLandingTracking';
+import { applyJustGoDocumentMeta } from './justGoDocumentMeta';
+import { recordLandingView, scanLandingQr } from './justGoLandingTracking';
 import JustGoLandingCityPicker from './JustGoLandingCityPicker';
 import JustGoLandingStoreLink from './JustGoLandingStoreLink';
 import JustGoLandingWaitlist from './JustGoLandingWaitlist';
@@ -154,7 +161,7 @@ function FlyerCard({ flyer }) {
     <article className={`justgo-landing__flyer justgo-landing__flyer--${flyer.tone}`}>
       {isPhoto ? (
         <div className="justgo-landing__flyer-cover">
-          <img src={flyer.cover} alt="" draggable={false} />
+          <img src={flyer.cover} alt="" draggable={false} loading="lazy" decoding="async" />
         </div>
       ) : (
         <h3 className="justgo-landing__flyer-cover justgo-landing__flyer-cover--field">
@@ -217,30 +224,32 @@ function JustGoLanding() {
       tenantKey: lockedTenantKey,
       search,
     });
+    if (qrQuery) {
+      void scanLandingQr({ name: qrQuery, search });
+    }
   }, [lockedTenantKey, srcQuery, qrQuery, refQuery]);
 
   useEffect(() => {
     analytics.screen('Just Go Landing');
+  }, []);
+
+  useEffect(() => {
     const theme = document.querySelector('meta[name="theme-color"]');
     const description = document.querySelector('meta[name="description"]');
     const previousTheme = theme?.getAttribute('content');
     const previousDescription = description?.getAttribute('content');
-    if (theme) theme.setAttribute('content', '#1E1A16');
+    applyJustGoDocumentMeta({
+      title: copy.documentTitle,
+      description: copy.metaDescription,
+    });
     return () => {
+      if (isJustGoHost()) return;
       document.title = 'Meridian';
       if (theme && previousTheme != null) theme.setAttribute('content', previousTheme);
       if (description && previousDescription != null) {
         description.setAttribute('content', previousDescription);
       }
     };
-  }, []);
-
-  useEffect(() => {
-    document.title = copy.documentTitle;
-    const description = document.querySelector('meta[name="description"]');
-    if (description) {
-      description.setAttribute('content', copy.metaDescription);
-    }
   }, [copy.documentTitle, copy.metaDescription]);
 
   useEffect(() => {
@@ -413,7 +422,23 @@ function JustGoLanding() {
       </a>
 
       <header className="justgo-landing__hero">
-        <div className="justgo-landing__hero-photo" aria-hidden="true" />
+        <picture className="justgo-landing__hero-photo" aria-hidden="true">
+          <source
+            media="(max-width: 899px)"
+            srcSet={JUSTGO_HERO_MOBILE_WEBP}
+            type="image/webp"
+          />
+          <source srcSet={JUSTGO_HERO_DESKTOP_WEBP} type="image/webp" />
+          <img
+            src={JUSTGO_HERO_DESKTOP_WEBP}
+            alt=""
+            width={1024}
+            height={1024}
+            decoding="async"
+            fetchpriority="high"
+            draggable={false}
+          />
+        </picture>
         <span className="justgo-landing__hero-wash" aria-hidden="true" />
         <span className="justgo-landing__grain" aria-hidden="true" />
         <nav className="justgo-landing__nav" aria-label="just go">
@@ -437,8 +462,14 @@ function JustGoLanding() {
         <div className="justgo-landing__hero-stage" ref={ctaRef} id="download">
           <img
             className="justgo-landing__wordmark"
-            src={justGoWordmark}
+            src={JUSTGO_WORDMARK_1298}
+            srcSet={JUSTGO_WORDMARK_SRCSET}
+            sizes={JUSTGO_WORDMARK_SIZES}
             alt={copy.wordmarkAlt}
+            width={1298}
+            height={782}
+            decoding="async"
+            fetchpriority="high"
             draggable={false}
           />
           <h1 className="justgo-landing__headline">
@@ -545,8 +576,13 @@ function JustGoLanding() {
       <footer className="justgo-landing__footer" id="contact">
         <img
           className="justgo-landing__footer-mark"
-          src={justGoWordmark}
+          src={JUSTGO_WORDMARK_1298}
+          srcSet={JUSTGO_WORDMARK_SRCSET}
+          sizes="8.5rem"
           alt={copy.wordmarkAlt}
+          width={1298}
+          height={782}
+          decoding="async"
           draggable={false}
         />
         <p className="justgo-landing__footer-stamp">{copy.footerStamp}</p>

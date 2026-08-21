@@ -23,35 +23,101 @@
       content="Web site created using create-react-app"
     />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/Logo.svg" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <script type="text/javascript" src="https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js"></script>
+    <script>
+      (function () {
+        var host = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+        var path = location.pathname || '/';
+        var onJustGoHost = host === 'justgo.lol' || (host === 'localhost' && (function () {
+          try { return localStorage.getItem('justgoHostOverride') === '1'; } catch (e) { return false; }
+        })());
+        var onCampusJustGo = path === '/justgo' || path.indexOf('/justgo/') === 0;
+        var onJustGoSurface = onJustGoHost || onCampusJustGo;
+        if (onJustGoSurface) {
+          var title = 'just go. this week in your city';
+          var description = "stop planning. swipe what's on in your city this week. just go.";
+          var canonicalPath = path;
+          if (canonicalPath === '/justgo' || canonicalPath === '/justgo/') canonicalPath = '/';
+          else if (canonicalPath.indexOf('/justgo/') === 0) canonicalPath = canonicalPath.slice(7) || '/';
+          var origin = (location.protocol && location.host)
+            ? (location.protocol + '//' + location.host)
+            : 'https://justgo.lol';
+          var canonical = origin + (canonicalPath === '/' ? '' : canonicalPath);
+          var image = origin + '/justgo/og.jpg';
+          var icon = '%PUBLIC_URL%/justgo-icon.svg';
+          document.title = title;
+          var setMeta = function (attr, key, content) {
+            var nodes = document.head.querySelectorAll('meta[' + attr + '="' + key + '"]');
+            var i;
+            if (nodes.length) {
+              for (i = 0; i < nodes.length; i++) nodes[i].setAttribute('content', content);
+              return;
+            }
+            var meta = document.createElement('meta');
+            meta.setAttribute(attr, key);
+            meta.setAttribute('content', content);
+            document.head.appendChild(meta);
+          };
+          var setLink = function (rel, href) {
+            var link = document.head.querySelector('link[rel="' + rel + '"]');
+            if (!link) {
+              link = document.createElement('link');
+              link.rel = rel;
+              document.head.appendChild(link);
+            }
+            link.href = href;
+          };
+          setMeta('name', 'description', description);
+          setMeta('name', 'theme-color', '#1E1A16');
+          setMeta('property', 'og:title', title);
+          setMeta('property', 'og:description', description);
+          setMeta('property', 'og:image', image);
+          setMeta('property', 'og:url', canonical);
+          setMeta('property', 'og:type', 'website');
+          setMeta('property', 'og:site_name', 'just go');
+          setMeta('name', 'twitter:card', 'summary_large_image');
+          setMeta('name', 'twitter:title', title);
+          setMeta('name', 'twitter:description', description);
+          setMeta('name', 'twitter:image', image);
+          setLink('icon', icon);
+          setLink('apple-touch-icon', icon);
+        }
+        var onLanding = false;
+        if (onJustGoHost) {
+          onLanding = !/^\/(privacy-policy|terms-of-service|justgo\/creator|creator|qr\/)/.test(path);
+        } else {
+          onLanding = path === '/justgo' || /^\/justgo\/(?!privacy-policy|terms-of-service|creator|qr\/)[^/]+$/.test(path);
+        }
+        if (!onLanding) return;
+        var base = '%PUBLIC_URL%';
+        var mobile = window.matchMedia('(max-width: 899px)').matches;
+        var preload = document.createElement('link');
+        preload.rel = 'preload';
+        preload.as = 'image';
+        preload.href = base + (mobile ? '/justgo/hero-court-mobile.webp' : '/justgo/hero-court.webp');
+        preload.fetchPriority = 'high';
+        document.head.appendChild(preload);
+        var mark = document.createElement('link');
+        mark.rel = 'preload';
+        mark.as = 'image';
+        mark.href = base + (mobile ? '/justgo/wordmark-1298.png' : '/justgo/wordmark-1624.png');
+        mark.fetchPriority = 'high';
+        document.head.appendChild(mark);
+        var fonts = document.createElement('link');
+        fonts.rel = 'preconnect';
+        fonts.href = 'https://fonts.googleapis.com';
+        document.head.appendChild(fonts);
+        var gstatic = document.createElement('link');
+        gstatic.rel = 'preconnect';
+        gstatic.href = 'https://fonts.gstatic.com';
+        gstatic.crossOrigin = 'anonymous';
+        document.head.appendChild(gstatic);
+      })();
+    </script>
     <title>Meridian</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
   </body>
 </html>

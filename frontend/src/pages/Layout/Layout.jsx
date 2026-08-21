@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { Outlet, useLocation, Navigate } from 'react-router-dom'; // Allows for nested routes to be rendered within this layout
 import { updateReferrerOnNavigation } from '../../utils/referrerContext';
 import Banner from '../../components/Banner/Banner'; // Import your Banner component
@@ -11,6 +11,7 @@ import {
   restoreCampusTabIcon,
   shouldHideCampusBanner,
 } from '../JustGoLanding/justGoLandingUtils';
+import { applyJustGoDocumentMeta } from '../JustGoLanding/justGoDocumentMeta';
 
 function Layout() {
   const [visible, setVisible] = useState(false);
@@ -45,9 +46,17 @@ function Layout() {
   }, [location.hash, location.pathname, location.search]);
 
   useEffect(() => {
-    if (hideCampusChrome) applyJustGoTabIcon();
-    else restoreCampusTabIcon();
-  }, [hideCampusChrome]);
+    if (hideCampusChrome) {
+      applyJustGoTabIcon();
+      if (
+        justGoHost ||
+        location.pathname === '/justgo' ||
+        location.pathname.startsWith('/justgo/')
+      ) {
+        applyJustGoDocumentMeta();
+      }
+    } else restoreCampusTabIcon();
+  }, [hideCampusChrome, justGoHost, location.pathname]);
 
   const handleOrgInviteAccept = (invite) => {
     setPendingOrgInvites(prev => prev.filter(inv => inv._id !== invite._id));
@@ -109,7 +118,9 @@ function Layout() {
       {/* This will render the content of the page (children) */}
       <main style={{minHeight: viewport, overflowX: 'clip', width: '100%'}}>
         <div className="out" style={{minHeight: viewport, overflowX: 'clip', width: '100%'}}>
-            <Outlet />      
+            <Suspense fallback={null}>
+              <Outlet />
+            </Suspense>
         </div>
       </main>
     </div>
