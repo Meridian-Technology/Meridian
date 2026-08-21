@@ -908,7 +908,9 @@ describe('JustGoLanding', () => {
       (call) => call[0] === 'justgo_landing_waitlist_submit',
     )[1];
     expect(trackProps).not.toHaveProperty('email');
-    expect(await screen.findByText(justGoLandingCopy.waitlistSuccessTitle)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: justGoLandingCopy.waitlistSuccessTitle }),
+    ).toBeInTheDocument();
     const panel = screen.getByRole('dialog', { name: justGoLandingCopy.waitlistCta });
     expect(within(panel).getByText(justGoLandingCopy.waitlistSuccessBody)).toBeInTheDocument();
     expect(within(panel).getByText('0 friends joined')).toBeInTheDocument();
@@ -937,7 +939,9 @@ describe('JustGoLanding', () => {
       fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistSubmit }));
     });
 
-    expect(await screen.findByText(justGoLandingCopy.waitlistSuccessTitle)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: justGoLandingCopy.waitlistSuccessTitle }),
+    ).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: justGoLandingCopy.waitlistShare }));
     });

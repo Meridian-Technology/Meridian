@@ -568,8 +568,8 @@ function JustGoLanding() {
             {copy.storyTitle}
           </span>
         </h2>
-        {copy.story.map((graf) => (
-          <p key={graf}>{graf}</p>
+        {copy.story.map((graf, index) => (
+          <p key={`story-graf-${index}`}>{graf}</p>
         ))}
       </section>
 
