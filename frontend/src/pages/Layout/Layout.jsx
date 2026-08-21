@@ -11,6 +11,7 @@ import {
   restoreCampusTabIcon,
   shouldHideCampusBanner,
 } from '../JustGoLanding/justGoLandingUtils';
+import { applyJustGoDocumentMeta } from '../JustGoLanding/justGoDocumentMeta';
 
 function Layout() {
   const [visible, setVisible] = useState(false);
@@ -45,9 +46,17 @@ function Layout() {
   }, [location.hash, location.pathname, location.search]);
 
   useEffect(() => {
-    if (hideCampusChrome) applyJustGoTabIcon();
-    else restoreCampusTabIcon();
-  }, [hideCampusChrome]);
+    if (hideCampusChrome) {
+      applyJustGoTabIcon();
+      if (
+        justGoHost ||
+        location.pathname === '/justgo' ||
+        location.pathname.startsWith('/justgo/')
+      ) {
+        applyJustGoDocumentMeta();
+      }
+    } else restoreCampusTabIcon();
+  }, [hideCampusChrome, justGoHost, location.pathname]);
 
   const handleOrgInviteAccept = (invite) => {
     setPendingOrgInvites(prev => prev.filter(inv => inv._id !== invite._id));

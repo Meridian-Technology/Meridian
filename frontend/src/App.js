@@ -1,4 +1,4 @@
-import React, { lazy, useEffect } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import './App.scss';
 import AnimatedPageWrapper, { StaticFullBleedPage } from './components/AnimatedPageWrapper/AnimatedPageWrapper';
 import { analytics } from './services/analytics/analytics';
@@ -20,7 +20,6 @@ import { ProfileCreationProvider } from './ProfileCreationContext';
 import { WebSocketProvider } from './WebSocketContext';
 import Layout from './pages/Layout/Layout';
 import axios from 'axios';
-import RebrandingNotice from './components/RebrandingNotice/RebrandingNotice';
 import DevTenantSelector from './components/DevTenantSelector/DevTenantSelector';
 import CommunityOrganizerFeatureAdminRedirect from './components/CommunityOrganizerFeatureAdminRedirect/CommunityOrganizerFeatureAdminRedirect';
 
@@ -30,6 +29,7 @@ if (typeof window !== 'undefined' && !isJustGoHost()) {
     import('./assets/Fonts/OpenSauce/OpenSauce.css');
 }
 
+const RebrandingNotice = lazy(() => import('./components/RebrandingNotice/RebrandingNotice'));
 const Room1 = lazy(() => import('./pages/Room/Room1'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register/Register'));
@@ -202,7 +202,11 @@ function App() {
     const justGoHost = isJustGoHost();
     return (
         <GoogleOAuthProvider clientId="639818062398-k4qnm9l320phu967ctc2l1jt1sp9ib7p.apps.googleusercontent.com">
-            <RebrandingNotice />
+            {justGoHost ? null : (
+                <Suspense fallback={null}>
+                    <RebrandingNotice />
+                </Suspense>
+            )}
             <DevTenantSelector />
             <ErrorProvider>
                 <NotificationProvider>

@@ -8,6 +8,8 @@ import {
   buildLandingEventBody,
   buildWaitlistPayload,
   getOrMintLandingVisitorId,
+  guessLandingQrHopTo,
+  guessLandingQrTenantKey,
   handleLandingStoreClick,
   hasSeenLandingQr,
   markLandingQrSeen,
@@ -16,6 +18,7 @@ import {
   readLandingAttribution,
   recordLandingStoreClick,
   recordLandingView,
+  resetLandingQrScanMemo,
   resolveLandingEventTenantKey,
   scanLandingQr,
   buildLandingQrHopTo,
@@ -42,6 +45,7 @@ describe('justGoLandingTracking (Task 1.3)', () => {
     mockApi.mockResolvedValue({ success: true });
     window.localStorage.clear();
     window.sessionStorage.clear();
+    resetLandingQrScanMemo();
   });
 
   describe('visitor id', () => {
@@ -328,6 +332,28 @@ describe('justGoLandingTracking (Task 1.3)', () => {
       ).toBe('/justgo/troy?src=qr&qr=poster-a');
     });
 
+    it('guesses sf-* and iowa-* poster names without a scan', () => {
+      expect(guessLandingQrTenantKey('sf-1')).toBe('sf');
+      expect(guessLandingQrTenantKey('iowa-2')).toBe('iowacity');
+      expect(guessLandingQrTenantKey('poster-a')).toBe('');
+      expect(guessLandingQrTenantKey('troy')).toBe('');
+      expect(
+        guessLandingQrHopTo({
+          name: 'sf-1',
+          search: '?utm=ig',
+          justGoHost: true,
+          timeZone: 'America/Los_Angeles',
+        }),
+      ).toBe('/sf?utm=ig&src=qr&qr=sf-1');
+      expect(
+        guessLandingQrHopTo({
+          name: 'sf-1',
+          justGoHost: true,
+          timeZone: 'America/Chicago',
+        }),
+      ).toBe('/iowacity?src=qr&qr=sf-1');
+    });
+
     it('posts a unique scan once per visitor+code', async () => {
       mockApi.mockResolvedValue({
         success: true,
@@ -341,7 +367,10 @@ describe('justGoLandingTracking (Task 1.3)', () => {
         expect.objectContaining({ name: 'poster-a', unique: true }),
       );
 
+      expect(mockApi).toHaveBeenCalledTimes(1);
+
       mockApi.mockClear();
+      resetLandingQrScanMemo();
       mockApi.mockResolvedValue({
         success: true,
         data: { name: 'poster-a', tenantKey: 'troy', path: '/troy' },
@@ -351,6 +380,17 @@ describe('justGoLandingTracking (Task 1.3)', () => {
         JUSTGO_LANDING_QR_SCAN_PATH,
         expect.objectContaining({ unique: false }),
       );
+    });
+
+    it('shares one POST when hop and landing scan the same code', async () => {
+      mockApi.mockResolvedValue({
+        success: true,
+        data: { name: 'sf-1', tenantKey: 'sf', path: '/sf' },
+      });
+      const first = scanLandingQr({ name: 'sf-1', search: '' });
+      const second = scanLandingQr({ name: 'sf-1', search: '' });
+      await Promise.all([first, second]);
+      expect(mockApi).toHaveBeenCalledTimes(1);
     });
 
     it('does not mark seen when the code is inactive', async () => {

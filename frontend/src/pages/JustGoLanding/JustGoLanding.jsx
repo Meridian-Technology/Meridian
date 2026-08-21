@@ -39,7 +39,8 @@ import {
 } from './justGoLandingUtils';
 import { useJustGoLandingMotion } from './justGoLandingMotion';
 import { isJustGoHost } from '../../config/tenantRedirect';
-import { recordLandingView } from './justGoLandingTracking';
+import { applyJustGoDocumentMeta } from './justGoDocumentMeta';
+import { recordLandingView, scanLandingQr } from './justGoLandingTracking';
 import JustGoLandingCityPicker from './JustGoLandingCityPicker';
 import JustGoLandingStoreLink from './JustGoLandingStoreLink';
 import JustGoLandingWaitlist from './JustGoLandingWaitlist';
@@ -223,30 +224,32 @@ function JustGoLanding() {
       tenantKey: lockedTenantKey,
       search,
     });
+    if (qrQuery) {
+      void scanLandingQr({ name: qrQuery, search });
+    }
   }, [lockedTenantKey, srcQuery, qrQuery, refQuery]);
 
   useEffect(() => {
     analytics.screen('Just Go Landing');
+  }, []);
+
+  useEffect(() => {
     const theme = document.querySelector('meta[name="theme-color"]');
     const description = document.querySelector('meta[name="description"]');
     const previousTheme = theme?.getAttribute('content');
     const previousDescription = description?.getAttribute('content');
-    if (theme) theme.setAttribute('content', '#1E1A16');
+    applyJustGoDocumentMeta({
+      title: copy.documentTitle,
+      description: copy.metaDescription,
+    });
     return () => {
+      if (isJustGoHost()) return;
       document.title = 'Meridian';
       if (theme && previousTheme != null) theme.setAttribute('content', previousTheme);
       if (description && previousDescription != null) {
         description.setAttribute('content', previousDescription);
       }
     };
-  }, []);
-
-  useEffect(() => {
-    document.title = copy.documentTitle;
-    const description = document.querySelector('meta[name="description"]');
-    if (description) {
-      description.setAttribute('content', copy.metaDescription);
-    }
   }, [copy.documentTitle, copy.metaDescription]);
 
   useEffect(() => {

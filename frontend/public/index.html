@@ -31,6 +31,57 @@
         var onJustGoHost = host === 'justgo.lol' || (host === 'localhost' && (function () {
           try { return localStorage.getItem('justgoHostOverride') === '1'; } catch (e) { return false; }
         })());
+        var onCampusJustGo = path === '/justgo' || path.indexOf('/justgo/') === 0;
+        var onJustGoSurface = onJustGoHost || onCampusJustGo;
+        if (onJustGoSurface) {
+          var title = 'just go. this week in your city';
+          var description = "stop planning. swipe what's on in your city this week. just go.";
+          var canonicalPath = path;
+          if (canonicalPath === '/justgo' || canonicalPath === '/justgo/') canonicalPath = '/';
+          else if (canonicalPath.indexOf('/justgo/') === 0) canonicalPath = canonicalPath.slice(7) || '/';
+          var origin = (location.protocol && location.host)
+            ? (location.protocol + '//' + location.host)
+            : 'https://justgo.lol';
+          var canonical = origin + (canonicalPath === '/' ? '' : canonicalPath);
+          var image = origin + '/justgo/og.jpg';
+          var icon = '%PUBLIC_URL%/justgo-icon.svg';
+          document.title = title;
+          var setMeta = function (attr, key, content) {
+            var nodes = document.head.querySelectorAll('meta[' + attr + '="' + key + '"]');
+            var i;
+            if (nodes.length) {
+              for (i = 0; i < nodes.length; i++) nodes[i].setAttribute('content', content);
+              return;
+            }
+            var meta = document.createElement('meta');
+            meta.setAttribute(attr, key);
+            meta.setAttribute('content', content);
+            document.head.appendChild(meta);
+          };
+          var setLink = function (rel, href) {
+            var link = document.head.querySelector('link[rel="' + rel + '"]');
+            if (!link) {
+              link = document.createElement('link');
+              link.rel = rel;
+              document.head.appendChild(link);
+            }
+            link.href = href;
+          };
+          setMeta('name', 'description', description);
+          setMeta('name', 'theme-color', '#1E1A16');
+          setMeta('property', 'og:title', title);
+          setMeta('property', 'og:description', description);
+          setMeta('property', 'og:image', image);
+          setMeta('property', 'og:url', canonical);
+          setMeta('property', 'og:type', 'website');
+          setMeta('property', 'og:site_name', 'just go');
+          setMeta('name', 'twitter:card', 'summary_large_image');
+          setMeta('name', 'twitter:title', title);
+          setMeta('name', 'twitter:description', description);
+          setMeta('name', 'twitter:image', image);
+          setLink('icon', icon);
+          setLink('apple-touch-icon', icon);
+        }
         var onLanding = false;
         if (onJustGoHost) {
           onLanding = !/^\/(privacy-policy|terms-of-service|justgo\/creator|creator|qr\/)/.test(path);

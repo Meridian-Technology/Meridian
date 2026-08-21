@@ -10,6 +10,7 @@ import justGoLandingCopy, {
   justGoPublicLandingUrl,
   justGoPublicUrl,
 } from './justGoLandingCopy';
+import { JUSTGO_LANDING_QR_SCAN_PATH, resetLandingQrScanMemo } from './justGoLandingTracking';
 
 const mockApi = jest.fn();
 const mockScreen = jest.fn();
@@ -160,6 +161,7 @@ beforeEach(() => {
   mockIsJustGoHost.mockReturnValue(false);
   window.localStorage.clear();
   window.sessionStorage.clear();
+  resetLandingQrScanMemo();
   if (window.location.hash) {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   }
@@ -194,6 +196,12 @@ beforeEach(() => {
         },
       });
     }
+    if (url === JUSTGO_LANDING_QR_SCAN_PATH) {
+      return Promise.resolve({
+        success: true,
+        data: { name: 'poster-night', tenantKey: 'troy', path: '/troy' },
+      });
+    }
     return Promise.resolve({ success: false });
   });
   window.IntersectionObserver = class {
@@ -220,6 +228,10 @@ describe('JustGoLanding', () => {
     expect(screen.queryByText(/why just go/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Welcome Back/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Meridian Go/i)).not.toBeInTheDocument();
+    expect(document.title).toBe(justGoLandingCopy.documentTitle);
+    expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toBe(
+      justGoLandingCopy.metaDescription,
+    );
     expect(mockScreen).toHaveBeenCalledWith('Just Go Landing');
     expect(await screen.findByText(/live in brooklyn/i)).toBeInTheDocument();
     expect(mockApi).toHaveBeenCalledWith('/pivot/landing/config', null, { method: 'GET' });
@@ -644,6 +656,10 @@ describe('JustGoLanding', () => {
     });
     expect(window.sessionStorage.getItem('justgo.landing.src')).toBe('qr');
     expect(window.sessionStorage.getItem('justgo.landing.qr')).toBe('poster-night');
+    expect(mockApi).toHaveBeenCalledWith(
+      JUSTGO_LANDING_QR_SCAN_PATH,
+      expect.objectContaining({ name: 'poster-night' }),
+    );
   });
 
   it('persists ref from a share URL and implies source=share', async () => {

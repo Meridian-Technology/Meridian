@@ -6,9 +6,11 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { isWww, isPathAllowedOnWww, isJustGoHost } from './config/tenantRedirect';
 import { applyJustGoTabIcon } from './pages/JustGoLanding/justGoLandingUtils';
+import { applyJustGoDocumentMeta } from './pages/JustGoLanding/justGoDocumentMeta';
 
 if (typeof document !== 'undefined' && isJustGoHost()) {
   applyJustGoTabIcon();
+  applyJustGoDocumentMeta();
 }
 
 if (process.env.NODE_ENV !== 'production') {
