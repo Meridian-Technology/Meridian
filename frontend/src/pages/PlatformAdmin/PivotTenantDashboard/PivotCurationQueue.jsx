@@ -149,6 +149,14 @@ const CatalogRow = React.memo(function CatalogRow({
         <div className="pivot-curation-sheet__host">
           {event.organizerName || 'No host'}
         </div>
+        {event.featured ? (
+          <span
+            className="pivot-curation-sheet__featured"
+            title="Featured — public landing deck"
+          >
+            Featured
+          </span>
+        ) : null}
       </td>
       <td className="pivot-curation-sheet__when">
         {formatEventWhenWithShowtimes(event)}
@@ -200,6 +208,7 @@ function QueueInspector({
   onPublish,
   onUnpublish,
   onDelete,
+  onToggleFeatured,
   busyKey,
   releaseDisabled,
   releaseBlockReason,
@@ -210,6 +219,7 @@ function QueueInspector({
   const unpublishing = busyKey === `unrelease-${event._id}`;
   const publishing = busyKey === `release-${event._id}`;
   const deleting = busyKey === `delete-${event._id}`;
+  const featuring = busyKey === `feature-${event._id}`;
 
   return (
     <aside className="pivot-curation-sheet__inspect" aria-label={`${event.name} details`}>
@@ -247,6 +257,9 @@ function QueueInspector({
             {event.ingestStatus || 'unknown'}
           </PivotOpsStatus>
           <CatalogSourceBadge source={event.source} />
+          {event.featured ? (
+            <span className="pivot-curation-sheet__featured">Featured</span>
+          ) : null}
           {event.outOfReviewRange ? (
             <PivotOpsStatus tone="danger">Out of range</PivotOpsStatus>
           ) : null}
@@ -336,6 +349,25 @@ function QueueInspector({
           ) : null}
           <button
             type="button"
+            className="linear-btn linear-btn--secondary"
+            onClick={() => onToggleFeatured(event)}
+            disabled={featuring}
+            title={
+              event.featured
+                ? 'Remove from the Just Go landing deck'
+                : 'Mark as featured for the public landing deck'
+            }
+          >
+            {featuring
+              ? event.featured
+                ? 'Removing…'
+                : 'Featuring…'
+              : event.featured
+                ? 'Unfeature'
+                : 'Feature'}
+          </button>
+          <button
+            type="button"
             className="linear-btn linear-btn--ghost pivot-tenant-curation__delete-btn"
             onClick={() => onDelete(event)}
             disabled={deleting}
@@ -379,6 +411,9 @@ function PivotCurationQueue({
   onBulkApplyTags,
   onBulkSuggestTags,
   onBulkCollapseShowtimes,
+  onBulkFeature,
+  onBulkUnfeature,
+  onToggleFeatured,
   emptyLabel,
 }) {
   const sheetRef = useRef(null);
@@ -468,6 +503,8 @@ function PivotCurationQueue({
   const selectedDraftCount = selectedEvents.filter((e) => e.ingestStatus === 'draft').length;
   const selectedStagedCount = selectedEvents.filter((e) => e.ingestStatus === 'staged').length;
   const selectedPublishedCount = selectedEvents.filter((e) => e.ingestStatus === 'published').length;
+  const selectedUnfeaturedCount = selectedEvents.filter((e) => e.featured !== true).length;
+  const selectedFeaturedCount = selectedEvents.filter((e) => e.featured === true).length;
 
   const previewAt = useCallback((event, index, nextIds) => {
     if (typeof index === 'number') {
@@ -892,6 +929,32 @@ function PivotCurationQueue({
                       : `Unpublish (${selectedPublishedCount})`}
                   </button>
                 ) : null}
+                {selectedUnfeaturedCount > 0 ? (
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--secondary"
+                    onClick={onBulkFeature}
+                    disabled={busyKey === 'bulk-feature'}
+                    title="Mark selected events as featured for the public landing deck"
+                  >
+                    {busyKey === 'bulk-feature'
+                      ? 'Featuring…'
+                      : `Feature (${selectedUnfeaturedCount})`}
+                  </button>
+                ) : null}
+                {selectedFeaturedCount > 0 ? (
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--ghost"
+                    onClick={onBulkUnfeature}
+                    disabled={busyKey === 'bulk-unfeature'}
+                    title="Remove selected events from the Just Go landing deck"
+                  >
+                    {busyKey === 'bulk-unfeature'
+                      ? 'Removing…'
+                      : `Unfeature (${selectedFeaturedCount})`}
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -907,6 +970,7 @@ function PivotCurationQueue({
             onPublish={onPublish}
             onUnpublish={onUnpublish}
             onDelete={onDelete}
+            onToggleFeatured={onToggleFeatured}
             busyKey={busyKey}
             releaseDisabled={releaseDisabled}
             releaseBlockReason={releaseBlockReason}

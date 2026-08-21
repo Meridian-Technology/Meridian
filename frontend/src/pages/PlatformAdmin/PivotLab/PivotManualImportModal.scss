@@ -182,6 +182,15 @@
     }
   }
 
+  &__check {
+    grid-column: 1 / -1;
+
+    input[type='checkbox'] {
+      width: auto;
+      margin: 0;
+    }
+  }
+
   &__label {
     font-size: 12px;
     font-weight: 600;

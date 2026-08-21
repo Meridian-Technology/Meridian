@@ -62,6 +62,20 @@ function firstNonEmpty(...values) {
   return null;
 }
 
+function parseFeatured(value) {
+  if (value === true || value === 'true' || value === 1 || value === '1') {
+    return { featured: true };
+  }
+  if (value === false || value === 'false' || value === 0 || value === '0') {
+    return { featured: false };
+  }
+  return {
+    error: 'featured must be true or false.',
+    status: 400,
+    code: 'INVALID_FEATURED',
+  };
+}
+
 function parseDateTime(value) {
   if (!value) return null;
   const parsed = new Date(value);
@@ -884,6 +898,14 @@ async function updateIngestEvent(req, options = {}) {
     pivotPatch.ingestStatus = statusResult.ingestStatus;
   }
 
+  if (overrides.featured !== undefined) {
+    const featuredResult = parseFeatured(overrides.featured);
+    if (featuredResult.error) {
+      return featuredResult;
+    }
+    pivotPatch.featured = featuredResult.featured;
+  }
+
   if (overrides.batchWeek !== undefined) {
     const batchNormalized = normalizeBatchWeek(overrides.batchWeek, options.now);
     if (batchNormalized.error) {
@@ -1012,6 +1034,7 @@ module.exports = {
   resolvePivotTenant,
   resolveCatalogOrgId,
   resolveCreateIngestStatus,
+  parseFeatured,
   DEFAULT_INGEST_STATUS,
   RELEASE_NOW_CONFIRM_TOKEN,
 };

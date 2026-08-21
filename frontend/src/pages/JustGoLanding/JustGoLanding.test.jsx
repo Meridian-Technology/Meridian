@@ -413,6 +413,33 @@ describe('JustGoLanding', () => {
     expect(screen.getByText(justGoLandingCopy.deckDownloadBody)).toBeInTheDocument();
   });
 
+  it('labels the deck last week when the drop falls back', async () => {
+    mockApi.mockImplementation((url) => {
+      if (url === '/pivot/landing/config') {
+        return Promise.resolve({ success: true, data: { cities: CITIES } });
+      }
+      if (url === '/pivot/landing/drop') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            tenantKey: 'brooklyn',
+            cityDisplayName: 'Brooklyn',
+            batchWeek: '2026-W32',
+            liveWeek: '2026-W33',
+            fallback: true,
+            events: DROP_EVENTS.slice(0, 1),
+          },
+        });
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    await renderLanding({ desktop: false });
+
+    expect(await screen.findByText(justGoLandingCopy.deckEyebrowFallback)).toBeInTheDocument();
+    expect(screen.queryByText(justGoLandingCopy.deckEyebrow)).not.toBeInTheDocument();
+  });
+
   it('refetches the drop when the city chip changes', async () => {
     await renderLanding({ desktop: false });
     await screen.findByRole('heading', { name: 'friday night market' });

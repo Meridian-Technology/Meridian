@@ -14,6 +14,7 @@ const { getTenantByKey } = require('../../services/tenantConfigService');
 const { buildPublishedCatalogQuery } = require('../../services/pivotFeedService');
 const {
   getPivotLandingDrop,
+  buildFeaturedLandingQuery,
   LANDING_DROP_LIMIT,
 } = require('../../services/pivotLandingDropService');
 
@@ -32,6 +33,8 @@ const NYC_TENANT = {
 const WALL_CLOCK = new Date('2026-08-16T20:00:00.000Z');
 /** Thursday Aug 13 2026 18:00 America/New_York (EDT). */
 const DROP_AT = new Date('2026-08-13T22:00:00.000Z');
+/** Thursday Aug 6 2026 18:00 America/New_York (EDT) — previous week. */
+const PREV_DROP_AT = new Date('2026-08-06T22:00:00.000Z');
 
 function catalogEvent(overrides = {}) {
   const id = overrides._id || `event-${Math.random().toString(16).slice(2)}`;
@@ -47,6 +50,7 @@ function catalogEvent(overrides = {}) {
     customFields: {
       pivot: {
         ingestStatus: 'published',
+        featured: true,
         batchWeek: '2026-W33',
         host: { name: 'public records' },
         tags: ['live-music'],
@@ -56,6 +60,7 @@ function catalogEvent(overrides = {}) {
     customFields: {
       pivot: {
         ingestStatus: 'published',
+        featured: true,
         batchWeek: '2026-W33',
         host: { name: 'public records' },
         tags: ['live-music'],
@@ -65,11 +70,15 @@ function catalogEvent(overrides = {}) {
   };
 }
 
-function mockEventFind(rows) {
-  const lean = jest.fn().mockResolvedValue(rows);
-  const sort = jest.fn().mockReturnValue({ lean });
-  const select = jest.fn().mockReturnValue({ sort, lean });
-  const find = jest.fn().mockReturnValue({ select, sort, lean });
+function mockEventFindByWeek(rowsByWeek) {
+  const find = jest.fn().mockImplementation((query) => {
+    const week = query['customFields.pivot.batchWeek'];
+    const rows = rowsByWeek[week] || [];
+    const lean = jest.fn().mockResolvedValue(rows);
+    const sort = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ sort, lean });
+    return { select, sort, lean };
+  });
   getModels.mockReturnValue({ Event: { find } });
   return find;
 }
@@ -108,7 +117,7 @@ describe('getPivotLandingDrop', () => {
     });
   });
 
-  it('ranks the live week as if the deck opened at drop time and caps at 4 cards', async () => {
+  it('ranks featured live-week cards at drop time and caps at 4', async () => {
     const friday = catalogEvent({
       _id: 'fri',
       name: 'friday night market',
@@ -151,15 +160,9 @@ describe('getPivotLandingDrop', () => {
       customFields: { pivot: { host: { name: '' }, tags: [] } },
     });
 
-    const find = mockEventFind([
-      friday,
-      saturday,
-      sunday,
-      monday,
-      tuesday,
-      beforeDrop,
-      noHost,
-    ]);
+    const find = mockEventFindByWeek({
+      '2026-W33': [friday, saturday, sunday, monday, tuesday, beforeDrop, noHost],
+    });
 
     const result = await getPivotLandingDrop(
       { globalDb: {} },
@@ -167,8 +170,14 @@ describe('getPivotLandingDrop', () => {
     );
 
     expect(connectToDatabase).toHaveBeenCalledWith('nyc');
-    expect(find).toHaveBeenCalledWith(buildPublishedCatalogQuery('2026-W33', DROP_AT));
+    expect(find).toHaveBeenCalledWith(buildFeaturedLandingQuery('2026-W33', DROP_AT));
+    expect(buildFeaturedLandingQuery('2026-W33', DROP_AT)).toEqual({
+      ...buildPublishedCatalogQuery('2026-W33', DROP_AT),
+      'customFields.pivot.featured': true,
+    });
     expect(result.data.batchWeek).toBe('2026-W33');
+    expect(result.data.liveWeek).toBe('2026-W33');
+    expect(result.data.fallback).toBe(false);
     expect(result.data.dropAt).toBe(DROP_AT.toISOString());
     expect(result.data.events).toHaveLength(LANDING_DROP_LIMIT);
     expect(result.data.events.map((card) => card.id)).toEqual(['fri', 'sat', 'sun', 'mon']);
@@ -186,8 +195,60 @@ describe('getPivotLandingDrop', () => {
     });
     expect(fridayCard).not.toHaveProperty('description');
     expect(fridayCard).not.toHaveProperty('externalLink');
+    expect(fridayCard).not.toHaveProperty('featured');
     expect(Object.keys(fridayCard).sort()).toEqual(
       ['coverImageUrl', 'hostName', 'id', 'location', 'name', 'startTime', 'tag'].sort(),
     );
+  });
+
+  it('falls back to last week’s featured segment when this week has none', async () => {
+    const lastWeek = catalogEvent({
+      _id: 'prev-fri',
+      name: 'last friday market',
+      start_time: new Date('2026-08-07T23:00:00.000Z'),
+      end_time: new Date('2026-08-08T03:00:00.000Z'),
+      customFields: { pivot: { batchWeek: '2026-W32' } },
+    });
+    const find = mockEventFindByWeek({
+      '2026-W33': [],
+      '2026-W32': [lastWeek],
+    });
+
+    const result = await getPivotLandingDrop(
+      { globalDb: {} },
+      { tenantKey: 'nyc', now: WALL_CLOCK },
+    );
+
+    expect(find).toHaveBeenCalledWith(buildFeaturedLandingQuery('2026-W33', DROP_AT));
+    expect(find).toHaveBeenCalledWith(buildFeaturedLandingQuery('2026-W32', PREV_DROP_AT));
+    expect(result.data.fallback).toBe(true);
+    expect(result.data.liveWeek).toBe('2026-W33');
+    expect(result.data.batchWeek).toBe('2026-W32');
+    expect(result.data.events.map((card) => card.id)).toEqual(['prev-fri']);
+  });
+
+  it('does not fall back when this week has a featured segment', async () => {
+    const thisWeek = catalogEvent({
+      _id: 'fri',
+      name: 'friday night market',
+    });
+    const lastWeek = catalogEvent({
+      _id: 'prev-fri',
+      name: 'last friday market',
+      customFields: { pivot: { batchWeek: '2026-W32' } },
+    });
+    const find = mockEventFindByWeek({
+      '2026-W33': [thisWeek],
+      '2026-W32': [lastWeek],
+    });
+
+    const result = await getPivotLandingDrop(
+      { globalDb: {} },
+      { tenantKey: 'nyc', now: WALL_CLOCK },
+    );
+
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(result.data.fallback).toBe(false);
+    expect(result.data.events.map((card) => card.id)).toEqual(['fri']);
   });
 });
