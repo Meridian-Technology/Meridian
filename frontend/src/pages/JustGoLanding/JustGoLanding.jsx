@@ -578,7 +578,7 @@ function JustGoLanding() {
           className="justgo-landing__footer-mark"
           src={JUSTGO_WORDMARK_1298}
           srcSet={JUSTGO_WORDMARK_SRCSET}
-          sizes="8.5rem"
+          sizes="6rem"
           alt={copy.wordmarkAlt}
           width={1298}
           height={782}

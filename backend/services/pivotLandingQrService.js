@@ -326,6 +326,42 @@ async function deactivateLandingQr(req, options = {}) {
   return { data: serializeLandingQr(found.row, req) };
 }
 
+/**
+ * Zero scan counters on one named QR and drop landing events tagged with it.
+ * Does not deactivate the code or touch waitlist rows.
+ */
+async function wipeLandingQrScans(req, options = {}) {
+  const found = await findLandingQrByName(req, options.name);
+  if (found.error) return found;
+
+  const previousScans = Number(found.row.scans) || 0;
+  const previousUnique = Number(found.row.uniqueScans) || 0;
+
+  found.row.scans = 0;
+  found.row.uniqueScans = 0;
+  found.row.lastScannedAt = null;
+  found.row.scanDays = new Map();
+  await found.row.save();
+
+  let eventsDeleted = 0;
+  const { JustGoLandingEvent } = getGlobalModels(req, 'JustGoLandingEvent');
+  if (typeof JustGoLandingEvent?.deleteMany === 'function') {
+    const deleted = await JustGoLandingEvent.deleteMany({ qrName: found.row.name });
+    eventsDeleted = Number(deleted?.deletedCount) || 0;
+  }
+
+  return {
+    data: {
+      ...serializeLandingQr(found.row, req),
+      wiped: {
+        scans: previousScans,
+        uniqueScans: previousUnique,
+        eventsDeleted,
+      },
+    },
+  };
+}
+
 function parseHopUnique(value) {
   if (value === true || value === 'true' || value === 1 || value === '1') return true;
   return false;
@@ -464,6 +500,7 @@ module.exports = {
   createTenantLandingQr,
   updateLandingQr,
   deactivateLandingQr,
+  wipeLandingQrScans,
   hopLandingQr,
   serializeLandingQr,
   resolvePivotTenant,

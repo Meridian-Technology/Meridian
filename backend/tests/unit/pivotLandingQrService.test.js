@@ -16,6 +16,7 @@ const {
   createTenantLandingQr,
   updateLandingQr,
   deactivateLandingQr,
+  wipeLandingQrScans,
   hopLandingQr,
 } = require('../../services/pivotLandingQrService');
 
@@ -230,6 +231,44 @@ describe('pivotLandingQrService (Task 5.1)', () => {
     expect(result.data.fgColor).toBe('#FFD23F');
     expect(result.data.name).toBe('poster-a');
     expect(row.tenantKey).toBe('nyc');
+  });
+
+  it('wipes scan counters and landing events for one named QR', async () => {
+    const save = jest.fn().mockResolvedValue(true);
+    const row = qrRow({
+      save,
+      scans: 12,
+      uniqueScans: 7,
+      lastScannedAt: new Date('2026-08-18T18:00:00.000Z'),
+      scanDays: new Map([['2026-08-18', 12]]),
+    });
+    const deleteMany = jest.fn().mockResolvedValue({ deletedCount: 5 });
+    getGlobalModels.mockImplementation((_req, name) => {
+      if (name === 'JustGoLandingEvent') {
+        return { JustGoLandingEvent: { deleteMany } };
+      }
+      return {
+        JustGoLandingQr: {
+          findOne: jest.fn().mockResolvedValue(row),
+        },
+      };
+    });
+
+    const result = await wipeLandingQrScans(mockReq(), { name: 'Poster-A' });
+
+    expect(row.scans).toBe(0);
+    expect(row.uniqueScans).toBe(0);
+    expect(row.lastScannedAt).toBeNull();
+    expect(row.scanDays.size).toBe(0);
+    expect(save).toHaveBeenCalled();
+    expect(deleteMany).toHaveBeenCalledWith({ qrName: 'poster-a' });
+    expect(result.data.scans).toBe(0);
+    expect(result.data.wiped).toEqual({
+      scans: 12,
+      uniqueScans: 7,
+      eventsDeleted: 5,
+    });
+    expect(row.isActive).toBe(true);
   });
 });
 

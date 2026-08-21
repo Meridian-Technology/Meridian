@@ -158,6 +158,7 @@ jest.mock('../../services/pivotLandingQrService', () => ({
   createTenantLandingQr: jest.fn(),
   updateLandingQr: jest.fn(),
   deactivateLandingQr: jest.fn(),
+  wipeLandingQrScans: jest.fn(),
 }));
 
 const { requirePlatformAdmin } = require('../../middlewares/requirePlatformAdmin');
@@ -251,6 +252,7 @@ const {
   createTenantLandingQr,
   updateLandingQr,
   deactivateLandingQr,
+  wipeLandingQrScans,
 } = require('../../services/pivotLandingQrService');
 const pivotAdminRoutes = require('../../routes/pivotAdminRoutes');
 
@@ -2811,6 +2813,7 @@ describe('pivotAdminRoutes landing QRs (Task 5.1)', () => {
     createTenantLandingQr.mockReset();
     updateLandingQr.mockReset();
     deactivateLandingQr.mockReset();
+    wipeLandingQrScans.mockReset();
     requirePlatformAdmin.mockImplementation((req, res, next) => next());
   });
 
@@ -2947,6 +2950,42 @@ describe('pivotAdminRoutes landing QRs (Task 5.1)', () => {
       expect.anything(),
       expect.objectContaining({ name: 'poster-a' }),
     );
+  });
+
+  it('POST /admin/pivot/landing-qrs/:name/wipe-scans clears counters', async () => {
+    wipeLandingQrScans.mockResolvedValue({
+      data: {
+        name: 'poster-a',
+        scans: 0,
+        uniqueScans: 0,
+        wiped: { scans: 4, uniqueScans: 3, eventsDeleted: 2 },
+      },
+    });
+
+    const response = await request(buildApp()).post(
+      '/admin/pivot/landing-qrs/poster-a/wipe-scans',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.scans).toBe(0);
+    expect(response.body.data.wiped.scans).toBe(4);
+    expect(wipeLandingQrScans).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'poster-a' }),
+    );
+  });
+
+  it('POST /admin/pivot/landing-qrs/:name/wipe-scans returns 403 for non-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp()).post(
+      '/admin/pivot/landing-qrs/poster-a/wipe-scans',
+    );
+
+    expect(response.status).toBe(403);
+    expect(wipeLandingQrScans).not.toHaveBeenCalled();
   });
 
   it('PATCH /admin/pivot/landing-qrs/:name returns 403 for non-admin', async () => {
