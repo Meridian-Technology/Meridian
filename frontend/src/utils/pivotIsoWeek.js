@@ -80,6 +80,20 @@ export function formatEventWhen(iso) {
   });
 }
 
+/** Queue/catalog when-label: `3 showtimes` when a listing has multiple slots. */
+export function formatEventWhenWithShowtimes(event) {
+  const slots = Array.isArray(event?.timeSlots)
+    ? event.timeSlots.filter((slot) => slot?.start_time)
+    : [];
+  if (slots.length > 1) {
+    return `${slots.length} showtimes`;
+  }
+  if (slots.length === 1) {
+    return formatEventWhen(slots[0].start_time);
+  }
+  return formatEventWhen(event?.start_time || event?.start);
+}
+
 /** Compact when label for pivot deck cards, e.g. `fri · 7pm`. */
 export function formatPivotDeckWhen(startTime, endTime) {
   if (!startTime) return '';

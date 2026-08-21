@@ -64,7 +64,7 @@ const FILTER_OPTIONS = [
   { value: 'published', label: 'Published' },
   { value: 'untagged', label: 'Untagged' },
   { value: 'missing-host', label: 'Missing host' },
-  { value: 'film', label: 'Film / showtimes' },
+  { value: 'film', label: 'Showtimes' },
 ];
 
 const HOST_CREATED_SOURCE = 'justgo';
@@ -1116,6 +1116,53 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       type: failed ? 'warning' : 'success',
     });
   }, [addNotification, patchEventOverrides, refreshAll, selectedEvents]);
+
+  const handleBulkCollapseShowtimes = useCallback(async () => {
+    if (selectedEvents.length < 2) {
+      addNotification({
+        title: 'Select more than one event',
+        message: 'Pick the nights that belong together, then collapse them into showtimes.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Collapse ${selectedEvents.length} events into one listing with showtimes? Extra catalog rows will be removed.`,
+      )
+    ) {
+      return;
+    }
+
+    setBusyKey('bulk-showtimes');
+    const { data, error } = await authenticatedRequest('/admin/pivot/ingest/collapse-showtimes', {
+      method: 'POST',
+      data: {
+        tenantKey,
+        eventIds: selectedEvents.map((event) => event._id),
+      },
+    });
+    setBusyKey(null);
+
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Could not collapse showtimes',
+        message: error || data?.message || 'Those events could not be merged.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const keptId = data.data?.event?._id;
+    setSelectedIds(keptId ? new Set([keptId]) : new Set());
+    refreshAll();
+    addNotification({
+      title: 'Collapsed into showtimes',
+      message: `${data.data?.event?.name || 'Event'} now has ${data.data?.showtimeCount ?? selectedEvents.length} showtimes.`,
+      type: 'success',
+    });
+  }, [addNotification, refreshAll, selectedEvents, tenantKey]);
 
   const handleBulkApplyTags = useCallback(async () => {
     if (!bulkTags.length) {
@@ -2440,6 +2487,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           onBulkUnpublish={handleBulkUnpublish}
           onBulkApplyTags={handleBulkApplyTags}
           onBulkSuggestTags={handleBulkSuggestTags}
+          onBulkCollapseShowtimes={handleBulkCollapseShowtimes}
           emptyLabel={
             events.length
               ? 'No events match this filter.'

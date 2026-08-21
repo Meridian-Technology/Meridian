@@ -4,7 +4,7 @@ import {
   PivotOpsSection,
   PivotOpsStatus,
 } from '../../../components/PivotOps';
-import { formatEventWhen } from '../../../utils/pivotIsoWeek';
+import { formatEventWhen, formatEventWhenWithShowtimes } from '../../../utils/pivotIsoWeek';
 import PivotImportThumb from '../PivotLab/PivotImportThumb';
 import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import { isTypingTarget } from '../PivotLab/PivotManualImportModal';
@@ -151,7 +151,7 @@ const CatalogRow = React.memo(function CatalogRow({
         </div>
       </td>
       <td className="pivot-curation-sheet__when">
-        {formatEventWhen(event.start_time)}
+        {formatEventWhenWithShowtimes(event)}
       </td>
       {showPerformance ? (
         <>
@@ -235,7 +235,9 @@ function QueueInspector({
         </div>
         <p className="pivot-curation-sheet__inspect-meta">
           {event.organizerName || 'No host'}
-          {event.start_time ? ` · ${formatEventWhen(event.start_time)}` : ''}
+          {event.start_time || event.timeSlots?.length
+            ? ` · ${formatEventWhenWithShowtimes(event)}`
+            : ''}
         </p>
         {event.location ? (
           <p className="pivot-curation-sheet__inspect-meta">{event.location}</p>
@@ -285,6 +287,13 @@ function QueueInspector({
         ) : (
           <p className="pivot-curation-sheet__muted">No description</p>
         )}
+        {Array.isArray(event.timeSlots) && event.timeSlots.length > 1 ? (
+          <ul className="pivot-curation-sheet__showtimes" aria-label="Showtimes">
+            {event.timeSlots.map((slot) => (
+              <li key={slot.id || slot.start_time}>{formatEventWhen(slot.start_time)}</li>
+            ))}
+          </ul>
+        ) : null}
         {sourceHref ? (
           <a
             className="pivot-curation-sheet__inspect-link"
@@ -369,6 +378,7 @@ function PivotCurationQueue({
   onBulkUnpublish,
   onBulkApplyTags,
   onBulkSuggestTags,
+  onBulkCollapseShowtimes,
   emptyLabel,
 }) {
   const sheetRef = useRef(null);
@@ -833,6 +843,19 @@ function PivotCurationQueue({
                 >
                   {busyKey === 'bulk-suggest' ? 'Suggesting…' : 'Suggest tags'}
                 </button>
+                {selectedIds.size > 1 ? (
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--secondary"
+                    onClick={onBulkCollapseShowtimes}
+                    disabled={busyKey === 'bulk-showtimes'}
+                    title="Merge selected rows into one listing with showtimes"
+                  >
+                    {busyKey === 'bulk-showtimes'
+                      ? 'Collapsing…'
+                      : `Showtimes (${selectedIds.size})`}
+                  </button>
+                ) : null}
                 {selectedDraftCount > 0 ? (
                   <button
                     type="button"

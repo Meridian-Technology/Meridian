@@ -415,4 +415,84 @@ describe('PivotTenantCatalogPage', () => {
     });
     expect(window.confirm).toHaveBeenCalled();
   });
+
+  it('collapses same-name nights into showtimes from the dossier', async () => {
+    const refetchDetail = jest.fn();
+    mockUseFetch.mockImplementation((url) => {
+      const isDetail = typeof url === 'string' && /\/organizers\/org-1$/.test(url);
+      return {
+        data: isDetail
+          ? {
+              success: true,
+              data: {
+                organizer: {
+                  id: 'org-1',
+                  canonicalName: "Cobb's Comedy Club",
+                  claimStatus: 'unclaimed',
+                  providers: ['generic-site'],
+                  identities: [],
+                },
+                events: [
+                  {
+                    id: 'evt-1',
+                    name: 'Derrick Stroup',
+                    batchWeek: '2026-W35',
+                    ingestStatus: 'staged',
+                    source: 'generic-site',
+                    start: '2026-08-29T02:00:00.000Z',
+                    intentStats: { interested: 0 },
+                  },
+                  {
+                    id: 'evt-2',
+                    name: 'Derrick Stroup',
+                    batchWeek: '2026-W35',
+                    ingestStatus: 'staged',
+                    source: 'generic-site',
+                    start: '2026-08-28T02:30:00.000Z',
+                    intentStats: { interested: 0 },
+                  },
+                  {
+                    id: 'evt-3',
+                    name: 'Molly Kearney',
+                    batchWeek: '2026-W35',
+                    ingestStatus: 'staged',
+                    source: 'generic-site',
+                    start: '2026-08-24T02:30:00.000Z',
+                    intentStats: { interested: 0 },
+                  },
+                ],
+                audience: { interested: 0, registered: 0, passed: 0, externalOpens: 0, repeatUsers: 0 },
+              },
+            }
+          : null,
+        loading: false,
+        error: null,
+        refetch: refetchDetail,
+      };
+    });
+    postRequest.mockResolvedValue({
+      success: true,
+      data: { event: { name: 'Derrick Stroup' }, showtimeCount: 2, collapsedCount: 1 },
+    });
+    window.confirm = jest.fn(() => true);
+
+    render(
+      <MemoryRouter initialEntries={['/platform-admin/pivot/nyc?page=4&organizerId=org-1']}>
+        <PivotTenantCatalogPage tenantKey="nyc" cityDisplayName="New York" />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse 2 nights' }));
+
+    await waitFor(() => {
+      expect(postRequest).toHaveBeenCalledWith('/admin/pivot/ingest/collapse-showtimes', {
+        tenantKey: 'nyc',
+        eventIds: ['evt-1', 'evt-2'],
+      });
+      expect(refetchDetail).toHaveBeenCalled();
+    });
+    expect(mockAddNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Collapsed into showtimes', type: 'success' }),
+    );
+  });
 });

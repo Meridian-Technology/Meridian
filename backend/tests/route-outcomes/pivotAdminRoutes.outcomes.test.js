@@ -94,6 +94,10 @@ jest.mock('../../services/pivotIngestPublishService', () => ({
   updateIngestEvent: jest.fn(),
 }));
 
+jest.mock('../../services/pivotCatalogShowtimeCollapseService', () => ({
+  collapseCatalogEventsToShowtimes: jest.fn(),
+}));
+
 jest.mock('../../services/pivotTagSuggestService', () => ({
   suggestPivotEventTags: jest.fn(),
   suggestPivotEventTagsBatch: jest.fn(),
@@ -209,6 +213,7 @@ const {
   publishIngestEvent,
   updateIngestEvent,
 } = require('../../services/pivotIngestPublishService');
+const { collapseCatalogEventsToShowtimes } = require('../../services/pivotCatalogShowtimeCollapseService');
 const {
   suggestPivotEventTags,
   suggestPivotEventTagsBatch,
@@ -1129,6 +1134,7 @@ describe('pivotAdminRoutes lab', () => {
     previewIngestUrl.mockReset();
     publishIngestEvent.mockReset();
     updateIngestEvent.mockReset();
+    collapseCatalogEventsToShowtimes.mockReset();
     requirePlatformAdmin.mockImplementation((req, res, next) => next());
   });
 
@@ -1284,6 +1290,33 @@ describe('pivotAdminRoutes lab', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data.event.organizerName).toBe('Updated Host');
+  });
+
+  it('POST /admin/pivot/ingest/collapse-showtimes returns the merged event', async () => {
+    collapseCatalogEventsToShowtimes.mockResolvedValue({
+      data: {
+        event: { _id: '665a1b2c3d4e5f6789012345', timeSlots: [{ id: 'a' }, { id: 'b' }] },
+        collapsedCount: 1,
+        showtimeCount: 2,
+      },
+    });
+
+    const response = await request(buildApp())
+      .post('/admin/pivot/ingest/collapse-showtimes')
+      .send({
+        tenantKey: 'nyc',
+        eventIds: ['665a1b2c3d4e5f6789012345', '665a1b2c3d4e5f6789012346'],
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.showtimeCount).toBe(2);
+    expect(collapseCatalogEventsToShowtimes).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        eventIds: ['665a1b2c3d4e5f6789012345', '665a1b2c3d4e5f6789012346'],
+      }),
+    );
   });
 });
 

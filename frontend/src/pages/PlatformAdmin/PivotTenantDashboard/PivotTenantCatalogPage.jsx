@@ -115,7 +115,14 @@ export function catalogCurationHref(tenantKey, event) {
   return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
 }
 
-function formatEventStart(start) {
+function formatEventStart(event) {
+  const slots = Array.isArray(event?.timeSlots)
+    ? event.timeSlots.filter((slot) => slot?.start_time)
+    : [];
+  if (slots.length > 1) {
+    return `${slots.length} showtimes`;
+  }
+  const start = event?.start_time || event?.start || slots[0]?.start_time;
   if (!start) return '—';
   const date = new Date(start);
   if (Number.isNaN(date.getTime())) return '—';
@@ -125,6 +132,28 @@ function formatEventStart(start) {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function eventNameKey(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function clusterEventsByName(events) {
+  const clusters = [];
+  const index = new Map();
+  for (const event of events || []) {
+    const key = eventNameKey(event.name) || event.id;
+    if (!index.has(key)) {
+      const cluster = { key, events: [] };
+      index.set(key, cluster);
+      clusters.push(cluster);
+    }
+    index.get(key).events.push(event);
+  }
+  return clusters;
 }
 
 function groupEventsByWeek(events) {
@@ -142,7 +171,15 @@ function groupEventsByWeek(events) {
   return groups;
 }
 
-function CatalogOrganizerDetail({ tenantKey, payload, loading, error, onBack }) {
+function CatalogOrganizerDetail({
+  tenantKey,
+  payload,
+  loading,
+  error,
+  onBack,
+  onCollapseShowtimes,
+  collapseBusyKey,
+}) {
   const organizer = payload?.organizer;
   const audience = payload?.audience;
   const weekGroups = useMemo(
@@ -282,26 +319,46 @@ function CatalogOrganizerDetail({ tenantKey, payload, loading, error, onBack }) 
                 <section key={group.week} className="pivot-tenant-catalog__week">
                   <h4 className="pivot-tenant-catalog__week-title">{group.week}</h4>
                   <ul className="pivot-tenant-catalog__event-list">
-                    {group.events.map((event) => (
-                      <li key={event.id} className="pivot-tenant-catalog__event">
-                        <div className="pivot-tenant-catalog__event-copy">
-                          <Link
-                            className="pivot-tenant-catalog__event-link"
-                            to={catalogCurationHref(tenantKey, event)}
-                          >
-                            {event.name || 'Untitled event'}
-                          </Link>
-                          <span className="pivot-tenant-catalog__muted">
-                            {formatEventStart(event.start)}
-                            {event.source ? ` · ${providerLabel(event.source)}` : ''}
-                            {event.ingestStatus ? ` · ${event.ingestStatus}` : ''}
-                          </span>
-                        </div>
-                        <span className="pivot-tenant-catalog__muted">
-                          {event.intentStats?.interested ?? 0} interested
-                        </span>
-                      </li>
-                    ))}
+                    {clusterEventsByName(group.events).flatMap((cluster) =>
+                      cluster.events.map((event, index) => {
+                        const canCollapse = cluster.events.length > 1 && index === 0;
+                        const collapsing = collapseBusyKey === cluster.key;
+                        return (
+                          <li key={event.id} className="pivot-tenant-catalog__event">
+                            <div className="pivot-tenant-catalog__event-copy">
+                              <Link
+                                className="pivot-tenant-catalog__event-link"
+                                to={catalogCurationHref(tenantKey, event)}
+                              >
+                                {event.name || 'Untitled event'}
+                              </Link>
+                              <span className="pivot-tenant-catalog__muted">
+                                {formatEventStart(event)}
+                                {event.source ? ` · ${providerLabel(event.source)}` : ''}
+                                {event.ingestStatus ? ` · ${event.ingestStatus}` : ''}
+                              </span>
+                            </div>
+                            <div className="pivot-tenant-catalog__event-aside">
+                              {canCollapse ? (
+                                <button
+                                  type="button"
+                                  className="linear-btn linear-btn--ghost linear-btn--sm"
+                                  disabled={collapsing}
+                                  onClick={() => onCollapseShowtimes?.(cluster.events)}
+                                >
+                                  {collapsing
+                                    ? 'Collapsing…'
+                                    : `Collapse ${cluster.events.length} nights`}
+                                </button>
+                              ) : null}
+                              <span className="pivot-tenant-catalog__muted">
+                                {event.intentStats?.interested ?? 0} interested
+                              </span>
+                            </div>
+                          </li>
+                        );
+                      }),
+                    )}
                   </ul>
                 </section>
               ))
@@ -355,6 +412,7 @@ function PivotTenantCatalogPage({ tenantKey, cityDisplayName }) {
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillError, setBackfillError] = useState('');
   const [mergeBusy, setMergeBusy] = useState(false);
+  const [collapseBusyKey, setCollapseBusyKey] = useState(null);
   const [dismissedProposals, setDismissedProposals] = useState(() => new Set());
 
   const debouncedQuery = useDebouncedValue(searchQuery.trim(), SEARCH_DEBOUNCE_MS);
@@ -425,6 +483,7 @@ function PivotTenantCatalogPage({ tenantKey, cityDisplayName }) {
     data: detailResponse,
     loading: detailLoading,
     error: detailError,
+    refetch: refetchDetail,
   } = useFetch(detailUrl, { cache: NO_FETCH_CACHE });
 
   const unlinkedParams = useMemo(() => {
@@ -564,6 +623,44 @@ function PivotTenantCatalogPage({ tenantKey, cityDisplayName }) {
     [handleMerge],
   );
 
+  const handleCollapseShowtimes = useCallback(
+    async (events) => {
+      if (!tenantKey || collapseBusyKey || !Array.isArray(events) || events.length < 2) return;
+      if (
+        !window.confirm(
+          `Collapse ${events.length} nights of “${events[0]?.name || 'this event'}” into one listing with showtimes? Extra catalog rows will be removed.`,
+        )
+      ) {
+        return;
+      }
+
+      const key = eventNameKey(events[0]?.name) || events[0]?.id;
+      setCollapseBusyKey(key);
+      const result = await postRequest('/admin/pivot/ingest/collapse-showtimes', {
+        tenantKey,
+        eventIds: events.map((event) => event.id),
+      });
+      setCollapseBusyKey(null);
+
+      if (result?.error) {
+        addNotification({
+          title: 'Could not collapse showtimes',
+          message: result.error,
+          type: 'error',
+        });
+        return;
+      }
+
+      refetchDetail();
+      addNotification({
+        title: 'Collapsed into showtimes',
+        message: `${result?.data?.event?.name || events[0]?.name} now has ${result?.data?.showtimeCount ?? events.length} showtimes.`,
+        type: 'success',
+      });
+    },
+    [addNotification, collapseBusyKey, refetchDetail, tenantKey],
+  );
+
   const openOrganizer = useCallback(
     (id) => {
       const next = new URLSearchParams(searchParams);
@@ -602,6 +699,8 @@ function PivotTenantCatalogPage({ tenantKey, cityDisplayName }) {
           loading={detailLoading}
           error={detailMessage}
           onBack={closeOrganizer}
+          onCollapseShowtimes={handleCollapseShowtimes}
+          collapseBusyKey={collapseBusyKey}
         />
       ) : null}
       {organizerId ? null : (

@@ -70,6 +70,7 @@ const {
   publishBatchIngestEvents,
   updateIngestEvent,
 } = require('../services/pivotIngestPublishService');
+const { collapseCatalogEventsToShowtimes } = require('../services/pivotCatalogShowtimeCollapseService');
 const {
   purgePivotCatalog,
   deletePivotCatalogEvent,
@@ -2349,6 +2350,34 @@ router.post('/ingest', verifyToken, requirePlatformAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to stage pivot catalog event.',
+    });
+  }
+});
+
+router.post('/ingest/collapse-showtimes', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await collapseCatalogEventsToShowtimes(req, {
+      tenantKey: req.body?.tenantKey,
+      eventIds: req.body?.eventIds,
+      keepEventId: req.body?.keepEventId,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /admin/pivot/ingest/collapse-showtimes', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to collapse events into showtimes.',
     });
   }
 });
