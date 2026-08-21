@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isForceLogoutRefreshError, refreshSession } from './refreshSession';
 
 /**
  * Normalize a failed axios response into the `{ error, code, errorCode? }` shape callers expect.
@@ -60,8 +61,7 @@ const apiRequest = async (url, body = null, options = {}) => {
     if (error.response?.status === 401) {
       console.log('🔄 Token expired or missing, attempting refresh...');
       try {
-        // Attempt to refresh token
-        const refreshResponse = await axios.post('/refresh-token', {}, { withCredentials: true });
+        const refreshResponse = await refreshSession();
         console.log('✅ Token refresh successful:', refreshResponse.data);
         
         // Retry original request
@@ -113,9 +113,7 @@ const apiRequest = async (url, body = null, options = {}) => {
         console.log('❌ Token refresh failed:', refreshError.response?.data || refreshError.message);
         
         // Check if refresh token expired or is invalid
-        if (refreshError.response?.data?.code === 'REFRESH_TOKEN_EXPIRED' || 
-            refreshError.response?.data?.code === 'INVALID_REFRESH_TOKEN' ||
-            refreshError.response?.data?.code === 'REFRESH_FAILED') {
+        if (isForceLogoutRefreshError(refreshError)) {
           console.log('🚫 Refresh token expired or invalid, redirecting to login');
         //   window.location.href = '/login';
           return { error: 'Authentication required' };
