@@ -318,7 +318,8 @@ async function handleBranchCollision(meridianPath, eventsPath, branch, options =
 }
 
 // --- status ---
-function cmdStatus() {
+function cmdStatus(options = {}) {
+  const { json = false, local = false } = options;
   const { meridianPath, eventsPath } = resolveWorkspace();
 
   const merBranch = currentBranch(meridianPath);
@@ -336,9 +337,30 @@ function cmdStatus() {
   let matchesMain = false;
   const matchesLocal = lockRef && eventsHeadSha && lockRef === eventsHeadSha;
   if (lockRef) {
-    fetchAll(eventsPath);
+    if (!local) fetchAll(eventsPath);
     eventsMainSha = getHeadSha(eventsPath, 'origin/main');
     matchesMain = eventsMainSha && lockRef === eventsMainSha;
+  }
+
+  const snapshot = {
+    repositories: {
+      Meridian: { branch: merBranch || null, clean: merClean, head: merSha || null },
+      'Events-Backend': { branch: evBranch || null, clean: evClean, head: evSha || null },
+    },
+    alignment: {
+      lockRef: lockRef || null,
+      eventsHead: eventsHeadSha || null,
+      eventsMain: eventsMainSha || null,
+      lockMatchesLocal: Boolean(matchesLocal),
+      lockMatchesMain: Boolean(matchesMain),
+      eventsSymlink: isEventsSymlink(meridianPath),
+    },
+    localOnly: local,
+  };
+
+  if (json) {
+    console.log(JSON.stringify(snapshot));
+    return snapshot;
   }
 
   const sep = '─'.repeat(50);
@@ -747,7 +769,7 @@ async function main() {
       await cmdSetup();
       break;
     case 'status':
-      cmdStatus();
+      cmdStatus({ json: args.includes('--json'), local: args.includes('--local') });
       break;
     case 'start': {
       const startFlags = ['--from-current', '-c', '--yes', '--any-branch', '--resume'];
