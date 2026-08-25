@@ -1014,6 +1014,12 @@ async function qualifyCandidate(state, candidate) {
   };
 }
 
+/**
+ * Upsert one discovered host into the city-source registry.
+ *
+ * Exported so Relay promote can replay a stored artifact without calling
+ * discovery, rehearsal, or crawl-run routes. Do not use this to start a crawl.
+ */
 async function persistOutcome(req, tenantKey, outcome, now) {
   const { PivotCitySource } = getGlobalModels(req, 'PivotCitySource');
   const seedTags = [...outcome.candidate.seedTags];
@@ -1952,6 +1958,7 @@ module.exports = {
   getLatestCitySourceDiscoveryRun,
   serializeCitySource,
   persistBootstrappedSource,
+  persistOutcome,
   nativeRegistryHost,
   pickEventIndexUrl,
   scoreEventIndexUrl,
