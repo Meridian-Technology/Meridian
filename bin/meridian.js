@@ -90,12 +90,13 @@ function validateBranchName(branch, anyBranch = false) {
   if (!isValidBranchName(branch, anyBranch)) {
     console.error('');
     console.error(red('  Invalid branch name'));
-    if (anyBranch) {
+    if (anyBranch || String(branch || '').startsWith('relay/')) {
       console.error(dim('  Must be git-safe: letters, numbers, dot, underscore, slash, and hyphen only.'));
       console.error(dim('  Names cannot contain ".." or start with "/" or "-".'));
     } else {
       console.error(dim('  Must match: MER-<number>-<slug>'));
       console.error(dim('  Examples:  MER-123-Org-Forms, MER-456-Fix-Login'));
+      console.error(dim('  Relay branches (relay/…) are also accepted.'));
     }
     console.error('');
     process.exit(1);

@@ -11,8 +11,13 @@ function isGitSafeBranchName(branch) {
   );
 }
 
+function isRelayBranchName(branch) {
+  return Boolean(branch && branch.startsWith('relay/') && isGitSafeBranchName(branch));
+}
+
 function isValidBranchName(branch, anyBranch = false) {
-  return anyBranch ? isGitSafeBranchName(branch) : TICKET_BRANCH_REGEX.test(branch || '');
+  if (anyBranch || isRelayBranchName(branch)) return isGitSafeBranchName(branch);
+  return TICKET_BRANCH_REGEX.test(branch || '');
 }
 
 function collisionAction({ yes = false, resume = false } = {}) {
@@ -24,5 +29,6 @@ function collisionAction({ yes = false, resume = false } = {}) {
 module.exports = {
   collisionAction,
   isGitSafeBranchName,
+  isRelayBranchName,
   isValidBranchName,
 };

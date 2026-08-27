@@ -10,7 +10,15 @@ const {
 test('ticket branches remain the default', () => {
   assert.equal(isValidBranchName('MER-123-Org-Forms'), true);
   assert.equal(isValidBranchName('not-a-ticket'), false);
-  assert.equal(isValidBranchName('relay/foo/bar'), false);
+  assert.equal(isValidBranchName('feature/foo'), false);
+});
+
+test('Relay names are valid without --any-branch', () => {
+  assert.equal(isValidBranchName('relay/foo/bar'), true);
+  assert.equal(
+    isValidBranchName('relay/launch-shareable-just-go-public-event-pages/20260827T074953Z'),
+    true,
+  );
 });
 
 test('--any-branch accepts Relay names but still enforces git-safe syntax', () => {
