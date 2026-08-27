@@ -4,11 +4,11 @@
     "details": [
       {
         "appID": "S22WF3L7P9.com.meridian.mobile",
-        "paths": ["/invite", "/invite/*", "/pivot/*"]
+        "paths": ["/invite", "/invite/*", "/pivot/*", "/events/*"]
       },
       {
         "appID": "S22WF3L7P9.app.justgo",
-        "paths": ["/invite", "/invite/*", "/pivot/*"]
+        "paths": ["/invite", "/invite/*", "/pivot/*", "/events/*"]
       }
     ]
   }

@@ -13,6 +13,7 @@ const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsMan
 const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
 const { isAllowedCorsOrigin, isJustGoPublicHost } = require('./utilities/corsOrigins');
+const { registerMobileAssociationRoutes } = require('./utilities/mobileAssociationFiles');
 
 const s3 = require('./aws-config');
 
@@ -72,6 +73,10 @@ function createApp() {
   } else {
     app.use(cors(corsOptions));
   }
+
+  // Association crawlers must not depend on tenant/database availability. Register
+  // these before the tenant middleware and serve JSON directly without redirects.
+  registerMobileAssociationRoutes(app);
 
   // Other middleware
   app.use(express.json());

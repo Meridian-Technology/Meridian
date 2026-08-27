@@ -3,7 +3,10 @@ import axe from 'axe-core';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import JustGoPublicEvent from './JustGoPublicEvent';
-import { JUSTGO_IOS_STORE_URL } from '../JustGoLanding/justGoLandingCopy';
+import {
+  JUSTGO_IOS_STORE_URL,
+  JUSTGO_PLAY_STORE_URL,
+} from '../JustGoLanding/justGoLandingCopy';
 
 const EVENT = {
   id: '64f1234567890abcdef12345',
@@ -48,6 +51,9 @@ it('renders the privacy-safe event contract responsively', async () => {
   expect(screen.getByText('Civic Center Lawn')).toBeInTheDocument();
   expect(screen.getByText('Night Owl Cinema')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'open just go to register for this event' })).toHaveAttribute('href', EVENT.canonicalUrl);
+  expect(screen.getByRole('group', { name: 'download options' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'app store' })).toHaveAttribute('href', JUSTGO_IOS_STORE_URL);
+  expect(screen.getByRole('link', { name: 'google play' })).toHaveAttribute('href', JUSTGO_PLAY_STORE_URL);
 });
 
 it.each([
@@ -92,6 +98,9 @@ it('updates visible, status, helper, and accessible copy from dynamic language',
     'landing.web.event.venueLabel': 'LOCATION',
     'landing.web.event.organizerLabel': 'PRESENTED BY',
     'landing.web.event.imageAlt': 'Featured artwork',
+    'landing.web.event.appStore': 'Download for iPhone',
+    'landing.web.event.googlePlay': 'Download for Android',
+    'landing.web.event.storeChoicesLabel': 'Choose your store',
   };
   jest.spyOn(global, 'fetch')
     .mockImplementationOnce(() => response({ contractVersion: '1', data: configuredEvent }))
@@ -106,6 +115,9 @@ it('updates visible, status, helper, and accessible copy from dynamic language',
   expect(screen.getByText(/Local zone:/)).toBeInTheDocument();
   expect(screen.getByText('Discover more with Just Tonight')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Launch this listing in Just Tonight' })).toHaveTextContent('Launch Just Tonight');
+  expect(screen.getByRole('group', { name: 'Choose your store' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Download for iPhone' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Download for Android' })).toBeInTheDocument();
   expect(screen.getByRole('img', { name: `${EVENT.title} — Featured artwork` })).toBeInTheDocument();
   expect(screen.getAllByRole('img', { name: 'Just Tonight' })).toHaveLength(1);
 });
@@ -117,6 +129,20 @@ it('keeps approved fallbacks when the language request fails', async () => {
   renderPage();
   expect(await screen.findByRole('heading', { name: EVENT.title })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'open just go to register for this event' })).toHaveTextContent('get the app to register');
+});
+
+it('shows only Google Play as the Android fallback while preserving the HTTPS app link', async () => {
+  const userAgent = jest.spyOn(window.navigator, 'userAgent', 'get')
+    .mockReturnValue('Mozilla/5.0 (Linux; Android 15; Pixel 9)');
+  jest.spyOn(global, 'fetch')
+    .mockImplementationOnce(() => response({ contractVersion: '1', data: EVENT }))
+    .mockImplementationOnce(() => response({ language: { entries: {}, tokens: {} } }));
+  renderPage();
+  const appLink = await screen.findByRole('link', { name: 'open just go to register for this event' });
+  expect(appLink).toHaveAttribute('href', EVENT.canonicalUrl);
+  expect(screen.getByRole('link', { name: 'google play' })).toHaveAttribute('href', JUSTGO_PLAY_STORE_URL);
+  expect(screen.queryByRole('link', { name: 'app store' })).not.toBeInTheDocument();
+  userAgent.mockRestore();
 });
 
 it('replaces an image that fails after loading with the accessible branded fallback', async () => {

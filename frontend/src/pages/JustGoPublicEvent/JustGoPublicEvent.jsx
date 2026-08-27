@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import justGoWordmark from '../../assets/pivot/just-go-wordmark-dark.svg';
-import { JUSTGO_IOS_STORE_URL } from '../JustGoLanding/justGoLandingCopy';
 import { resolvePublicEventCopy } from './justGoPublicEventCopy';
 import { formatPublicEventDate } from './justGoPublicEventFormat';
+import {
+  detectPublicEventPlatform,
+  publicEventStoreChoices,
+} from './justGoPublicEventAcquisition';
 import './JustGoPublicEvent.scss';
 
 function ClockIcon() {
@@ -36,20 +39,32 @@ function EventPoster({ event, copy }) {
   );
 }
 
-function Unavailable({ copy, retry, transient }) {
+function StoreFallback({ copy, platform }) {
+  const stores = publicEventStoreChoices(platform, copy);
+  return (
+    <div className="justgo-event__stores" role="group" aria-label={copy.storeChoicesLabel}>
+      {stores.map((store) => (
+        <a
+          key={store.id}
+          className="justgo-event__store-link"
+          href={store.url}
+          aria-label={store.label}
+        >
+          {store.label}<span aria-hidden="true">→</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function Unavailable({ copy, retry, transient, platform }) {
   return (
     <section className="justgo-event__unavailable" aria-labelledby="event-unavailable-title">
       <span className="justgo-event__scribble" aria-hidden="true">?</span>
       <h1 id="event-unavailable-title">{copy.unavailableTitle}</h1>
       <p>{copy.unavailableBody}</p>
       {transient ? <button type="button" className="justgo-event__button" onClick={retry}>{copy.retry}</button> : null}
-      <a
-        className="justgo-event__button justgo-event__button--download"
-        href={JUSTGO_IOS_STORE_URL}
-        aria-label={copy.appStore}
-      >
-        {copy.appStore}<span aria-hidden="true">→</span>
-      </a>
+      <StoreFallback copy={copy} platform={platform} />
       <p className="justgo-event__download">{copy.downloadPrompt}</p>
     </section>
   );
@@ -60,6 +75,10 @@ export default function JustGoPublicEvent() {
   const [state, setState] = useState({ status: 'loading', event: null, language: null });
   const [attempt, setAttempt] = useState(0);
   const copy = useMemo(() => resolvePublicEventCopy(state.language), [state.language]);
+  const platform = useMemo(
+    () => detectPublicEventPlatform(typeof navigator === 'undefined' ? null : navigator),
+    [],
+  );
 
   useEffect(() => {
     if (state.status !== 'unavailable') return undefined;
@@ -117,7 +136,7 @@ export default function JustGoPublicEvent() {
       <main className="justgo-event__main" id="event">
         {state.status === 'loading' ? <Loading copy={copy} /> : null}
         {state.status === 'unavailable' || state.status === 'error' ? (
-          <Unavailable copy={copy} transient={state.status === 'error'} retry={() => setAttempt((value) => value + 1)} />
+          <Unavailable copy={copy} platform={platform} transient={state.status === 'error'} retry={() => setAttempt((value) => value + 1)} />
         ) : null}
         {state.status === 'ready' && event ? (
           <article className="justgo-event__layout">
@@ -136,6 +155,7 @@ export default function JustGoPublicEvent() {
               {event.description ? <p className="justgo-event__description">{event.description}</p> : null}
               <a className="justgo-event__button" href={event.canonicalUrl} aria-label={ctaA11y}>{ctaLabel}<span aria-hidden="true">→</span></a>
               <p className="justgo-event__download">{copy.downloadPrompt}</p>
+              <StoreFallback copy={copy} platform={platform} />
             </div>
           </article>
         ) : null}
