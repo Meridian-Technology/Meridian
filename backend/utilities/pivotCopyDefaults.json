@@ -464,7 +464,7 @@
       "path": "cardStack.pass",
       "kind": "string",
       "params": [],
-      "shipped": "pass"
+      "shipped": "skip"
     },
     {
       "path": "cardStack.swipeInterestedHint",
@@ -3408,6 +3408,149 @@
       "params": [],
       "shipped": "{brand.name}. this week in your city",
       "usesTokens": true
+    },
+    {
+      "path": "landing.web.event.appStore",
+      "kind": "string",
+      "params": [],
+      "shipped": "app store"
+    },
+    {
+      "path": "landing.web.event.cityMismatch",
+      "kind": "string",
+      "params": [],
+      "shipped": "this event isn’t available in your current city"
+    },
+    {
+      "path": "landing.web.event.dateSeparator",
+      "kind": "string",
+      "params": [],
+      "shipped": "to"
+    },
+    {
+      "path": "landing.web.event.downloadPrompt",
+      "kind": "string",
+      "params": [],
+      "shipped": "get {brand.name} to find more events in your city",
+      "usesTokens": true
+    },
+    {
+      "path": "landing.web.event.ended",
+      "kind": "string",
+      "params": [],
+      "shipped": "ended"
+    },
+    {
+      "path": "landing.web.event.googlePlay",
+      "kind": "string",
+      "params": [],
+      "shipped": "google play"
+    },
+    {
+      "path": "landing.web.event.imageAlt",
+      "kind": "string",
+      "params": [],
+      "shipped": "event image"
+    },
+    {
+      "path": "landing.web.event.loading",
+      "kind": "string",
+      "params": [],
+      "shipped": "loading event"
+    },
+    {
+      "path": "landing.web.event.missingImageAlt",
+      "kind": "string",
+      "params": [],
+      "shipped": "event image unavailable"
+    },
+    {
+      "path": "landing.web.event.ongoing",
+      "kind": "string",
+      "params": [],
+      "shipped": "happening now"
+    },
+    {
+      "path": "landing.web.event.openAppA11y",
+      "kind": "string",
+      "params": [],
+      "shipped": "open this event in {brand.name}",
+      "usesTokens": true
+    },
+    {
+      "path": "landing.web.event.openAppCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "open in {brand.name}",
+      "usesTokens": true
+    },
+    {
+      "path": "landing.web.event.organizerLabel",
+      "kind": "string",
+      "params": [],
+      "shipped": "hosted by"
+    },
+    {
+      "path": "landing.web.event.registerA11y",
+      "kind": "string",
+      "params": [],
+      "shipped": "open {brand.name} to register for this event",
+      "usesTokens": true
+    },
+    {
+      "path": "landing.web.event.registerCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "get the app to register"
+    },
+    {
+      "path": "landing.web.event.retry",
+      "kind": "string",
+      "params": [],
+      "shipped": "try again"
+    },
+    {
+      "path": "landing.web.event.share",
+      "kind": "string",
+      "params": [],
+      "shipped": "share event"
+    },
+    {
+      "path": "landing.web.event.shareA11y",
+      "kind": "string",
+      "params": [],
+      "shipped": "share this event"
+    },
+    {
+      "path": "landing.web.event.storeChoicesLabel",
+      "kind": "string",
+      "params": [],
+      "shipped": "download options"
+    },
+    {
+      "path": "landing.web.event.timezoneLabel",
+      "kind": "string",
+      "params": [],
+      "shipped": "times shown in"
+    },
+    {
+      "path": "landing.web.event.unavailableBody",
+      "kind": "string",
+      "params": [],
+      "shipped": "it may have moved or is no longer public. find something else in {brand.name}.",
+      "usesTokens": true
+    },
+    {
+      "path": "landing.web.event.unavailableTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "this event isn’t available"
+    },
+    {
+      "path": "landing.web.event.venueLabel",
+      "kind": "string",
+      "params": [],
+      "shipped": "where"
     },
     {
       "path": "landing.web.flyers.body",

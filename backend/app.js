@@ -191,6 +191,7 @@ function createApp() {
     '/log-visit',
     '/log-repeated-visit',
     '/v1/events',
+    '/api/public/events',
     '/api/event-system-config/analytics-config',
     '/api/android-tester',
     '/api/tenant-config',
@@ -320,6 +321,7 @@ function createApp() {
   const noticeRoutes = require('./routes/noticeRoutes.js');
   const pivotRoutes = require('./routes/pivotRoutes.js');
   const pivotAdminRoutes = require('./routes/pivotAdminRoutes.js');
+  const publicEventRoutes = require('./routes/publicEventRoutes.js');
 
   app.use(authRoutes);
   app.use('/auth/saml', samlRoutes);
@@ -344,6 +346,7 @@ function createApp() {
   app.use(platformTenantRoutes);
   app.use(pivotWeeklyDropRoutes);
   app.use(formRoutes);
+  app.use(publicEventRoutes);
   app.use('/notifications', notificationRoutes);
   app.use('/api/qr', qrRoutes);
   app.use(contactRoutes);
