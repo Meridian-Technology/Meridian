@@ -212,6 +212,7 @@ const JUSTGO_HOST_ALLOWED_PATHS = Object.freeze([
   '/justgo',
   '/error',
   '/tenant-status',
+  '/events',
 ]);
 
 export function isPathAllowedOnJustGoHost(pathname) {

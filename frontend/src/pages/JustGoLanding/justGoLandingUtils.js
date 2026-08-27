@@ -236,6 +236,7 @@ export function shouldHideCampusBanner(pathname, justGoHost = false) {
   if (path === '/privacy-policy' || path === '/terms-of-service') return true;
   if (path === '/qr' || path.startsWith('/qr/')) return true;
   if (path === '/creator' || path.startsWith('/creator/')) return true;
+  if (path === '/events' || path.startsWith('/events/')) return true;
   const segments = path.split('/').filter(Boolean);
   return segments.length === 1 && Boolean(landingTenantKeyFromParam(segments[0]));
 }

@@ -54,6 +54,7 @@ const JustGoCreatorHome = lazy(() => import('./pages/JustGoCreator/JustGoCreator
 const JustGoCreatorNew = lazy(() => import('./pages/JustGoCreator/JustGoCreatorNew'));
 const JustGoCreatorEventWorkspace = lazy(() => import('./pages/JustGoCreator/JustGoCreatorEventWorkspace'));
 const JustGoCreatorLogin = lazy(() => import('./pages/JustGoCreator/JustGoCreatorLogin'));
+const JustGoPublicEvent = lazy(() => import('./pages/JustGoPublicEvent/JustGoPublicEvent'));
 const OIEDash = lazy(() => import('./pages/OIEDash/OIEDash'));
 const NewBadge = lazy(() => import('./pages/NewBadge/NewBadge'));
 const CreateOrg = lazy(() => import('./pages/CreateOrg/CreateOrg'));
@@ -229,6 +230,7 @@ function App() {
                                             <Route path="/check-in/:eventId/:token" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route path="/check-in/:eventId" element={<AnimatedPageWrapper><CheckInConfirmation/></AnimatedPageWrapper>}/>
                                             <Route index element={justGoHost ? <JustGoLanding /> : <AnimatedPageWrapper><Landing/></AnimatedPageWrapper>} />
+                                            <Route path="/events/:eventId" element={<JustGoPublicEvent />} />
                                             <Route path="/room/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/room1/:roomid" element={<AnimatedPageWrapper><Room1 /></AnimatedPageWrapper>}/>
                                             <Route path="/register" element={<AnimatedPageWrapper><Register /></AnimatedPageWrapper>}/>

@@ -371,6 +371,8 @@ function createApp() {
     const {
       wantsJustGoHtmlMeta,
       applyJustGoIndexHtml,
+      isPublicEventRequest,
+      renderPublicEventIndexHtml,
     } = require('./utilities/justGoSpaHtml');
     let cachedIndexHtml = null;
     const readIndexHtml = () => {
@@ -380,7 +382,15 @@ function createApp() {
       return cachedIndexHtml;
     };
     app.use(express.static(buildDir, { index: false }));
-    app.get('*', (req, res) => {
+    app.get('*', async (req, res) => {
+      if (isPublicEventRequest(req)) {
+        const html = await renderPublicEventIndexHtml(readIndexHtml(), req);
+        const unavailable = /name="robots" content="noindex, nofollow"/i.test(html);
+        res.set('Cache-Control', unavailable
+          ? 'no-store'
+          : 'public, max-age=60, s-maxage=60, stale-while-revalidate=30');
+        return res.type('html').send(html);
+      }
       if (wantsJustGoHtmlMeta(req)) {
         return res.type('html').send(applyJustGoIndexHtml(readIndexHtml(), req));
       }
