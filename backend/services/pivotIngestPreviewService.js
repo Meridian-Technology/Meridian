@@ -40,9 +40,16 @@ const HOST_ENRICH_CONCURRENCY = 4;
 
 /** Unauthenticated Luma city/category discover API (paginated JSON). */
 const LUMA_DISCOVER_API_URL = 'https://api.luma.com/discover/get-paginated-events';
+/** Unauthenticated Luma event detail API — listing payloads omit About. */
+const LUMA_EVENT_API_URL = 'https://api.luma.com/event/get';
 const LUMA_DISCOVER_PAGE_SIZE = 20;
 /** Safety rail against runaway pagination. */
 const MAX_LUMA_DISCOVER_PAGES = 100;
+
+const LUMA_FETCH_HEADERS = {
+  'User-Agent': 'MeridianPivotLab/1.0 (+https://meridian.study; event ingest preview)',
+  Accept: 'application/json',
+};
 
 const ALLOWED_HOST_SUFFIXES = ['partiful.com', 'lu.ma', 'luma.com'];
 
@@ -907,6 +914,83 @@ function imageFromLumaDiscoverEvent(event) {
   );
 }
 
+/**
+ * Luma's event page labels this section "About". The public API stores it as
+ * `about`, `description`, or a ProseMirror `description_mirror` — never all three.
+ */
+function flattenLumaAboutNode(node) {
+  if (node == null) return '';
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) {
+    return node.map(flattenLumaAboutNode).filter(Boolean).join('\n');
+  }
+  if (typeof node !== 'object') return '';
+  if (node.type === 'hard_break' || node.type === 'break') return '\n';
+  if (typeof node.text === 'string') return node.text;
+
+  const children = Array.isArray(node.content) ? node.content : [];
+  if (!children.length) return '';
+
+  const inline =
+    node.type === 'paragraph' ||
+    node.type === 'heading' ||
+    node.type === 'list_item' ||
+    !node.type;
+  return children.map(flattenLumaAboutNode).join(inline ? '' : '\n');
+}
+
+function textFromLumaAbout(node) {
+  const text = flattenLumaAboutNode(node)
+    .replace(/\u200b/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text || null;
+}
+
+function descriptionFromLumaDetail(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const event = payload.event && typeof payload.event === 'object' ? payload.event : {};
+  return firstNonEmpty(
+    typeof payload.about === 'string' ? payload.about : null,
+    typeof event.about === 'string' ? event.about : null,
+    typeof payload.description === 'string' ? payload.description : null,
+    typeof event.description === 'string' ? event.description : null,
+    textFromLumaAbout(payload.about),
+    textFromLumaAbout(event.about),
+    textFromLumaAbout(payload.description_mirror),
+    textFromLumaAbout(event.description_mirror),
+  );
+}
+
+function descriptionFromLumaDiscoverEntry(entry, event) {
+  return firstNonEmpty(
+    typeof event?.about === 'string' ? event.about : null,
+    typeof event?.description === 'string' ? event.description : null,
+    typeof entry?.about === 'string' ? entry.about : null,
+    typeof entry?.description === 'string' ? entry.description : null,
+    textFromLumaAbout(event?.about),
+    textFromLumaAbout(event?.description_mirror),
+    textFromLumaAbout(entry?.about),
+    textFromLumaAbout(entry?.description_mirror),
+  );
+}
+
+function lumaEventApiIdFromEntry(entry, event) {
+  const id = event?.api_id || entry?.api_id;
+  return typeof id === 'string' && id.trim() ? id.trim() : null;
+}
+
+function lumaDetailFromNextData(html) {
+  const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1])?.props?.pageProps?.initialData?.data || null;
+  } catch {
+    return null;
+  }
+}
+
 function buildLumaDiscoverDraftFromNextData(entry, options = {}) {
   const event = entry?.event;
   if (!event) {
@@ -918,7 +1002,7 @@ function buildLumaDiscoverDraftFromNextData(entry, options = {}) {
   const hostFields = hostFieldsFromLumaDiscoverEntry(entry);
   const draft = {
     name: typeof event.name === 'string' ? event.name.trim() : null,
-    description: null,
+    description: descriptionFromLumaDiscoverEntry(entry, event),
     image: imageFromLumaDiscoverEvent(event),
     start_time: event.start_at || null,
     end_time: event.end_at || null,
@@ -935,7 +1019,12 @@ function buildLumaDiscoverDraftFromNextData(entry, options = {}) {
   };
 
   const enriched = enrichIngestDraft(draft, fieldParseOptions(options));
-  return { draft: enriched, warnings: draftWarnings(enriched), sourceUrl };
+  return {
+    draft: enriched,
+    warnings: draftWarnings(enriched),
+    sourceUrl,
+    lumaEventApiId: lumaEventApiIdFromEntry(entry, event),
+  };
 }
 
 /**
@@ -992,11 +1081,7 @@ async function fetchLumaDiscoverApiPage({
     const response = await axios.get(LUMA_DISCOVER_API_URL, {
       params,
       timeout: FETCH_TIMEOUT_MS,
-      headers: {
-        'User-Agent':
-          'MeridianPivotLab/1.0 (+https://meridian.study; event ingest preview)',
-        Accept: 'application/json',
-      },
+      headers: LUMA_FETCH_HEADERS,
       validateStatus: (status) => status >= 200 && status < 500,
     });
 
@@ -1227,6 +1312,89 @@ async function enrichPartifulBatchDrafts(entries, options = {}) {
   });
 }
 
+async function fetchLumaEventApi(apiId) {
+  if (!apiId) {
+    return { error: 'Luma event id is required.', status: 400, code: 'INVALID_LUMA_EVENT' };
+  }
+
+  try {
+    const response = await axios.get(LUMA_EVENT_API_URL, {
+      params: { event_api_id: apiId },
+      timeout: FETCH_TIMEOUT_MS,
+      headers: LUMA_FETCH_HEADERS,
+      validateStatus: (status) => status >= 200 && status < 500,
+    });
+
+    if (!response?.data || typeof response.data !== 'object' || response.status >= 400 || response.data.message) {
+      return {
+        error: response?.data?.message || `Luma event API returned ${response?.status || 'an error'}.`,
+        status: response?.status >= 400 ? response.status : 422,
+        code: response?.data?.code || 'LUMA_EVENT_FAILED',
+      };
+    }
+
+    return { payload: response.data };
+  } catch (err) {
+    if (err.code === 'ECONNABORTED') {
+      return {
+        error: 'Luma event API timed out.',
+        status: 504,
+        code: 'FETCH_TIMEOUT',
+      };
+    }
+    return {
+      error: err.message || 'Failed to reach Luma event API.',
+      status: 502,
+      code: 'LUMA_EVENT_UNREACHABLE',
+    };
+  }
+}
+
+async function fetchLumaEventDescription(entry) {
+  if (entry?.lumaEventApiId) {
+    const fetched = await fetchLumaEventApi(entry.lumaEventApiId);
+    if (!fetched.error) {
+      const fromApi = descriptionFromLumaDetail(fetched.payload);
+      if (fromApi) return fromApi;
+    }
+  }
+
+  if (!entry?.sourceUrl) return null;
+
+  const page = await fetchEventPage(entry.sourceUrl);
+  if (page.error || !page.html) return null;
+
+  return (
+    descriptionFromLumaDetail(lumaDetailFromNextData(page.html)) ||
+    buildDraft({
+      html: page.html,
+      provider: 'luma',
+      sourceUrl: entry.sourceUrl,
+    }).draft?.description ||
+    null
+  );
+}
+
+async function enrichLumaBatchDrafts(entries, options = {}) {
+  const enrichLimit = resolveBatchLimit(
+    options.maxEnrich != null ? options.maxEnrich : options.maxEvents,
+  );
+  const needingEnrichment = entries.filter((entry) => {
+    if (!entry.sourceUrl && !entry.lumaEventApiId) return false;
+    return !firstNonEmpty(entry.draft?.description);
+  });
+  const toEnrich = sliceToBatchLimit(needingEnrichment, enrichLimit);
+
+  await mapWithConcurrency(toEnrich, HOST_ENRICH_CONCURRENCY, async (entry) => {
+    const description = await fetchLumaEventDescription(entry);
+    if (!description) return;
+
+    entry.draft.description = description;
+    entry.draft = enrichIngestDraft(entry.draft, fieldParseOptions(options));
+    entry.warnings = draftWarnings(entry.draft);
+  });
+}
+
 function firstNonEmpty(...values) {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) {
@@ -1248,16 +1416,23 @@ function buildDraft({ html, provider, sourceUrl, timezone, now }) {
 
   let hostFields = {};
   let partifulPageDraft = null;
+  let lumaPageDescription = null;
   if (provider === 'partiful') {
     partifulPageDraft = parsePartifulSingleEventDraft(html, sourceUrl, { timezone, now });
     hostFields = parsePartifulHost(html);
   } else if (provider === 'luma') {
     hostFields = parseLumaHost(html, jsonLdNodes);
+    lumaPageDescription = descriptionFromLumaDetail(lumaDetailFromNextData(html));
   }
 
   const draft = {
     name: firstNonEmpty(partifulPageDraft?.name, openGraph.name, jsonLdEvent.name),
-    description: firstNonEmpty(partifulPageDraft?.description, openGraph.description, jsonLdEvent.description),
+    description: firstNonEmpty(
+      partifulPageDraft?.description,
+      lumaPageDescription,
+      jsonLdEvent.description,
+      openGraph.description,
+    ),
     image: sanitizeEventPosterImage(
       firstNonEmpty(partifulPageDraft?.image, openGraph.image, jsonLdEvent.image),
     ),
@@ -1306,7 +1481,7 @@ async function fetchEventPage(url) {
       validateStatus: (status) => status >= 200 && status < 400,
     });
 
-    if (typeof response.data !== 'string') {
+    if (!response || typeof response.data !== 'string') {
       return {
         error: 'Unexpected response from event page.',
         status: 422,
@@ -1536,6 +1711,8 @@ async function previewIngestUrl(_req, options = {}) {
   if (batchResult?.drafts?.length) {
     if (normalized.provider === 'partiful') {
       await enrichPartifulBatchDrafts(batchResult.drafts, parseOptions);
+    } else if (normalized.provider === 'luma') {
+      await enrichLumaBatchDrafts(batchResult.drafts, parseOptions);
     }
 
     const batchWarnings = [];
@@ -1635,6 +1812,9 @@ module.exports = {
   buildPartifulExploreDraft,
   buildLumaDiscoverDraft,
   enrichPartifulBatchDrafts,
+  enrichLumaBatchDrafts,
+  descriptionFromLumaDetail,
+  textFromLumaAbout,
   resolveBatchLimit,
   sliceToBatchLimit,
   isInvalidHostName,
@@ -1650,6 +1830,7 @@ module.exports = {
   MAX_CRAWL_BATCH_EVENTS,
   MAX_BATCH_EVENTS_CEILING,
   LUMA_DISCOVER_API_URL,
+  LUMA_EVENT_API_URL,
   LUMA_DISCOVER_PAGE_SIZE,
   MAX_LUMA_DISCOVER_PAGES,
   HOST_ENRICH_CONCURRENCY,

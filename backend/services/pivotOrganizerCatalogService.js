@@ -1019,6 +1019,14 @@ function serializeOrganizerDetail(doc) {
 
 function serializeOrganizerEvent(event, intentStats) {
   const pivot = event.customFields?.pivot || {};
+  const timeSlots = Array.isArray(pivot.timeSlots)
+    ? pivot.timeSlots.map((slot) => ({
+        id: slot.id,
+        start_time: slot.start_time,
+        end_time: slot.end_time || null,
+        label: slot.label || null,
+      }))
+    : [];
   return {
     id: String(event._id),
     name: event.name,
@@ -1026,6 +1034,7 @@ function serializeOrganizerEvent(event, intentStats) {
     ingestStatus: pivot.ingestStatus || null,
     source: pivot.source || null,
     start: event.start_time || null,
+    timeSlots,
     intentStats: intentStats || {
       interested: 0,
       registered: 0,

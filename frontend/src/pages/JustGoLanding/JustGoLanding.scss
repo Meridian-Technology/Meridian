@@ -502,17 +502,39 @@ a.justgo-landing__app-store {
   transform: rotate(-0.55deg);
 }
 
-.justgo-landing__waitlist-kicker {
-  margin: 0 0 0.45rem;
-  font-family: var(--jg-font-mono);
-  font-size: 0.78rem;
+.justgo-landing__waitlist--success {
+  padding: 1.2rem 1.05rem 1.05rem;
+}
+
+.justgo-landing__waitlist-title {
+  margin: 0 0 0.7rem;
+  font-family: var(--jg-font-flos);
+  font-size: clamp(1.85rem, 7vw, 2.35rem);
   font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1.18;
+  color: var(--jg-sticker-ink);
+
+  span {
+    background: var(--jg-pop);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    padding: 0.04em 0.18em 0.08em;
+  }
 }
 
 .justgo-landing__waitlist-body {
   margin: 0 0 0.7rem;
   font-size: 0.92rem;
   line-height: 1.35;
+}
+
+.justgo-landing__waitlist--success .justgo-landing__waitlist-body {
+  margin: 0 0 0.95rem;
+  max-width: 18rem;
+  font-size: 1.02rem;
+  line-height: 1.4;
+  color: rgba(26, 23, 20, 0.78);
 }
 
 .justgo-landing__waitlist-cities {
@@ -587,6 +609,20 @@ a.justgo-landing__app-store {
   font-family: var(--jg-font-mono);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.justgo-landing__waitlist--success .justgo-landing__waitlist-friends {
+  display: inline-block;
+  margin: 0 0 1.05rem;
+  padding: 0.22rem 0.52rem 0.18rem;
+  border: 2px dashed var(--jg-accent);
+  color: var(--jg-accent);
+  letter-spacing: 0.06em;
+  transform: rotate(-2.2deg);
+}
+
+.justgo-landing__waitlist--success .justgo-landing__waitlist-actions {
+  margin-top: 0.1rem;
 }
 
 .justgo-landing__waitlist-actions {
@@ -725,6 +761,23 @@ button.justgo-landing__cta {
   }
 }
 
+@keyframes justgo-landing-slap-waitlist {
+  from {
+    opacity: 0;
+    transform: rotate(-7deg) scale(1.06) translateY(10px);
+  }
+
+  68% {
+    opacity: 1;
+    transform: rotate(0.35deg) scale(1.015);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotate(-0.55deg) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .justgo-landing:not(.justgo-landing--slap) .justgo-landing__wordmark,
   .justgo-landing:not(.justgo-landing--slap) .justgo-landing__strip,
@@ -755,6 +808,10 @@ button.justgo-landing__cta {
   .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__app-store,
   .justgo-landing--slap .justgo-landing__hero-stage .justgo-landing__waitlist-gate {
     animation: justgo-landing-slap-cta 400ms 240ms var(--jg-ease) backwards;
+  }
+
+  .justgo-landing__waitlist--success {
+    animation: justgo-landing-slap-waitlist 420ms var(--jg-ease) backwards;
   }
 
   .justgo-landing__countdown-value {

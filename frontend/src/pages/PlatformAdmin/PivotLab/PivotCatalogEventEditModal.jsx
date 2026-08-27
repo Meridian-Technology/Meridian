@@ -99,6 +99,7 @@ export function catalogEventToEditDraft(event) {
     endTimeLocal: isoToDatetimeLocal(event.end_time),
     timeSlots: hasShowtimes ? timeSlots : [],
     ingestStatus: event.ingestStatus || 'staged',
+    featured: event.featured === true,
     tags: Array.isArray(event.tags) ? [...event.tags] : [],
     movie: event.movie || null,
     enrichment: enrichmentToDraft(event.enrichment),
@@ -125,6 +126,7 @@ export function catalogEditDraftToOverrides(draft) {
     start_time: window.start_time || undefined,
     end_time: window.end_time || undefined,
     ingestStatus: draft.ingestStatus,
+    featured: draft.featured === true,
     tags: Array.isArray(draft.tags) ? draft.tags : [],
     ...(useShowtimes ? { timeSlots: normalizedSlots } : { timeSlots: [] }),
     ...(draft.movie ? { movie: draft.movie } : {}),
@@ -562,6 +564,17 @@ function PivotCatalogEventEditModal({
                     <option value="staged">Staged</option>
                     <option value="published">Published (live feed)</option>
                   </select>
+                </label>
+                <label className="pivot-manual-import__field pivot-manual-import__check">
+                  <span className="pivot-manual-import__label">Featured</span>
+                  <input
+                    type="checkbox"
+                    checked={draft.featured === true}
+                    onChange={(e) => patchDraft({ featured: e.target.checked })}
+                  />
+                  <span className="pivot-manual-import__hint">
+                    Internal. Published featured events are the only cards on the public landing deck.
+                  </span>
                 </label>
                 {event?.ingestStatus === 'staged' && draft.ingestStatus === 'published' ? (
                   <p className="pivot-manual-import__hint" role="status">

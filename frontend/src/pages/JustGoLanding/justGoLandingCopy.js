@@ -44,6 +44,7 @@ const justGoLandingCopy = Object.freeze({
   flyersTitle: 'the drop',
   flyersBody: 'a new week, a new deck.',
   deckEyebrow: 'this week',
+  deckEyebrowFallback: 'last week',
   deckTitle: 'the drop',
   deckBody: 'swipe what’s on.',
   deckEmpty: "this week’s drop is still cooking. get the app",
@@ -58,9 +59,11 @@ const justGoLandingCopy = Object.freeze({
   cityPickerLabel: 'your city',
   storyTitle: 'the movement',
   story: Object.freeze([
-    'when did going out get so complicated?',
-    'nowadays, plans don\'t fail at the door. they die in the group chat, in "maybes"',
-    'we built a weekly drop for people who’d rather just go.',
+    'we want people to go to one event each week. not users, people.',
+    'every person deserves something outside of the 9-5.',
+    'a time, a place, a group with which they can truly be.',
+    "endless scrolling won't find that space you're looking for, we will.",
+    'give us 5 minutes this monday to prove it.',
   ]),
   stickyCta: 'get just go',
   contactLead: "don't be a stranger",
@@ -123,6 +126,7 @@ export const JUSTGO_LANDING_COPY_KEYS = Object.freeze({
   flyersTitle: 'landing.web.flyers.title',
   flyersBody: 'landing.web.flyers.body',
   deckEyebrow: 'landing.web.deck.eyebrow',
+  deckEyebrowFallback: 'landing.web.deck.eyebrowFallback',
   deckTitle: 'landing.web.deck.title',
   deckBody: 'landing.web.deck.body',
   deckEmpty: 'landing.web.deck.empty',
@@ -168,12 +172,6 @@ export const JUSTGO_LANDING_COPY_KEYS = Object.freeze({
   qrMissingBody: 'landing.web.qr.missingBody',
   qrBack: 'landing.web.qr.back',
 });
-
-export const JUSTGO_LANDING_STORY_KEYS = Object.freeze([
-  'landing.web.story.graf0',
-  'landing.web.story.graf1',
-  'landing.web.story.graf2',
-]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -230,14 +228,59 @@ export function resolveLandingCopyField(path, pack, fallback) {
   return formatLandingTemplate(overlay, mergeLandingTokens(pack.tokens)) || bundled;
 }
 
+const STORY_GRAF_KEY_PREFIX = 'landing.web.story.graf';
+const MAX_STORY_GRAFS = 32;
+
+export function landingStoryGrafKey(index) {
+  return `${STORY_GRAF_KEY_PREFIX}${index}`;
+}
+
+export function landingStoryKeysFrom(story) {
+  const list = Array.isArray(story) ? story : [];
+  return Object.freeze(list.map((_, index) => landingStoryGrafKey(index)));
+}
+
+export const JUSTGO_LANDING_STORY_KEYS = landingStoryKeysFrom(justGoLandingCopy.story);
+
+function overlayStoryGraf(pack, index) {
+  if (!isPlainObject(pack) || !isPlainObject(pack.entries)) {
+    return null;
+  }
+  const overlay = pack.entries[landingStoryGrafKey(index)];
+  if (typeof overlay !== 'string' || !overlay.trim()) {
+    return null;
+  }
+  return overlay;
+}
+
+/** Sequential `graf0`…`grafN` — bundled length, plus extra overlay grafs. */
+export function resolveLandingStory(pack, bundled = justGoLandingCopy.story) {
+  const fallbacks = Array.isArray(bundled) ? bundled : [];
+  const grafs = [];
+  for (let index = 0; index < MAX_STORY_GRAFS; index += 1) {
+    const fallback = fallbacks[index];
+    const hasFallback = typeof fallback === 'string';
+    const overlay = overlayStoryGraf(pack, index);
+    if (!hasFallback && !overlay) {
+      break;
+    }
+    grafs.push(
+      resolveLandingCopyField(
+        landingStoryGrafKey(index),
+        pack,
+        hasFallback ? fallback : overlay,
+      ),
+    );
+  }
+  return grafs;
+}
+
 export function resolveJustGoLandingCopy(pack) {
   const next = { ...justGoLandingCopy };
   for (const [field, path] of Object.entries(JUSTGO_LANDING_COPY_KEYS)) {
     next[field] = resolveLandingCopyField(path, pack, justGoLandingCopy[field]);
   }
-  next.story = justGoLandingCopy.story.map((graf, index) =>
-    resolveLandingCopyField(JUSTGO_LANDING_STORY_KEYS[index], pack, graf),
-  );
+  next.story = resolveLandingStory(pack, justGoLandingCopy.story);
   return next;
 }
 

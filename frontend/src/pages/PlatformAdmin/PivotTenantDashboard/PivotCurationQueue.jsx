@@ -4,7 +4,7 @@ import {
   PivotOpsSection,
   PivotOpsStatus,
 } from '../../../components/PivotOps';
-import { formatEventWhen } from '../../../utils/pivotIsoWeek';
+import { formatEventWhen, formatEventWhenWithShowtimes } from '../../../utils/pivotIsoWeek';
 import PivotImportThumb from '../PivotLab/PivotImportThumb';
 import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import { isTypingTarget } from '../PivotLab/PivotManualImportModal';
@@ -149,9 +149,17 @@ const CatalogRow = React.memo(function CatalogRow({
         <div className="pivot-curation-sheet__host">
           {event.organizerName || 'No host'}
         </div>
+        {event.featured ? (
+          <span
+            className="pivot-curation-sheet__featured"
+            title="Featured — public landing deck"
+          >
+            Featured
+          </span>
+        ) : null}
       </td>
       <td className="pivot-curation-sheet__when">
-        {formatEventWhen(event.start_time)}
+        {formatEventWhenWithShowtimes(event)}
       </td>
       {showPerformance ? (
         <>
@@ -200,6 +208,7 @@ function QueueInspector({
   onPublish,
   onUnpublish,
   onDelete,
+  onToggleFeatured,
   busyKey,
   releaseDisabled,
   releaseBlockReason,
@@ -210,6 +219,7 @@ function QueueInspector({
   const unpublishing = busyKey === `unrelease-${event._id}`;
   const publishing = busyKey === `release-${event._id}`;
   const deleting = busyKey === `delete-${event._id}`;
+  const featuring = busyKey === `feature-${event._id}`;
 
   return (
     <aside className="pivot-curation-sheet__inspect" aria-label={`${event.name} details`}>
@@ -235,7 +245,9 @@ function QueueInspector({
         </div>
         <p className="pivot-curation-sheet__inspect-meta">
           {event.organizerName || 'No host'}
-          {event.start_time ? ` · ${formatEventWhen(event.start_time)}` : ''}
+          {event.start_time || event.timeSlots?.length
+            ? ` · ${formatEventWhenWithShowtimes(event)}`
+            : ''}
         </p>
         {event.location ? (
           <p className="pivot-curation-sheet__inspect-meta">{event.location}</p>
@@ -245,6 +257,9 @@ function QueueInspector({
             {event.ingestStatus || 'unknown'}
           </PivotOpsStatus>
           <CatalogSourceBadge source={event.source} />
+          {event.featured ? (
+            <span className="pivot-curation-sheet__featured">Featured</span>
+          ) : null}
           {event.outOfReviewRange ? (
             <PivotOpsStatus tone="danger">Out of range</PivotOpsStatus>
           ) : null}
@@ -285,6 +300,13 @@ function QueueInspector({
         ) : (
           <p className="pivot-curation-sheet__muted">No description</p>
         )}
+        {Array.isArray(event.timeSlots) && event.timeSlots.length > 1 ? (
+          <ul className="pivot-curation-sheet__showtimes" aria-label="Showtimes">
+            {event.timeSlots.map((slot) => (
+              <li key={slot.id || slot.start_time}>{formatEventWhen(slot.start_time)}</li>
+            ))}
+          </ul>
+        ) : null}
         {sourceHref ? (
           <a
             className="pivot-curation-sheet__inspect-link"
@@ -325,6 +347,25 @@ function QueueInspector({
               {unpublishing ? 'Unpublishing…' : 'Unpublish'}
             </button>
           ) : null}
+          <button
+            type="button"
+            className="linear-btn linear-btn--secondary"
+            onClick={() => onToggleFeatured(event)}
+            disabled={featuring}
+            title={
+              event.featured
+                ? 'Remove from the Just Go landing deck'
+                : 'Mark as featured for the public landing deck'
+            }
+          >
+            {featuring
+              ? event.featured
+                ? 'Removing…'
+                : 'Featuring…'
+              : event.featured
+                ? 'Unfeature'
+                : 'Feature'}
+          </button>
           <button
             type="button"
             className="linear-btn linear-btn--ghost pivot-tenant-curation__delete-btn"
@@ -369,6 +410,10 @@ function PivotCurationQueue({
   onBulkUnpublish,
   onBulkApplyTags,
   onBulkSuggestTags,
+  onBulkCollapseShowtimes,
+  onBulkFeature,
+  onBulkUnfeature,
+  onToggleFeatured,
   emptyLabel,
 }) {
   const sheetRef = useRef(null);
@@ -458,6 +503,8 @@ function PivotCurationQueue({
   const selectedDraftCount = selectedEvents.filter((e) => e.ingestStatus === 'draft').length;
   const selectedStagedCount = selectedEvents.filter((e) => e.ingestStatus === 'staged').length;
   const selectedPublishedCount = selectedEvents.filter((e) => e.ingestStatus === 'published').length;
+  const selectedUnfeaturedCount = selectedEvents.filter((e) => e.featured !== true).length;
+  const selectedFeaturedCount = selectedEvents.filter((e) => e.featured === true).length;
 
   const previewAt = useCallback((event, index, nextIds) => {
     if (typeof index === 'number') {
@@ -833,6 +880,19 @@ function PivotCurationQueue({
                 >
                   {busyKey === 'bulk-suggest' ? 'Suggesting…' : 'Suggest tags'}
                 </button>
+                {selectedIds.size > 1 ? (
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--secondary"
+                    onClick={onBulkCollapseShowtimes}
+                    disabled={busyKey === 'bulk-showtimes'}
+                    title="Merge selected rows into one listing with showtimes"
+                  >
+                    {busyKey === 'bulk-showtimes'
+                      ? 'Collapsing…'
+                      : `Showtimes (${selectedIds.size})`}
+                  </button>
+                ) : null}
                 {selectedDraftCount > 0 ? (
                   <button
                     type="button"
@@ -869,6 +929,32 @@ function PivotCurationQueue({
                       : `Unpublish (${selectedPublishedCount})`}
                   </button>
                 ) : null}
+                {selectedUnfeaturedCount > 0 ? (
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--secondary"
+                    onClick={onBulkFeature}
+                    disabled={busyKey === 'bulk-feature'}
+                    title="Mark selected events as featured for the public landing deck"
+                  >
+                    {busyKey === 'bulk-feature'
+                      ? 'Featuring…'
+                      : `Feature (${selectedUnfeaturedCount})`}
+                  </button>
+                ) : null}
+                {selectedFeaturedCount > 0 ? (
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--ghost"
+                    onClick={onBulkUnfeature}
+                    disabled={busyKey === 'bulk-unfeature'}
+                    title="Remove selected events from the Just Go landing deck"
+                  >
+                    {busyKey === 'bulk-unfeature'
+                      ? 'Removing…'
+                      : `Unfeature (${selectedFeaturedCount})`}
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -884,6 +970,7 @@ function PivotCurationQueue({
             onPublish={onPublish}
             onUnpublish={onUnpublish}
             onDelete={onDelete}
+            onToggleFeatured={onToggleFeatured}
             busyKey={busyKey}
             releaseDisabled={releaseDisabled}
             releaseBlockReason={releaseBlockReason}

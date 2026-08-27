@@ -34,6 +34,7 @@ const {
   isPushed,
 } = require('./lib/git');
 const { promptYesNo, promptChoice } = require('./lib/prompts');
+const { collisionAction, isValidBranchName } = require('./lib/branch-options');
 const { setEventsRef, getEventsRef } = require('./lib/lockfile');
 const {
   ensureGhAvailable,
@@ -45,7 +46,6 @@ const {
   prUrlFromRemote,
 } = require('./lib/gh');
 
-const BRANCH_REGEX = /^MER-\d+-[A-Za-z0-9][A-Za-z0-9-]*$/;
 const EVENTS_CLONE_URL = 'git@github.com:Study-Compass/Events-Backend.git';
 
 const dim = (s) => (process.stdout.isTTY && !process.env.NO_COLOR ? `\x1b[2m${s}\x1b[0m` : s);
@@ -74,21 +74,30 @@ function usage() {
   console.log(dim('  meridian start MER-123-Org-Forms'));
   console.log(dim('  meridian setup'));
   console.log(dim('  meridian start MER-123-Org-Forms ') + cyan('--from-current') + dim('   (create from current branch)'));
+  console.log(dim('  meridian start relay/my-run ') + cyan('--yes --any-branch') + dim('   (unattended)'));
+  console.log(dim('  meridian start relay/my-run ') + cyan('--yes --any-branch --resume') + dim('   (resume remote branch)'));
   console.log(dim('  meridian switch MER-123-Org-Forms'));
   console.log(dim('  meridian symlink'));
   console.log(dim('  meridian ship'));
   console.log('');
   console.log(dim('  Branch names: MER-<number>-<slug> (e.g. MER-123-Org-Forms)'));
   console.log(dim('  start: use ') + cyan('--from-current') + dim(' or MERIDIAN_START_FROM_CURRENT=1 to create from current branch instead of main'));
+  console.log(dim('  unattended: use ') + cyan('--yes --any-branch') + dim('; add ') + cyan('--resume') + dim(' to resume a remote branch'));
   console.log('');
 }
 
-function validateBranchName(branch) {
-  if (!branch || !BRANCH_REGEX.test(branch)) {
+function validateBranchName(branch, anyBranch = false) {
+  if (!isValidBranchName(branch, anyBranch)) {
     console.error('');
     console.error(red('  Invalid branch name'));
-    console.error(dim('  Must match: MER-<number>-<slug>'));
-    console.error(dim('  Examples:  MER-123-Org-Forms, MER-456-Fix-Login'));
+    if (anyBranch || String(branch || '').startsWith('relay/')) {
+      console.error(dim('  Must be git-safe: letters, numbers, dot, underscore, slash, and hyphen only.'));
+      console.error(dim('  Names cannot contain ".." or start with "/" or "-".'));
+    } else {
+      console.error(dim('  Must match: MER-<number>-<slug>'));
+      console.error(dim('  Examples:  MER-123-Org-Forms, MER-456-Fix-Login'));
+      console.error(dim('  Relay branches (relay/…) are also accepted.'));
+    }
     console.error('');
     process.exit(1);
   }
@@ -262,7 +271,7 @@ function cmdSymlink() {
   }
 }
 
-async function handleBranchCollision(meridianPath, eventsPath, branch) {
+async function handleBranchCollision(meridianPath, eventsPath, branch, options = {}) {
   const merRemote = branchExistsRemote(meridianPath, branch);
   const evRemote = branchExistsRemote(eventsPath, branch);
   if (!merRemote && !evRemote) return null;
@@ -285,6 +294,13 @@ async function handleBranchCollision(meridianPath, eventsPath, branch) {
   }
   console.error('');
 
+  const action = collisionAction(options);
+  if (action === 'resume') return 'resume';
+  if (action === 'abort') {
+    console.error(dim('  Aborted. Pass --resume to check out the existing remote branch.'));
+    process.exit(1);
+  }
+
   const choice = await promptChoice('How to proceed?', [
     { label: 'Resume (checkout existing branch tracking remote)', value: 'resume' },
     { label: 'Abort (recommended)', value: 'abort' },
@@ -303,7 +319,8 @@ async function handleBranchCollision(meridianPath, eventsPath, branch) {
 }
 
 // --- status ---
-function cmdStatus() {
+function cmdStatus(options = {}) {
+  const { json = false, local = false } = options;
   const { meridianPath, eventsPath } = resolveWorkspace();
 
   const merBranch = currentBranch(meridianPath);
@@ -321,9 +338,30 @@ function cmdStatus() {
   let matchesMain = false;
   const matchesLocal = lockRef && eventsHeadSha && lockRef === eventsHeadSha;
   if (lockRef) {
-    fetchAll(eventsPath);
+    if (!local) fetchAll(eventsPath);
     eventsMainSha = getHeadSha(eventsPath, 'origin/main');
     matchesMain = eventsMainSha && lockRef === eventsMainSha;
+  }
+
+  const snapshot = {
+    repositories: {
+      Meridian: { branch: merBranch || null, clean: merClean, head: merSha || null },
+      'Events-Backend': { branch: evBranch || null, clean: evClean, head: evSha || null },
+    },
+    alignment: {
+      lockRef: lockRef || null,
+      eventsHead: eventsHeadSha || null,
+      eventsMain: eventsMainSha || null,
+      lockMatchesLocal: Boolean(matchesLocal),
+      lockMatchesMain: Boolean(matchesMain),
+      eventsSymlink: isEventsSymlink(meridianPath),
+    },
+    localOnly: local,
+  };
+
+  if (json) {
+    console.log(JSON.stringify(snapshot));
+    return snapshot;
   }
 
   const sep = '─'.repeat(50);
@@ -352,15 +390,16 @@ function cmdStatus() {
 }
 
 // --- start ---
-async function cmdStart(branch, fromCurrent = false) {
-  validateBranchName(branch);
+async function cmdStart(branch, options = {}) {
+  const { anyBranch = false, fromCurrent = false } = options;
+  validateBranchName(branch, anyBranch);
   const { meridianPath, eventsPath } = resolveWorkspace();
   ensureClean(meridianPath, eventsPath);
 
   fetchAll(meridianPath);
   fetchAll(eventsPath);
 
-  const collision = await handleBranchCollision(meridianPath, eventsPath, branch);
+  const collision = await handleBranchCollision(meridianPath, eventsPath, branch, options);
   if (collision === 'resume') {
     // Checkout existing branches
     if (branchExistsLocal(meridianPath, branch)) {
@@ -448,8 +487,8 @@ async function cmdStart(branch, fromCurrent = false) {
 }
 
 // --- switch ---
-async function cmdSwitch(branch) {
-  validateBranchName(branch);
+async function cmdSwitch(branch, options = {}) {
+  validateBranchName(branch, options.anyBranch);
   const { meridianPath, eventsPath } = resolveWorkspace();
   ensureClean(meridianPath, eventsPath);
 
@@ -731,31 +770,39 @@ async function main() {
       await cmdSetup();
       break;
     case 'status':
-      cmdStatus();
+      cmdStatus({ json: args.includes('--json'), local: args.includes('--local') });
       break;
     case 'start': {
-      const startFlags = ['--from-current', '-c'];
+      const startFlags = ['--from-current', '-c', '--yes', '--any-branch', '--resume'];
       const startArgs = args.slice(1).filter((a) => !startFlags.includes(a));
       const branchArg = startArgs[0];
       if (!branchArg) {
         console.error('');
-        console.error(red('  Usage: ') + 'meridian start <branch> [--from-current]');
+        console.error(red('  Usage: ') + 'meridian start <branch> [--from-current] [--yes] [--any-branch] [--resume]');
         console.error('');
         process.exit(1);
       }
       const fromCurrent = args.includes('--from-current') || args.includes('-c') || process.env.MERIDIAN_START_FROM_CURRENT === '1';
-      await cmdStart(branchArg, fromCurrent);
+      await cmdStart(branchArg, {
+        anyBranch: args.includes('--any-branch'),
+        fromCurrent,
+        resume: args.includes('--resume'),
+        yes: args.includes('--yes'),
+      });
       break;
     }
-    case 'switch':
-      if (!args[1]) {
+    case 'switch': {
+      const switchFlags = ['--yes', '--any-branch'];
+      const switchArgs = args.slice(1).filter((a) => !switchFlags.includes(a));
+      if (!switchArgs[0]) {
         console.error('');
-        console.error(red('  Usage: ') + 'meridian switch <branch>');
+        console.error(red('  Usage: ') + 'meridian switch <branch> [--yes] [--any-branch]');
         console.error('');
         process.exit(1);
       }
-      await cmdSwitch(args[1]);
+      await cmdSwitch(switchArgs[0], { anyBranch: args.includes('--any-branch') });
       break;
+    }
     case 'sync':
       cmdSync(allowMain);
       break;
