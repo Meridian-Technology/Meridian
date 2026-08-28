@@ -100,9 +100,9 @@ function JustGoTermsOfService() {
           <li>scrapes, overloads, or breaks just go</li>
         </ul>
         <p>
-          we may remove content or accounts that violate this. to report
-          abuse, email raven@meridian.study. we do not currently offer in-app
-          report or block.
+          we may remove content or accounts that violate this. report or block
+          someone in the app: you → account settings → safety, or hold a
+          friend’s name. you can also email raven@meridian.study.
         </p>
       </JustGoLegalSection>
 

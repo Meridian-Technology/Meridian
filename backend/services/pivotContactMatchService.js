@@ -9,6 +9,7 @@ const {
 const {
   resolveFriendshipStatus,
 } = require('./pivotFriendService');
+const { getHiddenUserIdSet } = require('./pivotSafetyService');
 
 const MAX_HASHES_PER_REQUEST = 500;
 const MATCH_RESULT_LIMIT = 30;
@@ -193,15 +194,27 @@ async function matchPivotContacts(req, body = {}) {
   }
 
   const { User, Friendship } = getModels(req, 'User', 'Friendship');
+  const hidden = await getHiddenUserIdSet(req);
+  const visibleTenantUserIds = tenantUserIds.filter((id) => !hidden.has(id));
 
-  const users = await User.find({ _id: { $in: tenantUserIds } })
+  if (!visibleTenantUserIds.length) {
+    return {
+      data: {
+        users: [],
+        matchedHashCount,
+        submittedHashCount: submittedHashes.length,
+      },
+    };
+  }
+
+  const users = await User.find({ _id: { $in: visibleTenantUserIds } })
     .select('name picture username')
     .lean();
 
   const friendships = await Friendship.find({
     $or: [
-      { requester: userId, recipient: { $in: tenantUserIds } },
-      { requester: { $in: tenantUserIds }, recipient: userId },
+      { requester: userId, recipient: { $in: visibleTenantUserIds } },
+      { requester: { $in: visibleTenantUserIds }, recipient: userId },
     ],
   })
     .select('requester recipient status')
@@ -217,7 +230,7 @@ async function matchPivotContacts(req, body = {}) {
   }
 
   const results = [];
-  for (const tenantUserId of tenantUserIds) {
+  for (const tenantUserId of visibleTenantUserIds) {
     if (results.length >= MATCH_RESULT_LIMIT) {
       break;
     }

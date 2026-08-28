@@ -101,6 +101,12 @@ describe('pivotCrewService (Task 1.2)', () => {
     expect(result.data.inviteLink).toMatch(/^meridian:\/\/pivot\/crew\/join\?token=/);
   });
 
+  it('rejects a profane crew name', async () => {
+    const result = await createPivotCrew(req, { name: 'fuck crew' });
+    expect(result.status).toBe(400);
+    expect(result.code).toBe('NAME_PROFANE');
+  });
+
   it('lists all active crews for the user', async () => {
     await createPivotCrew(req, { name: 'Crew A' });
     await createPivotCrew(req, { name: 'Crew B' });

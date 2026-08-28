@@ -15,6 +15,7 @@ const {
   listPivotFriendRequests,
   acceptPivotFriendRequest,
   declinePivotFriendRequest,
+  unfriendPivotFriend,
   SEARCH_RESULT_LIMIT,
   MIN_QUERY_LENGTH,
 } = require('../../services/pivotFriendService');
@@ -88,7 +89,7 @@ describe('searchPivotFriends', () => {
 
     expect(User.find).toHaveBeenCalledWith(
       expect.objectContaining({
-        _id: { $ne: userId },
+        _id: { $nin: [userId] },
         $or: expect.arrayContaining([
           { name: { $regex: /alice/i } },
           { username: { $regex: /alice/i } },
@@ -113,7 +114,7 @@ describe('searchPivotFriends', () => {
 
     expect(User.find).toHaveBeenCalledWith(
       expect.objectContaining({
-        _id: { $ne: userId },
+        _id: { $nin: [userId] },
       }),
     );
   });
@@ -394,10 +395,10 @@ describe('acceptPivotFriendRequest', () => {
   });
 });
 
-describe('declinePivotFriendRequest', () => {
-  it('rejects invalid friendship ids', async () => {
-    const result = await declinePivotFriendRequest(req, 'bad-id');
+describe('unfriendPivotFriend', () => {
+  it('rejects invalid user ids', async () => {
+    const result = await unfriendPivotFriend(req, { userId: 'bad-id' });
     expect(result.status).toBe(400);
-    expect(result.code).toBe('INVALID_FRIENDSHIP_ID');
+    expect(result.code).toBe('INVALID_USER_ID');
   });
 });

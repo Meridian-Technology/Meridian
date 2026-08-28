@@ -3,6 +3,10 @@ const getModels = require('./getModelService');
 const getGlobalModels = require('./getGlobalModelService');
 const NotificationService = require('./notificationService');
 const { getFriendRequests } = require('../utilities/friendUtils');
+const {
+  areUsersBlocked,
+  getHiddenUserIdSet,
+} = require('./pivotSafetyService');
 
 const SEARCH_RESULT_LIMIT = 20;
 const MIN_QUERY_LENGTH = 2;
@@ -68,10 +72,11 @@ async function searchPivotFriends(req, options = {}) {
   }
 
   const { User, Friendship } = getModels(req, 'User', 'Friendship');
+  const hiddenIds = [...(await getHiddenUserIdSet(req))];
 
   const users = await User.find({
     ...buildNameUsernameQuery(query),
-    _id: { $ne: userId },
+    _id: { $nin: [userId, ...hiddenIds] },
   })
     .select('name picture username')
     .limit(SEARCH_RESULT_LIMIT)
@@ -222,6 +227,7 @@ async function getPivotCohortSuggestions(req) {
   }
 
   const { User, Friendship } = getModels(req, 'User', 'Friendship');
+  const hidden = await getHiddenUserIdSet(req);
 
   const users = await User.find({ _id: { $in: orderedTenantUserIds } })
     .select('name picture username')
@@ -251,6 +257,7 @@ async function getPivotCohortSuggestions(req) {
     if (results.length >= COHORT_SUGGESTION_LIMIT) break;
     const user = userById.get(tenantUserId);
     if (!user) continue;
+    if (hidden.has(tenantUserId)) continue;
 
     const friendshipStatus = resolveFriendshipStatus(
       friendshipByOtherId.get(tenantUserId),
@@ -296,6 +303,14 @@ async function sendPivotFriendRequest(req, body = {}) {
   const recipient = await User.findById(recipientId).select('name username').lean();
   if (!recipient) {
     return { error: 'User not found.', status: 404, code: 'USER_NOT_FOUND' };
+  }
+
+  if (await areUsersBlocked(req, requesterId, recipientId)) {
+    return {
+      error: 'Unable to send friend request.',
+      status: 403,
+      code: 'USER_BLOCKED',
+    };
   }
 
   const existingFriendship = await Friendship.findOne({
@@ -364,6 +379,7 @@ async function listPivotFriends(req) {
   }
 
   const { User, Friendship } = getModels(req, 'User', 'Friendship');
+  const hidden = await getHiddenUserIdSet(req);
 
   const friendships = await Friendship.find({
     $or: [
@@ -382,7 +398,11 @@ async function listPivotFriends(req) {
     ? await User.find({ _id: { $in: friendIds } }).select('name username picture email partners')
     : [];
 
-  return { data: { friends } };
+  const visibleFriends = hidden.size
+    ? friends.filter((friend) => !hidden.has(friend._id.toString()))
+    : friends;
+
+  return { data: { friends: visibleFriends } };
 }
 
 /**
@@ -395,13 +415,27 @@ async function listPivotFriendRequests(req) {
   }
 
   const { Friendship } = getModels(req, 'Friendship');
+  const hidden = await getHiddenUserIdSet(req);
   const friendRequests = await getFriendRequests(Friendship, userId, {
     receivedFields: 'username name picture email _id',
     sentFields: 'username name picture email _id',
     lean: true,
   });
 
-  return { data: friendRequests };
+  if (!hidden.size) {
+    return { data: friendRequests };
+  }
+
+  const received = (friendRequests.received || []).filter((row) => {
+    const otherId = row.requester?._id?.toString() || row.requester?.toString();
+    return otherId && !hidden.has(otherId);
+  });
+  const sent = (friendRequests.sent || []).filter((row) => {
+    const otherId = row.recipient?._id?.toString() || row.recipient?.toString();
+    return otherId && !hidden.has(otherId);
+  });
+
+  return { data: { ...friendRequests, received, sent } };
 }
 
 async function acceptPivotFriendRequest(req, friendshipId) {
@@ -427,6 +461,15 @@ async function acceptPivotFriendRequest(req, friendshipId) {
   }
   if (friendship.recipient.toString() !== recipientId.toString()) {
     return { error: 'Not authorized to accept request.', status: 403, code: 'FORBIDDEN' };
+  }
+
+  if (await areUsersBlocked(req, friendship.requester, friendship.recipient)) {
+    await Friendship.deleteOne({ _id: friendship._id });
+    return {
+      error: 'Unable to accept friend request.',
+      status: 403,
+      code: 'USER_BLOCKED',
+    };
   }
 
   friendship.status = 'accepted';
@@ -467,6 +510,46 @@ async function declinePivotFriendRequest(req, friendshipId) {
   return { data: { friendshipId: id, status: 'declined' } };
 }
 
+async function unfriendPivotFriend(req, body = {}) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    return unauthorized();
+  }
+
+  const friendId = String(body.userId || '').trim();
+  if (!mongoose.Types.ObjectId.isValid(friendId)) {
+    return {
+      error: 'A valid userId is required.',
+      status: 400,
+      code: 'INVALID_USER_ID',
+    };
+  }
+
+  if (friendId === userId.toString()) {
+    return {
+      error: 'Cannot unfriend yourself.',
+      status: 400,
+      code: 'SELF_UNFRIEND',
+    };
+  }
+
+  const { Friendship } = getModels(req, 'Friendship');
+  const friendship = await Friendship.findOne({
+    $or: [
+      { requester: userId, recipient: friendId },
+      { requester: friendId, recipient: userId },
+    ],
+  });
+
+  if (!friendship) {
+    return { error: 'Friendship not found.', status: 404, code: 'FRIENDSHIP_NOT_FOUND' };
+  }
+
+  await Friendship.deleteOne({ _id: friendship._id });
+
+  return { data: { userId: friendId, status: 'unfriended' } };
+}
+
 module.exports = {
   searchPivotFriends,
   getPivotCohortSuggestions,
@@ -475,6 +558,7 @@ module.exports = {
   listPivotFriendRequests,
   acceptPivotFriendRequest,
   declinePivotFriendRequest,
+  unfriendPivotFriend,
   resolveFriendshipStatus,
   SEARCH_RESULT_LIMIT,
   MIN_QUERY_LENGTH,

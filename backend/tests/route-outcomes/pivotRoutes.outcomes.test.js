@@ -103,6 +103,15 @@ jest.mock('../../services/pivotFriendService', () => ({
   listPivotFriendRequests: jest.fn(),
   acceptPivotFriendRequest: jest.fn(),
   declinePivotFriendRequest: jest.fn(),
+  unfriendPivotFriend: jest.fn(),
+}));
+
+jest.mock('../../services/pivotSafetyService', () => ({
+  blockPivotUser: jest.fn(),
+  unblockPivotUser: jest.fn(),
+  listBlockedPivotUsers: jest.fn(),
+  reportPivotUser: jest.fn(),
+  listPivotSafetyTargets: jest.fn(),
 }));
 
 const {
@@ -147,6 +156,14 @@ const {
   getPivotProfileInterests,
   updatePivotProfileInterests,
 } = require('../../services/pivotProfileService');
+const { unfriendPivotFriend } = require('../../services/pivotFriendService');
+const {
+  blockPivotUser,
+  unblockPivotUser,
+  listBlockedPivotUsers,
+  reportPivotUser,
+  listPivotSafetyTargets,
+} = require('../../services/pivotSafetyService');
 const pivotRoutes = require('../../routes/pivotRoutes');
 
 function buildBaseApp() {
@@ -1725,6 +1742,104 @@ describe('pivotRoutes GET /pivot/tags', () => {
 
     expect(response.statusCode).toBe(500);
     expect(response.body.success).toBe(false);
+  });
+});
+
+describe('pivotRoutes friends unfriend + safety', () => {
+  beforeEach(() => {
+    unfriendPivotFriend.mockReset();
+    blockPivotUser.mockReset();
+    unblockPivotUser.mockReset();
+    listBlockedPivotUsers.mockReset();
+    reportPivotUser.mockReset();
+    listPivotSafetyTargets.mockReset();
+  });
+
+  it('POST /pivot/friends/unfriend unfriends the target user', async () => {
+    unfriendPivotFriend.mockResolvedValue({
+      data: { userId: '507f191e810c19729de860ec', status: 'unfriended' },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/friends/unfriend')
+      .set('Authorization', 'Bearer test-token')
+      .send({ userId: '507f191e810c19729de860ec' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.status).toBe('unfriended');
+    expect(unfriendPivotFriend).toHaveBeenCalled();
+  });
+
+  it('POST /pivot/safety/block blocks the target user', async () => {
+    blockPivotUser.mockResolvedValue({
+      data: { userId: '507f191e810c19729de860ec', blocked: true },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/safety/block')
+      .set('Authorization', 'Bearer test-token')
+      .send({ userId: '507f191e810c19729de860ec' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.blocked).toBe(true);
+  });
+
+  it('POST /pivot/safety/report stores a report', async () => {
+    reportPivotUser.mockResolvedValue({
+      data: {
+        reportId: '507f191e810c19729de860ff',
+        userId: '507f191e810c19729de860ec',
+        reason: 'harassment',
+      },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/safety/report')
+      .set('Authorization', 'Bearer test-token')
+      .send({ userId: '507f191e810c19729de860ec', reason: 'harassment' });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.body.data.reason).toBe('harassment');
+  });
+
+  it('GET /pivot/safety/blocked returns blocked users', async () => {
+    listBlockedPivotUsers.mockResolvedValue({
+      data: { users: [{ id: '507f191e810c19729de860ec', name: 'Alice' }] },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/safety/blocked')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.users).toHaveLength(1);
+  });
+
+  it('GET /pivot/safety/targets returns reportable people', async () => {
+    listPivotSafetyTargets.mockResolvedValue({
+      data: { users: [{ id: '507f191e810c19729de860ec', name: 'Alice', source: 'friend' }] },
+    });
+
+    const response = await request(buildBaseApp())
+      .get('/pivot/safety/targets')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.users[0].source).toBe('friend');
+  });
+
+  it('POST /pivot/safety/unblock unblocks the target user', async () => {
+    unblockPivotUser.mockResolvedValue({
+      data: { userId: '507f191e810c19729de860ec', blocked: false },
+    });
+
+    const response = await request(buildBaseApp())
+      .post('/pivot/safety/unblock')
+      .set('Authorization', 'Bearer test-token')
+      .send({ userId: '507f191e810c19729de860ec' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.blocked).toBe(false);
   });
 });
 

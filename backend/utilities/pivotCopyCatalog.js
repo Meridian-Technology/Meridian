@@ -40,6 +40,7 @@ const PIVOT_COPY_REMOTE_SECTIONS = Object.freeze([
   'profile',
   'social',
   'editInterests',
+  'accountSettings',
   'crew',
   // Phase 6.2 — web landing
   'landing',
