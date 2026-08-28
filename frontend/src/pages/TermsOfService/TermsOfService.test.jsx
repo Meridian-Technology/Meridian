@@ -43,6 +43,7 @@ describe('TermsOfService', () => {
     expect(screen.getByRole('heading', { name: 'terms' })).toBeInTheDocument();
     expect(screen.getByText(/at least 18 years old/i)).toBeInTheDocument();
     expect(screen.getByText(/does not process those payments/i)).toBeInTheDocument();
+    expect(screen.getByText(/report or block/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'back to just go' })).toHaveAttribute(
       'href',
       '/',

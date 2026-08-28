@@ -74,6 +74,8 @@ const pivotCrewWeekStateSchema = require('../schemas/pivotCrewWeekState');
 const pivotCrewNudgeSentSchema = require('../schemas/pivotCrewNudgeSent');
 const pivotOrganizerSchema = require('../schemas/pivotOrganizer');
 const pivotOrganizerBackfillRunSchema = require('../schemas/pivotOrganizerBackfillRun');
+const pivotSafetyReportSchema = require('../schemas/pivotSafetyReport');
+const pivotUserBlockSchema = require('../schemas/pivotUserBlock');
 const registeredConnections = new WeakSet();
 const MODEL_DEFINITIONS = Object.freeze({
     BadgeGrant: { modelName: 'BadgeGrant', schema: badgeGrantSchema, collection: 'badgegrants' },
@@ -185,6 +187,16 @@ const MODEL_DEFINITIONS = Object.freeze({
         modelName: 'PivotOrganizerBackfillRun',
         schema: pivotOrganizerBackfillRunSchema,
         collection: 'pivotOrganizerBackfillRuns',
+    },
+    PivotSafetyReport: {
+        modelName: 'PivotSafetyReport',
+        schema: pivotSafetyReportSchema,
+        collection: 'pivotSafetyReports',
+    },
+    PivotUserBlock: {
+        modelName: 'PivotUserBlock',
+        schema: pivotUserBlockSchema,
+        collection: 'pivotUserBlocks',
     },
     ResourcesConfig: { modelName: 'ResourcesConfig', schema: resourcesConfigSchema, collection: 'resourcesConfigs' },
     ShuttleConfig: { modelName: 'ShuttleConfig', schema: shuttleConfigSchema, collection: 'shuttleConfigs' },

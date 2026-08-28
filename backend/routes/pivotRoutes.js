@@ -45,8 +45,16 @@ const {
   listPivotFriendRequests,
   acceptPivotFriendRequest,
   declinePivotFriendRequest,
+  unfriendPivotFriend,
 } = require('../services/pivotFriendService');
 const { matchPivotContacts } = require('../services/pivotContactMatchService');
+const {
+  blockPivotUser,
+  unblockPivotUser,
+  listBlockedPivotUsers,
+  reportPivotUser,
+  listPivotSafetyTargets,
+} = require('../services/pivotSafetyService');
 const {
   listPivotCities,
   resolvePivotEntry,
@@ -1099,6 +1107,30 @@ router.post('/friends/request', verifyToken, async (req, res) => {
   }
 });
 
+router.post('/friends/unfriend', verifyToken, async (req, res) => {
+  try {
+    const result = await unfriendPivotFriend(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/friends/unfriend', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to unfriend.',
+    });
+  }
+});
+
 router.post('/contacts/match', verifyToken, async (req, res) => {
   try {
     const result = await matchPivotContacts(req, req.body);
@@ -1119,6 +1151,126 @@ router.post('/contacts/match', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to match contacts.',
+    });
+  }
+});
+
+router.get('/safety/targets', verifyToken, async (req, res) => {
+  try {
+    const result = await listPivotSafetyTargets(req);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/safety/targets', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load people.',
+    });
+  }
+});
+
+router.get('/safety/blocked', verifyToken, async (req, res) => {
+  try {
+    const result = await listBlockedPivotUsers(req);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /pivot/safety/blocked', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load blocked people.',
+    });
+  }
+});
+
+router.post('/safety/block', verifyToken, async (req, res) => {
+  try {
+    const result = await blockPivotUser(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/safety/block', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to block user.',
+    });
+  }
+});
+
+router.post('/safety/unblock', verifyToken, async (req, res) => {
+  try {
+    const result = await unblockPivotUser(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/safety/unblock', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to unblock user.',
+    });
+  }
+});
+
+router.post('/safety/report', verifyToken, async (req, res) => {
+  try {
+    const result = await reportPivotUser(req, req.body);
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('POST /pivot/safety/report', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to submit report.',
     });
   }
 });

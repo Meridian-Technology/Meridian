@@ -7,6 +7,7 @@ const {
   scheduleCrewWeekRecomputeForCrew,
 } = require('./pivotCrewWeekStateService');
 const { toIsoWeek } = require('../utilities/pivotIsoWeek');
+const { isProfane } = require('./profanityFilterService');
 
 const CREW_NAME_MAX_LENGTH = 80;
 const MAX_INVITE_PLACEHOLDERS_PER_REQUEST = 20;
@@ -406,6 +407,13 @@ async function createPivotCrew(req, options = {}) {
       error: `Crew name must be ${CREW_NAME_MAX_LENGTH} characters or fewer.`,
       status: 400,
       code: 'NAME_TOO_LONG',
+    };
+  }
+  if (isProfane(name)) {
+    return {
+      error: 'Please choose a different name.',
+      status: 400,
+      code: 'NAME_PROFANE',
     };
   }
 
