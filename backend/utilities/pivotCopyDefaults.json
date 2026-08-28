@@ -3551,6 +3551,12 @@
       "shipped": "share this event"
     },
     {
+      "path": "landing.web.event.skipToEvent",
+      "kind": "string",
+      "params": [],
+      "shipped": "skip to event"
+    },
+    {
       "path": "landing.web.event.storeChoicesLabel",
       "kind": "string",
       "params": [],

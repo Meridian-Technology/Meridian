@@ -8,6 +8,7 @@ const {
   applyJustGoIndexHtml,
   isPublicEventRequest,
   renderPublicEventIndexHtml,
+  applyUnavailablePublicEventIndexHtml,
 } = require('../../utilities/justGoSpaHtml');
 
 const INDEX_HTML = fs.readFileSync(
@@ -156,5 +157,55 @@ describe('justGoSpaHtml', () => {
     expect(html).toContain('name="robots" content="noindex, nofollow"');
     expect(html).not.toContain('data-justgo-event>');
     expect(html).not.toContain('database unavailable');
+  });
+
+  it('keeps ended-event and hostile configured metadata crawler-safe', async () => {
+    const event = {
+      id: '64f1234567890abcdef12345',
+      title: 'Past </title><script>bad()</script>',
+      description: 'Finished & archived',
+      image: null,
+      startsAt: '2026-08-01T18:00:00.000Z',
+      endsAt: '2026-08-01T20:00:00.000Z',
+      timezone: 'America/New_York',
+      venue: { text: 'The Hall' },
+      organizer: { name: 'Hosts', imageUrl: null, profileUrl: null },
+      lifecycleStatus: 'ended',
+      registrationCapability: 'none',
+      cityId: 'nyc',
+      canonicalUrl: 'https://justgo.lol/events/64f1234567890abcdef12345',
+    };
+    const html = await renderPublicEventIndexHtml(
+      INDEX_HTML,
+      req({ originalUrl: `/events/${event.id}?src=share&ignored=<script>` }),
+      {
+        loadPublicEvent: jest.fn().mockResolvedValue({ available: true, body: { data: event } }),
+        getPublicEventLanguage: jest.fn().mockResolvedValue({
+          language: { tokens: { 'brand.name': 'Just <Tonight>' }, entries: {} },
+        }),
+      },
+    );
+
+    expect(html).toContain('rel="canonical" href="https://justgo.lol/events/64f1234567890abcdef12345"');
+    expect(html).not.toContain('?src=share');
+    expect(html).not.toContain('</title><script>bad()</script>');
+    const json = JSON.parse(html.match(/data-justgo-event>(.*?)<\/script>/)[1]);
+    expect(json.eventStatus).toBe('https://schema.org/EventCompleted');
+    expect(json.name).toBe(event.title);
+  });
+
+  it('interpolates and escapes configured unavailable metadata without leaking the cause', async () => {
+    const html = applyUnavailablePublicEventIndexHtml(
+      INDEX_HTML,
+      req({ originalUrl: '/events/64f1234567890abcdef12345?src=share' }),
+      { entries: {
+        'landing.web.event.unavailableTitle': 'Gone <quietly>',
+        'landing.web.event.unavailableBody': 'Find another plan in {brand.name}.',
+      }, tokens: { 'brand.name': 'Just & Tonight' } },
+    );
+    expect(html).toContain('name="robots" content="noindex, nofollow"');
+    expect(html).toContain('<title>Gone &lt;quietly></title>');
+    expect(html).toContain('Find another plan in Just &amp; Tonight.');
+    expect(html).not.toContain('{brand.name}');
   });
 });

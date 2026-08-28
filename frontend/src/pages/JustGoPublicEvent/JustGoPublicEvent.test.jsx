@@ -121,6 +121,7 @@ it.each([
 it('updates visible, status, helper, and accessible copy from dynamic language', async () => {
   const configuredEvent = { ...EVENT, lifecycleStatus: 'ongoing', registrationCapability: 'none' };
   const entries = {
+    'landing.web.event.skipToEvent': 'Jump to the listing',
     'landing.web.event.ongoing': 'LIVE Right Now',
     'landing.web.event.openAppCta': 'Launch {brand.name}',
     'landing.web.event.openAppA11y': 'Launch this listing in {brand.name}',
@@ -141,6 +142,7 @@ it('updates visible, status, helper, and accessible copy from dynamic language',
     }));
   renderPage();
   expect(await screen.findByText('LIVE Right Now')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Jump to the listing' })).toHaveAttribute('href', '#event');
   expect(screen.getByText('LOCATION')).toBeInTheDocument();
   expect(screen.getByText('PRESENTED BY')).toBeInTheDocument();
   expect(screen.getByText(/UNTIL/)).toBeInTheDocument();
@@ -233,4 +235,34 @@ it('has no automated accessibility violations in the ready state', async () => {
     rules: { 'color-contrast': { enabled: false } },
   });
   expect(result.violations).toEqual([]);
+});
+
+it('covers the shared ended-event journey with hostile content and configured copy', async () => {
+  const endedEvent = {
+    ...EVENT,
+    title: 'Closing Night <script>alert("title")</script>',
+    description: 'Thanks for coming. </p><img src=x onerror=alert(1)>',
+    lifecycleStatus: 'ended',
+    registrationCapability: 'none',
+  };
+  jest.spyOn(global, 'fetch')
+    .mockImplementationOnce(() => response({ contractVersion: '1', data: endedEvent }))
+    .mockImplementationOnce(() => response({ language: { entries: {
+      'landing.web.event.ended': 'That’s a wrap',
+      'landing.web.event.openAppCta': 'See it in {brand.name}',
+      'landing.web.event.openAppA11y': 'Open the ended event in {brand.name}',
+      'landing.web.event.downloadPrompt': 'More plans in {brand.name}',
+    }, tokens: { 'brand.name': 'Just Tonight' } } }));
+
+  renderPage(`/events/${EVENT.id}?src=share&next=%3Cscript%3E`);
+  expect(await screen.findByRole('heading', { name: endedEvent.title })).toBeInTheDocument();
+  expect(screen.getByText('That’s a wrap')).toBeInTheDocument();
+  expect(screen.getByText(endedEvent.description)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Open the ended event in Just Tonight' }))
+    .toHaveTextContent('See it in Just Tonight');
+  expect(screen.getByText('More plans in Just Tonight')).toBeInTheDocument();
+  await waitFor(() => expect(mockTrackView).toHaveBeenCalledWith(expect.objectContaining({
+    eventId: EVENT.id,
+    search: '?src=share&next=%3Cscript%3E',
+  })));
 });

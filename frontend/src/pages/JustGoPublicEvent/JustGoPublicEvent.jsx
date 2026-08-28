@@ -44,14 +44,16 @@ function EventPoster({ event, copy }) {
   );
 }
 
-function StoreFallback({ copy, platform, onStoreClick }) {
+function StoreFallback({ copy, platform, onStoreClick, primaryFirst = false }) {
   const stores = publicEventStoreChoices(platform, copy);
   return (
     <div className="justgo-event__stores" role="group" aria-label={copy.storeChoicesLabel}>
       {stores.map((store) => (
         <a
           key={store.id}
-          className="justgo-event__store-link"
+          className={primaryFirst && store === stores[0]
+            ? 'justgo-event__button justgo-event__button--store'
+            : 'justgo-event__store-link'}
           href={store.url}
           aria-label={store.label}
           onClick={() => onStoreClick?.(store.id)}
@@ -70,7 +72,7 @@ function Unavailable({ copy, retry, transient, platform, onStoreClick }) {
       <h1 id="event-unavailable-title">{copy.unavailableTitle}</h1>
       <p>{copy.unavailableBody}</p>
       {transient ? <button type="button" className="justgo-event__button" onClick={retry}>{copy.retry}</button> : null}
-      <StoreFallback copy={copy} platform={platform} onStoreClick={onStoreClick} />
+      <StoreFallback copy={copy} platform={platform} onStoreClick={onStoreClick} primaryFirst />
       <p className="justgo-event__download">{copy.downloadPrompt}</p>
     </section>
   );
@@ -151,6 +153,7 @@ export default function JustGoPublicEvent() {
 
   return (
     <div className="justgo-event">
+      <a className="justgo-event__skip" href="#event">{copy.skipToEvent}</a>
       <div className="justgo-event__grain" aria-hidden="true" />
       <header className="justgo-event__header">
         <a href="/" aria-label={copy.productName}><img src={justGoWordmark} alt={copy.productName} /></a>
@@ -166,13 +169,13 @@ export default function JustGoPublicEvent() {
             <div className="justgo-event__content">
               {event.lifecycleStatus !== 'upcoming' ? <div className={`justgo-event__status justgo-event__status--${event.lifecycleStatus}`}>{event.lifecycleStatus === 'ended' ? copy.ended : copy.ongoing}</div> : null}
               <h1>{event.title}</h1>
-              <div className="justgo-event__facts">
-                {when ? <div className="justgo-event__fact"><ClockIcon /><div><strong>{when.date}</strong><span>{when.startTime} {copy.dateSeparator} {when.endTime}</span><small>{copy.timezoneLabel} {event.timezone}</small></div></div> : null}
-                <div className="justgo-event__fact"><PinIcon /><div><small>{copy.venueLabel}</small><strong>{event.venue.text}</strong></div></div>
-              </div>
               <div className="justgo-event__organizer">
                 {event.organizer.imageUrl ? <img src={event.organizer.imageUrl} alt="" /> : <span aria-hidden="true">{event.organizer.name.slice(0, 1)}</span>}
                 <p><small>{copy.organizerLabel}</small><strong>{event.organizer.name}</strong></p>
+              </div>
+              <div className="justgo-event__facts">
+                {when ? <div className="justgo-event__fact"><ClockIcon /><div><strong>{when.date}</strong><span>{when.startTime} {copy.dateSeparator} {when.endTime}</span><small>{copy.timezoneLabel} {event.timezone}</small></div></div> : null}
+                <div className="justgo-event__fact"><PinIcon /><div><small>{copy.venueLabel}</small><strong>{event.venue.text}</strong></div></div>
               </div>
               {event.description ? <p className="justgo-event__description">{event.description}</p> : null}
               <a className="justgo-event__button" href={event.canonicalUrl} aria-label={ctaA11y} onClick={() => trackPublicEventAppOpenAttempt(analyticsOptions)}>{ctaLabel}<span aria-hidden="true">→</span></a>

@@ -10,6 +10,7 @@ const {
 const { loadPublicEvent } = require('./publicEventEndpointService');
 
 const PUBLIC_EVENT_LANGUAGE_KEYS = Object.freeze([
+  'landing.web.event.skipToEvent',
   'landing.web.event.loading',
   'landing.web.event.unavailableTitle',
   'landing.web.event.unavailableBody',

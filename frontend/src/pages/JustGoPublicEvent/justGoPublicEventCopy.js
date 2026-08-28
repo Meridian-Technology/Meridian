@@ -1,4 +1,5 @@
 export const JUSTGO_PUBLIC_EVENT_COPY = Object.freeze({
+  skipToEvent: 'skip to event',
   loading: 'loading event',
   unavailableTitle: 'this event isn’t available',
   unavailableBody: 'it may have moved or is no longer public. find something else in just go.',

@@ -97,6 +97,9 @@ function setJsonLd(html, value) {
 }
 
 function publicEventStructuredData(event) {
+  const schemaStatus = event.lifecycleStatus === 'ended'
+    ? 'https://schema.org/EventCompleted'
+    : 'https://schema.org/EventScheduled';
   const data = {
     '@context': 'https://schema.org',
     '@type': 'Event',
@@ -104,7 +107,7 @@ function publicEventStructuredData(event) {
     description: event.description || undefined,
     startDate: event.startsAt,
     endDate: event.endsAt,
-    eventStatus: 'https://schema.org/EventScheduled',
+    eventStatus: schemaStatus,
     eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     location: {
       '@type': 'Place',
@@ -127,6 +130,17 @@ function publicEventStructuredData(event) {
       .map(([key, entry]) => [key, stripUndefined(entry)]));
   };
   return stripUndefined(data);
+}
+
+function resolveLanguageEntry(language, key, fallback) {
+  const tokens = { 'brand.name': JUSTGO_SITE_NAME, ...(language?.tokens || {}) };
+  let value = language?.entries?.[key] || fallback;
+  for (const [name, replacement] of Object.entries(tokens)) {
+    if (typeof replacement === 'string' && replacement.trim()) {
+      value = String(value).split(`{${name}}`).join(replacement);
+    }
+  }
+  return /[{}]/.test(value) ? fallback : value;
 }
 
 function applyPublicEventIndexHtml(html, req, event, language = null) {
@@ -154,10 +168,16 @@ function applyPublicEventIndexHtml(html, req, event, language = null) {
 
 function applyUnavailablePublicEventIndexHtml(html, req, language = null) {
   const brandName = language?.tokens?.['brand.name'] || JUSTGO_SITE_NAME;
-  const entries = language?.entries || {};
-  const title = entries['landing.web.event.unavailableTitle'] || 'this event isn’t available';
-  const description = entries['landing.web.event.unavailableBody']
-    || `find something else happening in ${brandName}`;
+  const title = resolveLanguageEntry(
+    language,
+    'landing.web.event.unavailableTitle',
+    'this event isn’t available',
+  );
+  const description = resolveLanguageEntry(
+    language,
+    'landing.web.event.unavailableBody',
+    `find something else happening in ${brandName}`,
+  );
   const id = publicEventIdFromRequest(req);
   const canonical = justGoPublicUrl(`/events/${id || ''}`.replace(/\/$/, ''), req, {
     nodeEnv: 'production',
