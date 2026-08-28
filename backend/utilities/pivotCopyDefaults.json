@@ -2593,6 +2593,35 @@
       "shipped": "Registration"
     },
     {
+      "path": "eventDetail.shareCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "share event"
+    },
+    {
+      "path": "eventDetail.shareMessage",
+      "kind": "template",
+      "params": [
+        "eventTitle"
+      ],
+      "shipped": "check out {eventTitle} on {brand.name}",
+      "usesTokens": true,
+      "sampleArgs": {
+        "eventTitle": "eventTitle"
+      }
+    },
+    {
+      "path": "eventDetail.shareTitle",
+      "kind": "template",
+      "params": [
+        "eventTitle"
+      ],
+      "shipped": "share {eventTitle}",
+      "sampleArgs": {
+        "eventTitle": "eventTitle"
+      }
+    },
+    {
       "path": "eventDetail.showtimesTitle",
       "kind": "string",
       "params": [],

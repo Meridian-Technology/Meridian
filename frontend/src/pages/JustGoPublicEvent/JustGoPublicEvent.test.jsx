@@ -8,6 +8,15 @@ import {
   JUSTGO_PLAY_STORE_URL,
 } from '../JustGoLanding/justGoLandingCopy';
 
+const mockTrackView = jest.fn();
+const mockTrackAppOpen = jest.fn();
+const mockTrackStoreClick = jest.fn();
+jest.mock('./justGoPublicEventAnalytics', () => ({
+  trackPublicEventView: (...args) => mockTrackView(...args),
+  trackPublicEventAppOpenAttempt: (...args) => mockTrackAppOpen(...args),
+  trackPublicEventStoreClick: (...args) => mockTrackStoreClick(...args),
+}));
+
 const EVENT = {
   id: '64f1234567890abcdef12345',
   title: 'Movie Night Under the Stars',
@@ -28,9 +37,9 @@ function response(body, status = 200) {
   return Promise.resolve({ ok: status >= 200 && status < 300, status, json: async () => body });
 }
 
-function renderPage() {
+function renderPage(initialEntry = '/events/64f1234567890abcdef12345') {
   return render(
-    <MemoryRouter initialEntries={['/events/64f1234567890abcdef12345']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes><Route path="/events/:eventId" element={<JustGoPublicEvent />} /></Routes>
     </MemoryRouter>,
   );
@@ -38,7 +47,30 @@ function renderPage() {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  mockTrackView.mockReset();
+  mockTrackAppOpen.mockReset();
+  mockTrackStoreClick.mockReset();
   document.querySelectorAll('meta[data-justgo-event-unavailable]').forEach((node) => node.remove());
+});
+
+it('emits one attributed view and the requested acquisition click events', async () => {
+  jest.spyOn(global, 'fetch')
+    .mockImplementationOnce(() => response({ contractVersion: '1', data: EVENT }))
+    .mockImplementationOnce(() => response({ language: { entries: {}, tokens: {} } }));
+  renderPage('/events/64f1234567890abcdef12345?src=share');
+
+  const appLink = await screen.findByRole('link', { name: 'open just go to register for this event' });
+  await waitFor(() => expect(mockTrackView).toHaveBeenCalledTimes(1));
+  expect(mockTrackView).toHaveBeenCalledWith(expect.objectContaining({
+    eventId: EVENT.id, search: '?src=share',
+  }));
+
+  fireEvent.click(appLink);
+  fireEvent.click(screen.getByRole('link', { name: 'app store' }));
+  fireEvent.click(screen.getByRole('link', { name: 'google play' }));
+  expect(mockTrackAppOpen).toHaveBeenCalledTimes(1);
+  expect(mockTrackStoreClick).toHaveBeenNthCalledWith(1, expect.objectContaining({ store: 'ios' }));
+  expect(mockTrackStoreClick).toHaveBeenNthCalledWith(2, expect.objectContaining({ store: 'android' }));
 });
 
 it('renders the privacy-safe event contract responsively', async () => {

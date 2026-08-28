@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import justGoWordmark from '../../assets/pivot/just-go-wordmark-dark.svg';
 import { resolvePublicEventCopy } from './justGoPublicEventCopy';
 import { formatPublicEventDate } from './justGoPublicEventFormat';
@@ -7,6 +7,11 @@ import {
   detectPublicEventPlatform,
   publicEventStoreChoices,
 } from './justGoPublicEventAcquisition';
+import {
+  trackPublicEventAppOpenAttempt,
+  trackPublicEventStoreClick,
+  trackPublicEventView,
+} from './justGoPublicEventAnalytics';
 import './JustGoPublicEvent.scss';
 
 function ClockIcon() {
@@ -39,7 +44,7 @@ function EventPoster({ event, copy }) {
   );
 }
 
-function StoreFallback({ copy, platform }) {
+function StoreFallback({ copy, platform, onStoreClick }) {
   const stores = publicEventStoreChoices(platform, copy);
   return (
     <div className="justgo-event__stores" role="group" aria-label={copy.storeChoicesLabel}>
@@ -49,6 +54,7 @@ function StoreFallback({ copy, platform }) {
           className="justgo-event__store-link"
           href={store.url}
           aria-label={store.label}
+          onClick={() => onStoreClick?.(store.id)}
         >
           {store.label}<span aria-hidden="true">→</span>
         </a>
@@ -57,14 +63,14 @@ function StoreFallback({ copy, platform }) {
   );
 }
 
-function Unavailable({ copy, retry, transient, platform }) {
+function Unavailable({ copy, retry, transient, platform, onStoreClick }) {
   return (
     <section className="justgo-event__unavailable" aria-labelledby="event-unavailable-title">
       <span className="justgo-event__scribble" aria-hidden="true">?</span>
       <h1 id="event-unavailable-title">{copy.unavailableTitle}</h1>
       <p>{copy.unavailableBody}</p>
       {transient ? <button type="button" className="justgo-event__button" onClick={retry}>{copy.retry}</button> : null}
-      <StoreFallback copy={copy} platform={platform} />
+      <StoreFallback copy={copy} platform={platform} onStoreClick={onStoreClick} />
       <p className="justgo-event__download">{copy.downloadPrompt}</p>
     </section>
   );
@@ -72,13 +78,23 @@ function Unavailable({ copy, retry, transient, platform }) {
 
 export default function JustGoPublicEvent() {
   const { eventId } = useParams();
+  const location = useLocation();
   const [state, setState] = useState({ status: 'loading', event: null, language: null });
   const [attempt, setAttempt] = useState(0);
+  const trackedViewRef = useRef(null);
   const copy = useMemo(() => resolvePublicEventCopy(state.language), [state.language]);
   const platform = useMemo(
     () => detectPublicEventPlatform(typeof navigator === 'undefined' ? null : navigator),
     [],
   );
+  const analyticsSearch = location.search;
+  const analyticsOptions = useMemo(
+    () => ({ eventId, platform, search: analyticsSearch }),
+    [analyticsSearch, eventId, platform],
+  );
+  const handleStoreClick = (store) => {
+    trackPublicEventStoreClick({ ...analyticsOptions, store });
+  };
 
   useEffect(() => {
     if (state.status !== 'unavailable') return undefined;
@@ -121,6 +137,12 @@ export default function JustGoPublicEvent() {
     return () => controller.abort();
   }, [attempt, eventId]);
 
+  useEffect(() => {
+    if (state.status !== 'ready' || !state.event || trackedViewRef.current === state.event.id) return;
+    trackedViewRef.current = state.event.id;
+    trackPublicEventView(analyticsOptions);
+  }, [analyticsOptions, state.event, state.status]);
+
   const event = state.event;
   const when = useMemo(() => formatPublicEventDate(event), [event]);
   const actionable = event?.registrationCapability === 'in_app' || event?.registrationCapability === 'external';
@@ -136,7 +158,7 @@ export default function JustGoPublicEvent() {
       <main className="justgo-event__main" id="event">
         {state.status === 'loading' ? <Loading copy={copy} /> : null}
         {state.status === 'unavailable' || state.status === 'error' ? (
-          <Unavailable copy={copy} platform={platform} transient={state.status === 'error'} retry={() => setAttempt((value) => value + 1)} />
+          <Unavailable copy={copy} platform={platform} transient={state.status === 'error'} retry={() => setAttempt((value) => value + 1)} onStoreClick={handleStoreClick} />
         ) : null}
         {state.status === 'ready' && event ? (
           <article className="justgo-event__layout">
@@ -153,9 +175,9 @@ export default function JustGoPublicEvent() {
                 <p><small>{copy.organizerLabel}</small><strong>{event.organizer.name}</strong></p>
               </div>
               {event.description ? <p className="justgo-event__description">{event.description}</p> : null}
-              <a className="justgo-event__button" href={event.canonicalUrl} aria-label={ctaA11y}>{ctaLabel}<span aria-hidden="true">→</span></a>
+              <a className="justgo-event__button" href={event.canonicalUrl} aria-label={ctaA11y} onClick={() => trackPublicEventAppOpenAttempt(analyticsOptions)}>{ctaLabel}<span aria-hidden="true">→</span></a>
               <p className="justgo-event__download">{copy.downloadPrompt}</p>
-              <StoreFallback copy={copy} platform={platform} />
+              <StoreFallback copy={copy} platform={platform} onStoreClick={handleStoreClick} />
             </div>
           </article>
         ) : null}
