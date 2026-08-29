@@ -8,6 +8,7 @@ import { formatEventWhen, formatEventWhenWithShowtimes } from '../../../utils/pi
 import PivotImportThumb from '../PivotLab/PivotImportThumb';
 import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import { isTypingTarget } from '../PivotLab/PivotManualImportModal';
+import { curationPublicEventUrl } from './curationPublicEventUrl';
 import { dragRangeSelection, nextSelection } from './curationQueueSelection';
 import useCurationImmersiveScroll from './useCurationImmersiveScroll';
 import './PivotCurationQueue.scss';
@@ -215,6 +216,7 @@ function QueueInspector({
 }) {
   if (!event) return null;
   const sourceHref = event.externalLink || event.sourceUrl;
+  const publicHref = curationPublicEventUrl(event);
   const tags = Array.isArray(event.tags) ? event.tags : [];
   const unpublishing = busyKey === `unrelease-${event._id}`;
   const publishing = busyKey === `release-${event._id}`;
@@ -307,16 +309,28 @@ function QueueInspector({
             ))}
           </ul>
         ) : null}
-        {sourceHref ? (
-          <a
-            className="pivot-curation-sheet__inspect-link"
-            href={sourceHref}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open listing
-          </a>
-        ) : null}
+        <div className="pivot-curation-sheet__inspect-links">
+          {publicHref ? (
+            <a
+              className="pivot-curation-sheet__inspect-link"
+              href={publicHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open public page ↗
+            </a>
+          ) : null}
+          {sourceHref ? (
+            <a
+              className="pivot-curation-sheet__inspect-link pivot-curation-sheet__inspect-link--secondary"
+              href={sourceHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open source listing ↗
+            </a>
+          ) : null}
+        </div>
         <div className="pivot-curation-sheet__inspect-actions">
           <button
             type="button"

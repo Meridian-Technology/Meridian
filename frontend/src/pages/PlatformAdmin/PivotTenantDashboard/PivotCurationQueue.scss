@@ -529,6 +529,12 @@
   overflow: hidden;
 }
 
+.pivot-curation-sheet__inspect-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
 .pivot-curation-sheet__inspect-link {
   font-size: 13px;
   font-weight: 600;
@@ -537,6 +543,10 @@
 
   &:hover {
     text-decoration: underline;
+  }
+
+  &--secondary {
+    color: var(--pivot-ops-ink-muted);
   }
 }
 
