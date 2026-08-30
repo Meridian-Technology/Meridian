@@ -175,6 +175,7 @@
 .pivot-curation-sheet__pane {
   min-width: 0;
   outline: none;
+  touch-action: pan-y;
 
   &:focus-visible {
     box-shadow: inset 0 0 0 2px var(--pivot-ops-accent-soft);
@@ -297,6 +298,10 @@
 .pivot-curation-sheet__when {
   font-size: 12px;
   color: var(--pivot-ops-ink-soft);
+}
+
+.pivot-curation-sheet__mobile-when {
+  display: none;
 }
 
 .pivot-curation-sheet__num {
@@ -601,5 +606,123 @@
   .pivot-curation-sheet__bulk,
   .pivot-curation-sheet__inspect {
     animation: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .pivot-curation-sheet__body {
+    margin-inline: -12px;
+  }
+
+  .pivot-curation-sheet__filters {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .pivot-curation-sheet__chip {
+    flex: 0 0 auto;
+    min-height: 36px;
+  }
+
+  .pivot-curation-sheet__scroller,
+  .pivot-curation-frame.is-immersive .pivot-curation-sheet__scroller {
+    max-height: min(68dvh, 620px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pivot-curation-sheet__table {
+    table-layout: fixed;
+
+    th,
+    td {
+      padding: 10px 8px;
+    }
+
+    th:nth-child(2),
+    td:nth-child(2) {
+      width: auto;
+    }
+
+    .pivot-curation-sheet__status-col {
+      width: 82px;
+    }
+  }
+
+  .pivot-curation-sheet__desktop-only {
+    display: none;
+  }
+
+  .pivot-curation-sheet__mobile-when {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--pivot-ops-ink-soft);
+  }
+
+  .pivot-curation-sheet__name,
+  .pivot-curation-sheet__host,
+  .pivot-curation-sheet__mobile-when {
+    overflow-wrap: anywhere;
+  }
+
+  .pivot-curation-sheet__inspect {
+    position: fixed;
+    z-index: 140;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pivot-curation-sheet__inspect-media {
+    flex: 0 0 auto;
+    max-height: 34dvh;
+  }
+
+  .pivot-curation-sheet__inspect-body {
+    padding: 16px max(16px, env(safe-area-inset-right))
+      calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+
+  .pivot-curation-sheet__inspect-head {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    margin: -16px calc(-1 * max(16px, env(safe-area-inset-right))) 0
+      calc(-1 * max(16px, env(safe-area-inset-left)));
+    padding: calc(14px + env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right)) 12px
+      max(16px, env(safe-area-inset-left));
+    border-bottom: 1px solid var(--pivot-ops-border);
+    background: var(--pivot-ops-surface);
+  }
+
+  .pivot-curation-sheet__inspect-actions .linear-btn {
+    min-height: 42px;
+  }
+
+  .pivot-curation-sheet__bulk {
+    max-height: 46dvh;
+    overflow-y: auto;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
   }
 }
