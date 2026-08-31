@@ -8,6 +8,7 @@ import { formatEventWhen, formatEventWhenWithShowtimes } from '../../../utils/pi
 import PivotImportThumb from '../PivotLab/PivotImportThumb';
 import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
 import { isTypingTarget } from '../PivotLab/PivotManualImportModal';
+import { curationPublicEventUrl } from './curationPublicEventUrl';
 import { dragRangeSelection, nextSelection } from './curationQueueSelection';
 import useCurationImmersiveScroll from './useCurationImmersiveScroll';
 import './PivotCurationQueue.scss';
@@ -149,6 +150,9 @@ const CatalogRow = React.memo(function CatalogRow({
         <div className="pivot-curation-sheet__host">
           {event.organizerName || 'No host'}
         </div>
+        <div className="pivot-curation-sheet__mobile-when">
+          {formatEventWhenWithShowtimes(event)}
+        </div>
         {event.featured ? (
           <span
             className="pivot-curation-sheet__featured"
@@ -158,20 +162,20 @@ const CatalogRow = React.memo(function CatalogRow({
           </span>
         ) : null}
       </td>
-      <td className="pivot-curation-sheet__when">
+      <td className="pivot-curation-sheet__when pivot-curation-sheet__desktop-only">
         {formatEventWhenWithShowtimes(event)}
       </td>
       {showPerformance ? (
         <>
-          <td className="pivot-curation-sheet__num">
+          <td className="pivot-curation-sheet__num pivot-curation-sheet__desktop-only">
             {perf ? <PivotOpsAnimateNumber value={perf.reached} /> : '—'}
           </td>
-          <td>
+          <td className="pivot-curation-sheet__desktop-only">
             <InterestMeter rate={perf?.interestRate} />
           </td>
         </>
       ) : null}
-      <td>
+      <td className="pivot-curation-sheet__desktop-only">
         {tags.length ? (
           <div className="pivot-curation-sheet__tag-list">
             {tags.slice(0, 3).map((tag) => (
@@ -187,12 +191,12 @@ const CatalogRow = React.memo(function CatalogRow({
           <span className="pivot-curation-sheet__muted">—</span>
         )}
       </td>
-      <td>
+      <td className="pivot-curation-sheet__status-col">
         <PivotOpsStatus tone={ingestTone(event.ingestStatus)}>
           {event.ingestStatus || '—'}
         </PivotOpsStatus>
       </td>
-      <td>
+      <td className="pivot-curation-sheet__desktop-only">
         <CatalogSourceBadge source={event.source} />
       </td>
     </tr>
@@ -215,6 +219,7 @@ function QueueInspector({
 }) {
   if (!event) return null;
   const sourceHref = event.externalLink || event.sourceUrl;
+  const publicHref = curationPublicEventUrl(event);
   const tags = Array.isArray(event.tags) ? event.tags : [];
   const unpublishing = busyKey === `unrelease-${event._id}`;
   const publishing = busyKey === `release-${event._id}`;
@@ -307,16 +312,28 @@ function QueueInspector({
             ))}
           </ul>
         ) : null}
-        {sourceHref ? (
-          <a
-            className="pivot-curation-sheet__inspect-link"
-            href={sourceHref}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open listing
-          </a>
-        ) : null}
+        <div className="pivot-curation-sheet__inspect-links">
+          {publicHref ? (
+            <a
+              className="pivot-curation-sheet__inspect-link"
+              href={publicHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open public page ↗
+            </a>
+          ) : null}
+          {sourceHref ? (
+            <a
+              className="pivot-curation-sheet__inspect-link pivot-curation-sheet__inspect-link--secondary"
+              href={sourceHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open source listing ↗
+            </a>
+          ) : null}
+        </div>
         <div className="pivot-curation-sheet__inspect-actions">
           <button
             type="button"
@@ -589,6 +606,19 @@ function PivotCurationQueue({
       const event = events[index];
       if (!event || !Number.isInteger(index)) return;
 
+      if (nativeEvent.pointerType === 'touch') {
+        dragRef.current = {
+          pointerId: nativeEvent.pointerId,
+          touch: true,
+          cancelled: false,
+          event,
+          index,
+          startX: nativeEvent.clientX,
+          startY: nativeEvent.clientY,
+        };
+        return;
+      }
+
       nativeEvent.preventDefault();
       nativeEvent.currentTarget.setPointerCapture?.(nativeEvent.pointerId);
       nativeEvent.currentTarget.focus?.({ preventScroll: true });
@@ -625,6 +655,10 @@ function PivotCurationQueue({
 
       const dx = nativeEvent.clientX - drag.startX;
       const dy = nativeEvent.clientY - drag.startY;
+      if (drag.touch) {
+        if (dx * dx + dy * dy >= DRAG_SELECT_THRESHOLD_PX ** 2) drag.cancelled = true;
+        return;
+      }
       if (!drag.dragging && dx * dx + dy * dy < DRAG_SELECT_THRESHOLD_PX ** 2) {
         return;
       }
@@ -644,9 +678,18 @@ function PivotCurationQueue({
 
   const handlePanePointerUp = useCallback(
     (nativeEvent) => {
+      const drag = dragRef.current;
+      if (
+        nativeEvent.type === 'pointerup'
+        && drag?.touch
+        && drag.pointerId === nativeEvent.pointerId
+        && !drag.cancelled
+      ) {
+        previewAt(drag.event, drag.index, new Set([drag.event._id]));
+      }
       endDrag(nativeEvent.pointerId);
     },
-    [endDrag],
+    [endDrag, previewAt],
   );
 
   const handleKeyDown = useCallback(
@@ -804,18 +847,18 @@ function PivotCurationQueue({
                       <span className="visually-hidden">Image</span>
                     </th>
                     <th scope="col">Event</th>
-                    <th scope="col">When</th>
+                    <th scope="col" className="pivot-curation-sheet__desktop-only">When</th>
                     {showPerformance ? (
                       <>
-                        <th scope="col" className="pivot-curation-sheet__num">
+                        <th scope="col" className="pivot-curation-sheet__num pivot-curation-sheet__desktop-only">
                           Reached
                         </th>
-                        <th scope="col">Interest</th>
+                        <th scope="col" className="pivot-curation-sheet__desktop-only">Interest</th>
                       </>
                     ) : null}
-                    <th scope="col">Tags</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Source</th>
+                    <th scope="col" className="pivot-curation-sheet__desktop-only">Tags</th>
+                    <th scope="col" className="pivot-curation-sheet__status-col">Status</th>
+                    <th scope="col" className="pivot-curation-sheet__desktop-only">Source</th>
                   </tr>
                 </thead>
                 <tbody>

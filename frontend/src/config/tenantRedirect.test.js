@@ -27,11 +27,12 @@ describe('isJustGoHost', () => {
     expect(isJustGoHost('rpi.meridian.study')).toBe(false);
   });
 
-  it('lets localhost opt into Just Go apex without changing campus npm start', () => {
+  it('lets any development origin opt into Just Go apex without local DNS changes', () => {
     expect(isJustGoHost('localhost')).toBe(false);
     window.localStorage.setItem(JUSTGO_HOST_OVERRIDE_KEY, '1');
     expect(isJustGoHost('localhost')).toBe(true);
-    expect(isJustGoHost('meridian.study')).toBe(false);
+    expect(isJustGoHost('100.64.0.10')).toBe(true);
+    expect(isJustGoHost('preview.internal')).toBe(true);
   });
 });
 
@@ -61,6 +62,13 @@ describe('isWww', () => {
     expect(isWww('justgo.lol')).toBe(false);
     expect(isWww('www.justgo.lol')).toBe(false);
   });
+
+  it('does not treat a development origin in Just Go mode as campus www', () => {
+    window.localStorage.setItem(JUSTGO_HOST_OVERRIDE_KEY, '1');
+    expect(isWww('localhost')).toBe(false);
+    expect(isWww('100.64.0.10')).toBe(false);
+    window.localStorage.removeItem(JUSTGO_HOST_OVERRIDE_KEY);
+  });
 });
 
 describe('getCurrentTenantKey / tenantKeyFromHostname', () => {
@@ -88,6 +96,7 @@ describe('getCurrentTenantKey / tenantKeyFromHostname', () => {
     expect(getCurrentTenantKey('localhost')).toBe('rpi');
     window.localStorage.setItem(JUSTGO_HOST_OVERRIDE_KEY, '1');
     expect(getCurrentTenantKey('localhost')).toBeNull();
+    expect(getCurrentTenantKey('100.64.0.10')).toBeNull();
   });
 });
 

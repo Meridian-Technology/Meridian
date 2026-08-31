@@ -3,8 +3,8 @@
  * Subdomain is enforced for auth and app; user must choose school on first login/register.
  *
  * justgo.lol is a third host class (Just Go apex) — not campus www, not a school subdomain.
- * Local/dev: set localStorage justgoHostOverride=1 to treat localhost as that apex
- * without changing campus `npm start`.
+ * Local/dev: set localStorage justgoHostOverride=1 to treat the current dev origin as that apex
+ * without changing campus `npm start` or local DNS.
  */
 
 const ROOT_HOSTS = ['www.meridian.study', 'meridian.study'];
@@ -133,12 +133,12 @@ export function readJustGoHostOverride() {
   }
 }
 
-/** True on justgo.lol / www.justgo.lol, or localhost with justgoHostOverride=1 (dev only). */
+/** True on justgo.lol / www.justgo.lol, or any dev origin with justgoHostOverride=1. */
 export function isJustGoHost(hostname = currentHostname()) {
   const host = normalizeHostname(hostname);
   if (isJustGoPublicHostname(host)) return true;
   if (process.env.NODE_ENV === 'production') return false;
-  return host === 'localhost' && readJustGoHostOverride();
+  return Boolean(host) && readJustGoHostOverride();
 }
 
 /** Canonical public origin. www.justgo.lol should 301 here once DNS exists. */
@@ -160,6 +160,7 @@ export function isWww(hostname = currentHostname()) {
   if (!host) return false;
   // Just Go apex is not campus marketing www (www.justgo.lol would otherwise match www.*).
   if (isJustGoPublicHostname(host)) return false;
+  if (process.env.NODE_ENV !== 'production' && readJustGoHostOverride()) return false;
   if (ROOT_HOSTS.includes(host)) return true;
   if (host.startsWith('www.')) return true;
   if (process.env.NODE_ENV !== 'production' && host === 'localhost') return true;
@@ -303,8 +304,8 @@ export function getCurrentTenantKey(hostname = currentHostname()) {
   if (typeof window === 'undefined' && !hostname) return null;
   const host = normalizeHostname(hostname);
   if (isJustGoPublicHostname(host)) return null;
+  if (process.env.NODE_ENV !== 'production' && readJustGoHostOverride()) return null;
   if (process.env.NODE_ENV !== 'production' && host === 'localhost') {
-    if (readJustGoHostOverride()) return null;
     try {
       return localStorage.getItem('devTenantOverride') || getLastTenant() || null;
     } catch (_) {

@@ -66,11 +66,8 @@ it('emits one attributed view and the requested acquisition click events', async
   }));
 
   fireEvent.click(appLink);
-  fireEvent.click(screen.getByRole('link', { name: 'app store' }));
-  fireEvent.click(screen.getByRole('link', { name: 'google play' }));
   expect(mockTrackAppOpen).toHaveBeenCalledTimes(1);
-  expect(mockTrackStoreClick).toHaveBeenNthCalledWith(1, expect.objectContaining({ store: 'ios' }));
-  expect(mockTrackStoreClick).toHaveBeenNthCalledWith(2, expect.objectContaining({ store: 'android' }));
+  expect(mockTrackStoreClick).not.toHaveBeenCalled();
 });
 
 it('renders the privacy-safe event contract responsively', async () => {
@@ -83,9 +80,7 @@ it('renders the privacy-safe event contract responsively', async () => {
   expect(screen.getByText('Civic Center Lawn')).toBeInTheDocument();
   expect(screen.getByText('Night Owl Cinema')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'open just go to register for this event' })).toHaveAttribute('href', EVENT.canonicalUrl);
-  expect(screen.getByRole('group', { name: 'download options' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'app store' })).toHaveAttribute('href', JUSTGO_IOS_STORE_URL);
-  expect(screen.getByRole('link', { name: 'google play' })).toHaveAttribute('href', JUSTGO_PLAY_STORE_URL);
+  expect(screen.queryByRole('group', { name: 'download options' })).not.toBeInTheDocument();
 });
 
 it.each([
@@ -147,11 +142,8 @@ it('updates visible, status, helper, and accessible copy from dynamic language',
   expect(screen.getByText('PRESENTED BY')).toBeInTheDocument();
   expect(screen.getByText(/UNTIL/)).toBeInTheDocument();
   expect(screen.getByText(/Local zone:/)).toBeInTheDocument();
-  expect(screen.getByText('Discover more with Just Tonight')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Launch this listing in Just Tonight' })).toHaveTextContent('Launch Just Tonight');
-  expect(screen.getByRole('group', { name: 'Choose your store' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Download for iPhone' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Download for Android' })).toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'Choose your store' })).not.toBeInTheDocument();
   expect(screen.getByRole('img', { name: `${EVENT.title} — Featured artwork` })).toBeInTheDocument();
   expect(screen.getAllByRole('img', { name: 'Just Tonight' })).toHaveLength(1);
 });
@@ -165,15 +157,14 @@ it('keeps approved fallbacks when the language request fails', async () => {
   expect(screen.getByRole('link', { name: 'open just go to register for this event' })).toHaveTextContent('get the app to register');
 });
 
-it('shows only Google Play as the Android fallback while preserving the HTTPS app link', async () => {
+it('shows only Google Play as the Android fallback when the event is unavailable', async () => {
   const userAgent = jest.spyOn(window.navigator, 'userAgent', 'get')
     .mockReturnValue('Mozilla/5.0 (Linux; Android 15; Pixel 9)');
   jest.spyOn(global, 'fetch')
-    .mockImplementationOnce(() => response({ contractVersion: '1', data: EVENT }))
+    .mockImplementationOnce(() => response({ error: { code: 'EVENT_UNAVAILABLE' } }, 404))
     .mockImplementationOnce(() => response({ language: { entries: {}, tokens: {} } }));
   renderPage();
-  const appLink = await screen.findByRole('link', { name: 'open just go to register for this event' });
-  expect(appLink).toHaveAttribute('href', EVENT.canonicalUrl);
+  await screen.findByRole('heading', { name: 'this event isn’t available' });
   expect(screen.getByRole('link', { name: 'google play' })).toHaveAttribute('href', JUSTGO_PLAY_STORE_URL);
   expect(screen.queryByRole('link', { name: 'app store' })).not.toBeInTheDocument();
   userAgent.mockRestore();
@@ -260,7 +251,6 @@ it('covers the shared ended-event journey with hostile content and configured co
   expect(screen.getByText(endedEvent.description)).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Open the ended event in Just Tonight' }))
     .toHaveTextContent('See it in Just Tonight');
-  expect(screen.getByText('More plans in Just Tonight')).toBeInTheDocument();
   await waitFor(() => expect(mockTrackView).toHaveBeenCalledWith(expect.objectContaining({
     eventId: EVENT.id,
     search: '?src=share&next=%3Cscript%3E',

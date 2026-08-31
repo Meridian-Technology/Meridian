@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
-import justGoWordmark from '../../assets/pivot/just-go-wordmark-dark.svg';
+import justGoWordmark from '../../assets/pivot/just-go-wordmark.svg';
 import { resolvePublicEventCopy } from './justGoPublicEventCopy';
 import { formatPublicEventDate } from './justGoPublicEventFormat';
 import {
@@ -179,8 +179,6 @@ export default function JustGoPublicEvent() {
               </div>
               {event.description ? <p className="justgo-event__description">{event.description}</p> : null}
               <a className="justgo-event__button" href={event.canonicalUrl} aria-label={ctaA11y} onClick={() => trackPublicEventAppOpenAttempt(analyticsOptions)}>{ctaLabel}<span aria-hidden="true">→</span></a>
-              <p className="justgo-event__download">{copy.downloadPrompt}</p>
-              <StoreFallback copy={copy} platform={platform} onStoreClick={handleStoreClick} />
             </div>
           </article>
         ) : null}
