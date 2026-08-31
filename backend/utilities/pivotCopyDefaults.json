@@ -38,6 +38,227 @@
       "shipped": "delete account?"
     },
     {
+      "path": "accountSettings.safety.blockCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "block"
+    },
+    {
+      "path": "accountSettings.safety.blockedEmpty",
+      "kind": "string",
+      "params": [],
+      "shipped": "you have not blocked anyone"
+    },
+    {
+      "path": "accountSettings.safety.blockedTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "blocked"
+    },
+    {
+      "path": "accountSettings.safety.blockError",
+      "kind": "string",
+      "params": [],
+      "shipped": "couldn't block. try again."
+    },
+    {
+      "path": "accountSettings.safety.blockMessage",
+      "kind": "string",
+      "params": [],
+      "shipped": "they'll be unfriended and hidden from friends, search, and who is going. they won't be told."
+    },
+    {
+      "path": "accountSettings.safety.blockTitle",
+      "kind": "template",
+      "params": [
+        "name"
+      ],
+      "shipped": "block {name}?",
+      "sampleArgs": {
+        "name": "alex"
+      }
+    },
+    {
+      "path": "accountSettings.safety.contactCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "email support"
+    },
+    {
+      "path": "accountSettings.safety.contactHint",
+      "kind": "string",
+      "params": [],
+      "shipped": "email raven@meridian.study"
+    },
+    {
+      "path": "accountSettings.safety.contactTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "need more help?"
+    },
+    {
+      "path": "accountSettings.safety.emptyTargets",
+      "kind": "string",
+      "params": [],
+      "shipped": "no one to report yet. add friends or join a {group.singular} first.",
+      "usesTokens": true
+    },
+    {
+      "path": "accountSettings.safety.intro",
+      "kind": "string",
+      "params": [],
+      "shipped": "report harassment, spam, or impersonation. blocking unfriends them and hides them from friends, search, and who is going."
+    },
+    {
+      "path": "accountSettings.safety.loadError",
+      "kind": "string",
+      "params": [],
+      "shipped": "couldn't load safety. pull to refresh"
+    },
+    {
+      "path": "accountSettings.safety.notesLabel",
+      "kind": "string",
+      "params": [],
+      "shipped": "more detail"
+    },
+    {
+      "path": "accountSettings.safety.notesPlaceholder",
+      "kind": "string",
+      "params": [],
+      "shipped": "optional. what happened?"
+    },
+    {
+      "path": "accountSettings.safety.reasonHarassment",
+      "kind": "string",
+      "params": [],
+      "shipped": "harassment"
+    },
+    {
+      "path": "accountSettings.safety.reasonImpersonation",
+      "kind": "string",
+      "params": [],
+      "shipped": "impersonation"
+    },
+    {
+      "path": "accountSettings.safety.reasonOther",
+      "kind": "string",
+      "params": [],
+      "shipped": "something else"
+    },
+    {
+      "path": "accountSettings.safety.reasonSpam",
+      "kind": "string",
+      "params": [],
+      "shipped": "spam"
+    },
+    {
+      "path": "accountSettings.safety.reasonTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "what happened?"
+    },
+    {
+      "path": "accountSettings.safety.reportConfirmMessage",
+      "kind": "template",
+      "params": [
+        "name"
+      ],
+      "shipped": "we'll review what you shared about {name}. they won't be told you reported them.",
+      "sampleArgs": {
+        "name": "alex"
+      }
+    },
+    {
+      "path": "accountSettings.safety.reportConfirmTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "send this report?"
+    },
+    {
+      "path": "accountSettings.safety.reportError",
+      "kind": "string",
+      "params": [],
+      "shipped": "couldn't send report. try again."
+    },
+    {
+      "path": "accountSettings.safety.reportHint",
+      "kind": "string",
+      "params": [],
+      "shipped": "pick a friend or {group.singular} member",
+      "usesTokens": true
+    },
+    {
+      "path": "accountSettings.safety.reportSuccessMessage",
+      "kind": "string",
+      "params": [],
+      "shipped": "thanks. we'll look into it. you can also block them so they disappear from your friends and plans."
+    },
+    {
+      "path": "accountSettings.safety.reportSuccessTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "report sent"
+    },
+    {
+      "path": "accountSettings.safety.reportTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "report someone"
+    },
+    {
+      "path": "accountSettings.safety.rowHint",
+      "kind": "string",
+      "params": [],
+      "shipped": "report or block someone"
+    },
+    {
+      "path": "accountSettings.safety.rowTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "safety"
+    },
+    {
+      "path": "accountSettings.safety.screenTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "safety"
+    },
+    {
+      "path": "accountSettings.safety.submitReport",
+      "kind": "string",
+      "params": [],
+      "shipped": "send report"
+    },
+    {
+      "path": "accountSettings.safety.unblockCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "unblock"
+    },
+    {
+      "path": "accountSettings.safety.unblockError",
+      "kind": "string",
+      "params": [],
+      "shipped": "couldn't unblock. try again."
+    },
+    {
+      "path": "accountSettings.safety.unblockMessage",
+      "kind": "string",
+      "params": [],
+      "shipped": "they can find you and send a friend request again."
+    },
+    {
+      "path": "accountSettings.safety.unblockTitle",
+      "kind": "template",
+      "params": [
+        "name"
+      ],
+      "shipped": "unblock {name}?",
+      "sampleArgs": {
+        "name": "alex"
+      }
+    },
+    {
       "path": "accountSettings.screenTitle",
       "kind": "string",
       "params": [],
@@ -362,7 +583,7 @@
       "path": "calendarOnboarding.connectedSubtitle",
       "kind": "string",
       "params": [],
-      "shipped": "calendar access is already on. we'll use it for availability-aware picks and one-tap adds."
+      "shipped": "calendar access is already on. we'll save plans you add to a just go calendar on your phone."
     },
     {
       "path": "calendarOnboarding.connectedTitle",
@@ -374,7 +595,7 @@
       "path": "calendarOnboarding.cta",
       "kind": "string",
       "params": [],
-      "shipped": "allow calendar access"
+      "shipped": "continue"
     },
     {
       "path": "calendarOnboarding.deniedHint",
@@ -392,7 +613,7 @@
       "path": "calendarOnboarding.reasonAvailability",
       "kind": "string",
       "params": [],
-      "shipped": "see when you're free so we can suggest events that fit"
+      "shipped": "keeps just go plans in their own calendar on your phone"
     },
     {
       "path": "calendarOnboarding.settingsBody",
@@ -416,13 +637,13 @@
       "path": "calendarOnboarding.skip",
       "kind": "string",
       "params": [],
-      "shipped": "not now"
+      "shipped": "continue"
     },
     {
       "path": "calendarOnboarding.subtitle",
       "kind": "string",
       "params": [],
-      "shipped": "full calendar access helps us fit events around your schedule and save plans in one tap."
+      "shipped": "we make a just go calendar on your phone and save nights you add."
     },
     {
       "path": "calendarOnboarding.ticker",
@@ -771,6 +992,12 @@
       "kind": "string",
       "params": [],
       "shipped": "scan contacts"
+    },
+    {
+      "path": "crew.contacts.onboarding.settingsCta",
+      "kind": "string",
+      "params": [],
+      "shipped": "open settings"
     },
     {
       "path": "crew.contacts.onboarding.skip",
@@ -2911,10 +3138,33 @@
       "shipped": "couldn't accept. try again"
     },
     {
+      "path": "friends.actionsTitle",
+      "kind": "template",
+      "params": [
+        "name"
+      ],
+      "shipped": "{name}",
+      "sampleArgs": {
+        "name": "alex"
+      }
+    },
+    {
       "path": "friends.add",
       "kind": "string",
       "params": [],
       "shipped": "add"
+    },
+    {
+      "path": "friends.block",
+      "kind": "string",
+      "params": [],
+      "shipped": "block"
+    },
+    {
+      "path": "friends.cancel",
+      "kind": "string",
+      "params": [],
+      "shipped": "cancel"
     },
     {
       "path": "friends.count",
@@ -2976,6 +3226,12 @@
       "shipped": "loading friends"
     },
     {
+      "path": "friends.longPressHint",
+      "kind": "string",
+      "params": [],
+      "shipped": "hold a name to unfriend, report, or block"
+    },
+    {
       "path": "friends.pendingBadge",
       "kind": "template",
       "params": [
@@ -2985,6 +3241,12 @@
       "sampleArgs": {
         "count": 2
       }
+    },
+    {
+      "path": "friends.report",
+      "kind": "string",
+      "params": [],
+      "shipped": "report"
     },
     {
       "path": "friends.requestsAction",
@@ -3104,6 +3366,35 @@
       "kind": "string",
       "params": [],
       "shipped": "pending"
+    },
+    {
+      "path": "friends.unfriend",
+      "kind": "string",
+      "params": [],
+      "shipped": "unfriend"
+    },
+    {
+      "path": "friends.unfriendError",
+      "kind": "string",
+      "params": [],
+      "shipped": "couldn't unfriend. try again."
+    },
+    {
+      "path": "friends.unfriendMessage",
+      "kind": "string",
+      "params": [],
+      "shipped": "you'll both leave each other's friends list."
+    },
+    {
+      "path": "friends.unfriendTitle",
+      "kind": "template",
+      "params": [
+        "name"
+      ],
+      "shipped": "unfriend {name}?",
+      "sampleArgs": {
+        "name": "alex"
+      }
     },
     {
       "path": "interestsOnboarding.cta",
@@ -3978,7 +4269,7 @@
       "path": "profile.accountSettingsHint",
       "kind": "string",
       "params": [],
-      "shipped": "interests · delete account"
+      "shipped": "interests · safety · delete account"
     },
     {
       "path": "profile.accountSettingsSectionTitle",

@@ -77,6 +77,14 @@ router.post("/update-user", verifyToken, async (req, res) => {
                     field: 'name',
                 });
             }
+            if (isProfane(trimmedName)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Name does not abide by community standards',
+                    code: 'NAME_PROFANE',
+                    field: 'name',
+                });
+            }
             user.name = trimmedName;
         }
 

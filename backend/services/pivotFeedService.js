@@ -31,6 +31,7 @@ const {
 } = require('../utilities/pivotCrewConfig');
 const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
 const { getPivotConfig } = require('./pivotConfigService');
+const { getHiddenUserIdSet } = require('./pivotSafetyService');
 
 const FRIEND_CAP = 5;
 const FEED_CREW_CONFIG_CACHE_TTL_MS = 60_000;
@@ -270,7 +271,7 @@ function serializePivotFeedEvent(event, extras) {
   };
 }
 
-async function getAcceptedFriendIds(Friendship, userId) {
+async function getAcceptedFriendIds(Friendship, userId, hiddenIds = new Set()) {
   const rows = await Friendship.find({
     status: 'accepted',
     $or: [{ requester: userId }, { recipient: userId }],
@@ -279,9 +280,9 @@ async function getAcceptedFriendIds(Friendship, userId) {
     .lean();
 
   const uid = String(userId);
-  return rows.map((row) =>
-    String(row.requester) === uid ? row.recipient : row.requester,
-  );
+  return rows
+    .map((row) => (String(row.requester) === uid ? row.recipient : row.requester))
+    .filter((id) => !hiddenIds.has(String(id)));
 }
 
 function mapFriendPreview(user) {
@@ -596,7 +597,11 @@ async function loadFriendSocial(req, userId, eventIds, previewCap = FRIEND_CAP, 
     ]),
   );
 
-  const friendIds = await getAcceptedFriendIds(Friendship, userId);
+  const friendIds = await getAcceptedFriendIds(
+    Friendship,
+    userId,
+    await getHiddenUserIdSet(req),
+  );
   if (!friendIds.length) {
     return {
       userIntents,
