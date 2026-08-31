@@ -13,6 +13,7 @@ const { connectToDatabase, connectToGlobalDatabase } = require('./connectionsMan
 const { initSocket } = require('./socket');
 const getGlobalModels = require('./services/getGlobalModelService');
 const { isAllowedCorsOrigin, isJustGoPublicHost } = require('./utilities/corsOrigins');
+const { registerMobileAssociationRoutes } = require('./utilities/mobileAssociationFiles');
 
 const s3 = require('./aws-config');
 
@@ -72,6 +73,10 @@ function createApp() {
   } else {
     app.use(cors(corsOptions));
   }
+
+  // Association crawlers must not depend on tenant/database availability. Register
+  // these before the tenant middleware and serve JSON directly without redirects.
+  registerMobileAssociationRoutes(app);
 
   // Other middleware
   app.use(express.json());
@@ -191,6 +196,7 @@ function createApp() {
     '/log-visit',
     '/log-repeated-visit',
     '/v1/events',
+    '/api/public/events',
     '/api/event-system-config/analytics-config',
     '/api/android-tester',
     '/api/tenant-config',
@@ -320,6 +326,7 @@ function createApp() {
   const noticeRoutes = require('./routes/noticeRoutes.js');
   const pivotRoutes = require('./routes/pivotRoutes.js');
   const pivotAdminRoutes = require('./routes/pivotAdminRoutes.js');
+  const publicEventRoutes = require('./routes/publicEventRoutes.js');
 
   app.use(authRoutes);
   app.use('/auth/saml', samlRoutes);
@@ -344,6 +351,7 @@ function createApp() {
   app.use(platformTenantRoutes);
   app.use(pivotWeeklyDropRoutes);
   app.use(formRoutes);
+  app.use(publicEventRoutes);
   app.use('/notifications', notificationRoutes);
   app.use('/api/qr', qrRoutes);
   app.use(contactRoutes);
@@ -368,6 +376,8 @@ function createApp() {
     const {
       wantsJustGoHtmlMeta,
       applyJustGoIndexHtml,
+      isPublicEventRequest,
+      renderPublicEventIndexHtml,
     } = require('./utilities/justGoSpaHtml');
     let cachedIndexHtml = null;
     const readIndexHtml = () => {
@@ -377,7 +387,15 @@ function createApp() {
       return cachedIndexHtml;
     };
     app.use(express.static(buildDir, { index: false }));
-    app.get('*', (req, res) => {
+    app.get('*', async (req, res) => {
+      if (isPublicEventRequest(req)) {
+        const html = await renderPublicEventIndexHtml(readIndexHtml(), req);
+        const unavailable = /name="robots" content="noindex, nofollow"/i.test(html);
+        res.set('Cache-Control', unavailable
+          ? 'no-store'
+          : 'public, max-age=60, s-maxage=60, stale-while-revalidate=30');
+        return res.type('html').send(html);
+      }
       if (wantsJustGoHtmlMeta(req)) {
         return res.type('html').send(applyJustGoIndexHtml(readIndexHtml(), req));
       }
