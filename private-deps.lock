@@ -1,11 +1,7 @@
 {
   "events": {
     "repo": "git@github.com:Study-Compass/Events-Backend.git",
-<<<<<<< HEAD
     "ref": "a8dc411839612435b61d91dcb94766e33897d170",
-=======
-    "ref": "cbeea11a0cdcaa7de2bc426a630a70b5cea5f892",
->>>>>>> origin/relay/launch-shareable-just-go-public-event-pages/20260827T205425Z
     "dest": "backend/events"
   }
 }
