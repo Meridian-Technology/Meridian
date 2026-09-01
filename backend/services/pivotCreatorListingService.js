@@ -50,6 +50,10 @@ const {
 } = require('./pivotCreatorAdminNotifyService');
 const { resolveOrganizers } = require('./pivotOrganizerResolveService');
 const { activeOrganizerFilter } = require('../schemas/pivotOrganizer');
+const {
+  requestFromPayload,
+  resolveRichLocationWrite,
+} = require('./justGoRichLocationWriteService');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 const CREATOR_SOURCE = 'justgo';
@@ -70,7 +74,7 @@ const EMPTY_ANALYTICS_SUMMARY = Object.freeze({
   uniqueRegistrations: 0,
 });
 const LISTING_SELECT =
-  'name description image start_time end_time location externalLink type visibility status hostingType hostingId customFields.pivot createdAt updatedAt';
+  'name description image start_time end_time location richLocation externalLink type visibility status hostingType hostingId customFields.pivot createdAt updatedAt';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -179,6 +183,7 @@ function validateListingPayload(payload = {}, { partial = false } = {}) {
     firstNonEmpty(payload.image, payload.coverImage),
   );
   const timeSlots = normalizeCreatorTimeSlots(payload.timeSlots);
+  const richLocationRequest = requestFromPayload(payload);
 
   let startTime = parseDateTime(payload.start_time ?? payload.startTime);
   let endTime = parseDateTime(payload.end_time ?? payload.endTime);
@@ -350,6 +355,7 @@ function validateListingPayload(payload = {}, { partial = false } = {}) {
         ? { timeSlots }
         : {}),
       ...(payload.tags !== undefined ? { tags: payload.tags } : {}),
+      ...(richLocationRequest !== undefined ? { richLocationRequest } : {}),
     },
   };
 }
@@ -885,6 +891,13 @@ async function createListing(req, payload = {}) {
   if (validated.error) return validated;
   const { fields } = validated;
 
+  const locationResult = await resolveRichLocationWrite({
+    tenant: context.tenant,
+    request: fields.richLocationRequest,
+    legacyLocation: fields.location,
+  });
+  if (locationResult.error) return locationResult;
+
   const config = resolveCreatorPublishConfig(context.tenant);
   const ingestStatus = resolveCreatorDefaultIngestStatus(config);
 
@@ -918,6 +931,7 @@ async function createListing(req, payload = {}) {
     description: fields.description || '',
     type: 'social',
     location: fields.location,
+    ...(locationResult.richLocation ? { richLocation: locationResult.richLocation } : {}),
     start_time: fields.startTime,
     end_time: fields.endTime,
     status: 'not-applicable',
@@ -1065,6 +1079,22 @@ async function updateListing(req, eventId, payload = {}) {
   const ownership = assertListingOwnership(existing, creatorUserId);
   if (ownership) return ownership;
 
+  if (fields.location !== undefined && fields.richLocationRequest === undefined
+    && existing.richLocation) {
+    return {
+      error: 'Select a location mode and Google place when changing this location.',
+      status: 400,
+      code: 'RICH_LOCATION_SELECTION_REQUIRED',
+    };
+  }
+
+  const locationResult = await resolveRichLocationWrite({
+    tenant: context.tenant,
+    request: fields.richLocationRequest,
+    legacyLocation: fields.location || existing.location,
+  });
+  if (locationResult.error) return locationResult;
+
   const pivot = { ...(existing.customFields?.pivot || {}) };
   const currentStatus = pivot.ingestStatus || 'draft';
   const isPublished = currentStatus === PIVOT_FEED_INGEST_STATUS;
@@ -1083,6 +1113,7 @@ async function updateListing(req, eventId, payload = {}) {
   if (fields.name !== undefined) setPayload.name = fields.name;
   if (fields.description !== undefined) setPayload.description = fields.description;
   if (fields.location !== undefined) setPayload.location = fields.location;
+  if (locationResult.richLocation) setPayload.richLocation = locationResult.richLocation;
   if (fields.image !== undefined) setPayload.image = fields.image;
   if (fields.startTime !== undefined) setPayload.start_time = fields.startTime;
   if (fields.endTime !== undefined) setPayload.end_time = fields.endTime;

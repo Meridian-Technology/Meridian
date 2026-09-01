@@ -119,6 +119,42 @@ const creatorPublishConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const richLocationConstraintsSchema = new mongoose.Schema(
+  {
+    countryCode: {
+      type: String,
+      required: true,
+      trim: true,
+      uppercase: true,
+      minlength: 2,
+      maxlength: 2,
+    },
+    bounds: {
+      south: { type: Number, min: -90, max: 90 },
+      west: { type: Number, min: -180, max: 180 },
+      north: { type: Number, min: -90, max: 90 },
+      east: { type: Number, min: -180, max: 180 },
+    },
+    center: {
+      latitude: { type: Number, min: -90, max: 90 },
+      longitude: { type: Number, min: -180, max: 180 },
+    },
+    radiusKm: { type: Number, min: 0.1, max: 500 },
+  },
+  { _id: false },
+);
+
+const richLocationControlsSchema = new mongoose.Schema(
+  {
+    rollout: { type: String, enum: ['off', 'on'], default: 'off' },
+    reads: { type: Boolean, default: false },
+    writes: { type: Boolean, default: false },
+    autocomplete: { type: Boolean, default: false },
+    search: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const tenantEntrySchema = new mongoose.Schema(
   {
     tenantKey: { type: String, required: true, trim: true, lowercase: true },
@@ -158,6 +194,8 @@ const tenantEntrySchema = new mongoose.Schema(
     pivotMobileConfig: { type: pivotMobileConfigSchema, default: undefined },
     creatorPublish: { type: creatorPublishConfigSchema, default: undefined },
     pivotDiscovery: { type: pivotDiscoveryConfigSchema, default: undefined },
+    richLocationConstraints: { type: richLocationConstraintsSchema, default: undefined },
+    richLocationControls: { type: richLocationControlsSchema, default: undefined },
     provisioningConfirmations: {
       dns: { type: Boolean, default: false },
       cors: { type: Boolean, default: false },

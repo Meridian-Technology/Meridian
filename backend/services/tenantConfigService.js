@@ -20,6 +20,12 @@ const { validatePivotMobileConfigPatch } = require('../utilities/pivotMobileConf
 const { validateCreatorPublishConfigPatch } = require('../utilities/pivotCreatorPublishConfig');
 const { validatePivotDiscoveryConfigPatch } = require('../utilities/pivotDiscoveryConfig');
 const {
+  validateJustGoLocationConstraints,
+} = require('../utilities/justGoLocationConstraints');
+const {
+  validateRichLocationControls,
+} = require('../utilities/justGoRichLocationControls');
+const {
   connectToDatabase,
   setTenantUriCache,
   deriveMongoUriForTenant,
@@ -107,6 +113,12 @@ function toStoredTenantRow(tenant) {
     pivotDiscovery: tenant.pivotDiscovery,
     provisioningConfirmations: tenant.provisioningConfirmations,
   };
+  if (tenant.richLocationConstraints) {
+    payload.richLocationConstraints = tenant.richLocationConstraints;
+  }
+  if (tenant.richLocationControls) {
+    payload.richLocationControls = tenant.richLocationControls;
+  }
   if (Object.prototype.hasOwnProperty.call(tenant, 'pivotDeckConfig')) {
     payload.pivotDeckConfig = tenant.pivotDeckConfig;
   }
@@ -403,6 +415,17 @@ function validateTenantMetadataUpdate(body = {}) {
     if (discoveryValidation.error) {
       return { error: discoveryValidation.error };
     }
+  }
+
+  if (body.richLocationConstraints !== undefined && body.richLocationConstraints !== null) {
+    const locationValidation = validateJustGoLocationConstraints(
+      body.richLocationConstraints,
+    );
+    if (locationValidation.error) return { error: locationValidation.error };
+  }
+  if (body.richLocationControls !== undefined && body.richLocationControls !== null) {
+    const controlsValidation = validateRichLocationControls(body.richLocationControls);
+    if (controlsValidation.error) return { error: controlsValidation.error };
   }
 
   return { ok: true };

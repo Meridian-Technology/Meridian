@@ -67,6 +67,35 @@ describe('pivotConfigService', () => {
       expect(result.data.crew.version).toBe(PIVOT_CREW_CONFIG_VERSION);
       expect(result.data.crew.feedMix.personalInterestWeight).toBe(0.7);
       expect(result.data.crew.quorum.minSwipeParticipation).toBe(0.6);
+      expect(result.data.richLocation).toEqual({
+        rollout: 'off',
+        reads: false,
+        writes: false,
+        autocomplete: false,
+        search: false,
+      });
+    });
+
+    it('returns effective per-city rich-location controls', async () => {
+      getTenantByKey.mockResolvedValue({
+        ...nycTenant,
+        richLocationControls: {
+          rollout: 'on',
+          reads: true,
+          writes: true,
+          autocomplete: true,
+          search: false,
+        },
+      });
+
+      const result = await getPivotConfig({ school: 'nyc' });
+      expect(result.data.richLocation).toEqual({
+        rollout: 'on',
+        reads: true,
+        writes: true,
+        autocomplete: true,
+        search: false,
+      });
     });
 
     it('merges tenant pivotCrewConfig overrides into crew payload', async () => {

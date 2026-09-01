@@ -31,6 +31,12 @@ const {
 const {
   validateCreatorPublishConfigPatch,
 } = require('../utilities/pivotCreatorPublishConfig');
+const {
+  normalizeJustGoLocationConstraints,
+} = require('../utilities/justGoLocationConstraints');
+const {
+  normalizeRichLocationControls,
+} = require('../utilities/justGoRichLocationControls');
 const { invalidateTenantConnection } = require('../connectionsManager');
 const { renameTenantKey } = require('../services/tenantKeyRenameService');
 const {
@@ -268,6 +274,22 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
       } else {
         updated.creatorPublish = patch;
       }
+    }
+
+    if (req.body.richLocationConstraints === null) {
+      delete updated.richLocationConstraints;
+    } else if (req.body.richLocationConstraints !== undefined) {
+      updated.richLocationConstraints = normalizeJustGoLocationConstraints(
+        req.body.richLocationConstraints,
+      );
+    }
+
+    if (req.body.richLocationControls === null) {
+      delete updated.richLocationControls;
+    } else if (req.body.richLocationControls !== undefined) {
+      updated.richLocationControls = normalizeRichLocationControls(
+        req.body.richLocationControls,
+      );
     }
 
     const mergedPreview = (await getMergedTenants(req)).map((row) =>
