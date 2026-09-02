@@ -138,6 +138,9 @@ describe('googleLocationService', () => {
       coordinates: { type: 'Point', coordinates: [-73.9, 40.7] },
       resolutionConfidence: 0.75,
     });
+    expect(result._backfillMatchCount).toBe(1);
+    expect(Object.keys(result)).not.toContain('_backfillMatchCount');
+    expect(JSON.stringify(result)).not.toContain('_backfillMatchCount');
     expect(options.httpClient.request).toHaveBeenCalledWith(expect.objectContaining({
       timeout: 5000,
       params: expect.objectContaining({

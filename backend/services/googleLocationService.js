@@ -496,6 +496,13 @@ function createGoogleLocationAdapter(options = {}) {
       confidence: firstResult?.partial_match ? 0.75 : 0.9,
       resolvedAt: new Date(now()),
     });
+    // Backfill needs to distinguish a unique provider result from an ambiguous
+    // first result. Keep this orchestration hint non-enumerable so it can never
+    // enter the shared rich-location subdocument or a generic serializer.
+    Object.defineProperty(location, '_backfillMatchCount', {
+      value: response.data.results.length,
+      enumerable: false,
+    });
     return location;
   }
 
