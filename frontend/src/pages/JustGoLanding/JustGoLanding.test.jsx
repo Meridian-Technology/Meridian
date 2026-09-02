@@ -49,7 +49,16 @@ const DROP_EVENTS = [
     name: 'friday night market',
     hostName: 'public records',
     startTime: '2026-08-14T23:00:00.000Z',
-    location: 'brooklyn',
+    location: 'DO NOT USE: 123 Secret St',
+    richLocation: {
+      mode: 'registration_gated',
+      revealPolicy: 'registered_only',
+      resolutionStatus: 'resolved',
+      publicDisplayLabel: 'Private venue in Williamsburg',
+      formattedAddress: '123 Secret St',
+      coordinates: { type: 'Point', coordinates: [-73.96, 40.72] },
+      googlePlaceId: 'secret-place-id',
+    },
     tag: 'food',
     description: 'should never render',
     externalLink: 'https://partiful.com/e/secret',
@@ -394,6 +403,8 @@ describe('JustGoLanding', () => {
     expect(await screen.findByRole('heading', { name: justGoLandingCopy.deckTitle })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'night market' })).not.toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'friday night market' })).toBeInTheDocument();
+    expect(screen.getByText('Private venue in Williamsburg')).toBeInTheDocument();
+    expect(screen.queryByText(/123 Secret St/i)).not.toBeInTheDocument();
     expect(screen.queryByText('should never render')).not.toBeInTheDocument();
     expect(screen.queryByText('https://partiful.com/e/secret')).not.toBeInTheDocument();
     expect(screen.queryByText('tuesday fifth card')).not.toBeInTheDocument();
