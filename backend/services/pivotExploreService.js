@@ -38,9 +38,12 @@ const {
   FRIEND_CAP,
 } = require('./pivotFeedService');
 const { resolveExploreSections } = require('./pivotExploreSectionsService');
+const {
+  loadRichLocationViewerContext,
+} = require('./justGoRichLocationProjectionService');
 
 const PUBLIC_EVENT_FIELDS =
-  'name description location start_time end_time externalLink type registrationCount image customFields.pivot';
+  'name description location richLocation start_time end_time externalLink type registrationCount image customFields.pivot';
 const DEFAULT_EXPLORE_LIMIT = 40;
 const MAX_EXPLORE_LIMIT = 100;
 const EXPLORE_SORT_MODES = new Set(['for_you', 'soonest']);
@@ -452,7 +455,7 @@ function serializeExploreEvent(event, extras) {
 
 function serializeExploreCatalogEvents(
   catalogEvents,
-  { socialByEvent, userIntents, socialByEventAndSlot },
+  { socialByEvent, userIntents, socialByEventAndSlot, richLocationViewerContext },
 ) {
   return catalogEvents.map((event) => {
     const id = String(event._id);
@@ -479,6 +482,7 @@ function serializeExploreCatalogEvents(
     return serializeExploreEvent(event, {
       displayHost: resolveDisplayHost(event.customFields.pivot),
       userIntent: resolveExploreUserIntent(userIntentRow),
+      richLocationViewerContext,
       userTimeSlotId: userIntentRow?.timeSlotId || null,
       socialByTimeSlot,
       friendsInterested: social.friendsInterested,
@@ -759,6 +763,11 @@ async function getPivotExplore(req, options = {}) {
     }
   }
   const { userIntents, socialByEvent, socialByEventAndSlot } = friendSocial;
+  const richLocationViewerContext = await loadRichLocationViewerContext(
+    req,
+    catalogEventIds,
+    { tenant },
+  );
 
   const cityDisplayName = tenant?.location || tenant?.name || req.school;
   const { timezone: timeZone } = resolvePivotDropInstant(tenant, batchWeek, now);
@@ -793,6 +802,7 @@ async function getPivotExplore(req, options = {}) {
     socialByEvent,
     userIntents,
     socialByEventAndSlot,
+    richLocationViewerContext,
   });
   const pageEvents = serializedEvents.slice(offset, offset + limit);
   const { sections, sectionsSource } = await resolveExploreSections(req, {

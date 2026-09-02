@@ -54,6 +54,7 @@ const {
   requestFromPayload,
   resolveRichLocationWrite,
 } = require('./justGoRichLocationWriteService');
+const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 const CREATOR_SOURCE = 'justgo';
@@ -563,7 +564,7 @@ function serializeAnalyticsSummary(analyticsDoc) {
 }
 
 function serializeCreatorListing(event, intentStatsByEventId = null, options = {}) {
-  const base = serializeLabEvent(event, intentStatsByEventId);
+  const base = serializeLabEvent(event, intentStatsByEventId, options);
   const pivot = event?.customFields?.pivot || {};
   const host = pivot.host || {};
   const creatorUserId = options.creatorUserId;
@@ -710,7 +711,11 @@ async function listListings(req, options = {}) {
     events.map((event) => event._id),
   );
 
-  const serializeOptions = { creatorUserId, claimedOrganizerIds };
+  const serializeOptions = {
+    creatorUserId,
+    claimedOrganizerIds,
+    richLocationReadsEnabled: isRichLocationCapabilityEnabled(context.tenant, 'reads'),
+  };
 
   return {
     data: {
@@ -813,6 +818,7 @@ async function getListing(req, eventId, options = {}) {
       event: serializeCreatorListing(existing, intentStatsByEventId, {
         creatorUserId,
         claimedOrganizerIds,
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(context.tenant, 'reads'),
       }),
       stats: {
         intents: intentStats,
@@ -998,7 +1004,9 @@ async function createListing(req, payload = {}) {
 
   return {
     data: {
-      event: serializeCreatorListing(event),
+      event: serializeCreatorListing(event, null, {
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(context.tenant, 'reads'),
+      }),
       created: true,
       ingestStatus,
       batchWeek: weekResult.batchWeek,
@@ -1212,7 +1220,9 @@ async function updateListing(req, eventId, payload = {}) {
 
   return {
     data: {
-      event: serializeCreatorListing(updated),
+      event: serializeCreatorListing(updated, null, {
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(context.tenant, 'reads'),
+      }),
       updated: true,
       ingestStatus: pivot.ingestStatus || null,
       batchWeek: pivot.batchWeek || null,

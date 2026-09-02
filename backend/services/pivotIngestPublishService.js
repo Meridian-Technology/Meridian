@@ -43,6 +43,7 @@ const {
   resolveOrganizers,
   uniqueOrganizerIds,
 } = require('./pivotOrganizerResolveService');
+const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 /** Default for new Lab / URL / JSON ingest — not live until Release (Task 3.2). */
@@ -664,7 +665,12 @@ async function publishIngestEvent(req, options = {}) {
 
   return {
     data: {
-      event: serializeLabEvent(event),
+      event: serializeLabEvent(event, null, {
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(
+          tenantResult.tenant,
+          'reads',
+        ),
+      }),
       created: !updatedExisting,
       updated: updatedExisting,
       ingestStatus,
@@ -1018,7 +1024,12 @@ async function updateIngestEvent(req, options = {}) {
 
   return {
     data: {
-      event: serializeLabEvent(updated),
+      event: serializeLabEvent(updated, null, {
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(
+          tenantResult.tenant,
+          'reads',
+        ),
+      }),
     },
   };
 }

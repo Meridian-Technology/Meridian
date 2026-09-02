@@ -114,6 +114,30 @@ describe('Just Go public event v1 contract (Phase 1, Step 1.4)', () => {
     }
   });
 
+  it('accepts an optional public-safe rich location and rejects restricted additions', () => {
+    const richLocation = {
+      mode: 'registration_gated',
+      publicDisplayLabel: 'Supper Club · Uptown',
+      venueName: 'Supper Club',
+      neighborhood: 'Uptown',
+      city: 'Oakland',
+      region: 'California',
+      countryCode: 'US',
+      resolutionStatus: 'resolved',
+      revealPolicy: 'registered_only',
+    };
+    expect(matchesSchema(publicEvent({ richLocation }), schema)).toBe(true);
+    expect(matchesSchema(publicEvent({
+      richLocation: {
+        ...richLocation,
+        coordinates: { type: 'Point', coordinates: [-122.27, 37.81] },
+      },
+    }), schema)).toBe(false);
+    expect(matchesSchema(publicEvent({
+      richLocation: { ...richLocation, googlePlaceId: 'ChIJ-private' },
+    }), schema)).toBe(false);
+  });
+
   it.each([
     ['attendees', [{ userId: 'private-user' }]],
     ['registrationCount', 12],

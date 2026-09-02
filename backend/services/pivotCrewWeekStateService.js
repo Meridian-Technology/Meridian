@@ -19,6 +19,10 @@ const {
   computeBallotEndsAt,
   LEGACY_OPEN_JUDGEMENT_STATUSES,
 } = require('../utilities/pivotCrewBorda');
+const {
+  loadRichLocationViewerContext,
+  projectEventRichLocation,
+} = require('./justGoRichLocationProjectionService');
 
 const LOCKED_JUDGEMENT_STATUSES = new Set(['confirmed', 'swapped']);
 const PRESERVED_JUDGEMENT_STATUSES = new Set([
@@ -110,7 +114,7 @@ function computeJudgementWindowEndsAt({
   return new Date(Math.max(minEndMs, eventDeadlineMs)).toISOString();
 }
 
-function serializeCrewWeekEvent(event, voteEntry) {
+function serializeCrewWeekEvent(event, voteEntry, richLocationViewerContext) {
   if (!event) {
     return null;
   }
@@ -124,6 +128,7 @@ function serializeCrewWeekEvent(event, voteEntry) {
       : typeof pivot.movie?.synopsis === 'string' && pivot.movie.synopsis.trim()
         ? pivot.movie.synopsis.trim()
         : null;
+  const richLocation = projectEventRichLocation(event, richLocationViewerContext);
 
   return {
     id: event._id.toString(),
@@ -131,6 +136,7 @@ function serializeCrewWeekEvent(event, voteEntry) {
     startTime: event.start_time,
     endTime: event.end_time,
     location: event.location,
+    ...(richLocation ? { richLocation } : {}),
     externalLink: event.externalLink || null,
     displayHost: resolveDisplayHost(pivot),
     ...(coverImageUrl ? { coverImageUrl } : {}),
@@ -198,7 +204,13 @@ function resolveProposedEventId(weekState) {
   return null;
 }
 
-function serializeCrewWeekProgressRow(crew, weekState, eventsById, crewConfig) {
+function serializeCrewWeekProgressRow(
+  crew,
+  weekState,
+  eventsById,
+  crewConfig,
+  richLocationViewerContext,
+) {
   // Viewer only appears here with an active membership — if week state is not
   // recomputed yet (brand-new solo circle), treat as 1 active so invite-waiting
   // surfaces instead of a zeroed-out row that looks empty/broken.
@@ -249,10 +261,18 @@ function serializeCrewWeekProgressRow(crew, weekState, eventsById, crewConfig) {
     judgementStatus: weekState?.judgementStatus || 'awaiting_quorum',
     shortlistEventIds,
     proposedEvent: proposedEventId
-      ? serializeCrewWeekEvent(eventsById.get(proposedEventId), voteByEventId.get(proposedEventId))
+      ? serializeCrewWeekEvent(
+          eventsById.get(proposedEventId),
+          voteByEventId.get(proposedEventId),
+          richLocationViewerContext,
+        )
       : null,
     runnerUp: runnerUpEventId
-      ? serializeCrewWeekEvent(eventsById.get(runnerUpEventId), voteByEventId.get(runnerUpEventId))
+      ? serializeCrewWeekEvent(
+          eventsById.get(runnerUpEventId),
+          voteByEventId.get(runnerUpEventId),
+          richLocationViewerContext,
+        )
       : null,
     judgementWindowEndsAt,
     ballot: {
@@ -339,12 +359,18 @@ async function buildCrewWeekProgressPayload(req, batchWeek) {
         status: { $in: PIVOT_EVENT_STATUSES },
         isDeleted: { $ne: true },
       })
-        .select('name description location start_time end_time externalLink image customFields.pivot')
+        .select('name description location richLocation start_time end_time externalLink image customFields.pivot')
         .lean()
     : [];
 
   const eventsById = new Map(events.map((event) => [event._id.toString(), event]));
   const crewById = new Map(crews.map((crew) => [crew._id.toString(), crew]));
+  const tenant = await getTenantByKey(req, tenantKey).catch(() => null);
+  const richLocationViewerContext = await loadRichLocationViewerContext(
+    req,
+    events.map((event) => event._id),
+    { tenant },
+  );
 
   const crewsPayload = memberships
     .map((membership) => {
@@ -358,6 +384,7 @@ async function buildCrewWeekProgressPayload(req, batchWeek) {
         weekStateByCrewId.get(crewId),
         eventsById,
         crewConfig,
+        richLocationViewerContext,
       );
     })
     .filter(Boolean);

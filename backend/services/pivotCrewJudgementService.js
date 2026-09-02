@@ -31,7 +31,7 @@ const {
 } = require('../utilities/pivotCrewBorda');
 const { PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
-const { getMergedTenants } = require('./tenantConfigService');
+const { getMergedTenants, getTenantByKey } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
 const { connectToDatabase } = require('../connectionsManager');
 const { notifyCrewConsensusPeers } = require('./pivotCrewNudgeService');
@@ -40,6 +40,9 @@ const {
   normalizeProposedEventIds,
   syncPrimaryProposedFields,
 } = require('../utilities/pivotCrewPickSlots');
+const {
+  loadRichLocationViewerContext,
+} = require('./justGoRichLocationProjectionService');
 
 function toObjectId(value) {
   if (!mongoose.Types.ObjectId.isValid(value)) {
@@ -137,7 +140,7 @@ async function loadWeekStateEvents(req, weekState, batchWeek) {
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
   })
-    .select('name description location start_time end_time externalLink image customFields.pivot')
+    .select('name description location richLocation start_time end_time externalLink image customFields.pivot')
     .lean();
 
   return new Map(events.map((event) => [event._id.toString(), event]));
@@ -214,7 +217,12 @@ async function loadActiveMemberUserIds(req, crewObjectId) {
     .filter(Boolean);
 }
 
-function serializeVoteBreakdown(weekState, eventsById, usersById) {
+function serializeVoteBreakdown(
+  weekState,
+  eventsById,
+  usersById,
+  richLocationViewerContext,
+) {
   return (weekState?.voteBreakdown || []).map((entry) => {
     const eventId = entry.eventId.toString();
     return {
@@ -222,7 +230,11 @@ function serializeVoteBreakdown(weekState, eventsById, usersById) {
       score: entry.score,
       interestedCount: entry.interestedCount,
       registeredCount: entry.registeredCount,
-      event: serializeCrewWeekEvent(eventsById.get(eventId), entry),
+      event: serializeCrewWeekEvent(
+        eventsById.get(eventId),
+        entry,
+        richLocationViewerContext,
+      ),
       memberVotes: (entry.memberVotes || []).map((vote) => {
         const userId = vote.userId.toString();
         const user = usersById.get(userId);
@@ -607,13 +619,24 @@ async function buildCrewWeekJudgementPayload(
 
   const usersById = await loadJudgementVoteUsers(req, weekState);
   const activeMemberUserIds = await loadActiveMemberUserIds(req, crewObjectId);
+  const tenant = await getTenantByKey(req, req.school).catch(() => null);
+  const richLocationViewerContext = await loadRichLocationViewerContext(
+    req,
+    [...eventsById.keys()],
+    { tenant },
+  );
   const judgementWindowEndsAt = resolveJudgementWindowEndsAt(
     weekState,
     eventsById,
     crewConfig,
   );
 
-  const voteBreakdown = serializeVoteBreakdown(weekState, eventsById, usersById);
+  const voteBreakdown = serializeVoteBreakdown(
+    weekState,
+    eventsById,
+    usersById,
+    richLocationViewerContext,
+  );
   const maxPickSlots = resolveEffectiveMaxPickSlots({
     weekState,
     crew,
@@ -653,7 +676,7 @@ async function buildCrewWeekJudgementPayload(
     if (!eventId) return null;
     return (
       voteBreakdown.find((entry) => entry.eventId === eventId)?.event ||
-      serializeCrewWeekEvent(eventsById.get(eventId), null) ||
+      serializeCrewWeekEvent(eventsById.get(eventId), null, richLocationViewerContext) ||
       null
     );
   };
@@ -1108,11 +1131,17 @@ async function loadLockedCrewPicksForUser(req, batchWeek) {
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
   })
-    .select('name description location start_time end_time externalLink image customFields.pivot')
+    .select('name description location richLocation start_time end_time externalLink image customFields.pivot')
     .lean();
 
   const eventsById = new Map(events.map((event) => [event._id.toString(), event]));
   const crewById = new Map(crews.map((crew) => [crew._id.toString(), crew]));
+  const tenant = await getTenantByKey(req, req.school).catch(() => null);
+  const richLocationViewerContext = await loadRichLocationViewerContext(
+    req,
+    eventIds,
+    { tenant },
+  );
 
   return weekStates
     .map((weekState) => {
@@ -1131,7 +1160,7 @@ async function loadLockedCrewPicksForUser(req, batchWeek) {
         crewId: crew._id.toString(),
         crewName: crew.name,
         judgementStatus: weekState.judgementStatus,
-        event: serializeCrewWeekEvent(event, voteEntry),
+        event: serializeCrewWeekEvent(event, voteEntry, richLocationViewerContext),
       };
     })
     .filter(Boolean);
