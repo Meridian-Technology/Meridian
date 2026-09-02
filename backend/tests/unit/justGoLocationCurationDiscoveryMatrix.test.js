@@ -30,6 +30,8 @@ function resolved(mode = 'physical', overrides = {}) {
     coordinates: { type: 'Point', coordinates: [-73.99, 40.69] },
     googlePlaceId: PLACE_ID,
     provider: 'google',
+    aliases: ['Private provider alias'],
+    normalizedSearchText: 'private provider normalized search material',
     resolutionStatus: 'resolved',
     resolutionConfidence: 1,
     resolvedAt: '2026-09-01T00:00:00.000Z',
@@ -172,6 +174,8 @@ describe('Just Go curation and discovery rich-location matrix', () => {
         expect(JSON.stringify(publicOutput)).not.toContain(PLACE_ID);
         expect(JSON.stringify(indexedFields)).not.toContain(PRECISE_ADDRESS);
         expect(JSON.stringify(indexedFields)).not.toContain(PLACE_ID);
+        expect(JSON.stringify(indexedFields)).not.toContain('Private provider alias');
+        expect(JSON.stringify(indexedFields)).not.toContain('normalized search material');
         expect(registeredOutput).toMatchObject({
           formattedAddress: PRECISE_ADDRESS,
           googlePlaceId: PLACE_ID,
@@ -190,5 +194,31 @@ describe('Just Go curation and discovery rich-location matrix', () => {
     });
     expect(justGoLocationIndexFields(event)).toEqual(['Legacy venue string']);
     expect(projectEventRichLocation(event)).toBeUndefined();
+  });
+
+  test('registration reveals an authorized response without mutating the shared index', async () => {
+    const event = {
+      _id: EVENT_ID,
+      location: 'Unchanged legacy location',
+      richLocation: resolved('registration_gated'),
+    };
+    const sourceBefore = JSON.parse(JSON.stringify(event));
+    const indexBeforeRegistration = justGoLocationIndexFields(event);
+
+    const registeredOutput = await projectAuthorizedRichLocation(
+      { user: { userId: USER_ID }, db: {} },
+      event,
+    );
+    const indexAfterRegistration = justGoLocationIndexFields(event);
+
+    expect(registeredOutput).toMatchObject({
+      formattedAddress: PRECISE_ADDRESS,
+      googlePlaceId: PLACE_ID,
+    });
+    expect(indexAfterRegistration).toEqual(indexBeforeRegistration);
+    expect(event).toEqual(expect.objectContaining(sourceBefore));
+    expect(JSON.stringify(indexAfterRegistration)).not.toContain(PRECISE_ADDRESS);
+    expect(JSON.stringify(indexAfterRegistration)).not.toContain(PLACE_ID);
+    expect(JSON.stringify(indexAfterRegistration)).not.toContain('Private provider alias');
   });
 });

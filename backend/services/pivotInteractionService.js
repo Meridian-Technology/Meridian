@@ -22,6 +22,39 @@ const MAX_DWELL_MS = 5 * 60 * 1000;
 const DEFAULT_IMPRESSION_RANKER_VERSION = 'rules_v0';
 
 const MICRO_INTERACTION_TYPES = new Set(['dwell', 'detail_open']);
+const RESTRICTED_LOCATION_ANALYTICS_KEYS = new Set([
+  'richLocation',
+  'originalInput',
+  'formattedAddress',
+  'addressComponents',
+  'postalCode',
+  'coordinates',
+  'googlePlaceId',
+  'provider',
+  'placeTypes',
+  'aliases',
+  'normalizedSearchText',
+  'resolutionConfidence',
+  'createdAt',
+  'updatedAt',
+  'resolvedAt',
+  'reviewedAt',
+]);
+
+function sanitizePivotAnalyticsValue(value, depth = 0) {
+  if (depth > 10) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => sanitizePivotAnalyticsValue(entry, depth + 1))
+      .filter((entry) => entry !== undefined);
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !RESTRICTED_LOCATION_ANALYTICS_KEYS.has(key))
+    .map(([key, entry]) => [key, sanitizePivotAnalyticsValue(entry, depth + 1)])
+    .filter(([, entry]) => entry !== undefined));
+}
 
 function clampDwellMs(ms) {
   if (ms == null || !Number.isFinite(Number(ms))) {
@@ -203,7 +236,7 @@ function normalizePivotInteractionPayload(payload = {}) {
     doc.query = payload.query.trim();
   }
   if (payload.filters != null && typeof payload.filters === 'object') {
-    doc.filters = payload.filters;
+    doc.filters = sanitizePivotAnalyticsValue(payload.filters);
   }
   if (seedEventId) {
     doc.seedEventId = seedEventId;
@@ -523,6 +556,7 @@ function recordPivotMicroInteractions(req, body = {}) {
 
 module.exports = {
   normalizePivotInteractionPayload,
+  sanitizePivotAnalyticsValue,
   normalizeCrewIds,
   resolveInteractionCrewContext,
   writePivotInteraction,

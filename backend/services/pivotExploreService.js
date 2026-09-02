@@ -41,6 +41,12 @@ const { resolveExploreSections } = require('./pivotExploreSectionsService');
 const {
   loadRichLocationViewerContext,
 } = require('./justGoRichLocationProjectionService');
+const {
+  justGoLocationIndexFields,
+} = require('../utilities/justGoLocationPolicy');
+const {
+  isRichLocationCapabilityEnabled,
+} = require('../utilities/justGoRichLocationControls');
 
 const PUBLIC_EVENT_FIELDS =
   'name description location richLocation start_time end_time externalLink type registrationCount image customFields.pivot';
@@ -245,7 +251,7 @@ function eventMatchesNight(event, night, timeZone) {
   );
 }
 
-function eventMatchesQuery(event, query) {
+function eventMatchesQuery(event, query, options = {}) {
   if (!query) {
     return true;
   }
@@ -253,7 +259,10 @@ function eventMatchesQuery(event, query) {
   const needle = query.toLowerCase();
   const hostName = event.customFields?.pivot?.host?.name || '';
   const enrichmentText = collectPivotEnrichmentSearchText(event.customFields?.pivot);
-  const haystack = [event.name, event.description, hostName, enrichmentText]
+  const locationText = options.richLocationSearchEnabled === true
+    ? justGoLocationIndexFields({ richLocation: event.richLocation }).join(' ')
+    : '';
+  const haystack = [event.name, event.description, hostName, enrichmentText, locationText]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -305,7 +314,12 @@ function shouldExcludePassedExploreEvent(event, userIntents, excludePassed) {
 }
 
 function applyExploreFilters(events, filters, context) {
-  const { userIntents, socialByEvent, timeZone } = context;
+  const {
+    userIntents,
+    socialByEvent,
+    timeZone,
+    richLocationSearchEnabled,
+  } = context;
 
   return events.filter((event) => {
     if (shouldExcludePassedExploreEvent(event, userIntents, filters.excludePassed)) {
@@ -324,7 +338,7 @@ function applyExploreFilters(events, filters, context) {
       return false;
     }
 
-    return eventMatchesQuery(event, filters.q);
+    return eventMatchesQuery(event, filters.q, { richLocationSearchEnabled });
   });
 }
 
@@ -771,11 +785,13 @@ async function getPivotExplore(req, options = {}) {
 
   const cityDisplayName = tenant?.location || tenant?.name || req.school;
   const { timezone: timeZone } = resolvePivotDropInstant(tenant, batchWeek, now);
+  const richLocationSearchEnabled = isRichLocationCapabilityEnabled(tenant, 'search');
 
   const filteredEvents = applyExploreFilters(catalogEvents, filters, {
     userIntents,
     socialByEvent,
     timeZone,
+    richLocationSearchEnabled,
   });
 
   if (sort === 'for_you') {

@@ -1,3 +1,10 @@
+const {
+  projectPublicRichLocation,
+} = require('../events/services/richLocationProjectionService');
+const {
+  collectPublicRichLocationSearchTerms,
+} = require('./justGoRichLocationSearch');
+
 const MODES = new Set([
   'physical',
   'registration_gated',
@@ -193,19 +200,27 @@ function justGoLocationIndexFields(input) {
     return isNonEmptyString(input.location) ? [input.location.trim()] : [];
   }
 
+  const publicLocation = projectPublicRichLocation(location);
+  if (!publicLocation) return [];
+
   let values;
-  if (location.mode === 'physical') {
-    values = [location.publicDisplayLabel, location.venueName, location.formattedAddress,
-      location.neighborhood, location.city, location.region, location.countryCode];
-  } else if (location.mode === 'registration_gated') {
-    values = [location.publicDisplayLabel, location.venueName, location.approximateLabel,
-      location.neighborhood, location.city, location.region, location.countryCode,
+  if (publicLocation.mode === 'physical') {
+    values = [
+      ...collectPublicRichLocationSearchTerms(location),
+      publicLocation.region,
+      publicLocation.countryCode,
+    ];
+  } else if (publicLocation.mode === 'registration_gated') {
+    values = [publicLocation.publicDisplayLabel, publicLocation.venueName,
+      publicLocation.approximateLabel, publicLocation.neighborhood, publicLocation.city,
+      publicLocation.region, publicLocation.countryCode,
       'registration required'];
-  } else if (location.mode === 'approximate') {
-    values = [location.publicDisplayLabel, location.approximateLabel,
-      location.neighborhood, location.city, location.region, location.countryCode];
+  } else if (publicLocation.mode === 'approximate') {
+    values = [publicLocation.publicDisplayLabel, publicLocation.approximateLabel,
+      publicLocation.neighborhood, publicLocation.city, publicLocation.region,
+      publicLocation.countryCode];
   } else {
-    values = [location.publicDisplayLabel, location.mode];
+    values = [publicLocation.publicDisplayLabel, publicLocation.mode];
   }
   return [...new Set(values.filter(isNonEmptyString).map((value) => value.trim()))];
 }
