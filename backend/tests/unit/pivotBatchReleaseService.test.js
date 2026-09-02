@@ -149,6 +149,7 @@ describe('releaseBatch', () => {
       expect.objectContaining({
         'customFields.pivot.batchWeek': BATCH_WEEK,
         'customFields.pivot.ingestStatus': 'staged',
+        'customFields.pivot.locationReview.status': { $ne: 'needs_review' },
       }),
       { $set: { 'customFields.pivot.ingestStatus': 'published' } },
     );

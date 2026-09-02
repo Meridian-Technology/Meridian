@@ -113,6 +113,7 @@ async function releaseBatch(req, options = {}) {
   const match = {
     ...catalogWeekBaseQuery(batchWeek),
     'customFields.pivot.ingestStatus': STAGED_STATUS,
+    'customFields.pivot.locationReview.status': { $ne: 'needs_review' },
   };
   if (idsResult.eventIds) {
     match._id = { $in: idsResult.eventIds };

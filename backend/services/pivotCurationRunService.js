@@ -293,6 +293,8 @@ async function upsertDiscoveredEntry(
       description: draft.description,
       image: draft.image,
       location: draft.location,
+      rawLocationText: draft.rawLocationText,
+      richLocation: draft.richLocation,
       start_time: draft.start_time,
       end_time: draft.end_time,
       hostName: draft.hostName,
@@ -313,6 +315,8 @@ async function upsertDiscoveredEntry(
     const skipCodes = new Set([
       'MISSING_REQUIRED_FIELDS',
       'INVALID_START_TIME',
+      'RICH_LOCATION_INVALID',
+      'RICH_LOCATION_UNRESOLVED',
       'DUPLICATE_EVENT',
     ]);
     if (skipCodes.has(result.code)) {

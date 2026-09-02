@@ -78,6 +78,8 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     ...(movie ? { movie } : {}),
     ...(enrichment ? { enrichment } : {}),
     ...(pivot.duplicateRollup ? { duplicateRollup: pivot.duplicateRollup } : {}),
+    ...(pivot.rawLocationText ? { rawLocationText: pivot.rawLocationText } : {}),
+    ...(pivot.locationReview ? { locationReview: pivot.locationReview } : {}),
     organizerName: host.name || '',
     organizerImageUrl: host.imageUrl || null,
     organizerProfileUrl: host.profileUrl || null,

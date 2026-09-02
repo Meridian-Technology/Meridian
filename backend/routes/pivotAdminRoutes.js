@@ -70,6 +70,10 @@ const {
   publishBatchIngestEvents,
   updateIngestEvent,
 } = require('../services/pivotIngestPublishService');
+const {
+  listLocationReviewCandidates,
+  reviewLocationCandidate,
+} = require('../services/pivotLocationReviewService');
 const { collapseCatalogEventsToShowtimes } = require('../services/pivotCatalogShowtimeCollapseService');
 const {
   purgePivotCatalog,
@@ -2307,6 +2311,56 @@ router.post('/ingest/annotate-duplicates', verifyToken, requirePlatformAdmin, as
     });
   }
 });
+
+router.get('/ingest/location-reviews', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await listLocationReviewCandidates(req, {
+      tenantKey: req.query?.tenantKey,
+      status: req.query?.status,
+      limit: req.query?.limit,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+    return res.status(200).json({ success: true, data: result.data });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/ingest/location-reviews', err, req);
+    return res.status(500).json({ success: false, message: 'Unable to load location reviews.' });
+  }
+});
+
+router.post(
+  '/ingest/:eventId/location-review',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await reviewLocationCandidate(req, {
+        eventId: req.params.eventId,
+        tenantKey: req.body?.tenantKey,
+        action: req.body?.action,
+        candidateId: req.body?.candidateId,
+        richLocation: req.body?.richLocation,
+        notes: req.body?.notes,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError('POST /admin/pivot/ingest/:eventId/location-review', err, req);
+      return res.status(500).json({ success: false, message: 'Unable to review location.' });
+    }
+  },
+);
 
 router.post('/ingest', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {

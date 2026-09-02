@@ -72,6 +72,7 @@ const {
   mergePivotDiscoveryConfig,
   NATIVE_SKIP_HOSTS,
 } = require('../utilities/pivotDiscoveryConfig');
+const { assessJustGoLocationReview } = require('../utilities/justGoLocationPolicy');
 
 /**
  * Autonomous event-source discovery for a city.
@@ -958,8 +959,12 @@ async function qualifyCandidate(state, candidate) {
 
   // A listing without a resolvable start time is not schedulable, so it does not
   // count toward the threshold even though the extractor returned it.
-  const dated = scraped.drafts.filter((entry) => entry.draft?.start_time);
-  const undated = scraped.drafts.length - dated.length;
+  const datedEntries = scraped.drafts.filter((entry) => entry.draft?.start_time);
+  const undated = scraped.drafts.length - datedEntries.length;
+  const dated = datedEntries.filter(
+    (entry) => assessJustGoLocationReview(entry.draft).ingestible,
+  );
+  const locationBlocked = datedEntries.length - dated.length;
 
   if (dated.length < state.minEvents) {
     const reason = dated.length === 0 ? 'no-events' : 'below-threshold';
@@ -972,9 +977,14 @@ async function qualifyCandidate(state, candidate) {
           ? `No dated events on ${candidate.host}`
           : `Only ${dated.length} dated event(s) on ${candidate.host}`,
       detail:
-        undated > 0
-          ? `${undated} listing(s) had no resolvable start time, so they cannot be scheduled`
-          : `Below the threshold of ${state.minEvents}`,
+        [
+          undated > 0
+            ? `${undated} listing(s) had no resolvable start time, so they cannot be scheduled`
+            : null,
+          locationBlocked > 0
+            ? `${locationBlocked} listing(s) had an invalid rich location`
+            : null,
+        ].filter(Boolean).join('; ') || `Below the threshold of ${state.minEvents}`,
       host: candidate.host,
       url: picked.url,
       eventCount: dated.length,
@@ -995,7 +1005,12 @@ async function qualifyCandidate(state, candidate) {
     kind: 'qualify',
     tone: 'good',
     title: `${candidate.host} qualified with ${dated.length} event(s)`,
-    detail: undated > 0 ? `${undated} undated listing(s) ignored` : null,
+    detail: [
+      undated > 0 ? `${undated} undated listing(s) ignored` : null,
+      locationBlocked > 0
+        ? `${locationBlocked} listing(s) with non-publishable rich locations ignored`
+        : null,
+    ].filter(Boolean).join('; ') || null,
     host: candidate.host,
     url: picked.url,
     eventCount: dated.length,

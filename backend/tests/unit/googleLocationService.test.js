@@ -1,6 +1,7 @@
 const {
   GoogleLocationError,
   createGoogleLocationAdapter,
+  normalizeAutocompleteSuggestions,
   normalizedLocationFromGoogle,
   resolveServerApiKey,
 } = require('../../services/googleLocationService');
@@ -40,6 +41,43 @@ function adapterOptions(overrides = {}) {
 }
 
 describe('googleLocationService', () => {
+  it('normalizes safe autocomplete fields without returning provider payloads', async () => {
+    const providerData = {
+      suggestions: [{
+        placePrediction: {
+          place: `places/${PLACE_ID}`,
+          text: { text: 'The Great Hall, Brooklyn, NY' },
+          structuredFormat: {
+            mainText: { text: 'The Great Hall' },
+            secondaryText: { text: 'Brooklyn, NY' },
+          },
+          types: ['event-venue', 'point_of_interest'],
+          distanceMeters: 123,
+        },
+      }],
+    };
+    expect(normalizeAutocompleteSuggestions(providerData)).toEqual([{
+      placeId: PLACE_ID,
+      primaryText: 'The Great Hall',
+      secondaryText: 'Brooklyn, NY',
+      fullText: 'The Great Hall, Brooklyn, NY',
+      placeTypes: ['event_venue', 'point_of_interest'],
+    }]);
+
+    const options = adapterOptions();
+    options.httpClient.request.mockResolvedValue({ data: providerData });
+    await expect(createGoogleLocationAdapter(options).autocompletePlaces('Great Hall', {
+      languageCode: 'en',
+      regionCode: 'US',
+      includedRegionCodes: ['US'],
+    })).resolves.toHaveLength(1);
+    expect(options.httpClient.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      url: 'https://places.googleapis.com/v1/places:autocomplete',
+      data: expect.objectContaining({ input: 'Great Hall', includedRegionCodes: ['US'] }),
+    }));
+  });
+
   it('maps Places API fields into the shared rich-location shape', () => {
     const result = normalizedLocationFromGoogle(googlePlace(), {
       resolvedAt: new Date('2026-09-01T12:00:00.000Z'),

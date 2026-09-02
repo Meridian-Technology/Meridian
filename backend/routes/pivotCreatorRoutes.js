@@ -7,6 +7,7 @@ const express = require('express');
 const { verifyToken } = require('../middlewares/verifyToken');
 const { requirePivotCreator } = require('../middlewares/requirePivotCreator');
 const {
+  autocompleteCreatorLocations,
   createListing,
   updateListing,
   listListings,
@@ -22,6 +23,26 @@ const router = express.Router();
 
 router.use(verifyToken);
 router.use(requirePivotCreator);
+
+router.get('/locations/autocomplete', async (req, res) => {
+  try {
+    const result = await autocompleteCreatorLocations(req, {
+      query: req.query?.q ?? req.query?.query,
+    });
+    if (result.error) {
+      logPivotServiceReject('GET /pivot/creator/locations/autocomplete', result, req);
+      return sendServiceResult(res, result);
+    }
+    return sendServiceResult(res, result);
+  } catch (err) {
+    logPivotRouteError('GET /pivot/creator/locations/autocomplete', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to search locations.',
+      code: 'CREATOR_LOCATION_AUTOCOMPLETE_FAILED',
+    });
+  }
+});
 
 function sendServiceResult(res, result, { successStatus = 200 } = {}) {
   if (result.error) {

@@ -16,6 +16,13 @@ const PLACE_DETAILS_FIELD_MASK = [
   'location',
   'types',
 ].join(',');
+const AUTOCOMPLETE_FIELD_MASK = [
+  'suggestions.placePrediction.place',
+  'suggestions.placePrediction.placeId',
+  'suggestions.placePrediction.text',
+  'suggestions.placePrediction.structuredFormat',
+  'suggestions.placePrediction.types',
+].join(',');
 
 const RETRYABLE_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRYABLE_NETWORK_CODES = new Set([
@@ -149,6 +156,26 @@ function normalizedLocationFromGoogle(place, options = {}) {
   };
 
   return Object.fromEntries(Object.entries(location).filter(([, value]) => value !== undefined));
+}
+
+function normalizeAutocompleteSuggestions(data) {
+  const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+  return suggestions.reduce((result, suggestion) => {
+    const prediction = suggestion?.placePrediction;
+    const placeId = trimString(prediction?.placeId || prediction?.place).replace(/^places\//, '');
+    const fullText = trimString(prediction?.text?.text);
+    const primaryText = trimString(prediction?.structuredFormat?.mainText?.text) || fullText;
+    const secondaryText = trimString(prediction?.structuredFormat?.secondaryText?.text);
+    if (!placeId || !primaryText) return result;
+    result.push({
+      placeId,
+      primaryText,
+      ...(secondaryText ? { secondaryText } : {}),
+      fullText: fullText || [primaryText, secondaryText].filter(Boolean).join(', '),
+      placeTypes: normalizeTokens(prediction?.types),
+    });
+    return result;
+  }, []);
 }
 
 function resolveServerApiKey(env = process.env) {
@@ -338,6 +365,56 @@ function createGoogleLocationAdapter(options = {}) {
     return location;
   }
 
+  async function autocompletePlaces(input, requestOptions = {}) {
+    const normalizedInput = trimString(input);
+    if (normalizedInput.length < 2 || normalizedInput.length > 500) {
+      throw new GoogleLocationError('Autocomplete input must be between 2 and 500 characters.', {
+        code: 'GOOGLE_AUTOCOMPLETE_INPUT_INVALID',
+        status: 400,
+        retryable: false,
+      });
+    }
+
+    const response = await requestWithRetry(
+      'place_autocomplete',
+      (key) => ({
+        method: 'POST',
+        url: `${PLACES_API_BASE_URL}/places:autocomplete`,
+        timeout: timeoutMs,
+        headers: {
+          'X-Goog-Api-Key': key,
+          'X-Goog-FieldMask': AUTOCOMPLETE_FIELD_MASK,
+        },
+        data: {
+          input: normalizedInput,
+          ...(trimString(requestOptions.languageCode)
+            ? { languageCode: trimString(requestOptions.languageCode) }
+            : {}),
+          ...(trimString(requestOptions.regionCode)
+            ? { regionCode: trimString(requestOptions.regionCode).toUpperCase() }
+            : {}),
+          ...(Array.isArray(requestOptions.includedRegionCodes)
+            ? { includedRegionCodes: requestOptions.includedRegionCodes }
+            : {}),
+          ...(requestOptions.locationRestriction
+            ? { locationRestriction: requestOptions.locationRestriction }
+            : {}),
+        },
+      }),
+      (providerResponse) => (
+        Array.isArray(providerResponse.data?.suggestions)
+          ? null
+          : {
+              code: 'GOOGLE_LOCATION_MALFORMED_RESPONSE',
+              status: 502,
+              retryable: false,
+            }
+      ),
+    );
+
+    return normalizeAutocompleteSuggestions(response.data);
+  }
+
   async function geocodeAddress(address, requestOptions = {}) {
     const normalizedAddress = trimString(address);
     if (!normalizedAddress || normalizedAddress.length > 2000) {
@@ -423,6 +500,7 @@ function createGoogleLocationAdapter(options = {}) {
   }
 
   return {
+    autocompletePlaces,
     fetchPlaceDetails,
     geocodeAddress,
     isConfigured: () => Boolean(resolveServerApiKey(env)),
@@ -434,10 +512,12 @@ const defaultAdapter = createGoogleLocationAdapter();
 module.exports = {
   GoogleLocationError,
   createGoogleLocationAdapter,
+  autocompletePlaces: defaultAdapter.autocompletePlaces,
   fetchPlaceDetails: defaultAdapter.fetchPlaceDetails,
   geocodeAddress: defaultAdapter.geocodeAddress,
   isGoogleLocationConfigured: defaultAdapter.isConfigured,
   normalizedLocationFromGoogle,
+  normalizeAutocompleteSuggestions,
   normalizeAddressComponents,
   resolveServerApiKey,
   classifyTransportError,
@@ -445,6 +525,7 @@ module.exports = {
     DEFAULT_TIMEOUT_MS,
     DEFAULT_MAX_ATTEMPTS,
     PLACE_DETAILS_FIELD_MASK,
+    AUTOCOMPLETE_FIELD_MASK,
     PLACES_API_BASE_URL,
     GEOCODING_API_URL,
   },

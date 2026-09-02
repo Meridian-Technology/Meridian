@@ -17,6 +17,10 @@ const {
 } = require('../utilities/pivotTimeSlots');
 const { unionHostIdentities } = require('../utilities/pivotHostIdentity');
 const { uniqueOrganizerIds } = require('./pivotOrganizerResolveService');
+const {
+  justGoLocationMatchText,
+  rawJustGoLocationText,
+} = require('../utilities/justGoLocationPolicy');
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -105,7 +109,7 @@ function summarizeCatalogEvent(event) {
     _id: String(event._id),
     name: event.name || '',
     start_time: event.start_time || null,
-    location: event.location || '',
+    location: justGoLocationMatchText(event),
     batchWeek: pivot.batchWeek || null,
     organizerName: host.name || '',
     source: trimString(pivot.source),
@@ -118,7 +122,7 @@ function summarizeCatalogEvent(event) {
     fingerprint: buildEventFingerprint({
       name: event.name,
       start_time: event.start_time,
-      location: event.location,
+      location: justGoLocationMatchText(event),
     }),
     titleDayKey: buildTitleDayKey({
       name: event.name,
@@ -127,7 +131,7 @@ function summarizeCatalogEvent(event) {
     showtimeKey: showtimeGroupKey({
       name: event.name,
       start_time: event.start_time,
-      location: event.location,
+      location: justGoLocationMatchText(event),
     }),
     description: event.description || '',
     city: pivot.parsed?.address?.city || null,
@@ -143,7 +147,7 @@ async function loadCatalogDuplicateIndex(tenantKey) {
     'customFields.pivot': { $exists: true },
     isDeleted: { $ne: true },
   })
-    .select('name start_time location description image externalLink customFields.pivot')
+    .select('name start_time location richLocation description image externalLink customFields.pivot')
     .lean();
 
   return events.map(summarizeCatalogEvent);
@@ -250,7 +254,7 @@ function draftCandidate(entry) {
     name: entry.draft?.name,
     start_time: entry.draft?.start_time,
     end_time: entry.draft?.end_time,
-    location: entry.draft?.location,
+    location: justGoLocationMatchText(entry.draft),
     description: entry.draft?.description,
     sourceUrl: entry.sourceUrl || entry.draft?.sourceUrl,
     source: entry.draft?.source,
@@ -294,6 +298,7 @@ function mergeShowtimeGroup(entries) {
     ...primary.draft,
     description: ranked.reduce((best, entry) => pickRicherText(best, entry.draft?.description), ''),
     location: ranked.reduce((best, entry) => pickRicherText(best, entry.draft?.location), ''),
+    rawLocationText: rawJustGoLocationText(primary.draft),
     image: primary.draft?.image || ranked.find((entry) => entry.draft?.image)?.draft.image || null,
     hostIdentities: unionHostIdentities(
       ...ranked.map((entry) => entry.draft?.hostIdentities || entry.draft?.identities),
@@ -480,6 +485,9 @@ function mergeIngestIntoExisting(existing, incoming, duplicate = {}, incomingUrl
       ? incoming.description || existing.description || ''
       : pickRicherText(existing.description, incoming.description),
     location: pickRicherText(existing.location, incoming.location),
+    rawLocationText:
+      trimString(existingPivot.rawLocationText)
+      || rawJustGoLocationText(incoming),
     image: incoming.image || existing.image || null,
     hostName: trimString(existingPivot.host?.name) || trimString(incoming.hostName),
     hostImageUrl: incoming.hostImageUrl || existingPivot.host?.imageUrl || null,

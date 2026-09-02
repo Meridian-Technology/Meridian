@@ -55,6 +55,8 @@ const {
   resolveRichLocationWrite,
 } = require('./justGoRichLocationWriteService');
 const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
+const { validateJustGoLocationConstraints } = require('../utilities/justGoLocationConstraints');
+const googleLocationService = require('./googleLocationService');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 const CREATOR_SOURCE = 'justgo';
@@ -87,6 +89,69 @@ function firstNonEmpty(...values) {
     if (trimmed) return trimmed;
   }
   return null;
+}
+
+function autocompleteLocationRestriction(constraints) {
+  const bounds = constraints?.bounds;
+  if (!bounds || bounds.west > bounds.east) return undefined;
+  return {
+    rectangle: {
+      low: { latitude: bounds.south, longitude: bounds.west },
+      high: { latitude: bounds.north, longitude: bounds.east },
+    },
+  };
+}
+
+async function autocompleteCreatorLocations(req, options = {}) {
+  const context = await resolveListingContext(req);
+  if (context.error) return context;
+  if (!isRichLocationCapabilityEnabled(context.tenant, 'autocomplete')) {
+    return {
+      error: 'Location autocomplete is not enabled for this city.',
+      status: 409,
+      code: 'RICH_LOCATION_AUTOCOMPLETE_DISABLED',
+    };
+  }
+
+  const query = trimString(options.query);
+  if (query.length < 2 || query.length > 200) {
+    return {
+      error: 'Location search must be between 2 and 200 characters.',
+      status: 400,
+      code: 'RICH_LOCATION_AUTOCOMPLETE_QUERY_INVALID',
+    };
+  }
+
+  const constraintResult = validateJustGoLocationConstraints(
+    context.tenant.richLocationConstraints,
+  );
+  if (constraintResult.error) {
+    return {
+      error: 'This city is not configured for location autocomplete.',
+      status: 503,
+      code: 'RICH_LOCATION_CITY_CONSTRAINTS_REQUIRED',
+    };
+  }
+
+  const constraints = constraintResult.constraints;
+  try {
+    const suggestions = await googleLocationService.autocompletePlaces(query, {
+      languageCode: 'en',
+      regionCode: constraints.countryCode,
+      includedRegionCodes: [constraints.countryCode],
+      locationRestriction: autocompleteLocationRestriction(constraints),
+    });
+    return { data: { suggestions } };
+  } catch (error) {
+    const invalid = error?.code === 'GOOGLE_AUTOCOMPLETE_INPUT_INVALID';
+    return {
+      error: invalid
+        ? 'Location search is invalid.'
+        : 'Location suggestions are temporarily unavailable.',
+      status: invalid ? 400 : error?.status || 502,
+      code: error?.code || 'GOOGLE_LOCATION_FAILED',
+    };
+  }
 }
 
 function parseDateTime(value) {
@@ -1231,6 +1296,7 @@ async function updateListing(req, eventId, payload = {}) {
 }
 
 module.exports = {
+  autocompleteCreatorLocations,
   createListing,
   updateListing,
   listListings,

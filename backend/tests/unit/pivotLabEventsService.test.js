@@ -88,6 +88,22 @@ describe('pivotLabEventsService', () => {
       });
       expect(row.featured).toBe(true);
     });
+
+    it('surfaces raw location and review metadata for ops inspection', () => {
+      const row = serializeLabEvent({
+        _id: 'review-1',
+        name: 'Review me',
+        location: 'Legacy venue',
+        customFields: { pivot: {
+          rawLocationText: 'Original scraped venue',
+          locationReview: { status: 'needs_review', reason: 'physical_resolution_required' },
+        } },
+      });
+      expect(row).toMatchObject({
+        rawLocationText: 'Original scraped venue',
+        locationReview: { status: 'needs_review' },
+      });
+    });
   });
 
   describe('loadIntentStatsByEventId', () => {

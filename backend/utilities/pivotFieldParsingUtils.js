@@ -692,6 +692,10 @@ function enrichIngestDraft(draft, options = {}) {
 
     return {
       ...draft,
+      rawLocationText:
+        (typeof draft.rawLocationText === 'string' && draft.rawLocationText.trim())
+          ? draft.rawLocationText.trim()
+          : (typeof draft.location === 'string' ? draft.location.trim() : ''),
       start_time: start.iso || draft.start_time || null,
       end_time: end.iso || draft.end_time || null,
       ...(parsed ? { parsed } : {}),

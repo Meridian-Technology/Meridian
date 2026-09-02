@@ -32,6 +32,7 @@ jest.mock('../../services/pivotOrganizerResolveService', () => ({
   }),
 }));
 jest.mock('../../services/googleLocationService', () => ({
+  autocompletePlaces: jest.fn(),
   fetchPlaceDetails: jest.fn(),
 }));
 
@@ -52,6 +53,7 @@ const { toIsoWeek } = require('../../utilities/pivotIsoWeek');
 const { PIVOT_FEED_INGEST_STATUS } = require('../../utilities/pivotIngestStatus');
 const {
   createListing,
+  autocompleteCreatorLocations,
   updateListing,
   listListings,
   getListing,
@@ -172,6 +174,53 @@ describe('pivotCreatorListingService', () => {
       ambiguous: [],
     });
     googleLocationService.fetchPlaceDetails.mockReset();
+    googleLocationService.autocompletePlaces.mockReset();
+  });
+
+  describe('autocompleteCreatorLocations', () => {
+    it('returns city-restricted safe suggestions when autocomplete is enabled', async () => {
+      const tenant = {
+        ...TENANT,
+        richLocationControls: {rollout: 'on', autocomplete: true},
+        richLocationConstraints: {
+          countryCode: 'US',
+          bounds: {south: 40.55, west: -74.1, north: 40.75, east: -73.8},
+        },
+      };
+      resolvePivotTenant.mockResolvedValue({tenant});
+      googleLocationService.autocompletePlaces.mockResolvedValue([{
+        placeId: PLACE_ID,
+        primaryText: 'The Great Hall',
+        fullText: 'The Great Hall, Brooklyn, NY',
+        placeTypes: ['event_venue'],
+      }]);
+
+      const result = await autocompleteCreatorLocations(makeReq({
+        pivotCreator: {...makeReq().pivotCreator, tenant},
+      }), {query: 'Great Hall'});
+
+      expect(result.data.suggestions).toHaveLength(1);
+      expect(googleLocationService.autocompletePlaces).toHaveBeenCalledWith('Great Hall', {
+        languageCode: 'en',
+        regionCode: 'US',
+        includedRegionCodes: ['US'],
+        locationRestriction: {
+          rectangle: {
+            low: {latitude: 40.55, longitude: -74.1},
+            high: {latitude: 40.75, longitude: -73.8},
+          },
+        },
+      });
+    });
+
+    it('fails closed when city autocomplete is disabled', async () => {
+      const result = await autocompleteCreatorLocations(makeReq(), {query: 'Great Hall'});
+      expect(result).toMatchObject({
+        code: 'RICH_LOCATION_AUTOCOMPLETE_DISABLED',
+        status: 409,
+      });
+      expect(googleLocationService.autocompletePlaces).not.toHaveBeenCalled();
+    });
   });
 
   describe('rejectCreatorLifecycleOverrides', () => {

@@ -696,6 +696,47 @@ describe('pivotCurationRunService', () => {
       );
     });
 
+    it('passes raw and rich location fields through the curation handoff', async () => {
+      publishIngestEvent.mockResolvedValue({
+        data: {event: {_id: 'e1'}, created: true, updated: false},
+      });
+      const richLocation = {
+        mode: 'physical',
+        originalInput: 'RAW VENUE',
+        resolutionStatus: 'unresolved',
+        publicDisplayLabel: 'RAW VENUE',
+        revealPolicy: 'public',
+      };
+
+      await upsertDiscoveredEntry(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entry: {
+          sourceUrl: 'https://example.com/event',
+          draft: {
+            name: 'Review me',
+            hostName: 'Host',
+            location: 'RAW VENUE',
+            rawLocationText: 'RAW VENUE',
+            richLocation,
+            start_time: '2026-07-10T20:00:00.000Z',
+          },
+        },
+        defaultTags: ['nightlife'],
+      });
+
+      expect(publishIngestEvent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          overrides: expect.objectContaining({
+            rawLocationText: 'RAW VENUE',
+            richLocation,
+            ingestStatus: 'staged',
+          }),
+        }),
+      );
+    });
+
     it('skips incomplete drafts without aborting', async () => {
       publishIngestEvent.mockResolvedValue({
         error: 'Missing required fields after merge: hostName.',
@@ -715,6 +756,32 @@ describe('pivotCurationRunService', () => {
 
       expect(result.skipped).toBe(true);
       expect(result.code).toBe('MISSING_REQUIRED_FIELDS');
+    });
+
+    it('skips unresolved physical locations without treating policy rejection as a run failure', async () => {
+      publishIngestEvent.mockResolvedValue({
+        error: 'Physical locations must resolve before publishing.',
+        status: 422,
+        code: 'RICH_LOCATION_UNRESOLVED',
+      });
+
+      const result = await upsertDiscoveredEntry(mockReq(), {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        entry: {
+          sourceUrl: 'https://example.com/unresolved',
+          draft: {
+            name: 'Unresolved event',
+            sourceUrl: 'https://example.com/unresolved',
+          },
+        },
+        defaultTags: [],
+      });
+
+      expect(result).toMatchObject({
+        skipped: true,
+        code: 'RICH_LOCATION_UNRESOLVED',
+      });
     });
   });
 
