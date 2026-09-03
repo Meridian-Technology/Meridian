@@ -75,6 +75,7 @@ const pivotCrewNudgeSentSchema = require('../schemas/pivotCrewNudgeSent');
 const pivotOrganizerSchema = require('../schemas/pivotOrganizer');
 const pivotOrganizerBackfillRunSchema = require('../schemas/pivotOrganizerBackfillRun');
 const pivotLocationBackfillRunSchema = require('../schemas/pivotLocationBackfillRun');
+const pivotLocationMigrationLeaseSchema = require('../schemas/pivotLocationMigrationLease');
 const pivotSafetyReportSchema = require('../schemas/pivotSafetyReport');
 const pivotUserBlockSchema = require('../schemas/pivotUserBlock');
 const registeredConnections = new WeakSet();
@@ -193,6 +194,11 @@ const MODEL_DEFINITIONS = Object.freeze({
         modelName: 'PivotLocationBackfillRun',
         schema: pivotLocationBackfillRunSchema,
         collection: 'pivotLocationBackfillRuns',
+    },
+    PivotLocationMigrationLease: {
+        modelName: 'PivotLocationMigrationLease',
+        schema: pivotLocationMigrationLeaseSchema,
+        collection: 'pivotLocationMigrationLeases',
     },
     PivotSafetyReport: {
         modelName: 'PivotSafetyReport',

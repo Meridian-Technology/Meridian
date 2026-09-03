@@ -53,8 +53,51 @@ const {
   renderPoster,
 } = require('../services/pivotPosterTemplateService');
 const { upload } = require('../services/imageUploadService');
+const {
+  migrationUiEnabled,
+  getRichLocationMigrationStatus,
+  runRichLocationMigrationBatch,
+} = require('../services/richLocationMigrationAdminService');
+const {
+  listLocationReviewCandidates,
+  reviewLocationCandidate,
+} = require('../services/pivotLocationReviewService');
 
 const router = express.Router();
+
+function requireRichLocationMigrationUi(req, res, next) {
+  if (!migrationUiEnabled()) {
+    return res.status(404).json({
+      success: false,
+      message: 'Rich-location migration UI is disabled.',
+      code: 'RICH_LOCATION_MIGRATION_UI_DISABLED',
+    });
+  }
+  return next();
+}
+
+async function migrationTenant(req, res) {
+  const tenantKey = String(req.params.tenantKey || '').trim().toLowerCase();
+  const tenant = await getTenantByKey(req, tenantKey);
+  if (!tenant || tenant.tenantType !== 'pivot') {
+    res.status(404).json({
+      success: false,
+      message: `No Just Go tenant "${tenantKey}".`,
+      code: 'PIVOT_TENANT_NOT_FOUND',
+    });
+    return null;
+  }
+  return tenant;
+}
+
+function sendMigrationError(res, error, fallbackMessage) {
+  const status = Number(error?.status) || 500;
+  return res.status(status).json({
+    success: false,
+    message: status >= 500 ? fallbackMessage : error.message,
+    code: error?.code || 'RICH_LOCATION_MIGRATION_FAILED',
+  });
+}
 
 function enrichTenantForAdmin(tenant, extras = {}) {
   const serialized = serializeTenantForAdmin(tenant, extras);
@@ -99,6 +142,103 @@ router.get('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration',
+  verifyToken,
+  requirePlatformAdmin,
+  requireRichLocationMigrationUi,
+  async (req, res) => {
+    try {
+      const tenant = await migrationTenant(req, res);
+      if (!tenant) return undefined;
+      const data = await getRichLocationMigrationStatus({ tenant });
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('GET rich-location migration status failed:', error.message);
+      return sendMigrationError(res, error, 'Unable to load rich-location migration status.');
+    }
+  },
+);
+
+router.post(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/run',
+  verifyToken,
+  requirePlatformAdmin,
+  requireRichLocationMigrationUi,
+  async (req, res) => {
+    try {
+      const tenant = await migrationTenant(req, res);
+      if (!tenant) return undefined;
+      const data = await runRichLocationMigrationBatch(req, { tenant, input: req.body });
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('POST rich-location migration batch failed:', error.code || error.message);
+      return sendMigrationError(res, error, 'Unable to run rich-location migration batch.');
+    }
+  },
+);
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/reviews',
+  verifyToken,
+  requirePlatformAdmin,
+  requireRichLocationMigrationUi,
+  async (req, res) => {
+    try {
+      const tenant = await migrationTenant(req, res);
+      if (!tenant) return undefined;
+      const result = await listLocationReviewCandidates(req, {
+        tenantKey: tenant.tenantKey,
+        status: req.query?.status,
+        limit: req.query?.limit,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.json({ success: true, data: result.data });
+    } catch (error) {
+      console.error('GET rich-location migration reviews failed:', error.message);
+      return sendMigrationError(res, error, 'Unable to load rich-location reviews.');
+    }
+  },
+);
+
+router.post(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/reviews/:eventId',
+  verifyToken,
+  requirePlatformAdmin,
+  requireRichLocationMigrationUi,
+  async (req, res) => {
+    try {
+      const tenant = await migrationTenant(req, res);
+      if (!tenant) return undefined;
+      const result = await reviewLocationCandidate(req, {
+        eventId: req.params.eventId,
+        tenantKey: tenant.tenantKey,
+        action: req.body?.action,
+        candidateId: req.body?.candidateId,
+        richLocation: req.body?.richLocation,
+        notes: req.body?.notes,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.json({ success: true, data: result.data });
+    } catch (error) {
+      console.error('POST rich-location migration review failed:', error.message);
+      return sendMigrationError(res, error, 'Unable to save rich-location review.');
+    }
+  },
+);
 
 router.post('/admin/platform/tenants', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
