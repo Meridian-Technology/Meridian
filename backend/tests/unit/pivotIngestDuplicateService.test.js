@@ -170,6 +170,29 @@ describe('pivotIngestDuplicateService', () => {
       expect(formatDuplicateWarning(duplicate, 'Comedy Night')).toMatch(/another showtime/);
     });
 
+    it('treats matching events on different days in the same week as a showtime update', () => {
+      const catalogIndex = [
+        {
+          _id: 'existing-1',
+          name: 'Comedy Night',
+          location: "Gabe's",
+          start_time: '2026-08-13T03:30:00.000Z',
+          fingerprint: 'x',
+        },
+      ];
+
+      const duplicate = findCatalogDuplicate(catalogIndex, {
+        name: 'Comedy Night',
+        location: "Gabe's",
+        start_time: '2026-08-15T03:30:00.000Z',
+        sourceUrl: 'https://gabes.example/calendar#comedy-saturday',
+      });
+
+      expect(duplicate.matchType).toBe('showtime');
+      expect(duplicate.mergeSlots).toBe(true);
+      expect(duplicate.reasons).toContain('multi-day-showtimes');
+    });
+
     it('merges a venue listing into the native row on fuzzy title+venue+day', () => {
       const catalogIndex = [
         {
@@ -323,6 +346,31 @@ describe('pivotIngestDuplicateService', () => {
   });
 
   describe('rollupShowtimeDrafts', () => {
+    it('rolls matching showtimes across multiple days in the same week', () => {
+      const { drafts, rolledUpCount } = rollupShowtimeDrafts([
+        {
+          sourceUrl: 'https://gabes.example/cal#thursday',
+          draft: {
+            name: 'Comedy Night',
+            start_time: '2026-08-13T03:30:00.000Z',
+            location: "Gabe's",
+          },
+        },
+        {
+          sourceUrl: 'https://gabes.example/cal#saturday',
+          draft: {
+            name: 'Comedy Night',
+            start_time: '2026-08-15T03:30:00.000Z',
+            location: "Gabe's",
+          },
+        },
+      ]);
+
+      expect(rolledUpCount).toBe(1);
+      expect(drafts).toHaveLength(1);
+      expect(drafts[0].draft.timeSlots).toHaveLength(2);
+    });
+
     it('does not collapse the same title at two venues', () => {
       const { drafts, rolledUpCount } = rollupShowtimeDrafts([
         {

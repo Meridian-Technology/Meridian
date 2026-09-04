@@ -143,19 +143,35 @@ describe('collapseCatalogEventsToShowtimes', () => {
     );
   });
 
-  it('rejects events from two catalog weeks', async () => {
-    Event.find.mockReturnValue({
-      lean: jest.fn().mockResolvedValue([
-        catalogEvent(ID_A, { batchWeek: '2026-W35' }),
-        catalogEvent(ID_B, { batchWeek: '2026-W36', start_time: '2026-09-02T02:00:00.000Z' }),
-      ]),
+  it('rolls selected showtimes across catalog weeks and anchors them to the earliest week', async () => {
+    const earlier = catalogEvent(ID_A, {
+      batchWeek: '2026-W35',
+      start_time: '2026-08-30T02:00:00.000Z',
     });
+    const later = catalogEvent(ID_B, {
+      batchWeek: '2026-W36',
+      start_time: '2026-09-02T02:00:00.000Z',
+      ingestStatus: 'published',
+    });
+    Event.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([earlier, later]),
+    });
+    Event.findByIdAndUpdate.mockImplementation((_id, update) => ({
+      lean: async () => ({
+        ...later,
+        start_time: update.$set.start_time,
+        end_time: update.$set.end_time,
+        customFields: { pivot: update.$set['customFields.pivot'] },
+      }),
+    }));
 
     const result = await collapseCatalogEventsToShowtimes(
       {},
       { tenantKey: 'nyc', eventIds: [ID_A, ID_B] },
     );
-    expect(result.code).toBe('MIXED_BATCH_WEEK');
-    expect(Event.findByIdAndUpdate).not.toHaveBeenCalled();
+
+    expect(result.error).toBeUndefined();
+    expect(result.data.showtimeCount).toBe(2);
+    expect(result.data.event.batchWeek).toBe('2026-W35');
   });
 });

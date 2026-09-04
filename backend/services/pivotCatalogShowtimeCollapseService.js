@@ -182,15 +182,6 @@ async function collapseCatalogEventsToShowtimes(req, options = {}) {
     };
   }
 
-  const weeks = new Set(events.map((event) => event.customFields?.pivot?.batchWeek).filter(Boolean));
-  if (weeks.size > 1) {
-    return {
-      error: 'Collapse showtimes within a single catalog week.',
-      status: 400,
-      code: 'MIXED_BATCH_WEEK',
-    };
-  }
-
   const survivor = pickSurvivorEvent(events, options.keepEventId);
   const absorbed = events.filter((event) => String(event._id) !== String(survivor._id));
   const slots = unionPivotTimeSlots(...events.map((event) => slotsFromCatalogEvent(event)));
@@ -221,7 +212,13 @@ async function collapseCatalogEventsToShowtimes(req, options = {}) {
 
   const earliest = resolveEventEarliestStart({ timeSlots: slots }, survivor.start_time);
   const latest = resolveEventLatestEnd({ timeSlots: slots }, survivor.end_time);
+  const earliestEvent = [...events].sort((left, right) => {
+    const leftStart = left.start_time ? new Date(left.start_time).getTime() : Infinity;
+    const rightStart = right.start_time ? new Date(right.start_time).getTime() : Infinity;
+    return leftStart - rightStart;
+  })[0];
   pivot.host = host;
+  pivot.batchWeek = earliestEvent?.customFields?.pivot?.batchWeek || pivot.batchWeek;
   pivot.timeSlots = serializeStoredSlots(slots);
   pivot.tags = [...new Set(events.flatMap((event) => event.customFields?.pivot?.tags || []))];
   pivot.duplicateRollup = {

@@ -53,12 +53,17 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
   const richLocation = projectEventRichLocation(event, undefined, {
     readsEnabled: options.richLocationReadsEnabled,
   });
+  const missingRichData = [];
+  if (!event.description?.trim?.()) missingRichData.push('description');
+  if (!event.image?.trim?.()) missingRichData.push('image');
 
   return {
     _id: String(event._id),
     name: event.name,
     description: event.description || '',
     image: event.image || null,
+    missingRichData,
+    needsRichData: missingRichData.length > 0,
     start_time: event.start_time,
     end_time: event.end_time || null,
     location: event.location || '',

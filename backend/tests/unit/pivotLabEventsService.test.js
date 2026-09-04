@@ -49,6 +49,20 @@ describe('pivotLabEventsService', () => {
       expect(row.platformManaged).toBe(false);
       expect(row.createdByUserId).toBeNull();
       expect(row.creatorSubmittedAt).toBeNull();
+      expect(row.needsRichData).toBe(true);
+      expect(row.missingRichData).toEqual(['description', 'image']);
+    });
+
+    it('marks rich event rows complete for the curation filter', () => {
+      const row = serializeLabEvent({
+        _id: 'rich-1',
+        name: 'Complete event',
+        description: 'Everything you need to know.',
+        image: 'https://example.com/poster.jpg',
+        customFields: { pivot: {} },
+      });
+      expect(row.needsRichData).toBe(false);
+      expect(row.missingRichData).toEqual([]);
     });
 
     it('surfaces Just Go host-created provenance for curation', () => {

@@ -7,6 +7,7 @@ const {
   showtimeGroupKey,
   parseStart,
   utcDayKey,
+  utcIsoWeekKey,
   normalizeVenueName,
 } = require('../utilities/pivotEventSimilarityUtils');
 const {
@@ -174,6 +175,7 @@ function findFuzzyCatalogDuplicate(index, candidate, rawThresholds) {
   const thresholds = mergeDuplicateThresholds(rawThresholds);
   const start = parseStart(candidate.start_time);
   const day = utcDayKey(start);
+  const week = utcIsoWeekKey(start);
   if (!day || !normalizeVenueName(candidate.location)) return null;
 
   const windowMs = thresholds.timeWindowHours * 3_600_000;
@@ -182,6 +184,10 @@ function findFuzzyCatalogDuplicate(index, candidate, rawThresholds) {
     const rowStart = parseStart(row.start_time);
     if (!rowStart) continue;
     if (utcDayKey(rowStart) === day) {
+      pool.push(row);
+      continue;
+    }
+    if (utcIsoWeekKey(rowStart) === week) {
       pool.push(row);
       continue;
     }
@@ -214,7 +220,7 @@ function findFuzzyCatalogDuplicate(index, candidate, rawThresholds) {
  * page rather than a per-event permalink. Many distinct events legitimately
  * share such a URL, so matching on it would fold a whole week onto one document.
  * Those imports fall back to the title/time/location fingerprint, then
- * same-night showtimes and conservative title+venue similarity.
+ * same-week showtimes and conservative title+venue similarity.
  */
 function findCatalogDuplicate(index, candidate, options = {}) {
   const sourceKey = options.sharedSourceUrl ? null : normalizeIngestSourceUrl(candidate.sourceUrl);
@@ -328,7 +334,7 @@ function mergeShowtimeGroup(entries) {
 }
 
 /**
- * Collapse same-title, same-venue, same-UTC-day rows with different start
+ * Collapse same-title, same-venue, same-UTC-week rows with different start
  * times into one draft that carries `timeSlots`. Exact same-minute copies
  * stay as separate rows so fingerprint / batchFingerprint can handle them.
  */
@@ -364,7 +370,7 @@ function rollupShowtimeDrafts(drafts = [], rawThresholds) {
         draftCandidate(drafts[index]),
         thresholds,
       );
-      return scored.showtime || (scored.match && scored.sameDay);
+      return scored.showtime;
     });
     if (!scoredOk) continue;
 
