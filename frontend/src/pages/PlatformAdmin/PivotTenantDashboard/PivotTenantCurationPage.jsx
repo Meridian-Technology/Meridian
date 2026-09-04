@@ -30,6 +30,7 @@ import PivotCatalogEventEditModal, {
 import PivotReadinessCard from './PivotReadinessCard';
 import PivotCurationMonitorPanel from './PivotCurationMonitorPanel';
 import PivotCurationQueue from './PivotCurationQueue';
+import PivotRichDataEnrichmentPopup from './PivotRichDataEnrichmentPopup';
 import PivotTenantSourcesPanel from './PivotTenantSourcesPanel';
 import PivotDiscoveryConsole, { orbStateFor, phaseLabel, OrbTint } from './PivotDiscoveryConsole';
 import Popup from '../../../components/Popup/Popup';
@@ -57,6 +58,7 @@ const RUN_POLL_MS = 2500;
  */
 const BATCH_IDLE_POLL_MS = 30000;
 const MONITOR_EVENTS_LIMIT = 100;
+const MAX_RICH_ENRICH_EVENTS = 50;
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'draft', label: 'Draft' },
@@ -64,6 +66,7 @@ const FILTER_OPTIONS = [
   { value: 'published', label: 'Published' },
   { value: 'untagged', label: 'Untagged' },
   { value: 'missing-host', label: 'Missing host' },
+  { value: 'missing-rich-data', label: 'Missing rich data' },
   { value: 'film', label: 'Showtimes' },
   { value: 'featured', label: 'Featured' },
 ];
@@ -100,6 +103,9 @@ function eventMatchesFilter(event, filter) {
   }
   if (filter === 'missing-host') {
     return !event.organizerName?.trim();
+  }
+  if (filter === 'missing-rich-data') {
+    return event.needsRichData === true;
   }
   if (filter === 'film') {
     return Boolean(event.movie) || (Array.isArray(event.timeSlots) && event.timeSlots.length > 0);
@@ -238,6 +244,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   });
   const [manualImportPublishLoading, setManualImportPublishLoading] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
+  const [richEnrichmentOpen, setRichEnrichmentOpen] = useState(false);
+  const [richEnrichmentEvents, setRichEnrichmentEvents] = useState([]);
+  const [richEnrichmentRunning, setRichEnrichmentRunning] = useState(false);
+  const [richEnrichmentResult, setRichEnrichmentResult] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
   const [tagSuggestLoadingKey, setTagSuggestLoadingKey] = useState(null);
   const [urlImportValue, setUrlImportValue] = useState('');
@@ -613,7 +623,8 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     batchWeekValid &&
     !manualImportOpen &&
     !editingEvent &&
-    !jobFormOpen;
+    !jobFormOpen &&
+    !richEnrichmentOpen;
 
   const { keyboardNavActive } = usePivotTenantWeekKeybinds({
     enabled: keybindsEnabled,
@@ -625,6 +636,62 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     () => events.filter((e) => selectedIds.has(e._id)),
     [events, selectedIds],
   );
+
+  const openRichDataEnrichment = useCallback(() => {
+    const missing = selectedEvents.filter((event) => event.needsRichData);
+    if (!missing.length) {
+      addNotification({
+        title: 'Rich data complete',
+        message: 'The selected events already have both an image and description.',
+        type: 'info',
+      });
+      return;
+    }
+    if (missing.length > MAX_RICH_ENRICH_EVENTS) {
+      addNotification({
+        title: 'Enrichment limited to 50',
+        message: 'The first 50 selected incomplete events were added to this job.',
+        type: 'info',
+      });
+    }
+    setRichEnrichmentEvents(missing.slice(0, MAX_RICH_ENRICH_EVENTS));
+    setRichEnrichmentResult(null);
+    setRichEnrichmentOpen(true);
+  }, [addNotification, selectedEvents]);
+
+  const runRichDataEnrichment = useCallback(async () => {
+    if (!tenantKey || !richEnrichmentEvents.length) return;
+    setRichEnrichmentRunning(true);
+    const { data, error } = await authenticatedRequest(
+      `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/catalog/enrich-rich-data`,
+      {
+        method: 'POST',
+        data: { eventIds: richEnrichmentEvents.map((event) => event._id) },
+      },
+    );
+    setRichEnrichmentRunning(false);
+    if (error || !data?.success) {
+      addNotification({
+        title: 'Enrichment failed',
+        message: error || data?.message || 'Could not enrich the selected events.',
+        type: 'error',
+      });
+      return;
+    }
+    const result = data.data;
+    setRichEnrichmentResult(result);
+    refreshAll();
+    addNotification({
+      title: 'Enrichment complete',
+      message: `${result?.totals?.enriched || 0} completed; ${result?.totals?.incomplete || 0} still need rich data.`,
+      type: result?.totals?.incomplete ? 'warning' : 'success',
+    });
+  }, [addNotification, refreshAll, richEnrichmentEvents, tenantKey]);
+
+  const closeRichDataEnrichment = useCallback(() => {
+    if (richEnrichmentRunning) return;
+    setRichEnrichmentOpen(false);
+  }, [richEnrichmentRunning]);
 
   const buildTagSuggestPayload = useCallback(
     (fields) => ({
@@ -1125,7 +1192,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     if (selectedEvents.length < 2) {
       addNotification({
         title: 'Select more than one event',
-        message: 'Pick the nights that belong together, then collapse them into showtimes.',
+        message: 'Pick the dates and times that belong together, then roll them into showtimes.',
         type: 'warning',
       });
       return;
@@ -1133,7 +1200,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
     if (
       !window.confirm(
-        `Collapse ${selectedEvents.length} events into one listing with showtimes? Extra catalog rows will be removed.`,
+        `Roll up ${selectedEvents.length} events across their selected dates into one listing with showtimes? Extra catalog rows will be removed.`,
       )
     ) {
       return;
@@ -1151,7 +1218,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
     if (error || !data?.success) {
       addNotification({
-        title: 'Could not collapse showtimes',
+        title: 'Could not roll up showtimes',
         message: error || data?.message || 'Those events could not be merged.',
         type: 'error',
       });
@@ -1162,7 +1229,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     setSelectedIds(keptId ? new Set([keptId]) : new Set());
     refreshAll();
     addNotification({
-      title: 'Collapsed into showtimes',
+      title: 'Rolled up showtimes',
       message: `${data.data?.event?.name || 'Event'} now has ${data.data?.showtimeCount ?? selectedEvents.length} showtimes.`,
       type: 'success',
     });
@@ -2565,6 +2632,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           onBulkUnpublish={handleBulkUnpublish}
           onBulkApplyTags={handleBulkApplyTags}
           onBulkSuggestTags={handleBulkSuggestTags}
+          onBulkEnrichRichData={openRichDataEnrichment}
           onBulkCollapseShowtimes={handleBulkCollapseShowtimes}
           onBulkFeature={handleBulkFeature}
           onBulkUnfeature={handleBulkUnfeature}
@@ -2669,6 +2737,15 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         saving={editSaving}
         onSuggestTags={suggestTagsForEdit}
         tagSuggestLoading={tagSuggestLoadingKey === 'edit'}
+      />
+
+      <PivotRichDataEnrichmentPopup
+        open={richEnrichmentOpen}
+        events={richEnrichmentEvents}
+        running={richEnrichmentRunning}
+        result={richEnrichmentResult}
+        onRun={runRichDataEnrichment}
+        onClose={closeRichDataEnrichment}
       />
 
       <PivotManualImportModal

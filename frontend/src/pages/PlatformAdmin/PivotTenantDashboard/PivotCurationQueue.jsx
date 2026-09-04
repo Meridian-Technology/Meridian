@@ -32,6 +32,14 @@ function isInteractiveTarget(target) {
   return Boolean(target?.closest?.('button, a, input, label, textarea, select'));
 }
 
+function richDataFlag(event) {
+  const missing = Array.isArray(event?.missingRichData)
+    ? event.missingRichData
+    : [!event?.description?.trim() ? 'description' : null, !event?.image ? 'image' : null].filter(Boolean);
+  if (!missing.length) return null;
+  return `Missing ${missing.map((field) => (field === 'description' ? 'desc' : field)).join(' + ')}`;
+}
+
 function CatalogSourceBadge({ source }) {
   if (source === HOST_CREATED_SOURCE) {
     return (
@@ -150,6 +158,9 @@ const CatalogRow = React.memo(function CatalogRow({
         <div className="pivot-curation-sheet__host">
           {event.organizerName || 'No host'}
         </div>
+        {richDataFlag(event) ? (
+          <span className="pivot-curation-sheet__rich-flag">{richDataFlag(event)}</span>
+        ) : null}
         <div className="pivot-curation-sheet__mobile-when">
           {formatEventWhenWithShowtimes(event)}
         </div>
@@ -267,6 +278,9 @@ function QueueInspector({
           ) : null}
           {event.outOfReviewRange ? (
             <PivotOpsStatus tone="danger">Out of range</PivotOpsStatus>
+          ) : null}
+          {richDataFlag(event) ? (
+            <span className="pivot-curation-sheet__rich-flag">{richDataFlag(event)}</span>
           ) : null}
         </div>
         {showPerformance && perf ? (
@@ -427,6 +441,7 @@ function PivotCurationQueue({
   onBulkUnpublish,
   onBulkApplyTags,
   onBulkSuggestTags,
+  onBulkEnrichRichData,
   onBulkCollapseShowtimes,
   onBulkFeature,
   onBulkUnfeature,
@@ -522,6 +537,7 @@ function PivotCurationQueue({
   const selectedPublishedCount = selectedEvents.filter((e) => e.ingestStatus === 'published').length;
   const selectedUnfeaturedCount = selectedEvents.filter((e) => e.featured !== true).length;
   const selectedFeaturedCount = selectedEvents.filter((e) => e.featured === true).length;
+  const selectedMissingRichCount = selectedEvents.filter((e) => e.needsRichData).length;
 
   const previewAt = useCallback((event, index, nextIds) => {
     if (typeof index === 'number') {
@@ -923,17 +939,28 @@ function PivotCurationQueue({
                 >
                   {busyKey === 'bulk-suggest' ? 'Suggesting…' : 'Suggest tags'}
                 </button>
+                {selectedMissingRichCount > 0 ? (
+                  <button
+                    type="button"
+                    className="linear-btn linear-btn--secondary"
+                    onClick={onBulkEnrichRichData}
+                    disabled={busyKey === 'bulk-enrich'}
+                    title="Open a manual detail-page enrichment job"
+                  >
+                    Enrich ({selectedMissingRichCount})
+                  </button>
+                ) : null}
                 {selectedIds.size > 1 ? (
                   <button
                     type="button"
                     className="linear-btn linear-btn--secondary"
                     onClick={onBulkCollapseShowtimes}
                     disabled={busyKey === 'bulk-showtimes'}
-                    title="Merge selected rows into one listing with showtimes"
+                    title="Manually roll selected rows into one listing with showtimes across their dates"
                   >
                     {busyKey === 'bulk-showtimes'
-                      ? 'Collapsing…'
-                      : `Showtimes (${selectedIds.size})`}
+                      ? 'Rolling up…'
+                      : `Roll up showtimes (${selectedIds.size})`}
                   </button>
                 ) : null}
                 {selectedDraftCount > 0 ? (
