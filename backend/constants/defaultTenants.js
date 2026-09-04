@@ -24,6 +24,12 @@ const {
 const {
   validatePivotDiscoveryConfigPatch,
 } = require('../utilities/pivotDiscoveryConfig');
+const {
+  normalizeJustGoLocationConstraints,
+} = require('../utilities/justGoLocationConstraints');
+const {
+  normalizeRichLocationControls,
+} = require('../utilities/justGoRichLocationControls');
 
 const PIVOT_DROP_PUSH_TITLE_MAX = 100;
 const PIVOT_DROP_PUSH_BODY_MAX = 240;
@@ -160,6 +166,16 @@ function normalizeTenantRow(row = {}) {
     },
   };
 
+  const richLocationConstraints = normalizeJustGoLocationConstraints(
+    row.richLocationConstraints,
+  );
+  if (richLocationConstraints) normalized.richLocationConstraints = richLocationConstraints;
+  const richLocationControls = normalizeRichLocationControls(
+    row.richLocationControls,
+    { sparse: true },
+  );
+  if (richLocationControls) normalized.richLocationControls = richLocationControls;
+
   return normalizePivotDropFields(row, normalized);
 }
 
@@ -209,6 +225,14 @@ function normalizeTenantOverride(row = {}) {
   if (row.pivotCatalogOrgId !== undefined && row.pivotCatalogOrgId !== null) {
     const orgId = String(row.pivotCatalogOrgId).trim();
     if (orgId) out.pivotCatalogOrgId = orgId;
+  }
+  if (row.richLocationConstraints !== undefined && row.richLocationConstraints !== null) {
+    const constraints = normalizeJustGoLocationConstraints(row.richLocationConstraints);
+    if (constraints) out.richLocationConstraints = constraints;
+  }
+  if (row.richLocationControls !== undefined && row.richLocationControls !== null) {
+    const controls = normalizeRichLocationControls(row.richLocationControls, { sparse: true });
+    if (controls) out.richLocationControls = controls;
   }
   if (row.provisioningConfirmations && typeof row.provisioningConfirmations === 'object') {
     const pc = {};
@@ -290,6 +314,12 @@ function mergeSparseTenantOverrides(existing = {}, delta = {}) {
       merged.pivotDeckConfig = delta.pivotDeckConfig;
     }
   }
+  if (existing.richLocationControls || delta.richLocationControls) {
+    merged.richLocationControls = {
+      ...(existing.richLocationControls || {}),
+      ...(delta.richLocationControls || {}),
+    };
+  }
   return merged;
 }
 
@@ -303,6 +333,7 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
       pivotCrewConfig: crewPatch,
       pivotDeckConfig: deckPatch,
       creatorPublish: creatorPublishPatch,
+      richLocationControls: richLocationControlsPatch,
       ...rest
     } = row;
     const next = { ...base, ...rest };
@@ -332,6 +363,12 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
         base.creatorPublish,
         creatorPublishPatch,
       );
+    }
+    if (richLocationControlsPatch) {
+      next.richLocationControls = {
+        ...(base.richLocationControls || {}),
+        ...richLocationControlsPatch,
+      };
     }
     merged.set(row.tenantKey, next);
   });

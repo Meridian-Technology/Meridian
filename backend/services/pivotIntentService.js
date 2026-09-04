@@ -26,6 +26,11 @@ const {
 } = require('./pivotCrewWeekStateService');
 const { loadLockedCrewPicksForUser } = require('./pivotCrewJudgementService');
 const { attachCrossCrewOverlapFlags } = require('./pivotCrossCrewService');
+const { getTenantByKey } = require('./tenantConfigService');
+const {
+  loadRichLocationViewerContext,
+  projectEventRichLocation,
+} = require('./justGoRichLocationProjectionService');
 
 const FEED_ACTION_TO_STATUS = {
   interested: 'interested',
@@ -40,7 +45,7 @@ const FEED_ACTION_TO_INTERACTION_TYPE = {
 
 const RECAP_STATUSES = ['interested', 'registered'];
 const RECAP_EVENT_FIELDS =
-  'name description location start_time end_time externalLink type image customFields.pivot';
+  'name description location richLocation start_time end_time externalLink type image customFields.pivot';
 
 function unauthorized() {
   return { error: 'Authentication required.', status: 401, code: 'UNAUTHORIZED' };
@@ -68,7 +73,7 @@ async function findPublishedPivotEvent(req, eventId, { now, requireWindow } = {}
     : baseQuery;
 
   return Event.findOne(query)
-    .select('start_time end_time externalLink customFields.pivot')
+    .select('location richLocation start_time end_time externalLink customFields.pivot')
     .lean();
 }
 
@@ -424,12 +429,22 @@ async function confirmRegistered(req, rawEventId, body = {}) {
     timeSlotId: doc.timeSlotId || null,
   });
 
+  const tenant = await getTenantByKey(req, req.school).catch(() => null);
+  const richLocationViewerContext = await loadRichLocationViewerContext(
+    req,
+    [event._id],
+    { tenant },
+  );
+  const richLocation = projectEventRichLocation(event, richLocationViewerContext);
+
   return {
     data: {
       eventId: String(doc.eventId),
       status: doc.status,
       batchWeek: doc.batchWeek,
       timeSlotId: doc.timeSlotId || null,
+      location: event.location,
+      ...(richLocation ? { richLocation } : {}),
     },
   };
 }
@@ -446,6 +461,7 @@ function serializeRecapEvent(event, intentRow, extras = {}) {
   return serializePivotFeedEvent(event, {
     displayHost: resolveDisplayHost(pivot),
     userIntent: status || null,
+    richLocationViewerContext: extras.richLocationViewerContext,
     userTimeSlotId,
     socialByTimeSlot: extras.socialByTimeSlot || new Map(),
     friendsInterested: extras.friendsInterested || [],
@@ -510,10 +526,17 @@ async function getWeekRecap(req, options = {}) {
     .sort({ start_time: 1 })
     .lean();
 
-  const { socialByEvent, socialByEventAndSlot } = await loadFriendSocial(
+  const [
+    { socialByEvent, socialByEventAndSlot },
+    tenant,
+  ] = await Promise.all([
+    loadFriendSocial(req, userId, eventIds),
+    getTenantByKey(req, req.school).catch(() => null),
+  ]);
+  const richLocationViewerContext = await loadRichLocationViewerContext(
     req,
-    userId,
     eventIds,
+    { tenant },
   );
 
   const recapEvents = events
@@ -538,6 +561,7 @@ async function getWeekRecap(req, options = {}) {
       }
 
       return serializeRecapEvent(event, intentByEvent.get(id), {
+        richLocationViewerContext,
         socialByTimeSlot,
         friendsInterested: social.friendsInterested,
         friendsGoing: social.friendsGoing,

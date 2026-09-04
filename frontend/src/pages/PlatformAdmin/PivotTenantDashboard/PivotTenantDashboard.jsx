@@ -11,6 +11,9 @@ import PivotTenantDropDeckPage from './PivotTenantDropDeckPage';
 import PivotTenantCatalogPage from './PivotTenantCatalogPage';
 import PivotVoicePage from './PivotVoicePage';
 import PivotTenantLaunchPage from './PivotTenantLaunchPage';
+import PivotTenantLocationMigrationPage, {
+  RICH_LOCATION_MIGRATION_UI_ENABLED,
+} from './PivotTenantLocationMigrationPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -42,8 +45,9 @@ function PivotTenantGate({ title, body, onBack }) {
 
 /**
  * Per-tenant Just Go ops shell.
- * Route: /platform-admin/pivot/:tenantKey?page=0|1|2|3|4|5|6
- * Catalog is page=4; Voice is page=5; Launch is page=6 (appended — do not insert).
+ * Route: /platform-admin/pivot/:tenantKey?page=0|1|2|3|4|5|6|7
+ * Catalog is page=4; Voice is page=5; Launch is page=6; migration is page=7.
+ * New pages are appended so existing bookmarks remain stable.
  */
 function PivotTenantDashboard() {
   const navigate = useNavigate();
@@ -66,8 +70,8 @@ function PivotTenantDashboard() {
 
   const cityDisplayName = tenant?.location || tenant?.name || tenantKey;
 
-  const menuItems = useMemo(
-    () => [
+  const menuItems = useMemo(() => {
+    const items = [
       {
         label: 'Overview',
         icon: 'ic:round-dashboard',
@@ -148,9 +152,25 @@ function PivotTenantDashboard() {
           />
         ),
       },
-    ],
-    [tenantKey, cityDisplayName, tenant?.pivotDeckConfig, refetch],
-  );
+    ];
+
+    if (RICH_LOCATION_MIGRATION_UI_ENABLED) {
+      items.push({
+        label: 'Location migration',
+        icon: 'mdi:map-marker-path',
+        element: (
+          <PivotTenantLocationMigrationPage
+            key={tenantKey}
+            tenantKey={tenantKey}
+            cityDisplayName={cityDisplayName}
+            onTenantUpdated={refetch}
+          />
+        ),
+      });
+    }
+
+    return items;
+  }, [tenantKey, cityDisplayName, tenant?.pivotDeckConfig, refetch]);
 
   if (!tenantKey) {
     return (

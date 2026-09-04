@@ -14,6 +14,12 @@
       "shipped": "cancel"
     },
     {
+      "path": "accountSettings.contactSupport",
+      "kind": "string",
+      "params": [],
+      "shipped": "contact support"
+    },
+    {
       "path": "accountSettings.deleteAccountConfirm",
       "kind": "string",
       "params": [],
@@ -36,6 +42,24 @@
       "kind": "string",
       "params": [],
       "shipped": "delete account?"
+    },
+    {
+      "path": "accountSettings.legalLinkError",
+      "kind": "string",
+      "params": [],
+      "shipped": "could not open that link. try again."
+    },
+    {
+      "path": "accountSettings.legalTitle",
+      "kind": "string",
+      "params": [],
+      "shipped": "legal & support"
+    },
+    {
+      "path": "accountSettings.privacyPolicy",
+      "kind": "string",
+      "params": [],
+      "shipped": "privacy policy"
     },
     {
       "path": "accountSettings.safety.blockCta",
@@ -263,6 +287,12 @@
       "kind": "string",
       "params": [],
       "shipped": "account settings"
+    },
+    {
+      "path": "accountSettings.termsOfService",
+      "kind": "string",
+      "params": [],
+      "shipped": "terms of service"
     },
     {
       "path": "accountSettings.ticker",
@@ -991,7 +1021,7 @@
       "path": "crew.contacts.onboarding.scanCta",
       "kind": "string",
       "params": [],
-      "shipped": "scan contacts"
+      "shipped": "continue"
     },
     {
       "path": "crew.contacts.onboarding.settingsCta",
@@ -4042,6 +4072,12 @@
       "kind": "string",
       "params": [],
       "shipped": "give us 5 minutes this monday to prove it."
+    },
+    {
+      "path": "landing.web.story.grafs",
+      "kind": "string",
+      "params": [],
+      "shipped": "we want people to go to one event each week. not users, people.\n\nevery person deserves something outside of the 9-5.\n\na time, a place, a group with which they can truly be.\n\nendless scrolling won't find that space you're looking for, we will.\n\ngive us 5 minutes this monday to prove it."
     },
     {
       "path": "landing.web.story.title",

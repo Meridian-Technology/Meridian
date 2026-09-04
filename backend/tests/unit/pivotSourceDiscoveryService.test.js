@@ -380,6 +380,58 @@ describe('pivotSourceDiscoveryService', () => {
       expect(result.data.calls).toEqual({ searches: 1, maps: 1, scrapes: 1 });
     });
 
+    it('retains unresolved physical listings for staging review', async () => {
+      searchSites.mockResolvedValue({
+        results: [{ url: 'https://englert.org/events', title: 'The Englert Theatre' }],
+      });
+      scrapeSiteEvents.mockResolvedValue({
+        listLabel: 'The Englert Theatre',
+        drafts: [
+          {
+            draft: {
+              name: 'Resolved later',
+              start_time: '2026-08-14T01:00:00.000Z',
+              location: 'Raw venue',
+              richLocation: {
+                mode: 'physical',
+                originalInput: 'Raw venue',
+                resolutionStatus: 'unresolved',
+                publicDisplayLabel: 'Raw venue',
+                revealPolicy: 'public',
+              },
+            },
+          },
+          {
+            draft: {
+              name: 'Legacy-compatible show',
+              start_time: '2026-08-21T01:00:00.000Z',
+              location: 'Legacy venue',
+            },
+          },
+        ],
+      });
+
+      const result = await discoverCitySources(mockReq(), {
+        tenantKey: 'iowacity',
+        maxQueries: 1,
+      });
+
+      expect(result.data.qualified[0].lastEventCount).toBe(2);
+      expect(ingestEntries).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          entries: expect.arrayContaining([
+            expect.objectContaining({
+              draft: expect.objectContaining({ name: 'Resolved later' }),
+            }),
+            expect.objectContaining({
+              draft: expect.objectContaining({ name: 'Legacy-compatible show' }),
+            }),
+          ]),
+        }),
+      );
+    });
+
     it('passes the city timezone to the qualifying scrape', async () => {
       searchSites.mockResolvedValue({ results: [{ url: 'https://englert.org/events' }] });
       scrapeSiteEvents.mockResolvedValue({

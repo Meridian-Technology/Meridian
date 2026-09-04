@@ -193,6 +193,89 @@ describe('pivotExploreService filter helpers', () => {
     expect(eventMatchesQuery(event, 'missing')).toBe(false);
   });
 
+  it('eventMatchesQuery searches public-safe rich-location fields when enabled', () => {
+    const event = {
+      name: 'Open Studio',
+      richLocation: {
+        mode: 'physical',
+        originalInput: 'Fox Theater',
+        publicDisplayLabel: 'The Fox Theater',
+        venueName: 'Fox Theater',
+        formattedAddress: '1807 Telegraph Avenue, Oakland, CA 94612',
+        neighborhood: 'Uptown',
+        city: 'Oakland',
+        aliases: ['The Fox', 'Uptown Fox'],
+        coordinates: { type: 'Point', coordinates: [-122.2697, 37.8081] },
+        googlePlaceId: 'ChIJ-fox',
+        provider: 'google',
+        resolutionStatus: 'resolved',
+        resolutionConfidence: 1,
+        resolvedAt: '2026-09-01T00:00:00.000Z',
+        revealPolicy: 'public',
+      },
+      customFields: { pivot: { host: { name: 'Arts Collective' } } },
+    };
+    const enabled = { richLocationSearchEnabled: true };
+
+    expect(eventMatchesQuery(event, 'fox theater', enabled)).toBe(true);
+    expect(eventMatchesQuery(event, 'telegraph avenue', enabled)).toBe(true);
+    expect(eventMatchesQuery(event, 'uptown', enabled)).toBe(true);
+    expect(eventMatchesQuery(event, 'oakland', enabled)).toBe(true);
+    expect(eventMatchesQuery(event, 'the fox', enabled)).toBe(true);
+    expect(eventMatchesQuery(event, 'uptown fox', enabled)).toBe(true);
+
+    event.richLocation.aliases.push('Private search alias');
+    expect(eventMatchesQuery(event, 'private search alias', enabled)).toBe(false);
+  });
+
+  it('does not search rich locations when rollout search is disabled', () => {
+    const event = {
+      name: 'Open Studio',
+      richLocation: {
+        mode: 'physical',
+        publicDisplayLabel: 'The Fox Theater',
+        venueName: 'Fox Theater',
+        formattedAddress: '1807 Telegraph Avenue, Oakland, CA 94612',
+        city: 'Oakland',
+        aliases: ['The Fox'],
+        revealPolicy: 'public',
+      },
+      customFields: { pivot: { host: { name: 'Arts Collective' } } },
+    };
+
+    expect(eventMatchesQuery(event, 'telegraph avenue')).toBe(false);
+  });
+
+  it('never searches precise or alias data for registration-gated locations', () => {
+    const event = {
+      name: 'Secret Supper',
+      richLocation: {
+        mode: 'registration_gated',
+        originalInput: 'Private source address',
+        publicDisplayLabel: 'Private venue in SoMa',
+        venueName: 'Private venue',
+        formattedAddress: '777 Hidden Street, San Francisco, CA',
+        neighborhood: 'SoMa',
+        city: 'San Francisco',
+        aliases: ['Secret Warehouse'],
+        coordinates: { type: 'Point', coordinates: [-122.4, 37.78] },
+        googlePlaceId: 'ChIJ-secret',
+        provider: 'google',
+        resolutionStatus: 'resolved',
+        resolutionConfidence: 1,
+        resolvedAt: '2026-09-01T00:00:00.000Z',
+        revealPolicy: 'registered_only',
+      },
+      customFields: { pivot: { host: { name: 'Supper Club' } } },
+    };
+    const enabled = { richLocationSearchEnabled: true };
+
+    expect(eventMatchesQuery(event, 'soma', enabled)).toBe(true);
+    expect(eventMatchesQuery(event, 'san francisco', enabled)).toBe(true);
+    expect(eventMatchesQuery(event, 'hidden street', enabled)).toBe(false);
+    expect(eventMatchesQuery(event, 'secret warehouse', enabled)).toBe(false);
+  });
+
   it('buildExploreRails includes standard rails and interest-matched week tag rails', () => {
     const rails = buildExploreRails(
       CATALOG_TAGS,
@@ -857,6 +940,63 @@ describe('getPivotExplore', () => {
     expect(result.data.filters.q).toBe('board game');
     expect(result.data.events).toHaveLength(1);
     expect(result.data.events[0].name).toBe('Board Game Night');
+  });
+
+  it('matches rich-location search terms only for cities with search enabled', async () => {
+    const events = [
+      {
+        _id: '665a000000000000000000a1',
+        name: 'Open Studio',
+        description: 'Local artists',
+        start_time: new Date('2026-05-28T19:00:00.000Z'),
+        richLocation: {
+          mode: 'physical',
+          originalInput: 'Fox Theater',
+          publicDisplayLabel: 'The Fox Theater',
+          venueName: 'Fox Theater',
+          formattedAddress: '1807 Telegraph Avenue, Oakland, CA 94612',
+          neighborhood: 'Uptown',
+          city: 'Oakland',
+          aliases: ['The Fox'],
+          coordinates: { type: 'Point', coordinates: [-122.2697, 37.8081] },
+          googlePlaceId: 'ChIJ-fox',
+          provider: 'google',
+          resolutionStatus: 'resolved',
+          resolutionConfidence: 1,
+          resolvedAt: '2026-09-01T00:00:00.000Z',
+          revealPolicy: 'public',
+        },
+        customFields: { pivot: { host: { name: 'Arts Collective' } } },
+      },
+    ];
+    mockExploreModels(events);
+
+    let result = await getPivotExplore(req, {
+      batchWeek: '2026-W22',
+      now,
+      q: 'telegraph avenue',
+    });
+    expect(result.data.total).toBe(0);
+
+    getTenantByKey.mockResolvedValue({
+      tenantKey: 'nyc',
+      name: 'New York City Pilot',
+      location: 'Brooklyn',
+      pivotPilot: true,
+      richLocationControls: {
+        rollout: 'on',
+        reads: true,
+        search: true,
+      },
+    });
+    result = await getPivotExplore(req, {
+      batchWeek: '2026-W22',
+      now,
+      q: 'telegraph avenue',
+    });
+
+    expect(result.data.total).toBe(1);
+    expect(result.data.events[0].name).toBe('Open Studio');
   });
 
   it('filters by night weekday shortcut', async () => {

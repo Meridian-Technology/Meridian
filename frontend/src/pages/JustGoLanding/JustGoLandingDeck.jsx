@@ -19,6 +19,7 @@ import {
   writeStoredLandingCity,
 } from './justGoLandingUtils';
 import JustGoLandingCityPicker from './JustGoLandingCityPicker';
+import { projectJustGoPublicLandingEvent } from './justGoPublicLocation';
 
 const SWIPE_COMMIT_FRACTION = 0.2;
 const SWIPE_VELOCITY = 0.42;
@@ -463,7 +464,9 @@ export default function JustGoLandingDeck({
     })
       .then((res) => {
         if (cancelled) return;
-        const next = Array.isArray(res?.data?.events) ? res.data.events.slice(0, 4) : [];
+        const next = Array.isArray(res?.data?.events)
+          ? res.data.events.slice(0, 4).map(projectJustGoPublicLandingEvent)
+          : [];
         setEvents(next);
         setFallback(Boolean(res?.data?.fallback));
         setDropState(next.length ? 'ready' : 'empty');

@@ -50,6 +50,13 @@ const {
 } = require('./pivotCreatorAdminNotifyService');
 const { resolveOrganizers } = require('./pivotOrganizerResolveService');
 const { activeOrganizerFilter } = require('../schemas/pivotOrganizer');
+const {
+  requestFromPayload,
+  resolveRichLocationWrite,
+} = require('./justGoRichLocationWriteService');
+const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
+const { validateJustGoLocationConstraints } = require('../utilities/justGoLocationConstraints');
+const googleLocationService = require('./googleLocationService');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 const CREATOR_SOURCE = 'justgo';
@@ -70,7 +77,7 @@ const EMPTY_ANALYTICS_SUMMARY = Object.freeze({
   uniqueRegistrations: 0,
 });
 const LISTING_SELECT =
-  'name description image start_time end_time location externalLink type visibility status hostingType hostingId customFields.pivot createdAt updatedAt';
+  'name description image start_time end_time location richLocation externalLink type visibility status hostingType hostingId customFields.pivot createdAt updatedAt';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -82,6 +89,69 @@ function firstNonEmpty(...values) {
     if (trimmed) return trimmed;
   }
   return null;
+}
+
+function autocompleteLocationRestriction(constraints) {
+  const bounds = constraints?.bounds;
+  if (!bounds || bounds.west > bounds.east) return undefined;
+  return {
+    rectangle: {
+      low: { latitude: bounds.south, longitude: bounds.west },
+      high: { latitude: bounds.north, longitude: bounds.east },
+    },
+  };
+}
+
+async function autocompleteCreatorLocations(req, options = {}) {
+  const context = await resolveListingContext(req);
+  if (context.error) return context;
+  if (!isRichLocationCapabilityEnabled(context.tenant, 'autocomplete')) {
+    return {
+      error: 'Location autocomplete is not enabled for this city.',
+      status: 409,
+      code: 'RICH_LOCATION_AUTOCOMPLETE_DISABLED',
+    };
+  }
+
+  const query = trimString(options.query);
+  if (query.length < 2 || query.length > 200) {
+    return {
+      error: 'Location search must be between 2 and 200 characters.',
+      status: 400,
+      code: 'RICH_LOCATION_AUTOCOMPLETE_QUERY_INVALID',
+    };
+  }
+
+  const constraintResult = validateJustGoLocationConstraints(
+    context.tenant.richLocationConstraints,
+  );
+  if (constraintResult.error) {
+    return {
+      error: 'This city is not configured for location autocomplete.',
+      status: 503,
+      code: 'RICH_LOCATION_CITY_CONSTRAINTS_REQUIRED',
+    };
+  }
+
+  const constraints = constraintResult.constraints;
+  try {
+    const suggestions = await googleLocationService.autocompletePlaces(query, {
+      languageCode: 'en',
+      regionCode: constraints.countryCode,
+      includedRegionCodes: [constraints.countryCode],
+      locationRestriction: autocompleteLocationRestriction(constraints),
+    });
+    return { data: { suggestions } };
+  } catch (error) {
+    const invalid = error?.code === 'GOOGLE_AUTOCOMPLETE_INPUT_INVALID';
+    return {
+      error: invalid
+        ? 'Location search is invalid.'
+        : 'Location suggestions are temporarily unavailable.',
+      status: invalid ? 400 : error?.status || 502,
+      code: error?.code || 'GOOGLE_LOCATION_FAILED',
+    };
+  }
 }
 
 function parseDateTime(value) {
@@ -179,6 +249,7 @@ function validateListingPayload(payload = {}, { partial = false } = {}) {
     firstNonEmpty(payload.image, payload.coverImage),
   );
   const timeSlots = normalizeCreatorTimeSlots(payload.timeSlots);
+  const richLocationRequest = requestFromPayload(payload);
 
   let startTime = parseDateTime(payload.start_time ?? payload.startTime);
   let endTime = parseDateTime(payload.end_time ?? payload.endTime);
@@ -350,6 +421,7 @@ function validateListingPayload(payload = {}, { partial = false } = {}) {
         ? { timeSlots }
         : {}),
       ...(payload.tags !== undefined ? { tags: payload.tags } : {}),
+      ...(richLocationRequest !== undefined ? { richLocationRequest } : {}),
     },
   };
 }
@@ -557,7 +629,7 @@ function serializeAnalyticsSummary(analyticsDoc) {
 }
 
 function serializeCreatorListing(event, intentStatsByEventId = null, options = {}) {
-  const base = serializeLabEvent(event, intentStatsByEventId);
+  const base = serializeLabEvent(event, intentStatsByEventId, options);
   const pivot = event?.customFields?.pivot || {};
   const host = pivot.host || {};
   const creatorUserId = options.creatorUserId;
@@ -704,7 +776,11 @@ async function listListings(req, options = {}) {
     events.map((event) => event._id),
   );
 
-  const serializeOptions = { creatorUserId, claimedOrganizerIds };
+  const serializeOptions = {
+    creatorUserId,
+    claimedOrganizerIds,
+    richLocationReadsEnabled: isRichLocationCapabilityEnabled(context.tenant, 'reads'),
+  };
 
   return {
     data: {
@@ -807,6 +883,7 @@ async function getListing(req, eventId, options = {}) {
       event: serializeCreatorListing(existing, intentStatsByEventId, {
         creatorUserId,
         claimedOrganizerIds,
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(context.tenant, 'reads'),
       }),
       stats: {
         intents: intentStats,
@@ -885,6 +962,13 @@ async function createListing(req, payload = {}) {
   if (validated.error) return validated;
   const { fields } = validated;
 
+  const locationResult = await resolveRichLocationWrite({
+    tenant: context.tenant,
+    request: fields.richLocationRequest,
+    legacyLocation: fields.location,
+  });
+  if (locationResult.error) return locationResult;
+
   const config = resolveCreatorPublishConfig(context.tenant);
   const ingestStatus = resolveCreatorDefaultIngestStatus(config);
 
@@ -918,6 +1002,7 @@ async function createListing(req, payload = {}) {
     description: fields.description || '',
     type: 'social',
     location: fields.location,
+    ...(locationResult.richLocation ? { richLocation: locationResult.richLocation } : {}),
     start_time: fields.startTime,
     end_time: fields.endTime,
     status: 'not-applicable',
@@ -984,7 +1069,9 @@ async function createListing(req, payload = {}) {
 
   return {
     data: {
-      event: serializeCreatorListing(event),
+      event: serializeCreatorListing(event, null, {
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(context.tenant, 'reads'),
+      }),
       created: true,
       ingestStatus,
       batchWeek: weekResult.batchWeek,
@@ -1065,6 +1152,22 @@ async function updateListing(req, eventId, payload = {}) {
   const ownership = assertListingOwnership(existing, creatorUserId);
   if (ownership) return ownership;
 
+  if (fields.location !== undefined && fields.richLocationRequest === undefined
+    && existing.richLocation) {
+    return {
+      error: 'Select a location mode and Google place when changing this location.',
+      status: 400,
+      code: 'RICH_LOCATION_SELECTION_REQUIRED',
+    };
+  }
+
+  const locationResult = await resolveRichLocationWrite({
+    tenant: context.tenant,
+    request: fields.richLocationRequest,
+    legacyLocation: fields.location || existing.location,
+  });
+  if (locationResult.error) return locationResult;
+
   const pivot = { ...(existing.customFields?.pivot || {}) };
   const currentStatus = pivot.ingestStatus || 'draft';
   const isPublished = currentStatus === PIVOT_FEED_INGEST_STATUS;
@@ -1083,6 +1186,7 @@ async function updateListing(req, eventId, payload = {}) {
   if (fields.name !== undefined) setPayload.name = fields.name;
   if (fields.description !== undefined) setPayload.description = fields.description;
   if (fields.location !== undefined) setPayload.location = fields.location;
+  if (locationResult.richLocation) setPayload.richLocation = locationResult.richLocation;
   if (fields.image !== undefined) setPayload.image = fields.image;
   if (fields.startTime !== undefined) setPayload.start_time = fields.startTime;
   if (fields.endTime !== undefined) setPayload.end_time = fields.endTime;
@@ -1181,7 +1285,9 @@ async function updateListing(req, eventId, payload = {}) {
 
   return {
     data: {
-      event: serializeCreatorListing(updated),
+      event: serializeCreatorListing(updated, null, {
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(context.tenant, 'reads'),
+      }),
       updated: true,
       ingestStatus: pivot.ingestStatus || null,
       batchWeek: pivot.batchWeek || null,
@@ -1190,6 +1296,7 @@ async function updateListing(req, eventId, payload = {}) {
 }
 
 module.exports = {
+  autocompleteCreatorLocations,
   createListing,
   updateListing,
   listListings,

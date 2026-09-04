@@ -214,6 +214,9 @@ describe('pivotFieldParsingUtils', () => {
       );
 
       expect(draft.start_time).toBe('2026-08-15T01:00:00.000Z');
+      expect(draft.rawLocationText).toBe(
+        "Gabe's, 330 E Washington St, Iowa City, IA 52240",
+      );
       expect(draft.parsed.startTimeRaw).toBe('Friday at 8pm');
       expect(draft.parsed.startTimestamp).toBe('2026-08-15T01:00:00.000Z');
       expect(draft.parsed.address).toMatchObject({ city: 'Iowa City', state: 'IA', zip: '52240' });

@@ -91,6 +91,16 @@ describe('pivotIngestPublishService merge helpers', () => {
     expect(merged.name).toBe('Draft title');
     expect(merged.hostName).toBe('Brooklyn Board Game Cafe');
     expect(merged.location).toBe('Brooklyn, NY');
+    expect(merged.rawLocationText).toBe('Brooklyn, NY');
+  });
+
+  it('retains scraped source text when an operator supplies a canonical location', () => {
+    const merged = mergeDraftWithOverrides(
+      { location: 'RAW VENUE TEXT', rawLocationText: 'RAW VENUE TEXT' },
+      { location: 'Canonical Venue, Brooklyn' },
+    );
+    expect(merged.location).toBe('Canonical Venue, Brooklyn');
+    expect(merged.rawLocationText).toBe('RAW VENUE TEXT');
   });
 
   it('keeps hostIdentities and does not clobber a known host image with null', () => {
@@ -120,6 +130,76 @@ describe('pivotIngestPublishService merge helpers', () => {
     });
 
     expect(result.code).toBe('MISSING_REQUIRED_FIELDS');
+  });
+
+  it('blocks unresolved physical rich locations at the shared policy boundary', () => {
+    const result = validateMergedDraft({
+      name: 'Event',
+      location: 'Raw scraped venue',
+      start_time: '2026-07-12T18:00:00.000Z',
+      hostName: 'Host',
+      richLocation: {
+        mode: 'physical',
+        originalInput: 'Raw scraped venue',
+        resolutionStatus: 'unresolved',
+        publicDisplayLabel: 'Raw scraped venue',
+        revealPolicy: 'public',
+      },
+    });
+
+    expect(result).toMatchObject({
+      code: 'RICH_LOCATION_UNRESOLVED',
+      status: 422,
+      locationPolicy: {
+        publishable: false,
+        reason: 'physical_resolution_required',
+      },
+    });
+  });
+
+  it('retains unresolved physical candidates for staging review', () => {
+    const result = validateMergedDraft({
+      name: 'Event',
+      location: 'Raw scraped venue',
+      rawLocationText: 'Raw scraped venue',
+      start_time: '2026-07-12T18:00:00.000Z',
+      hostName: 'Host',
+      richLocation: {
+        mode: 'physical',
+        originalInput: 'Raw scraped venue',
+        resolutionStatus: 'unresolved',
+        publicDisplayLabel: 'Raw scraped venue',
+        revealPolicy: 'public',
+      },
+    }, { allowLocationReview: true });
+
+    expect(result.error).toBeUndefined();
+    expect(result.merged.locationPolicy).toMatchObject({
+      publishable: false,
+      ingestible: true,
+      reviewRequired: true,
+    });
+    expect(result.merged.rawLocationText).toBe('Raw scraped venue');
+  });
+
+  it('accepts intentional TBD while retaining the required legacy string', () => {
+    const result = validateMergedDraft({
+      name: 'Event',
+      location: 'TBD',
+      start_time: '2026-07-12T18:00:00.000Z',
+      hostName: 'Host',
+      richLocation: {
+        mode: 'tbd',
+        originalInput: 'TBD',
+        resolutionStatus: 'not_applicable',
+        publicDisplayLabel: 'Location to be announced',
+        revealPolicy: 'public',
+      },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.merged.location).toBe('TBD');
+    expect(result.merged.richLocation.mode).toBe('tbd');
   });
 
   it('converts casual start times using the tenant timezone', () => {
@@ -266,6 +346,143 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
       expect.objectContaining({ upsert: true }),
     );
     expect(provisionPivotCatalogOrg).not.toHaveBeenCalled();
+  });
+
+  it('stages unresolved scraped physical locations with raw text and review metadata', async () => {
+    previewIngestUrl.mockResolvedValue({
+      data: {
+        draft: {
+          name: 'Needs location review',
+          location: 'RAW VENUE FROM SOURCE',
+          rawLocationText: 'RAW VENUE FROM SOURCE',
+          start_time: '2026-07-12T18:00:00-04:00',
+          hostName: 'Source Host',
+          source: 'partiful',
+          richLocation: {
+            mode: 'physical',
+            originalInput: 'RAW VENUE FROM SOURCE',
+            resolutionStatus: 'unresolved',
+            publicDisplayLabel: 'RAW VENUE FROM SOURCE',
+            revealPolicy: 'public',
+          },
+        },
+      },
+    });
+
+    const result = await publishIngestEvent(
+      {user: {email: 'ops@meridian.study'}, globalDb: {}},
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/location-review',
+        overrides: {tags: ['nightlife']},
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    const payload = Event.findOneAndUpdate.mock.calls[0][1].$set;
+    expect(payload.location).toBe('RAW VENUE FROM SOURCE');
+    expect(payload.richLocation.resolutionStatus).toBe('unresolved');
+    expect(payload.customFields.pivot).toMatchObject({
+      rawLocationText: 'RAW VENUE FROM SOURCE',
+      locationReview: {
+        status: 'needs_review',
+        reason: 'physical_resolution_required',
+      },
+      ingestStatus: 'staged',
+    });
+  });
+
+  it('resolves rich location during a curation-style publish', async () => {
+    getMergedTenants.mockResolvedValue([{
+      ...TENANT,
+      richLocationConstraints: {
+        countryCode: 'US',
+        bounds: { north: 41, south: 40, east: -73, west: -75 },
+      },
+    }]);
+    const geocodeAddress = jest.fn().mockResolvedValue({
+      venueName: 'Brooklyn Bridge Park',
+      formattedAddress: '334 Furman St, Brooklyn, NY 11201, USA',
+      addressComponents: [
+        { longText: 'Brooklyn', types: ['locality'] },
+        { longText: 'United States', shortText: 'US', types: ['country'] },
+      ],
+      city: 'Brooklyn',
+      region: 'New York',
+      countryCode: 'US',
+      coordinates: { type: 'Point', coordinates: [-73.997, 40.696] },
+      googlePlaceId: 'ChIJ_test_bridge_park',
+      provider: 'google',
+      placeTypes: ['park'],
+      aliases: [],
+      resolutionStatus: 'resolved',
+      resolutionConfidence: 0.95,
+      resolvedAt: new Date('2026-09-04T12:00:00.000Z'),
+      publicDisplayLabel: 'Brooklyn Bridge Park',
+    });
+
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        resolveRichLocation: true,
+        googleLocationAdapter: { geocodeAddress },
+        locationNow: () => new Date('2026-09-04T12:00:00.000Z'),
+        overrides: { hostName: 'Brooklyn Board Game Cafe', tags: ['board-games'] },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(geocodeAddress).toHaveBeenCalledWith('Brooklyn Bridge Park', {
+      regionCode: 'US',
+      languageCode: 'en',
+    });
+    const payload = Event.findOneAndUpdate.mock.calls[0][1].$set;
+    expect(payload.richLocation).toMatchObject({
+      mode: 'physical',
+      originalInput: 'Brooklyn Bridge Park',
+      googlePlaceId: 'ChIJ_test_bridge_park',
+      resolutionStatus: 'resolved',
+    });
+    expect(payload.customFields.pivot.locationReview).toBeUndefined();
+  });
+
+  it('rejects immediate publication of an unresolved scraped physical location', async () => {
+    previewIngestUrl.mockResolvedValue({
+      data: {
+        draft: {
+          name: 'Needs location review',
+          location: 'RAW VENUE',
+          start_time: '2026-07-12T18:00:00-04:00',
+          hostName: 'Source Host',
+          richLocation: {
+            mode: 'physical',
+            originalInput: 'RAW VENUE',
+            resolutionStatus: 'unresolved',
+            publicDisplayLabel: 'RAW VENUE',
+            revealPolicy: 'public',
+          },
+        },
+      },
+    });
+
+    const result = await publishIngestEvent(
+      {user: {email: 'ops@meridian.study'}, globalDb: {}},
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/location-review',
+        overrides: {tags: ['nightlife']},
+        releaseNow: true,
+        confirm: 'RELEASE_NOW',
+      },
+    );
+
+    expect(result).toMatchObject({
+      code: 'RICH_LOCATION_UNRESOLVED',
+      status: 422,
+    });
+    expect(Event.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('persists host.identities from the preview draft and fills image from the primary identity', async () => {

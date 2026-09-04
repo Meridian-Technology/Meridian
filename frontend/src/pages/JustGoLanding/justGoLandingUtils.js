@@ -173,17 +173,6 @@ export function detectStorePlatform(userAgent = '') {
   return /android/i.test(userAgent) ? 'android' : 'ios';
 }
 
-export function decorateFlyers(flyers, cities = []) {
-  if (!Array.isArray(flyers) || flyers.length === 0) return [];
-  if (!cities.length) {
-    return flyers.map((flyer) => ({ ...flyer, city: null }));
-  }
-  return flyers.map((flyer, index) => ({
-    ...flyer,
-    city: cities[index % cities.length]?.cityDisplayName || null,
-  }));
-}
-
 export function cityChipLabel(city) {
   const name = String(city?.cityDisplayName || '').trim().toLowerCase();
   return name || null;

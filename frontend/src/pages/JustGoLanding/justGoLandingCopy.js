@@ -58,6 +58,8 @@ const justGoLandingCopy = Object.freeze({
   deckDownloadBody: 'the full week, and the people going. get just go.',
   cityPickerLabel: 'your city',
   storyTitle: 'the movement',
+  storyGrafs:
+    "we want people to go to one event each week. not users, people.\n\nevery person deserves something outside of the 9-5.\n\na time, a place, a group with which they can truly be.\n\nendless scrolling won't find that space you're looking for, we will.\n\ngive us 5 minutes this monday to prove it.",
   story: Object.freeze([
     'we want people to go to one event each week. not users, people.',
     'every person deserves something outside of the 9-5.',
@@ -140,6 +142,7 @@ export const JUSTGO_LANDING_COPY_KEYS = Object.freeze({
   deckDownloadBody: 'landing.web.deck.downloadBody',
   cityPickerLabel: 'landing.web.cityPickerLabel',
   storyTitle: 'landing.web.story.title',
+  storyGrafs: 'landing.web.story.grafs',
   stickyCta: 'landing.web.stickyCta',
   contactLead: 'landing.web.contactLead',
   footerStamp: 'landing.web.footer.stamp',
@@ -255,6 +258,19 @@ function overlayStoryGraf(pack, index) {
 
 /** Sequential `graf0`…`grafN` — bundled length, plus extra overlay grafs. */
 export function resolveLandingStory(pack, bundled = justGoLandingCopy.story) {
+  const combined = resolveLandingCopyField(
+    JUSTGO_LANDING_COPY_KEYS.storyGrafs,
+    pack,
+    '',
+  );
+  if (combined) {
+    const paragraphs = combined
+      .split(/\n\s*\n/)
+      .map((graf) => graf.trim())
+      .filter(Boolean);
+    if (paragraphs.length) return paragraphs;
+  }
+
   const fallbacks = Array.isArray(bundled) ? bundled : [];
   const grafs = [];
   for (let index = 0; index < MAX_STORY_GRAFS; index += 1) {

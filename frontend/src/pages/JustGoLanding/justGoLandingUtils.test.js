@@ -1,6 +1,5 @@
 import {
   cityChipLabel,
-  decorateFlyers,
   detectStorePlatform,
   formatIsoWeekToken,
   formatLandingDropSpoken,
@@ -84,23 +83,6 @@ describe('detectStorePlatform', () => {
   it('defaults everyone else to the app store', () => {
     expect(detectStorePlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)')).toBe('ios');
     expect(detectStorePlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)')).toBe('ios');
-  });
-});
-
-describe('decorateFlyers', () => {
-  const flyers = [{ id: 'a', title: 'night market' }, { id: 'b', title: 'warehouse show' }];
-
-  it('stamps city names onto flyers without inventing a live catalog', () => {
-    const decorated = decorateFlyers(flyers, [
-      { cityDisplayName: 'Brooklyn' },
-      { cityDisplayName: 'Troy' },
-    ]);
-    expect(decorated[0].city).toBe('Brooklyn');
-    expect(decorated[1].city).toBe('Troy');
-  });
-
-  it('leaves city empty when the public list is down', () => {
-    expect(decorateFlyers(flyers, [])[0].city).toBeNull();
   });
 });
 

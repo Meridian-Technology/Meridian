@@ -4,6 +4,7 @@
  */
 
 const getModels = require('./getModelService');
+const { projectEventRichLocation } = require('./justGoRichLocationProjectionService');
 
 function defaultAnalytics() {
     return {
@@ -84,9 +85,13 @@ async function getAdminTenantEventDashboard(req, eventId) {
     }
 
     const effectiveOrgId = resolveEffectiveOrgId(event);
+    const eventPayload = event.toObject ? event.toObject() : { ...event };
+    if (eventPayload.richLocation) {
+        eventPayload.richLocation = projectEventRichLocation(eventPayload);
+    }
 
     return {
-        event,
+        event: eventPayload,
         analytics,
         agenda: agenda || { items: [] },
         roles: {

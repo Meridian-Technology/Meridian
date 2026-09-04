@@ -31,6 +31,10 @@ jest.mock('../../services/pivotOrganizerResolveService', () => ({
     ambiguous: [],
   }),
 }));
+jest.mock('../../services/googleLocationService', () => ({
+  autocompletePlaces: jest.fn(),
+  fetchPlaceDetails: jest.fn(),
+}));
 
 const getModels = require('../../services/getModelService');
 const { connectToDatabase } = require('../../connectionsManager');
@@ -44,10 +48,12 @@ const {
   notifyAdminsOnCreatorListingCreate,
 } = require('../../services/pivotCreatorAdminNotifyService');
 const { resolveOrganizers } = require('../../services/pivotOrganizerResolveService');
+const googleLocationService = require('../../services/googleLocationService');
 const { toIsoWeek } = require('../../utilities/pivotIsoWeek');
 const { PIVOT_FEED_INGEST_STATUS } = require('../../utilities/pivotIngestStatus');
 const {
   createListing,
+  autocompleteCreatorLocations,
   updateListing,
   listListings,
   getListing,
@@ -62,6 +68,7 @@ const CATALOG_ORG_ID = '507f1f77bcf86cd799439011';
 const EVENT_ID = '507f1f77bcf86cd799439099';
 const ORGANIZER_ID = '665a1b2c3d4e5f6789012ccc';
 const CLAIMED_EVENT_ID = '507f1f77bcf86cd799439088';
+const PLACE_ID = 'ChIJN1t_tDeuEmsRUsoyG83frY4';
 
 const TENANT = {
   tenantKey: 'brooklyn',
@@ -98,6 +105,26 @@ function basePayload(overrides = {}) {
     hostName: 'Just Go Host',
     externalLink: 'https://tickets.example.com/rooftop',
     tags: ['live-music'],
+    ...overrides,
+  };
+}
+
+function canonicalGooglePlaceForCreator(overrides = {}) {
+  return {
+    venueName: 'The Great Hall',
+    formattedAddress: '123 Main St, Brooklyn, NY 11201, USA',
+    city: 'Brooklyn',
+    region: 'New York',
+    countryCode: 'US',
+    coordinates: { type: 'Point', coordinates: [-73.95, 40.68] },
+    googlePlaceId: PLACE_ID,
+    provider: 'google',
+    placeTypes: ['event_venue'],
+    aliases: [],
+    resolutionStatus: 'resolved',
+    resolutionConfidence: 1,
+    resolvedAt: new Date('2026-05-01T12:00:00.000Z'),
+    publicDisplayLabel: 'The Great Hall',
     ...overrides,
   };
 }
@@ -146,6 +173,54 @@ describe('pivotCreatorListingService', () => {
       attached: [],
       ambiguous: [],
     });
+    googleLocationService.fetchPlaceDetails.mockReset();
+    googleLocationService.autocompletePlaces.mockReset();
+  });
+
+  describe('autocompleteCreatorLocations', () => {
+    it('returns city-restricted safe suggestions when autocomplete is enabled', async () => {
+      const tenant = {
+        ...TENANT,
+        richLocationControls: {rollout: 'on', autocomplete: true},
+        richLocationConstraints: {
+          countryCode: 'US',
+          bounds: {south: 40.55, west: -74.1, north: 40.75, east: -73.8},
+        },
+      };
+      resolvePivotTenant.mockResolvedValue({tenant});
+      googleLocationService.autocompletePlaces.mockResolvedValue([{
+        placeId: PLACE_ID,
+        primaryText: 'The Great Hall',
+        fullText: 'The Great Hall, Brooklyn, NY',
+        placeTypes: ['event_venue'],
+      }]);
+
+      const result = await autocompleteCreatorLocations(makeReq({
+        pivotCreator: {...makeReq().pivotCreator, tenant},
+      }), {query: 'Great Hall'});
+
+      expect(result.data.suggestions).toHaveLength(1);
+      expect(googleLocationService.autocompletePlaces).toHaveBeenCalledWith('Great Hall', {
+        languageCode: 'en',
+        regionCode: 'US',
+        includedRegionCodes: ['US'],
+        locationRestriction: {
+          rectangle: {
+            low: {latitude: 40.55, longitude: -74.1},
+            high: {latitude: 40.75, longitude: -73.8},
+          },
+        },
+      });
+    });
+
+    it('fails closed when city autocomplete is disabled', async () => {
+      const result = await autocompleteCreatorLocations(makeReq(), {query: 'Great Hall'});
+      expect(result).toMatchObject({
+        code: 'RICH_LOCATION_AUTOCOMPLETE_DISABLED',
+        status: 409,
+      });
+      expect(googleLocationService.autocompletePlaces).not.toHaveBeenCalled();
+    });
   });
 
   describe('rejectCreatorLifecycleOverrides', () => {
@@ -162,6 +237,158 @@ describe('pivotCreatorListingService', () => {
   });
 
   describe('createListing', () => {
+    it('resolves and saves a client-selected in-city Google place', async () => {
+      const tenant = {
+        ...TENANT,
+        richLocationControls: { rollout: 'on', writes: true },
+        richLocationConstraints: {
+          countryCode: 'US',
+          bounds: { south: 40.55, west: -74.1, north: 40.75, east: -73.8 },
+        },
+      };
+      googleLocationService.fetchPlaceDetails.mockResolvedValue(
+        canonicalGooglePlaceForCreator(),
+      );
+      Event.create.mockImplementation(async (payload) => ({
+        ...payload,
+        _id: EVENT_ID,
+        toObject() { return this; },
+      }));
+
+      const result = await createListing(
+        makeReq({
+          pivotCreator: {
+            tenantKey: 'brooklyn',
+            tenant,
+            globalUserId: GLOBAL_USER_ID,
+          },
+        }),
+        basePayload({
+          location: 'Original user-entered venue',
+          richLocation: { mode: 'physical', googlePlaceId: PLACE_ID },
+        }),
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(googleLocationService.fetchPlaceDetails).toHaveBeenCalledWith(PLACE_ID, {
+        languageCode: 'en',
+      });
+      expect(Event.create).toHaveBeenCalledWith(expect.objectContaining({
+        location: 'Original user-entered venue',
+        richLocation: expect.objectContaining({
+          mode: 'physical',
+          originalInput: 'Original user-entered venue',
+          googlePlaceId: PLACE_ID,
+          formattedAddress: '123 Main St, Brooklyn, NY 11201, USA',
+          revealPolicy: 'public',
+        }),
+      }));
+    });
+
+    it('rejects an out-of-scope physical place without saving', async () => {
+      const tenant = {
+        ...TENANT,
+        richLocationControls: { rollout: 'on', writes: true },
+        richLocationConstraints: {
+          countryCode: 'US',
+          bounds: { south: 40.55, west: -74.1, north: 40.75, east: -73.8 },
+        },
+      };
+      googleLocationService.fetchPlaceDetails.mockResolvedValue({
+        ...canonicalGooglePlaceForCreator(),
+        coordinates: { type: 'Point', coordinates: [-122.42, 37.77] },
+      });
+
+      const result = await createListing(
+        makeReq({
+          pivotCreator: {
+            tenantKey: 'brooklyn',
+            tenant,
+            globalUserId: GLOBAL_USER_ID,
+          },
+        }),
+        basePayload({
+          richLocation: { mode: 'physical', googlePlaceId: PLACE_ID },
+        }),
+      );
+
+      expect(result).toMatchObject({
+        code: 'RICH_LOCATION_OUT_OF_SCOPE',
+        status: 422,
+      });
+      expect(Event.create).not.toHaveBeenCalled();
+    });
+
+    it('does not resolve or save rich locations when the city rollout is disabled', async () => {
+      const tenant = {
+        ...TENANT,
+        richLocationControls: {
+          rollout: 'off',
+          writes: true,
+        },
+        richLocationConstraints: {
+          countryCode: 'US',
+          bounds: { south: 40.55, west: -74.1, north: 40.75, east: -73.8 },
+        },
+      };
+
+      const result = await createListing(
+        makeReq({
+          pivotCreator: {
+            tenantKey: 'brooklyn',
+            tenant,
+            globalUserId: GLOBAL_USER_ID,
+          },
+        }),
+        basePayload({
+          richLocation: { mode: 'physical', googlePlaceId: PLACE_ID },
+        }),
+      );
+
+      expect(result).toMatchObject({
+        code: 'RICH_LOCATION_WRITES_DISABLED',
+        status: 409,
+      });
+      expect(googleLocationService.fetchPlaceDetails).not.toHaveBeenCalled();
+      expect(Event.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['GOOGLE_PLACE_ID_INVALID', 400, 'The selected Google place is invalid.'],
+      ['GOOGLE_LOCATION_AUTH_FAILED', 503, 'The selected place could not be resolved.'],
+      ['GOOGLE_LOCATION_TIMEOUT', 504, 'The selected place could not be resolved.'],
+    ])('does not save when provider resolution fails with %s', async (code, status, message) => {
+      const tenant = {
+        ...TENANT,
+        richLocationControls: { rollout: 'on', writes: true },
+        richLocationConstraints: {
+          countryCode: 'US',
+          bounds: { south: 40.55, west: -74.1, north: 40.75, east: -73.8 },
+        },
+      };
+      googleLocationService.fetchPlaceDetails.mockRejectedValue(Object.assign(
+        new Error(`sensitive provider details for ${PLACE_ID}`),
+        { code, status },
+      ));
+
+      const result = await createListing(
+        makeReq({
+          pivotCreator: {
+            tenantKey: 'brooklyn',
+            tenant,
+            globalUserId: GLOBAL_USER_ID,
+          },
+        }),
+        basePayload({
+          richLocation: { mode: 'physical', googlePlaceId: PLACE_ID },
+        }),
+      );
+
+      expect(result).toEqual({ error: message, code, status });
+      expect(JSON.stringify(result)).not.toContain(PLACE_ID);
+      expect(Event.create).not.toHaveBeenCalled();
+    });
+
     it('creates a justgo draft with ISO week of start_time (not feed-eligible)', async () => {
       const start = new Date('2026-05-23T19:00:00.000Z');
       const createdDoc = {

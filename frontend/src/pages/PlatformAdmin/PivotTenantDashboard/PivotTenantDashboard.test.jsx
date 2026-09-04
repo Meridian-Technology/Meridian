@@ -54,6 +54,11 @@ jest.mock('./PivotVoicePage', () => ({ scope, tenantKey }) => (
 jest.mock('./PivotTenantLaunchPage', () => ({ tenantKey }) => (
   <div>city-launch-page:{tenantKey}</div>
 ));
+jest.mock('./PivotTenantLocationMigrationPage', () => ({
+  __esModule: true,
+  default: ({ tenantKey }) => <div>city-location-migration-page:{tenantKey}</div>,
+  RICH_LOCATION_MIGRATION_UI_ENABLED: true,
+}));
 jest.mock('./PivotTenantDropdown', () => () => <div>city-switcher</div>);
 jest.mock('./PivotJustGoLogo', () => () => <div>logo</div>);
 
@@ -89,12 +94,12 @@ function renderDashboard(path = '/platform-admin/pivot/nyc?page=4') {
   );
 }
 
-describe('PivotTenantDashboard Catalog + Voice + Launch shell', () => {
+describe('PivotTenantDashboard city operations shell', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('keeps Catalog as page 4, Voice as page 5, and appends Launch as page 6', () => {
+  it('keeps existing bookmarks stable and appends Location migration as page 7', () => {
     renderDashboard('/platform-admin/pivot/nyc');
 
     expect(screen.getByTestId('tenant-dash-shell')).toBeInTheDocument();
@@ -115,7 +120,11 @@ describe('PivotTenantDashboard Catalog + Voice + Launch shell', () => {
       'data-icon',
       'mdi:rocket-launch-outline',
     );
-    expect(screen.queryByTestId('menu-7')).toBeNull();
+    expect(screen.getByTestId('menu-7')).toHaveTextContent('Location migration');
+    expect(screen.getByTestId('menu-7')).toHaveAttribute(
+      'data-icon',
+      'mdi:map-marker-path',
+    );
   });
 
   it('keeps ?page=4 Catalog bookmarks on Catalog', () => {
@@ -141,6 +150,14 @@ describe('PivotTenantDashboard Catalog + Voice + Launch shell', () => {
     expect(screen.getByText('city-launch-page:nyc')).toBeInTheDocument();
     expect(screen.queryByText('overview-page')).toBeNull();
     expect(screen.queryByText(/city-voice-page/)).toBeNull();
+  });
+
+  it('shows the tenant-specific location migration at ?page=7', () => {
+    renderDashboard('/platform-admin/pivot/nyc?page=7');
+
+    expect(screen.getByText('city-location-migration-page:nyc')).toBeInTheDocument();
+    expect(screen.queryByText('overview-page')).toBeNull();
+    expect(screen.queryByText('curation-page')).toBeNull();
   });
 
   it('does not show Launch (or waitlist emails) on Overview', () => {

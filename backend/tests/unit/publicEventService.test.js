@@ -175,6 +175,46 @@ describe('Just Go public event safe projection', () => {
   it('keeps the database selection allowlisted', () => {
     expect(PUBLIC_EVENT_SELECT).not.toMatch(/attendees|contact|approvalReference|reservation|deletedAt/);
     expect(PUBLIC_EVENT_SELECT).toMatch(/customFields\.pivot\.host\.name/);
+    expect(PUBLIC_EVENT_SELECT).toMatch(/richLocation/);
+  });
+
+  it('adds only public-safe rich location fields when city reads are enabled', () => {
+    const source = event({
+      richLocation: {
+        mode: 'registration_gated',
+        venueName: 'Supper Club',
+        formattedAddress: '123 Private St, Oakland, CA 94612',
+        addressComponents: [{ longText: 'Oakland', types: ['locality'] }],
+        neighborhood: 'Uptown',
+        city: 'Oakland',
+        region: 'California',
+        postalCode: '94612',
+        countryCode: 'US',
+        coordinates: { type: 'Point', coordinates: [-122.27, 37.81] },
+        googlePlaceId: 'ChIJ-private',
+        resolutionStatus: 'resolved',
+        publicDisplayLabel: 'Supper Club · Uptown',
+        revealPolicy: 'registered_only',
+      },
+    });
+    const enabledTenant = tenant('oakland', {
+      richLocationControls: { rollout: 'on', reads: true },
+    });
+
+    const result = projection(source, enabledTenant);
+
+    expect(result.venue).toEqual({ text: 'Civic Center Lawn' });
+    expect(result.richLocation).toMatchObject({
+      mode: 'registration_gated',
+      publicDisplayLabel: 'Supper Club · Uptown',
+      venueName: 'Supper Club',
+      city: 'Oakland',
+      revealPolicy: 'registered_only',
+    });
+    expect(result.richLocation).not.toHaveProperty('formattedAddress');
+    expect(result.richLocation).not.toHaveProperty('coordinates');
+    expect(result.richLocation).not.toHaveProperty('googlePlaceId');
+    expect(projection(source)).not.toHaveProperty('richLocation');
   });
 });
 

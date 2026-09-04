@@ -22,17 +22,22 @@ const {
   resolveDisplayHost,
   selectDropDeckEvents,
 } = require('./pivotFeedService');
+const { projectEventRichLocation } = require('./justGoRichLocationProjectionService');
+const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
 
 const LANDING_DROP_LIMIT = 4;
-const LANDING_EVENT_FIELDS = 'name location start_time image customFields.pivot';
+const LANDING_EVENT_FIELDS = 'name location richLocation start_time image customFields.pivot';
 
-function serializeLandingDropEvent(event) {
+function serializeLandingDropEvent(event, options = {}) {
   const host = resolveDisplayHost(event.customFields?.pivot);
   const tags = Array.isArray(event.customFields?.pivot?.tags)
     ? event.customFields.pivot.tags.filter((tag) => typeof tag === 'string' && tag.trim())
     : [];
   const coverImageUrl = resolvePivotCoverImageUrl(event);
   const tag = tags[0] ? tags[0].trim() : '';
+  const richLocation = projectEventRichLocation(event, undefined, {
+    readsEnabled: options.readsEnabled,
+  });
 
   return {
     id: String(event._id),
@@ -40,6 +45,7 @@ function serializeLandingDropEvent(event) {
     hostName: host?.name || '',
     startTime: event.start_time,
     location: event.location || '',
+    ...(richLocation ? { richLocation } : {}),
     ...(coverImageUrl ? { coverImageUrl } : {}),
     ...(tag ? { tag } : {}),
   };
@@ -144,7 +150,10 @@ async function getPivotLandingDrop(req, options = {}) {
       liveWeek,
       fallback,
       dropAt: loaded.dropAt.toISOString(),
-      events: loaded.ranked.slice(0, LANDING_DROP_LIMIT).map(serializeLandingDropEvent),
+      events: loaded.ranked.slice(0, LANDING_DROP_LIMIT).map((event) =>
+        serializeLandingDropEvent(event, {
+          readsEnabled: isRichLocationCapabilityEnabled(tenant, 'reads'),
+        })),
     },
   };
 }

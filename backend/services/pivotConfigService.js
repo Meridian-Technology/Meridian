@@ -10,6 +10,9 @@ const {
 const { mergePivotCrewConfig } = require('../utilities/pivotCrewConfig');
 const { mergePivotMobileConfig } = require('../utilities/pivotMobileConfig');
 const { getCopyPointer, EMPTY_COPY_POINTER } = require('./pivotCopyService');
+const {
+  resolveRichLocationControls,
+} = require('../utilities/justGoRichLocationControls');
 
 function buildDropSchedulePayload(tenant, batchWeek, now = new Date()) {
   const resolved = resolvePivotDropInstant(tenant, batchWeek, now);
@@ -88,6 +91,7 @@ async function getPivotConfig(req, options = {}) {
       mobile: mergePivotMobileConfig(tenant.pivotMobileConfig, {
         product: String(req.headers?.['x-app-product'] || '').toLowerCase(),
       }),
+      richLocation: resolveRichLocationControls(tenant),
       copy: await resolveCopyPointer(req, tenant.tenantKey),
     },
   };

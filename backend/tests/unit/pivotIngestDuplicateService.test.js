@@ -48,6 +48,39 @@ describe('pivotIngestDuplicateService', () => {
     });
   });
 
+  it('uses a public rich-location label for draft duplicate matching', () => {
+    const rolled = rollupShowtimeDrafts([
+      {
+        sourceUrl: 'https://example.com/one',
+        draft: {
+          name: 'Supper Club',
+          start_time: '2026-07-12T22:00:00.000Z',
+          location: 'Secret exact address A',
+          richLocation: {
+            mode: 'registration_gated',
+            venueName: 'Private supper club',
+            publicDisplayLabel: 'Private venue · SoHo',
+          },
+        },
+      },
+      {
+        sourceUrl: 'https://example.com/two',
+        draft: {
+          name: 'Supper Club',
+          start_time: '2026-07-12T23:00:00.000Z',
+          location: 'Secret exact address B',
+          richLocation: {
+            mode: 'registration_gated',
+            venueName: 'Private supper club',
+            publicDisplayLabel: 'Private venue · SoHo',
+          },
+        },
+      },
+    ]);
+    expect(rolled.rolledUpCount).toBe(1);
+    expect(rolled.drafts).toHaveLength(1);
+  });
+
   describe('findCatalogDuplicate', () => {
     const catalogIndex = [
       {

@@ -38,9 +38,18 @@ const {
   FRIEND_CAP,
 } = require('./pivotFeedService');
 const { resolveExploreSections } = require('./pivotExploreSectionsService');
+const {
+  loadRichLocationViewerContext,
+} = require('./justGoRichLocationProjectionService');
+const {
+  justGoLocationIndexFields,
+} = require('../utilities/justGoLocationPolicy');
+const {
+  isRichLocationCapabilityEnabled,
+} = require('../utilities/justGoRichLocationControls');
 
 const PUBLIC_EVENT_FIELDS =
-  'name description location start_time end_time externalLink type registrationCount image customFields.pivot';
+  'name description location richLocation start_time end_time externalLink type registrationCount image customFields.pivot';
 const DEFAULT_EXPLORE_LIMIT = 40;
 const MAX_EXPLORE_LIMIT = 100;
 const EXPLORE_SORT_MODES = new Set(['for_you', 'soonest']);
@@ -242,7 +251,7 @@ function eventMatchesNight(event, night, timeZone) {
   );
 }
 
-function eventMatchesQuery(event, query) {
+function eventMatchesQuery(event, query, options = {}) {
   if (!query) {
     return true;
   }
@@ -250,7 +259,10 @@ function eventMatchesQuery(event, query) {
   const needle = query.toLowerCase();
   const hostName = event.customFields?.pivot?.host?.name || '';
   const enrichmentText = collectPivotEnrichmentSearchText(event.customFields?.pivot);
-  const haystack = [event.name, event.description, hostName, enrichmentText]
+  const locationText = options.richLocationSearchEnabled === true
+    ? justGoLocationIndexFields({ richLocation: event.richLocation }).join(' ')
+    : '';
+  const haystack = [event.name, event.description, hostName, enrichmentText, locationText]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -302,7 +314,12 @@ function shouldExcludePassedExploreEvent(event, userIntents, excludePassed) {
 }
 
 function applyExploreFilters(events, filters, context) {
-  const { userIntents, socialByEvent, timeZone } = context;
+  const {
+    userIntents,
+    socialByEvent,
+    timeZone,
+    richLocationSearchEnabled,
+  } = context;
 
   return events.filter((event) => {
     if (shouldExcludePassedExploreEvent(event, userIntents, filters.excludePassed)) {
@@ -321,7 +338,7 @@ function applyExploreFilters(events, filters, context) {
       return false;
     }
 
-    return eventMatchesQuery(event, filters.q);
+    return eventMatchesQuery(event, filters.q, { richLocationSearchEnabled });
   });
 }
 
@@ -452,7 +469,7 @@ function serializeExploreEvent(event, extras) {
 
 function serializeExploreCatalogEvents(
   catalogEvents,
-  { socialByEvent, userIntents, socialByEventAndSlot },
+  { socialByEvent, userIntents, socialByEventAndSlot, richLocationViewerContext },
 ) {
   return catalogEvents.map((event) => {
     const id = String(event._id);
@@ -479,6 +496,7 @@ function serializeExploreCatalogEvents(
     return serializeExploreEvent(event, {
       displayHost: resolveDisplayHost(event.customFields.pivot),
       userIntent: resolveExploreUserIntent(userIntentRow),
+      richLocationViewerContext,
       userTimeSlotId: userIntentRow?.timeSlotId || null,
       socialByTimeSlot,
       friendsInterested: social.friendsInterested,
@@ -759,14 +777,21 @@ async function getPivotExplore(req, options = {}) {
     }
   }
   const { userIntents, socialByEvent, socialByEventAndSlot } = friendSocial;
+  const richLocationViewerContext = await loadRichLocationViewerContext(
+    req,
+    catalogEventIds,
+    { tenant },
+  );
 
   const cityDisplayName = tenant?.location || tenant?.name || req.school;
   const { timezone: timeZone } = resolvePivotDropInstant(tenant, batchWeek, now);
+  const richLocationSearchEnabled = isRichLocationCapabilityEnabled(tenant, 'search');
 
   const filteredEvents = applyExploreFilters(catalogEvents, filters, {
     userIntents,
     socialByEvent,
     timeZone,
+    richLocationSearchEnabled,
   });
 
   if (sort === 'for_you') {
@@ -793,6 +818,7 @@ async function getPivotExplore(req, options = {}) {
     socialByEvent,
     userIntents,
     socialByEventAndSlot,
+    richLocationViewerContext,
   });
   const pageEvents = serializedEvents.slice(offset, offset + limit);
   const { sections, sectionsSource } = await resolveExploreSections(req, {

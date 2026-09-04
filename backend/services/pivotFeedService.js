@@ -32,6 +32,10 @@ const {
 const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
 const { getPivotConfig } = require('./pivotConfigService');
 const { getHiddenUserIdSet } = require('./pivotSafetyService');
+const {
+  loadRichLocationViewerContext,
+  projectEventRichLocation,
+} = require('./justGoRichLocationProjectionService');
 
 const FRIEND_CAP = 5;
 const FEED_CREW_CONFIG_CACHE_TTL_MS = 60_000;
@@ -40,7 +44,7 @@ const LOW_FEEDBACK_RATING_THRESHOLD = 3;
 /** Ranker id stamped on feed payloads + deck impressions. */
 const PIVOT_FEED_RANKER_VERSION = 'rules_v1';
 const PUBLIC_EVENT_FIELDS =
-  'name description location start_time end_time externalLink type registrationCount image customFields.pivot';
+  'name description location richLocation start_time end_time externalLink type registrationCount image customFields.pivot';
 const CATALOG_PROBE_FIELDS = 'start_time end_time customFields.pivot';
 
 /** @type {Map<string, { expiresAt: number, value: { crewSignalWeight: number } }>} */
@@ -234,12 +238,14 @@ function serializePivotFeedEvent(event, extras) {
   const timeSlots = normalizedSlots.length
     ? serializePivotTimeSlots(normalizedSlots, extras.socialByTimeSlot)
     : undefined;
+  const richLocation = projectEventRichLocation(event, extras.richLocationViewerContext);
 
   return {
     _id: String(event._id),
     name: event.name,
     description: movie?.synopsis || event.description,
     location: event.location,
+    ...(richLocation ? { richLocation } : {}),
     start_time: event.start_time,
     end_time: event.end_time,
     externalLink: event.externalLink,
@@ -1184,11 +1190,13 @@ async function getPivotFeed(req, options = {}) {
     userInterestTags,
     negativeFeedbackTags,
     crewRankConfig,
+    richLocationViewerContext,
   ] = await Promise.all([
     loadFriendSocial(req, userId, eventIds, FRIEND_CAP, batchWeek),
     loadUserInterestTags(req, userId),
     loadNegativeFeedbackTags(req, userId),
     getFeedRankCrewConfig(req),
+    loadRichLocationViewerContext(req, eventIds, { tenant }),
   ]);
 
   await applyCrewSocialCounts(req, userId, eventIds, batchWeek, socialByEvent);
@@ -1299,6 +1307,7 @@ async function getPivotFeed(req, options = {}) {
         return serializePivotFeedEvent(event, {
           displayHost: resolveDisplayHost(event.customFields.pivot),
           userIntent: userIntentRow?.status || null,
+          richLocationViewerContext,
           userTimeSlotId: userIntentRow?.timeSlotId || null,
           socialByTimeSlot,
           friendsInterested: social.friendsInterested,

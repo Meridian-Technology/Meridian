@@ -10,6 +10,8 @@ const {
 } = require('./pivotWeeklySnapshotService');
 const { serializePivotMovie } = require('../utilities/pivotMovieMetadata');
 const { serializePivotEnrichment } = require('../utilities/pivotEnrichment');
+const { projectEventRichLocation } = require('./justGoRichLocationProjectionService');
+const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
 
 function labEventsQuery(batchWeek) {
   return {
@@ -48,6 +50,9 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
       ? pivot.creatorSubmittedAt.toISOString()
       : pivot.creatorSubmittedAt
     : null;
+  const richLocation = projectEventRichLocation(event, undefined, {
+    readsEnabled: options.richLocationReadsEnabled,
+  });
 
   return {
     _id: String(event._id),
@@ -57,6 +62,7 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     start_time: event.start_time,
     end_time: event.end_time || null,
     location: event.location || '',
+    ...(richLocation ? { richLocation } : {}),
     externalLink: event.externalLink || null,
     sourceUrl: pivot.sourceUrl || null,
     ingestStatus: pivot.ingestStatus || null,
@@ -72,6 +78,8 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     ...(movie ? { movie } : {}),
     ...(enrichment ? { enrichment } : {}),
     ...(pivot.duplicateRollup ? { duplicateRollup: pivot.duplicateRollup } : {}),
+    ...(pivot.rawLocationText ? { rawLocationText: pivot.rawLocationText } : {}),
+    ...(pivot.locationReview ? { locationReview: pivot.locationReview } : {}),
     organizerName: host.name || '',
     organizerImageUrl: host.imageUrl || null,
     organizerProfileUrl: host.profileUrl || null,
@@ -162,7 +170,7 @@ async function listPivotLabEvents(req, options = {}) {
   const query = labEventsQuery(batchWeek);
 
   const events = await Event.find(query)
-    .select('name description image start_time end_time location externalLink customFields.pivot')
+    .select('name description image start_time end_time location richLocation externalLink customFields.pivot')
     .sort({ start_time: 1 })
     .lean();
 
@@ -183,6 +191,7 @@ async function listPivotLabEvents(req, options = {}) {
       events: events.map((event) =>
         serializeLabEvent(event, intentStatsByEventId, {
           dropDayOfWeek: dropConfig.dayOfWeek,
+          richLocationReadsEnabled: isRichLocationCapabilityEnabled(tenant, 'reads'),
         }),
       ),
     },

@@ -19,11 +19,10 @@ import justGoLandingCopy, {
   resolveJustGoLandingCopy,
   useJustGoLandingCopy,
 } from './justGoLandingCopy';
-import { JUSTGO_LANDING_FLYERS } from './justGoLandingFlyers';
+import { landingFlyersFromEvents } from './justGoLandingFlyers';
 import JustGoLandingDeck from './JustGoLandingDeck';
 import {
   cityChipLabel,
-  decorateFlyers,
   findLandingCity,
   formatLandingDropSpoken,
   isWaitlistLandingMode,
@@ -37,6 +36,7 @@ import {
   writeStoredLandingCity,
   justGoLegalPath,
 } from './justGoLandingUtils';
+import { projectJustGoPublicLandingEvent } from './justGoPublicLocation';
 import { useJustGoLandingMotion } from './justGoLandingMotion';
 import { isJustGoHost } from '../../config/tenantRedirect';
 import { applyJustGoDocumentMeta } from './justGoDocumentMeta';
@@ -171,6 +171,7 @@ function FlyerCard({ flyer }) {
       <div className="justgo-landing__flyer-meta">
         <p className="justgo-landing__flyer-tag">{flyer.tag}</p>
         {isPhoto ? <h3>{flyer.title}</h3> : null}
+        {flyer.host ? <p className="justgo-landing__flyer-host">{flyer.host}</p> : null}
         <p className="justgo-landing__flyer-when">
           {flyer.when}
           {flyer.city ? ` · ${String(flyer.city).toLowerCase()}` : ''}
@@ -209,6 +210,9 @@ function JustGoLanding() {
   const [citiesState, setCitiesState] = useState('loading');
   const [selectedTenantKey, setSelectedTenantKey] = useState('');
   const [copy, setCopy] = useState(justGoLandingCopy);
+  const [billboardEvents, setBillboardEvents] = useState([]);
+  const [billboardState, setBillboardState] = useState('idle');
+  const [billboardFallback, setBillboardFallback] = useState(false);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const { slap } = useJustGoLandingMotion({ desktop, flyersRef });
   const srcQuery = searchParams.get('src');
@@ -352,6 +356,42 @@ function JustGoLanding() {
   const waitlistMode = isWaitlistLandingMode(activeCity);
   const ctaReady = Boolean(activeCity);
 
+  useEffect(() => {
+    const tenantKey = activeCity?.tenantKey;
+    if (!desktop || !tenantKey || isWaitlistLandingMode(activeCity)) {
+      setBillboardEvents([]);
+      setBillboardState(tenantKey ? 'empty' : 'idle');
+      setBillboardFallback(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setBillboardEvents([]);
+    setBillboardState('loading');
+    setBillboardFallback(false);
+    apiRequest('/pivot/landing/drop', null, {
+      method: 'GET',
+      params: { tenantKey },
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const events = Array.isArray(res?.data?.events)
+          ? res.data.events.map(projectJustGoPublicLandingEvent)
+          : [];
+        setBillboardEvents(events);
+        setBillboardFallback(Boolean(res?.data?.fallback));
+        setBillboardState(events.length ? 'ready' : 'empty');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBillboardEvents([]);
+        setBillboardState('empty');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCity, desktop]);
+
   function openWaitlist(event) {
     event?.preventDefault?.();
     setWaitlistOpen(true);
@@ -399,8 +439,8 @@ function JustGoLanding() {
       ? 'empty'
       : citiesState;
   const flyers = useMemo(
-    () => decorateFlyers(JUSTGO_LANDING_FLYERS, scopedCities),
-    [scopedCities],
+    () => landingFlyersFromEvents(billboardEvents, activeCity?.cityDisplayName),
+    [activeCity?.cityDisplayName, billboardEvents],
   );
   const cityLabels = useMemo(
     () => scopedCities.map(cityChipLabel).filter(Boolean),
@@ -539,14 +579,20 @@ function JustGoLanding() {
         {desktop ? (
           <>
             <div className="justgo-landing__drop-copy">
-              <p className="justgo-landing__eyebrow">{copy.flyersEyebrow}</p>
+              <p className="justgo-landing__eyebrow">
+                {billboardFallback ? copy.deckEyebrowFallback : copy.flyersEyebrow}
+              </p>
               <h2>{copy.flyersTitle}</h2>
               <p>{copy.flyersBody}</p>
             </div>
             <div className="justgo-landing__flyers" ref={flyersRef}>
-              {flyers.map((flyer) => (
-                <FlyerCard key={flyer.id} flyer={flyer} />
-              ))}
+              {billboardState === 'loading' ? (
+                <p className="justgo-landing__muted">{copy.deckLoading}</p>
+              ) : flyers.length ? (
+                flyers.map((flyer) => <FlyerCard key={flyer.id} flyer={flyer} />)
+              ) : (
+                <p className="justgo-landing__muted">{copy.deckEmpty}</p>
+              )}
             </div>
           </>
         ) : (

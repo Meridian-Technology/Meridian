@@ -29,7 +29,11 @@ const {
   enrichIngestDraft,
   normalizeParsedFields,
 } = require('../utilities/pivotFieldParsingUtils');
-const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const {
+  logPivot,
+  pivotRequestContext,
+  isPivotDetailLoggingEnabled,
+} = require('../utilities/pivotLogger');
 const { resolvePivotDiscoveryConfig } = require('../utilities/pivotDiscoveryConfig');
 const {
   normalizeIngestStatus,
@@ -43,6 +47,14 @@ const {
   resolveOrganizers,
   uniqueOrganizerIds,
 } = require('./pivotOrganizerResolveService');
+const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
+const { resolveIngestRichLocation } = require('./pivotIngestRichLocationService');
+const {
+  assessJustGoLocationReview,
+  justGoLocationMatchText,
+  rawJustGoLocationText,
+  JUST_GO_LOCATION_POLICY_REASONS,
+} = require('../utilities/justGoLocationPolicy');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 /** Default for new Lab / URL / JSON ingest — not live until Release (Task 3.2). */
@@ -175,6 +187,8 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
         : [],
   );
 
+  const rawLocationText = rawJustGoLocationText(draft)
+    || rawJustGoLocationText(overrides);
   return {
     name: firstNonEmpty(overrides.name, draft.name),
     description: firstNonEmpty(overrides.description, draft.description) || '',
@@ -214,6 +228,15 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
     parsed: normalizeParsedFields(
       overrides.parsed !== undefined ? overrides.parsed : draft.parsed,
     ),
+    richLocation:
+      overrides.richLocation !== undefined
+        ? overrides.richLocation
+        : draft.richLocation,
+    locationReview:
+      overrides.locationReview !== undefined
+        ? overrides.locationReview
+        : draft.locationReview,
+    ...(rawLocationText ? { rawLocationText } : {}),
   };
 }
 
@@ -233,6 +256,25 @@ function validateMergedDraft(merged, options = {}) {
       status: 400,
       code: 'MISSING_REQUIRED_FIELDS',
     };
+  }
+
+  const locationPolicy = assessJustGoLocationReview(withMovieDefaults);
+  if (!locationPolicy.publishable) {
+    const unresolved = locationPolicy.reason
+      === JUST_GO_LOCATION_POLICY_REASONS.UNRESOLVED_PHYSICAL;
+    if (unresolved && options.allowLocationReview) {
+      // Keep unresolved physical candidates staged for an explicit ops review;
+      // publication paths never set this option.
+    } else {
+      return {
+        error: unresolved
+          ? 'Physical locations must resolve before publishing.'
+          : `Location is not publishable for ${locationPolicy.mode || 'unknown'} mode.`,
+        status: unresolved ? 422 : 400,
+        code: unresolved ? 'RICH_LOCATION_UNRESOLVED' : 'RICH_LOCATION_INVALID',
+        locationPolicy,
+      };
+    }
   }
 
   const slots = normalizePivotTimeSlots(withMovieDefaults.timeSlots);
@@ -287,6 +329,7 @@ function validateMergedDraft(merged, options = {}) {
       endTime,
       parsed: normalizeParsedFields(enriched.parsed) || withMovieDefaults.parsed || null,
       ...(enrichmentResult ? { enrichment: enrichmentResult } : {}),
+      locationPolicy,
     },
   };
 }
@@ -317,6 +360,20 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
     ...(merged.enrichment ? { enrichment: merged.enrichment } : {}),
     ...(merged.parsed ? { parsed: merged.parsed } : {}),
     ...(merged.duplicateRollup ? { duplicateRollup: merged.duplicateRollup } : {}),
+    ...(merged.rawLocationText ? { rawLocationText: merged.rawLocationText } : {}),
+    ...(merged.locationPolicy?.reviewRequired
+      ? {
+          locationReview: {
+            ...(merged.locationReview || {}),
+            status: 'needs_review',
+            reason:
+              merged.locationReview?.reason
+              || merged.locationPolicy.reviewReason
+              || 'physical_resolution_required',
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      : merged.locationReview ? { locationReview: merged.locationReview } : {}),
     ingestStatus: ingestStatus || DEFAULT_INGEST_STATUS,
     importedAt: new Date().toISOString(),
     importedBy,
@@ -378,6 +435,7 @@ function buildEventPayload(merged, { catalogOrgId, sourceUrl, batchWeek, importe
     hostingType: 'Org',
     hostingId: catalogOrgId,
     isDeleted: false,
+    ...(merged.richLocation ? { richLocation: merged.richLocation } : {}),
     ...(merged.image ? { image: merged.image } : {}),
     customFields: {
       pivot: buildPivotMetadata(merged, {
@@ -480,9 +538,16 @@ async function publishIngestEvent(req, options = {}) {
   mergedInput.source =
     firstNonEmpty(mergedInput.source, urlNormalized.provider) || 'manual';
 
+  const ingestStatusResult = resolveCreateIngestStatus(options, overrides);
+  if (ingestStatusResult.error) {
+    return ingestStatusResult;
+  }
+
   const validated = validateMergedDraft(mergedInput, {
     timezone: tenantResult.tenant.pivotDropTimezone,
     now: options.now,
+    allowLocationReview:
+      ingestStatusResult.ingestStatus !== PIVOT_FEED_INGEST_STATUS,
   });
   if (validated.error) {
     return validated;
@@ -516,7 +581,7 @@ async function publishIngestEvent(req, options = {}) {
     candidate: {
       name: validated.merged.name,
       start_time: validated.merged.start_time,
-      location: validated.merged.location,
+      location: justGoLocationMatchText(validated.merged),
       sourceUrl: listingUrl,
       description: validated.merged.description,
       source: mergedInput.source,
@@ -541,11 +606,6 @@ async function publishIngestEvent(req, options = {}) {
   // sourceUrl and fingerprint matches resolve to an existing catalog event — update it.
   const updateEventId =
     duplicate?.willUpdate && duplicate?.existingEventId ? duplicate.existingEventId : null;
-
-  const ingestStatusResult = resolveCreateIngestStatus(options, overrides);
-  if (ingestStatusResult.error) {
-    return ingestStatusResult;
-  }
 
   const catalogResult = await resolveCatalogOrgId(req, tenantResult.tenant);
   const importedBy = resolveImportedBy(req);
@@ -593,6 +653,48 @@ async function publishIngestEvent(req, options = {}) {
     existingDoc && updateEventId
       ? mergeIngestIntoExisting(existingDoc, validated.merged, duplicate, listingUrl)
       : validated.merged;
+
+  // Refreshing an already-resolved row must not spend another provider call or
+  // replace an operator's earlier decision with a new automated suggestion.
+  if (!mergedForSave.richLocation && existingDoc?.richLocation) {
+    mergedForSave.richLocation = existingDoc.richLocation;
+  }
+  const existingLocationReview = existingDoc?.customFields?.pivot?.locationReview;
+  const locationWasReviewed = Boolean(existingLocationReview?.reviewedAt);
+
+  if (options.resolveRichLocation === true
+    && !mergedForSave.richLocation
+    && !locationWasReviewed) {
+    const locationResult = await resolveIngestRichLocation({
+      tenant: tenantResult.tenant,
+      location: mergedForSave.location,
+      rawLocationText: mergedForSave.rawLocationText,
+      googleAdapter: options.googleLocationAdapter,
+      beforeProviderCall: options.beforeLocationProviderCall,
+      now: options.locationNow,
+    });
+    if (locationResult.richLocation) {
+      mergedForSave.richLocation = locationResult.richLocation;
+    }
+    if (locationResult.locationReview) {
+      mergedForSave.locationReview = locationResult.locationReview;
+    }
+
+    // Emergency release remains fail-closed. Ordinary discovery and refresh
+    // runs stage unresolved matches so the operator can decide in the review UI.
+    const resolvedPolicy = assessJustGoLocationReview(mergedForSave);
+    if (ingestStatus === PIVOT_FEED_INGEST_STATUS && !resolvedPolicy.publishable) {
+      return {
+        error: 'Physical locations must resolve before publishing.',
+        status: 422,
+        code: 'RICH_LOCATION_UNRESOLVED',
+        locationPolicy: resolvedPolicy,
+      };
+    }
+    mergedForSave.locationPolicy = resolvedPolicy;
+  } else if (!mergedForSave.locationReview && existingLocationReview) {
+    mergedForSave.locationReview = existingLocationReview;
+  }
 
   // Crawl path stamps organizerIds on the draft (array, possibly empty).
   // Lab / JSON / single-URL publish resolve a batch of one when missing.
@@ -644,27 +746,34 @@ async function publishIngestEvent(req, options = {}) {
       isNativeIngestFamily(duplicate?.existingSourceFamily),
   );
 
-  logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event staged', {
-    tenantKey: tenantResult.tenant.tenantKey,
-    batchWeek: resolvedBatchWeek,
-    batchWeekSource: weekResolved.source,
-    eventId: String(event._id),
-    name: event.name,
-    source: mergedInput.source,
-    ingestStatus,
-    releaseNow: Boolean(options.releaseNow),
-    timeSlotCount: validated.merged.timeSlots?.length ?? 0,
-    duplicateMatch: duplicate?.matchType || null,
-    duplicateScore: duplicate?.score || null,
-    existingSource: duplicate?.existingSource || null,
-    existingSourceFamily: duplicate?.existingSourceFamily || null,
-    overlappedNative,
-    importedBy,
-  });
+  if (isPivotDetailLoggingEnabled()) {
+    logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event staged', {
+      tenantKey: tenantResult.tenant.tenantKey,
+      batchWeek: resolvedBatchWeek,
+      batchWeekSource: weekResolved.source,
+      eventId: String(event._id),
+      name: event.name,
+      source: mergedInput.source,
+      ingestStatus,
+      releaseNow: Boolean(options.releaseNow),
+      timeSlotCount: validated.merged.timeSlots?.length ?? 0,
+      duplicateMatch: duplicate?.matchType || null,
+      duplicateScore: duplicate?.score || null,
+      existingSource: duplicate?.existingSource || null,
+      existingSourceFamily: duplicate?.existingSourceFamily || null,
+      overlappedNative,
+      importedBy,
+    });
+  }
 
   return {
     data: {
-      event: serializeLabEvent(event),
+      event: serializeLabEvent(event, null, {
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(
+          tenantResult.tenant,
+          'reads',
+        ),
+      }),
       created: !updatedExisting,
       updated: updatedExisting,
       ingestStatus,
@@ -835,6 +944,9 @@ async function updateIngestEvent(req, options = {}) {
     setPayload.description = trimString(overrides.description);
   }
   if (overrides.location !== undefined) setPayload.location = trimString(overrides.location);
+  if (overrides.richLocation !== undefined) {
+    setPayload.richLocation = overrides.richLocation;
+  }
   if (overrides.image !== undefined) setPayload.image = trimString(overrides.image) || null;
 
   if (overrides.start_time !== undefined) {
@@ -890,6 +1002,12 @@ async function updateIngestEvent(req, options = {}) {
   if (display.profileUrl && !host.profileUrl) host.profileUrl = display.profileUrl;
 
   const pivotPatch = { ...pivot, host };
+  const rawLocationText = rawJustGoLocationText({
+    rawLocationText: pivot.rawLocationText,
+    richLocation: existing.richLocation,
+    location: existing.location,
+  });
+  if (rawLocationText) pivotPatch.rawLocationText = rawLocationText;
   if (overrides.ingestStatus !== undefined) {
     const statusResult = normalizeIngestStatus(overrides.ingestStatus);
     if (statusResult.error) {
@@ -992,6 +1110,36 @@ async function updateIngestEvent(req, options = {}) {
 
   const nextIngestStatus = pivotPatch.ingestStatus ?? pivot.ingestStatus;
   const nextTags = pivotPatch.tags ?? pivot.tags ?? [];
+  const nextLocation = {
+    location: setPayload.location ?? existing.location,
+    richLocation: setPayload.richLocation ?? existing.richLocation,
+  };
+  const locationPolicy = assessJustGoLocationReview(nextLocation);
+  if (nextIngestStatus === PIVOT_FEED_INGEST_STATUS && !locationPolicy.publishable) {
+    const unresolved = locationPolicy.reason
+      === JUST_GO_LOCATION_POLICY_REASONS.UNRESOLVED_PHYSICAL;
+    return {
+      error: unresolved
+        ? 'Physical locations must resolve before publishing.'
+        : `Location is not publishable for ${locationPolicy.mode || 'unknown'} mode.`,
+      status: unresolved ? 422 : 400,
+      code: unresolved ? 'RICH_LOCATION_UNRESOLVED' : 'RICH_LOCATION_INVALID',
+      locationPolicy,
+    };
+  }
+  if (locationPolicy.reviewRequired) {
+    pivotPatch.locationReview = {
+      ...(pivot.locationReview || {}),
+      status: 'needs_review',
+      reason: locationPolicy.reviewReason,
+      updatedAt: new Date().toISOString(),
+    };
+  } else if (Array.isArray(pivot.locationReview?.decisionHistory)
+    && pivot.locationReview.decisionHistory.length) {
+    pivotPatch.locationReview = pivot.locationReview;
+  } else {
+    delete pivotPatch.locationReview;
+  }
   if (nextIngestStatus === 'published' && nextTags.length === 0) {
     return {
       error: 'At least one catalog tag is required for published events.',
@@ -1018,7 +1166,12 @@ async function updateIngestEvent(req, options = {}) {
 
   return {
     data: {
-      event: serializeLabEvent(updated),
+      event: serializeLabEvent(updated, null, {
+        richLocationReadsEnabled: isRichLocationCapabilityEnabled(
+          tenantResult.tenant,
+          'reads',
+        ),
+      }),
     },
   };
 }

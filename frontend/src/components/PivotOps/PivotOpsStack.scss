@@ -43,6 +43,16 @@
       background: #d97706;
     }
 
+    &--striped-muted {
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(26, 23, 20, 0.55),
+        rgba(26, 23, 20, 0.55) 3px,
+        rgba(26, 23, 20, 0.22) 3px,
+        rgba(26, 23, 20, 0.22) 6px
+      );
+    }
+
     &--success {
       background: var(--pivot-ops-success);
     }
@@ -84,6 +94,16 @@
 
     &--warn {
       background: #d97706;
+    }
+
+    &--striped-muted {
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(26, 23, 20, 0.55),
+        rgba(26, 23, 20, 0.55) 3px,
+        rgba(26, 23, 20, 0.22) 3px,
+        rgba(26, 23, 20, 0.22) 6px
+      );
     }
 
     &--success {

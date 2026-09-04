@@ -996,6 +996,18 @@ button.justgo-landing__cta {
   color: var(--jg-ink-muted);
 }
 
+.justgo-landing__flyer-host {
+  margin: 0.3rem 0 0;
+  font-family: var(--jg-font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--jg-ink-soft);
+}
+
+.justgo-landing__flyer--accent .justgo-landing__flyer-host {
+  color: rgba(255, 255, 255, 0.82);
+}
+
 /* ---------------------------------------------------------------- mobile deck */
 
 .justgo-landing-deck {
@@ -1371,17 +1383,25 @@ button.justgo-landing__cta {
     font-size: clamp(1.8rem, 4vw, 2.6rem);
     font-weight: 700;
     line-height: 1.05;
+    text-wrap: balance;
     text-shadow: none;
   }
 
   p {
-    max-width: 28rem;
+    max-width: min(100%, 38ch);
     margin: 0 auto 1rem;
     font-family: var(--jg-font-display);
     font-size: clamp(1.02rem, 2.2vw, 1.2rem);
     line-height: 1.45;
     color: var(--jg-ink);
+    text-wrap: pretty;
     text-shadow: 0 1px 12px rgba(0, 0, 0, 0.65);
+  }
+
+  @supports (text-wrap: balance) {
+    p {
+      text-wrap: balance;
+    }
   }
 }
 

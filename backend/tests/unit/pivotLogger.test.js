@@ -4,6 +4,8 @@ const {
   pivotRequestLogger,
   logPivotRouteError,
   isPivotLoggingEnabled,
+  isPivotRequestLoggingEnabled,
+  isPivotDetailLoggingEnabled,
 } = require('../../utilities/pivotLogger');
 
 describe('pivotLogger', () => {
@@ -13,6 +15,8 @@ describe('pivotLogger', () => {
     jest.resetModules();
     process.env = { ...originalEnv, NODE_ENV: 'development' };
     delete process.env.PIVOT_LOG;
+    delete process.env.PIVOT_REQUEST_LOG;
+    delete process.env.PIVOT_DETAIL_LOG;
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -30,6 +34,12 @@ describe('pivotLogger', () => {
     );
   });
 
+  it('keeps per-item detail logging opt-in', () => {
+    expect(isPivotDetailLoggingEnabled()).toBe(false);
+    process.env.PIVOT_DETAIL_LOG = '1';
+    expect(isPivotDetailLoggingEnabled()).toBe(true);
+  });
+
   it('does not log during tests', () => {
     process.env.NODE_ENV = 'test';
     expect(isPivotLoggingEnabled()).toBe(false);
@@ -37,7 +47,7 @@ describe('pivotLogger', () => {
     expect(console.log).not.toHaveBeenCalled();
   });
 
-  it('pivotRequestLogger emits request summary on finish', (done) => {
+  function requestPair(statusCode = 200) {
     const req = {
       method: 'GET',
       originalUrl: '/pivot/feed?batchWeek=2026-W22',
@@ -45,7 +55,7 @@ describe('pivotLogger', () => {
       user: { userId: '507f191e810c19729de860eb' },
     };
     const res = {
-      statusCode: 200,
+      statusCode,
       on(event, handler) {
         if (event === 'finish') {
           this._finish = handler;
@@ -58,9 +68,39 @@ describe('pivotLogger', () => {
       },
     };
 
+    return { req, res };
+  }
+
+  it('does not log successful requests by default', (done) => {
+    const { req, res } = requestPair();
+
+    pivotRequestLogger(req, res, () => {
+      res.emit('finish');
+      expect(console.log).not.toHaveBeenCalled();
+      done();
+    });
+  });
+
+  it('logs successful requests when explicitly enabled', (done) => {
+    process.env.PIVOT_REQUEST_LOG = 'true';
+    expect(isPivotRequestLoggingEnabled()).toBe(true);
+    const { req, res } = requestPair();
+
     pivotRequestLogger(req, res, () => {
       res.emit('finish');
       expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('[pivot] request'),
+      );
+      done();
+    });
+  });
+
+  it('continues to log unsuccessful requests by default', (done) => {
+    const { req, res } = requestPair(429);
+
+    pivotRequestLogger(req, res, () => {
+      res.emit('finish');
+      expect(console.warn).toHaveBeenCalledWith(
         expect.stringContaining('[pivot] request'),
       );
       done();
