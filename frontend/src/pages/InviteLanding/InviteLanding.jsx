@@ -6,8 +6,7 @@ import justGoWordmark from '../../assets/pivot/just-go-wordmark.svg';
 import './InviteLanding.scss';
 
 const JUSTGO_IOS_STORE_URL =
-  process.env.REACT_APP_JUSTGO_IOS_STORE_URL ||
-  'https://apps.apple.com/us/app/meridian-go/id6755217537';
+  'https://apps.apple.com/us/app/just-go-weekly-curated-events/id6801364892';
 const JUSTGO_PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=app.justgo';
 const INVITE_THEME_STORAGE_KEY = 'meridian.invite.theme';

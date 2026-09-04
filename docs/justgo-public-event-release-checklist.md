@@ -15,7 +15,7 @@ Release status: **conditionally ready; do not release until the live-host and st
 | Crawler HTML and search directives | Pass locally; live blocked | Raw HTML tests validate canonical, title, description, Open Graph, Twitter, image, escaped JSON-LD, `EventCompleted`, query-free URLs, indexable eligible events, and identical noindex unavailable HTML. |
 | Social unfurls | Pass locally; live blocked | Event-specific raw metadata is server-visible without JavaScript and fallback imagery is configured. Apple Messages, Slack, Discord, X, and Facebook validators require the deployed HTTPS URL. |
 | Dynamic language | Pass | Narrow allowlist, city/product context, shipped defaults, valid overrides, malformed/missing fallback, interpolation, casing, and independent cache semantics are tested. |
-| Web acquisition routing | Pass with iOS blocker | HTTPS app link remains primary; iOS/Android/desktop store selection and accessible labels are tested. Google Play points to `app.justgo`. The default iOS URL still points to Meridian Go unless production sets `REACT_APP_JUSTGO_IOS_STORE_URL`. |
+| Web acquisition routing | Pass | HTTPS app link remains primary; iOS/Android/desktop store selection and accessible labels are tested. Google Play points to `app.justgo`; iOS is pinned to the standalone Just Go listing. |
 | Installed-app routing | Static/test pass; device blocked | iOS Associated Domains and Android verified intent filter include `justgo.lol/events/*`; authenticated, logged-out, onboarding, pending-link, query/hash, and malformed-ID parsing tests pass. Device verification remains required. |
 | City handling | Static pass; device blocked | The public-link gate compares the resolved event city with the active tenant, does not switch cities, and uses configured `cityMismatch` copy. Matching/different-city device checks remain required. |
 | Analytics and attribution | Pass | Page view, share source, app-open attempt, App Store click, Google Play click, and native share use centralized names and only `event_id`, `source`, `platform`, and optional `store`. Share URLs use bounded `src=share`; page views are deduplicated. |
@@ -27,9 +27,9 @@ Set and verify before deployment:
 
 - `ANDROID_MERIDIAN_SHA256_CERT_FINGERPRINTS`: Google Play **app-signing** certificate SHA-256 for `com.meridian.mobile`.
 - `ANDROID_JUSTGO_SHA256_CERT_FINGERPRINTS`: Google Play **app-signing** certificate SHA-256 for `app.justgo`.
-- `REACT_APP_JUSTGO_IOS_STORE_URL`: published standalone Just Go App Store URL. This is a release blocker because the fallback is Meridian Go.
+- Just Go iOS acquisition is pinned to `https://apps.apple.com/us/app/just-go-weekly-curated-events/id6801364892`.
 - `REACT_APP_JUSTGO_PLAY_STORE_URL`: normally `https://play.google.com/store/apps/details?id=app.justgo`; set explicitly in production to avoid environment ambiguity.
-- `EXPO_PUBLIC_JUSTGO_IOS_STORE_URL` and any backend/mobile remote-copy equivalent used by the binary, all pointing to the same standalone listing.
+- The native Just Go force-update route is pinned to the same standalone listing.
 
 Build-time React variables must be present during the production frontend build, not added only to the runtime container afterward.
 

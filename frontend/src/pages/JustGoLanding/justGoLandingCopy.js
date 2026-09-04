@@ -307,8 +307,7 @@ export function useJustGoLandingCopy() {
 }
 
 export const JUSTGO_IOS_STORE_URL =
-  process.env.REACT_APP_JUSTGO_IOS_STORE_URL ||
-  'https://apps.apple.com/us/app/meridian-go/id6755217537';
+  'https://apps.apple.com/us/app/just-go-weekly-curated-events/id6801364892';
 
 export const JUSTGO_PLAY_STORE_URL =
   process.env.REACT_APP_JUSTGO_PLAY_STORE_URL ||
