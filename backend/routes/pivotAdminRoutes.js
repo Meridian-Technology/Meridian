@@ -75,6 +75,7 @@ const {
   reviewLocationCandidate,
 } = require('../services/pivotLocationReviewService');
 const { collapseCatalogEventsToShowtimes } = require('../services/pivotCatalogShowtimeCollapseService');
+const { enrichPivotEventRichData } = require('../services/pivotRichDataEnrichmentService');
 const {
   purgePivotCatalog,
   deletePivotCatalogEvent,
@@ -387,6 +388,38 @@ router.get('/events', verifyToken, requirePlatformAdmin, async (req, res) => {
     });
   }
 });
+
+router.post(
+  '/tenants/:tenantKey/catalog/enrich-rich-data',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await enrichPivotEventRichData(req, {
+        tenantKey: req.params.tenantKey,
+        eventIds: req.body?.eventIds,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError(
+        'POST /admin/pivot/tenants/:tenantKey/catalog/enrich-rich-data',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to enrich selected catalog events.',
+      });
+    }
+  },
+);
 
 router.get('/interview-notes', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {

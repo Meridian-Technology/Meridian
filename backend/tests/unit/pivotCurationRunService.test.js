@@ -54,6 +54,8 @@ const {
   upsertDiscoveredEntry,
   ingestEntries,
   summarizeIngest,
+  hasRichEventData,
+  pickIngestStatus,
 } = require('../../services/pivotCurationRunService');
 
 const JOB_ID = '665a1b2c3d4e5f6789012345';
@@ -116,6 +118,20 @@ describe('pivotCurationRunService', () => {
     });
   });
 
+  describe('rich data ingest defaults', () => {
+    it('keeps tagged events in draft until both description and image exist', () => {
+      expect(hasRichEventData({ description: 'Details', image: 'https://x.test/a.jpg' })).toBe(true);
+      expect(pickIngestStatus(['nightlife'], { description: 'Details' })).toBe('draft');
+      expect(pickIngestStatus(['nightlife'], { image: 'https://x.test/a.jpg' })).toBe('draft');
+      expect(
+        pickIngestStatus(
+          ['nightlife'],
+          { description: 'Details', image: 'https://x.test/a.jpg' },
+        ),
+      ).toBe('staged');
+    });
+  });
+
   describe('resolveRunBatchWeek', () => {
     it('uses explicit batchWeek when provided', () => {
       const result = resolveRunBatchWeek({
@@ -146,7 +162,15 @@ describe('pivotCurationRunService', () => {
 
   describe('ingestEntries', () => {
     function entry(name, sourceUrl) {
-      return { draft: { name, sourceUrl }, sourceUrl };
+      return {
+        draft: {
+          name,
+          sourceUrl,
+          description: `${name} description`,
+          image: `https://x.test/${name.toLowerCase()}.jpg`,
+        },
+        sourceUrl,
+      };
     }
 
     it('creates the batch for each week the events land in', async () => {
@@ -638,6 +662,8 @@ describe('pivotCurationRunService', () => {
             hostName: 'Host',
             location: 'BK',
             start_time: '2026-07-10T20:00:00.000Z',
+            description: 'A complete event description.',
+            image: 'https://partiful.com/poster.jpg',
             source: 'partiful',
             sourceUrl: 'https://partiful.com/e/abc',
           },
@@ -683,6 +709,8 @@ describe('pivotCurationRunService', () => {
             hostName: 'Host',
             location: 'BK',
             start_time: '2026-07-10T20:00:00.000Z',
+            description: 'A complete event description.',
+            image: 'https://example.com/poster.jpg',
             source: 'partiful',
             sourceUrl: 'https://partiful.com/e/abc',
           },
@@ -724,6 +752,8 @@ describe('pivotCurationRunService', () => {
             rawLocationText: 'RAW VENUE',
             richLocation,
             start_time: '2026-07-10T20:00:00.000Z',
+            description: 'A complete event description.',
+            image: 'https://example.com/review-poster.jpg',
           },
         },
         defaultTags: ['nightlife'],

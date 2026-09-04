@@ -98,6 +98,10 @@ jest.mock('../../services/pivotCatalogShowtimeCollapseService', () => ({
   collapseCatalogEventsToShowtimes: jest.fn(),
 }));
 
+jest.mock('../../services/pivotRichDataEnrichmentService', () => ({
+  enrichPivotEventRichData: jest.fn(),
+}));
+
 jest.mock('../../services/pivotTagSuggestService', () => ({
   suggestPivotEventTags: jest.fn(),
   suggestPivotEventTagsBatch: jest.fn(),

@@ -254,7 +254,17 @@ async function syncJobLastRun(reqLike, jobId, { status, stats, finishedAt, event
   });
 }
 
-function pickIngestStatus(defaultTags) {
+function hasRichEventData(draft = {}) {
+  return Boolean(
+    typeof draft.description === 'string'
+      && draft.description.trim()
+      && typeof draft.image === 'string'
+      && draft.image.trim(),
+  );
+}
+
+function pickIngestStatus(defaultTags, draft) {
+  if (!hasRichEventData(draft)) return 'draft';
   return Array.isArray(defaultTags) && defaultTags.length > 0 ? 'staged' : 'draft';
 }
 
@@ -287,7 +297,7 @@ async function upsertDiscoveredEntry(
   }
 
   const tags = Array.isArray(defaultTags) ? defaultTags : [];
-  const ingestStatus = pickIngestStatus(tags);
+  const ingestStatus = pickIngestStatus(tags, draft);
 
   const result = await publishIngestEvent(req, {
     tenantKey,
@@ -930,5 +940,7 @@ module.exports = {
   ingestEntries,
   summarizeIngest,
   emptyStats,
+  hasRichEventData,
+  pickIngestStatus,
   MAX_CRAWL_BATCH_EVENTS,
 };
