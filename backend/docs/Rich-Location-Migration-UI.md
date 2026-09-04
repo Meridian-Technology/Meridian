@@ -1,8 +1,8 @@
 # Temporary rich-location migration UI
 
-The Platform Admin tenant detail screen includes a temporary rich-location
-migration panel for Just Go (`pivot`) tenants. Both halves of the feature are
-off unless explicitly enabled at deployment time:
+The Platform Admin tenant pivot dashboard includes a tenant-specific
+**Location migration** page for Just Go (`pivot`) tenants. Both halves of the
+feature are off unless explicitly enabled at deployment time:
 
 ```sh
 # Backend runtime
@@ -17,7 +17,8 @@ server-only and restrict it by Google API and backend egress IP.
 
 ## Operator flow
 
-1. Open Platform Admin, select the Just Go tenant, and find **Rich location migration**.
+1. Open `/platform-admin/pivot/:tenantKey?page=7`, or select the tenant's
+   **Location migration** dashboard item.
 2. Save valid city constraints while rollout and all capabilities remain off.
 3. Preserve the generated ISO cutoff and dry-run the live scope.
 4. Type the tenant key, apply one live batch, and repeat until completed.
