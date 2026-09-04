@@ -244,11 +244,13 @@ describe('JustGoLanding', () => {
     expect(mockScreen).toHaveBeenCalledWith('Just Go Landing');
     expect(await screen.findByText(/live in brooklyn/i)).toBeInTheDocument();
     expect(mockApi).toHaveBeenCalledWith('/pivot/landing/config', null, { method: 'GET' });
-    expect(mockApi).toHaveBeenCalledWith(
-      '/pivot/landing/drop',
-      null,
-      { method: 'GET', params: { tenantKey: 'brooklyn' } },
-    );
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/pivot/landing/drop',
+        null,
+        { method: 'GET', params: { tenantKey: 'brooklyn' } },
+      );
+    });
   });
 
   it('fills the desktop billboard with real drop events', async () => {
