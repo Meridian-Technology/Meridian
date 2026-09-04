@@ -70,6 +70,7 @@ function PivotBatchWeekPicker({
   timeZone = 'UTC',
   pastWeeks = DEFAULT_PAST,
   futureWeeks = DEFAULT_FUTURE,
+  extraWeeks = [],
   label = 'Batch week',
   showLabel = true,
   pending = false,
@@ -87,11 +88,15 @@ function PivotBatchWeekPicker({
       buildWeekOptions(batchWeek, {
         past: pastWeeks,
         future: futureWeeks,
-        extraWeeks: [anchors?.liveWeek, anchors?.curateWeek].filter(Boolean),
+        extraWeeks: [
+          ...extraWeeks,
+          anchors?.liveWeek,
+          anchors?.curateWeek,
+        ].filter(Boolean),
         dropDayOfWeek,
         timeZone,
       }),
-    [batchWeek, pastWeeks, futureWeeks, anchors?.liveWeek, anchors?.curateWeek, dropDayOfWeek, timeZone],
+    [batchWeek, pastWeeks, futureWeeks, extraWeeks, anchors?.liveWeek, anchors?.curateWeek, dropDayOfWeek, timeZone],
   );
 
   const close = useCallback(() => setOpen(false), []);

@@ -8,6 +8,7 @@ const { resolvePivotTenant } = require('../../services/pivotIngestPublishService
 const {
   buildReviewMutation,
   listLocationReviewCandidates,
+  reviewExplanation,
   reviewLocationCandidate,
 } = require('../../services/pivotLocationReviewService');
 
@@ -98,6 +99,20 @@ describe('pivot location review', () => {
     const result = await listLocationReviewCandidates({}, { tenantKey: 'nyc' });
     expect(result.data.candidates[0]).toMatchObject({ eventId: 'event-1',
       rawLocationText: 'Never rewrite this source text', candidateMatches: [{ id: 'candidate-1' }] });
+  });
+
+  test('explains ambiguity with confidence and candidate count', () => {
+    expect(reviewExplanation({
+      reason: 'ambiguous_provider_matches',
+      confidence: 0.76,
+      candidateCount: 3,
+    })).toEqual({
+      reason: 'ambiguous_provider_matches',
+      title: 'Google found multiple plausible places',
+      detail: 'Compare the source location with the suggested listing before choosing it.',
+      confidence: 0.76,
+      candidateCount: 3,
+    });
   });
 
   test('persists authenticated reviewer metadata', async () => {

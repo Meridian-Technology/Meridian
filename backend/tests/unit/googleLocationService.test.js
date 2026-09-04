@@ -139,8 +139,12 @@ describe('googleLocationService', () => {
       resolutionConfidence: 0.75,
     });
     expect(result._backfillMatchCount).toBe(1);
+    expect(result._backfillCandidates).toHaveLength(1);
+    expect(result._backfillCandidates[0]).toMatchObject({ googlePlaceId: PLACE_ID });
     expect(Object.keys(result)).not.toContain('_backfillMatchCount');
+    expect(Object.keys(result)).not.toContain('_backfillCandidates');
     expect(JSON.stringify(result)).not.toContain('_backfillMatchCount');
+    expect(JSON.stringify(result)).not.toContain('_backfillCandidates');
     expect(options.httpClient.request).toHaveBeenCalledWith(expect.objectContaining({
       timeout: 5000,
       params: expect.objectContaining({

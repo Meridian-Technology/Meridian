@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Icon } from '@iconify-icon/react';
+import { useSearchParams } from 'react-router-dom';
 import { authenticatedRequest, useFetch } from '../../../hooks/useFetch';
 import { useNotification } from '../../../NotificationContext';
 import {
@@ -7,9 +8,14 @@ import {
   PivotOpsMetric,
   PivotOpsMetricGrid,
   PivotOpsSection,
+  PivotOpsStack,
   PivotOpsStatus,
 } from '../../../components/PivotOps';
+import { formatBatchWeekRange, isValidIsoWeek, toIsoWeek } from '../../../utils/pivotIsoWeek';
+import PivotBatchWeekPicker from './PivotBatchWeekPicker';
+import PivotLocationReviewInspector from './PivotLocationReviewInspector';
 import PivotTenantPage from './PivotTenantPage';
+import usePivotBatchWeekState from './usePivotBatchWeekState';
 import './PivotTenantLocationMigrationPage.scss';
 
 const RICH_LOCATION_MIGRATION_UI_ENABLED =
@@ -24,47 +30,35 @@ const EMPTY_CONTROLS = {
 };
 
 const CONTROL_OPTIONS = [
-  {
-    key: 'reads',
-    label: 'Rich location reads',
-    description: 'Return structured locations to authorized clients.',
-  },
-  {
-    key: 'autocomplete',
-    label: 'Creator suggestions',
-    description: 'Show provider-backed suggestions while creators type.',
-  },
-  {
-    key: 'writes',
-    label: 'Structured saves',
-    description: 'Allow creators and admins to save rich locations.',
-  },
-  {
-    key: 'search',
-    label: 'Search metadata',
-    description: 'Use structured location fields in discovery and search.',
-  },
+  { key: 'reads', label: 'Show rich locations', description: 'Return structured locations to approved client experiences.' },
+  { key: 'autocomplete', label: 'Suggest places to creators', description: 'Use Google-backed suggestions while creators enter a location.' },
+  { key: 'writes', label: 'Save rich locations', description: 'Allow creators and admins to save structured location data.' },
+  { key: 'search', label: 'Use locations in search', description: 'Include structured location fields in discovery and search.' },
 ];
 
-function nowIso() {
-  return new Date().toISOString();
+function friendlyLabel(value) {
+  return String(value || 'not_started').replace(/_/g, ' ');
 }
 
-function displayStatus(value) {
-  return String(value || 'not_started').replace(/_/g, ' ');
+function runLabel(value, activeLease) {
+  if (activeLease) return 'Processing';
+  const labels = {
+    not_started: 'Not started',
+    batch_complete: 'In progress',
+    quota_reached: 'Call limit reached',
+    completed: 'Week evaluated',
+    paused: 'Paused',
+    failed: 'Needs attention',
+  };
+  return labels[value || 'not_started'] || friendlyLabel(value);
 }
 
 function statusTone(value) {
   if (value === 'completed') return 'ok';
   if (value === 'failed' || value === 'blocked') return 'danger';
-  if (value === 'running' || value === 'in_progress') return 'info';
+  if (['running', 'in_progress', 'batch_complete'].includes(value)) return 'info';
+  if (value === 'paused' || value === 'quota_reached') return 'warn';
   return 'muted';
-}
-
-function formatDate(value) {
-  if (!value) return 'Not locked';
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
 function constraintFields(constraints) {
@@ -92,7 +86,6 @@ function buildConstraints(fields) {
   if (!/^[A-Z]{2}$/.test(countryCode)) {
     throw new Error('Country must be a two-letter ISO code, such as US.');
   }
-
   if (fields.mode === 'bounds') {
     const bounds = {
       north: numberField(fields.north),
@@ -108,7 +101,6 @@ function buildConstraints(fields) {
     }
     return { countryCode, bounds };
   }
-
   const center = {
     latitude: numberField(fields.latitude),
     longitude: numberField(fields.longitude),
@@ -127,113 +119,100 @@ function outcomeCount(counts, ...keys) {
   return keys.reduce((total, key) => total + Number(counts?.[key] || 0), 0);
 }
 
-function RunStateCard({ label, run, lease, active, onSelect }) {
-  const runStatus = lease ? 'running' : run?.status;
-  return (
-    <button
-      type="button"
-      className={`pivot-location-migration__scope${active ? ' is-active' : ''}`}
-      data-scope={label.toLowerCase()}
-      onClick={onSelect}
-    >
-      <span className="pivot-location-migration__scope-head">
-        <strong>{label}</strong>
-        <PivotOpsStatus tone={statusTone(runStatus)}>{displayStatus(runStatus)}</PivotOpsStatus>
-      </span>
-      <span>{lease ? `Locked by ${lease.actor || 'another operator'}` : formatDate(run?.catalogAsOf)}</span>
-      <small>{Number(run?.cumulativeCounts?.scanned || 0).toLocaleString()} scanned</small>
-    </button>
-  );
-}
-
-function ReviewInspector({ candidate, busy, onReview }) {
-  const suggested = candidate?.candidateMatches?.[0] || null;
-  const [representation, setRepresentation] = useState('{}');
-
-  useEffect(() => {
-    setRepresentation(JSON.stringify(suggested || candidate?.richLocation || {}, null, 2));
-  }, [candidate, suggested]);
-
-  if (!candidate) {
-    return (
-      <div className="pivot-location-migration__review-empty">
-        Select an event to inspect its candidate representation.
-      </div>
-    );
-  }
-
-  const saveCorrection = () => {
-    try {
-      onReview(candidate.eventId, 'correct_representation', JSON.parse(representation));
-    } catch {
-      onReview(candidate.eventId, 'invalid_json');
-    }
-  };
+function WeekCoverage({ coverage, batchWeek, loading }) {
+  const total = Number(coverage?.total || 0);
+  const evaluated = Math.min(total, Number(coverage?.processed || 0));
+  const resolved = Math.min(total, Number(coverage?.resolved || 0));
+  const review = Math.min(total, Number(coverage?.needsReview || 0));
+  const remaining = Math.max(0, Number(coverage?.remaining ?? total - evaluated));
+  const otherEvaluated = Math.max(0, evaluated - resolved - review);
+  const percent = total ? Math.min(100, Math.round((evaluated / total) * 100)) : 0;
+  const segments = [
+    { key: 'ready', label: 'Locations ready', value: resolved, tone: 'accent' },
+    { key: 'review', label: 'Need a decision', value: review, tone: 'striped-muted' },
+    ...(otherEvaluated
+      ? [{ key: 'other', label: 'Other evaluated', value: otherEvaluated, tone: 'ink' }]
+      : []),
+    { key: 'remaining', label: 'Not evaluated', value: remaining, tone: 'soft' },
+  ].filter((segment) => segment.value > 0);
 
   return (
-    <aside className="pivot-location-migration__inspector">
-      <div className="pivot-location-migration__inspector-head">
+    <div className="pivot-location-migration__coverage">
+      <div className="pivot-location-migration__coverage-head">
         <div>
-          <strong>{candidate.name || 'Untitled event'}</strong>
-          <span>{candidate.rawLocationText || candidate.legacyLocation || 'No location text'}</span>
+          <span>{batchWeek}</span>
+          <strong>{loading ? 'Loading…' : `${evaluated.toLocaleString()} of ${total.toLocaleString()} events evaluated`}</strong>
         </div>
-        <PivotOpsStatus tone="warn">{candidate.review?.reason || 'manual review'}</PivotOpsStatus>
+        <span className="pivot-location-migration__coverage-percent">{percent}%</span>
       </div>
-      <label className="pivot-location-migration__field">
-        <span>Rich location representation</span>
-        <textarea
-          className="linear-input pivot-location-migration__json"
-          aria-label="Rich location representation"
-          rows={12}
-          value={representation}
-          onChange={(event) => setRepresentation(event.target.value)}
+      {total > 0 ? (
+        <PivotOpsStack
+          segments={segments}
+          ariaLabel={`${batchWeek} location migration coverage`}
+          className="pivot-location-migration__coverage-stack"
         />
-      </label>
-      <div className="pivot-location-migration__actions">
-        {suggested ? (
-          <button
-            type="button"
-            className="linear-btn linear-btn--primary linear-btn--sm"
-            disabled={busy}
-            onClick={() => onReview(candidate.eventId, 'select_match', suggested)}
-          >
-            Approve top match
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="linear-btn linear-btn--secondary linear-btn--sm"
-          disabled={busy}
-          onClick={saveCorrection}
-        >
-          Save correction
-        </button>
-        <button
-          type="button"
-          className="linear-btn linear-btn--ghost linear-btn--sm"
-          disabled={busy}
-          onClick={() => onReview(candidate.eventId, 'reject_match')}
-        >
-          Reject
-        </button>
-      </div>
-    </aside>
+      ) : null}
+      {!loading && total === 0 ? <p>No events with a legacy location were found in this batch week.</p> : null}
+    </div>
   );
 }
 
-export default function PivotTenantLocationMigrationPage({
-  tenantKey,
-  cityDisplayName,
-  onTenantUpdated,
-}) {
+function BatchResult({ result }) {
+  if (!result) return null;
+  const providerFailures = outcomeCount(result.counts, 'providerFailures', 'providerFailure', 'provider_failed');
+  return (
+    <div className="pivot-location-migration__result" aria-live="polite">
+      <div className="pivot-location-migration__result-head">
+        <div>
+          <strong>{result.dryRun ? 'Preview complete' : 'Batch processed'}</strong>
+          <span>{result.items?.length || 0} location decisions for {result.batchWeek}</span>
+        </div>
+        <PivotOpsStatus tone={statusTone(result.status)}>{runLabel(result.status)}</PivotOpsStatus>
+      </div>
+      {providerFailures > 0 ? (
+        <PivotOpsBanner tone="danger" title={`${providerFailures} Google requests failed`} role="alert">
+          Check the reason codes below before processing another batch.
+        </PivotOpsBanner>
+      ) : null}
+      <div className="pivot-location-migration__result-counts">
+        {Object.entries(result.counts || {}).map(([name, value]) => (
+          <span key={name}><strong>{Number(value).toLocaleString()}</strong>{friendlyLabel(name)}</span>
+        ))}
+      </div>
+      {result.items?.length ? (
+        <div className="pivot-location-migration__table-wrap">
+          <table className="pivot-location-migration__table">
+            <thead><tr><th>Event ID</th><th>Decision</th><th>Why</th></tr></thead>
+            <tbody>
+              {result.items.map((item) => (
+                <tr key={`${item.eventId}-${item.outcome}`}>
+                  <td><code>{item.eventId}</code></td>
+                  <td>{friendlyLabel(item.outcome)}</td>
+                  <td>{friendlyLabel(item.reason || item.code || item.mode || '—')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function PivotTenantLocationMigrationPage({ tenantKey, cityDisplayName, onTenantUpdated }) {
   const { addNotification } = useNotification();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlBatchWeek = searchParams.get('batchWeek');
+  const { batchWeek, committedWeek, setBatchWeek, batchWeekValid, committedWeekValid, weekSettled } =
+    usePivotBatchWeekState(isValidIsoWeek(urlBatchWeek) ? urlBatchWeek.trim() : toIsoWeek());
   const baseUrl = `/admin/platform/tenants/${tenantKey}/rich-location-migration`;
-  const statusQuery = useFetch(RICH_LOCATION_MIGRATION_UI_ENABLED ? baseUrl : null, {
-    cache: { enabled: false },
-  });
+  const statusQuery = useFetch(
+    RICH_LOCATION_MIGRATION_UI_ENABLED && committedWeekValid ? baseUrl : null,
+    { params: { batchWeek: committedWeek }, cache: { enabled: false } },
+  );
   const reviewsQuery = useFetch(
-    RICH_LOCATION_MIGRATION_UI_ENABLED ? `${baseUrl}/reviews` : null,
-    { params: { status: 'needs_review', limit: 200 }, cache: { enabled: false } },
+    RICH_LOCATION_MIGRATION_UI_ENABLED && committedWeekValid ? `${baseUrl}/reviews` : null,
+    { params: { status: 'needs_review', limit: 200, batchWeek: committedWeek }, cache: { enabled: false } },
   );
   const status = statusQuery.data?.success ? statusQuery.data.data : null;
   const reviews = useMemo(
@@ -241,14 +220,11 @@ export default function PivotTenantLocationMigrationPage({
     [reviewsQuery.data],
   );
 
-  const [scope, setScope] = useState('live');
-  const [asOf, setAsOf] = useState(nowIso);
   const [batchSize, setBatchSize] = useState(25);
   const [maxProviderOperations, setMaxProviderOperations] = useState(25);
   const [minIntervalMs, setMinIntervalMs] = useState(100);
   const [autoApplyConfidence, setAutoApplyConfidence] = useState(0.9);
   const [reviewConfidence, setReviewConfidence] = useState(0.6);
-  const [confirmLiveStable, setConfirmLiveStable] = useState(false);
   const [confirmation, setConfirmation] = useState('');
   const [constraints, setConstraints] = useState(() => constraintFields(null));
   const [controls, setControls] = useState(EMPTY_CONTROLS);
@@ -257,6 +233,21 @@ export default function PivotTenantLocationMigrationPage({
   const [reviewingId, setReviewingId] = useState(null);
   const [selectedReviewId, setSelectedReviewId] = useState(null);
   const [lastResult, setLastResult] = useState(null);
+
+  useEffect(() => {
+    if (!committedWeekValid || searchParams.get('batchWeek') === committedWeek) return;
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.set('batchWeek', committedWeek);
+      return next;
+    }, { replace: true });
+  }, [committedWeek, committedWeekValid, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    setLastResult(null);
+    setConfirmation('');
+    setSelectedReviewId(null);
+  }, [committedWeek]);
 
   useEffect(() => {
     if (!status) return;
@@ -274,39 +265,15 @@ export default function PivotTenantLocationMigrationPage({
     }
   }, [reviews, selectedReviewId]);
 
-  const lockedCutoff = useMemo(() => {
-    const selected = status?.runs?.[scope]?.catalogAsOf;
-    if (selected) return new Date(selected).toISOString();
-    if (scope === 'historical' && status?.runs?.live?.catalogAsOf) {
-      return new Date(status.runs.live.catalogAsOf).toISOString();
-    }
-    return null;
-  }, [scope, status]);
-
-  useEffect(() => {
-    if (lockedCutoff) setAsOf(lockedCutoff);
-  }, [lockedCutoff]);
-
-  const selectedReview =
-    reviews.find((candidate) => candidate.eventId === selectedReviewId) || null;
-  const selectedRun = status?.runs?.[scope] || null;
-  const cumulative = selectedRun?.cumulativeCounts || {};
-  const activeLease = status?.leases?.[scope] || null;
-  const hasConstraints = Boolean(
-    status?.constraints?.countryCode &&
-      (status?.constraints?.bounds || status?.constraints?.center),
-  );
+  const selectedReview = reviews.find((candidate) => candidate.eventId === selectedReviewId) || null;
+  const coverage = status?.coverage || null;
+  const weekRun = status?.weekRun || null;
+  const activeLease = status?.leases?.live || null;
+  const hasConstraints = Boolean(status?.constraints?.countryCode && (status?.constraints?.bounds || status?.constraints?.center));
   const canApply = confirmation.trim().toLowerCase() === tenantKey.toLowerCase();
-  const providerFailures = outcomeCount(
-    lastResult?.counts,
-    'providerFailures',
-    'providerFailure',
-    'provider_failed',
-  );
+  const weekRange = batchWeekValid ? formatBatchWeekRange(batchWeek) : 'Choose a valid week';
 
-  const notifyError = (title, message) =>
-    addNotification({ title, message: message || 'Request failed', type: 'error' });
-
+  const notifyError = (title, message) => addNotification({ title, message: message || 'Request failed', type: 'error' });
   const refresh = () => {
     statusQuery.refetch();
     reviewsQuery.refetch();
@@ -321,22 +288,18 @@ export default function PivotTenantLocationMigrationPage({
       notifyError('Invalid city boundary', error.message);
       return;
     }
-
     setSavingConfig(true);
-    const { data, error } = await authenticatedRequest(
-      `/admin/platform/tenants/${tenantKey}`,
-      {
-        method: 'PUT',
-        data: { richLocationConstraints, richLocationControls: controls },
-        headers: { 'Content-Type': 'application/json' },
-      },
-    );
+    const { data, error } = await authenticatedRequest(`/admin/platform/tenants/${tenantKey}`, {
+      method: 'PUT',
+      data: { richLocationConstraints, richLocationControls: controls },
+      headers: { 'Content-Type': 'application/json' },
+    });
     setSavingConfig(false);
     if (error || !data?.success) {
       notifyError('Configuration failed', data?.message || error);
       return;
     }
-    addNotification({ title: 'Migration configuration saved', message: tenantKey, type: 'success' });
+    addNotification({ title: 'Location settings saved', message: tenantKey, type: 'success' });
     refresh();
   };
 
@@ -344,20 +307,17 @@ export default function PivotTenantLocationMigrationPage({
     const disabled = { ...EMPTY_CONTROLS };
     setControls(disabled);
     setSavingConfig(true);
-    const { data, error } = await authenticatedRequest(
-      `/admin/platform/tenants/${tenantKey}`,
-      {
-        method: 'PUT',
-        data: { richLocationControls: disabled },
-        headers: { 'Content-Type': 'application/json' },
-      },
-    );
+    const { data, error } = await authenticatedRequest(`/admin/platform/tenants/${tenantKey}`, {
+      method: 'PUT',
+      data: { richLocationControls: disabled },
+      headers: { 'Content-Type': 'application/json' },
+    });
     setSavingConfig(false);
     if (error || !data?.success) {
       notifyError('Disable rollout failed', data?.message || error);
       return;
     }
-    addNotification({ title: 'Rich location rollout disabled', message: tenantKey, type: 'success' });
+    addNotification({ title: 'Rich locations turned off', message: tenantKey, type: 'success' });
     refresh();
   };
 
@@ -366,28 +326,27 @@ export default function PivotTenantLocationMigrationPage({
     const { data, error } = await authenticatedRequest(`${baseUrl}/run`, {
       method: 'POST',
       data: {
-        scope,
+        scope: 'live',
+        batchWeek: committedWeek,
         apply,
-        asOf,
         batchSize: Number(batchSize),
         maxProviderOperations: Number(maxProviderOperations),
         minIntervalMs: Number(minIntervalMs),
         autoApplyConfidence: Number(autoApplyConfidence),
         reviewConfidence: Number(reviewConfidence),
-        confirmLiveStable,
         confirmTenantKey: confirmation,
       },
       headers: { 'Content-Type': 'application/json' },
     });
     setRunning(false);
     if (error || !data?.success) {
-      notifyError(apply ? 'Applied batch failed' : 'Dry run failed', data?.message || error);
+      notifyError(apply ? 'Could not process batch' : 'Could not preview batch', data?.message || error);
       return;
     }
     setLastResult(data.data);
     addNotification({
-      title: apply ? 'Batch applied' : 'Dry run complete',
-      message: `${data.data.counts?.scanned || 0} events scanned · ${displayStatus(data.data.status)}`,
+      title: apply ? 'Batch processed' : 'Preview ready',
+      message: `${data.data.counts?.scanned || 0} events evaluated · ${runLabel(data.data.status)}`,
       type: 'success',
     });
     refresh();
@@ -395,7 +354,7 @@ export default function PivotTenantLocationMigrationPage({
 
   const reviewCandidate = async (eventId, action, richLocation) => {
     if (action === 'invalid_json') {
-      notifyError('Invalid representation', 'The rich-location representation must be valid JSON.');
+      notifyError('Invalid location JSON', 'The rich location must be valid JSON.');
       return;
     }
     setReviewingId(eventId);
@@ -406,11 +365,11 @@ export default function PivotTenantLocationMigrationPage({
     });
     setReviewingId(null);
     if (error || !data?.success) {
-      notifyError('Review failed', data?.message || error);
+      notifyError('Could not save decision', data?.message || error);
       return;
     }
     const name = reviews.find((candidate) => candidate.eventId === eventId)?.name || eventId;
-    addNotification({ title: 'Review saved', message: name, type: 'success' });
+    addNotification({ title: 'Location decision saved', message: name, type: 'success' });
     refresh();
   };
 
@@ -419,394 +378,140 @@ export default function PivotTenantLocationMigrationPage({
   return (
     <PivotTenantPage
       title="Location migration"
+      subtitle={`${cityDisplayName || tenantKey} · Prepare structured event locations for ${weekRange}.`}
       tenantKey={tenantKey}
       cityDisplayName={cityDisplayName}
       className="pivot-location-migration"
       actions={(
         <>
-          <button
-            type="button"
-            className="linear-btn linear-btn--ghost linear-btn--sm"
-            onClick={refresh}
-            disabled={statusQuery.loading || running}
-          >
+          <PivotBatchWeekPicker batchWeek={batchWeek} onChange={setBatchWeek} disabled={running} pending={!weekSettled} extraWeeks={status?.availableWeeks || []} label="Event batch" showLabel={false} />
+          <button type="button" className="linear-btn linear-btn--ghost linear-btn--sm" onClick={refresh} disabled={statusQuery.loading || running}>
             <Icon icon="mdi:refresh" /> Refresh
           </button>
-          <button
-            type="button"
-            className="linear-btn linear-btn--secondary linear-btn--sm"
-            onClick={disableRollout}
-            disabled={savingConfig}
-          >
-            Disable rollout
+          <button type="button" className="linear-btn linear-btn--secondary linear-btn--sm" onClick={disableRollout} disabled={savingConfig}>
+            Turn off rich locations
           </button>
         </>
       )}
     >
       {statusQuery.error ? (
-        <PivotOpsBanner tone="danger" title="Migration status unavailable" role="alert">
-          {String(statusQuery.error)}
-        </PivotOpsBanner>
+        <PivotOpsBanner tone="danger" title="Location status unavailable" role="alert">{String(statusQuery.error)}</PivotOpsBanner>
       ) : null}
 
-      <div className="pivot-location-migration__steps" aria-label="Migration workflow">
-        {[
-          ['1', 'Configure', hasConstraints],
-          ['2', 'Dry run', Boolean(lastResult?.dryRun)],
-          ['3', 'Apply batches', status?.runs?.live?.status === 'completed'],
-          ['4', 'Review & roll out', controls.rollout === 'on'],
-        ].map(([number, label, complete]) => (
-          <div key={number} className={`pivot-location-migration__step${complete ? ' is-complete' : ''}`}>
-            <span>{complete ? <Icon icon="mdi:check" /> : number}</span>
-            <strong>{label}</strong>
-          </div>
-        ))}
-      </div>
-
-      {!status?.providerConfigured ? (
-        <PivotOpsBanner tone="danger" title="Google provider is not configured" role="alert">
-          Set the server-side API key before running a batch. Rollout can remain off while you configure the city.
+      {status && !status.providerConfigured ? (
+        <PivotOpsBanner tone="danger" title="Google location lookup is not configured" role="alert">
+          Add the server-side Google Maps key before previewing or processing events.
         </PivotOpsBanner>
-      ) : !hasConstraints ? (
-        <PivotOpsBanner tone="warn" title="City boundary required">
-          Define and save the tenant boundary before running the migration.
+      ) : status && !hasConstraints ? (
+        <PivotOpsBanner tone="warn" title="Set the city boundary first">
+          The migration uses this boundary to catch suggestions that belong to another city.
         </PivotOpsBanner>
       ) : null}
 
       <PivotOpsMetricGrid className="pivot-location-migration__metrics">
-        <PivotOpsMetric
-          label="Live catalog"
-          value={displayStatus(status?.leases?.live ? 'running' : status?.runs?.live?.status)}
-          hint={`${Number(status?.runs?.live?.cumulativeCounts?.scanned || 0).toLocaleString()} scanned`}
-        />
-        <PivotOpsMetric
-          label="Historical catalog"
-          value={displayStatus(status?.leases?.historical ? 'running' : status?.runs?.historical?.status)}
-          hint={`${Number(status?.runs?.historical?.cumulativeCounts?.scanned || 0).toLocaleString()} scanned`}
-        />
-        <PivotOpsMetric
-          label="Needs review"
-          value={Number(status?.needsReview || 0).toLocaleString()}
-          hint={`${reviews.length} loaded in queue`}
-        />
-        <PivotOpsMetric
-          label="Rollout"
-          value={controls.rollout === 'on' ? 'On' : 'Off'}
-          hint={`${CONTROL_OPTIONS.filter(({ key }) => controls[key]).length} of 4 capabilities enabled`}
-        />
+        <PivotOpsMetric label="Locations ready" value={Number(coverage?.resolved || 0).toLocaleString()} hint="Structured location saved" />
+        <PivotOpsMetric label="Need a decision" value={Number(coverage?.needsReview || 0).toLocaleString()} hint={`${reviews.length} loaded below`} />
+        <PivotOpsMetric label="Not evaluated" value={Number(coverage?.remaining || 0).toLocaleString()} hint={committedWeek} />
+        <PivotOpsMetric label="Rich locations" value={controls.rollout === 'on' ? 'On' : 'Off'} hint={`${CONTROL_OPTIONS.filter(({ key }) => controls[key]).length} of 4 capabilities enabled`} />
       </PivotOpsMetricGrid>
 
       <div className="pivot-location-migration__workspace">
         <main>
           <PivotOpsSection
-            title="Run migration"
-            description="Process one bounded batch. Dry runs never write event data or advance the checkpoint."
+            title="Batch coverage"
+            description={`${committedWeek} · ${formatBatchWeekRange(committedWeek)}`}
+            actions={<PivotOpsStatus tone={statusTone(weekRun?.status)}>{runLabel(weekRun?.status, activeLease)}</PivotOpsStatus>}
           >
-            <div className="pivot-location-migration__scopes">
-              <RunStateCard
-                label="Live"
-                run={status?.runs?.live}
-                lease={status?.leases?.live}
-                active={scope === 'live'}
-                onSelect={() => setScope('live')}
-              />
-              <RunStateCard
-                label="Historical"
-                run={status?.runs?.historical}
-                lease={status?.leases?.historical}
-                active={scope === 'historical'}
-                onSelect={() => setScope('historical')}
-              />
-            </div>
+            <WeekCoverage coverage={coverage} batchWeek={committedWeek} loading={statusQuery.loading || !weekSettled} />
 
-            <div className="pivot-location-migration__run-grid">
-              <label className="pivot-location-migration__field pivot-location-migration__field--wide">
-                <span>Catalog cutoff</span>
-                <input
-                  className="linear-input"
-                  value={asOf}
-                  readOnly={Boolean(lockedCutoff)}
-                  onChange={(event) => setAsOf(event.target.value)}
-                />
-                <small>{lockedCutoff ? 'Locked by the first applied batch.' : 'Snapshot time for this migration.'}</small>
-              </label>
-              <label className="pivot-location-migration__field">
-                <span>Batch size</span>
-                <input
-                  className="linear-input"
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={batchSize}
-                  onChange={(event) => setBatchSize(event.target.value)}
-                />
-              </label>
-              <label className="pivot-location-migration__field">
-                <span>Provider calls</span>
-                <input
-                  className="linear-input"
-                  type="number"
-                  min="0"
-                  max={batchSize || 50}
-                  value={maxProviderOperations}
-                  onChange={(event) => setMaxProviderOperations(event.target.value)}
-                />
-              </label>
-              <label className="pivot-location-migration__field">
-                <span>Pacing (ms)</span>
-                <input
-                  className="linear-input"
-                  type="number"
-                  min="0"
-                  max="5000"
-                  value={minIntervalMs}
-                  onChange={(event) => setMinIntervalMs(event.target.value)}
-                />
-              </label>
-              <label className="pivot-location-migration__field">
-                <span>Auto-apply at</span>
-                <input
-                  className="linear-input"
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={autoApplyConfidence}
-                  onChange={(event) => setAutoApplyConfidence(event.target.value)}
-                />
-              </label>
-              <label className="pivot-location-migration__field">
-                <span>Review at</span>
-                <input
-                  className="linear-input"
-                  type="number"
-                  min="0"
-                  max={autoApplyConfidence || 1}
-                  step="0.05"
-                  value={reviewConfidence}
-                  onChange={(event) => setReviewConfidence(event.target.value)}
-                />
-              </label>
-              <label className="pivot-location-migration__field">
-                <span>Type “{tenantKey}” to apply</span>
-                <input
-                  className="linear-input"
-                  aria-label={`Type ${tenantKey} to apply`}
-                  value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                  placeholder={tenantKey}
-                />
-              </label>
-            </div>
+            <details className="pivot-location-migration__processing-settings">
+              <summary>Processing settings</summary>
+              <div className="pivot-location-migration__run-grid">
+                <label className="pivot-location-migration__field"><span>Events per group</span><input className="linear-input" type="number" min="1" max="50" value={batchSize} onChange={(event) => setBatchSize(event.target.value)} /></label>
+                <label className="pivot-location-migration__field"><span>Maximum Google lookups</span><input className="linear-input" type="number" min="0" max={batchSize || 50} value={maxProviderOperations} onChange={(event) => setMaxProviderOperations(event.target.value)} /></label>
+                <label className="pivot-location-migration__field"><span>Delay between lookups (ms)</span><input className="linear-input" type="number" min="0" max="5000" value={minIntervalMs} onChange={(event) => setMinIntervalMs(event.target.value)} /></label>
+                <label className="pivot-location-migration__field"><span>Apply automatically at</span><input className="linear-input" type="number" min="0" max="1" step="0.05" value={autoApplyConfidence} onChange={(event) => setAutoApplyConfidence(event.target.value)} /><small>0.90 means 90% confidence.</small></label>
+                <label className="pivot-location-migration__field"><span>Show a Google candidate at</span><input className="linear-input" type="number" min="0" max={autoApplyConfidence || 1} step="0.05" value={reviewConfidence} onChange={(event) => setReviewConfidence(event.target.value)} /><small>Weaker matches still enter review without a suggestion.</small></label>
+              </div>
+            </details>
 
-            {scope === 'historical' ? (
-              <label className="pivot-location-migration__confirm">
-                <input
-                  type="checkbox"
-                  checked={confirmLiveStable}
-                  onChange={(event) => setConfirmLiveStable(event.target.checked)}
-                />
-                I confirm the live catalog backfill is complete and stable.
+            <div className="pivot-location-migration__apply-confirmation">
+              <label className="pivot-location-migration__field">
+                <span>To process events, type “{tenantKey}”</span>
+                <input className="linear-input" aria-label={`Type ${tenantKey} to process`} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={tenantKey} />
               </label>
-            ) : null}
+              <small>Previewing is read-only and does not need confirmation.</small>
+            </div>
 
             <div className="pivot-location-migration__run-footer">
               <div className="pivot-location-migration__run-totals">
-                <span><strong>{Number(cumulative.scanned || 0).toLocaleString()}</strong> scanned</span>
-                <span><strong>{Number(cumulative.applied || 0).toLocaleString()}</strong> applied</span>
-                <span><strong>{Number(cumulative.needsReview || 0).toLocaleString()}</strong> review</span>
+                <span><strong>{Number(coverage?.remaining || 0).toLocaleString()}</strong> left to evaluate</span>
+                <span><strong>{Number(coverage?.needsReview || 0).toLocaleString()}</strong> awaiting you</span>
               </div>
               <div className="pivot-location-migration__actions">
-                <button
-                  type="button"
-                  className="linear-btn linear-btn--secondary"
-                  disabled={running || Boolean(activeLease) || !hasConstraints}
-                  onClick={() => runBatch(false)}
-                >
-                  {running ? 'Running…' : 'Dry run next batch'}
-                </button>
-                <button
-                  type="button"
-                  className="linear-btn linear-btn--primary"
-                  disabled={
-                    running ||
-                    Boolean(activeLease) ||
-                    !canApply ||
-                    !hasConstraints ||
-                    (scope === 'historical' && !confirmLiveStable)
-                  }
-                  onClick={() => runBatch(true)}
-                >
-                  {running ? 'Running…' : 'Apply next batch'}
-                </button>
+                <button type="button" className="linear-btn linear-btn--secondary" disabled={running || Boolean(activeLease) || !hasConstraints || !batchWeekValid || !weekSettled} onClick={() => runBatch(false)}>{running ? 'Working…' : `Preview next ${batchSize}`}</button>
+                <button type="button" className="linear-btn linear-btn--primary" disabled={running || Boolean(activeLease) || !canApply || !hasConstraints || !batchWeekValid || !weekSettled} onClick={() => runBatch(true)}>{running ? 'Working…' : `Process next ${batchSize}`}</button>
               </div>
             </div>
 
-            {lastResult ? (
-              <div className="pivot-location-migration__result" aria-live="polite">
-                <div className="pivot-location-migration__result-head">
-                  <div>
-                    <strong>{lastResult.dryRun ? 'Dry run' : 'Applied batch'} · {lastResult.scope}</strong>
-                    <span>{lastResult.items?.length || 0} decisions returned</span>
-                  </div>
-                  <PivotOpsStatus tone={statusTone(lastResult.status)}>{displayStatus(lastResult.status)}</PivotOpsStatus>
-                </div>
-                {providerFailures > 0 ? (
-                  <PivotOpsBanner tone="danger" title={`${providerFailures} provider failures`} role="alert">
-                    Inspect the decision codes below before applying another batch.
-                  </PivotOpsBanner>
-                ) : null}
-                <div className="pivot-location-migration__result-counts">
-                  {Object.entries(lastResult.counts || {}).map(([name, value]) => (
-                    <span key={name}><strong>{Number(value).toLocaleString()}</strong>{displayStatus(name)}</span>
-                  ))}
-                </div>
-                {lastResult.items?.length ? (
-                  <div className="pivot-location-migration__table-wrap">
-                    <table className="pivot-location-migration__table">
-                      <thead><tr><th>Event</th><th>Outcome</th><th>Reason / code</th></tr></thead>
-                      <tbody>
-                        {lastResult.items.map((item) => (
-                          <tr key={`${item.eventId}-${item.outcome}`}>
-                            <td><code>{item.eventId}</code></td>
-                            <td>{displayStatus(item.outcome)}</td>
-                            <td>{displayStatus(item.reason || item.code || item.mode || '—')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+            <BatchResult result={lastResult} />
           </PivotOpsSection>
 
-          <PivotOpsSection
-            title={`Review queue (${reviews.length})`}
-            description="Select an event, inspect one representation, then approve or correct it."
-          >
+          <PivotOpsSection title={`Decisions needed (${reviews.length})`} description="Choose an event to compare what the source says with the Google result.">
             {reviewsQuery.error ? (
               <PivotOpsBanner tone="danger" role="alert">{String(reviewsQuery.error)}</PivotOpsBanner>
             ) : reviews.length ? (
               <div className="pivot-location-migration__review-layout">
                 <div className="pivot-location-migration__review-list">
                   <table className="pivot-location-migration__table">
-                    <thead><tr><th>Event</th><th>Location</th><th>Reason</th></tr></thead>
+                    <thead><tr><th>Event</th><th>Source location</th><th>Why it needs you</th></tr></thead>
                     <tbody>
                       {reviews.map((candidate) => (
-                        <tr
-                          key={candidate.eventId}
-                          className={candidate.eventId === selectedReviewId ? 'is-selected' : ''}
-                          onClick={() => setSelectedReviewId(candidate.eventId)}
-                        >
+                        <tr key={candidate.eventId} className={candidate.eventId === selectedReviewId ? 'is-selected' : ''} onClick={() => setSelectedReviewId(candidate.eventId)}>
                           <td><strong>{candidate.name || 'Untitled event'}</strong><code>{candidate.eventId}</code></td>
-                          <td>{candidate.rawLocationText || candidate.legacyLocation || '—'}</td>
-                          <td>{displayStatus(candidate.review?.reason || 'manual review')}</td>
+                          <td>{candidate.rawLocationText || candidate.legacyLocation || 'No location supplied'}</td>
+                          <td><strong>{candidate.whyReview?.title || 'Human decision needed'}</strong></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <ReviewInspector
-                  candidate={selectedReview}
-                  busy={reviewingId === selectedReview?.eventId}
-                  onReview={reviewCandidate}
-                />
+                <PivotLocationReviewInspector candidate={selectedReview} busy={reviewingId === selectedReview?.eventId} onReview={reviewCandidate} />
               </div>
             ) : (
               <div className="pivot-location-migration__empty-state">
-                <Icon icon="mdi:check-circle-outline" />
-                <strong>Review queue is clear</strong>
-                <span>New ambiguous matches will appear here after a batch runs.</span>
+                <Icon icon="mdi:check-circle-outline" /><strong>No decisions needed for {committedWeek}</strong><span>Ambiguous or weak matches will appear here after you process events.</span>
               </div>
             )}
           </PivotOpsSection>
         </main>
 
         <aside>
-          <PivotOpsSection title="City boundary" description="Only locations inside this tenant's operating area are eligible.">
+          <PivotOpsSection title="City boundary" description="Google suggestions outside this area are sent to you for review.">
             <div className="pivot-location-migration__segmented" role="group" aria-label="Boundary type">
               {['bounds', 'radius'].map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={constraints.mode === mode ? 'is-active' : ''}
-                  onClick={() => setConstraints((value) => ({ ...value, mode }))}
-                >
-                  {mode === 'bounds' ? 'Bounding box' : 'Center + radius'}
-                </button>
+                <button key={mode} type="button" className={constraints.mode === mode ? 'is-active' : ''} onClick={() => setConstraints((value) => ({ ...value, mode }))}>{mode === 'bounds' ? 'Bounding box' : 'Center + radius'}</button>
               ))}
             </div>
-            <label className="pivot-location-migration__field">
-              <span>Country code</span>
-              <input
-                className="linear-input"
-                aria-label="Country code"
-                maxLength="2"
-                value={constraints.countryCode}
-                onChange={(event) => setConstraints((value) => ({ ...value, countryCode: event.target.value }))}
-                placeholder="US"
-              />
-            </label>
+            <label className="pivot-location-migration__field"><span>Country code</span><input className="linear-input" aria-label="Country code" maxLength="2" value={constraints.countryCode} onChange={(event) => setConstraints((value) => ({ ...value, countryCode: event.target.value }))} placeholder="US" /></label>
             <div className="pivot-location-migration__boundary-grid">
-              {(constraints.mode === 'bounds'
-                ? [['north', 'North'], ['west', 'West'], ['east', 'East'], ['south', 'South']]
-                : [['latitude', 'Latitude'], ['longitude', 'Longitude'], ['radiusKm', 'Radius (km)']]
-              ).map(([key, label]) => (
-                <label key={key} className="pivot-location-migration__field">
-                  <span>{label}</span>
-                  <input
-                    className="linear-input"
-                    type="number"
-                    step="any"
-                    aria-label={label}
-                    value={constraints[key]}
-                    onChange={(event) => setConstraints((value) => ({ ...value, [key]: event.target.value }))}
-                  />
-                </label>
+              {(constraints.mode === 'bounds' ? [['north', 'North'], ['west', 'West'], ['east', 'East'], ['south', 'South']] : [['latitude', 'Latitude'], ['longitude', 'Longitude'], ['radiusKm', 'Radius (km)']]).map(([key, label]) => (
+                <label key={key} className="pivot-location-migration__field"><span>{label}</span><input className="linear-input" type="number" step="any" aria-label={label} value={constraints[key]} onChange={(event) => setConstraints((value) => ({ ...value, [key]: event.target.value }))} /></label>
               ))}
             </div>
           </PivotOpsSection>
 
-          <PivotOpsSection title="Rollout controls" description="The master switch must be on before any capability takes effect.">
+          <PivotOpsSection title="Turn on rich locations" description="Keep the master switch off until this tenant is ready to use the migrated data.">
             <label className="pivot-location-migration__master-control">
-              <span>
-                <strong>Tenant rollout</strong>
-                <small>{controls.rollout === 'on' ? 'Capabilities may serve production traffic.' : 'All rich location behavior is dormant.'}</small>
-              </span>
-              <input
-                type="checkbox"
-                checked={controls.rollout === 'on'}
-                onChange={(event) => setControls((value) => ({
-                  ...value,
-                  rollout: event.target.checked ? 'on' : 'off',
-                }))}
-              />
+              <span><strong>Use rich locations for this tenant</strong><small>{controls.rollout === 'on' ? 'Enabled capabilities can serve production traffic.' : 'Migrated data is saved, but no rich-location behavior is live.'}</small></span>
+              <input type="checkbox" aria-label="Use rich locations for this tenant" checked={controls.rollout === 'on'} onChange={(event) => setControls((value) => ({ ...value, rollout: event.target.checked ? 'on' : 'off' }))} />
             </label>
             <div className="pivot-location-migration__control-list">
-              {CONTROL_OPTIONS.map(({ key, label, description }, index) => (
-                <label key={key} className="pivot-location-migration__control">
-                  <span className="pivot-location-migration__control-order">{index + 1}</span>
-                  <span>
-                    <strong>{label}</strong>
-                    <small>{description}</small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={controls[key]}
-                    onChange={(event) => setControls((value) => ({ ...value, [key]: event.target.checked }))}
-                  />
-                </label>
+              {CONTROL_OPTIONS.map(({ key, label, description }) => (
+                <label key={key} className="pivot-location-migration__control"><span><strong>{label}</strong><small>{description}</small></span><input type="checkbox" aria-label={label} checked={controls[key]} onChange={(event) => setControls((value) => ({ ...value, [key]: event.target.checked }))} /></label>
               ))}
             </div>
-            <button
-              type="button"
-              className="linear-btn linear-btn--primary pivot-location-migration__save"
-              disabled={savingConfig}
-              onClick={saveConfiguration}
-            >
-              {savingConfig ? 'Saving…' : 'Save boundary & rollout'}
-            </button>
+            <button type="button" className="linear-btn linear-btn--primary pivot-location-migration__save" disabled={savingConfig} onClick={saveConfiguration}>{savingConfig ? 'Saving…' : 'Save location settings'}</button>
           </PivotOpsSection>
         </aside>
       </div>
@@ -814,9 +519,4 @@ export default function PivotTenantLocationMigrationPage({
   );
 }
 
-export {
-  EMPTY_CONTROLS,
-  RICH_LOCATION_MIGRATION_UI_ENABLED,
-  buildConstraints,
-  constraintFields,
-};
+export { EMPTY_CONTROLS, RICH_LOCATION_MIGRATION_UI_ENABLED, WeekCoverage, buildConstraints, constraintFields };

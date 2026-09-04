@@ -76,16 +76,20 @@ function stateSnapshot(value) {
 function createModelDoubles(seedEvents = []) {
   const events = seedEvents;
   const runStates = new Map();
-  const stateKey = (filter = {}) => `${filter.tenantKey || TENANT.tenantKey}:${filter.scope || 'live'}`;
+  const stateKey = (filter = {}) => filter.batchWeek
+    ? `${filter.tenantKey || TENANT.tenantKey}:week:${filter.batchWeek}`
+    : `${filter.tenantKey || TENANT.tenantKey}:${filter.scope || 'live'}`;
   const Event = {
     find: jest.fn((query) => {
       let rows = events.filter((event) => (
         event.customFields?.pivot
         && !event.isDeleted
         && event.location
-        && (query.end_time.$gte
-          ? event.end_time >= query.end_time.$gte
-          : event.end_time < query.end_time.$lt)
+        && (query['customFields.pivot.batchWeek']
+          ? event.customFields.pivot.batchWeek === query['customFields.pivot.batchWeek']
+          : query.end_time.$gte
+            ? event.end_time >= query.end_time.$gte
+            : event.end_time < query.end_time.$lt)
         && !event.richLocation
         && !event.customFields.pivot.locationBackfill?.processedAt
         && !event.customFields.pivot.locationReview?.reviewedAt
@@ -131,6 +135,7 @@ function createModelDoubles(seedEvents = []) {
   return {
     Event,
     PivotLocationBackfillRun,
+    PivotLocationBackfillWeekRun: PivotLocationBackfillRun,
     events,
     state: (scope = 'live') => runStates.get(`${TENANT.tenantKey}:${scope}`) || null,
     setState: (scope, state) => runStates.set(`${TENANT.tenantKey}:${scope}`, {
@@ -285,6 +290,23 @@ describe('runLocationBackfill', () => {
     expect(models.state().tenantKey).toBe('nyc');
   });
 
+  it('uses an independent checkpoint and filters events for a selected batch week', async () => {
+    const selected = eventDoc('Selected Hall', { batchWeek: '2026-W37' });
+    const other = eventDoc('Other Hall', { batchWeek: '2026-W38' });
+    useEvents([selected, other]);
+
+    const result = await run({ batchWeek: '2026-W37', batchSize: 10 });
+
+    expect(result).toMatchObject({ batchWeek: '2026-W37', counts: { scanned: 1, applied: 1 } });
+    expect(selected.richLocation).toMatchObject({ mode: 'physical' });
+    expect(selected.customFields.pivot.locationBackfill.batchWeek).toBe('2026-W37');
+    expect(other.richLocation).toBeUndefined();
+    expect(models.PivotLocationBackfillWeekRun.findOne).toHaveBeenCalledWith({
+      tenantKey: 'nyc',
+      batchWeek: '2026-W37',
+    });
+  });
+
   it('routes lower-confidence and out-of-scope candidates to ops review', async () => {
     const source = [eventDoc('Possible Hall'), eventDoc('Far Hall')]
       .sort((first, second) => String(first._id).localeCompare(String(second._id)));
@@ -429,9 +451,16 @@ describe('runLocationBackfill', () => {
   it('routes multiple provider matches to review instead of auto-applying', async () => {
     const source = [eventDoc('Common Hall')];
     useEvents(source);
+    const matches = [
+      canonical(),
+      canonical({ venueName: 'The Other Hall', googlePlaceId: 'ChIJ_other_place' }),
+    ];
     const result = await run({
       googleAdapter: {
-        geocodeAddress: jest.fn().mockResolvedValue(canonical({ _backfillMatchCount: 2 })),
+        geocodeAddress: jest.fn().mockResolvedValue(canonical({
+          _backfillMatchCount: 2,
+          _backfillCandidates: matches,
+        })),
       },
     });
 
@@ -439,6 +468,10 @@ describe('runLocationBackfill', () => {
     expect(source[0].richLocation).toBeUndefined();
     expect(source[0].customFields.pivot.locationReview.reason)
       .toBe('ambiguous_provider_matches');
+    expect(source[0].customFields.pivot.locationReview.candidateMatches)
+      .toHaveLength(2);
+    expect(source[0].customFields.pivot.locationReview.candidateMatches[1])
+      .toMatchObject({ venueName: 'The Other Hall', googlePlaceId: 'ChIJ_other_place' });
   });
 
   it('keeps unique broad-geography provider results approximate', async () => {

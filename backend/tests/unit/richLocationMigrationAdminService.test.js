@@ -34,7 +34,14 @@ function query(value) {
 }
 
 function models() {
-  const Event = { countDocuments: jest.fn().mockResolvedValue(3) };
+  const Event = {
+    countDocuments: jest.fn()
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(2),
+    distinct: jest.fn().mockResolvedValue(['2026-W36', '2026-W37']),
+  };
   const PivotLocationBackfillRun = {
     find: jest.fn(() => query([{ scope: 'live', status: 'completed' }])),
   };
@@ -43,7 +50,15 @@ function models() {
     deleteOne: jest.fn().mockResolvedValue({ deletedCount: 0 }),
     create: jest.fn().mockResolvedValue({}),
   };
-  return { Event, PivotLocationBackfillRun, PivotLocationMigrationLease };
+  const PivotLocationBackfillWeekRun = {
+    findOne: jest.fn(() => query({ batchWeek: '2026-W37', status: 'batch_complete' })),
+  };
+  return {
+    Event,
+    PivotLocationBackfillRun,
+    PivotLocationBackfillWeekRun,
+    PivotLocationMigrationLease,
+  };
 }
 
 describe('richLocationMigrationAdminService', () => {
@@ -61,12 +76,18 @@ describe('richLocationMigrationAdminService', () => {
   test('returns public migration state without exposing audit history', async () => {
     const doubles = models();
     getModels.mockReturnValue(doubles);
-    const result = await getRichLocationMigrationStatus({ tenant: TENANT });
+    const result = await getRichLocationMigrationStatus({
+      tenant: TENANT,
+      batchWeek: '2026-W37',
+    });
 
     expect(result).toMatchObject({
       tenantKey: 'nyc',
       providerConfigured: true,
-      needsReview: 3,
+      batchWeek: '2026-W37',
+      needsReview: 2,
+      coverage: { total: 10, processed: 7, resolved: 5, needsReview: 2, remaining: 3, percent: 70 },
+      weekRun: { batchWeek: '2026-W37', status: 'batch_complete' },
       controls: { rollout: 'off', reads: false, writes: false },
       runs: { live: { scope: 'live', status: 'completed' }, historical: null },
     });
@@ -83,7 +104,11 @@ describe('richLocationMigrationAdminService', () => {
 
     const result = await runRichLocationMigrationBatch(
       { user: { email: 'operator@example.com' } },
-      { tenant: TENANT, input: { scope: 'live', asOf: '2026-09-03T12:00:00.000Z' } },
+      { tenant: TENANT, input: {
+        scope: 'live',
+        batchWeek: '2026-W37',
+        asOf: '2026-09-03T12:00:00.000Z',
+      } },
     );
 
     expect(result.status).toBe('completed');
@@ -92,6 +117,7 @@ describe('richLocationMigrationAdminService', () => {
       dryRun: true,
       batchSize: 25,
       maxProviderOperations: 25,
+      batchWeek: '2026-W37',
     }));
     expect(doubles.PivotLocationMigrationLease.create).toHaveBeenCalledWith(expect.objectContaining({
       tenantKey: 'nyc',
@@ -108,6 +134,17 @@ describe('richLocationMigrationAdminService', () => {
       { tenant: TENANT, input: { apply: true, confirmTenantKey: 'brooklyn' } },
     )).rejects.toMatchObject({
       code: 'RICH_LOCATION_MIGRATION_CONFIRMATION_REQUIRED',
+      status: 400,
+    });
+    expect(connectToDatabase).not.toHaveBeenCalled();
+  });
+
+  test('requires the UI to select a batch week', async () => {
+    await expect(runRichLocationMigrationBatch(
+      { user: {} },
+      { tenant: TENANT, input: {} },
+    )).rejects.toMatchObject({
+      code: 'RICH_LOCATION_MIGRATION_BATCH_WEEK_INVALID',
       status: 400,
     });
     expect(connectToDatabase).not.toHaveBeenCalled();

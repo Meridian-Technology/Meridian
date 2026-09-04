@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { logPivot } = require('../utilities/pivotLogger');
+const { logPivot, isPivotDetailLoggingEnabled } = require('../utilities/pivotLogger');
 
 const PLACES_API_BASE_URL = 'https://places.googleapis.com/v1';
 const GEOCODING_API_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
@@ -196,6 +196,7 @@ function defaultSleep(ms) {
 }
 
 function safeTelemetry(event) {
+  if (event.outcome !== 'failure' && !isPivotDetailLoggingEnabled()) return;
   logPivot(event.outcome === 'failure' ? 'warn' : 'info', 'google location provider', event);
 }
 
@@ -491,16 +492,27 @@ function createGoogleLocationAdapter(options = {}) {
       },
     );
 
-    const firstResult = Array.isArray(response.data.results) ? response.data.results[0] : null;
+    const providerResults = Array.isArray(response.data.results) ? response.data.results : [];
+    const firstResult = providerResults[0] || null;
+    const resolvedAt = new Date(now());
     const location = normalizedLocationFromGoogle(firstResult, {
       confidence: firstResult?.partial_match ? 0.75 : 0.9,
-      resolvedAt: new Date(now()),
+      resolvedAt,
     });
     // Backfill needs to distinguish a unique provider result from an ambiguous
     // first result. Keep this orchestration hint non-enumerable so it can never
     // enter the shared rich-location subdocument or a generic serializer.
     Object.defineProperty(location, '_backfillMatchCount', {
       value: response.data.results.length,
+      enumerable: false,
+    });
+    Object.defineProperty(location, '_backfillCandidates', {
+      value: providerResults
+        .map((result) => normalizedLocationFromGoogle(result, {
+          confidence: result?.partial_match ? 0.75 : 0.9,
+          resolvedAt,
+        }))
+        .filter(Boolean),
       enumerable: false,
     });
     return location;

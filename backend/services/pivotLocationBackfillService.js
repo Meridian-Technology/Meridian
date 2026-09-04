@@ -67,6 +67,15 @@ function normalizeBackfillScope(value) {
   return scope;
 }
 
+function normalizeBatchWeek(value) {
+  const batchWeek = trimString(value);
+  if (!batchWeek) return null;
+  if (!/^\d{4}-W\d{2}$/.test(batchWeek)) {
+    throw new Error('Location backfill batchWeek must use ISO format YYYY-Www.');
+  }
+  return batchWeek;
+}
+
 function historicalGateError(message, code) {
   const error = new Error(message);
   error.code = code;
@@ -240,6 +249,7 @@ function approximateLocationFromCanonical(canonical, originalInput, tenant, now)
 function resolvedPhysicalLocation(canonical, originalInput, now) {
   const {
     _backfillMatchCount,
+    _backfillCandidates,
     providerMatchCount,
     ambiguous,
     ...persistableCanonical
@@ -270,9 +280,16 @@ function reviewSet(event, options) {
       ...existingReview,
       status: 'needs_review',
       reason: options.reason,
-      candidateMatches: options.candidate ? [options.candidate] : [],
+      candidateMatches: Array.isArray(options.candidates)
+        ? options.candidates
+        : options.candidate ? [options.candidate] : [],
       updatedAt: options.now.toISOString(),
       source: 'rich_location_backfill',
+      ...(options.batchWeek ? { batchWeek: options.batchWeek } : {}),
+      ...(Number.isFinite(options.candidateCount)
+        ? { candidateCount: options.candidateCount }
+        : {}),
+      ...(Number.isFinite(options.confidence) ? { confidence: options.confidence } : {}),
       ...(options.suggestedMode ? { suggestedMode: options.suggestedMode } : {}),
     },
     'customFields.pivot.locationBackfill': {
@@ -281,19 +298,21 @@ function reviewSet(event, options) {
       outcome: 'needs_review',
       processedAt: options.now,
       reason: options.reason,
+      ...(options.batchWeek ? { batchWeek: options.batchWeek } : {}),
       ...(Number.isFinite(options.confidence) ? { confidence: options.confidence } : {}),
       ...(options.suggestedMode ? { suggestedMode: options.suggestedMode } : {}),
     },
   };
 }
 
-function appliedSet(originalInput, richLocation, now, scope = LIVE_SCOPE) {
+function appliedSet(originalInput, richLocation, now, scope = LIVE_SCOPE, batchWeek = null) {
   return {
     richLocation,
     'customFields.pivot.rawLocationText': originalInput,
     'customFields.pivot.locationBackfill': {
       version: 1,
       scope,
+      ...(batchWeek ? { batchWeek } : {}),
       outcome: 'applied',
       processedAt: now,
       mode: richLocation.mode,
@@ -395,14 +414,17 @@ async function runLocationBackfill(params = {}) {
   };
   const startedAt = dateNow();
   const scope = normalizeBackfillScope(params.scope);
-  const { Event, PivotLocationBackfillRun } = getModels(
+  const batchWeek = normalizeBatchWeek(params.batchWeek);
+  const { Event, PivotLocationBackfillRun, PivotLocationBackfillWeekRun } = getModels(
     { db: params.db, school: tenantKey },
     'Event',
     'PivotLocationBackfillRun',
+    'PivotLocationBackfillWeekRun',
   );
-  const stateFilter = { tenantKey, scope };
-  const priorRun = await PivotLocationBackfillRun.findOne(stateFilter).lean();
-  if (scope === HISTORICAL_SCOPE) {
+  const RunModel = batchWeek ? PivotLocationBackfillWeekRun : PivotLocationBackfillRun;
+  const stateFilter = batchWeek ? { tenantKey, batchWeek } : { tenantKey, scope };
+  const priorRun = await RunModel.findOne(stateFilter).lean();
+  if (!batchWeek && scope === HISTORICAL_SCOPE) {
     if (params.liveCatalogStable !== true) {
       throw historicalGateError(
         'Historical location backfill requires explicit live-catalog stability confirmation.',
@@ -434,12 +456,13 @@ async function runLocationBackfill(params = {}) {
     );
   }
   if (!dryRun) {
-    await PivotLocationBackfillRun.updateOne(
+    await RunModel.updateOne(
       stateFilter,
       {
         $set: {
           tenantKey,
           scope,
+          ...(batchWeek ? { batchWeek } : {}),
           version: 1,
           status: 'running',
           catalogAsOf,
@@ -454,7 +477,9 @@ async function runLocationBackfill(params = {}) {
     'customFields.pivot': { $exists: true },
     isDeleted: { $ne: true },
     location: { $type: 'string', $ne: '' },
-    end_time: scope === LIVE_SCOPE ? { $gte: catalogAsOf } : { $lt: catalogAsOf },
+    ...(batchWeek
+      ? { 'customFields.pivot.batchWeek': batchWeek }
+      : { end_time: scope === LIVE_SCOPE ? { $gte: catalogAsOf } : { $lt: catalogAsOf } }),
     $or: [
       { richLocation: { $exists: false } },
       { richLocation: null },
@@ -500,7 +525,7 @@ async function runLocationBackfill(params = {}) {
       if (!dryRun) {
         const result = await Event.updateOne(
           backfillEventFilter(event._id),
-          { $set: appliedSet(originalInput, richLocation, now, scope) },
+          { $set: appliedSet(originalInput, richLocation, now, scope, batchWeek) },
           { runValidators: true },
         );
         if (!result.modifiedCount) counts.skipped += 1;
@@ -508,7 +533,7 @@ async function runLocationBackfill(params = {}) {
       checkpoint = event._id;
       if (!dryRun) {
         await persistCheckpoint(
-          PivotLocationBackfillRun,
+          RunModel,
           stateFilter,
           checkpoint,
           addCounts(priorRun?.cumulativeCounts, counts),
@@ -538,6 +563,7 @@ async function runLocationBackfill(params = {}) {
             reason,
             suggestedMode: classification.mode,
             scope,
+            batchWeek,
             now,
           }) },
         );
@@ -546,7 +572,7 @@ async function runLocationBackfill(params = {}) {
       checkpoint = event._id;
       if (!dryRun) {
         await persistCheckpoint(
-          PivotLocationBackfillRun,
+          RunModel,
           stateFilter,
           checkpoint,
           addCounts(priorRun?.cumulativeCounts, counts),
@@ -599,6 +625,7 @@ async function runLocationBackfill(params = {}) {
             originalInput,
             reason: failureReason,
             scope,
+            batchWeek,
             now,
           }) },
         );
@@ -607,7 +634,7 @@ async function runLocationBackfill(params = {}) {
       checkpoint = event._id;
       if (!dryRun) {
         await persistCheckpoint(
-          PivotLocationBackfillRun,
+          RunModel,
           stateFilter,
           checkpoint,
           addCounts(priorRun?.cumulativeCounts, counts),
@@ -621,7 +648,13 @@ async function runLocationBackfill(params = {}) {
     );
     const providerAmbiguous = canonical?.ambiguous === true || providerMatchCount !== 1;
     if (providerAmbiguous) counts.ambiguous += 1;
-    const candidate = resolvedPhysicalLocation(canonical, originalInput, now);
+    const providerCandidates = Array.isArray(canonical?._backfillCandidates)
+      && canonical._backfillCandidates.length
+      ? canonical._backfillCandidates
+      : [canonical];
+    const candidates = providerCandidates.map((providerCandidate) =>
+      resolvedPhysicalLocation(providerCandidate, originalInput, now));
+    const candidate = candidates[0];
     const confidence = Number(candidate.resolutionConfidence);
     const locationScope = preciseLocationInScope(candidate, constraintResult.constraints);
     const broadProviderLocation = isBroadProviderLocation(canonical);
@@ -649,7 +682,7 @@ async function runLocationBackfill(params = {}) {
       if (!dryRun) {
         const result = await Event.updateOne(
           backfillEventFilter(event._id),
-          { $set: appliedSet(originalInput, richLocation, now, scope) },
+          { $set: appliedSet(originalInput, richLocation, now, scope, batchWeek) },
           { runValidators: true },
         );
         if (!result.modifiedCount) counts.skipped += 1;
@@ -657,7 +690,7 @@ async function runLocationBackfill(params = {}) {
       checkpoint = event._id;
       if (!dryRun) {
         await persistCheckpoint(
-          PivotLocationBackfillRun,
+          RunModel,
           stateFilter,
           checkpoint,
           addCounts(priorRun?.cumulativeCounts, counts),
@@ -676,7 +709,7 @@ async function runLocationBackfill(params = {}) {
       if (!dryRun) {
         const result = await Event.updateOne(
           backfillEventFilter(event._id),
-          { $set: appliedSet(originalInput, candidate, now, scope) },
+          { $set: appliedSet(originalInput, candidate, now, scope, batchWeek) },
           { runValidators: true },
         );
         if (!result.modifiedCount) counts.skipped += 1;
@@ -697,9 +730,12 @@ async function runLocationBackfill(params = {}) {
           { $set: reviewSet(event, {
             originalInput,
             reason,
-          candidate: confidence >= thresholds.reviewConfidence ? candidate : undefined,
+            candidate: confidence >= thresholds.reviewConfidence ? candidate : undefined,
+            candidates: confidence >= thresholds.reviewConfidence ? candidates : undefined,
             confidence: Number.isFinite(confidence) ? confidence : undefined,
             scope,
+            batchWeek,
+            candidateCount: providerMatchCount,
             now,
           }) },
         );
@@ -710,7 +746,7 @@ async function runLocationBackfill(params = {}) {
     checkpoint = event._id;
     if (!dryRun) {
       await persistCheckpoint(
-        PivotLocationBackfillRun,
+        RunModel,
         stateFilter,
         checkpoint,
         addCounts(priorRun?.cumulativeCounts, counts),
@@ -728,6 +764,7 @@ async function runLocationBackfill(params = {}) {
   const cumulativeCounts = addCounts(priorRun?.cumulativeCounts, counts);
   const summary = {
     scope,
+    ...(batchWeek ? { batchWeek } : {}),
     catalogAsOf,
     startedAt,
     finishedAt,
@@ -743,7 +780,7 @@ async function runLocationBackfill(params = {}) {
   };
 
   if (!dryRun) {
-    await persistAudit(PivotLocationBackfillRun, stateFilter, {
+    await persistAudit(RunModel, stateFilter, {
       checkpoint,
       cumulativeCounts,
       summary,
@@ -754,6 +791,7 @@ async function runLocationBackfill(params = {}) {
   return {
     tenantKey,
     scope,
+    batchWeek,
     catalogAsOf,
     dryRun,
     status,
@@ -771,6 +809,7 @@ module.exports = {
   createProviderPacer,
   confidenceThresholds,
   normalizeBackfillScope,
+  normalizeBatchWeek,
   resolvedPhysicalLocation,
   classifyLegacyLocation,
   categoricalLocation,

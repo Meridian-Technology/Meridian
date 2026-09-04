@@ -28,6 +28,7 @@ function publicRun(run) {
   if (!run) return null;
   return {
     scope: run.scope,
+    batchWeek: run.batchWeek || null,
     status: run.status,
     catalogAsOf: run.catalogAsOf || null,
     checkpoint: run.checkpoint || null,
@@ -55,23 +56,72 @@ async function tenantModels(tenantKey) {
       { db },
       'Event',
       'PivotLocationBackfillRun',
+      'PivotLocationBackfillWeekRun',
       'PivotLocationMigrationLease',
     ),
   };
 }
 
-async function getRichLocationMigrationStatus({ tenant }) {
-  const { Event, PivotLocationBackfillRun, PivotLocationMigrationLease } =
+function migrationBatchWeek(value, { required = false } = {}) {
+  const batchWeek = trimString(value);
+  if (!batchWeek && !required) return null;
+  if (!/^\d{4}-W\d{2}$/.test(batchWeek)) {
+    const error = new Error('Choose a valid batch week in YYYY-Www format.');
+    error.code = 'RICH_LOCATION_MIGRATION_BATCH_WEEK_INVALID';
+    error.status = 400;
+    throw error;
+  }
+  return batchWeek;
+}
+
+function weekCatalogQuery(batchWeek) {
+  return {
+    'customFields.pivot': { $exists: true },
+    'customFields.pivot.batchWeek': batchWeek,
+    isDeleted: { $ne: true },
+    location: { $type: 'string', $ne: '' },
+  };
+}
+
+async function getRichLocationMigrationStatus({ tenant, batchWeek: requestedBatchWeek }) {
+  const batchWeek = migrationBatchWeek(requestedBatchWeek);
+  const {
+    Event,
+    PivotLocationBackfillRun,
+    PivotLocationBackfillWeekRun,
+    PivotLocationMigrationLease,
+  } =
     await tenantModels(tenant.tenantKey);
   const now = new Date();
-  const [runs, leases, needsReview] = await Promise.all([
+  const baseWeekQuery = batchWeek ? weekCatalogQuery(batchWeek) : null;
+  const [runs, weekRun, leases, availableWeeks, total, processed, resolved, needsReview] = await Promise.all([
     PivotLocationBackfillRun.find({ tenantKey: tenant.tenantKey }).lean(),
+    batchWeek
+      ? PivotLocationBackfillWeekRun.findOne({ tenantKey: tenant.tenantKey, batchWeek }).lean()
+      : null,
     PivotLocationMigrationLease.find({
       tenantKey: tenant.tenantKey,
       expiresAt: { $gt: now },
     }).lean(),
-    Event.countDocuments({
+    Event.distinct('customFields.pivot.batchWeek', {
       isDeleted: { $ne: true },
+      'customFields.pivot.batchWeek': { $type: 'string' },
+    }),
+    batchWeek ? Event.countDocuments(baseWeekQuery) : 0,
+    batchWeek ? Event.countDocuments({
+      ...baseWeekQuery,
+      $or: [
+        { richLocation: { $exists: true, $ne: null } },
+        { 'customFields.pivot.locationBackfill.processedAt': { $exists: true } },
+      ],
+    }) : 0,
+    batchWeek ? Event.countDocuments({
+      ...baseWeekQuery,
+      richLocation: { $exists: true, $ne: null },
+      'customFields.pivot.locationReview.status': { $ne: 'needs_review' },
+    }) : 0,
+    Event.countDocuments({
+      ...(batchWeek ? baseWeekQuery : { isDeleted: { $ne: true } }),
       'customFields.pivot.locationReview.status': 'needs_review',
     }),
   ]);
@@ -81,6 +131,17 @@ async function getRichLocationMigrationStatus({ tenant }) {
   );
   return {
     tenantKey: tenant.tenantKey,
+    batchWeek,
+    availableWeeks: availableWeeks.filter((week) => /^\d{4}-W\d{2}$/.test(week)).sort(),
+    coverage: batchWeek ? {
+      total,
+      processed,
+      resolved,
+      needsReview,
+      remaining: Math.max(0, total - processed),
+      percent: total ? Math.min(100, Math.round((processed / total) * 100)) : 0,
+    } : null,
+    weekRun: publicRun(weekRun),
     constraints: tenant.richLocationConstraints || null,
     controls: resolveRichLocationControls(tenant),
     configuredControls: tenant.richLocationControls || null,
@@ -153,6 +214,7 @@ async function runRichLocationMigrationBatch(req, { tenant, input = {} }) {
     error.status = 400;
     throw error;
   }
+  const batchWeek = migrationBatchWeek(input.batchWeek, { required: true });
   const batchSize = Math.floor(uiNumber(
     input.batchSize,
     25,
@@ -201,6 +263,7 @@ async function runRichLocationMigrationBatch(req, { tenant, input = {} }) {
       tenantKey: tenant.tenantKey,
       tenant,
       scope,
+      batchWeek,
       liveCatalogStable: input.confirmLiveStable === true,
       dryRun: !apply,
       batchSize,
@@ -226,6 +289,8 @@ async function runRichLocationMigrationBatch(req, { tenant, input = {} }) {
 
 module.exports = {
   migrationUiEnabled,
+  migrationBatchWeek,
+  weekCatalogQuery,
   getRichLocationMigrationStatus,
   runRichLocationMigrationBatch,
   acquireLease,

@@ -152,7 +152,10 @@ router.get(
     try {
       const tenant = await migrationTenant(req, res);
       if (!tenant) return undefined;
-      const data = await getRichLocationMigrationStatus({ tenant });
+      const data = await getRichLocationMigrationStatus({
+        tenant,
+        batchWeek: req.query?.batchWeek,
+      });
       return res.json({ success: true, data });
     } catch (error) {
       console.error('GET rich-location migration status failed:', error.message);
@@ -192,6 +195,7 @@ router.get(
         tenantKey: tenant.tenantKey,
         status: req.query?.status,
         limit: req.query?.limit,
+        batchWeek: req.query?.batchWeek,
       });
       if (result.error) {
         return res.status(result.status || 400).json({
