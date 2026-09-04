@@ -71,6 +71,7 @@ describe('pivotCopyDefaults catalog (Task 4.1)', () => {
     expect(isCatalogCopyKey('crew.push.weeklyDrop.decideBody')).toBe(true);
     expect(isCatalogCopyKey('crew.push.ritual.quorumWaitingBody')).toBe(true);
     expect(isCatalogCopyKey('landing.web.cta')).toBe(true);
+    expect(isCatalogCopyKey('landing.web.story.grafs')).toBe(true);
     expect(isCopyTokenName('group.singular')).toBe(true);
 
     const catalog = getCopyCatalog().data;
@@ -201,11 +202,17 @@ describe('pivotCopyService (Task 2.2)', () => {
 
     it('accepts allowlisted entries and token names', () => {
       const result = validateCopyPatch({
-        entries: { 'ticker.week': 'this week' },
+        entries: {
+          'ticker.week': 'this week',
+          'landing.web.story.grafs': 'first graf\n\nsecond graf',
+        },
         tokens: { 'group.singular': 'crew' },
       });
       expect(result.ok).toBe(true);
       expect(result.entries['ticker.week']).toBe('this week');
+      expect(result.entries['landing.web.story.grafs']).toBe(
+        'first graf\n\nsecond graf',
+      );
       expect(result.tokens['group.singular']).toBe('crew');
     });
 

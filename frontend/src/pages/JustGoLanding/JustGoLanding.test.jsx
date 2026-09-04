@@ -244,11 +244,21 @@ describe('JustGoLanding', () => {
     expect(mockScreen).toHaveBeenCalledWith('Just Go Landing');
     expect(await screen.findByText(/live in brooklyn/i)).toBeInTheDocument();
     expect(mockApi).toHaveBeenCalledWith('/pivot/landing/config', null, { method: 'GET' });
-    expect(mockApi).not.toHaveBeenCalledWith(
+    expect(mockApi).toHaveBeenCalledWith(
       '/pivot/landing/drop',
       null,
-      expect.anything(),
+      { method: 'GET', params: { tenantKey: 'brooklyn' } },
     );
+  });
+
+  it('fills the desktop billboard with real drop events', async () => {
+    await renderLanding({ desktop: true });
+
+    expect(await screen.findByRole('heading', { name: 'friday night market' })).toBeInTheDocument();
+    expect(screen.getByText('public records')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'night market' })).not.toBeInTheDocument();
+    expect(screen.queryByText('should never render')).not.toBeInTheDocument();
+    expect(screen.queryByText(/123 Secret St/i)).not.toBeInTheDocument();
   });
 
   it('loads a compressed hero photo as a real image', async () => {
@@ -333,9 +343,9 @@ describe('JustGoLanding', () => {
     await renderLanding({ desktop: true });
 
     expect(screen.getByRole('heading', { name: justGoLandingCopy.flyersTitle })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'night market' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'board game night' })).toBeInTheDocument();
-    expect(screen.getByText(/fri night/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'friday night market' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'saturday warehouse' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'night market' })).not.toBeInTheDocument();
   });
 
   it('keeps a host path into the creator console', async () => {
@@ -540,7 +550,12 @@ describe('JustGoLanding', () => {
 
     expect(await screen.findByText(/^live in troy$/i)).toBeInTheDocument();
     expect(screen.queryByText(/live in brooklyn/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/· troy$/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(justGoLandingCopy.deckEmpty)).toBeInTheDocument();
+    expect(mockApi).not.toHaveBeenCalledWith(
+      '/pivot/landing/drop',
+      null,
+      expect.anything(),
+    );
     expect(mockApi).toHaveBeenCalledWith('/pivot/landing/config', null, {
       method: 'GET',
       params: { tenantKey: 'troy' },

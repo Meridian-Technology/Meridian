@@ -55,6 +55,16 @@ describe('resolveJustGoLandingCopy', () => {
     expect(copy.story.slice(0, 5)).toEqual([...justGoLandingCopy.story]);
   });
 
+  it('uses blank-line-separated voice copy to customize the story graf count', () => {
+    const copy = resolveJustGoLandingCopy({
+      entries: {
+        'landing.web.story.grafs': 'first graf\n\nsecond graf\n\n\nthird graf',
+        'landing.web.story.graf0': 'legacy graf',
+      },
+    });
+    expect(copy.story).toEqual(['first graf', 'second graf', 'third graf']);
+  });
+
   it('overlays waitlist keys', () => {
     const copy = resolveJustGoLandingCopy({
       entries: { 'landing.web.waitlist.cta': 'hold my spot' },

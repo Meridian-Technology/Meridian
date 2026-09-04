@@ -4044,6 +4044,12 @@
       "shipped": "give us 5 minutes this monday to prove it."
     },
     {
+      "path": "landing.web.story.grafs",
+      "kind": "string",
+      "params": [],
+      "shipped": "we want people to go to one event each week. not users, people.\n\nevery person deserves something outside of the 9-5.\n\na time, a place, a group with which they can truly be.\n\nendless scrolling won't find that space you're looking for, we will.\n\ngive us 5 minutes this monday to prove it."
+    },
+    {
       "path": "landing.web.story.title",
       "kind": "string",
       "params": [],
