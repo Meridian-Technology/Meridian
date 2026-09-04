@@ -724,14 +724,19 @@ async function executeCurationRun(runId) {
       events,
     });
 
-    logPivot('info', 'curation run completed', {
-      runId: String(runId),
-      tenantKey,
-      batchWeek: run.batchWeek,
-      forceBatchWeek,
-      byBatchWeek: stats.byBatchWeek,
-      ...stats,
-    });
+    // A batch emits one aggregate completion summary of its own. Logging every
+    // child completion makes a large refresh unnecessarily noisy, while a
+    // standalone run still benefits from a concise terminal record.
+    if (!run.parentBatchId) {
+      logPivot('info', 'curation run completed', {
+        runId: String(runId),
+        tenantKey,
+        batchWeek: run.batchWeek,
+        forceBatchWeek,
+        byBatchWeek: stats.byBatchWeek,
+        ...stats,
+      });
+    }
   } catch (err) {
     logPivot('error', 'curation run crashed', {
       runId: String(runId),
