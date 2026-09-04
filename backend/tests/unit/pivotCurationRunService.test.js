@@ -692,7 +692,11 @@ describe('pivotCurationRunService', () => {
 
       expect(publishIngestEvent).toHaveBeenCalledWith(
         expect.any(Object),
-        expect.objectContaining({ forceBatchWeek: true, batchWeek: '2026-W28' }),
+        expect.objectContaining({
+          forceBatchWeek: true,
+          batchWeek: '2026-W28',
+          resolveRichLocation: true,
+        }),
       );
     });
 

@@ -19,6 +19,7 @@ const {
 const { logPivot } = require('../utilities/pivotLogger');
 const { rollupShowtimeDrafts } = require('./pivotIngestDuplicateService');
 const { attachOrganizerIdsToDrafts } = require('./pivotOrganizerResolveService');
+const { createProviderPacer } = require('./pivotLocationBackfillService');
 
 const MAX_FAILURES_STORED = 50;
 const MAX_EVENTS_STORED = 100;
@@ -264,7 +265,14 @@ function pickIngestStatus(defaultTags) {
  */
 async function upsertDiscoveredEntry(
   req,
-  { tenantKey, batchWeek, forceBatchWeek = false, entry, defaultTags },
+  {
+    tenantKey,
+    batchWeek,
+    forceBatchWeek = false,
+    entry,
+    defaultTags,
+    locationResolution = {},
+  },
 ) {
   const draft = entry?.draft || {};
   const sourceUrl = entry?.sourceUrl || draft.sourceUrl || null;
@@ -288,6 +296,10 @@ async function upsertDiscoveredEntry(
     url: sourceUrl,
     draft,
     tagsRequired: false,
+    resolveRichLocation: true,
+    googleLocationAdapter: locationResolution.googleAdapter,
+    beforeLocationProviderCall: locationResolution.beforeProviderCall,
+    locationNow: locationResolution.now,
     overrides: {
       name: draft.name,
       description: draft.description,
@@ -295,6 +307,7 @@ async function upsertDiscoveredEntry(
       location: draft.location,
       rawLocationText: draft.rawLocationText,
       richLocation: draft.richLocation,
+      locationReview: draft.locationReview,
       start_time: draft.start_time,
       end_time: draft.end_time,
       hostName: draft.hostName,
@@ -411,6 +424,16 @@ async function ingestEntries(req, options = {}) {
   const events = [];
   const tags = Array.isArray(defaultTags) ? defaultTags : [];
   const ensuredWeeks = new Set();
+  const locationPacer = createProviderPacer({
+    minIntervalMs: options.locationMinIntervalMs,
+    sleep: options.locationSleep,
+    nowMs: options.locationNowMs,
+  });
+  const locationResolution = {
+    googleAdapter: options.googleLocationAdapter,
+    beforeProviderCall: () => locationPacer.wait(),
+    now: options.locationNow,
+  };
 
   // When forcing, ensure the pinned week exists up front. Otherwise ensure
   // each event's resolved week as we upsert.
@@ -427,6 +450,7 @@ async function ingestEntries(req, options = {}) {
         forceBatchWeek,
         entry,
         defaultTags: tags,
+        locationResolution,
       });
 
       if (outcome.upserted) {

@@ -392,6 +392,62 @@ describe('pivotIngestPublishService publishIngestEvent', () => {
     });
   });
 
+  it('resolves rich location during a curation-style publish', async () => {
+    getMergedTenants.mockResolvedValue([{
+      ...TENANT,
+      richLocationConstraints: {
+        countryCode: 'US',
+        bounds: { north: 41, south: 40, east: -73, west: -75 },
+      },
+    }]);
+    const geocodeAddress = jest.fn().mockResolvedValue({
+      venueName: 'Brooklyn Bridge Park',
+      formattedAddress: '334 Furman St, Brooklyn, NY 11201, USA',
+      addressComponents: [
+        { longText: 'Brooklyn', types: ['locality'] },
+        { longText: 'United States', shortText: 'US', types: ['country'] },
+      ],
+      city: 'Brooklyn',
+      region: 'New York',
+      countryCode: 'US',
+      coordinates: { type: 'Point', coordinates: [-73.997, 40.696] },
+      googlePlaceId: 'ChIJ_test_bridge_park',
+      provider: 'google',
+      placeTypes: ['park'],
+      aliases: [],
+      resolutionStatus: 'resolved',
+      resolutionConfidence: 0.95,
+      resolvedAt: new Date('2026-09-04T12:00:00.000Z'),
+      publicDisplayLabel: 'Brooklyn Bridge Park',
+    });
+
+    const result = await publishIngestEvent(
+      { user: { email: 'ops@meridian.study' }, globalDb: {} },
+      {
+        tenantKey: 'nyc',
+        url: 'https://partiful.com/e/sunset-listening',
+        resolveRichLocation: true,
+        googleLocationAdapter: { geocodeAddress },
+        locationNow: () => new Date('2026-09-04T12:00:00.000Z'),
+        overrides: { hostName: 'Brooklyn Board Game Cafe', tags: ['board-games'] },
+      },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(geocodeAddress).toHaveBeenCalledWith('Brooklyn Bridge Park', {
+      regionCode: 'US',
+      languageCode: 'en',
+    });
+    const payload = Event.findOneAndUpdate.mock.calls[0][1].$set;
+    expect(payload.richLocation).toMatchObject({
+      mode: 'physical',
+      originalInput: 'Brooklyn Bridge Park',
+      googlePlaceId: 'ChIJ_test_bridge_park',
+      resolutionStatus: 'resolved',
+    });
+    expect(payload.customFields.pivot.locationReview).toBeUndefined();
+  });
+
   it('rejects immediate publication of an unresolved scraped physical location', async () => {
     previewIngestUrl.mockResolvedValue({
       data: {

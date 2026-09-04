@@ -29,7 +29,11 @@ const {
   enrichIngestDraft,
   normalizeParsedFields,
 } = require('../utilities/pivotFieldParsingUtils');
-const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const {
+  logPivot,
+  pivotRequestContext,
+  isPivotDetailLoggingEnabled,
+} = require('../utilities/pivotLogger');
 const { resolvePivotDiscoveryConfig } = require('../utilities/pivotDiscoveryConfig');
 const {
   normalizeIngestStatus,
@@ -44,6 +48,7 @@ const {
   uniqueOrganizerIds,
 } = require('./pivotOrganizerResolveService');
 const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
+const { resolveIngestRichLocation } = require('./pivotIngestRichLocationService');
 const {
   assessJustGoLocationReview,
   justGoLocationMatchText,
@@ -227,6 +232,10 @@ function mergeDraftWithOverrides(draft = {}, overrides = {}) {
       overrides.richLocation !== undefined
         ? overrides.richLocation
         : draft.richLocation,
+    locationReview:
+      overrides.locationReview !== undefined
+        ? overrides.locationReview
+        : draft.locationReview,
     ...(rawLocationText ? { rawLocationText } : {}),
   };
 }
@@ -355,12 +364,16 @@ function buildPivotMetadata(merged, { batchWeek, sourceUrl, importedBy, tags, in
     ...(merged.locationPolicy?.reviewRequired
       ? {
           locationReview: {
+            ...(merged.locationReview || {}),
             status: 'needs_review',
-            reason: merged.locationPolicy.reviewReason,
+            reason:
+              merged.locationReview?.reason
+              || merged.locationPolicy.reviewReason
+              || 'physical_resolution_required',
             updatedAt: new Date().toISOString(),
           },
         }
-      : {}),
+      : merged.locationReview ? { locationReview: merged.locationReview } : {}),
     ingestStatus: ingestStatus || DEFAULT_INGEST_STATUS,
     importedAt: new Date().toISOString(),
     importedBy,
@@ -641,6 +654,48 @@ async function publishIngestEvent(req, options = {}) {
       ? mergeIngestIntoExisting(existingDoc, validated.merged, duplicate, listingUrl)
       : validated.merged;
 
+  // Refreshing an already-resolved row must not spend another provider call or
+  // replace an operator's earlier decision with a new automated suggestion.
+  if (!mergedForSave.richLocation && existingDoc?.richLocation) {
+    mergedForSave.richLocation = existingDoc.richLocation;
+  }
+  const existingLocationReview = existingDoc?.customFields?.pivot?.locationReview;
+  const locationWasReviewed = Boolean(existingLocationReview?.reviewedAt);
+
+  if (options.resolveRichLocation === true
+    && !mergedForSave.richLocation
+    && !locationWasReviewed) {
+    const locationResult = await resolveIngestRichLocation({
+      tenant: tenantResult.tenant,
+      location: mergedForSave.location,
+      rawLocationText: mergedForSave.rawLocationText,
+      googleAdapter: options.googleLocationAdapter,
+      beforeProviderCall: options.beforeLocationProviderCall,
+      now: options.locationNow,
+    });
+    if (locationResult.richLocation) {
+      mergedForSave.richLocation = locationResult.richLocation;
+    }
+    if (locationResult.locationReview) {
+      mergedForSave.locationReview = locationResult.locationReview;
+    }
+
+    // Emergency release remains fail-closed. Ordinary discovery and refresh
+    // runs stage unresolved matches so the operator can decide in the review UI.
+    const resolvedPolicy = assessJustGoLocationReview(mergedForSave);
+    if (ingestStatus === PIVOT_FEED_INGEST_STATUS && !resolvedPolicy.publishable) {
+      return {
+        error: 'Physical locations must resolve before publishing.',
+        status: 422,
+        code: 'RICH_LOCATION_UNRESOLVED',
+        locationPolicy: resolvedPolicy,
+      };
+    }
+    mergedForSave.locationPolicy = resolvedPolicy;
+  } else if (!mergedForSave.locationReview && existingLocationReview) {
+    mergedForSave.locationReview = existingLocationReview;
+  }
+
   // Crawl path stamps organizerIds on the draft (array, possibly empty).
   // Lab / JSON / single-URL publish resolve a batch of one when missing.
   if (!Array.isArray(mergedForSave.organizerIds)) {
@@ -691,23 +746,25 @@ async function publishIngestEvent(req, options = {}) {
       isNativeIngestFamily(duplicate?.existingSourceFamily),
   );
 
-  logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event staged', {
-    tenantKey: tenantResult.tenant.tenantKey,
-    batchWeek: resolvedBatchWeek,
-    batchWeekSource: weekResolved.source,
-    eventId: String(event._id),
-    name: event.name,
-    source: mergedInput.source,
-    ingestStatus,
-    releaseNow: Boolean(options.releaseNow),
-    timeSlotCount: validated.merged.timeSlots?.length ?? 0,
-    duplicateMatch: duplicate?.matchType || null,
-    duplicateScore: duplicate?.score || null,
-    existingSource: duplicate?.existingSource || null,
-    existingSourceFamily: duplicate?.existingSourceFamily || null,
-    overlappedNative,
-    importedBy,
-  });
+  if (isPivotDetailLoggingEnabled()) {
+    logPivot('info', updatedExisting ? 'catalog event updated' : 'catalog event staged', {
+      tenantKey: tenantResult.tenant.tenantKey,
+      batchWeek: resolvedBatchWeek,
+      batchWeekSource: weekResolved.source,
+      eventId: String(event._id),
+      name: event.name,
+      source: mergedInput.source,
+      ingestStatus,
+      releaseNow: Boolean(options.releaseNow),
+      timeSlotCount: validated.merged.timeSlots?.length ?? 0,
+      duplicateMatch: duplicate?.matchType || null,
+      duplicateScore: duplicate?.score || null,
+      existingSource: duplicate?.existingSource || null,
+      existingSourceFamily: duplicate?.existingSourceFamily || null,
+      overlappedNative,
+      importedBy,
+    });
+  }
 
   return {
     data: {
