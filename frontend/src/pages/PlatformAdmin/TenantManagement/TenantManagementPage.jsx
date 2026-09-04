@@ -11,7 +11,6 @@ import { isPivotTenant } from './tenantPivotUtils';
 import PivotReferralCodesPanel from './PivotReferralCodesPanel/PivotReferralCodesPanel';
 import PivotCrewConfigPanel from './PivotCrewConfigPanel/PivotCrewConfigPanel';
 import PivotTagCatalogPanel from './PivotTagCatalogPanel/PivotTagCatalogPanel';
-import RichLocationMigrationPanel from './RichLocationMigrationPanel/RichLocationMigrationPanel';
 import { useGradient } from '../../../hooks/useGradient';
 import './TenantManagementPage.scss';
 
@@ -377,10 +376,6 @@ function TenantDetail({
       {isPivot ? (
         <>
           <PivotTagCatalogPanel />
-          <RichLocationMigrationPanel
-            tenant={tenant}
-            onTenantUpdated={onTenantUpdated}
-          />
           <PivotCrewConfigPanel
             tenantKey={tenant.tenantKey}
             storedOverrides={tenant.pivotCrewConfig}
