@@ -13,9 +13,7 @@ const PIVOT_MOBILE_STORE_URLS = Object.freeze({
 });
 
 const JUSTGO_MOBILE_STORE_URLS = Object.freeze({
-  ios:
-    process.env.PIVOT_JUSTGO_STORE_URL_IOS?.trim() ||
-    PIVOT_MOBILE_STORE_URLS.ios,
+  ios: 'https://apps.apple.com/us/app/just-go-weekly-curated-events/id6801364892',
   android:
     process.env.PIVOT_JUSTGO_STORE_URL_ANDROID?.trim() ||
     'market://details?id=app.justgo',
@@ -171,16 +169,11 @@ function mergePivotMobileConfig(stored, options = {}) {
   const envOverrides = readEnvMobileOverrides();
   const resolved = deepMerge(merged, envOverrides);
   if (options.product === 'justgo') {
-    const ios =
-      process.env.PIVOT_JUSTGO_STORE_URL_IOS?.trim() || resolved.storeUrls?.ios;
     const android =
       process.env.PIVOT_JUSTGO_STORE_URL_ANDROID?.trim() ||
       resolved.storeUrls?.android;
     resolved.storeUrls = {
-      ios:
-        ios && !/meridian-go|id6755217537/i.test(ios)
-          ? ios
-          : JUSTGO_MOBILE_STORE_URLS.ios,
+      ios: JUSTGO_MOBILE_STORE_URLS.ios,
       android:
         android && !String(android).includes('com.meridian.mobile')
           ? android

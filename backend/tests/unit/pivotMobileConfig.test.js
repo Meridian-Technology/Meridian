@@ -72,7 +72,24 @@ describe('pivotMobileConfig', () => {
     );
 
     expect(mobile.storeUrls.ios).toBe(JUSTGO_MOBILE_STORE_URLS.ios);
+    expect(mobile.storeUrls.ios).toBe(
+      'https://apps.apple.com/us/app/just-go-weekly-curated-events/id6801364892',
+    );
     expect(mobile.storeUrls.android).toBe('market://details?id=app.justgo');
+  });
+
+  it('pins justgo iOS requests even when configuration supplies another listing', () => {
+    process.env.PIVOT_JUSTGO_STORE_URL_IOS =
+      'https://apps.apple.com/us/app/not-just-go/id1234567890';
+
+    const mobile = mergePivotMobileConfig(
+      { storeUrls: { ios: 'https://apps.apple.com/us/app/other/id9876543210' } },
+      { product: 'justgo' },
+    );
+
+    expect(mobile.storeUrls.ios).toBe(
+      'https://apps.apple.com/us/app/just-go-weekly-curated-events/id6801364892',
+    );
   });
 
   it('reads env overrides independently', () => {

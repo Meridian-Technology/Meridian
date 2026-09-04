@@ -1,4 +1,5 @@
 import justGoLandingCopy, {
+  JUSTGO_IOS_STORE_URL,
   JUSTGO_LANDING_STORY_KEYS,
   JUSTGO_PUBLIC_ORIGIN,
   formatWaitlistFriendsJoined,
@@ -11,6 +12,12 @@ import justGoLandingCopy, {
   resolveJustGoLandingCopy,
   resolveWaitlistShareUrl,
 } from './justGoLandingCopy';
+
+it('pins iOS acquisition to the standalone Just Go listing', () => {
+  expect(JUSTGO_IOS_STORE_URL).toBe(
+    'https://apps.apple.com/us/app/just-go-weekly-curated-events/id6801364892',
+  );
+});
 
 describe('resolveJustGoLandingCopy', () => {
   it('keeps bundled strings when the pack is empty', () => {
