@@ -45,6 +45,46 @@ describe('pivotEventSimilarityUtils', () => {
     expect(scored.sameDay).toBe(true);
   });
 
+  it('treats same-title same-venue times on different days in the same week as showtimes', () => {
+    const scored = scoreEventSimilarity(
+      {
+        name: 'Comedy Night',
+        location: "Gabe's",
+        start_time: '2026-08-13T03:30:00.000Z',
+      },
+      {
+        name: 'Comedy Night',
+        location: "Gabe's",
+        start_time: '2026-08-15T03:30:00.000Z',
+      },
+    );
+
+    expect(scored.match).toBe(true);
+    expect(scored.showtime).toBe(true);
+    expect(scored.sameDay).toBe(false);
+    expect(scored.sameWeek).toBe(true);
+    expect(scored.reasons).toContain('multi-day-showtimes');
+  });
+
+  it('does not automatically merge matching recurring events in different weeks', () => {
+    const scored = scoreEventSimilarity(
+      {
+        name: 'Comedy Night',
+        location: "Gabe's",
+        start_time: '2026-08-15T03:30:00.000Z',
+      },
+      {
+        name: 'Comedy Night',
+        location: "Gabe's",
+        start_time: '2026-08-22T03:30:00.000Z',
+      },
+    );
+
+    expect(scored.match).toBe(false);
+    expect(scored.showtime).toBe(false);
+    expect(scored.sameWeek).toBe(false);
+  });
+
   it('does not merge the same generic title at different venues', () => {
     const scored = scoreEventSimilarity(
       {
@@ -72,14 +112,14 @@ describe('pivotEventSimilarityUtils', () => {
     expect(scored.reasons).toContain('missing-venue');
   });
 
-  it('builds a showtime group key from title, venue, and UTC day', () => {
+  it('builds a showtime group key from title, venue, and UTC week', () => {
     expect(
       showtimeGroupKey({
         name: 'Comedy Night at Gabe\'s',
         location: "Gabe's",
         start_time: '2026-08-14T01:00:00.000Z',
       }),
-    ).toBe('comedy night|gabe s|2026-08-14');
+    ).toBe('comedy night|gabe s|2026-W33');
   });
 
   it('clamps tenant threshold overrides', () => {

@@ -3,7 +3,7 @@
  *
  * Exact sourceUrl / title+minute+location fingerprints stay in
  * `pivotIngestDuplicateService`. This module only scores near-misses:
- * same-night showtimes and cross-platform copies with slightly different
+ * same-week showtimes and cross-platform copies with slightly different
  * titles or venue strings.
  *
  * No geocoding. Venue match is normalized name similarity; if both sides
@@ -191,6 +191,15 @@ function utcDayKey(date) {
   return date.toISOString().slice(0, 10);
 }
 
+function utcIsoWeekKey(date) {
+  if (!date) return null;
+  const weekDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  weekDate.setUTCDate(weekDate.getUTCDate() + 4 - (weekDate.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(weekDate.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((weekDate.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  return `${weekDate.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
 function descriptionOverlap(left, right) {
   const a = normalizeComparableText(left);
   const b = normalizeComparableText(right);
@@ -215,6 +224,7 @@ function citiesAgree(leftCity, rightCity) {
  *   time: number,
  *   hoursApart: number,
  *   sameDay: boolean,
+ *   sameWeek: boolean,
  *   reasons: string[],
  * }}
  */
@@ -227,6 +237,9 @@ function scoreEventSimilarity(left, right, rawThresholds) {
   const leftStart = parseStart(left?.start_time || left?.startTimestamp);
   const rightStart = parseStart(right?.start_time || right?.startTimestamp);
   const sameDay = Boolean(leftStart && rightStart && utcDayKey(leftStart) === utcDayKey(rightStart));
+  const sameWeek = Boolean(
+    leftStart && rightStart && utcIsoWeekKey(leftStart) === utcIsoWeekKey(rightStart),
+  );
   const hoursApart =
     leftStart && rightStart ? Math.abs(leftStart.getTime() - rightStart.getTime()) / 3_600_000 : Infinity;
   const minutesApart = Number.isFinite(hoursApart) ? hoursApart * 60 : Infinity;
@@ -253,6 +266,7 @@ function scoreEventSimilarity(left, right, rawThresholds) {
       time,
       hoursApart,
       sameDay,
+      sameWeek,
       reasons: ['missing-venue'],
     };
   }
@@ -267,13 +281,20 @@ function scoreEventSimilarity(left, right, rawThresholds) {
       time,
       hoursApart,
       sameDay,
+      sameWeek,
       reasons: ['city-mismatch'],
     };
   }
 
-  const timeOk = thresholds.sameDayRequired
+  const showtime =
+    sameWeek &&
+    minutesApart >= thresholds.showtimeMinMinutes &&
+    title >= thresholds.showtimeTitleMin &&
+    venue >= thresholds.showtimeVenueMin;
+
+  const timeOk = showtime || (thresholds.sameDayRequired
     ? sameDay
-    : sameDay || hoursApart <= thresholds.timeWindowHours;
+    : sameDay || hoursApart <= thresholds.timeWindowHours);
   if (!timeOk) {
     return {
       match: false,
@@ -284,22 +305,17 @@ function scoreEventSimilarity(left, right, rawThresholds) {
       time,
       hoursApart,
       sameDay,
+      sameWeek,
       reasons: ['time-mismatch'],
     };
   }
-
-  const showtime =
-    sameDay &&
-    minutesApart >= thresholds.showtimeMinMinutes &&
-    title >= thresholds.showtimeTitleMin &&
-    venue >= thresholds.showtimeVenueMin;
 
   const similar =
     title >= thresholds.titleMin &&
     venue >= thresholds.venueMin &&
     combined >= thresholds.combinedMin;
 
-  if (showtime) reasons.push('same-day-showtimes');
+  if (showtime) reasons.push(sameDay ? 'same-day-showtimes' : 'multi-day-showtimes');
   if (similar) reasons.push('title-venue-time');
   if (desc >= 0.6) reasons.push('description-overlap');
 
@@ -312,6 +328,7 @@ function scoreEventSimilarity(left, right, rawThresholds) {
     time: Math.round(time * 1000) / 1000,
     hoursApart: Number.isFinite(hoursApart) ? Math.round(hoursApart * 100) / 100 : null,
     sameDay,
+    sameWeek,
     reasons,
   };
 }
@@ -320,9 +337,9 @@ function showtimeGroupKey(candidate) {
   const title = stripVenueFromTitle(candidate?.name, candidate?.location);
   const venue = normalizeVenueName(candidate?.location);
   const start = parseStart(candidate?.start_time);
-  const day = utcDayKey(start);
-  if (!title || !venue || !day) return null;
-  return `${title}|${venue}|${day}`;
+  const week = utcIsoWeekKey(start);
+  if (!title || !venue || !week) return null;
+  return `${title}|${venue}|${week}`;
 }
 
 module.exports = {
@@ -340,4 +357,5 @@ module.exports = {
   showtimeGroupKey,
   parseStart,
   utcDayKey,
+  utcIsoWeekKey,
 };
