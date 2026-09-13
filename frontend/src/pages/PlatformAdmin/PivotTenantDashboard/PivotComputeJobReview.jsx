@@ -100,13 +100,13 @@ function PreviewRowsTable({ rows }) {
           {rows.map((row) => (
             <tr
               key={`${row.entityType}:${row.key}:${row.action}`}
-              className={row.applyBlocked ? 'pivot-compute-review__row--blocked' : undefined}
+              className={row.missingFields?.length ? 'pivot-compute-review__row--blocked' : undefined}
             >
               <td>{formatPreviewEntityType(row.entityType)}</td>
               <td>
                 <PreviewActionPill action={row.action} />
-                {row.applyBlocked ? (
-                  <span className="pivot-lab__pill pivot-lab__pill--warn">Skipped</span>
+                {row.missingFields?.length ? (
+                  <span className="pivot-lab__pill pivot-lab__pill--warn">May skip</span>
                 ) : null}
               </td>
               <td className="pivot-compute-jobs__mono">{row.key}</td>
