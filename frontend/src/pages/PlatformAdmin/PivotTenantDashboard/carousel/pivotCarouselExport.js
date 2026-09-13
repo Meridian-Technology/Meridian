@@ -44,15 +44,33 @@ export function deckRevisionIso(deck) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+export function normalizeCarouselSlideNumbers(slideNumbers, slideCount) {
+  if (!Array.isArray(slideNumbers) || !slideNumbers.length) return null;
+  const numbers = [...new Set(slideNumbers.map((entry) => Number(entry)))].sort((left, right) => left - right);
+  if (numbers.some((slide) => !Number.isInteger(slide) || slide < 1 || (slideCount != null && slide > slideCount))) {
+    return null;
+  }
+  return numbers;
+}
+
 export function buildCarouselExportJobRequest({
   tenantKey,
   deckId,
   deckRevision,
   idempotencyKey,
+  slideNumbers,
+  slideCount,
   now = Date.now(),
 }) {
   const cityKey = String(tenantKey || '').trim().toLowerCase();
   const stamp = Number(now);
+  const selected = normalizeCarouselSlideNumbers(slideNumbers, slideCount);
+  const fullDeck = Boolean(
+    selected
+    && Number.isInteger(slideCount)
+    && selected.length === slideCount
+    && selected.every((slide, index) => slide === index + 1),
+  );
   return {
     contractVersion: '1',
     jobId: `job:carousel-${cityKey}-${stamp}`,
@@ -66,6 +84,7 @@ export function buildCarouselExportJobRequest({
     options: {
       deckId: String(deckId),
       deckRevision: String(deckRevision),
+      ...(selected && !fullDeck ? { slideNumbers: selected } : {}),
     },
   };
 }
@@ -158,8 +177,9 @@ export function formatExportProgress(job, uiState) {
     return `Rendering slide ${current} of ${counters.slideCount}`;
   }
   if (uiState === 'uploading' && Number.isFinite(counters.uploaded)) {
+    const zipSlot = Number.isFinite(counters.artifactCount) && counters.artifactCount > 1 ? 1 : 0;
     const pngCount = Number.isFinite(counters.artifactCount)
-      ? Math.min(counters.uploaded, Math.max(counters.artifactCount - 1, 0))
+      ? Math.min(counters.uploaded, Math.max(counters.artifactCount - zipSlot, 0))
       : counters.uploaded;
     return `${pngCount} PNGs uploaded`;
   }

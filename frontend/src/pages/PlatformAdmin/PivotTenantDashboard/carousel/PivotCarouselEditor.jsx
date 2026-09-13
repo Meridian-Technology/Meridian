@@ -18,6 +18,7 @@ import PivotCarouselVoicePanel from './PivotCarouselVoicePanel';
 import PivotCarouselEventPicker from './PivotCarouselEventPicker';
 import PivotCarouselAddSlide from './PivotCarouselAddSlide';
 import PivotCarouselExportPanel from './PivotCarouselExportPanel';
+import PivotCarouselExportPicker from './PivotCarouselExportPicker';
 
 /** Fixed types cannot be added, removed or moved — they open and close the deck. */
 function isFixed(manifest, type) {
@@ -138,6 +139,7 @@ export default function PivotCarouselEditor({
   const [editing, setEditing] = useState(false);
   const [pickingSlot, setPickingSlot] = useState(null);
   const [eventsOpen, setEventsOpen] = useState(false);
+  const [exportPicking, setExportPicking] = useState(false);
   const lastStageTap = useRef(0);
 
   const toggleEditingFromSlide = useCallback((event) => {
@@ -157,9 +159,13 @@ export default function PivotCarouselEditor({
   }, []);
 
   useEffect(() => {
-    if (!focused && !eventsOpen) return undefined;
+    if (!focused && !eventsOpen && !exportPicking) return undefined;
     const onKey = (event) => {
       if (event.key !== 'Escape') return;
+      if (exportPicking) {
+        setExportPicking(false);
+        return;
+      }
       if (eventsOpen) {
         setEventsOpen(false);
         return;
@@ -168,7 +174,7 @@ export default function PivotCarouselEditor({
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [focused, eventsOpen, onToggleFocus]);
+  }, [focused, eventsOpen, exportPicking, onToggleFocus]);
 
   const index = Math.min(selected, Math.max(deck.slides.length - 1, 0));
   const slide = deck.slides[index];
@@ -333,17 +339,43 @@ export default function PivotCarouselEditor({
   const slots = slide.events || [];
   const acceptsUpload = String(spec.photo || '').includes('upload');
 
+  const requestExport = () => {
+    if (dirty || exportState?.creating) return;
+    const count = deck.slides.length;
+    if (count <= 1) {
+      exportState?.startExport(count === 1 ? [1] : undefined);
+      return;
+    }
+    setExportPicking(true);
+  };
+
+  const confirmExport = (slideNumbers) => {
+    setExportPicking(false);
+    exportState?.startExport(slideNumbers);
+  };
+
   const exportButton = exportState?.uiEnabled !== false ? (
     <button
       type="button"
       className="jgz__action"
-      onClick={exportState?.startExport}
+      onClick={requestExport}
       disabled={dirty || exportState?.creating}
       title={dirty ? 'Save first — the export renders what is stored' : undefined}
     >
       {exportState?.creating ? 'exporting…' : 'export'}
     </button>
   ) : null;
+
+  const saveButton = (
+    <button
+      type="button"
+      className="jgz__action"
+      onClick={onSave}
+      disabled={!dirty || saving}
+    >
+      {saving ? 'saving…' : 'save deck'}
+    </button>
+  );
 
   const voiceButton = (
     <button
@@ -386,17 +418,7 @@ export default function PivotCarouselEditor({
           <span className={`jgz-flag${dirty ? '' : ' jgz-flag--saved'}`}>
             {dirty ? 'unsaved changes' : 'saved'}
           </span>
-          <button
-            type="button"
-            className="jgz__action"
-            onClick={onSave}
-            disabled={!dirty || saving}
-          >
-            {saving ? 'saving…' : 'save deck'}
-          </button>
-          <span className="jgz-editor__secondary">
-            {exportButton}
-          </span>
+          {dirty || saving ? saveButton : exportButton}
         </div>
       </div>
 
@@ -634,6 +656,16 @@ export default function PivotCarouselEditor({
         onRetry={exportState?.retryExport}
         onDownload={exportState?.downloadArtifact}
         busy={exportState?.busy}
+        showStrip={!focused}
+      />
+
+      <PivotCarouselExportPicker
+        open={exportPicking}
+        slides={deck.slides}
+        manifest={manifest}
+        currentIndex={index}
+        onClose={() => setExportPicking(false)}
+        onConfirm={confirmExport}
       />
 
       <PivotCarouselAddSlide

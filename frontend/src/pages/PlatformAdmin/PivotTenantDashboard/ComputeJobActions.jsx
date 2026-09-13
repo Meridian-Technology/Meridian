@@ -507,17 +507,23 @@ function StoredApplyResult({ result, onClose }) {
   const applied = creates + updates;
   const completed = result?.outcome === 'completed';
   const partial = result?.outcome === 'partial';
-  const title = completed
-    ? 'Apply completed'
-    : (partial ? 'Apply partially completed' : 'Nothing was applied');
+  const skipped = Number(summary.skipped) || 0;
+  const skippedOnly = (completed || partial) && skipped > 0 && !result?.failedRow;
+  const title = skippedOnly
+    ? 'Apply completed with skipped rows'
+    : completed
+      ? 'Apply completed'
+      : (partial ? 'Apply partially completed' : 'Nothing was applied');
   const status = result?.job?.status || (completed ? 'completed' : 'review-required');
   const issues = Array.isArray(result?.validationIssues) ? result.validationIssues : [];
+  const skippedRows = Array.isArray(result?.skippedRows) ? result.skippedRows : [];
+  const displayIssues = issues.length ? issues : skippedRows;
 
   return (
     <footer
-      className={`pivot-compute-review__apply-panel pivot-compute-review__apply-result is-${completed ? 'success' : 'error'}`}
+      className={`pivot-compute-review__apply-panel pivot-compute-review__apply-result is-${(completed || skippedOnly) ? 'success' : 'error'}`}
       data-testid="compute-apply-result"
-      role={completed ? 'status' : 'alert'}
+      role={(completed || skippedOnly) ? 'status' : 'alert'}
     >
       <div className="pivot-compute-review__apply-result-head">
         <div>
@@ -527,18 +533,20 @@ function StoredApplyResult({ result, onClose }) {
         <span className="pivot-lab__pill">{status.replace(/-/g, ' ')}</span>
       </div>
       <p>
-        {completed
-          ? `${creates} records created and ${updates} updated. This job no longer requires approval.`
-          : partial
-            ? `${applied} production changes succeeded before the failure (${creates} created, ${updates} updated). The job returned to Review required.`
-            : 'Preflight stopped the apply before any production writes. The job remains Review required.'}
+        {skippedOnly
+          ? `${creates} records created and ${updates} updated. ${skipped} row${skipped === 1 ? '' : 's'} skipped due to missing required fields.${completed ? ' This job no longer requires approval.' : ' The job returned to Review required for the skipped rows.'}`
+          : completed
+            ? `${creates} records created and ${updates} updated. This job no longer requires approval.`
+            : partial
+              ? `${applied} production changes succeeded before the failure (${creates} created, ${updates} updated). The job returned to Review required.`
+              : 'Preflight stopped the apply before any production writes. The job remains Review required.'}
       </p>
       {!completed && result?.message ? (
         <p className="pivot-compute-review__result-error"><strong>{result.code}</strong> · {result.message}</p>
       ) : null}
-      {issues.length ? (
+      {displayIssues.length ? (
         <ul className="pivot-compute-review__result-issues">
-          {issues.slice(0, 10).map((issue) => (
+          {displayIssues.slice(0, 10).map((issue) => (
             <li key={issue.key}>
               <strong>{issue.title}</strong>
               <span>Missing {issue.missingFields?.join(', ') || 'required metadata'}</span>
@@ -546,7 +554,7 @@ function StoredApplyResult({ result, onClose }) {
           ))}
         </ul>
       ) : null}
-      {!completed && result?.failedRow && !issues.length ? (
+      {!completed && result?.failedRow && !displayIssues.length ? (
         <p className="pivot-compute-review__apply-note">
           Failed at {result.failedRow.entityType || 'record'} <span className="pivot-compute-jobs__mono">{result.failedRow.key}</span>.
         </p>
@@ -696,9 +704,10 @@ export function ComputeJobDetailActions({
     ));
     if (result?.ok) {
       setApplyResult({
-        outcome: 'completed',
+        outcome: result.data?.outcome || 'completed',
         job: result.data?.job || null,
         summary: result.data?.summary || {},
+        skippedRows: result.data?.skippedRows || [],
       });
       setApplyConfirmed(false);
     } else {

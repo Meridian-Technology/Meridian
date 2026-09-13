@@ -94,6 +94,29 @@ describe('PivotCarouselExportPanel', () => {
     expect(onDownload).toHaveBeenCalledWith(expect.objectContaining({ artifactId: 'artifact:slide-01' }));
   });
 
+  it('offers a PNG download when the export is a single slide', () => {
+    const onDownload = jest.fn();
+    const job = completedJob();
+    job.exportArtifacts.artifacts = [job.exportArtifacts.artifacts[0]];
+    render(
+      <PivotCarouselExportPanel
+        open
+        uiState="completed"
+        progressLabel="Completed"
+        job={job}
+        onClose={() => {}}
+        onOpen={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+        onDownload={onDownload}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /Download ZIP/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Download PNG/i }));
+    expect(onDownload).toHaveBeenCalledWith(expect.objectContaining({ artifactId: 'artifact:slide-01' }));
+  });
+
   it('keeps a completed export on the page after the popup closes', () => {
     render(
       <PivotCarouselExportPanel
@@ -112,6 +135,26 @@ describe('PivotCarouselExportPanel', () => {
     expect(screen.queryByTestId('carousel-export-panel')).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Completed');
     expect(screen.getByRole('button', { name: /Download ZIP/i })).toBeInTheDocument();
+  });
+
+  it('hides the completed strip when asked', () => {
+    render(
+      <PivotCarouselExportPanel
+        open={false}
+        showStrip={false}
+        uiState="completed"
+        progressLabel="Completed"
+        job={completedJob()}
+        onClose={() => {}}
+        onOpen={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+        onDownload={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Download ZIP/i })).not.toBeInTheDocument();
   });
 
   it('names a finalization failure and offers retry', () => {

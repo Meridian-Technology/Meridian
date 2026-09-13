@@ -210,14 +210,8 @@ export default function PivotCarouselEventPicker({
                   )}
                 </span>
                 <span className="jgz-picker__row">
-                  {row.host ? (
-                    <>
-                      <b className="jgz-picker__host">{row.host}</b>
-                      <span className="jgz-picker__name">{row.name}</span>
-                    </>
-                  ) : (
-                    <b className="jgz-picker__host">{row.name}</b>
-                  )}
+                  <b className="jgz-picker__name">{row.name}</b>
+                  {row.host ? <span className="jgz-picker__host">{row.host}</span> : null}
                 </span>
               </button>
             </li>

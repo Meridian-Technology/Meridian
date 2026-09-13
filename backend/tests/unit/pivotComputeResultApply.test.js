@@ -381,14 +381,13 @@ describe('pivotComputeResultApplyService', () => {
       })).rejects.toMatchObject({ code: 'CAROUSEL_APPLY_UNSUPPORTED', status: 409 });
     });
 
-    it('blocks missing required event metadata before any production writes', async () => {
-      const result = loadFixture('result-discovery-valid-completed.json');
+    it('blocks apply when no rows remain applyable after missing-field annotation', async () => {
+      const result = loadFixture('result-refresh-valid-completed.json');
       result.proposals.events[0].draft.hostName = null;
       result.proposals.events[0].draft.location = null;
       const preview = await previewComputeResult(req, result, {
         currentContextVersion: result.basedOnContextVersion,
       });
-      const persistCallsBefore = persistOutcome.mock.calls.length;
       const publishCallsBefore = publishIngestEvent.mock.calls.length;
 
       expect(preview.applyAllowed).toBe(false);
@@ -398,6 +397,10 @@ describe('pivotComputeResultApplyService', () => {
           message: expect.stringContaining('hostName, location'),
         }),
       ]));
+      expect(preview.rows.find((row) => row.entityType === 'event')).toMatchObject({
+        applyBlocked: true,
+        missingFields: expect.arrayContaining(['hostName', 'location']),
+      });
 
       await expect(applyComputeResult(req, {
         result,
@@ -405,8 +408,79 @@ describe('pivotComputeResultApplyService', () => {
         idempotencyKey: 'apply:missing-fields',
         actor: 'admin@example.com',
       })).rejects.toMatchObject({ code: 'PREVIEW_APPLY_BLOCKED' });
-      expect(persistOutcome.mock.calls).toHaveLength(persistCallsBefore);
       expect(publishIngestEvent.mock.calls).toHaveLength(publishCallsBefore);
+    });
+
+    it('still allows apply for source and curation job rows when only events are invalid', async () => {
+      const result = loadFixture('result-discovery-valid-completed.json');
+      result.proposals.events[0].draft.hostName = null;
+      result.proposals.events[0].draft.location = null;
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+
+      expect(preview.applyAllowed).toBe(true);
+      expect(preview.applyWarnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'MISSING_REQUIRED_EVENT_FIELDS' }),
+      ]));
+
+      const applied = await applyComputeResult(req, {
+        result,
+        preview,
+        idempotencyKey: 'apply:discovery-invalid-event-only',
+        actor: 'admin@example.com',
+      });
+
+      expect(applied.summary.skipped).toBe(1);
+      expect(persistOutcome).toHaveBeenCalled();
+      expect(createCurationJob).toHaveBeenCalled();
+      expect(publishIngestEvent).not.toHaveBeenCalled();
+    });
+
+    it('applies valid event rows while skipping rows missing required metadata', async () => {
+      const result = loadFixture('result-discovery-valid-completed.json');
+      const invalidEvent = {
+        ...result.proposals.events[0],
+        sourceUrl: 'https://example-theatre.org/events/show-2',
+        draft: {
+          ...result.proposals.events[0].draft,
+          name: 'Incomplete Night',
+          sourceUrl: 'https://example-theatre.org/events/show-2',
+          hostName: null,
+          location: null,
+        },
+      };
+      result.proposals.events.push(invalidEvent);
+
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+
+      expect(preview.applyAllowed).toBe(true);
+      expect(preview.applyWarnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'MISSING_REQUIRED_EVENT_FIELDS',
+          message: expect.stringContaining('will be skipped'),
+        }),
+      ]));
+      expect(preview.summary.skipped).toBe(1);
+
+      const applied = await applyComputeResult(req, {
+        result,
+        preview,
+        idempotencyKey: 'apply:partial-missing-fields',
+        actor: 'admin@example.com',
+      });
+
+      expect(applied.summary.skipped).toBe(1);
+      expect(applied.summary.creates).toBeGreaterThan(0);
+      expect(publishIngestEvent).toHaveBeenCalled();
+      expect(applied.skippedRows).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          key: 'sourceUrl:https://example-theatre.org/events/show-2',
+          missingFields: expect.arrayContaining(['hostName', 'location']),
+        }),
+      ]));
     });
 
     it('applies create rows through existing source, job, and event seams without replaying discovery', async () => {

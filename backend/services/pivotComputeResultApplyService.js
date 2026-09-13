@@ -63,9 +63,25 @@ function comparablePreview(preview) {
     basedOnContextVersion: preview?.basedOnContextVersion,
     applyAllowed: preview?.applyAllowed,
     blockingReasons: preview?.blockingReasons,
+    applyWarnings: preview?.applyWarnings,
     rows: preview?.rows,
     summary: preview?.summary,
   });
+}
+
+function isApplyablePreviewRow(row) {
+  return Boolean(row)
+    && (row.action === 'create' || row.action === 'update')
+    && !row.applyBlocked;
+}
+
+function refreshPreviewApplyAllowed(preview) {
+  if ((preview.blockingReasons || []).length > 0) {
+    preview.applyAllowed = false;
+    return preview;
+  }
+  preview.applyAllowed = preview.rows.some(isApplyablePreviewRow);
+  return preview;
 }
 
 function sourceRowKey(host) {
@@ -329,7 +345,7 @@ function buildApplyPlan(result, identities, preview, now = new Date()) {
 
   for (const proposal of result.proposals?.events || []) {
     const row = rowByKey.get(eventRowKey(proposal.sourceUrl));
-    if (row?.action !== 'create' && row?.action !== 'update') continue;
+    if (!isApplyablePreviewRow(row)) continue;
 
     const currentDoc = identities.eventDocBySourceUrl.get(proposal.sourceUrl) || null;
     const currentStatus = trimString(currentDoc?.customFields?.pivot?.ingestStatus);
@@ -358,7 +374,7 @@ function buildApplyPlan(result, identities, preview, now = new Date()) {
   }
 
   const entityRows = (entityType) => preview.rows.filter((row) =>
-    row.entityType === entityType && (row.action === 'create' || row.action === 'update'));
+    row.entityType === entityType && isApplyablePreviewRow(row));
   const summarizeEntityRows = (entityType) => {
     const rows = entityRows(entityType);
     return {
@@ -394,12 +410,11 @@ function buildComputeReview(result, identities, preview, now = new Date()) {
     publishedEventUpdates: 0,
     stagedEventUpdates: 0,
     unchangedEvents: 0,
-    sourceMutations: preview.rows.filter((row) => row.entityType === 'source'
-      && (row.action === 'create' || row.action === 'update')).length,
+    sourceMutations: preview.rows.filter((row) => row.entityType === 'source' && isApplyablePreviewRow(row)).length,
     curationJobMutations: result.kind === 'city-source-discovery'
-      ? preview.rows.filter((row) => row.entityType === 'curationJob'
-        && (row.action === 'create' || row.action === 'update')).length
+      ? preview.rows.filter((row) => row.entityType === 'curationJob' && isApplyablePreviewRow(row)).length
       : 0,
+    skippedEvents: preview.summary?.skipped || 0,
   };
 
   for (const proposal of result.proposals?.events || []) {
@@ -423,7 +438,9 @@ function buildComputeReview(result, identities, preview, now = new Date()) {
       attention: 0,
       samples: [],
     };
-    if (row?.action === 'create') {
+    if (row?.applyBlocked) {
+      // Counted in impact.skippedEvents; excluded from apply plan.
+    } else if (row?.action === 'create') {
       impact.eventCreates += 1;
       group.creates += 1;
     } else if (row?.action === 'update') {
@@ -934,22 +951,42 @@ function buildPreviewEnvelope(result, currentContextVersion, rows, now = new Dat
   return preview;
 }
 
-function blockPreviewForMissingEventFields(result, preview) {
+function annotatePreviewMissingEventFields(result, preview) {
   const rowByKey = new Map(preview.rows.map((row) => [row.key, row]));
-  const invalid = (result.proposals?.events || []).filter((proposal) => {
-    const action = rowByKey.get(eventRowKey(proposal.sourceUrl))?.action;
-    return (action === 'create' || action === 'update')
-      && requiredEventFieldsMissing(proposal).length > 0;
-  });
+  const invalid = [];
+  for (const proposal of result.proposals?.events || []) {
+    const row = rowByKey.get(eventRowKey(proposal.sourceUrl));
+    if (row?.action !== 'create' && row?.action !== 'update') continue;
+    const missingFields = requiredEventFieldsMissing(proposal);
+    if (!missingFields.length) continue;
+    row.applyBlocked = true;
+    row.missingFields = missingFields;
+    if (!trimString(row.message)) {
+      row.message = `Missing required fields: ${missingFields.join(', ')}.`;
+    }
+    invalid.push({ proposal, missingFields });
+  }
   if (!invalid.length) return preview;
 
-  const fields = sortedStrings(invalid.flatMap((proposal) => requiredEventFieldsMissing(proposal)));
-  preview.applyAllowed = false;
-  preview.blockingReasons.push({
+  const fields = sortedStrings(invalid.flatMap((item) => item.missingFields));
+  const applyableCount = preview.rows.filter(isApplyablePreviewRow).length;
+  preview.summary.skipped = invalid.length;
+
+  if (applyableCount === 0) {
+    preview.blockingReasons.push({
+      code: 'MISSING_REQUIRED_EVENT_FIELDS',
+      message: `${invalid.length} event proposal${invalid.length === 1 ? '' : 's'} must be fixed before apply. Missing: ${fields.join(', ')}.`,
+    });
+    return refreshPreviewApplyAllowed(preview);
+  }
+
+  preview.applyWarnings = preview.applyWarnings || [];
+  preview.applyWarnings.push({
     code: 'MISSING_REQUIRED_EVENT_FIELDS',
-    message: `${invalid.length} event proposal${invalid.length === 1 ? '' : 's'} must be fixed before apply. Missing: ${fields.join(', ')}.`,
+    message: `${invalid.length} event proposal${invalid.length === 1 ? '' : 's'} will be skipped during apply. Missing: ${fields.join(', ')}. ${applyableCount} row${applyableCount === 1 ? '' : 's'} can still be applied.`,
+    skippedCount: invalid.length,
   });
-  return preview;
+  return refreshPreviewApplyAllowed(preview);
 }
 
 async function previewComputeResult(req, resultInput, {
@@ -967,7 +1004,7 @@ async function previewComputeResult(req, resultInput, {
   const rows = result.kind === 'city-curation-refresh'
     ? previewRefreshProposals(result, identities)
     : previewDiscoveryProposals(result, identities);
-  return blockPreviewForMissingEventFields(
+  return annotatePreviewMissingEventFields(
     result,
     buildPreviewEnvelope(result, contextVersion, rows, now),
   );
@@ -988,7 +1025,7 @@ async function previewComputeResultWithReview(req, resultInput, {
   const rows = result.kind === 'city-curation-refresh'
     ? previewRefreshProposals(result, identities)
     : previewDiscoveryProposals(result, identities);
-  const preview = blockPreviewForMissingEventFields(
+  const preview = annotatePreviewMissingEventFields(
     result,
     buildPreviewEnvelope(result, contextVersion, rows, now),
   );
@@ -1098,7 +1135,22 @@ async function applyComputeResult(req, {
   }
 
   const identities = await loadProductionIdentities(req, result);
-  const applicable = freshPreview.rows.filter((row) => row.action === 'create' || row.action === 'update');
+  const applicable = freshPreview.rows.filter(isApplyablePreviewRow);
+  const skippedRows = freshPreview.rows
+    .filter((row) => row.applyBlocked)
+    .map((row) => {
+      const proposal = row.entityType === 'event'
+        ? (result.proposals.events || []).find((item) => eventRowKey(item.sourceUrl) === row.key)
+        : null;
+      return {
+        entityType: row.entityType,
+        key: row.key,
+        title: trimString(proposal?.draft?.name) || proposal?.sourceUrl || row.key,
+        sourceUrl: proposal?.sourceUrl || null,
+        missingFields: row.missingFields || requiredEventFieldsMissing(proposal),
+      };
+    })
+    .filter((row) => row.missingFields?.length);
   const summary = {
     creates: 0,
     updates: 0,
@@ -1106,35 +1158,8 @@ async function applyComputeResult(req, {
     conflicts: 0,
     stale: 0,
     rejected: freshPreview.summary.rejected,
+    skipped: skippedRows.length,
   };
-
-  const validationIssues = applicable
-    .filter((row) => row.entityType === 'event')
-    .map((row) => {
-      const proposal = (result.proposals.events || [])
-        .find((item) => eventRowKey(item.sourceUrl) === row.key);
-      const missingFields = requiredEventFieldsMissing(proposal);
-      return missingFields.length ? {
-        entityType: 'event',
-        key: row.key,
-        title: trimString(proposal?.draft?.name) || proposal?.sourceUrl || row.key,
-        sourceUrl: proposal?.sourceUrl || null,
-        missingFields,
-      } : null;
-    })
-    .filter(Boolean);
-  if (validationIssues.length) {
-    const fields = sortedStrings(validationIssues.flatMap((issue) => issue.missingFields));
-    const error = serviceError(
-      `${validationIssues.length} event proposal${validationIssues.length === 1 ? '' : 's'} cannot be applied. Missing required fields: ${fields.join(', ')}.`,
-      'COMPUTE_APPLY_VALIDATION_FAILED',
-      422,
-    );
-    error.validationIssues = validationIssues.slice(0, 100);
-    error.failedRow = validationIssues[0];
-    error.partialSummary = summary;
-    throw error;
-  }
 
   let activeRow = null;
   try {
@@ -1157,6 +1182,7 @@ async function applyComputeResult(req, {
       if (row.entityType === 'event') {
         const proposal = (result.proposals.events || []).find((item) => eventRowKey(item.sourceUrl) === row.key);
         if (!proposal) continue;
+        if (requiredEventFieldsMissing(proposal).length) continue;
         await applyEventRow(req, result, proposal);
         summary[row.action === 'create' ? 'creates' : 'updates'] += 1;
       }
@@ -1171,7 +1197,11 @@ async function applyComputeResult(req, {
     throw error;
   }
 
-  return { summary, preview: freshPreview };
+  return {
+    summary,
+    preview: freshPreview,
+    skippedRows: skippedRows.slice(0, 100),
+  };
 }
 
 async function previewStoredComputeJob(req, externalJobId, options = {}) {
@@ -1245,15 +1275,23 @@ async function applyStoredComputeJob(req, externalJobId, {
       actor,
       now,
     });
+    const skippedCount = Number(applied.summary?.skipped) || 0;
+    const outcome = skippedCount > 0 ? 'partial' : 'completed';
     const completed = await completeComputeJobApply(req, {
       externalJobId,
       actor,
       idempotencyKey,
       summary: applied.summary,
-      outcome: 'completed',
+      outcome,
       now,
     });
-    return { job: completed, duplicate: false, summary: applied.summary };
+    return {
+      job: completed,
+      duplicate: false,
+      summary: applied.summary,
+      outcome,
+      skippedRows: applied.skippedRows || [],
+    };
   } catch (error) {
     const partialSummary = error.partialSummary || {
       creates: 0,

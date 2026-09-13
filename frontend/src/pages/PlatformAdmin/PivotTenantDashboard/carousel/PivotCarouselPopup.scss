@@ -167,7 +167,7 @@
   padding-top: 0.15rem;
 }
 
-.jgz-picker__host {
+.jgz-picker__name {
   display: block;
   font-size: 1.08rem;
   font-weight: 700;
@@ -175,10 +175,10 @@
   overflow-wrap: anywhere;
 }
 
-.jgz-picker__name {
+.jgz-picker__host {
   display: block;
   margin-top: 0.28rem;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   line-height: 1.35;
   color: rgba(26, 23, 20, 0.62);
   overflow-wrap: anywhere;
@@ -409,3 +409,90 @@
     &:disabled { opacity: 0.55; cursor: wait; }
   }
 }
+
+.jgz-export-pick {
+  width: min(26rem, 88vw);
+  color: #1a1714;
+  font-family: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+}
+
+.jgz-export-pick__head {
+  margin-bottom: 0.9rem;
+
+  h2 { margin: 0; font-size: 1.05rem; }
+  p {
+    margin: 0.25rem 0 0;
+    font-size: 0.74rem;
+    color: rgba(26, 23, 20, 0.62);
+  }
+}
+
+.jgz-export-pick__shortcuts {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+
+  button {
+    appearance: none;
+    font: inherit;
+    cursor: pointer;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid rgba(26, 23, 20, 0.3);
+    background: transparent;
+    font-size: 0.68rem;
+
+    &:hover { border-color: #1a1714; }
+  }
+}
+
+.jgz-export-pick__list {
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid rgba(26, 23, 20, 0.12);
+
+  li { border-bottom: 1px solid rgba(26, 23, 20, 0.12); }
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0;
+    cursor: pointer;
+  }
+
+  input { margin: 0; }
+
+  span {
+    display: flex;
+    gap: 0.55rem;
+    font-size: 0.78rem;
+  }
+
+  b { font-variant-numeric: tabular-nums; }
+}
+
+.jgz-export-pick__ops {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+
+  button {
+    appearance: none;
+    font: inherit;
+    cursor: pointer;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid rgba(26, 23, 20, 0.3);
+    background: transparent;
+    font-size: 0.72rem;
+  }
+}
+
+.jgz-export-pick__go {
+  border-color: #1a1714 !important;
+  background: #1a1714 !important;
+  color: #faf6ef;
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+

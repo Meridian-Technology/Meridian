@@ -13,6 +13,7 @@ import {
   formatPreviewSummary,
   MAX_UPLOAD_BYTES,
   previewAllowsApply,
+  previewApplyWarnings,
   previewBlockingMessage,
   validateParsedResult,
   validateUploadedResultText,
@@ -97,13 +98,31 @@ function PreviewRowsTable({ rows }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={`${row.entityType}:${row.key}:${row.action}`}>
+            <tr
+              key={`${row.entityType}:${row.key}:${row.action}`}
+              className={row.applyBlocked ? 'pivot-compute-review__row--blocked' : undefined}
+            >
               <td>{formatPreviewEntityType(row.entityType)}</td>
-              <td><PreviewActionPill action={row.action} /></td>
+              <td>
+                <PreviewActionPill action={row.action} />
+                {row.applyBlocked ? (
+                  <span className="pivot-lab__pill pivot-lab__pill--warn">Skipped</span>
+                ) : null}
+              </td>
               <td className="pivot-compute-jobs__mono">{row.key}</td>
               <td className="pivot-compute-jobs__mono">{row.basedOnRecordVersion || '—'}</td>
               <td className="pivot-compute-jobs__mono">{row.currentRecordVersion || '—'}</td>
-              <td>{row.message || '—'}</td>
+              <td>
+                {row.message || '—'}
+                {row.missingFields?.length ? (
+                  <span className="pivot-compute-review__missing-fields">
+                    {' '}
+                    Missing:
+                    {' '}
+                    {row.missingFields.join(', ')}
+                  </span>
+                ) : null}
+              </td>
               <td>{formatEvidence(row.evidence)}</td>
             </tr>
           ))}
@@ -138,7 +157,8 @@ function ExceptionDrivenReview({ review }) {
           ['Staged/draft events affected', impact.stagedEventUpdates ?? 0],
           ['Source changes', impact.sourceMutations ?? 0],
           ['Curation job changes', impact.curationJobMutations ?? 0],
-        ]}
+          ['Skipped (missing fields)', impact.skippedEvents ?? 0],
+        ].filter(([, value]) => value != null && value !== 0)}
       />
 
       <SummaryGrid
@@ -335,6 +355,7 @@ function ExceptionDrivenReview({ review }) {
 
 export function ComputeResultPreviewPanel({ preview, parsedResult, review = null }) {
   const { rows, total, truncated } = visiblePreviewRows(preview);
+  const applyWarnings = previewApplyWarnings(preview);
 
   return (
     <div className="pivot-compute-review__preview" data-testid="compute-result-preview">
@@ -362,7 +383,8 @@ export function ComputeResultPreviewPanel({ preview, parsedResult, review = null
             ['Conflicts', preview.summary?.conflicts ?? 0],
             ['Stale', preview.summary?.stale ?? 0],
             ['Rejected', preview.summary?.rejected ?? 0],
-          ]
+            ['Skipped (missing fields)', preview.summary?.skipped ?? 0],
+          ].filter(([, value]) => value != null && value !== 0)
           : formatPreviewSummary(preview.summary)}
       />
 
@@ -375,6 +397,18 @@ export function ComputeResultPreviewPanel({ preview, parsedResult, review = null
           Preview is eligible for explicit apply confirmation.
         </p>
       )}
+
+      {applyWarnings.length ? (
+        <ul className="pivot-compute-review__warnings" role="status">
+          {applyWarnings.map((warning) => (
+            <li key={warning.code}>
+              <strong>{warning.code}</strong>
+              {' · '}
+              {warning.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {review ? <ExceptionDrivenReview review={review} /> : null}
 

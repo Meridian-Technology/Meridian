@@ -3,6 +3,7 @@ import {
   formatPreviewAction,
   parseUploadedResultText,
   previewAllowsApply,
+  previewApplyWarnings,
   previewBlockingMessage,
   validateParsedResult,
   validateUploadedResultText,
@@ -49,6 +50,9 @@ describe('pivotComputeJobReviewFormat', () => {
       applyAllowed: false,
       blockingReasons: [{ code: 'STALE_CONTEXT', message: 'Context moved on.' }],
     })).toMatch(/STALE_CONTEXT/);
+    expect(previewApplyWarnings({
+      applyWarnings: [{ code: 'MISSING_REQUIRED_EVENT_FIELDS', message: '2 rows will be skipped.' }],
+    })).toHaveLength(1);
   });
 
   it('validates uploaded text end-to-end', () => {

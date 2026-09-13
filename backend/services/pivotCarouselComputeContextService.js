@@ -5,6 +5,7 @@ const { mintExportToken, deckRevision } = require('./pivotCarouselExportService'
 const {
   CONTRACT_VERSION,
   CAROUSEL_EXPORT_LIMITS,
+  resolveCarouselExportSlideNumbers,
   validateContextSnapshot,
 } = require('../utilities/pivotAdminComputeJobContract');
 
@@ -30,9 +31,9 @@ function renderUrlBase(req) {
   return 'http://localhost:3000/carousel-export';
 }
 
-function contextVersionFor(job, revision, attemptId) {
+function contextVersionFor(job, revision, attemptId, slideNumbers) {
   const digest = createHash('sha256')
-    .update([job.tenantKey, job.externalJobId, attemptId, revision].join(':'))
+    .update([job.tenantKey, job.externalJobId, attemptId, revision, slideNumbers.join(',')].join(':'))
     .digest('hex')
     .slice(0, 32);
   return `ctx:carousel.${digest}`;
@@ -56,10 +57,15 @@ async function buildCarouselExportContextSnapshot(req, { job, now = new Date() }
   if (revision !== expectedRevision) {
     throw serviceError('Carousel deck changed after the export was requested', 'DECK_REVISION_MISMATCH', 409);
   }
-  const slideCount = (deck.slides || []).length;
-  if (slideCount < 1 || slideCount > CAROUSEL_EXPORT_LIMITS.maxSlideCount) {
+  const deckSlideCount = (deck.slides || []).length;
+  if (deckSlideCount < 1 || deckSlideCount > CAROUSEL_EXPORT_LIMITS.maxSlideCount) {
     throw serviceError('Carousel slide count is outside the export limits', 'CAROUSEL_SLIDE_COUNT_INVALID', 422);
   }
+  const slideNumbers = resolveCarouselExportSlideNumbers(job.options, deckSlideCount);
+  if (!slideNumbers.length) {
+    throw serviceError('Carousel slide selection is outside the export limits', 'CAROUSEL_SLIDE_SELECTION_INVALID', 422);
+  }
+  const slideCount = slideNumbers.length;
 
   const renderGrant = await mintExportToken(req, job.tenantKey, deckId, {
     jobId: job.externalJobId,
@@ -90,12 +96,13 @@ async function buildCarouselExportContextSnapshot(req, { job, now = new Date() }
     tenantKey: job.tenantKey,
     cityKey: job.cityKey,
     implementationRevision: job.implementationRevision,
-    contextVersion: contextVersionFor(job, revision, attemptId),
+    contextVersion: contextVersionFor(job, revision, attemptId, slideNumbers),
     snapshotAt: now.toISOString(),
     attemptId,
     deckId,
     deckRevision: revision,
     slideCount,
+    slideNumbers,
     renderDimensions: { width: RENDER_WIDTH, height: RENDER_HEIGHT },
     renderUrlBase: renderUrlBase(req),
     renderToken: renderGrant.data.token,

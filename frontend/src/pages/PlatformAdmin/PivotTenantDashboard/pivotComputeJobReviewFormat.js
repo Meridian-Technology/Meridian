@@ -203,7 +203,8 @@ export function formatPreviewSummary(summary) {
     ['Conflicts', summary.conflicts],
     ['Rejected', summary.rejected],
     ['Stale', summary.stale],
-  ];
+    ['Skipped (missing fields)', summary.skipped],
+  ].filter(([, value]) => value != null);
 }
 
 export function formatEvidence(evidence) {
@@ -226,6 +227,10 @@ export function previewBlockingMessage(preview) {
     return reasons.map((reason) => `${reason.code}: ${reason.message}`).join(' ');
   }
   return 'Preview does not allow apply.';
+}
+
+export function previewApplyWarnings(preview) {
+  return Array.isArray(preview?.applyWarnings) ? preview.applyWarnings : [];
 }
 
 export function visiblePreviewRows(preview, limit = MAX_PREVIEW_ROWS_SHOWN) {

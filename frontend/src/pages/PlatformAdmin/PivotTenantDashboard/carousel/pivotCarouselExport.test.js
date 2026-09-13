@@ -53,6 +53,28 @@ describe('carousel export helpers', () => {
     });
   });
 
+  it('names only the slides that are not the whole deck', () => {
+    const subset = buildCarouselExportJobRequest({
+      tenantKey: 'iowacity',
+      deckId: DECK,
+      deckRevision: '2026-09-11T19:58:00.000Z',
+      idempotencyKey: 'idem:carousel-iowacity-001',
+      slideNumbers: [2],
+      slideCount: 3,
+    });
+    expect(subset.options.slideNumbers).toEqual([2]);
+
+    const whole = buildCarouselExportJobRequest({
+      tenantKey: 'iowacity',
+      deckId: DECK,
+      deckRevision: '2026-09-11T19:58:00.000Z',
+      idempotencyKey: 'idem:carousel-iowacity-001',
+      slideNumbers: [1, 2, 3],
+      slideCount: 3,
+    });
+    expect(whole.options.slideNumbers).toBeUndefined();
+  });
+
   it('maps job and wake into distinct export states', () => {
     expect(deriveExportUiState({ creating: true })).toBe('creating');
     expect(deriveExportUiState({ job: job(), wake: { status: 'accepted' } })).toBe('relay-notified');

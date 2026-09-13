@@ -288,4 +288,8 @@ describe('full screen hides the surrounding chrome', () => {
   test('the event dock bleeds to the screen edges', () => {
     expect(pageCss).toMatch(/jgz-editor__dock[\s\S]*?100vw/);
   });
+
+  test('full screen drops the export strip so the frame keeps the height', () => {
+    expect(pageCss).toMatch(/\.jgz-editor\.is-focused[\s\S]*?\.jgz-export-line \{[\s\S]*?display:\s*none/);
+  });
 });

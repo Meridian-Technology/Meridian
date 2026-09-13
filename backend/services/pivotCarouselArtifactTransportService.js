@@ -6,6 +6,8 @@ const { UPLOAD_PURPOSE } = require('./pivotCarouselComputeContextService');
 const {
   CAROUSEL_EXPORT_LIMITS,
   carouselExportArtifactPlan,
+  normalizeCarouselSlideNumbers,
+  sequentialCarouselSlideNumbers,
 } = require('../utilities/pivotAdminComputeJobContract');
 const {
   DEFAULT_PRESIGN_TTL_SECONDS,
@@ -77,12 +79,21 @@ function verifyUploadGrant(grantToken, job, now) {
   return claims;
 }
 
-function normalizeRequestedArtifacts(rawArtifacts, slideCount) {
+function plannedSlideNumbers(job, slideCount) {
+  if (Array.isArray(job?.options?.slideNumbers) && job.options.slideNumbers.length) {
+    const selected = normalizeCarouselSlideNumbers(job.options.slideNumbers);
+    if (selected.length !== slideCount) return [];
+    return selected;
+  }
+  return sequentialCarouselSlideNumbers(slideCount);
+}
+
+function normalizeRequestedArtifacts(rawArtifacts, slideNumbers) {
   if (!Array.isArray(rawArtifacts) || !rawArtifacts.length) {
     throw serviceError('Artifact list is required', 'INVALID_ARTIFACT_UPLOADS');
   }
   const planByName = new Map(
-    carouselExportArtifactPlan(slideCount).map((entry) => [entry.logicalName, entry]),
+    carouselExportArtifactPlan(slideNumbers).map((entry) => [entry.logicalName, entry]),
   );
   const seen = new Set();
   const artifacts = [];
@@ -131,8 +142,8 @@ function normalizeRequestedArtifacts(rawArtifacts, slideCount) {
   return artifacts;
 }
 
-function expectedPlanComplete(verified, slideCount) {
-  const plan = carouselExportArtifactPlan(slideCount);
+function expectedPlanComplete(verified, slideNumbers) {
+  const plan = carouselExportArtifactPlan(slideNumbers);
   if (verified.length !== plan.length) return false;
   const byName = new Map(verified.map((entry) => [entry.logicalName, entry]));
   return plan.every((expected) => {
@@ -203,7 +214,11 @@ async function initializeCarouselArtifactUploads(req, {
     throw serviceError('Carousel slide count is outside the export limits', 'CAROUSEL_SLIDE_COUNT_INVALID', 422);
   }
   const claims = verifyUploadGrant(grantToken, job, now);
-  const requested = normalizeRequestedArtifacts(rawArtifacts, count);
+  const slideNumbers = plannedSlideNumbers(job, count);
+  if (!slideNumbers.length) {
+    throw serviceError('Carousel slide selection does not match this export', 'CAROUSEL_SLIDE_SELECTION_INVALID', 422);
+  }
+  const requested = normalizeRequestedArtifacts(rawArtifacts, slideNumbers);
   const { PivotComputeJobAttempt, PivotComputeJob } = await getModels(req);
   const attempt = await PivotComputeJobAttempt.findById(job.lease.attemptId);
   if (!attempt) throw serviceError('Compute job attempt not found', 'COMPUTE_JOB_ATTEMPT_NOT_FOUND', 404);
@@ -353,7 +368,11 @@ async function finalizeCarouselArtifactUploads(req, {
   }
 
   const slideCount = Number(attempt.artifactUploads.slideCount);
-  const requested = normalizeRequestedArtifacts(rawArtifacts, slideCount);
+  const slideNumbers = plannedSlideNumbers(job, slideCount);
+  if (!slideNumbers.length) {
+    throw serviceError('Carousel slide selection does not match this export', 'CAROUSEL_SLIDE_SELECTION_INVALID', 422);
+  }
+  const requested = normalizeRequestedArtifacts(rawArtifacts, slideNumbers);
   const existingByName = new Map(attempt.artifactUploads.artifacts.map((entry) => [entry.logicalName, entry]));
 
   if (attempt.artifactUploads.finalizedAt) {
@@ -406,7 +425,7 @@ async function finalizeCarouselArtifactUploads(req, {
   }
 
   const verified = nextArtifacts.filter((entry) => entry.status === 'verified').map(asManifestEntry);
-  const complete = expectedPlanComplete(verified, slideCount);
+  const complete = expectedPlanComplete(verified, slideNumbers);
   attempt.artifactUploads.artifacts = nextArtifacts;
   if (complete) {
     attempt.artifactUploads.finalizedAt = now;

@@ -93,6 +93,38 @@ describe('useCarouselExport', () => {
     unmount();
   });
 
+  it('asks the job to render only the chosen slides', async () => {
+    const created = [];
+    mockAuthenticatedRequest.mockImplementation(async (url, options) => {
+      if (url === '/admin/pivot/compute-jobs' && options?.method === 'POST') {
+        created.push(options.data.request);
+        return { data: { job: pendingJob(), created: true, wake: { status: 'accepted' } } };
+      }
+      if (url === '/admin/pivot/compute-jobs') {
+        return { data: { jobs: [] } };
+      }
+      return { data: { job: pendingJob() } };
+    });
+
+    const { result, unmount } = renderHook(() => useCarouselExport({
+      tenantKey: 'iowacity',
+      deck: { _id: DECK, updatedAt: REVISION, slides: [{}, {}, {}] },
+      dirty: false,
+    }));
+
+    await waitFor(() => expect(mockAuthenticatedRequest).toHaveBeenCalled());
+    await act(async () => {
+      await result.current.startExport([2]);
+    });
+
+    expect(created[0].options).toEqual({
+      deckId: DECK,
+      deckRevision: REVISION,
+      slideNumbers: [2],
+    });
+    unmount();
+  });
+
   it('does not create a job when the frontend flag is off', async () => {
     const previous = process.env.REACT_APP_ENABLE_CAROUSEL_EXPORT;
     process.env.REACT_APP_ENABLE_CAROUSEL_EXPORT = 'false';

@@ -111,6 +111,21 @@ describe('Pivot admin compute job contracts v1 (Phase 1, Step 1.2)', () => {
         errors: expect.arrayContaining([expect.stringContaining('exactly one ZIP')]),
       });
 
+      const single = loadFixture('result-carousel-valid-completed.json');
+      single.slideCount = 1;
+      single.artifacts = [single.artifacts[0]];
+      expect(validateExecutionResult(single)).toEqual({ valid: true });
+
+      const zippedSingle = { ...single, artifacts: [...single.artifacts, incomplete.artifacts[incomplete.artifacts.length - 1]] };
+      zippedSingle.artifacts = [
+        single.artifacts[0],
+        loadFixture('result-carousel-valid-completed.json').artifacts[2],
+      ];
+      expect(validateExecutionResult(zippedSingle)).toEqual({
+        valid: false,
+        errors: expect.arrayContaining([expect.stringContaining('must not include a ZIP')]),
+      });
+
       const oversized = loadFixture('result-carousel-valid-completed.json');
       oversized.artifacts[0].byteCount = 67108865;
       expect(validateExecutionResult(oversized).valid).toBe(false);
