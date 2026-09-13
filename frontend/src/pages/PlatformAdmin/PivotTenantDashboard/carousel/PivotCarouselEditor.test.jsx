@@ -4,13 +4,22 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import PivotCarouselEditor from './PivotCarouselEditor';
 
 jest.mock('./PivotCarouselVoicePanel', () => () => null);
 jest.mock('./PivotCarouselEventPicker', () => () => null);
 jest.mock('./PivotCarouselAddSlide', () => () => null);
 jest.mock('./PivotCarouselExportPanel', () => () => null);
+jest.mock('./PivotCarouselExportPicker', () => ({ open, onConfirm, currentIndex }) => (
+  open ? (
+    <div data-testid="export-picker">
+      <button type="button" onClick={() => onConfirm([currentIndex + 1])}>
+        export this slide
+      </button>
+    </div>
+  ) : null
+));
 
 const MANIFEST = {
   addable: ['card'],
@@ -106,10 +115,30 @@ describe('full screen', () => {
     expect(screen.getAllByText('night press').length).toBeGreaterThan(0);
   });
 
-  test('the header does not carry an edit control', () => {
-    renderEditor();
-    expect(screen.queryByRole('button', { name: 'edit slide' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'details' })).not.toBeInTheDocument();
+  test('a saved deck offers export in the save slot', () => {
+    const { container } = renderEditor({ dirty: false });
+    const bar = container.querySelector('.jgz-editor__bar-actions');
+    expect(within(bar).getByRole('button', { name: 'export' })).toBeInTheDocument();
+    expect(within(bar).queryByRole('button', { name: 'save deck' })).not.toBeInTheDocument();
+  });
+
+  test('an unsaved deck offers save instead of export', () => {
+    const { container } = renderEditor({ dirty: true });
+    const bar = container.querySelector('.jgz-editor__bar-actions');
+    expect(within(bar).getByRole('button', { name: 'save deck' })).toBeInTheDocument();
+    expect(within(bar).queryByRole('button', { name: 'export' })).not.toBeInTheDocument();
+  });
+
+  test('export asks which slides to render', () => {
+    const startExport = jest.fn();
+    renderEditor({
+      dirty: false,
+      exportState: { uiEnabled: true, startExport },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'export' })[0]);
+    expect(screen.getByTestId('export-picker')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'export this slide' }));
+    expect(startExport).toHaveBeenCalledWith([1]);
   });
 
   test('a peek under the slide shows the title and the event', () => {

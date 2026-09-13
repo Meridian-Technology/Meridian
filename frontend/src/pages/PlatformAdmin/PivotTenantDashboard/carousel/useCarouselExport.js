@@ -119,7 +119,7 @@ export default function useCarouselExport({ tenantKey, deck, dirty }) {
   const openPanel = useCallback(() => setPanelOpen(true), []);
   const closePanel = useCallback(() => setPanelOpen(false), []);
 
-  const startExport = useCallback(async () => {
+  const startExport = useCallback(async (slideNumbers) => {
     if (!uiEnabled || !tenantKey || !deckId || !currentRevision) return;
     if (dirty) {
       addNotification({
@@ -140,7 +140,10 @@ export default function useCarouselExport({ tenantKey, deck, dirty }) {
     setCreating(true);
     setPanelOpen(true);
     const reuseKey = !currentJob || isExportActive(currentJob) ? createKeyRef.current : null;
-    const idempotencyKey = reuseKey || `idem:carousel-${tenantKey}-${deckId}-${Date.now()}`;
+    const selection = Array.isArray(slideNumbers) && slideNumbers.length
+      ? [...slideNumbers].sort((left, right) => left - right).join('.')
+      : 'all';
+    const idempotencyKey = reuseKey || `idem:carousel-${tenantKey}-${deckId}-${selection}-${Date.now()}`;
     createKeyRef.current = idempotencyKey;
     writeExportSession(tenantKey, deckId, {
       jobId: currentJob?.externalJobId || null,
@@ -153,6 +156,8 @@ export default function useCarouselExport({ tenantKey, deck, dirty }) {
       deckId,
       deckRevision: currentRevision,
       idempotencyKey,
+      slideNumbers,
+      slideCount: Array.isArray(deck?.slides) ? deck.slides.length : undefined,
     });
     const { data, error } = await authenticatedRequest('/admin/pivot/compute-jobs', {
       method: 'POST',
@@ -174,7 +179,7 @@ export default function useCarouselExport({ tenantKey, deck, dirty }) {
     setJob(data.job);
     setWake(data.wake || null);
     if (!isExportActive(data.job)) createKeyRef.current = null;
-  }, [uiEnabled, tenantKey, deckId, currentRevision, dirty, job, addNotification]);
+  }, [uiEnabled, tenantKey, deckId, currentRevision, dirty, job, deck?.slides, addNotification]);
 
   const cancelExport = useCallback(async () => {
     if (!job?.externalJobId || !canCancelComputeJob(job)) return;
@@ -210,7 +215,7 @@ export default function useCarouselExport({ tenantKey, deck, dirty }) {
       return;
     }
     createKeyRef.current = null;
-    await startExport();
+    await startExport(job?.options?.slideNumbers);
   }, [job, startExport, addNotification]);
 
   const downloadArtifact = useCallback(async (artifact) => {

@@ -60,6 +60,8 @@ function DownloadList({ job, expired, busy, onDownload }) {
     );
   }
 
+  const singlePng = !zip && slides.length === 1 ? slides[0] : null;
+
   return (
     <div className="jgz-export-panel__downloads">
       {zip ? (
@@ -73,7 +75,18 @@ function DownloadList({ job, expired, busy, onDownload }) {
           <span>{formatBytes(zip.byteCount)}</span>
         </button>
       ) : null}
-      {slides.length ? (
+      {singlePng ? (
+        <button
+          type="button"
+          className="jgz-export-panel__zip"
+          onClick={() => onDownload(singlePng)}
+          disabled={Boolean(busy)}
+        >
+          {busy === singlePng.artifactId ? 'starting download…' : 'Download PNG'}
+          <span>{formatBytes(singlePng.byteCount)}</span>
+        </button>
+      ) : null}
+      {!singlePng && slides.length ? (
         <ul className="jgz-export-panel__slides">
           {slides.map((slide) => (
             <li key={slide.artifactId}>
@@ -137,6 +150,11 @@ export default function PivotCarouselExportPanel({
             {completed && !expired && zipArtifact(job) ? (
               <button type="button" onClick={() => onDownload(zipArtifact(job))}>
                 Download ZIP
+              </button>
+            ) : null}
+            {completed && !expired && !zipArtifact(job) && slideArtifacts(job).length === 1 ? (
+              <button type="button" onClick={() => onDownload(slideArtifacts(job)[0])}>
+                Download PNG
               </button>
             ) : null}
           </div>
