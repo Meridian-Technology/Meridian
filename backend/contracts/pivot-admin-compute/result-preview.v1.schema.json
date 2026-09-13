@@ -47,6 +47,20 @@
         }
       }
     },
+    "applyWarnings": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string", "maxLength": 64 },
+          "message": { "type": "string", "maxLength": 500 },
+          "skippedCount": { "type": "integer", "minimum": 0, "maximum": 10000 }
+        }
+      }
+    },
     "rows": {
       "type": "array",
       "maxItems": 5000,
@@ -73,6 +87,12 @@
             ]
           },
           "message": { "oneOf": [{ "type": "string", "maxLength": 1000 }, { "type": "null" }] },
+          "applyBlocked": { "type": "boolean" },
+          "missingFields": {
+            "type": "array",
+            "maxItems": 8,
+            "items": { "type": "string", "maxLength": 64 }
+          },
           "evidence": {
             "type": "object",
             "additionalProperties": false,
@@ -95,7 +115,8 @@
         "unchanged": { "type": "integer", "minimum": 0, "maximum": 10000 },
         "conflicts": { "type": "integer", "minimum": 0, "maximum": 10000 },
         "rejected": { "type": "integer", "minimum": 0, "maximum": 10000 },
-        "stale": { "type": "integer", "minimum": 0, "maximum": 10000 }
+        "stale": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "skipped": { "type": "integer", "minimum": 0, "maximum": 10000 }
       }
     }
   }

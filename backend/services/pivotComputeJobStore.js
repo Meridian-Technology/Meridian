@@ -1041,6 +1041,7 @@ async function completeComputeJobApply(req, {
       conflicts: Number(summary.conflicts) || 0,
       stale: Number(summary.stale) || 0,
       rejected: Number(summary.rejected) || 0,
+      skipped: Number(summary.skipped) || 0,
     },
   });
   if (nextStatus === 'completed') {
