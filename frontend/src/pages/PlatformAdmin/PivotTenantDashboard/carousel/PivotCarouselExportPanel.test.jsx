@@ -112,8 +112,9 @@ describe('PivotCarouselExportPanel', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: /Download ZIP/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Download PNG/i }));
+    const panel = screen.getByTestId('carousel-export-panel');
+    expect(within(panel).queryByRole('button', { name: /Download ZIP/i })).not.toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: /Download PNG/i }));
     expect(onDownload).toHaveBeenCalledWith(expect.objectContaining({ artifactId: 'artifact:slide-01' }));
   });
 
