@@ -1016,6 +1016,34 @@ async function beginComputeJobApply(req, {
   throw error;
 }
 
+async function updateComputeJobApplyProgress(req, {
+  externalJobId,
+  summary = {},
+  now = new Date(),
+} = {}) {
+  const { PivotComputeJob } = await getModels(req);
+  await PivotComputeJob.findOneAndUpdate(
+    {
+      externalJobId: trimString(externalJobId),
+      status: 'applying',
+    },
+    {
+      $set: {
+        updatedAt: now,
+        'applicationAudit.summary': {
+          creates: Number(summary.creates) || 0,
+          updates: Number(summary.updates) || 0,
+          unchanged: Number(summary.unchanged) || 0,
+          conflicts: Number(summary.conflicts) || 0,
+          stale: Number(summary.stale) || 0,
+          rejected: Number(summary.rejected) || 0,
+          skipped: Number(summary.skipped) || 0,
+        },
+      },
+    },
+  );
+}
+
 async function completeComputeJobApply(req, {
   externalJobId,
   actor,
@@ -1228,6 +1256,7 @@ module.exports = {
   expireComputeJobLease,
   reclaimExpiredComputeJobLeases,
   beginComputeJobApply,
+  updateComputeJobApplyProgress,
   completeComputeJobApply,
   listComputeJobAttempts,
   listExpiredLeaseJobs,
