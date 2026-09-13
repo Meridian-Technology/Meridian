@@ -71,18 +71,19 @@ function comparablePreview(preview) {
 
 function isApplyablePreviewRow(row) {
   return Boolean(row)
-    && (row.action === 'create' || row.action === 'update')
-    && !row.applyBlocked;
+    && (row.action === 'create' || row.action === 'update');
 }
 
-function refreshPreviewApplyAllowed(preview) {
-  if ((preview.blockingReasons || []).length > 0) {
-    preview.applyAllowed = false;
-    return preview;
-  }
-  preview.applyAllowed = preview.rows.some(isApplyablePreviewRow);
-  return preview;
-}
+const SKIPPABLE_EVENT_PUBLISH_CODES = new Set([
+  'MISSING_REQUIRED_FIELDS',
+  'INVALID_START_TIME',
+  'RICH_LOCATION_INVALID',
+  'RICH_LOCATION_UNRESOLVED',
+  'DUPLICATE_EVENT',
+  'GOOGLE_LOCATION_RATE_LIMITED',
+  'GOOGLE_LOCATION_AUTH_FAILED',
+  'GOOGLE_LOCATION_FAILED',
+]);
 
 function sourceRowKey(host) {
   return `host:${trimString(host).toLowerCase()}`;
@@ -438,7 +439,7 @@ function buildComputeReview(result, identities, preview, now = new Date()) {
       attention: 0,
       samples: [],
     };
-    if (row?.applyBlocked) {
+    if (row?.missingFields?.length) {
       // Counted in impact.skippedEvents; excluded from apply plan.
     } else if (row?.action === 'create') {
       impact.eventCreates += 1;
@@ -959,34 +960,23 @@ function annotatePreviewMissingEventFields(result, preview) {
     if (row?.action !== 'create' && row?.action !== 'update') continue;
     const missingFields = requiredEventFieldsMissing(proposal);
     if (!missingFields.length) continue;
-    row.applyBlocked = true;
     row.missingFields = missingFields;
     if (!trimString(row.message)) {
-      row.message = `Missing required fields: ${missingFields.join(', ')}.`;
+      row.message = `Likely skipped on apply. Missing: ${missingFields.join(', ')}.`;
     }
     invalid.push({ proposal, missingFields });
   }
   if (!invalid.length) return preview;
 
   const fields = sortedStrings(invalid.flatMap((item) => item.missingFields));
-  const applyableCount = preview.rows.filter(isApplyablePreviewRow).length;
   preview.summary.skipped = invalid.length;
-
-  if (applyableCount === 0) {
-    preview.blockingReasons.push({
-      code: 'MISSING_REQUIRED_EVENT_FIELDS',
-      message: `${invalid.length} event proposal${invalid.length === 1 ? '' : 's'} must be fixed before apply. Missing: ${fields.join(', ')}.`,
-    });
-    return refreshPreviewApplyAllowed(preview);
-  }
-
   preview.applyWarnings = preview.applyWarnings || [];
   preview.applyWarnings.push({
     code: 'MISSING_REQUIRED_EVENT_FIELDS',
-    message: `${invalid.length} event proposal${invalid.length === 1 ? '' : 's'} will be skipped during apply. Missing: ${fields.join(', ')}. ${applyableCount} row${applyableCount === 1 ? '' : 's'} can still be applied.`,
+    message: `${invalid.length} event proposal${invalid.length === 1 ? '' : 's'} may be skipped during apply. Missing: ${fields.join(', ')}. Apply uses the same ingest rules as legacy refresh (draft/staged by metadata quality).`,
     skippedCount: invalid.length,
   });
-  return refreshPreviewApplyAllowed(preview);
+  return preview;
 }
 
 async function previewComputeResult(req, resultInput, {
@@ -1083,18 +1073,70 @@ async function applyCurationJobRow(req, result, proposal, identities) {
   });
 }
 
-async function applyEventRow(req, result, proposal) {
+async function applyEventRow(req, result, proposal, identities) {
+  const { pickIngestStatus } = require('./pivotCurationRunService');
   const { publishIngestEvent } = require('./pivotIngestPublishService');
+  const draft = proposal?.draft || {};
+  const linkedJob = proposal?.linkedJobId
+    ? identities?.jobById?.get(proposal.linkedJobId)
+    : null;
+  const defaultTags = Array.isArray(linkedJob?.defaultTags) ? linkedJob.defaultTags : [];
+  const tags = Array.isArray(draft.tags) && draft.tags.length ? draft.tags : defaultTags;
+  const ingestStatus = pickIngestStatus(defaultTags, draft);
+
   const published = await publishIngestEvent(req, {
     tenantKey: result.cityKey,
-    draft: proposal.draft,
+    draft,
     batchWeek: proposal.batchWeek,
     url: proposal.sourceUrl,
     tagsRequired: false,
+    resolveRichLocation: true,
+    overrides: {
+      name: draft.name,
+      description: draft.description,
+      image: draft.image,
+      location: draft.location,
+      rawLocationText: draft.rawLocationText,
+      richLocation: draft.richLocation,
+      locationReview: draft.locationReview,
+      start_time: draft.start_time,
+      end_time: draft.end_time,
+      hostName: draft.hostName,
+      hostImageUrl: draft.hostImageUrl,
+      hostProfileUrl: draft.hostProfileUrl,
+      hostIdentities: draft.hostIdentities,
+      organizerIds: Array.isArray(draft.organizerIds) ? draft.organizerIds : undefined,
+      source: draft.source,
+      sourceUrl: proposal.sourceUrl,
+      tags,
+      ingestStatus,
+      timeSlots: draft.timeSlots,
+      parsed: draft.parsed,
+    },
   });
+
   if (published?.error) {
-    throw serviceError(published.error, published.code || 'EVENT_APPLY_FAILED', published.status || 500);
+    const code = published.code || 'EVENT_APPLY_FAILED';
+    if (SKIPPABLE_EVENT_PUBLISH_CODES.has(code) || published.status === 503) {
+      return {
+        skipped: true,
+        code,
+        message: published.error,
+        title: trimString(draft.name) || proposal.sourceUrl || eventRowKey(proposal.sourceUrl),
+        sourceUrl: proposal.sourceUrl || null,
+        missingFields: code === 'MISSING_REQUIRED_FIELDS'
+          ? requiredEventFieldsMissing(proposal)
+          : [],
+      };
+    }
+    throw serviceError(published.error, code, published.status || 500);
   }
+
+  return {
+    applied: true,
+    created: !published.data?.updated,
+    ingestStatus: published.data?.ingestStatus || ingestStatus || null,
+  };
 }
 
 function requiredEventFieldsMissing(proposal) {
@@ -1136,21 +1178,7 @@ async function applyComputeResult(req, {
 
   const identities = await loadProductionIdentities(req, result);
   const applicable = freshPreview.rows.filter(isApplyablePreviewRow);
-  const skippedRows = freshPreview.rows
-    .filter((row) => row.applyBlocked)
-    .map((row) => {
-      const proposal = row.entityType === 'event'
-        ? (result.proposals.events || []).find((item) => eventRowKey(item.sourceUrl) === row.key)
-        : null;
-      return {
-        entityType: row.entityType,
-        key: row.key,
-        title: trimString(proposal?.draft?.name) || proposal?.sourceUrl || row.key,
-        sourceUrl: proposal?.sourceUrl || null,
-        missingFields: row.missingFields || requiredEventFieldsMissing(proposal),
-      };
-    })
-    .filter((row) => row.missingFields?.length);
+  const skippedRows = [];
   const summary = {
     creates: 0,
     updates: 0,
@@ -1158,7 +1186,7 @@ async function applyComputeResult(req, {
     conflicts: 0,
     stale: 0,
     rejected: freshPreview.summary.rejected,
-    skipped: skippedRows.length,
+    skipped: 0,
   };
 
   let activeRow = null;
@@ -1182,9 +1210,23 @@ async function applyComputeResult(req, {
       if (row.entityType === 'event') {
         const proposal = (result.proposals.events || []).find((item) => eventRowKey(item.sourceUrl) === row.key);
         if (!proposal) continue;
-        if (requiredEventFieldsMissing(proposal).length) continue;
-        await applyEventRow(req, result, proposal);
-        summary[row.action === 'create' ? 'creates' : 'updates'] += 1;
+        const outcome = await applyEventRow(req, result, proposal, identities);
+        if (outcome?.skipped) {
+          summary.skipped += 1;
+          skippedRows.push({
+            entityType: 'event',
+            key: row.key,
+            title: outcome.title || row.key,
+            sourceUrl: outcome.sourceUrl || null,
+            missingFields: outcome.missingFields?.length
+              ? outcome.missingFields
+              : [outcome.code || 'SKIPPED'],
+            code: outcome.code || null,
+            message: outcome.message || null,
+          });
+          continue;
+        }
+        summary[outcome?.created ? 'creates' : 'updates'] += 1;
       }
     }
   } catch (error) {

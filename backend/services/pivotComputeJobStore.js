@@ -947,6 +947,20 @@ async function cleanupCarouselAttemptBestEffort(req, input) {
   }
 }
 
+const APPLY_STALE_MS = 10 * 60 * 1000;
+
+async function reclaimStaleComputeJobApply(req, job, now = new Date()) {
+  const audit = job?.applicationAudit || {};
+  if (job?.status !== 'applying' || audit.appliedAt) return false;
+  const anchor = job.updatedAt || job.leasedAt || job.startedAt;
+  if (!anchor) return false;
+  const ageMs = now.getTime() - new Date(anchor).getTime();
+  if (ageMs < APPLY_STALE_MS) return false;
+  job.status = 'review-required';
+  await job.save();
+  return true;
+}
+
 async function beginComputeJobApply(req, {
   externalJobId,
   actor,
@@ -988,6 +1002,14 @@ async function beginComputeJobApply(req, {
     const error = new Error('Compute job has no stored result to apply');
     error.code = 'COMPUTE_JOB_RESULT_MISSING';
     throw error;
+  }
+  if (existing.status === 'applying' && await reclaimStaleComputeJobApply(req, existing, now)) {
+    const retried = await PivotComputeJob.findOneAndUpdate(
+      { externalJobId: normalizedExternalJobId, status: 'review-required', result: { $ne: null } },
+      { $set: { status: 'applying', applicationAudit } },
+      { new: true },
+    );
+    if (retried) return serializeJob(retried);
   }
   const error = new Error(`Compute job apply cannot start from status: ${existing.status}`);
   error.code = existing.status === 'applying' ? 'COMPUTE_JOB_APPLY_IN_PROGRESS' : 'ILLEGAL_COMPUTE_JOB_TRANSITION';

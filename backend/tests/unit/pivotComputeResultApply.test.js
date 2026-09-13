@@ -41,6 +41,9 @@ jest.mock('../../services/pivotCurationJobService', () => ({
 }));
 
 jest.mock('../../services/pivotOffloadedCurationRefreshContextService', () => ({
+  buildCityCurationRefreshContextSnapshot: jest.fn(async () => ({
+    data: { snapshot: { contextVersion: 'ctx:iowacity.refresh.v7' } },
+  })),
   serializeRefreshJobIdentity: (row) => {
     const jobId = String(row?._id || '');
     const label = typeof row?.label === 'string' ? row.label.trim() : '';
@@ -92,7 +95,8 @@ describe('pivotComputeResultApplyService', () => {
     await mongo.reset();
     await ensurePivotComputeJobIndexes(req, { force: true });
     resolvePivotTenant.mockResolvedValue({ tenant: tenantConfigRow() });
-    publishIngestEvent.mockResolvedValue({ data: { event: { _id: 'event-1' } } });
+    publishIngestEvent.mockReset();
+    publishIngestEvent.mockResolvedValue({ data: { event: { _id: 'event-1' }, updated: false } });
     persistOutcome.mockResolvedValue({});
     createCurationJob.mockResolvedValue({ data: { job: { _id: 'job-1' } } });
     updateCurationJob.mockResolvedValue({ data: { job: { _id: 'job-1' } } });
@@ -381,34 +385,39 @@ describe('pivotComputeResultApplyService', () => {
       })).rejects.toMatchObject({ code: 'CAROUSEL_APPLY_UNSUPPORTED', status: 409 });
     });
 
-    it('blocks apply when no rows remain applyable after missing-field annotation', async () => {
+    it('warns on missing metadata but still allows apply like legacy refresh', async () => {
       const result = loadFixture('result-refresh-valid-completed.json');
       result.proposals.events[0].draft.hostName = null;
       result.proposals.events[0].draft.location = null;
+      publishIngestEvent.mockResolvedValueOnce({
+        error: 'Missing required fields after merge: hostName, location.',
+        code: 'MISSING_REQUIRED_FIELDS',
+        status: 400,
+      });
       const preview = await previewComputeResult(req, result, {
         currentContextVersion: result.basedOnContextVersion,
       });
-      const publishCallsBefore = publishIngestEvent.mock.calls.length;
 
-      expect(preview.applyAllowed).toBe(false);
-      expect(preview.blockingReasons).toEqual(expect.arrayContaining([
+      expect(preview.applyAllowed).toBe(true);
+      expect(preview.applyWarnings).toEqual(expect.arrayContaining([
         expect.objectContaining({
           code: 'MISSING_REQUIRED_EVENT_FIELDS',
           message: expect.stringContaining('hostName, location'),
         }),
       ]));
       expect(preview.rows.find((row) => row.entityType === 'event')).toMatchObject({
-        applyBlocked: true,
         missingFields: expect.arrayContaining(['hostName', 'location']),
       });
 
-      await expect(applyComputeResult(req, {
+      const applied = await applyComputeResult(req, {
         result,
         preview,
         idempotencyKey: 'apply:missing-fields',
         actor: 'admin@example.com',
-      })).rejects.toMatchObject({ code: 'PREVIEW_APPLY_BLOCKED' });
-      expect(publishIngestEvent.mock.calls).toHaveLength(publishCallsBefore);
+      });
+      expect(applied.summary.skipped).toBe(1);
+      expect(applied.summary.creates + applied.summary.updates).toBe(0);
+      expect(publishIngestEvent).toHaveBeenCalled();
     });
 
     it('still allows apply for source and curation job rows when only events are invalid', async () => {
@@ -424,6 +433,11 @@ describe('pivotComputeResultApplyService', () => {
         expect.objectContaining({ code: 'MISSING_REQUIRED_EVENT_FIELDS' }),
       ]));
 
+      publishIngestEvent.mockResolvedValueOnce({
+        error: 'Missing required fields after merge: hostName, location.',
+        code: 'MISSING_REQUIRED_FIELDS',
+        status: 400,
+      });
       const applied = await applyComputeResult(req, {
         result,
         preview,
@@ -434,7 +448,7 @@ describe('pivotComputeResultApplyService', () => {
       expect(applied.summary.skipped).toBe(1);
       expect(persistOutcome).toHaveBeenCalled();
       expect(createCurationJob).toHaveBeenCalled();
-      expect(publishIngestEvent).not.toHaveBeenCalled();
+      expect(publishIngestEvent).toHaveBeenCalled();
     });
 
     it('applies valid event rows while skipping rows missing required metadata', async () => {
@@ -457,10 +471,17 @@ describe('pivotComputeResultApplyService', () => {
       });
 
       expect(preview.applyAllowed).toBe(true);
+      publishIngestEvent
+        .mockResolvedValueOnce({ data: { event: { _id: 'event-good' }, updated: false, ingestStatus: 'draft' } })
+        .mockResolvedValueOnce({
+          error: 'Missing required fields after merge: hostName, location.',
+          code: 'MISSING_REQUIRED_FIELDS',
+          status: 400,
+        });
       expect(preview.applyWarnings).toEqual(expect.arrayContaining([
         expect.objectContaining({
           code: 'MISSING_REQUIRED_EVENT_FIELDS',
-          message: expect.stringContaining('will be skipped'),
+          message: expect.stringContaining('may be skipped'),
         }),
       ]));
       expect(preview.summary.skipped).toBe(1);
@@ -474,7 +495,7 @@ describe('pivotComputeResultApplyService', () => {
 
       expect(applied.summary.skipped).toBe(1);
       expect(applied.summary.creates).toBeGreaterThan(0);
-      expect(publishIngestEvent).toHaveBeenCalled();
+      expect(publishIngestEvent).toHaveBeenCalledTimes(2);
       expect(applied.skippedRows).toEqual(expect.arrayContaining([
         expect.objectContaining({
           key: 'sourceUrl:https://example-theatre.org/events/show-2',

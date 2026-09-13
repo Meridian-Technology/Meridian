@@ -542,7 +542,13 @@ function StoredApplyResult({ result, onClose }) {
               : 'Preflight stopped the apply before any production writes. The job remains Review required.'}
       </p>
       {!completed && result?.message ? (
-        <p className="pivot-compute-review__result-error"><strong>{result.code}</strong> · {result.message}</p>
+        <p className="pivot-compute-review__result-error">
+          <strong>{result.code}</strong>
+          {' · '}
+          {result.code === 503 || /503/.test(String(result.message))
+            ? 'The apply request timed out or the upstream service was unavailable. Re-open preview and retry; stale applying jobs reset after about ten minutes.'
+            : result.message}
+        </p>
       ) : null}
       {displayIssues.length ? (
         <ul className="pivot-compute-review__result-issues">
