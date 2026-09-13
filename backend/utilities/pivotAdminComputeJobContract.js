@@ -22,24 +22,50 @@ function carouselSlideLogicalName(slideNumber) {
   return `slide-${String(slideNumber).padStart(2, '0')}.png`;
 }
 
-function carouselExportArtifactPlan(slideCount) {
-  const count = Number(slideCount);
-  if (!Number.isInteger(count) || count < 1 || count > CAROUSEL_EXPORT_LIMITS.maxSlideCount) {
+function sequentialCarouselSlideNumbers(count) {
+  const size = Number(count);
+  if (!Number.isInteger(size) || size < 1 || size > CAROUSEL_EXPORT_LIMITS.maxSlideCount) {
     return [];
   }
-  const artifacts = [];
-  for (let slideNumber = 1; slideNumber <= count; slideNumber += 1) {
+  return Array.from({ length: size }, (_, index) => index + 1);
+}
+
+function normalizeCarouselSlideNumbers(value, { maxIndex = CAROUSEL_EXPORT_LIMITS.maxSlideCount } = {}) {
+  if (!Array.isArray(value) || !value.length || value.length > CAROUSEL_EXPORT_LIMITS.maxSlideCount) {
+    return [];
+  }
+  const numbers = [...new Set(value.map((entry) => Number(entry)))].sort((left, right) => left - right);
+  if (numbers.some((slideNumber) => !Number.isInteger(slideNumber) || slideNumber < 1 || slideNumber > maxIndex)) {
+    return [];
+  }
+  return numbers;
+}
+
+function resolveCarouselExportSlideNumbers(options, deckSlideCount) {
+  const selected = normalizeCarouselSlideNumbers(options?.slideNumbers, { maxIndex: deckSlideCount });
+  if (Array.isArray(options?.slideNumbers) && options.slideNumbers.length) {
+    return selected;
+  }
+  return sequentialCarouselSlideNumbers(deckSlideCount);
+}
+
+function carouselExportArtifactPlan(slideNumbersOrCount) {
+  const numbers = Array.isArray(slideNumbersOrCount)
+    ? normalizeCarouselSlideNumbers(slideNumbersOrCount)
+    : sequentialCarouselSlideNumbers(slideNumbersOrCount);
+  if (!numbers.length) return [];
+  const artifacts = numbers.map((slideNumber) => ({
+    logicalName: carouselSlideLogicalName(slideNumber),
+    mimeType: 'image/png',
+    slideNumber,
+  }));
+  if (numbers.length > 1) {
     artifacts.push({
-      logicalName: carouselSlideLogicalName(slideNumber),
-      mimeType: 'image/png',
-      slideNumber,
+      logicalName: 'carousel.zip',
+      mimeType: 'application/zip',
+      slideNumber: null,
     });
   }
-  artifacts.push({
-    logicalName: 'carousel.zip',
-    mimeType: 'application/zip',
-    slideNumber: null,
-  });
   return artifacts;
 }
 
@@ -333,15 +359,20 @@ function validateExecutionResult(value) {
   if (new Set(slideNumbers).size !== slideNumbers.length) {
     errors.push('$.artifacts: PNG slide numbers must be unique');
   }
-  if (slideNumbers.some((slideNumber) => slideNumber < 1 || slideNumber > value.slideCount)) {
-    errors.push('$.artifacts: PNG slide number is outside the rendered slide count');
+  if (slideNumbers.some((slideNumber) => (
+    slideNumber < 1 || slideNumber > CAROUSEL_EXPORT_LIMITS.maxSlideCount
+  ))) {
+    errors.push('$.artifacts: PNG slide number is outside the export limits');
   }
   if (value.outcome === 'completed') {
     if (pngs.length !== value.slideCount) {
       errors.push('$.artifacts: completed exports require exactly one PNG per slide');
     }
-    if (zips.length !== 1) {
+    if (pngs.length > 1 && zips.length !== 1) {
       errors.push('$.artifacts: completed exports require exactly one ZIP');
+    }
+    if (pngs.length <= 1 && zips.length !== 0) {
+      errors.push('$.artifacts: a single-slide export must not include a ZIP');
     }
   }
   return errors.length ? { valid: false, errors } : validation;
@@ -392,6 +423,9 @@ module.exports = {
   PREVIEW_ACTIONS,
   CAROUSEL_EXPORT_LIMITS,
   carouselSlideLogicalName,
+  sequentialCarouselSlideNumbers,
+  normalizeCarouselSlideNumbers,
+  resolveCarouselExportSlideNumbers,
   carouselExportArtifactPlan,
   FORBIDDEN_IMPORTABLE_KEYS,
   SCHEMAS,

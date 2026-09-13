@@ -65,6 +65,7 @@ describe('pivotCarouselComputeContextService', () => {
       deckRevision: revision,
       attemptId,
       slideCount: 2,
+      slideNumbers: [1, 2],
       renderDimensions: { width: 1080, height: 1350 },
       artifactUploadGrant: {
         attemptId,
@@ -94,5 +95,37 @@ describe('pivotCarouselComputeContextService', () => {
       },
     })).rejects.toMatchObject({ code: 'DECK_REVISION_MISMATCH', status: 409 });
     expect(mintExportToken).not.toHaveBeenCalled();
+  });
+
+  it('narrows the snapshot to the requested slides', async () => {
+    const result = await buildCarouselExportContextSnapshot({}, {
+      job: {
+        externalJobId: 'job:carousel-iowacity-001',
+        tenantKey: 'iowacity',
+        cityKey: 'iowacity',
+        implementationRevision: 'relay-worker@test',
+        options: { deckId, deckRevision: revision, slideNumbers: [2] },
+        lease: { attemptId },
+      },
+      now: new Date('2026-09-11T20:05:00.000Z'),
+    });
+
+    expect(result.data.snapshot).toMatchObject({
+      slideCount: 1,
+      slideNumbers: [2],
+    });
+  });
+
+  it('rejects a slide that is not on the deck', async () => {
+    await expect(buildCarouselExportContextSnapshot({}, {
+      job: {
+        externalJobId: 'job:carousel-iowacity-001',
+        tenantKey: 'iowacity',
+        cityKey: 'iowacity',
+        implementationRevision: 'relay-worker@test',
+        options: { deckId, deckRevision: revision, slideNumbers: [3] },
+        lease: { attemptId },
+      },
+    })).rejects.toMatchObject({ code: 'CAROUSEL_SLIDE_SELECTION_INVALID', status: 422 });
   });
 });

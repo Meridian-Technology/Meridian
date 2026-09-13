@@ -108,9 +108,15 @@ describe('carousel export artifact transport', () => {
       logicalName: '../secret.png',
     })).toThrow(/Unapproved/);
     expect(carouselExportArtifactPlan(2)).toHaveLength(3);
+    expect(carouselExportArtifactPlan(1)).toEqual([
+      { logicalName: 'slide-01.png', mimeType: 'image/png', slideNumber: 1 },
+    ]);
+    expect(carouselExportArtifactPlan([2])).toEqual([
+      { logicalName: 'slide-02.png', mimeType: 'image/png', slideNumber: 2 },
+    ]);
   });
 
-  async function leaseCarouselJob() {
+  async function leaseCarouselJob(options = { deckId: DECK_ID, deckRevision: REVISION }) {
     const created = await createComputeJob(req, {
       externalJobId: 'job:carousel-iowacity-001',
       kind: 'carousel-export',
@@ -120,7 +126,7 @@ describe('carousel export artifact transport', () => {
       createIdempotencyKey: 'idem:carousel-artifact-001',
       requestedAt: FIXED_NOW.toISOString(),
       origin: { type: 'admin' },
-      options: { deckId: DECK_ID, deckRevision: REVISION },
+      options,
     });
     const claim = await claimNextPendingJob(req, {
       kind: 'carousel-export',
@@ -158,6 +164,41 @@ describe('carousel export artifact transport', () => {
     expect(init.uploads[0].uploadUrl).toContain('https://s3.test/');
     expect(init.uploads[0].artifactId).toMatch(/^artifact:/);
     expect(storage.createPresignedPutUrl).toHaveBeenCalledTimes(3);
+  });
+
+  it('accepts a single PNG without a ZIP when that is the selected slide', async () => {
+    const job = await leaseCarouselJob({
+      deckId: DECK_ID,
+      deckRevision: REVISION,
+      slideNumbers: [2],
+    });
+    const init = await initializeCarouselArtifactUploads(req, {
+      job,
+      grantToken: mintGrant(job),
+      slideCount: 1,
+      artifacts: [{
+        logicalName: 'slide-02.png',
+        mimeType: 'image/png',
+        byteCount: 110,
+        sha256: PNG_B,
+      }],
+      now: FIXED_NOW,
+    });
+    expect(init.uploads).toHaveLength(1);
+    expect(init.uploads[0]).toMatchObject({
+      logicalName: 'slide-02.png',
+      slideNumber: 2,
+    });
+    await expect(initializeCarouselArtifactUploads(req, {
+      job,
+      grantToken: mintGrant(job),
+      slideCount: 1,
+      artifacts: [
+        { logicalName: 'slide-02.png', mimeType: 'image/png', byteCount: 110, sha256: PNG_B },
+        { logicalName: 'carousel.zip', mimeType: 'application/zip', byteCount: 200, sha256: ZIP },
+      ],
+      now: FIXED_NOW,
+    })).rejects.toMatchObject({ code: 'UNAPPROVED_EXPORT_FILENAME' });
   });
 
   it('rejects an upload grant minted for another attempt', async () => {
