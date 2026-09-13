@@ -150,6 +150,9 @@ router.post('/:externalJobId/apply', verifyToken, requirePlatformAdmin, async (r
       actor: actorFromRequest(req),
       now: new Date(),
     });
+    if (payload?.async) {
+      return res.status(202).json(payload);
+    }
     return res.json(payload);
   } catch (error) {
     return handleAdminServiceError(res, error);

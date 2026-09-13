@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
+const { connectToDatabase, connectToGlobalDatabase } = require('../connectionsManager');
 const getGlobalModels = require('./getGlobalModelService');
 const getModels = require('./getModelService');
+const { logPivot } = require('../utilities/pivotLogger');
 const {
   CONTRACT_VERSION,
   validateExecutionResult,
@@ -12,10 +14,13 @@ const { resolveEventBatchWeek } = require('../utilities/pivotIsoWeek');
 const {
   findJobByExternalId,
   beginComputeJobApply,
+  updateComputeJobApplyProgress,
   completeComputeJobApply,
 } = require('./pivotComputeJobStore');
 
 const MAX_PREVIEW_ROWS = 5000;
+const BACKGROUND_APPLY_ROW_THRESHOLD = 8;
+const APPLY_PROGRESS_UPDATE_EVERY = 5;
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -72,6 +77,149 @@ function comparablePreview(preview) {
 function isApplyablePreviewRow(row) {
   return Boolean(row)
     && (row.action === 'create' || row.action === 'update');
+}
+
+function countApplicablePreviewRows(preview) {
+  return (preview?.rows || []).filter(isApplyablePreviewRow).length;
+}
+
+async function buildApplyRequestContext(tenantKey, actor) {
+  const normalizedTenantKey = trimString(tenantKey).toLowerCase();
+  const [globalDb, db] = await Promise.all([
+    connectToGlobalDatabase(),
+    connectToDatabase(normalizedTenantKey),
+  ]);
+  return {
+    globalDb,
+    db,
+    school: normalizedTenantKey,
+    user: trimString(actor) ? { email: trimString(actor) } : {},
+  };
+}
+
+async function finalizeStoredComputeJobApply(req, {
+  externalJobId,
+  actor,
+  idempotencyKey,
+  applied = null,
+  error = null,
+  now = new Date(),
+} = {}) {
+  if (applied) {
+    const skippedCount = Number(applied.summary?.skipped) || 0;
+    const outcome = skippedCount > 0 ? 'partial' : 'completed';
+    const completed = await completeComputeJobApply(req, {
+      externalJobId,
+      actor,
+      idempotencyKey,
+      summary: applied.summary,
+      outcome,
+      now,
+    });
+    return {
+      job: completed,
+      duplicate: false,
+      summary: applied.summary,
+      outcome,
+      skippedRows: applied.skippedRows || [],
+    };
+  }
+
+  const partialSummary = error?.partialSummary || {
+    creates: 0,
+    updates: 0,
+    unchanged: 0,
+    conflicts: 0,
+    stale: 0,
+    rejected: 0,
+    skipped: 0,
+  };
+  const appliedCount = (Number(partialSummary.creates) || 0) + (Number(partialSummary.updates) || 0);
+  const outcome = appliedCount > 0 ? 'partial' : 'rejected';
+  const reviewedJob = await completeComputeJobApply(req, {
+    externalJobId,
+    actor,
+    idempotencyKey: trimString(idempotencyKey) || `apply-failed:${externalJobId}`,
+    summary: partialSummary,
+    outcome,
+    now,
+  });
+  const rejected = {
+    outcome,
+    job: reviewedJob,
+    summary: partialSummary,
+    failedRow: error?.failedRow || null,
+    validationIssues: error?.validationIssues || [],
+  };
+  if (error) {
+    error.applyResult = rejected;
+    throw error;
+  }
+  return rejected;
+}
+
+function scheduleStoredComputeJobApply(input) {
+  setImmediate(async () => {
+    let req;
+    const startedAt = Date.now();
+    try {
+      req = await buildApplyRequestContext(input.tenantKey, input.actor);
+      const applied = await applyComputeResult(req, {
+        result: input.embedded,
+        preview: input.preview,
+        idempotencyKey: input.idempotencyKey,
+        actor: input.actor,
+        now: input.now,
+        externalJobId: input.externalJobId,
+        onProgress: (summary) => updateComputeJobApplyProgress(req, {
+          externalJobId: input.externalJobId,
+          summary,
+          now: new Date(),
+        }),
+      });
+      const finished = await finalizeStoredComputeJobApply(req, {
+        externalJobId: input.externalJobId,
+        actor: input.actor,
+        idempotencyKey: input.idempotencyKey,
+        applied,
+        now: input.now,
+      });
+      logPivot('info', 'background compute apply completed', {
+        externalJobId: input.externalJobId,
+        tenantKey: input.tenantKey,
+        outcome: finished.outcome,
+        creates: finished.summary?.creates || 0,
+        updates: finished.summary?.updates || 0,
+        skipped: finished.summary?.skipped || 0,
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      logPivot('error', 'background compute apply failed', {
+        externalJobId: input.externalJobId,
+        tenantKey: input.tenantKey,
+        code: error.code || null,
+        message: error.message,
+        durationMs: Date.now() - startedAt,
+      });
+      if (req) {
+        try {
+          await finalizeStoredComputeJobApply(req, {
+            externalJobId: input.externalJobId,
+            actor: input.actor,
+            idempotencyKey: input.idempotencyKey,
+            error,
+            now: input.now,
+          });
+        } catch (finalizeError) {
+          logPivot('error', 'background compute apply finalize failed', {
+            externalJobId: input.externalJobId,
+            tenantKey: input.tenantKey,
+            message: finalizeError.message,
+          });
+        }
+      }
+    }
+  });
 }
 
 const SKIPPABLE_EVENT_PUBLISH_CODES = new Set([
@@ -1155,6 +1303,8 @@ async function applyComputeResult(req, {
   idempotencyKey,
   actor = null,
   now = new Date(),
+  externalJobId = null,
+  onProgress = null,
 } = {}) {
   const result = validateComputeExecutionResult(resultInput);
   const normalizedKey = trimString(idempotencyKey);
@@ -1190,6 +1340,13 @@ async function applyComputeResult(req, {
   };
 
   let activeRow = null;
+  const reportProgress = async () => {
+    if (!externalJobId || typeof onProgress !== 'function') return;
+    const processed = summary.creates + summary.updates + summary.skipped;
+    if (processed > 0 && processed % APPLY_PROGRESS_UPDATE_EVERY === 0) {
+      await onProgress({ ...summary });
+    }
+  };
   try {
     for (const row of applicable) {
       activeRow = row;
@@ -1198,6 +1355,7 @@ async function applyComputeResult(req, {
         if (!proposal) continue;
         await applySourceRow(req, result, proposal);
         summary[row.action === 'create' ? 'creates' : 'updates'] += 1;
+        await reportProgress();
         continue;
       }
       if (row.entityType === 'curationJob' && result.kind === 'city-source-discovery') {
@@ -1205,6 +1363,7 @@ async function applyComputeResult(req, {
         if (!proposal) continue;
         await applyCurationJobRow(req, result, proposal, identities);
         summary[row.action === 'create' ? 'creates' : 'updates'] += 1;
+        await reportProgress();
         continue;
       }
       if (row.entityType === 'event') {
@@ -1224,10 +1383,15 @@ async function applyComputeResult(req, {
             code: outcome.code || null,
             message: outcome.message || null,
           });
+          await reportProgress();
           continue;
         }
         summary[outcome?.created ? 'creates' : 'updates'] += 1;
+        await reportProgress();
       }
+    }
+    if (externalJobId && typeof onProgress === 'function') {
+      await onProgress({ ...summary });
     }
   } catch (error) {
     error.partialSummary = summary;
@@ -1301,6 +1465,9 @@ async function applyStoredComputeJob(req, externalJobId, {
     throw serviceError('Compute job has no stored result to apply.', 'COMPUTE_JOB_RESULT_MISSING', 409);
   }
 
+  const applicableCount = countApplicablePreviewRows(preview);
+  const useBackgroundApply = applicableCount > BACKGROUND_APPLY_ROW_THRESHOLD;
+
   await beginComputeJobApply(req, {
     externalJobId,
     actor,
@@ -1309,6 +1476,26 @@ async function applyStoredComputeJob(req, externalJobId, {
     now,
   });
 
+  if (useBackgroundApply) {
+    scheduleStoredComputeJobApply({
+      externalJobId,
+      tenantKey: requestedTenantKey,
+      actor,
+      idempotencyKey,
+      preview,
+      embedded: job.result.embedded,
+      now,
+    });
+    const applyingJob = await findJobByExternalId(req, externalJobId);
+    return {
+      job: applyingJob,
+      async: true,
+      accepted: true,
+      applicableCount,
+      message: `Applying ${applicableCount} rows in the background. Poll this job until it leaves applying.`,
+    };
+  }
+
   try {
     const applied = await applyComputeResult(req, {
       result: job.result.embedded,
@@ -1316,51 +1503,28 @@ async function applyStoredComputeJob(req, externalJobId, {
       idempotencyKey,
       actor,
       now,
+      externalJobId,
+      onProgress: (summary) => updateComputeJobApplyProgress(req, {
+        externalJobId,
+        summary,
+        now: new Date(),
+      }),
     });
-    const skippedCount = Number(applied.summary?.skipped) || 0;
-    const outcome = skippedCount > 0 ? 'partial' : 'completed';
-    const completed = await completeComputeJobApply(req, {
+    return finalizeStoredComputeJobApply(req, {
       externalJobId,
       actor,
       idempotencyKey,
-      summary: applied.summary,
-      outcome,
+      applied,
       now,
     });
-    return {
-      job: completed,
-      duplicate: false,
-      summary: applied.summary,
-      outcome,
-      skippedRows: applied.skippedRows || [],
-    };
   } catch (error) {
-    const partialSummary = error.partialSummary || {
-      creates: 0,
-      updates: 0,
-      unchanged: 0,
-      conflicts: 0,
-      stale: 0,
-      rejected: 0,
-    };
-    const appliedCount = (Number(partialSummary.creates) || 0) + (Number(partialSummary.updates) || 0);
-    const outcome = appliedCount > 0 ? 'partial' : 'rejected';
-    const reviewedJob = await completeComputeJobApply(req, {
+    return finalizeStoredComputeJobApply(req, {
       externalJobId,
       actor,
-      idempotencyKey: trimString(idempotencyKey) || `apply-failed:${externalJobId}`,
-      summary: partialSummary,
-      outcome,
+      idempotencyKey,
+      error,
       now,
     });
-    error.applyResult = {
-      outcome,
-      job: reviewedJob,
-      summary: partialSummary,
-      failedRow: error.failedRow || null,
-      validationIssues: error.validationIssues || [],
-    };
-    throw error;
   }
 }
 
@@ -1381,6 +1545,8 @@ module.exports = {
   previewComputeResult,
   previewStoredComputeJob,
   previewManualComputeResult,
+  countApplicablePreviewRows,
   applyComputeResult,
   applyStoredComputeJob,
+  BACKGROUND_APPLY_ROW_THRESHOLD,
 };

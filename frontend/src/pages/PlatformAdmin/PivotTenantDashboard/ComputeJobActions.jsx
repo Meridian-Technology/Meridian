@@ -500,7 +500,73 @@ function StoredApplyPlan({ review }) {
   );
 }
 
+const APPLY_POLL_MS = 2500;
+const APPLY_POLL_MAX_ATTEMPTS = 480;
+
+function applyResultFromJob(job) {
+  const audit = job?.applicationAudit || {};
+  const summary = audit.summary || {};
+  const outcome = audit.outcome || (job?.status === 'completed' ? 'completed' : 'rejected');
+  return {
+    outcome,
+    job,
+    summary,
+    failedRow: null,
+    validationIssues: [],
+  };
+}
+
+async function pollComputeJobApply(externalJobId, { onProgress } = {}) {
+  for (let attempt = 0; attempt < APPLY_POLL_MAX_ATTEMPTS; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, APPLY_POLL_MS));
+    const { data, error } = await authenticatedRequest(
+      `/admin/pivot/compute-jobs/${encodeURIComponent(externalJobId)}`,
+    );
+    if (error || !data?.job) continue;
+    onProgress?.(data.job);
+    if (data.job.status !== 'applying') {
+      return applyResultFromJob(data.job);
+    }
+  }
+  return {
+    outcome: 'rejected',
+    job: null,
+    summary: {},
+    code: 'APPLY_POLL_TIMEOUT',
+    message: 'Timed out waiting for background apply to finish. Re-open this job to inspect its current status.',
+  };
+}
+
 function StoredApplyResult({ result, onClose }) {
+  if (result?.inProgress) {
+    const summary = result?.summary || {};
+    const processed = (Number(summary.creates) || 0)
+      + (Number(summary.updates) || 0)
+      + (Number(summary.skipped) || 0);
+    return (
+      <footer
+        className="pivot-compute-review__apply-panel pivot-compute-review__apply-result is-info"
+        data-testid="compute-apply-result"
+        role="status"
+      >
+        <div className="pivot-compute-review__apply-result-head">
+          <div>
+            <span className="pivot-compute-review__result-label">Apply result</span>
+            <h4>Apply in progress</h4>
+          </div>
+          <span className="pivot-lab__pill">applying</span>
+        </div>
+        <p>
+          {result.message || 'Applying rows in the background.'}
+          {' '}
+          {processed
+            ? `${processed} row${processed === 1 ? '' : 's'} processed so far.`
+            : 'Production writes are running now.'}
+        </p>
+      </footer>
+    );
+  }
+
   const summary = result?.summary || {};
   const creates = Number(summary.creates) || 0;
   const updates = Number(summary.updates) || 0;
@@ -593,7 +659,7 @@ export function ComputeJobDetailActions({
   const showPreview = !isCarousel && canPreviewStoredComputeJob(job);
   const showCancel = allowManagementActions && canCancelComputeJob(job);
   const showRetry = allowManagementActions && canRetryComputeJob(job);
-  const applyInProgress = actionLoading === 'apply';
+  const applyInProgress = actionLoading === 'apply' || Boolean(applyResult?.inProgress);
   const showApply = !isCarousel && (applyInProgress || canApplyStoredComputeJob(job, preview));
   const showCarouselDownloads = isCarousel && job?.status === 'completed';
   const carouselExpired = showCarouselDownloads && artifactsExpired(job);
@@ -709,6 +775,42 @@ export function ComputeJobDetailActions({
       },
     ));
     if (result?.ok) {
+      if (result.data?.async) {
+        setApplyConfirmed(false);
+        setApplyResult({
+          inProgress: true,
+          job: result.data?.job || null,
+          summary: result.data?.job?.applicationAudit?.summary || {},
+          message: result.data?.message || null,
+        });
+        const polled = await pollComputeJobApply(externalJobId, {
+          onProgress: (nextJob) => {
+            setApplyResult({
+              inProgress: true,
+              job: nextJob,
+              summary: nextJob.applicationAudit?.summary || {},
+              message: result.data?.message || null,
+            });
+            onJobUpdated?.(nextJob, { action: 'apply', optimistic: true });
+          },
+        });
+        setApplyResult(polled);
+        onJobUpdated?.(polled.job || job, { action: 'apply' });
+        if (polled.outcome === 'completed' || polled.outcome === 'partial') {
+          addNotification({
+            type: 'success',
+            title: 'Apply',
+            message: 'Background apply finished.',
+          });
+        } else if (polled.code === 'APPLY_POLL_TIMEOUT') {
+          addNotification({
+            type: 'info',
+            title: 'Apply',
+            message: polled.message,
+          });
+        }
+        return;
+      }
       setApplyResult({
         outcome: result.data?.outcome || 'completed',
         job: result.data?.job || null,

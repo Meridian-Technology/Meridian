@@ -8,6 +8,8 @@ const {
   previewStoredComputeJob,
   applyComputeResult,
   applyStoredComputeJob,
+  countApplicablePreviewRows,
+  BACKGROUND_APPLY_ROW_THRESHOLD,
 } = require('../../services/pivotComputeResultApplyService');
 const {
   createComputeJob,
@@ -537,6 +539,73 @@ describe('pivotComputeResultApplyService', () => {
         idempotencyKey: 'apply:tampered-preview',
         actor: 'admin@example.com',
       })).rejects.toMatchObject({ code: 'PREVIEW_STALE' });
+    });
+
+    it('routes large previews to background apply', async () => {
+      const externalJobId = 'job:refresh-bg-apply';
+      const result = loadFixture('result-refresh-valid-completed.json');
+      result.jobId = externalJobId;
+      await createComputeJob(req, {
+        externalJobId,
+        kind: 'city-curation-refresh',
+        cityKey: 'iowacity',
+        contractVersion: '1',
+        contextVersion: result.basedOnContextVersion,
+        createIdempotencyKey: 'idem:create-bg-apply',
+        requestedAt: new Date().toISOString(),
+        origin: { type: 'admin' },
+        options: {},
+      });
+      const claim = await claimNextPendingJob(req, {
+        kind: 'city-curation-refresh',
+        workerId: 'worker-1',
+        now: new Date(),
+      });
+      await startComputeJob(req, {
+        externalJobId,
+        leaseToken: claim.job.lease.token,
+        workerId: 'worker-1',
+        now: new Date(),
+      });
+      const template = result.proposals.events[0];
+      result.proposals.events = Array.from({ length: BACKGROUND_APPLY_ROW_THRESHOLD + 2 }, (_, index) => ({
+        ...template,
+        sourceUrl: `https://luma.com/iowa-city/event-${index}`,
+        draft: {
+          ...template.draft,
+          sourceUrl: `https://luma.com/iowa-city/event-${index}`,
+        },
+        basedOnEventVersion: null,
+      }));
+      await submitComputeJobResult(req, {
+        externalJobId,
+        leaseToken: claim.job.lease.token,
+        workerId: 'worker-1',
+        result,
+        now: new Date(),
+      });
+      const preview = await previewComputeResult(req, result, {
+        currentContextVersion: result.basedOnContextVersion,
+      });
+      expect(countApplicablePreviewRows(preview)).toBeGreaterThan(BACKGROUND_APPLY_ROW_THRESHOLD);
+
+      const queued = [];
+      const setImmediateSpy = jest.spyOn(global, 'setImmediate').mockImplementation((fn) => {
+        queued.push(fn);
+      });
+      try {
+        const accepted = await applyStoredComputeJob(req, externalJobId, {
+          tenantKey: 'iowacity',
+          idempotencyKey: 'apply:bg-001',
+          preview,
+          actor: 'admin@example.com',
+        });
+        expect(accepted.async).toBe(true);
+        expect(accepted.job.status).toBe('applying');
+        expect(queued).toHaveLength(1);
+      } finally {
+        setImmediateSpy.mockRestore();
+      }
     });
 
     it('returns the stored outcome for duplicate apply idempotency keys', async () => {
