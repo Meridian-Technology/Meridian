@@ -424,38 +424,60 @@ function buildShareOverlaySvg({
   );
 }
 
+/**
+ * Rest pose of native `MotionGleamView` (Meridian-Mobile
+ * `modules/motion-gleam/ios/MotionGleamModule.swift`).
+ *
+ * A radial white spotlight (layer oversized, then clipped) plus the same
+ * gradient masked to a 1pt rounded rim. Not the Expo-Go edge-bar fallback.
+ */
 function posterGleamSvg() {
+  const spotlightWidth = POSTER_WIDTH * 1.68;
+  const spotlightHeight = POSTER_HEIGHT * 1.6;
+  const spotlightOriginX = -POSTER_WIDTH * 0.34;
+  const spotlightOriginY = -POSTER_HEIGHT * 0.3;
+  const cx = spotlightOriginX + 0.42 * spotlightWidth;
+  const cy = spotlightOriginY + 0.38 * spotlightHeight;
+  const radius = Math.hypot(
+    spotlightOriginX + 0.94 * spotlightWidth - cx,
+    spotlightOriginY + 0.9 * spotlightHeight - cy,
+  );
+  const rimInset = 1.5;
+  const rimWidth = 3;
+  const rimRadius = POSTER_RADIUS;
+
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}">` +
       `<defs>` +
         `<clipPath id="posterClip">` +
           `<rect width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" rx="${POSTER_RADIUS}"/>` +
         `</clipPath>` +
-        `<linearGradient id="gleamBand" x1="0" y1="0" x2="1" y2="1">` +
-          `<stop offset="0%" stop-color="#fff" stop-opacity="0"/>` +
-          `<stop offset="40%" stop-color="#fff" stop-opacity="0"/>` +
-          `<stop offset="47%" stop-color="#fff" stop-opacity="0.46"/>` +
-          `<stop offset="54%" stop-color="#fff" stop-opacity="0"/>` +
+        `<radialGradient id="spotlight" gradientUnits="userSpaceOnUse" ` +
+          `cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${radius.toFixed(2)}">` +
+          `<stop offset="0%" stop-color="#fff" stop-opacity="0.25"/>` +
+          `<stop offset="22%" stop-color="#fff" stop-opacity="0.16"/>` +
+          `<stop offset="48%" stop-color="#fff" stop-opacity="0.08"/>` +
+          `<stop offset="76%" stop-color="#fff" stop-opacity="0.03"/>` +
           `<stop offset="100%" stop-color="#fff" stop-opacity="0"/>` +
-        `</linearGradient>` +
-        `<linearGradient id="topEdge" x1="0" y1="0" x2="1" y2="0">` +
-          `<stop offset="0%" stop-color="#fff" stop-opacity="0.92"/>` +
-          `<stop offset="72%" stop-color="#fff" stop-opacity="0"/>` +
-        `</linearGradient>` +
-        `<linearGradient id="leftEdge" x1="0" y1="0" x2="0" y2="1">` +
-          `<stop offset="0%" stop-color="#fff" stop-opacity="0.86"/>` +
-          `<stop offset="58%" stop-color="#fff" stop-opacity="0"/>` +
-        `</linearGradient>` +
+        `</radialGradient>` +
+        `<radialGradient id="edgeGleam" gradientUnits="userSpaceOnUse" ` +
+          `cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${radius.toFixed(2)}">` +
+          `<stop offset="0%" stop-color="#fff" stop-opacity="1"/>` +
+          `<stop offset="18%" stop-color="#fff" stop-opacity="1"/>` +
+          `<stop offset="40%" stop-color="#fff" stop-opacity="0.72"/>` +
+          `<stop offset="72%" stop-color="#fff" stop-opacity="0.3"/>` +
+          `<stop offset="100%" stop-color="#fff" stop-opacity="0"/>` +
+        `</radialGradient>` +
       `</defs>` +
       `<g clip-path="url(#posterClip)">` +
-        `<rect width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" fill="url(#gleamBand)"/>` +
-        `<rect x="0" y="0" width="${Math.round(POSTER_WIDTH * 0.44)}" height="3" fill="url(#topEdge)"/>` +
-        `<rect x="0" y="0" width="3" height="${Math.round(POSTER_HEIGHT * 0.38)}" fill="url(#leftEdge)"/>` +
+        `<rect width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" fill="url(#spotlight)"/>` +
+        `<rect x="${rimInset}" y="${rimInset}" ` +
+          `width="${POSTER_WIDTH - rimInset * 2}" height="${POSTER_HEIGHT - rimInset * 2}" ` +
+          `rx="${rimRadius}" fill="none" stroke="rgba(42,42,42,0.96)" stroke-width="${rimWidth}"/>` +
+        `<rect x="${rimInset}" y="${rimInset}" ` +
+          `width="${POSTER_WIDTH - rimInset * 2}" height="${POSTER_HEIGHT - rimInset * 2}" ` +
+          `rx="${rimRadius}" fill="none" stroke="url(#edgeGleam)" stroke-width="${rimWidth}"/>` +
       `</g>` +
-      `<rect x="1.5" y="1.5" width="${POSTER_WIDTH - 3}" height="${POSTER_HEIGHT - 3}" ` +
-        `rx="${POSTER_RADIUS - 1}" fill="none" stroke="${TOKEN.cream}" stroke-width="5"/>` +
-      `<rect x="0.75" y="0.75" width="${POSTER_WIDTH - 1.5}" height="${POSTER_HEIGHT - 1.5}" ` +
-        `rx="${POSTER_RADIUS}" fill="none" stroke="rgba(42,42,42,0.72)" stroke-width="1.5"/>` +
     `</svg>`,
   );
 }
