@@ -157,15 +157,13 @@ describe('justGoSpaHtml', () => {
       location: { '@type': 'Place', name: event.venue.text },
       organizer: { '@type': 'Organization', name: event.organizer.name },
     });
-    expect(html).toContain('id="justgo-share-fallback"');
-    expect(html).toContain('<h1>Movie Night &lt;Finale&gt;</h1>');
-    expect(html).toContain('where: Civic Center &lt;Lawn&gt;');
-    expect(html).toContain('hosted by: Night &amp; Owl');
+    expect(html).not.toContain('id="justgo-share-fallback"');
+    expect(html).not.toContain('<h1>Movie Night &lt;Finale&gt;</h1>');
+    expect(html).not.toContain('where: Civic Center &lt;Lawn&gt;');
+    expect(html).not.toContain('hosted by: Night &amp; Owl');
     expect(html).toContain(
-      '<a href="https://justgo.lol/events/64f1234567890abcdef12345">https://justgo.lol/events/64f1234567890abcdef12345</a>',
+      '<link rel="canonical" href="https://justgo.lol/events/64f1234567890abcdef12345"',
     );
-    const fallback = html.match(/<div id="justgo-share-fallback">[\s\S]*?<\/div>/)[0];
-    expect(fallback).not.toContain('<script');
   });
 
   it('uses the generated opengraph card for events without a photo', async () => {
@@ -211,10 +209,10 @@ describe('justGoSpaHtml', () => {
     expect(html).not.toMatch(
       /property="og:image" content="https:\/\/justgo\.lol\/justgo\/og\.jpg"/,
     );
-    expect(html).toContain('id="justgo-share-fallback"');
-    expect(html).toContain('<h1>Open mic night</h1>');
-    expect(html).toContain('where: Back Room');
-    expect(html).toContain('hosted by: Local Hosts');
+    expect(html).not.toContain('id="justgo-share-fallback"');
+    expect(html).not.toContain('<h1>Open mic night</h1>');
+    expect(html).not.toContain('where: Back Room');
+    expect(html).not.toContain('hosted by: Local Hosts');
   });
 
   it.each([

@@ -47,8 +47,12 @@ const FIELD_LIMITS = Object.freeze({
   timezone: 100,
 });
 
-const HEADLINE_MAX_LINES = 2;
+const HEADLINE_MAX_LINES = 3;
 const HEADLINE_CHARS_PER_LINE = 16;
+const HEADLINE_MAX_STRIP_WITH_PHOTO = 548;
+const HEADLINE_MAX_STRIP_FULL = 1040;
+const HEADLINE_FONT_ONE_LINE = 86;
+const HEADLINE_FONT_SIZES = Object.freeze([76, 66, 56]);
 const PLACE_MAX_CHARS = 22;
 const PHOTO_FETCH_TIMEOUT_MS = 3500;
 const PHOTO_FETCH_MAX_BYTES = 5 * 1024 * 1024;
@@ -230,12 +234,128 @@ function wrapHeadline(text, charsPerLine, maxLines) {
   return lines.slice(0, maxLines);
 }
 
-/** Short lowercase headline: drop subtitle after a colon, two lines max. */
-function shareHeadlineLines(title) {
-  let text = sanitizeText(title).toLowerCase();
+function normalizeShareHeadline(title) {
+  let text = sanitizeText(title)
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
   const colon = text.indexOf(':');
   if (colon >= 6) text = text.slice(0, colon).trim();
-  return wrapHeadline(text, HEADLINE_CHARS_PER_LINE, HEADLINE_MAX_LINES);
+  return text;
+}
+
+function scrapbookPadX(fontSize) {
+  return Math.round(fontSize * 0.28);
+}
+
+function stripInnerMax(fontSize, maxStripWidth) {
+  return Math.max(24, maxStripWidth - scrapbookPadX(fontSize) * 2);
+}
+
+function glueHeadlineWords(words) {
+  const glued = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+    const next = words[index + 1];
+    if (next && /^(w\/|&|vs\.?)$/i.test(word)) {
+      glued.push(`${word} ${next}`);
+      index += 1;
+    } else {
+      glued.push(word);
+    }
+  }
+  return glued;
+}
+
+function truncateToWidth(text, fontSize, maxTextWidth) {
+  const value = sanitizeText(text);
+  if (!value) return '';
+  if (lesFlosWidth(value, fontSize) <= maxTextWidth) return value;
+  const ellipsis = '…';
+  const budget = maxTextWidth - lesFlosWidth(ellipsis, fontSize);
+  if (budget <= 8) return ellipsis;
+  const words = glueHeadlineWords(value.split(/\s+/).filter(Boolean));
+  let kept = '';
+  for (const word of words) {
+    const candidate = kept ? `${kept} ${word}` : word;
+    if (lesFlosWidth(candidate, fontSize) <= budget) {
+      kept = candidate;
+      continue;
+    }
+    if (!kept) {
+      let cut = word;
+      while (cut.length && lesFlosWidth(cut, fontSize) > budget) {
+        cut = cut.slice(0, -1);
+      }
+      return `${cut.trimEnd()}${ellipsis}`;
+    }
+    break;
+  }
+  return `${kept}${ellipsis}`;
+}
+
+function wrapHeadlineToWidth(text, fontSize, maxStripWidth, maxLines) {
+  const maxText = stripInnerMax(fontSize, maxStripWidth);
+  const words = glueHeadlineWords(sanitizeText(text).split(/\s+/).filter(Boolean));
+  const lines = [];
+  let current = '';
+  let truncated = false;
+
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+    const candidate = current ? `${current} ${word}` : word;
+    if (lesFlosWidth(candidate, fontSize) <= maxText) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = '';
+    if (lines.length >= maxLines) {
+      truncated = true;
+      return { lines: lines.slice(0, maxLines), truncated };
+    }
+    if (lines.length === maxLines - 1) {
+      const remainder = words.slice(index).join(' ');
+      const last = truncateToWidth(remainder, fontSize, maxText);
+      lines.push(last);
+      truncated = last.endsWith('…') || last !== remainder;
+      return { lines, truncated };
+    }
+    if (lesFlosWidth(word, fontSize) <= maxText) {
+      current = word;
+    } else {
+      lines.push(truncateToWidth(word, fontSize, maxText));
+      truncated = true;
+      if (lines.length >= maxLines) return { lines, truncated };
+    }
+  }
+  if (current) lines.push(current);
+  return { lines: lines.slice(0, maxLines), truncated };
+}
+
+function layoutShareHeadline(title, maxStripWidth = HEADLINE_MAX_STRIP_WITH_PHOTO) {
+  const text = normalizeShareHeadline(title);
+  if (!text) return { lines: [], fontSize: HEADLINE_FONT_SIZES[0] };
+
+  if (lesFlosWidth(text, HEADLINE_FONT_ONE_LINE) + scrapbookPadX(HEADLINE_FONT_ONE_LINE) * 2
+    <= maxStripWidth) {
+    return { lines: [text], fontSize: HEADLINE_FONT_ONE_LINE };
+  }
+
+  let fallback = null;
+  for (const fontSize of HEADLINE_FONT_SIZES) {
+    const packed = wrapHeadlineToWidth(text, fontSize, maxStripWidth, HEADLINE_MAX_LINES);
+    fallback = { lines: packed.lines, fontSize };
+    if (!packed.truncated) return fallback;
+  }
+  return fallback;
+}
+
+/** Short lowercase headline: drop subtitle after a colon, wrap to the card. */
+function shareHeadlineLines(title, maxStripWidth = HEADLINE_MAX_STRIP_WITH_PHOTO) {
+  return layoutShareHeadline(title, maxStripWidth).lines;
 }
 
 /** City or named place — never a full street address. */
@@ -262,26 +382,121 @@ function loadLesFlos() {
 }
 
 function lesFlosWidth(text, fontSize) {
-  return lesFlosText(text, 0, 0, fontSize, '#000').width;
-}
-
-function lesFlosText(text, x, y, fontSize, fill) {
   const font = loadLesFlos();
   const scale = fontSize / font.unitsPerEm;
-  const paths = [];
-  let cursor = x;
+  let cursor = 0;
   const glyphs = font.stringToGlyphs(text);
   for (let index = 0; index < glyphs.length; index += 1) {
     const glyph = glyphs[index];
-    const data = glyph.getPath(cursor, y, fontSize).toPathData(1);
-    if (data) paths.push(`<path d="${data}" fill="${fill}"/>`);
-    cursor += glyph.advanceWidth * scale;
+    if (glyph.name !== '.notdef') {
+      cursor += glyph.advanceWidth * scale;
+    }
     const next = glyphs[index + 1];
     if (next && typeof font.getKerningValue === 'function') {
       cursor += font.getKerningValue(glyph, next) * scale;
     }
   }
-  return { svg: paths.join(''), width: Math.ceil(cursor - x) };
+  return Math.ceil(cursor);
+}
+
+const glyphPngCache = new Map();
+const GLYPH_RENDER_SCALE = 4;
+
+async function renderGlyphPng(glyph, fontSize, fill) {
+  const key = `${glyph.index}:${fontSize}:${fill}`;
+  const cached = glyphPngCache.get(key);
+  if (cached) return cached;
+  const renderSize = fontSize * GLYPH_RENDER_SCALE;
+  const path = glyph.getPath(0, 0, renderSize);
+  const data = path.toPathData(1);
+  const bbox = path.getBoundingBox();
+  if (!data || glyph.name === '.notdef' || glyph.name === 'space') {
+    const empty = { png: null, bbox: { x1: 0, y1: 0, x2: 0, y2: 0 } };
+    glyphPngCache.set(key, empty);
+    return empty;
+  }
+  const width = Math.max(2, Math.ceil(bbox.x2 - bbox.x1 + 8));
+  const height = Math.max(2, Math.ceil(bbox.y2 - bbox.y1 + 8));
+  const svg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+      `<path transform="translate(${(-bbox.x1 + 4).toFixed(2)} ${(-bbox.y1 + 4).toFixed(2)})" ` +
+        `d="${data}" fill="${fill}"/>` +
+    `</svg>`,
+  );
+  const hiRes = await sharp(svg).png().toBuffer();
+  const png = await sharp(hiRes)
+    .resize({
+      width: Math.max(1, Math.round(width / GLYPH_RENDER_SCALE)),
+      height: Math.max(1, Math.round(height / GLYPH_RENDER_SCALE)),
+      kernel: 'lanczos3',
+    })
+    .png()
+    .toBuffer();
+  const scaledBbox = {
+    x1: bbox.x1 / GLYPH_RENDER_SCALE,
+    y1: bbox.y1 / GLYPH_RENDER_SCALE,
+    x2: bbox.x2 / GLYPH_RENDER_SCALE,
+    y2: bbox.y2 / GLYPH_RENDER_SCALE,
+  };
+  const result = { png, bbox: scaledBbox };
+  glyphPngCache.set(key, result);
+  return result;
+}
+
+async function renderLesFlosPng(text, fontSize, fill) {
+  const font = loadLesFlos();
+  const scale = fontSize / font.unitsPerEm;
+  const glyphs = font.stringToGlyphs(text);
+  const parts = [];
+  let cursor = 0;
+  let minX = 0;
+  let minY = 0;
+  let maxY = fontSize;
+  let maxX = 0;
+
+  for (let index = 0; index < glyphs.length; index += 1) {
+    const glyph = glyphs[index];
+    const next = glyphs[index + 1];
+    const rendered = await renderGlyphPng(glyph, fontSize, fill);
+    if (rendered.png) {
+      const { bbox, png } = rendered;
+      const left = cursor + bbox.x1 - 1;
+      const top = bbox.y1 - 1;
+      parts.push({ input: png, left, top });
+      minX = Math.min(minX, left);
+      minY = Math.min(minY, top);
+      maxY = Math.max(maxY, bbox.y2 + 1);
+      maxX = Math.max(maxX, cursor + bbox.x2 + 1);
+    }
+    if (glyph.name !== '.notdef') {
+      cursor += glyph.advanceWidth * scale;
+    }
+    if (next && typeof font.getKerningValue === 'function') {
+      cursor += font.getKerningValue(glyph, next) * scale;
+    }
+  }
+
+  const xShift = Math.ceil(Math.max(0, -minX));
+  const yShift = Math.ceil(Math.max(0, -minY));
+  const width = Math.max(1, Math.ceil(Math.max(cursor, maxX) + xShift + 4));
+  const height = Math.max(1, Math.ceil(maxY + yShift + 4));
+  const buffer = await sharp({
+    create: {
+      width,
+      height,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite(parts.map((part) => ({
+      input: part.input,
+      left: Math.round(part.left + xShift),
+      top: Math.round(part.top + yShift),
+    })))
+    .png()
+    .toBuffer();
+
+  return { buffer, width, height, baseline: yShift };
 }
 
 function cutPaperPath(width, height) {
@@ -290,7 +505,7 @@ function cutPaperPath(width, height) {
   return `M 0 ${h * 0.06} L ${w} ${h * 0.04} L ${w * 0.985} ${h * 0.94} L ${w * 0.02} ${h} Z`;
 }
 
-function scrapbookStrip({
+async function paintScrapbookStrip({
   text,
   x,
   y,
@@ -299,43 +514,102 @@ function scrapbookStrip({
   textFill,
   fontSize,
 }) {
+  const type = await renderLesFlosPng(text, fontSize, textFill);
   const padX = Math.round(fontSize * 0.28);
   const padTop = Math.round(fontSize * 0.22);
   const padBottom = Math.round(fontSize * 0.28);
-  const textWidth = Math.ceil(lesFlosWidth(text, fontSize));
-  const width = textWidth + padX * 2;
+  const width = Math.max(type.width + padX * 2, 48);
   const height = fontSize + padTop + padBottom;
   const baseline = padTop + fontSize * 0.78;
-  const originX = x + width / 2;
-  const originY = y + height / 2;
-  const glyphs = lesFlosText(text, x + padX, y + baseline, fontSize, textFill);
+  const textLeft = padX;
+  const textTop = Math.round(baseline - type.baseline);
+  const extraTop = Math.max(0, -textTop);
+  const extraBottom = Math.max(0, textTop + type.height - height);
+  const extraRight = Math.max(0, textLeft + type.width - width);
+  const canvasWidth = width + extraRight;
+  const canvasHeight = height + extraTop + extraBottom;
+  const paperSvg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+      `<path d="${cutPaperPath(width, height)}" fill="${fill}" stroke="${TOKEN.ink}" ` +
+        `stroke-width="3" stroke-linejoin="miter"/>` +
+    `</svg>`,
+  );
+  const stacked = await sharp({
+    create: {
+      width: canvasWidth,
+      height: canvasHeight,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([
+      { input: await sharp(paperSvg).png().toBuffer(), left: 0, top: extraTop },
+      {
+        input: type.buffer,
+        left: textLeft,
+        top: extraTop + textTop,
+      },
+    ])
+    .png()
+    .toBuffer();
+
+  const tilted = await sharp(stacked)
+    .rotate(rotateDeg, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+  const meta = await sharp(tilted).metadata();
   return {
-    width,
-    height,
-    svg:
-      `<g transform="rotate(${rotateDeg} ${originX} ${originY})">` +
-        `<path d="${cutPaperPath(width, height)}" transform="translate(${x} ${y})" ` +
-          `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="3" stroke-linejoin="miter"/>` +
-        glyphs.svg +
-      `</g>`,
+    width: meta.width,
+    height: meta.height,
+    layer: {
+      input: tilted,
+      left: Math.round(x - (meta.width - canvasWidth) / 2),
+      top: Math.round((y - extraTop) - (meta.height - canvasHeight) / 2),
+    },
   };
 }
 
-function metaChip({ text, x, y, fill, textFill }) {
+async function paintMetaChip({ text, x, y, fill, textFill }) {
   const fontSize = 26;
   const padX = 20;
   const height = 52;
-  const glyphs = lesFlosText(text, x + padX, y + 35, fontSize, textFill);
-  const width = glyphs.width + padX * 2;
+  const type = await renderLesFlosPng(text, fontSize, textFill);
+  const width = type.width + padX * 2;
+  const textLeft = padX;
+  const textTop = Math.round(35 - type.baseline);
+  const extraTop = Math.max(0, -textTop);
+  const extraBottom = Math.max(0, textTop + type.height - height);
+  const extraRight = Math.max(0, textLeft + type.width - width);
+  const canvasWidth = width + extraRight;
+  const canvasHeight = height + extraTop + extraBottom;
+  const chipSvg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+      `<rect x="1.25" y="1.25" width="${width - 2.5}" height="${height - 2.5}" rx="14" ` +
+        `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="2.5"/>` +
+    `</svg>`,
+  );
+  const stacked = await sharp({
+    create: {
+      width: canvasWidth,
+      height: canvasHeight,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([
+      { input: await sharp(chipSvg).png().toBuffer(), left: 0, top: extraTop },
+      {
+        input: type.buffer,
+        left: textLeft,
+        top: extraTop + textTop,
+      },
+    ])
+    .png()
+    .toBuffer();
   return {
-    width,
-    height,
-    svg:
-      `<g>` +
-        `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="14" ` +
-          `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="2.5"/>` +
-        glyphs.svg +
-      `</g>`,
+    width: canvasWidth,
+    height: canvasHeight,
+    layer: { input: stacked, left: x, top: y - extraTop },
   };
 }
 
@@ -353,53 +627,7 @@ function resolveHeroPath(seed) {
   return path.join(HERO_DIR, file);
 }
 
-function buildShareOverlaySvg({
-  titleLines,
-  whenChip,
-  placeChip,
-}) {
-  const fontSize = titleLines.length === 1 ? 86 : 76;
-  const measured = titleLines.map((line, index) => scrapbookStrip({
-    text: line,
-    x: 44 + (index === 1 ? 22 : 0),
-    y: 0,
-    rotateDeg: index === 0 ? -1.6 : 1.2,
-    fill: index === 0 ? TOKEN.cream : TOKEN.accent,
-    textFill: index === 0 ? TOKEN.ink : TOKEN.cream,
-    fontSize,
-  }));
-  const stripStackHeight = measured.reduce((sum, strip, index) => (
-    sum + strip.height + (index === 0 ? 0 : -8)
-  ), 0);
-  let stripY = 220;
-  const chipY = Math.min(SHARE_HEIGHT - 70, stripY + stripStackHeight + 22);
-  const stripMarkup = titleLines.map((line, index) => {
-    const placed = scrapbookStrip({
-      text: line,
-      x: 44 + (index === 1 ? 22 : 0),
-      y: stripY,
-      rotateDeg: index === 0 ? -1.6 : 1.2,
-      fill: index === 0 ? TOKEN.cream : TOKEN.accent,
-      textFill: index === 0 ? TOKEN.ink : TOKEN.cream,
-      fontSize,
-    });
-    stripY += placed.height - 8;
-    return placed.svg;
-  }).join('');
-
-  const when = whenChip
-    ? metaChip({ text: whenChip, x: 44, y: chipY, fill: TOKEN.ticker, textFill: TOKEN.ink })
-    : null;
-  const place = placeChip
-    ? metaChip({
-      text: placeChip,
-      x: 44 + (when ? when.width + 14 : 0),
-      y: chipY,
-      fill: TOKEN.pop,
-      textFill: TOKEN.ink,
-    })
-    : null;
-
+function buildShareWashSvg() {
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}">` +
       `<defs>` +
@@ -416,11 +644,60 @@ function buildShareOverlaySvg({
       `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#scrim)"/>` +
       `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="${TOKEN.warmCast}"/>` +
       `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#typeWell)"/>` +
-      stripMarkup +
-      (when ? when.svg : '') +
-      (place ? place.svg : '') +
     `</svg>`,
   );
+}
+
+async function buildShareTypeLayers({
+  titleLines,
+  whenChip,
+  placeChip,
+  fontSize,
+}) {
+  const size = fontSize || (titleLines.length === 1 ? HEADLINE_FONT_ONE_LINE : HEADLINE_FONT_SIZES[0]);
+  const paperHeight = size + Math.round(size * 0.22) + Math.round(size * 0.28);
+  const stackHeight = titleLines.reduce((sum, _line, index) => (
+    sum + paperHeight + (index === 0 ? 0 : -8)
+  ), 0);
+  let stripY = 214;
+  const chipY = Math.min(SHARE_HEIGHT - 70, stripY + stackHeight + 18);
+  const layers = [];
+
+  for (let index = 0; index < titleLines.length; index += 1) {
+    const placed = await paintScrapbookStrip({
+      text: titleLines[index],
+      x: 44 + (index === 1 ? 16 : index === 2 ? 8 : 0),
+      y: stripY,
+      rotateDeg: index === 0 ? -1.6 : index === 1 ? 1.2 : -0.8,
+      fill: index % 2 === 0 ? TOKEN.cream : TOKEN.accent,
+      textFill: index % 2 === 0 ? TOKEN.ink : TOKEN.cream,
+      fontSize: size,
+    });
+    layers.push(placed.layer);
+    stripY += paperHeight - 8;
+  }
+
+  const when = whenChip
+    ? await paintMetaChip({
+      text: whenChip,
+      x: 44,
+      y: chipY,
+      fill: TOKEN.ticker,
+      textFill: TOKEN.ink,
+    })
+    : null;
+  const place = placeChip
+    ? await paintMetaChip({
+      text: placeChip,
+      x: 44 + (when ? when.width + 14 : 0),
+      y: chipY,
+      fill: TOKEN.pop,
+      textFill: TOKEN.ink,
+    })
+    : null;
+  if (when) layers.push(when.layer);
+  if (place) layers.push(place.layer);
+  return layers;
 }
 
 /**
@@ -628,8 +905,10 @@ async function renderJustGoPublicEventShareImage(event, options = {}) {
   const validated = validatePublicEventShareInput(event);
   if (validated.error) return validated;
 
-  const titleLines = shareHeadlineLines(validated.title);
-  if (!titleLines.length) {
+  const photoBuffer = await loadEventPhotoBuffer(event, options);
+  const maxStripWidth = photoBuffer ? HEADLINE_MAX_STRIP_WITH_PHOTO : HEADLINE_MAX_STRIP_FULL;
+  const headline = layoutShareHeadline(validated.title, maxStripWidth);
+  if (!headline.lines.length) {
     return { error: 'title is required.', status: 400 };
   }
 
@@ -641,9 +920,10 @@ async function renderJustGoPublicEventShareImage(event, options = {}) {
     options.locale || 'en-US',
   );
   const placeChip = shortPlaceLabel(validated.venueText);
-  const photoBuffer = await loadEventPhotoBuffer(event, options);
-  const overlaySvg = buildShareOverlaySvg({
-    titleLines,
+  const washSvg = buildShareWashSvg();
+  const typeLayers = await buildShareTypeLayers({
+    titleLines: headline.lines,
+    fontSize: headline.fontSize,
     whenChip,
     placeChip,
   });
@@ -655,8 +935,7 @@ async function renderJustGoPublicEventShareImage(event, options = {}) {
   } catch (_) {
     // Missing or unreadable hero → immersive canvas.
   }
-  layers.push({ input: overlaySvg, left: 0, top: 0 });
-  layers.push(await loadWordmarkComposite());
+  layers.push({ input: washSvg, left: 0, top: 0 });
   if (photoBuffer) {
     try {
       layers.push(await preparePosterCard(photoBuffer));
@@ -664,6 +943,8 @@ async function renderJustGoPublicEventShareImage(event, options = {}) {
       // Unreadable photo → type on nature, no empty frame.
     }
   }
+  layers.push(...typeLayers);
+  layers.push(await loadWordmarkComposite());
 
   const canvas = sharp({
     create: {
@@ -690,6 +971,9 @@ module.exports = {
   TOKEN,
   HEADLINE_MAX_LINES,
   HEADLINE_CHARS_PER_LINE,
+  HEADLINE_MAX_STRIP_WITH_PHOTO,
+  layoutShareHeadline,
+  wrapHeadlineToWidth,
   POSTER_WIDTH,
   POSTER_HEIGHT,
   escapeSvgText,
@@ -699,7 +983,6 @@ module.exports = {
   shareHeadlineLines,
   shortPlaceLabel,
   wrapHeadline,
-  buildShareOverlaySvg,
   isSafePublicImageUrl,
   resolvePublicEventPhotoUrl,
   renderJustGoPublicEventShareImage,
