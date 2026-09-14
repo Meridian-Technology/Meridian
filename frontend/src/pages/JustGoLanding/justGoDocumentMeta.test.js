@@ -1,5 +1,6 @@
 import justGoLandingCopy from './justGoLandingCopy';
 import {
+  JUSTGO_OG_IMAGE_ALT,
   JUSTGO_OG_IMAGE_PATH,
   applyJustGoDocumentMeta,
   justGoDocumentCanonicalPath,
@@ -44,6 +45,18 @@ describe('applyJustGoDocumentMeta', () => {
     );
     expect(document.querySelector('meta[property="og:image"]').getAttribute('content')).toContain(
       JUSTGO_OG_IMAGE_PATH,
+    );
+    expect(document.querySelector('meta[property="og:image:width"]').getAttribute('content')).toBe(
+      '1200',
+    );
+    expect(document.querySelector('meta[property="og:image:height"]').getAttribute('content')).toBe(
+      '630',
+    );
+    expect(document.querySelector('meta[property="og:image:alt"]').getAttribute('content')).toBe(
+      JUSTGO_OG_IMAGE_ALT,
+    );
+    expect(document.querySelector('meta[name="twitter:image:alt"]').getAttribute('content')).toBe(
+      JUSTGO_OG_IMAGE_ALT,
     );
     expect(document.querySelector('link[rel="icon"]').getAttribute('href')).toContain(
       'justgo-icon.svg',

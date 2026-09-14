@@ -1,5 +1,6 @@
 const { isJustGoPublicHost } = require('./corsOrigins');
 const { justGoPublicUrl } = require('./justGoPublicUrl');
+const { formatPublicEventDate } = require('../services/justGoPublicEventShareImageService');
 
 const JUSTGO_TITLE = 'just go. this week in your city';
 const JUSTGO_DESCRIPTION =
@@ -7,6 +8,10 @@ const JUSTGO_DESCRIPTION =
 const JUSTGO_THEME_COLOR = '#1E1A16';
 const JUSTGO_SITE_NAME = 'just go';
 const JUSTGO_OG_IMAGE_PATH = '/justgo/og.jpg';
+const JUSTGO_OG_IMAGE_WIDTH = 1200;
+const JUSTGO_OG_IMAGE_HEIGHT = 630;
+const JUSTGO_OG_IMAGE_ALT =
+  'just go wordmark — this week in your city. stop planning. swipe what\'s on in your city this week. just go.';
 const JUSTGO_ICON_PATH = '/justgo-icon.svg';
 const PUBLIC_EVENT_PATH = /^\/events\/([0-9a-f]{24})\/?$/;
 const ANY_PUBLIC_EVENT_PATH = /^\/events\/([^/]+)\/?$/;
@@ -16,6 +21,50 @@ function escapeAttr(value) {
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;');
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function injectBeforeBodyClose(html, block) {
+  return String(html || '').replace(/<\/body>/i, `    ${block}\n  </body>`);
+}
+
+function buildPublicEventShareFallbackBlock(event, language = null) {
+  const venueLabel = resolveLanguageEntry(language, 'landing.web.event.venueLabel', 'where');
+  const organizerLabel = resolveLanguageEntry(
+    language,
+    'landing.web.event.organizerLabel',
+    'hosted by',
+  );
+  const dateSeparator = resolveLanguageEntry(language, 'landing.web.event.dateSeparator', 'to');
+  const when = formatPublicEventDate(event, 'en-US');
+  const lines = [
+    '<div id="justgo-share-fallback">',
+    `<h1>${escapeHtml(event.title)}</h1>`,
+  ];
+  if (when) {
+    lines.push(`<p>${escapeHtml(when.date)}</p>`);
+    lines.push(
+      `<p>${escapeHtml(when.startTime)} ${escapeHtml(dateSeparator)} ${escapeHtml(when.endTime)}</p>`,
+    );
+  }
+  const venueText = event.venue?.text;
+  if (typeof venueText === 'string' && venueText.trim()) {
+    lines.push(`<p>${escapeHtml(venueLabel)}: ${escapeHtml(venueText)}</p>`);
+  }
+  const organizerName = event.organizer?.name;
+  if (typeof organizerName === 'string' && organizerName.trim()) {
+    lines.push(`<p>${escapeHtml(organizerLabel)}: ${escapeHtml(organizerName)}</p>`);
+  }
+  const canonical = event.canonicalUrl;
+  lines.push(`<p><a href="${escapeAttr(canonical)}">${escapeHtml(canonical)}</a></p>`);
+  lines.push('</div>');
+  return lines.join('\n    ');
 }
 
 function requestPath(req) {
@@ -143,12 +192,30 @@ function resolveLanguageEntry(language, key, fallback) {
   return /[{}]/.test(value) ? fallback : value;
 }
 
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function resolvePublicEventShareImage(event, req) {
+  const photoUrl = nonEmptyString(event.socialPreview?.imageUrl)
+    || nonEmptyString(event.image?.url);
+  if (photoUrl) {
+    return { image: photoUrl, useGeneratedCard: false };
+  }
+  return {
+    image: justGoPublicUrl(`/api/public/events/${event.id}/opengraph.png`, req, {
+      nodeEnv: 'production',
+    }),
+    useGeneratedCard: true,
+  };
+}
+
 function applyPublicEventIndexHtml(html, req, event, language = null) {
   const brandName = language?.tokens?.['brand.name'] || JUSTGO_SITE_NAME;
   const title = `${event.title} | ${brandName}`;
   const description = event.socialPreview?.description || event.description || event.title;
-  const fallbackImage = justGoPublicUrl(JUSTGO_OG_IMAGE_PATH, req, { nodeEnv: 'production' });
-  const image = event.socialPreview?.imageUrl || event.image?.url || fallbackImage;
+  const { image, useGeneratedCard } = resolvePublicEventShareImage(event, req);
+  const imageAlt = event.title;
   let out = applyJustGoIndexHtml(html, req);
   out = setTitle(out, title);
   out = setLinkHref(out, 'canonical', event.canonicalUrl);
@@ -157,13 +224,20 @@ function applyPublicEventIndexHtml(html, req, event, language = null) {
   out = setMetaContent(out, 'property', 'og:title', title);
   out = setMetaContent(out, 'property', 'og:description', description);
   out = setMetaContent(out, 'property', 'og:image', image);
+  if (useGeneratedCard) {
+    out = setMetaContent(out, 'property', 'og:image:width', String(JUSTGO_OG_IMAGE_WIDTH));
+    out = setMetaContent(out, 'property', 'og:image:height', String(JUSTGO_OG_IMAGE_HEIGHT));
+  }
+  out = setMetaContent(out, 'property', 'og:image:alt', imageAlt);
   out = setMetaContent(out, 'property', 'og:url', event.canonicalUrl);
   out = setMetaContent(out, 'property', 'og:type', 'event');
   out = setMetaContent(out, 'property', 'og:site_name', brandName);
   out = setMetaContent(out, 'name', 'twitter:title', title);
   out = setMetaContent(out, 'name', 'twitter:description', description);
   out = setMetaContent(out, 'name', 'twitter:image', image);
-  return setJsonLd(out, publicEventStructuredData(event));
+  out = setMetaContent(out, 'name', 'twitter:image:alt', imageAlt);
+  out = setJsonLd(out, publicEventStructuredData(event));
+  return injectBeforeBodyClose(out, buildPublicEventShareFallbackBlock(event, language));
 }
 
 function applyUnavailablePublicEventIndexHtml(html, req, language = null) {
@@ -228,6 +302,9 @@ function applyJustGoIndexHtml(html, req) {
   out = setMetaContent(out, 'property', 'og:title', JUSTGO_TITLE);
   out = setMetaContent(out, 'property', 'og:description', JUSTGO_DESCRIPTION);
   out = setMetaContent(out, 'property', 'og:image', image);
+  out = setMetaContent(out, 'property', 'og:image:width', String(JUSTGO_OG_IMAGE_WIDTH));
+  out = setMetaContent(out, 'property', 'og:image:height', String(JUSTGO_OG_IMAGE_HEIGHT));
+  out = setMetaContent(out, 'property', 'og:image:alt', JUSTGO_OG_IMAGE_ALT);
   out = setMetaContent(out, 'property', 'og:url', canonical);
   out = setMetaContent(out, 'property', 'og:type', 'website');
   out = setMetaContent(out, 'property', 'og:site_name', JUSTGO_SITE_NAME);
@@ -235,6 +312,7 @@ function applyJustGoIndexHtml(html, req) {
   out = setMetaContent(out, 'name', 'twitter:title', JUSTGO_TITLE);
   out = setMetaContent(out, 'name', 'twitter:description', JUSTGO_DESCRIPTION);
   out = setMetaContent(out, 'name', 'twitter:image', image);
+  out = setMetaContent(out, 'name', 'twitter:image:alt', JUSTGO_OG_IMAGE_ALT);
   out = setLinkHref(out, 'icon', icon);
   out = setLinkHref(out, 'apple-touch-icon', icon);
   return out;
@@ -244,6 +322,9 @@ module.exports = {
   JUSTGO_TITLE,
   JUSTGO_DESCRIPTION,
   JUSTGO_OG_IMAGE_PATH,
+  JUSTGO_OG_IMAGE_WIDTH,
+  JUSTGO_OG_IMAGE_HEIGHT,
+  JUSTGO_OG_IMAGE_ALT,
   wantsJustGoHtmlMeta,
   justGoCanonicalPath,
   applyJustGoIndexHtml,
@@ -253,4 +334,6 @@ module.exports = {
   applyPublicEventIndexHtml,
   applyUnavailablePublicEventIndexHtml,
   renderPublicEventIndexHtml,
+  resolvePublicEventShareImage,
+  buildPublicEventShareFallbackBlock,
 };
