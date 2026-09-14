@@ -27,9 +27,9 @@ Eligible public events always use:
 https://justgo.lol/api/public/events/{eventId}/opengraph.png
 ```
 
-Crawlers never receive the raw Luma/Partiful photo as `og:image`. The PNG is a photo-first Just Go flyer: full-bleed cover, wordmark, Les Flos scrapbook headline (short, lowercase, subtitle after `:` dropped), and two chips — when and place. Host names, street addresses, and time ranges stay off the card. `og:image:width` / `og:image:height` are always 1200 and 630. `og:image:alt` / `twitter:image:alt` use the event title.
+Crawlers never receive the raw Luma/Partiful photo as `og:image`. The PNG is a Just Go flyer: blurred week-home nature hero (`canopy` / `coast` / `meadow`), larger wordmark, Les Flos scrapbook headline (short, lowercase, subtitle after `:` dropped), and two chips — when and place. When the event has a photo, that artwork sits on its own tilted 3:4 poster card with a cream/ink border and a week-home gleam — the whole image is readable, not a blurred full-bleed cover. Host names, street addresses, and time ranges stay off the card. `og:image:width` / `og:image:height` are always 1200 and 630. `og:image:alt` / `twitter:image:alt` use the event title.
 
-When `socialPreview.imageUrl` or `image.url` is present, the service fetches that photo over HTTPS (timeout, size cap, no private hosts, no SVG) and cover-crops it to 1200×630 under a warm vignette. If the fetch fails or the event has no photo, the canvas is immersive `#1A1714` — still branded, never an unbranded remote image.
+When `socialPreview.imageUrl` or `image.url` is present, the service fetches that photo over HTTPS (timeout, size cap, no private hosts, no SVG) and cover-crops it into the poster card. If the fetch fails or the event has no photo, the canvas is still the blurred nature hero plus type — never an unbranded remote image, and never an empty card frame.
 
 Additional rules:
 

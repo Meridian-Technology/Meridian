@@ -28,7 +28,18 @@ const WORDMARK_PATH = path.join(
   '../../frontend/public/justgo/wordmark-1624.png',
 );
 const LES_FLOS_PATH = path.join(__dirname, '../assets/justgo/LesFlosSans.otf');
-const WORDMARK_DISPLAY_WIDTH = 260;
+const HERO_DIR = path.join(__dirname, '../assets/justgo');
+const HERO_FILES = Object.freeze([
+  'hero-canopy.jpg',
+  'hero-coast.jpg',
+  'hero-meadow.jpg',
+]);
+const WORDMARK_DISPLAY_WIDTH = 312;
+
+const POSTER_WIDTH = 388;
+const POSTER_HEIGHT = 518;
+const POSTER_RADIUS = 16;
+const POSTER_TILT_DEG = -5.4;
 
 const FIELD_LIMITS = Object.freeze({
   title: 200,
@@ -38,7 +49,7 @@ const FIELD_LIMITS = Object.freeze({
 });
 
 const HEADLINE_MAX_LINES = 2;
-const HEADLINE_CHARS_PER_LINE = 22;
+const HEADLINE_CHARS_PER_LINE = 16;
 const PLACE_MAX_CHARS = 22;
 const PHOTO_FETCH_TIMEOUT_MS = 3500;
 const PHOTO_FETCH_MAX_BYTES = 5 * 1024 * 1024;
@@ -312,95 +323,147 @@ function scrapbookStrip({
 }
 
 function metaChip({ text, x, y, fill, textFill }) {
-  const fontSize = 22;
-  const padX = 16;
-  const height = 40;
-  const glyphs = lesFlosText(text, x + padX, y + 28, fontSize, textFill);
+  const fontSize = 26;
+  const padX = 20;
+  const height = 52;
+  const glyphs = lesFlosText(text, x + padX, y + 35, fontSize, textFill);
   const width = glyphs.width + padX * 2;
   return {
     width,
     height,
     svg:
       `<g>` +
-        `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" ` +
-          `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="2"/>` +
+        `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="14" ` +
+          `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="2.5"/>` +
         glyphs.svg +
       `</g>`,
   };
+}
+
+function hashSeed(value) {
+  const text = String(value || '');
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function resolveHeroPath(seed) {
+  const file = HERO_FILES[hashSeed(seed) % HERO_FILES.length];
+  return path.join(HERO_DIR, file);
 }
 
 function buildShareOverlaySvg({
   titleLines,
   whenChip,
   placeChip,
-  hasPhoto,
 }) {
-  const fontSize = titleLines.length === 1 ? 72 : 58;
+  const fontSize = titleLines.length === 1 ? 86 : 72;
   const measured = titleLines.map((line, index) => scrapbookStrip({
     text: line,
-    x: 56 + (index === 1 ? 18 : 0),
+    x: 48 + (index === 1 ? 22 : 0),
     y: 0,
-    rotateDeg: index === 0 ? -1.4 : 1.1,
+    rotateDeg: index === 0 ? -1.6 : 1.2,
     fill: index === 0 ? TOKEN.cream : TOKEN.accent,
     textFill: index === 0 ? TOKEN.ink : TOKEN.cream,
     fontSize,
   }));
   const stripStackHeight = measured.reduce((sum, strip, index) => (
-    sum + strip.height + (index === 0 ? 0 : -6)
+    sum + strip.height + (index === 0 ? 0 : -8)
   ), 0);
-  const chipY = SHARE_HEIGHT - 86;
-  let stripY = chipY - 28 - stripStackHeight;
+  const chipY = SHARE_HEIGHT - 78;
+  let stripY = Math.max(196, chipY - 36 - stripStackHeight);
   const stripMarkup = titleLines.map((line, index) => {
     const placed = scrapbookStrip({
       text: line,
-      x: 56 + (index === 1 ? 18 : 0),
+      x: 48 + (index === 1 ? 22 : 0),
       y: stripY,
-      rotateDeg: index === 0 ? -1.4 : 1.1,
+      rotateDeg: index === 0 ? -1.6 : 1.2,
       fill: index === 0 ? TOKEN.cream : TOKEN.accent,
       textFill: index === 0 ? TOKEN.ink : TOKEN.cream,
       fontSize,
     });
-    stripY += placed.height - 6;
+    stripY += placed.height - 8;
     return placed.svg;
   }).join('');
 
   const when = whenChip
-    ? metaChip({ text: whenChip, x: 56, y: chipY, fill: TOKEN.ticker, textFill: TOKEN.ink })
+    ? metaChip({ text: whenChip, x: 48, y: chipY, fill: TOKEN.ticker, textFill: TOKEN.ink })
     : null;
   const place = placeChip
     ? metaChip({
       text: placeChip,
-      x: 56 + (when ? when.width + 12 : 0),
+      x: 48 + (when ? when.width + 14 : 0),
       y: chipY,
       fill: TOKEN.pop,
       textFill: TOKEN.ink,
     })
     : null;
 
-  const wash = hasPhoto
-    ? `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="${TOKEN.warmCast}"/>` +
-      `<defs>` +
-        `<linearGradient id="topFade" x1="0" y1="0" x2="0" y2="1">` +
-          `<stop offset="0%" stop-color="${TOKEN.vignetteTop}"/>` +
-          `<stop offset="42%" stop-color="${TOKEN.vignetteMid}" stop-opacity="0.35"/>` +
-          `<stop offset="70%" stop-color="rgb(14,11,9)" stop-opacity="0"/>` +
-        `</linearGradient>` +
-        `<linearGradient id="bottomFade" x1="0" y1="0" x2="0" y2="1">` +
-          `<stop offset="45%" stop-color="rgb(14,11,9)" stop-opacity="0"/>` +
-          `<stop offset="78%" stop-color="${TOKEN.vignetteMid}"/>` +
-          `<stop offset="100%" stop-color="${TOKEN.vignetteBottom}"/>` +
-        `</linearGradient>` +
-      `</defs>` +
-      `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#topFade)"/>` +
-      `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#bottomFade)"/>`
-    : '';
-
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}">` +
-      wash +
+      `<defs>` +
+        `<linearGradient id="typeWell" x1="0" y1="0" x2="1" y2="0">` +
+          `<stop offset="0%" stop-color="rgb(16,12,10)" stop-opacity="0.42"/>` +
+          `<stop offset="42%" stop-color="rgb(16,12,10)" stop-opacity="0.18"/>` +
+          `<stop offset="68%" stop-color="rgb(16,12,10)" stop-opacity="0"/>` +
+        `</linearGradient>` +
+        `<linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="0%" stop-color="rgb(26,23,20)" stop-opacity="0.28"/>` +
+          `<stop offset="100%" stop-color="rgb(14,11,9)" stop-opacity="0.46"/>` +
+        `</linearGradient>` +
+      `</defs>` +
+      `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#scrim)"/>` +
+      `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="${TOKEN.warmCast}"/>` +
+      `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#typeWell)"/>` +
       stripMarkup +
       (when ? when.svg : '') +
       (place ? place.svg : '') +
+    `</svg>`,
+  );
+}
+
+function posterGleamSvg() {
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}">` +
+      `<defs>` +
+        `<clipPath id="posterClip">` +
+          `<rect width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" rx="${POSTER_RADIUS}"/>` +
+        `</clipPath>` +
+        `<linearGradient id="gleamBand" x1="0" y1="0" x2="1" y2="1">` +
+          `<stop offset="0%" stop-color="#fff" stop-opacity="0"/>` +
+          `<stop offset="40%" stop-color="#fff" stop-opacity="0"/>` +
+          `<stop offset="47%" stop-color="#fff" stop-opacity="0.46"/>` +
+          `<stop offset="54%" stop-color="#fff" stop-opacity="0"/>` +
+          `<stop offset="100%" stop-color="#fff" stop-opacity="0"/>` +
+        `</linearGradient>` +
+        `<linearGradient id="topEdge" x1="0" y1="0" x2="1" y2="0">` +
+          `<stop offset="0%" stop-color="#fff" stop-opacity="0.92"/>` +
+          `<stop offset="72%" stop-color="#fff" stop-opacity="0"/>` +
+        `</linearGradient>` +
+        `<linearGradient id="leftEdge" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="0%" stop-color="#fff" stop-opacity="0.86"/>` +
+          `<stop offset="58%" stop-color="#fff" stop-opacity="0"/>` +
+        `</linearGradient>` +
+      `</defs>` +
+      `<g clip-path="url(#posterClip)">` +
+        `<rect width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" fill="url(#gleamBand)"/>` +
+        `<rect x="0" y="0" width="${Math.round(POSTER_WIDTH * 0.44)}" height="3" fill="url(#topEdge)"/>` +
+        `<rect x="0" y="0" width="3" height="${Math.round(POSTER_HEIGHT * 0.38)}" fill="url(#leftEdge)"/>` +
+      `</g>` +
+      `<rect x="1.5" y="1.5" width="${POSTER_WIDTH - 3}" height="${POSTER_HEIGHT - 3}" ` +
+        `rx="${POSTER_RADIUS - 1}" fill="none" stroke="${TOKEN.cream}" stroke-width="5"/>` +
+      `<rect x="0.75" y="0.75" width="${POSTER_WIDTH - 1.5}" height="${POSTER_HEIGHT - 1.5}" ` +
+        `rx="${POSTER_RADIUS}" fill="none" stroke="rgba(42,42,42,0.72)" stroke-width="1.5"/>` +
+    `</svg>`,
+  );
+}
+
+function posterMaskSvg() {
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}">` +
+      `<rect width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" rx="${POSTER_RADIUS}" fill="#fff"/>` +
     `</svg>`,
   );
 }
@@ -413,15 +476,78 @@ async function loadWordmarkComposite() {
     .resize({ width: WORDMARK_DISPLAY_WIDTH })
     .png()
     .toBuffer();
-  return { input: resized, left: 52, top: 40 };
+  return { input: resized, left: 40, top: 16 };
 }
 
-async function prepareFullBleedPhoto(photoBuffer) {
-  return sharp(photoBuffer)
-    .rotate()
-    .resize(SHARE_WIDTH, SHARE_HEIGHT, { fit: 'cover', position: 'centre' })
+async function renderHeroBackdrop(seed) {
+  const heroPath = resolveHeroPath(seed);
+  if (!fs.existsSync(heroPath)) return null;
+  const scaledWidth = Math.round(SHARE_WIDTH * 1.08);
+  const scaledHeight = Math.round(SHARE_HEIGHT * 1.08);
+  return sharp(heroPath)
+    .resize(scaledWidth, scaledHeight, { fit: 'cover', position: 'centre' })
+    .blur(22)
+    .extract({
+      left: Math.round((scaledWidth - SHARE_WIDTH) / 2),
+      top: Math.round((scaledHeight - SHARE_HEIGHT) / 2),
+      width: SHARE_WIDTH,
+      height: SHARE_HEIGHT,
+    })
+    .modulate({ brightness: 0.58, saturation: 0.82 })
     .png()
     .toBuffer();
+}
+
+async function preparePosterCard(photoBuffer) {
+  const artwork = await sharp(photoBuffer)
+    .rotate()
+    .resize(POSTER_WIDTH, POSTER_HEIGHT, { fit: 'cover', position: 'centre' })
+    .png()
+    .toBuffer();
+
+  const rounded = await sharp(artwork)
+    .composite([
+      { input: posterMaskSvg(), blend: 'dest-in' },
+      { input: posterGleamSvg(), blend: 'over' },
+    ])
+    .png()
+    .toBuffer();
+
+  const shadowPad = 28;
+  const shadowOffsetY = 14;
+  const shadowCanvasWidth = POSTER_WIDTH + shadowPad * 2;
+  const shadowCanvasHeight = POSTER_HEIGHT + shadowPad * 2 + shadowOffsetY;
+  const shadowShape = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${shadowCanvasWidth}" height="${shadowCanvasHeight}">` +
+      `<rect x="${shadowPad + 4}" y="${shadowPad + shadowOffsetY}" ` +
+        `width="${POSTER_WIDTH - 8}" height="${POSTER_HEIGHT - 4}" rx="${POSTER_RADIUS + 2}" ` +
+        `fill="rgba(8,6,4,0.48)"/>` +
+    `</svg>`,
+  );
+  const shadow = await sharp(shadowShape).blur(14).png().toBuffer();
+  const stacked = await sharp({
+    create: {
+      width: shadowCanvasWidth,
+      height: shadowCanvasHeight,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([
+      { input: shadow, left: 0, top: 0 },
+      { input: rounded, left: shadowPad, top: shadowPad },
+    ])
+    .png()
+    .toBuffer();
+
+  const tilted = await sharp(stacked)
+    .rotate(POSTER_TILT_DEG, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+  const meta = await sharp(tilted).metadata();
+  const left = SHARE_WIDTH - meta.width - 22;
+  const top = Math.max(8, Math.round((SHARE_HEIGHT - meta.height) / 2));
+  return { input: tilted, left, top, width: meta.width, height: meta.height };
 }
 
 async function fetchSharePhotoBuffer(photoUrl) {
@@ -466,7 +592,7 @@ async function loadEventPhotoBuffer(event, options = {}) {
 
 /**
  * Render a 1200×630 PNG share card for a public event v1 payload.
- * Photo-first Just Go flyer: wordmark, scrapbook headline, when/where chips.
+ * Blurred nature hero, scrapbook type, and the event photo as a gleam poster card.
  *
  * @returns {{ buffer?: Buffer, error?: string, status?: number }}
  */
@@ -492,19 +618,24 @@ async function renderJustGoPublicEventShareImage(event, options = {}) {
     titleLines,
     whenChip,
     placeChip,
-    hasPhoto: Boolean(photoBuffer),
   });
 
   const layers = [];
-  if (photoBuffer) {
-    try {
-      layers.push({ input: await prepareFullBleedPhoto(photoBuffer), left: 0, top: 0 });
-    } catch (_) {
-      // Unreadable photo → immersive canvas.
-    }
+  try {
+    const hero = await renderHeroBackdrop(`${validated.title}|${validated.startsAt}`);
+    if (hero) layers.push({ input: hero, left: 0, top: 0 });
+  } catch (_) {
+    // Missing or unreadable hero → immersive canvas.
   }
   layers.push({ input: overlaySvg, left: 0, top: 0 });
   layers.push(await loadWordmarkComposite());
+  if (photoBuffer) {
+    try {
+      layers.push(await preparePosterCard(photoBuffer));
+    } catch (_) {
+      // Unreadable photo → type on nature, no empty frame.
+    }
+  }
 
   const canvas = sharp({
     create: {
@@ -531,6 +662,8 @@ module.exports = {
   TOKEN,
   HEADLINE_MAX_LINES,
   HEADLINE_CHARS_PER_LINE,
+  POSTER_WIDTH,
+  POSTER_HEIGHT,
   escapeSvgText,
   formatPublicEventDate,
   formatShareWhenChip,

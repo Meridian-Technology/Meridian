@@ -58,10 +58,10 @@ describe('justGoPublicEventShareImageService', () => {
     });
   });
 
-  it('uses the short headline before a colon and lowercases it', () => {
+  it('uses the short headline before a colon and wraps it large', () => {
     expect(shareHeadlineLines(
       'Blinkko Launch Party: A first look at the social wearable that brings AI into real-world connection.',
-    )).toEqual(['blinkko launch party']);
+    )).toEqual(['blinkko launch', 'party']);
   });
 
   it('wraps leftover long headlines to two lines without duplicating words', () => {
@@ -83,7 +83,6 @@ describe('justGoPublicEventShareImageService', () => {
       titleLines: ['movie <finale>'],
       whenChip: 'fri · sep 4',
       placeChip: 'civic center <lawn>',
-      hasPhoto: false,
     }).toString('utf8');
 
     expect(svg).not.toContain('<finale>');
@@ -136,13 +135,13 @@ describe('justGoPublicEventShareImageService', () => {
     }))).toBe('https://images.example.test/event.jpg');
   });
 
-  it('composites a provided photo full-bleed under the flyer overlay', async () => {
+  it('composites a provided photo as a gleam poster card over the nature hero', async () => {
     const photoBuffer = await sharp({
       create: {
         width: 800,
-        height: 800,
+        height: 1066,
         channels: 3,
-        background: { r: 40, g: 120, b: 200 },
+        background: { r: 220, g: 16, b: 170 },
       },
     }).jpeg().toBuffer();
 
@@ -162,17 +161,30 @@ describe('justGoPublicEventShareImageService', () => {
     expect(meta.height).toBe(SHARE_HEIGHT);
     expect(meta.format).toBe('png');
 
-    const { data } = await sharp(result.buffer)
+    const posterSample = await sharp(result.buffer)
       .extract({
-        left: Math.floor(SHARE_WIDTH / 2) - 2,
-        top: 210,
-        width: 4,
-        height: 4,
+        left: SHARE_WIDTH - 160,
+        top: Math.floor(SHARE_HEIGHT / 2) - 4,
+        width: 8,
+        height: 8,
       })
       .raw()
-      .toBuffer({ resolveWithObject: true });
-    const sample = data.slice(0, 3);
-    expect(sample[2]).toBeGreaterThan(sample[0]);
+      .toBuffer();
+    const posterPixel = posterSample.slice(0, 3);
+    expect(posterPixel[0]).toBeGreaterThan(140);
+    expect(posterPixel[1]).toBeLessThan(90);
+
+    const backdropSample = await sharp(result.buffer)
+      .extract({
+        left: 180,
+        top: 120,
+        width: 8,
+        height: 8,
+      })
+      .raw()
+      .toBuffer();
+    const backdropPixel = backdropSample.slice(0, 3);
+    expect(backdropPixel[0]).toBeLessThan(140);
   });
 
   it('falls back to the immersive flyer when photo fetch fails', async () => {
