@@ -6,7 +6,11 @@
 const getGlobalModels = require('./getGlobalModelService');
 const { getTenantByKey } = require('./tenantConfigService');
 const { isPivotTenant } = require('../utilities/pivotDropSchedule');
-const { justGoLandingQrUrl, justGoLandingQrHopUrl } = require('../utilities/justGoPublicUrl');
+const {
+  justGoLandingQrUrl,
+  justGoLandingQrDirectUrl,
+  justGoLandingQrHopUrl,
+} = require('../utilities/justGoPublicUrl');
 const { IOWA_TENANT_KEY, resolvePosterTzHop } = require('../utilities/justGoPosterTzHop');
 const { VISITOR_ID_MAX_LENGTH } = require('../schemas/justGoLandingEvent');
 const {
@@ -129,7 +133,11 @@ function serializeLandingQr(row, req) {
       ? new Date(row.lastScannedAt).toISOString()
       : null,
     scanDays: scanDaysToObject(row.scanDays),
+    // Keep payloadUrl as the legacy hop for API compatibility and printed stock.
+    // New QR artwork should prefer directUrl to avoid an extra page transition.
     payloadUrl: justGoLandingQrUrl(name, req),
+    legacyUrl: justGoLandingQrUrl(name, req),
+    directUrl: justGoLandingQrDirectUrl(row.tenantKey, name, req),
     createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
     updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
   };

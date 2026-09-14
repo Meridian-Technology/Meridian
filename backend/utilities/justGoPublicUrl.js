@@ -52,6 +52,15 @@ function justGoLandingQrUrl(name, req, options) {
   return justGoPublicUrl(`/qr/${encodeURIComponent(slug)}`, req, options);
 }
 
+/**
+ * Fast QR payload for newly generated artwork. Lands directly on the city page
+ * while preserving the named campaign for views and downstream conversions.
+ * `/qr/{name}` remains the legacy scan hop for already-printed codes.
+ */
+function justGoLandingQrDirectUrl(tenantKey, name, req, options) {
+  return justGoLandingQrHopUrl(tenantKey, name, req, null, options);
+}
+
 /** City landing after a scan. Forces src=qr and qr={name}; keeps other query params. */
 function justGoLandingQrHopUrl(tenantKey, name, req, extraSearch, options) {
   const key = String(tenantKey || '').trim().toLowerCase();
@@ -76,5 +85,6 @@ module.exports = {
   justGoPublicUrl,
   justGoWaitlistShareUrl,
   justGoLandingQrUrl,
+  justGoLandingQrDirectUrl,
   justGoLandingQrHopUrl,
 };

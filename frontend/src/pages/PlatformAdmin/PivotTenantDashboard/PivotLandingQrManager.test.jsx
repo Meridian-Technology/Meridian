@@ -53,6 +53,8 @@ function qrItem(overrides = {}) {
     uniqueScans: 3,
     lastScannedAt: '2026-08-18T18:00:00.000Z',
     payloadUrl: 'https://justgo.lol/qr/poster-night',
+    legacyUrl: 'https://justgo.lol/qr/poster-night',
+    directUrl: 'https://justgo.lol/nyc?src=qr&qr=poster-night',
     ...overrides,
   };
 }
@@ -152,7 +154,10 @@ describe('PivotLandingQrManager', () => {
 
     rerender(<PivotLandingQrManager tenantKey="nyc" />);
     expect(screen.getByText('poster-night')).toBeInTheDocument();
-    expect(screen.getByText('→ https://justgo.lol/qr/poster-night')).toBeInTheDocument();
+    expect(screen.getByText('→ https://justgo.lol/nyc?src=qr&qr=poster-night')).toBeInTheDocument();
+    expect(
+      screen.getByText('Legacy poster: https://justgo.lol/qr/poster-night'),
+    ).toBeInTheDocument();
   });
 
   it('prompts for PNG or SVG in place, then downloads with Just Go ink', async () => {
@@ -165,7 +170,7 @@ describe('PivotLandingQrManager', () => {
     fireEvent.click(screen.getByRole('button', { name: 'PNG' }));
     await waitFor(() => {
       expect(mockDownloadJustGoQr).toHaveBeenCalledWith(
-        'https://justgo.lol/qr/poster-night',
+        'https://justgo.lol/nyc?src=qr&qr=poster-night',
         expect.objectContaining({
           format: 'png',
           fgColor: '#1A1714',
@@ -181,7 +186,7 @@ describe('PivotLandingQrManager', () => {
     fireEvent.click(screen.getByRole('button', { name: 'SVG' }));
     await waitFor(() => {
       expect(mockDownloadJustGoQr).toHaveBeenCalledWith(
-        'https://justgo.lol/qr/poster-night',
+        'https://justgo.lol/nyc?src=qr&qr=poster-night',
         expect.objectContaining({
           format: 'svg',
           fgColor: '#1A1714',
@@ -191,13 +196,13 @@ describe('PivotLandingQrManager', () => {
     });
   });
 
-  it('copies the public hop URL', async () => {
+  it('copies the fast direct attribution URL', async () => {
     stubQrs({ items: [qrItem()] });
     renderManager();
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        'https://justgo.lol/qr/poster-night',
+        'https://justgo.lol/nyc?src=qr&qr=poster-night',
       );
     });
   });

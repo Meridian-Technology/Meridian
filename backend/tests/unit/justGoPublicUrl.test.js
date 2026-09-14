@@ -4,6 +4,7 @@ const {
   justGoPublicUrl,
   justGoWaitlistShareUrl,
   justGoLandingQrUrl,
+  justGoLandingQrDirectUrl,
   justGoLandingQrHopUrl,
 } = require('../../utilities/justGoPublicUrl');
 
@@ -48,6 +49,15 @@ describe('justGoPublicUrl (backend)', () => {
     );
     expect(justGoLandingQrUrl('troy', null, { nodeEnv: 'production' })).toBe(
       'https://justgo.lol/qr/troy',
+    );
+  });
+
+  it('builds a fast direct QR URL for newly generated artwork', () => {
+    expect(justGoLandingQrDirectUrl('SF', 'SFSU', null, { nodeEnv: 'production' })).toBe(
+      'https://justgo.lol/sf?src=qr&qr=sfsu',
+    );
+    expect(justGoLandingQrDirectUrl('IC', 'Iowa-1', null, { nodeEnv: 'production' })).toBe(
+      'https://justgo.lol/ic?src=qr&qr=iowa-1',
     );
   });
 

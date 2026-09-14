@@ -169,11 +169,11 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
     return rows.map((row) => ({
       key: row.qrName,
       label: row.qrName,
-      value: row.scans ?? 0,
+      value: row.views ?? 0,
       hint: launched
-        ? `${row.views ?? 0} views · ${row.storeClicks ?? 0} store clicks`
-        : `${row.views ?? 0} views · ${row.waitlistSignups ?? 0} signups`,
-      secondary: `${row.views ?? 0} views`,
+        ? `${row.storeClicks ?? 0} store clicks · ${row.scans ?? 0} legacy hops`
+        : `${row.waitlistSignups ?? 0} signups · ${row.scans ?? 0} legacy hops`,
+      secondary: `${row.scans ?? 0} legacy hops`,
     }));
   }, [qr.byName, launched]);
 
@@ -410,7 +410,7 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
                 hint={launched ? 'store clicks / views' : 'signups / views'}
               />
               <PivotOpsMetric
-                label="QR scans"
+                label="Legacy QR hops"
                 value={<PivotOpsAnimateNumber value={qr.scans ?? 0} />}
                 hint="hops at /qr/{name}"
               />
@@ -439,11 +439,11 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
             />
             {qrBars.length ? (
               <div className="pivot-tenant-launch__qr-kpis">
-                <p className="pivot-tenant-launch__bars-label">QR hops vs landing views</p>
+                <p className="pivot-tenant-launch__bars-label">QR-attributed landing views</p>
                 <PivotOpsBarList
                   items={qrBars}
-                  ariaLabel="QR hops and landing views by code"
-                  valueFormat={(value) => `${value} scans`}
+                  ariaLabel="QR-attributed landing views by code"
+                  valueFormat={(value) => `${value} views`}
                 />
               </div>
             ) : null}
@@ -545,14 +545,14 @@ function PivotTenantLaunchPage({ tenantKey, cityDisplayName }) {
       <PivotOpsSection
         title="Public link"
         titleId="pivot-launch-link"
-        description="Canonical city landing. Named tracking QRs below hop here with src=qr."
+        description="Canonical city landing. New tracking QRs open this page directly with src=qr."
       >
         {launchLoading && !launch ? (
           <p className="pivot-lab__empty">Loading public URL…</p>
         ) : (
           <>
             <PivotOpsBanner tone="muted" title={publicUrl}>
-              Share or print this URL. Poster QRs use justgo.lol/qr/name and land here.
+              Share this URL directly. New poster QRs below add campaign attribution; legacy /qr/name posters still land here.
             </PivotOpsBanner>
             <div className="pivot-tenant-launch__link-row">
               <button

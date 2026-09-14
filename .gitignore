@@ -42,7 +42,7 @@ venv/
 
 .vscode/
 
-scripts/
+backend/scripts/
 .env*
 .flaskenv*
 !.env.project

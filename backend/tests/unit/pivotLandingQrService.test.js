@@ -91,6 +91,8 @@ describe('pivotLandingQrService (Task 5.1)', () => {
     expect(result.error).toBeUndefined();
     expect(result.data.tenantKey).toBe('nyc');
     expect(result.data.items[0].payloadUrl).toMatch(/\/qr\/poster-a$/);
+    expect(result.data.items[0].legacyUrl).toMatch(/\/qr\/poster-a$/);
+    expect(result.data.items[0].directUrl).toMatch(/\/nyc\?src=qr&qr=poster-a$/);
     expect(result.data.items[0].fgColor).toBe('#1A1714');
     expect(getModels).not.toHaveBeenCalled();
     expect(getGlobalModels).toHaveBeenCalledWith(expect.anything(), 'JustGoLandingQr');
@@ -118,6 +120,7 @@ describe('pivotLandingQrService (Task 5.1)', () => {
     expect(result.data.name).toBe('troy');
     expect(result.data.tenantKey).toBe('troy');
     expect(result.data.payloadUrl).toMatch(/\/qr\/troy$/);
+    expect(result.data.directUrl).toMatch(/\/troy\?src=qr&qr=troy$/);
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'troy',

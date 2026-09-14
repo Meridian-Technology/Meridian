@@ -10,7 +10,10 @@ import {
   downloadJustGoQr,
   justGoQrFilename,
 } from '../../../components/JustGoQr/justGoQrTheme';
-import { justGoPublicUrl } from '../../JustGoLanding/justGoLandingCopy';
+import {
+  justGoPublicLandingUrl,
+  justGoPublicUrl,
+} from '../../JustGoLanding/justGoLandingCopy';
 import PivotLandingQrModal from './PivotLandingQrModal';
 import './PivotLandingQrManager.scss';
 
@@ -22,7 +25,19 @@ function payload(response) {
 }
 
 function qrPayloadUrl(qr) {
-  return qr?.payloadUrl || justGoPublicUrl(`/qr/${encodeURIComponent(qr?.name || '')}`);
+  if (qr?.directUrl) return qr.directUrl;
+  const base = justGoPublicLandingUrl(qr?.tenantKey);
+  const params = new URLSearchParams({
+    src: 'qr',
+    qr: String(qr?.name || '').trim().toLowerCase(),
+  });
+  return `${base}?${params.toString()}`;
+}
+
+function qrLegacyUrl(qr) {
+  return qr?.legacyUrl
+    || qr?.payloadUrl
+    || justGoPublicUrl(`/qr/${encodeURIComponent(qr?.name || '')}`);
 }
 
 function formatSemanticDate(value) {
@@ -259,7 +274,7 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
     <PivotOpsSection
       title="Tracking QRs"
       titleId="pivot-launch-qrs"
-      description="Named codes at justgo.lol/qr/{name}. Default ink is Just Go, not campus green."
+      description="New codes land directly on the city page for faster attribution. Existing justgo.lol/qr/{name} posters remain supported."
       actions={
         <button
           type="button"
@@ -287,6 +302,7 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
         <div className="pivot-landing-qr-list">
           {items.map((qr) => {
             const url = qrPayloadUrl(qr);
+            const legacyUrl = qrLegacyUrl(qr);
             const lastScan = formatSemanticDate(qr.lastScannedAt);
             return (
               <div
@@ -312,6 +328,9 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
                     ) : null}
                     <span className="pivot-landing-qr-item__redirect" title={url}>
                       → {url}
+                    </span>
+                    <span className="pivot-landing-qr-item__meta" title={legacyUrl}>
+                      Legacy poster: {legacyUrl}
                     </span>
                     <span className="pivot-landing-qr-item__stats">
                       {qr.scans ?? 0} scans
@@ -424,4 +443,4 @@ function PivotLandingQrManager({ tenantKey, refetchRef }) {
 }
 
 export default PivotLandingQrManager;
-export { qrPayloadUrl };
+export { qrPayloadUrl, qrLegacyUrl };

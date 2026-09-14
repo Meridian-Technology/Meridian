@@ -201,10 +201,10 @@ describe('PivotTenantLaunchPage', () => {
     expect(screen.getAllByText('poster-night').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('https://justgo.lol/nyc')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Landing views by source' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'QR hops and landing views by code' })).toBeInTheDocument();
-    expect(screen.getByText('QR scans')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'QR-attributed landing views by code' })).toBeInTheDocument();
+    expect(screen.getByText('Legacy QR hops')).toBeInTheDocument();
     expect(screen.getByText('QR views')).toBeInTheDocument();
-    expect(screen.getByText('6 scans')).toBeInTheDocument();
+    expect(screen.getAllByText('4 views').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('link', { name: 'Open landing' })).toHaveAttribute(
       'href',
       'https://justgo.lol/nyc',
