@@ -32,7 +32,6 @@ const HERO_DIR = path.join(__dirname, '../assets/justgo');
 const HERO_FILES = Object.freeze([
   'hero-canopy.jpg',
   'hero-coast.jpg',
-  'hero-meadow.jpg',
 ]);
 const WORDMARK_DISPLAY_WIDTH = 336;
 
