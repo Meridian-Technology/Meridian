@@ -1050,6 +1050,9 @@ async function completeComputeJobApply(req, {
   idempotencyKey,
   summary = {},
   outcome = 'completed',
+  errorCode = null,
+  errorMessage = null,
+  previewDrift = false,
   now = new Date(),
 } = {}) {
   const { PivotComputeJob } = await getModels(req);
@@ -1084,6 +1087,9 @@ async function completeComputeJobApply(req, {
     appliedAt: now,
     appliedBy: trimString(actor) || job.applicationAudit?.appliedBy || null,
     outcome,
+    errorCode: trimString(errorCode) || null,
+    errorMessage: trimString(errorMessage) || null,
+    previewDrift: Boolean(previewDrift),
     summary: {
       creates: Number(summary.creates) || 0,
       updates: Number(summary.updates) || 0,

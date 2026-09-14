@@ -513,6 +513,9 @@ function applyResultFromJob(job) {
     summary,
     failedRow: null,
     validationIssues: [],
+    code: audit.errorCode || null,
+    message: audit.errorMessage || null,
+    previewDrift: Boolean(audit.previewDrift),
   };
 }
 
@@ -537,7 +540,7 @@ async function pollComputeJobApply(externalJobId, { onProgress } = {}) {
   };
 }
 
-function StoredApplyResult({ result, onClose }) {
+function StoredApplyResult({ result, onClose, onRefreshPreview }) {
   if (result?.inProgress) {
     const summary = result?.summary || {};
     const processed = (Number(summary.creates) || 0)
@@ -575,6 +578,7 @@ function StoredApplyResult({ result, onClose }) {
   const partial = result?.outcome === 'partial';
   const skipped = Number(summary.skipped) || 0;
   const skippedOnly = (completed || partial) && skipped > 0 && !result?.failedRow;
+  const failed = !completed && !partial && !skippedOnly;
   const title = skippedOnly
     ? 'Apply completed with skipped rows'
     : completed
@@ -602,18 +606,22 @@ function StoredApplyResult({ result, onClose }) {
         {skippedOnly
           ? `${creates} records created and ${updates} updated. ${skipped} row${skipped === 1 ? '' : 's'} skipped due to missing required fields.${completed ? ' This job no longer requires approval.' : ' The job returned to Review required for the skipped rows.'}`
           : completed
-            ? `${creates} records created and ${updates} updated. This job no longer requires approval.`
+            ? `${creates} records created and ${updates} updated.${result?.previewDrift ? ' Production changed since preview; the server applied the refreshed plan.' : ''} This job no longer requires approval.`
             : partial
               ? `${applied} production changes succeeded before the failure (${creates} created, ${updates} updated). The job returned to Review required.`
-              : 'Preflight stopped the apply before any production writes. The job remains Review required.'}
+              : result?.code === 'PREVIEW_STALE'
+                ? 'Production changed since this preview was generated. Use Refresh preview below, review the updated plan, then Apply again.'
+                : 'Preflight stopped the apply before any production writes. The job remains Review required.'}
       </p>
       {!completed && result?.message ? (
         <p className="pivot-compute-review__result-error">
           <strong>{result.code}</strong>
           {' · '}
-          {result.code === 503 || /503/.test(String(result.message))
-            ? 'The apply request timed out or the upstream service was unavailable. Re-open preview and retry; stale applying jobs reset after about ten minutes.'
-            : result.message}
+          {result.code === 'PREVIEW_STALE'
+            ? (result.message || 'Production changed since this preview was generated. Refresh preview before applying.')
+            : result.code === 503 || /503/.test(String(result.message))
+              ? 'The apply request timed out or the upstream service was unavailable. Close this result, click Preview stored result again, and retry; stale applying jobs reset after about ten minutes.'
+              : result.message}
         </p>
       ) : null}
       {displayIssues.length ? (
@@ -631,9 +639,16 @@ function StoredApplyResult({ result, onClose }) {
           Failed at {result.failedRow.entityType || 'record'} <span className="pivot-compute-jobs__mono">{result.failedRow.key}</span>.
         </p>
       ) : null}
-      <button type="button" className="linear-btn linear-btn--secondary" onClick={onClose}>
-        Close result
-      </button>
+      <div className="pivot-compute-review__apply-result-actions">
+        {failed && onRefreshPreview ? (
+          <button type="button" className="linear-btn" onClick={onRefreshPreview}>
+            Refresh preview
+          </button>
+        ) : null}
+        <button type="button" className="linear-btn linear-btn--secondary" onClick={onClose}>
+          {failed ? 'Close' : 'Close result'}
+        </button>
+      </div>
     </footer>
   );
 }
@@ -673,6 +688,11 @@ export function ComputeJobDetailActions({
     setApplyResult(null);
   }, []);
 
+  const clearApplyResult = useCallback(() => {
+    setApplyResult(null);
+    setApplyConfirmed(false);
+  }, []);
+
   useEffect(() => {
     resetPreview();
   }, [job?.externalJobId, resetPreview]);
@@ -700,14 +720,19 @@ export function ComputeJobDetailActions({
     return { ok: true, data };
   }, [addNotification, onJobUpdated, job]);
 
-  const handlePreview = useCallback(async () => {
-    if (!showPreview || !externalJobId) return;
+  const loadStoredPreview = useCallback(async ({ keepOpen = false } = {}) => {
+    if (!externalJobId) return false;
+    if (!keepOpen && !showPreview) return false;
     setPreviewLoading(true);
-    setActionFeedback(null);
-    setPreview(null);
-    setReview(null);
-    setApplyConfirmed(false);
-    setApplyResult(null);
+    if (!keepOpen) {
+      setActionFeedback(null);
+      setPreview(null);
+      setReview(null);
+      setApplyConfirmed(false);
+      setApplyResult(null);
+    } else {
+      clearApplyResult();
+    }
 
     const { data, error } = await authenticatedRequest(
       `/admin/pivot/compute-jobs/${encodeURIComponent(externalJobId)}/preview`,
@@ -717,11 +742,20 @@ export function ComputeJobDetailActions({
     setPreviewLoading(false);
     if (error) {
       setActionFeedback({ tone: 'error', message: error });
-      return;
+      return false;
     }
     setPreview(data?.preview || null);
     setReview(data?.review || null);
-  }, [showPreview, externalJobId]);
+    return true;
+  }, [showPreview, externalJobId, clearApplyResult]);
+
+  const handlePreview = useCallback(async () => {
+    await loadStoredPreview();
+  }, [loadStoredPreview]);
+
+  const handleRefreshPreview = useCallback(async () => {
+    await loadStoredPreview({ keepOpen: true });
+  }, [loadStoredPreview]);
 
   const handleCancel = useCallback(async () => {
     if (!showCancel || !externalJobId) return;
@@ -816,6 +850,7 @@ export function ComputeJobDetailActions({
         job: result.data?.job || null,
         summary: result.data?.summary || {},
         skippedRows: result.data?.skippedRows || [],
+        previewDrift: Boolean(result.data?.previewDrift),
       });
       setApplyConfirmed(false);
     } else {
@@ -965,7 +1000,13 @@ export function ComputeJobDetailActions({
                 <ComputeResultPreviewPanel preview={preview} parsedResult={null} review={review} />
               </div>
               {applyResult ? (
-                <StoredApplyResult result={applyResult} onClose={resetPreview} />
+                <StoredApplyResult
+                  result={applyResult}
+                  onClose={applyResult?.outcome === 'completed' || applyResult?.outcome === 'partial'
+                    ? resetPreview
+                    : clearApplyResult}
+                  onRefreshPreview={handleRefreshPreview}
+                />
               ) : showApply ? (
                 <footer className="pivot-compute-review__apply-panel" data-testid="compute-stored-apply-panel">
                   <StoredApplyPlan review={review} />
