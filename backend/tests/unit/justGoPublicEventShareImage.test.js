@@ -9,7 +9,6 @@ const {
   validatePublicEventShareInput,
   shareHeadlineLines,
   shortPlaceLabel,
-  buildShareOverlaySvg,
   isSafePublicImageUrl,
   resolvePublicEventPhotoUrl,
   renderJustGoPublicEventShareImage,
@@ -58,19 +57,34 @@ describe('justGoPublicEventShareImageService', () => {
     });
   });
 
-  it('uses the short headline before a colon and wraps it large', () => {
-    expect(shareHeadlineLines(
+  it('uses the short headline before a colon and wraps to the card width', () => {
+    const lines = shareHeadlineLines(
       'Blinkko Launch Party: A first look at the social wearable that brings AI into real-world connection.',
-    )).toEqual(['blinkko launch', 'party']);
+    );
+    expect(lines.join(' ')).toBe('blinkko launch party');
+    expect(lines.length).toBeGreaterThanOrEqual(1);
+    expect(lines.length).toBeLessThanOrEqual(3);
   });
 
-  it('wraps leftover long headlines to two lines without duplicating words', () => {
+  it('wraps leftover long headlines without duplicating words or clipping mid-word', () => {
     const lines = shareHeadlineLines(
       'An absolutely enormous movie night under the stars with blankets snacks and friends everywhere',
     );
-    expect(lines).toHaveLength(2);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    expect(lines.length).toBeLessThanOrEqual(3);
     expect(lines.join(' ')).not.toMatch(/an absolutely enormous an absolutely/);
-    expect(lines[1]).toMatch(/…$/);
+    expect(lines[lines.length - 1]).toMatch(/…$/);
+  });
+
+  it('fits long event names onto the left column with an ellipsis instead of overflowing', () => {
+    const lines = shareHeadlineLines(
+      'Agentic PM Kickoff w/ PostHog, Linear, Supabase & Dreambase',
+    );
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    expect(lines.length).toBeLessThanOrEqual(3);
+    expect(lines.join(' ')).toMatch(/agentic/);
+    expect(lines.join(' ')).toMatch(/kickoff/);
+    expect(lines.some((line) => / w\/\s*$/.test(line))).toBe(false);
   });
 
   it('shortens street addresses to a city or named place', () => {
@@ -78,18 +92,15 @@ describe('justGoPublicEventShareImageService', () => {
     expect(shortPlaceLabel('Civic Center Lawn')).toBe('civic center lawn');
   });
 
-  it('builds overlay SVG with escaped scrapbook text and no host dump', () => {
-    const svg = buildShareOverlaySvg({
-      titleLines: ['movie <finale>'],
-      whenChip: 'fri · sep 4',
-      placeChip: 'civic center <lawn>',
-    }).toString('utf8');
-
-    expect(svg).not.toContain('<finale>');
-    expect(svg).not.toContain('<lawn>');
-    expect(svg).not.toContain('<script>');
-    expect(svg).not.toContain('hosted by');
-    expect(svg).not.toContain('Night Owl');
+  it('renders scrapbook type without embedding raw HTML', async () => {
+    const svgProbe = (await renderJustGoPublicEventShareImage(sampleEvent({
+      title: 'Movie Night <Finale>',
+      venue: { text: 'Civic Center <Lawn>' },
+    }))).buffer.toString('latin1');
+    expect(svgProbe).not.toContain('<Finale>');
+    expect(svgProbe).not.toContain('<Lawn>');
+    expect(svgProbe).not.toContain('hosted by');
+    expect(svgProbe).not.toContain('Night Owl');
   });
 
   it('renders a 1200×630 PNG without embedding raw HTML', async () => {

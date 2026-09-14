@@ -226,7 +226,7 @@ function applyPublicEventIndexHtml(html, req, event, language = null) {
   out = setMetaContent(out, 'name', 'twitter:image', image);
   out = setMetaContent(out, 'name', 'twitter:image:alt', imageAlt);
   out = setJsonLd(out, publicEventStructuredData(event));
-  return injectBeforeBodyClose(out, buildPublicEventShareFallbackBlock(event, language));
+  return out;
 }
 
 function applyUnavailablePublicEventIndexHtml(html, req, language = null) {

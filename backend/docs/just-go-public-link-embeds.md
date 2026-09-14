@@ -61,7 +61,7 @@ Open Graph HTML rewriting runs **only when `NODE_ENV === 'production'`**:
 
 1. Serves `frontend/build` with `express.static` (`index: false`).
 2. Catch-all `GET *`:
-   - **`/events/:id`** (any `/events/…` shape): `renderPublicEventIndexHtml` — eligible events get event meta + `#justgo-share-fallback` block; invalid/unavailable IDs get `noindex` meta without a share fallback block.
+   - **`/events/:id`** (any `/events/…` shape): `renderPublicEventIndexHtml` — eligible events get event meta and JSON-LD; invalid/unavailable IDs get `noindex` meta.
    - **Just Go hosts** (`isJustGoPublicHost`) or `/justgo/*`: `applyJustGoIndexHtml` — brand meta tags.
    - Otherwise: plain `index.html` (campus SPA).
 
@@ -73,7 +73,7 @@ In development, crawlers receive the unmodified Vite/dev `index.html` unless you
 
 ## Crawler-visible HTML fallback (eligible events)
 
-For available public events, `applyPublicEventIndexHtml` injects a plain `#justgo-share-fallback` block before `</body>`: title, when, venue, organizer, and canonical link. All text is HTML-escaped; no scripts. This gives crawlers that ignore or deprioritize meta tags a readable snapshot. Unavailable event pages do **not** receive this block.
+Public event pages do **not** inject a visible `#justgo-share-fallback` body block — that footer showed up under the live event UI. Crawlers get Open Graph / Twitter tags plus JSON-LD `Event` schema in `<head>`. Unavailable event pages still receive `noindex` and no share fallback.
 
 Structured data: JSON-LD `Event` schema is also injected in `<head>` for eligible events.
 
@@ -171,7 +171,7 @@ Tests: `npm test -- --testPathPattern=justGoSpaHtml`, `justGoPublicEventShareIma
 
 ## Verification
 
-Captured **2026-09-06** against production (`JUSTGO_PUBLIC_ORIGIN=https://justgo.lol`). `JUSTGO_SAMPLE_EVENT_ID` was **not set**, so the eligible-event path was skipped — set it to a live public event ObjectId and re-run after deploy to validate `opengraph.png` / photo meta and `#justgo-share-fallback`.
+Captured **2026-09-06** against production (`JUSTGO_PUBLIC_ORIGIN=https://justgo.lol`). `JUSTGO_SAMPLE_EVENT_ID` was **not set**, so the eligible-event path was skipped — set it to a live public event ObjectId and re-run after deploy to validate `opengraph.png` / photo meta.
 
 ```text
 $ ./backend/scripts/check-justgo-embed.sh
