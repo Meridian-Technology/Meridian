@@ -34,10 +34,10 @@ const HERO_FILES = Object.freeze([
   'hero-coast.jpg',
   'hero-meadow.jpg',
 ]);
-const WORDMARK_DISPLAY_WIDTH = 312;
+const WORDMARK_DISPLAY_WIDTH = 336;
 
-const POSTER_WIDTH = 388;
-const POSTER_HEIGHT = 518;
+const POSTER_WIDTH = 400;
+const POSTER_HEIGHT = 533;
 const POSTER_RADIUS = 16;
 const POSTER_TILT_DEG = -5.4;
 
@@ -359,10 +359,10 @@ function buildShareOverlaySvg({
   whenChip,
   placeChip,
 }) {
-  const fontSize = titleLines.length === 1 ? 86 : 72;
+  const fontSize = titleLines.length === 1 ? 86 : 76;
   const measured = titleLines.map((line, index) => scrapbookStrip({
     text: line,
-    x: 48 + (index === 1 ? 22 : 0),
+    x: 44 + (index === 1 ? 22 : 0),
     y: 0,
     rotateDeg: index === 0 ? -1.6 : 1.2,
     fill: index === 0 ? TOKEN.cream : TOKEN.accent,
@@ -372,12 +372,12 @@ function buildShareOverlaySvg({
   const stripStackHeight = measured.reduce((sum, strip, index) => (
     sum + strip.height + (index === 0 ? 0 : -8)
   ), 0);
-  const chipY = SHARE_HEIGHT - 78;
-  let stripY = Math.max(196, chipY - 36 - stripStackHeight);
+  let stripY = 220;
+  const chipY = Math.min(SHARE_HEIGHT - 70, stripY + stripStackHeight + 22);
   const stripMarkup = titleLines.map((line, index) => {
     const placed = scrapbookStrip({
       text: line,
-      x: 48 + (index === 1 ? 22 : 0),
+      x: 44 + (index === 1 ? 22 : 0),
       y: stripY,
       rotateDeg: index === 0 ? -1.6 : 1.2,
       fill: index === 0 ? TOKEN.cream : TOKEN.accent,
@@ -389,12 +389,12 @@ function buildShareOverlaySvg({
   }).join('');
 
   const when = whenChip
-    ? metaChip({ text: whenChip, x: 48, y: chipY, fill: TOKEN.ticker, textFill: TOKEN.ink })
+    ? metaChip({ text: whenChip, x: 44, y: chipY, fill: TOKEN.ticker, textFill: TOKEN.ink })
     : null;
   const place = placeChip
     ? metaChip({
       text: placeChip,
-      x: 48 + (when ? when.width + 14 : 0),
+      x: 44 + (when ? when.width + 14 : 0),
       y: chipY,
       fill: TOKEN.pop,
       textFill: TOKEN.ink,
@@ -405,13 +405,13 @@ function buildShareOverlaySvg({
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}">` +
       `<defs>` +
         `<linearGradient id="typeWell" x1="0" y1="0" x2="1" y2="0">` +
-          `<stop offset="0%" stop-color="rgb(16,12,10)" stop-opacity="0.42"/>` +
-          `<stop offset="42%" stop-color="rgb(16,12,10)" stop-opacity="0.18"/>` +
-          `<stop offset="68%" stop-color="rgb(16,12,10)" stop-opacity="0"/>` +
+          `<stop offset="0%" stop-color="rgb(16,12,10)" stop-opacity="0.22"/>` +
+          `<stop offset="38%" stop-color="rgb(16,12,10)" stop-opacity="0.08"/>` +
+          `<stop offset="62%" stop-color="rgb(16,12,10)" stop-opacity="0"/>` +
         `</linearGradient>` +
         `<linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">` +
-          `<stop offset="0%" stop-color="rgb(26,23,20)" stop-opacity="0.28"/>` +
-          `<stop offset="100%" stop-color="rgb(14,11,9)" stop-opacity="0.46"/>` +
+          `<stop offset="0%" stop-color="rgb(26,23,20)" stop-opacity="0.14"/>` +
+          `<stop offset="100%" stop-color="rgb(14,11,9)" stop-opacity="0.22"/>` +
         `</linearGradient>` +
       `</defs>` +
       `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#scrim)"/>` +
@@ -476,24 +476,20 @@ async function loadWordmarkComposite() {
     .resize({ width: WORDMARK_DISPLAY_WIDTH })
     .png()
     .toBuffer();
-  return { input: resized, left: 40, top: 16 };
+  return { input: resized, left: 36, top: 14 };
 }
 
 async function renderHeroBackdrop(seed) {
   const heroPath = resolveHeroPath(seed);
   if (!fs.existsSync(heroPath)) return null;
-  const scaledWidth = Math.round(SHARE_WIDTH * 1.08);
-  const scaledHeight = Math.round(SHARE_HEIGHT * 1.08);
   return sharp(heroPath)
-    .resize(scaledWidth, scaledHeight, { fit: 'cover', position: 'centre' })
-    .blur(22)
-    .extract({
-      left: Math.round((scaledWidth - SHARE_WIDTH) / 2),
-      top: Math.round((scaledHeight - SHARE_HEIGHT) / 2),
-      width: SHARE_WIDTH,
-      height: SHARE_HEIGHT,
+    .resize(SHARE_WIDTH, SHARE_HEIGHT, {
+      fit: 'cover',
+      position: 'centre',
+      kernel: 'lanczos3',
     })
-    .modulate({ brightness: 0.58, saturation: 0.82 })
+    .blur(12)
+    .modulate({ brightness: 0.84, saturation: 0.95 })
     .png()
     .toBuffer();
 }
@@ -513,8 +509,8 @@ async function preparePosterCard(photoBuffer) {
     .png()
     .toBuffer();
 
-  const shadowPad = 28;
-  const shadowOffsetY = 14;
+  const shadowPad = 18;
+  const shadowOffsetY = 10;
   const shadowCanvasWidth = POSTER_WIDTH + shadowPad * 2;
   const shadowCanvasHeight = POSTER_HEIGHT + shadowPad * 2 + shadowOffsetY;
   const shadowShape = Buffer.from(
@@ -540,13 +536,24 @@ async function preparePosterCard(photoBuffer) {
     .png()
     .toBuffer();
 
-  const tilted = await sharp(stacked)
+  let tilted = await sharp(stacked)
     .rotate(POSTER_TILT_DEG, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();
-  const meta = await sharp(tilted).metadata();
-  const left = SHARE_WIDTH - meta.width - 22;
-  const top = Math.max(8, Math.round((SHARE_HEIGHT - meta.height) / 2));
+  let meta = await sharp(tilted).metadata();
+  if (meta.width > SHARE_WIDTH || meta.height > SHARE_HEIGHT) {
+    tilted = await sharp(tilted)
+      .resize({
+        width: Math.min(meta.width, SHARE_WIDTH),
+        height: Math.min(meta.height, SHARE_HEIGHT),
+        fit: 'inside',
+      })
+      .png()
+      .toBuffer();
+    meta = await sharp(tilted).metadata();
+  }
+  const left = SHARE_WIDTH - meta.width - 18;
+  const top = Math.max(6, Math.round((SHARE_HEIGHT - meta.height) / 2));
   return { input: tilted, left, top, width: meta.width, height: meta.height };
 }
 

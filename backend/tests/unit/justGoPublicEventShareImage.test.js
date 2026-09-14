@@ -176,15 +176,15 @@ describe('justGoPublicEventShareImageService', () => {
 
     const backdropSample = await sharp(result.buffer)
       .extract({
-        left: 180,
-        top: 120,
+        left: 520,
+        top: 36,
         width: 8,
         height: 8,
       })
       .raw()
       .toBuffer();
     const backdropPixel = backdropSample.slice(0, 3);
-    expect(backdropPixel[0]).toBeLessThan(140);
+    expect(backdropPixel[0]).toBeLessThan(170);
   });
 
   it('falls back to the immersive flyer when photo fetch fails', async () => {
