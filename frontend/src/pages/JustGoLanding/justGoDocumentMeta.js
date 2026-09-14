@@ -3,6 +3,10 @@ import { applyJustGoTabIcon } from './justGoLandingUtils';
 
 export const JUSTGO_THEME_COLOR = '#1E1A16';
 export const JUSTGO_OG_IMAGE_PATH = '/justgo/og.jpg';
+export const JUSTGO_OG_IMAGE_WIDTH = 1200;
+export const JUSTGO_OG_IMAGE_HEIGHT = 630;
+export const JUSTGO_OG_IMAGE_ALT =
+  'just go wordmark — this week in your city. stop planning. swipe what\'s on in your city this week. just go.';
 
 /** Strip the campus `/justgo` alias so share URLs stay on justgo.lol. */
 export function justGoDocumentCanonicalPath(pathname) {
@@ -53,6 +57,9 @@ export function applyJustGoDocumentMeta({
   upsertMeta(root, 'property', 'og:title', title);
   upsertMeta(root, 'property', 'og:description', description);
   upsertMeta(root, 'property', 'og:image', image);
+  upsertMeta(root, 'property', 'og:image:width', String(JUSTGO_OG_IMAGE_WIDTH));
+  upsertMeta(root, 'property', 'og:image:height', String(JUSTGO_OG_IMAGE_HEIGHT));
+  upsertMeta(root, 'property', 'og:image:alt', JUSTGO_OG_IMAGE_ALT);
   upsertMeta(root, 'property', 'og:url', url);
   upsertMeta(root, 'property', 'og:type', 'website');
   upsertMeta(root, 'property', 'og:site_name', justGoLandingCopy.productName);
@@ -60,5 +67,6 @@ export function applyJustGoDocumentMeta({
   upsertMeta(root, 'name', 'twitter:title', title);
   upsertMeta(root, 'name', 'twitter:description', description);
   upsertMeta(root, 'name', 'twitter:image', image);
+  upsertMeta(root, 'name', 'twitter:image:alt', JUSTGO_OG_IMAGE_ALT);
   applyJustGoTabIcon(root);
 }
