@@ -28,6 +28,7 @@ const SCORE_PARTS = [
   { key: 'personal', label: 'personal' },
   { key: 'bleed', label: 'crew bleed' },
   { key: 'negative', label: 'negative tags', subtract: true },
+  { key: 'editorial', label: 'editorial weight', signed: true },
 ];
 
 function useDebouncedValue(value, delayMs) {
@@ -59,9 +60,11 @@ function IntentStatusPill({ status }) {
 
 function scoreBreakdown(score) {
   if (!score) return [];
-  return SCORE_PARTS.filter((part) => Number(score[part.key]) > 0).map((part) => {
+  return SCORE_PARTS.filter((part) => Number(score[part.key]) !== 0).map((part) => {
     const value = Number(score[part.key]);
-    const signed = part.subtract ? `−${formatScore(value)}` : formatScore(value);
+    const signed = part.subtract
+      ? `−${formatScore(value)}`
+      : part.signed && value > 0 ? `+${formatScore(value)}` : formatScore(value);
     return `${part.label} ${signed}`;
   });
 }
@@ -149,6 +152,7 @@ function DropDeckEventRow({ event, rank }) {
   const social = socialCounts(event);
   const tags = Array.isArray(event.tags) ? event.tags : [];
   const hostName = event.displayHost?.name || '';
+  const editorial = event.editorialRanking;
 
   return (
     <li className="pivot-drop-deck-inspector__event">
@@ -163,6 +167,18 @@ function DropDeckEventRow({ event, rank }) {
         </p>
         {parts.length ? (
           <p className="pivot-drop-deck-inspector__parts">{parts.join(' · ')}</p>
+        ) : null}
+        {editorial && (editorial.tier !== 'standard' || editorial.inclusionReason !== 'ranked') ? (
+          <p className="pivot-drop-deck-inspector__parts">
+            {editorial.inclusionReason === 'editorial'
+              ? 'Exact editorial set'
+              : editorial.inclusionReason === 'must_show'
+                ? 'Guaranteed membership'
+                : editorial.tier.replaceAll('_', ' ')}
+            {editorial.audience === 'matching_interests'
+              ? editorial.matched ? ' · interest matched' : ' · interest not matched'
+              : ''}
+          </p>
         ) : null}
         {tags.length ? (
           <ul className="pivot-drop-deck-inspector__tags">
@@ -494,6 +510,7 @@ function PivotTenantDropDeckInspector({ tenantKey }) {
                   <li key={user.userId}>
                     <button
                       type="button"
+                      role="option"
                       className={`pivot-drop-deck-inspector__user-row${
                         selected ? ' pivot-drop-deck-inspector__user-row--selected' : ''
                       }`}

@@ -4,6 +4,7 @@ import {
   PivotOpsSection,
   PivotOpsStatus,
 } from '../../../components/PivotOps';
+import Select from '../../../components/Select/Select';
 import { formatEventWhen, formatEventWhenWithShowtimes } from '../../../utils/pivotIsoWeek';
 import PivotImportThumb from '../PivotLab/PivotImportThumb';
 import PivotTagMultiSelect from '../PivotLab/PivotTagMultiSelect';
@@ -15,6 +16,116 @@ import './PivotCurationQueue.scss';
 
 const HOST_CREATED_SOURCE = 'justgo';
 const DRAG_SELECT_THRESHOLD_PX = 5;
+const EDITORIAL_TIERS = [
+  { value: 'hidden', label: 'Hidden', help: 'Exclude from Drop and Explore.' },
+  { value: 'demote', label: 'Demote', help: 'Lower its rank; strong relevance can recover.' },
+  { value: 'standard', label: 'Standard', help: 'Use normal personalization.' },
+  { value: 'promote', label: 'Promote', help: 'Add one interest-match boost.' },
+  { value: 'strong_promote', label: 'Strong Promote', help: 'Add one friend-going boost.' },
+  { value: 'must_show', label: 'Must Show', help: 'Guarantee a place in every new Drop.' },
+];
+
+function editorialTierLabel(event) {
+  const tier = event?.rankingOverride?.tier;
+  return EDITORIAL_TIERS.find((option) => option.value === tier)?.label || null;
+}
+
+function EditorialWeightControl({ event, busy, onSave }) {
+  const saved = event.rankingOverride || {};
+  const [tier, setTier] = useState(saved.tier || 'standard');
+  const [audience, setAudience] = useState(saved.audience || 'everyone');
+
+  useEffect(() => {
+    setTier(saved.tier || 'standard');
+    setAudience(saved.audience || 'everyone');
+  }, [event._id, saved.audience, saved.tier]);
+
+  const promotion = tier === 'promote' || tier === 'strong_promote';
+  const active = EDITORIAL_TIERS.find((option) => option.value === tier);
+  const activeIndex = Math.max(0, EDITORIAL_TIERS.findIndex((option) => option.value === tier));
+  const savedTier = saved.tier || 'standard';
+  const savedAudience = saved.audience || 'everyone';
+  const hasChanges = tier !== savedTier || (promotion && audience !== savedAudience);
+
+  const selectTierAt = (index) => {
+    const option = EDITORIAL_TIERS[index] || EDITORIAL_TIERS[2];
+    setTier(option.value);
+    if (option.value !== 'promote' && option.value !== 'strong_promote') {
+      setAudience('everyone');
+    }
+  };
+
+  return (
+    <section className="pivot-curation-editorial" aria-labelledby={`editorial-${event._id}`}>
+      <div className="pivot-curation-editorial__slider-card">
+        <div className="pivot-curation-editorial__slider-head">
+          <div className="pivot-curation-editorial__current">
+            <span className="visually-hidden">Editorial weight: </span>
+            <h4 id={`editorial-${event._id}`}>{active?.label}</h4>
+            <p>{active?.help}</p>
+          </div>
+          <button
+            type="button"
+            className="pivot-curation-editorial__reset"
+            aria-label="Reset editorial weight to Standard"
+            title="Reset to Standard"
+            onClick={() => selectTierAt(2)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4.7 8.3A8 8 0 1 1 4 14M4.7 8.3V3.8m0 4.5h4.5" />
+            </svg>
+          </button>
+        </div>
+        <div
+          className="pivot-curation-editorial__slider"
+          data-position={activeIndex}
+        >
+          <div className="pivot-curation-editorial__ticks" aria-hidden="true">
+            {EDITORIAL_TIERS.map((option, index) => (
+              <span
+                key={option.value}
+                className={index <= activeIndex ? 'is-reached' : ''}
+              />
+            ))}
+          </div>
+          <span className="pivot-curation-editorial__thumb" aria-hidden="true" />
+          <input
+            type="range"
+            min="0"
+            max={EDITORIAL_TIERS.length - 1}
+            step="1"
+            value={activeIndex}
+            aria-label="Editorial weight"
+            aria-valuetext={active?.label}
+            onChange={(e) => selectTierAt(Number(e.target.value))}
+          />
+        </div>
+      </div>
+      {promotion ? (
+        <label className="pivot-curation-editorial__field">
+          <span>Apply promotion to</span>
+          <select value={audience} onChange={(e) => setAudience(e.target.value)}>
+            <option value="everyone">Everyone</option>
+            <option value="matching_interests">People with matching interests</option>
+          </select>
+        </label>
+      ) : null}
+      <div className="pivot-curation-editorial__save-slot">
+        {hasChanges ? (
+          <button
+            type="button"
+            className="linear-btn linear-btn--primary linear-btn--sm"
+            disabled={busy}
+            onClick={() => onSave(event, tier === 'standard' ? null : { tier, audience })}
+          >
+            {busy ? 'Saving…' : 'Save weight'}
+          </button>
+        ) : null}
+      </div>
+      <p className="pivot-curation-editorial__foot">Opened decks remain unchanged.</p>
+    </section>
+  );
+}
 
 function ingestTone(status) {
   if (status === 'published') return 'ok';
@@ -172,6 +283,17 @@ const CatalogRow = React.memo(function CatalogRow({
             Featured
           </span>
         ) : null}
+        {editorialTierLabel(event) ? (
+          <span
+            className={`pivot-curation-sheet__editorial-badge pivot-curation-sheet__editorial-badge--${event.rankingOverride.tier}`}
+            title={event.rankingOverride.audience === 'matching_interests'
+              ? 'Applies only when an event tag matches the member’s interests'
+              : 'Applies to everyone'}
+          >
+            {editorialTierLabel(event)}
+            {event.rankingOverride.audience === 'matching_interests' ? ' · interests' : ''}
+          </span>
+        ) : null}
       </td>
       <td className="pivot-curation-sheet__when pivot-curation-sheet__desktop-only">
         {formatEventWhenWithShowtimes(event)}
@@ -224,6 +346,7 @@ function QueueInspector({
   onUnpublish,
   onDelete,
   onToggleFeatured,
+  onEditorialChange,
   busyKey,
   releaseDisabled,
   releaseBlockReason,
@@ -236,6 +359,7 @@ function QueueInspector({
   const publishing = busyKey === `release-${event._id}`;
   const deleting = busyKey === `delete-${event._id}`;
   const featuring = busyKey === `feature-${event._id}`;
+  const editorialSaving = busyKey === `editorial-${event._id}`;
 
   return (
     <aside className="pivot-curation-sheet__inspect" aria-label={`${event.name} details`}>
@@ -326,6 +450,11 @@ function QueueInspector({
             ))}
           </ul>
         ) : null}
+        <EditorialWeightControl
+          event={event}
+          busy={editorialSaving}
+          onSave={onEditorialChange}
+        />
         <div className="pivot-curation-sheet__inspect-links">
           {publicHref ? (
             <a
@@ -446,6 +575,10 @@ function PivotCurationQueue({
   onBulkFeature,
   onBulkUnfeature,
   onToggleFeatured,
+  onEditorialChange,
+  onBulkEditorial,
+  selectionPolicy,
+  onSelectionPolicyChange,
   emptyLabel,
 }) {
   const sheetRef = useRef(null);
@@ -538,6 +671,22 @@ function PivotCurationQueue({
   const selectedUnfeaturedCount = selectedEvents.filter((e) => e.featured !== true).length;
   const selectedFeaturedCount = selectedEvents.filter((e) => e.featured === true).length;
   const selectedMissingRichCount = selectedEvents.filter((e) => e.needsRichData).length;
+  const [bulkEditorialTier, setBulkEditorialTier] = useState('standard');
+  const editorialCounts = useMemo(() => {
+    const counts = { hidden: 0, demote: 0, promote: 0, strong_promote: 0, must_show: 0 };
+    events.forEach((event) => {
+      const tier = event?.rankingOverride?.tier;
+      if (Object.prototype.hasOwnProperty.call(counts, tier)) counts[tier] += 1;
+    });
+    return counts;
+  }, [events]);
+  const editorialSummary = [
+    editorialCounts.must_show ? `${editorialCounts.must_show} must show` : null,
+    editorialCounts.strong_promote ? `${editorialCounts.strong_promote} strong` : null,
+    editorialCounts.promote ? `${editorialCounts.promote} promoted` : null,
+    editorialCounts.demote ? `${editorialCounts.demote} demoted` : null,
+    editorialCounts.hidden ? `${editorialCounts.hidden} hidden` : null,
+  ].filter(Boolean).join(' · ');
 
   const previewAt = useCallback((event, index, nextIds) => {
     if (typeof index === 'number') {
@@ -818,19 +967,54 @@ function PivotCurationQueue({
         }`}
       >
         <PivotOpsSection
-      title={`Catalog · ${batchWeek}`}
-      titleId="curation-queue"
-      description={
-        immersive
-          ? 'Scroll the list. Scroll up past the top to return.'
-          : showPerformance
-            ? 'Click a row to preview · click and drag to select several. Interest % updates as the live batch gets swipes.'
-            : 'Click a row to preview · click and drag to select several. Draft and staged rows are ready to publish; published rows can be pulled back.'
-      }
-      actions={filterActions}
-      className={`pivot-curation-sheet${immersive ? ' is-immersive' : ''}`}
-      bodyClassName="pivot-curation-sheet__body"
-    >
+          title={`Catalog · ${batchWeek}`}
+          titleId="curation-queue"
+          description={
+            immersive
+              ? 'Scroll the list. Scroll up past the top to return.'
+              : showPerformance
+                ? 'Click a row to preview · click and drag to select several. Interest % updates as the live batch gets swipes.'
+                : 'Click a row to preview · click and drag to select several. Draft and staged rows are ready to publish; published rows can be pulled back.'
+          }
+          actions={filterActions}
+          className={`pivot-curation-sheet${immersive ? ' is-immersive' : ''}`}
+          bodyClassName="pivot-curation-sheet__body"
+        >
+      <div className="pivot-curation-selection-policy">
+        <div>
+          <strong>
+            {selectionPolicy?.mode === 'editorial' ? 'Exact editorial set' : 'Personalized selection'}
+          </strong>
+          <span>
+            {selectionPolicy?.mode === 'editorial'
+              ? `${selectionPolicy.eventIds?.length || 0} chosen events; order remains personalized.`
+              : editorialSummary || 'Editorial weights shape new decks; Must Show guarantees membership.'}
+          </span>
+        </div>
+        <div className="pivot-curation-selection-policy__actions">
+          <button
+            type="button"
+            className="linear-btn linear-btn--secondary linear-btn--sm"
+            disabled={busyKey === 'selection-policy' || selectedPublishedCount === 0}
+            onClick={() => onSelectionPolicyChange('editorial', selectedEvents
+              .filter((event) => event.ingestStatus === 'published')
+              .map((event) => event._id))}
+            title={selectedPublishedCount ? 'Use selected published events as the complete Drop' : 'Select published events first'}
+          >
+            Use selection as exact set
+          </button>
+          {selectionPolicy?.mode === 'editorial' ? (
+            <button
+              type="button"
+              className="linear-btn linear-btn--ghost linear-btn--sm"
+              disabled={busyKey === 'selection-policy'}
+              onClick={() => onSelectionPolicyChange('personalized', [])}
+            >
+              Return to personalized
+            </button>
+          ) : null}
+        </div>
+      </div>
       <div
         className={`pivot-curation-sheet__layout${
           inspectingEvent ? ' pivot-curation-sheet__layout--split' : ''
@@ -923,6 +1107,22 @@ function PivotCurationQueue({
                 />
               </div>
               <div className="pivot-curation-sheet__bulk-actions">
+                <Select
+                  className="pivot-curation-sheet__bulk-weight-select"
+                  optionItems={EDITORIAL_TIERS}
+                  defaultValue={bulkEditorialTier}
+                  onChange={setBulkEditorialTier}
+                  placeholder="Weight"
+                  menuPlacement="top"
+                />
+                <button
+                  type="button"
+                  className="linear-btn linear-btn--secondary"
+                  onClick={() => onBulkEditorial(bulkEditorialTier)}
+                  disabled={busyKey === 'bulk-editorial'}
+                >
+                  {busyKey === 'bulk-editorial' ? 'Applying…' : 'Apply weight'}
+                </button>
                 <button
                   type="button"
                   className="linear-btn linear-btn--secondary"
@@ -1041,6 +1241,7 @@ function PivotCurationQueue({
             onUnpublish={onUnpublish}
             onDelete={onDelete}
             onToggleFeatured={onToggleFeatured}
+            onEditorialChange={onEditorialChange}
             busyKey={busyKey}
             releaseDisabled={releaseDisabled}
             releaseBlockReason={releaseBlockReason}
@@ -1054,4 +1255,4 @@ function PivotCurationQueue({
 }
 
 export default PivotCurationQueue;
-export { HOST_CREATED_SOURCE, eventPerf };
+export { HOST_CREATED_SOURCE, eventPerf, EditorialWeightControl };

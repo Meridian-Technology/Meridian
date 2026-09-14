@@ -55,6 +55,11 @@ const {
   rawJustGoLocationText,
   JUST_GO_LOCATION_POLICY_REASONS,
 } = require('../utilities/justGoLocationPolicy');
+const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
+const {
+  actorFromReq,
+  normalizeRankingOverride,
+} = require('../utilities/pivotEditorialPolicy');
 
 const DEFAULT_DURATION_MS = 2 * 60 * 60 * 1000;
 /** Default for new Lab / URL / JSON ingest — not live until Release (Task 3.2). */
@@ -1024,12 +1029,25 @@ async function updateIngestEvent(req, options = {}) {
     pivotPatch.featured = featuredResult.featured;
   }
 
+  if (overrides.rankingOverride !== undefined) {
+    const rankingResult = normalizeRankingOverride(overrides.rankingOverride, {
+      actor: actorFromReq(req),
+      now: options.now,
+    });
+    if (rankingResult.error) return rankingResult;
+    if (rankingResult.value) pivotPatch.rankingOverride = rankingResult.value;
+    else delete pivotPatch.rankingOverride;
+  }
+
   if (overrides.batchWeek !== undefined) {
     const batchNormalized = normalizeBatchWeek(overrides.batchWeek, options.now);
     if (batchNormalized.error) {
       return batchNormalized;
     }
     pivotPatch.batchWeek = batchNormalized.batchWeek;
+    if (pivotPatch.batchWeek !== pivot.batchWeek) {
+      delete pivotPatch.rankingOverride;
+    }
   }
 
   if (overrides.tags !== undefined) {
@@ -1154,6 +1172,24 @@ async function updateIngestEvent(req, options = {}) {
       status: 400,
       code: 'HOST_NAME_REQUIRED',
     };
+  }
+
+
+  if (pivotPatch.rankingOverride?.tier === 'must_show') {
+    const deckConfig = mergePivotDeckConfig(tenantResult.tenant.pivotDeckConfig);
+    const existingMustShow = await Event.countDocuments({
+      _id: { $ne: existing._id },
+      'customFields.pivot.batchWeek': pivotPatch.batchWeek,
+      'customFields.pivot.rankingOverride.tier': 'must_show',
+      isDeleted: { $ne: true },
+    });
+    if (existingMustShow >= deckConfig.hardMax) {
+      return {
+        error: `A batch can have at most ${deckConfig.hardMax} must-show events.`,
+        status: 400,
+        code: 'TOO_MANY_MUST_SHOW_EVENTS',
+      };
+    }
   }
 
   setPayload['customFields.pivot'] = pivotPatch;

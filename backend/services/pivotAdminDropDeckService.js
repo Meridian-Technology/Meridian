@@ -123,6 +123,7 @@ async function previewAdminDropDeck(req, options = {}) {
       asOfLabel,
       cityDisplayName: feedResult.data?.cityDisplayName,
       rankerVersion: feedResult.data?.rankerVersion,
+      selectionMode: feedResult.data?.selectionMode || 'personalized',
       eligibleCount: feedResult.data?.eligibleCount ?? 0,
       events: feedResult.data?.events || [],
     },

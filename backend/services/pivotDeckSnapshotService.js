@@ -44,6 +44,8 @@ function serializePivotDeckSnapshot(doc) {
     batchWeek: doc.batchWeek,
     orderedEventIds: (doc.orderedEventIds || []).map((id) => String(id)),
     rankerVersion: doc.rankerVersion,
+    selectionMode: doc.selectionMode || 'personalized',
+    rankingEntries: Array.isArray(doc.rankingEntries) ? doc.rankingEntries : [],
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -109,6 +111,8 @@ async function upsertPivotDeckSnapshot(req, payload = {}) {
       $set: {
         orderedEventIds,
         rankerVersion,
+        selectionMode: payload.selectionMode === 'editorial' ? 'editorial' : 'personalized',
+        rankingEntries: Array.isArray(payload.rankingEntries) ? payload.rankingEntries : [],
       },
     },
     {

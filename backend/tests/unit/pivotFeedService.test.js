@@ -699,6 +699,78 @@ describe('pivotFeedService helpers', () => {
     expect(selected.map((event) => event._id)).toEqual(['2']);
   });
 
+  it('applies granular editorial promotion and demotion to ranking', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const events = [
+      { _id: 'standard', start_time: new Date('2026-05-28T18:00:00.000Z'), customFields: { pivot: { tags: [] } } },
+      { _id: 'promoted', start_time: new Date('2026-05-28T19:00:00.000Z'), customFields: { pivot: { tags: [], rankingOverride: { tier: 'promote', audience: 'everyone' } } } },
+      { _id: 'demoted', start_time: new Date('2026-05-28T17:00:00.000Z'), customFields: { pivot: { tags: [], rankingOverride: { tier: 'demote', audience: 'everyone' } } } },
+    ];
+    const selected = selectDropDeckEvents(
+      events,
+      new Map(),
+      new Set(),
+      new Set(),
+      {},
+      mergePivotDeckConfig({ softMax: 3, hardMax: 3 }),
+    );
+    expect(selected.map((event) => event._id)).toEqual(['promoted', 'standard', 'demoted']);
+  });
+
+  it('guarantees must-show membership while preserving personalized order', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const events = [
+      { _id: 'high', start_time: new Date('2026-05-28T18:00:00.000Z'), customFields: { pivot: { tags: ['music'] } } },
+      { _id: 'middle', start_time: new Date('2026-05-28T19:00:00.000Z'), customFields: { pivot: { tags: ['music'] } } },
+      { _id: 'must', start_time: new Date('2026-05-28T20:00:00.000Z'), customFields: { pivot: { tags: [], rankingOverride: { tier: 'must_show', audience: 'everyone' } } } },
+    ];
+    const selected = selectDropDeckEvents(
+      events,
+      new Map(),
+      new Set(['music']),
+      new Set(),
+      {},
+      mergePivotDeckConfig({ softMax: 2, hardMax: 2 }),
+    );
+    expect(selected.map((event) => event._id)).toEqual(['high', 'must']);
+  });
+
+  it('uses only the exact editorial set and still personalizes its order', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const events = [
+      { _id: 'excluded', start_time: new Date('2026-05-28T17:00:00.000Z'), customFields: { pivot: { tags: ['music'] } } },
+      { _id: 'generic', start_time: new Date('2026-05-28T18:00:00.000Z'), customFields: { pivot: { tags: [] } } },
+      { _id: 'match', start_time: new Date('2026-05-28T19:00:00.000Z'), customFields: { pivot: { tags: ['music'] } } },
+    ];
+    const selected = selectDropDeckEvents(
+      events,
+      new Map(),
+      new Set(['music']),
+      new Set(),
+      {},
+      mergePivotDeckConfig(),
+      { mode: 'editorial', eventIds: ['generic', 'match'] },
+    );
+    expect(selected.map((event) => event._id)).toEqual(['match', 'generic']);
+  });
+
+  it('removes hidden events from newly selected decks', () => {
+    const { mergePivotDeckConfig } = require('../../utilities/pivotDeckConfig');
+    const events = [
+      { _id: 'hidden', start_time: new Date(), customFields: { pivot: { tags: ['music'], rankingOverride: { tier: 'hidden', audience: 'everyone' } } } },
+      { _id: 'visible', start_time: new Date(), customFields: { pivot: { tags: [] } } },
+    ];
+    const selected = selectDropDeckEvents(
+      events,
+      new Map(),
+      new Set(['music']),
+      new Set(),
+      {},
+      mergePivotDeckConfig(),
+    );
+    expect(selected.map((event) => event._id)).toEqual(['visible']);
+  });
+
   it('applyFrozenDeckOrder preserves snapshot order and drops missing ids', () => {
     const events = [
       { _id: 'a' },
@@ -799,7 +871,7 @@ describe('getPivotFeed', () => {
 
     expect(result.data.batchWeek).toBe('2026-W22');
     expect(result.data.cityDisplayName).toBe('New York City');
-    expect(result.data.rankerVersion).toBe('rules_v1');
+    expect(result.data.rankerVersion).toBe('rules_v2_editorial');
     expect(result.data.events).toHaveLength(1);
     expect(result.data.events[0].displayHost).toEqual({ name: 'Roof Records' });
     expect(result.data.events[0].userIntent).toBeNull();
@@ -1097,7 +1169,7 @@ describe('getPivotFeed', () => {
       'No Friends (popular)',
     ]);
     expect(result.data.events.map((event) => event.rankInFeed)).toEqual([0, 1, 2]);
-    expect(result.data.rankerVersion).toBe('rules_v1');
+    expect(result.data.rankerVersion).toBe('rules_v2_editorial');
     const registered = result.data.events[0];
     expect(registered.friendsGoing).toHaveLength(1);
     expect(registered.friendsInterested).toHaveLength(1);
@@ -1945,7 +2017,7 @@ describe('getPivotFeed', () => {
           events[1]._id,
           events[0]._id,
         ],
-        rankerVersion: 'rules_v1',
+        rankerVersion: 'rules_v2_editorial',
         forceRefresh: false,
       }),
     );
@@ -2002,7 +2074,11 @@ describe('getPivotFeed', () => {
         name: 'Earlier Generic',
         start_time: new Date('2026-05-28T19:00:00.000Z'),
         customFields: {
-          pivot: { host: { name: 'Venue A' }, tags: [] },
+          pivot: {
+            host: { name: 'Venue A' },
+            tags: [],
+            rankingOverride: { tier: 'hidden', audience: 'everyone' },
+          },
         },
       },
     ];
@@ -2029,6 +2105,7 @@ describe('getPivotFeed', () => {
       'Earlier Generic',
       'Later Match',
     ]);
+    expect(result.data.frozen).toBe(true);
     expect(recordPivotDeckSnapshot).not.toHaveBeenCalled();
   });
 
