@@ -433,6 +433,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
   const readiness =
     ops?.readiness && !ops.readiness.error ? ops.readiness : null;
+  const selectionPolicy = readiness?.batch?.selectionPolicy || {
+    mode: 'personalized',
+    eventIds: [],
+  };
   const readinessLoading = opsLoading && canPublishCatalog && !ops?.readiness;
 
   const catalogTags = tagsResponse?.success
@@ -1251,6 +1255,88 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       refreshAll();
     },
     [addNotification, patchEventOverrides, refreshAll],
+  );
+
+  const handleEditorialChange = useCallback(
+    async (event, rankingOverride) => {
+      if (!event?._id) return;
+      setBusyKey(`editorial-${event._id}`);
+      const result = await patchEventOverrides(event._id, { rankingOverride });
+      setBusyKey(null);
+      if (result.error) {
+        addNotification({
+          title: 'Could not update influence',
+          message: result.error,
+          type: 'error',
+        });
+        return;
+      }
+      refreshAll();
+      addNotification({
+        title: 'Editorial influence saved',
+        message: 'This affects new decks only; opened decks remain unchanged.',
+        type: 'success',
+      });
+    },
+    [addNotification, patchEventOverrides, refreshAll],
+  );
+
+  const handleBulkEditorial = useCallback(
+    async (tier) => {
+      if (!selectedEvents.length) return;
+      setBusyKey('bulk-editorial');
+      let ok = 0;
+      let failed = 0;
+      for (const event of selectedEvents) {
+        const rankingOverride = tier === 'standard'
+          ? null
+          : { tier, audience: 'everyone' };
+        const result = await patchEventOverrides(event._id, { rankingOverride });
+        if (result.error) failed += 1;
+        else ok += 1;
+      }
+      setBusyKey(null);
+      refreshAll();
+      addNotification({
+        title: failed ? 'Partial editorial update' : 'Editorial influence applied',
+        message: `${ok} updated${failed ? `, ${failed} failed` : ''}. Opened decks remain unchanged.`,
+        type: failed ? 'warning' : 'success',
+      });
+    },
+    [addNotification, patchEventOverrides, refreshAll, selectedEvents],
+  );
+
+  const handleSelectionPolicyChange = useCallback(
+    async (mode, eventIds) => {
+      const count = Array.isArray(eventIds) ? eventIds.length : 0;
+      if (mode === 'editorial' && !window.confirm(
+        `Use these ${count} published event(s) as the complete batch for unopened decks? Ordering will still be personalized.`,
+      )) return;
+      setBusyKey('selection-policy');
+      const { data, error } = await authenticatedRequest(
+        `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(committedWeek)}/selection-policy`,
+        { method: 'PUT', data: { mode, eventIds } },
+      );
+      setBusyKey(null);
+      if (error || !data?.success) {
+        addNotification({
+          title: 'Could not update batch selection',
+          message: error || data?.message || 'Update failed.',
+          type: 'error',
+        });
+        return;
+      }
+      setSelectedIds(new Set());
+      refreshAll();
+      addNotification({
+        title: mode === 'editorial' ? 'Exact batch enabled' : 'Personalization restored',
+        message: mode === 'editorial'
+          ? `${count} events will make up every new deck; order remains personalized.`
+          : 'New decks will use the ranked catalog and event-level influence.',
+        type: 'success',
+      });
+    },
+    [addNotification, committedWeek, refreshAll, tenantKey],
   );
 
   const handleBulkApplyTags = useCallback(async () => {
@@ -2497,6 +2583,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
           onBulkFeature={handleBulkFeature}
           onBulkUnfeature={handleBulkUnfeature}
           onToggleFeatured={handleToggleFeatured}
+          onEditorialChange={handleEditorialChange}
+          onBulkEditorial={handleBulkEditorial}
+          selectionPolicy={selectionPolicy}
+          onSelectionPolicyChange={handleSelectionPolicyChange}
           emptyLabel={
             events.length
               ? 'No events match this filter.'
