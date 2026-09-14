@@ -192,16 +192,7 @@ function resolveLanguageEntry(language, key, fallback) {
   return /[{}]/.test(value) ? fallback : value;
 }
 
-function nonEmptyString(value) {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-}
-
 function resolvePublicEventShareImage(event, req) {
-  const photoUrl = nonEmptyString(event.socialPreview?.imageUrl)
-    || nonEmptyString(event.image?.url);
-  if (photoUrl) {
-    return { image: photoUrl, useGeneratedCard: false };
-  }
   return {
     image: justGoPublicUrl(`/api/public/events/${event.id}/opengraph.png`, req, {
       nodeEnv: 'production',
@@ -214,7 +205,7 @@ function applyPublicEventIndexHtml(html, req, event, language = null) {
   const brandName = language?.tokens?.['brand.name'] || JUSTGO_SITE_NAME;
   const title = `${event.title} | ${brandName}`;
   const description = event.socialPreview?.description || event.description || event.title;
-  const { image, useGeneratedCard } = resolvePublicEventShareImage(event, req);
+  const { image } = resolvePublicEventShareImage(event, req);
   const imageAlt = event.title;
   let out = applyJustGoIndexHtml(html, req);
   out = setTitle(out, title);
@@ -224,10 +215,8 @@ function applyPublicEventIndexHtml(html, req, event, language = null) {
   out = setMetaContent(out, 'property', 'og:title', title);
   out = setMetaContent(out, 'property', 'og:description', description);
   out = setMetaContent(out, 'property', 'og:image', image);
-  if (useGeneratedCard) {
-    out = setMetaContent(out, 'property', 'og:image:width', String(JUSTGO_OG_IMAGE_WIDTH));
-    out = setMetaContent(out, 'property', 'og:image:height', String(JUSTGO_OG_IMAGE_HEIGHT));
-  }
+  out = setMetaContent(out, 'property', 'og:image:width', String(JUSTGO_OG_IMAGE_WIDTH));
+  out = setMetaContent(out, 'property', 'og:image:height', String(JUSTGO_OG_IMAGE_HEIGHT));
   out = setMetaContent(out, 'property', 'og:image:alt', imageAlt);
   out = setMetaContent(out, 'property', 'og:url', event.canonicalUrl);
   out = setMetaContent(out, 'property', 'og:type', 'event');

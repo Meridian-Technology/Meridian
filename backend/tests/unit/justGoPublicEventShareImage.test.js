@@ -3,11 +3,19 @@ const {
   SHARE_WIDTH,
   SHARE_HEIGHT,
   FIELD_LIMITS,
+  PHOTO_WIDTH,
+  PHOTO_HEIGHT,
+  PHOTO_LEFT,
+  PHOTO_TOP,
+  TITLE_CHARS_PER_LINE_SPLIT,
+  TITLE_MAX_LINES_SPLIT,
   escapeSvgText,
   formatPublicEventDate,
   validatePublicEventShareInput,
   wrapTitleLines,
   buildShareOverlaySvg,
+  isSafePublicImageUrl,
+  resolvePublicEventPhotoUrl,
   renderJustGoPublicEventShareImage,
 } = require('../../services/justGoPublicEventShareImageService');
 
@@ -103,5 +111,80 @@ describe('justGoPublicEventShareImageService', () => {
       error: 'timezone is required.',
       status: 400,
     });
+  });
+
+  it('rejects unsafe photo URLs and reads the event photo field', () => {
+    expect(isSafePublicImageUrl('http://images.example.test/event.jpg')).toBe(false);
+    expect(isSafePublicImageUrl('https://localhost/event.jpg')).toBe(false);
+    expect(isSafePublicImageUrl('https://127.0.0.1/event.jpg')).toBe(false);
+    expect(isSafePublicImageUrl('https://10.0.0.8/event.jpg')).toBe(false);
+    expect(isSafePublicImageUrl('https://images.lumacdn.com/event.jpg')).toBe(true);
+    expect(resolvePublicEventPhotoUrl(sampleEvent({
+      socialPreview: { imageUrl: 'https://images.example.test/event.jpg' },
+    }))).toBe('https://images.example.test/event.jpg');
+  });
+
+  it('wraps split-layout titles to three shorter lines', () => {
+    const lines = wrapTitleLines(
+      'Blinkko Launch Party: A first look at the social wearable that brings AI into real-world connection.',
+      { maxLines: TITLE_MAX_LINES_SPLIT, charsPerLine: TITLE_CHARS_PER_LINE_SPLIT },
+    );
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.length).toBeLessThanOrEqual(TITLE_MAX_LINES_SPLIT);
+    expect(lines.every((line) => line.length <= TITLE_CHARS_PER_LINE_SPLIT)).toBe(true);
+  });
+
+  it('composites a provided photo into the branded split card', async () => {
+    const photoBuffer = await sharp({
+      create: {
+        width: 800,
+        height: 800,
+        channels: 3,
+        background: { r: 40, g: 120, b: 200 },
+      },
+    }).jpeg().toBuffer();
+
+    const fetchPhoto = jest.fn();
+    const result = await renderJustGoPublicEventShareImage(
+      sampleEvent({
+        image: { url: 'https://images.example.test/event.jpg' },
+        socialPreview: { imageUrl: 'https://images.example.test/event.jpg' },
+      }),
+      { photoBuffer, fetchPhoto },
+    );
+
+    expect(fetchPhoto).not.toHaveBeenCalled();
+    expect(result.error).toBeUndefined();
+    const meta = await sharp(result.buffer).metadata();
+    expect(meta.width).toBe(SHARE_WIDTH);
+    expect(meta.height).toBe(SHARE_HEIGHT);
+    expect(meta.format).toBe('png');
+
+    const { data } = await sharp(result.buffer)
+      .extract({
+        left: PHOTO_LEFT + Math.floor(PHOTO_WIDTH / 2) - 2,
+        top: PHOTO_TOP + Math.floor(PHOTO_HEIGHT / 2) - 2,
+        width: 4,
+        height: 4,
+      })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const sample = data.slice(0, 3);
+    expect(sample[2]).toBeGreaterThan(sample[0]);
+  });
+
+  it('falls back to the full branded card when photo fetch fails', async () => {
+    const fetchPhoto = jest.fn().mockResolvedValue(null);
+    const result = await renderJustGoPublicEventShareImage(
+      sampleEvent({
+        socialPreview: { imageUrl: 'https://images.example.test/missing.jpg' },
+      }),
+      { fetchPhoto },
+    );
+    expect(fetchPhoto).toHaveBeenCalledWith('https://images.example.test/missing.jpg');
+    expect(result.error).toBeUndefined();
+    const meta = await sharp(result.buffer).metadata();
+    expect(meta.width).toBe(SHARE_WIDTH);
+    expect(meta.height).toBe(SHARE_HEIGHT);
   });
 });

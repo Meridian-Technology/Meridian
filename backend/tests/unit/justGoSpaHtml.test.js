@@ -128,8 +128,18 @@ describe('justGoSpaHtml', () => {
     expect(html).toContain('name="robots" content="index, follow"');
     expect(html).toContain('property="og:type" content="event"');
     expect(html).toContain('property="og:url" content="https://justgo.lol/events/64f1234567890abcdef12345"');
-    expect(html).toContain('property="og:image" content="https://images.example.test/event.jpg?a=1&amp;b=2"');
+    expect(html).toContain(
+      'property="og:image" content="https://justgo.lol/api/public/events/64f1234567890abcdef12345/opengraph.png"',
+    );
+    expect(html).toContain('property="og:image:width" content="1200"');
+    expect(html).toContain('property="og:image:height" content="630"');
     expect(html).toContain('property="og:image:alt" content="Movie Night &lt;Finale>"');
+    expect(html).not.toMatch(
+      /property="og:image" content="https:\/\/images\.example\.test\/event\.jpg/,
+    );
+    expect(html).not.toMatch(
+      /name="twitter:image" content="https:\/\/images\.example\.test\/event\.jpg/,
+    );
     expect(html).toContain('name="twitter:card" content="summary_large_image"');
     expect(html).toContain('name="twitter:title" content="Movie Night &lt;Finale> | Just &amp; Go"');
     expect(html).not.toContain('</script><script>alert(1)</script>');
@@ -158,7 +168,7 @@ describe('justGoSpaHtml', () => {
     expect(fallback).not.toContain('<script');
   });
 
-  it('uses the generated opengraph card when the event has no photo', async () => {
+  it('uses the generated opengraph card for events without a photo', async () => {
     const event = {
       id: '64f1234567890abcdef12345',
       title: 'Open mic night',
