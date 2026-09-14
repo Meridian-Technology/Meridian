@@ -27,9 +27,9 @@ Eligible public events always use:
 https://justgo.lol/api/public/events/{eventId}/opengraph.png
 ```
 
-Crawlers never receive the raw Luma/Partiful photo as `og:image`. The PNG is rendered server-side by `services/justGoPublicEventShareImageService.js` on `#1E1A16` with the Just Go wordmark, truncated title, date/time, venue, and organizer. `og:image:width` / `og:image:height` are always 1200 and 630. `og:image:alt` / `twitter:image:alt` use the event title.
+Crawlers never receive the raw Luma/Partiful photo as `og:image`. The PNG is a photo-first Just Go flyer: full-bleed cover, wordmark, Les Flos scrapbook headline (short, lowercase, subtitle after `:` dropped), and two chips — when and place. Host names, street addresses, and time ranges stay off the card. `og:image:width` / `og:image:height` are always 1200 and 630. `og:image:alt` / `twitter:image:alt` use the event title.
 
-When `socialPreview.imageUrl` or `image.url` is present, the service fetches that photo over HTTPS (timeout, size cap, no private hosts, no SVG), cover-crops it into a rounded right-hand panel, and keeps branded copy on the left. If the fetch fails or the event has no photo, the card is full-bleed branded text — still Just Go, never an unbranded remote image.
+When `socialPreview.imageUrl` or `image.url` is present, the service fetches that photo over HTTPS (timeout, size cap, no private hosts, no SVG) and cover-crops it to 1200×630 under a warm vignette. If the fetch fails or the event has no photo, the canvas is immersive `#1A1714` — still branded, never an unbranded remote image.
 
 Additional rules:
 
@@ -157,7 +157,7 @@ Printed tags: `og:title`, `og:description`, `og:image`, `og:url`, `twitter:card`
 | File | Role |
 |------|------|
 | `utilities/justGoSpaHtml.js` | SSR meta injection, share image resolution, crawler fallback block |
-| `services/justGoPublicEventShareImageService.js` | Branded PNG card; composites event photo when available |
+| `services/justGoPublicEventShareImageService.js` | Photo-first Just Go flyer PNG (scrapbook headline, when/where chips) |
 | `routes/publicEventRoutes.js` | JSON + `opengraph.png` public API |
 | `utilities/justGoPublicUrl.js` | Canonical absolute URLs |
 | `app.js` | Production catch-all SSR; www allowlist includes `/api/public/events` |

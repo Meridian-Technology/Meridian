@@ -3,16 +3,12 @@ const {
   SHARE_WIDTH,
   SHARE_HEIGHT,
   FIELD_LIMITS,
-  PHOTO_WIDTH,
-  PHOTO_HEIGHT,
-  PHOTO_LEFT,
-  PHOTO_TOP,
-  TITLE_CHARS_PER_LINE_SPLIT,
-  TITLE_MAX_LINES_SPLIT,
   escapeSvgText,
   formatPublicEventDate,
+  formatShareWhenChip,
   validatePublicEventShareInput,
-  wrapTitleLines,
+  shareHeadlineLines,
+  shortPlaceLabel,
   buildShareOverlaySvg,
   isSafePublicImageUrl,
   resolvePublicEventPhotoUrl,
@@ -39,6 +35,11 @@ describe('justGoPublicEventShareImageService', () => {
     expect(result.endTime).toMatch(/9:30 PM/);
   });
 
+  it('builds a compact when chip without the time range', () => {
+    expect(formatShareWhenChip(sampleEvent(), 'en-US')).toMatch(/sep/);
+    expect(formatShareWhenChip(sampleEvent(), 'en-US')).not.toMatch(/7:00/);
+  });
+
   it('escapes SVG text and rejects oversize strings', () => {
     expect(escapeSvgText('Movie <Finale> & "Friends"')).toBe(
       'Movie &lt;Finale&gt; &amp; &quot;Friends&quot;',
@@ -57,28 +58,39 @@ describe('justGoPublicEventShareImageService', () => {
     });
   });
 
-  it('wraps long titles to two lines with truncation', () => {
-    const lines = wrapTitleLines(
+  it('uses the short headline before a colon and lowercases it', () => {
+    expect(shareHeadlineLines(
+      'Blinkko Launch Party: A first look at the social wearable that brings AI into real-world connection.',
+    )).toEqual(['blinkko launch party']);
+  });
+
+  it('wraps leftover long headlines to two lines without duplicating words', () => {
+    const lines = shareHeadlineLines(
       'An absolutely enormous movie night under the stars with blankets snacks and friends everywhere',
     );
     expect(lines).toHaveLength(2);
+    expect(lines.join(' ')).not.toMatch(/an absolutely enormous an absolutely/);
     expect(lines[1]).toMatch(/…$/);
   });
 
-  it('builds overlay SVG with escaped event text only', () => {
+  it('shortens street addresses to a city or named place', () => {
+    expect(shortPlaceLabel('221 11th St, San Francisco, CA 94103, USA')).toBe('san francisco');
+    expect(shortPlaceLabel('Civic Center Lawn')).toBe('civic center lawn');
+  });
+
+  it('builds overlay SVG with escaped scrapbook text and no host dump', () => {
     const svg = buildShareOverlaySvg({
-      titleLines: ['Movie Night <Finale>'],
-      dateLine: 'Friday, September 4',
-      timeLine: '7:00 PM to 9:30 PM PDT',
-      venueLine: 'Civic Center <Lawn>',
-      organizerLine: 'Night & Owl',
+      titleLines: ['movie <finale>'],
+      whenChip: 'fri · sep 4',
+      placeChip: 'civic center <lawn>',
+      hasPhoto: false,
     }).toString('utf8');
 
-    expect(svg).toContain('Movie Night &lt;Finale&gt;');
-    expect(svg).toContain('Civic Center &lt;Lawn&gt;');
-    expect(svg).toContain('Night &amp; Owl');
-    expect(svg).not.toContain('<Finale>');
+    expect(svg).not.toContain('<finale>');
+    expect(svg).not.toContain('<lawn>');
     expect(svg).not.toContain('<script>');
+    expect(svg).not.toContain('hosted by');
+    expect(svg).not.toContain('Night Owl');
   });
 
   it('renders a 1200×630 PNG without embedding raw HTML', async () => {
@@ -124,17 +136,7 @@ describe('justGoPublicEventShareImageService', () => {
     }))).toBe('https://images.example.test/event.jpg');
   });
 
-  it('wraps split-layout titles to three shorter lines', () => {
-    const lines = wrapTitleLines(
-      'Blinkko Launch Party: A first look at the social wearable that brings AI into real-world connection.',
-      { maxLines: TITLE_MAX_LINES_SPLIT, charsPerLine: TITLE_CHARS_PER_LINE_SPLIT },
-    );
-    expect(lines.length).toBeGreaterThan(1);
-    expect(lines.length).toBeLessThanOrEqual(TITLE_MAX_LINES_SPLIT);
-    expect(lines.every((line) => line.length <= TITLE_CHARS_PER_LINE_SPLIT)).toBe(true);
-  });
-
-  it('composites a provided photo into the branded split card', async () => {
+  it('composites a provided photo full-bleed under the flyer overlay', async () => {
     const photoBuffer = await sharp({
       create: {
         width: 800,
@@ -162,8 +164,8 @@ describe('justGoPublicEventShareImageService', () => {
 
     const { data } = await sharp(result.buffer)
       .extract({
-        left: PHOTO_LEFT + Math.floor(PHOTO_WIDTH / 2) - 2,
-        top: PHOTO_TOP + Math.floor(PHOTO_HEIGHT / 2) - 2,
+        left: Math.floor(SHARE_WIDTH / 2) - 2,
+        top: 210,
         width: 4,
         height: 4,
       })
@@ -173,7 +175,7 @@ describe('justGoPublicEventShareImageService', () => {
     expect(sample[2]).toBeGreaterThan(sample[0]);
   });
 
-  it('falls back to the full branded card when photo fetch fails', async () => {
+  it('falls back to the immersive flyer when photo fetch fails', async () => {
     const fetchPhoto = jest.fn().mockResolvedValue(null);
     const result = await renderJustGoPublicEventShareImage(
       sampleEvent({

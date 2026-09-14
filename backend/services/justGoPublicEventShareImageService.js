@@ -1,21 +1,34 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const opentype = require('opentype.js');
 const sharp = require('sharp');
 
 const SHARE_WIDTH = 1200;
 const SHARE_HEIGHT = 630;
-const SHARE_BACKGROUND = '#1E1A16';
-const SHARE_INK = '#FAF6EF';
-const SHARE_INK_MUTED = 'rgba(250,246,239,0.72)';
-const SHARE_ACCENT = '#FF4F1F';
+
+// Just Go mobile tokens (pivotTheme light + photo/deck overlays).
+const TOKEN = Object.freeze({
+  cream: '#FAF6EF',
+  ink: '#1A1714',
+  immersive: '#1A1714',
+  accent: '#FF4F1F',
+  pop: '#FFD23F',
+  ticker: '#4AB5FF',
+  burst: '#FF2A2A',
+  onPhoto: '#FAF6EF',
+  warmCast: 'rgba(28, 20, 14, 0.12)',
+  vignetteTop: 'rgba(16, 12, 10, 0.42)',
+  vignetteMid: 'rgba(20, 16, 12, 0.18)',
+  vignetteBottom: 'rgba(14, 11, 9, 0.78)',
+});
 
 const WORDMARK_PATH = path.join(
   __dirname,
   '../../frontend/public/justgo/wordmark-1624.png',
 );
-const WORDMARK_DISPLAY_WIDTH = 220;
-const WORDMARK_DISPLAY_WIDTH_SPLIT = 190;
+const LES_FLOS_PATH = path.join(__dirname, '../assets/justgo/LesFlosSans.otf');
+const WORDMARK_DISPLAY_WIDTH = 260;
 
 const FIELD_LIMITS = Object.freeze({
   title: 200,
@@ -24,29 +37,13 @@ const FIELD_LIMITS = Object.freeze({
   timezone: 100,
 });
 
-const TITLE_MAX_LINES = 2;
-const TITLE_CHARS_PER_LINE = 38;
-const TITLE_MAX_LINES_SPLIT = 3;
-const TITLE_CHARS_PER_LINE_SPLIT = 22;
-
-const VENUE_MAX_CHARS = 72;
-const VENUE_MAX_CHARS_SPLIT = 36;
-const ORGANIZER_MAX_CHARS = 48;
-const ORGANIZER_MAX_CHARS_SPLIT = 32;
-
-const VENUE_LABEL = 'where';
-const ORGANIZER_LABEL = 'hosted by';
-const DATE_SEPARATOR = 'to';
-
-const PHOTO_PAD = 48;
-const PHOTO_WIDTH = 520;
-const PHOTO_HEIGHT = SHARE_HEIGHT - PHOTO_PAD * 2;
-const PHOTO_LEFT = SHARE_WIDTH - PHOTO_PAD - PHOTO_WIDTH;
-const PHOTO_TOP = PHOTO_PAD;
-const PHOTO_RADIUS = 36;
-const TEXT_LEFT = 64;
+const HEADLINE_MAX_LINES = 2;
+const HEADLINE_CHARS_PER_LINE = 22;
+const PLACE_MAX_CHARS = 22;
 const PHOTO_FETCH_TIMEOUT_MS = 3500;
 const PHOTO_FETCH_MAX_BYTES = 5 * 1024 * 1024;
+
+let cachedFont = null;
 
 function escapeSvgText(value) {
   return String(value)
@@ -174,6 +171,22 @@ function formatPublicEventDate(event, locale = 'en-US') {
   };
 }
 
+function formatShareWhenChip(event, locale = 'en-US') {
+  if (!event?.startsAt || !event?.timezone) return null;
+  const start = new Date(event.startsAt);
+  if (Number.isNaN(start.getTime())) return null;
+  const weekday = new Intl.DateTimeFormat(locale, {
+    timeZone: event.timezone,
+    weekday: 'short',
+  }).format(start);
+  const monthDay = new Intl.DateTimeFormat(locale, {
+    timeZone: event.timezone,
+    month: 'short',
+    day: 'numeric',
+  }).format(start);
+  return `${weekday} · ${monthDay}`.toLowerCase();
+}
+
 function truncateText(text, maxChars) {
   const value = sanitizeText(text);
   if (value.length <= maxChars) return value;
@@ -181,15 +194,8 @@ function truncateText(text, maxChars) {
   return `${value.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
-function wrapTitleLines(title, options = {}) {
-  const maxLines = options.maxLines || TITLE_MAX_LINES;
-  const charsPerLine = options.charsPerLine || TITLE_CHARS_PER_LINE;
-  const text = sanitizeText(title);
-  const maxChars = charsPerLine * maxLines;
-  if (text.length <= charsPerLine) return [text];
-
-  const needsEllipsis = text.length > maxChars - 1;
-  const words = text.split(/\s+/).filter(Boolean);
+function wrapHeadline(text, charsPerLine, maxLines) {
+  const words = sanitizeText(text).split(/\s+/).filter(Boolean);
   const lines = [];
   let current = '';
 
@@ -200,112 +206,222 @@ function wrapTitleLines(title, options = {}) {
       current = candidate;
       continue;
     }
-
     if (current) lines.push(current);
-    if (lines.length >= maxLines) {
-      return lines.slice(0, maxLines);
-    }
-
+    current = '';
+    if (lines.length >= maxLines) return lines.slice(0, maxLines);
     if (lines.length === maxLines - 1) {
-      const remainder = [word, ...words.slice(index + 1)].join(' ');
-      const lastLine = current ? `${current} ${remainder}` : remainder;
-      lines.push(truncateText(lastLine, charsPerLine));
-      return lines.slice(0, maxLines);
+      const remainder = words.slice(index).join(' ');
+      lines.push(truncateText(remainder, charsPerLine));
+      return lines;
     }
-
-    current = word.length > charsPerLine
-      ? truncateText(word, charsPerLine)
-      : word;
+    current = word.length > charsPerLine ? truncateText(word, charsPerLine) : word;
   }
-
   if (current) lines.push(current);
-  if (needsEllipsis && lines.length > 0 && !lines[lines.length - 1].endsWith('…')) {
-    lines[lines.length - 1] = truncateText(lines[lines.length - 1], charsPerLine);
-  }
   return lines.slice(0, maxLines);
+}
+
+/** Short lowercase headline: drop subtitle after a colon, two lines max. */
+function shareHeadlineLines(title) {
+  let text = sanitizeText(title).toLowerCase();
+  const colon = text.indexOf(':');
+  if (colon >= 6) text = text.slice(0, colon).trim();
+  return wrapHeadline(text, HEADLINE_CHARS_PER_LINE, HEADLINE_MAX_LINES);
+}
+
+/** City or named place — never a full street address. */
+function shortPlaceLabel(venueText) {
+  const parts = sanitizeText(venueText)
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return '';
+  const named = parts.length >= 2 && /^\d/.test(parts[0]) ? parts[1] : parts[0];
+  return truncateText(named.toLowerCase(), PLACE_MAX_CHARS);
+}
+
+function loadLesFlos() {
+  if (cachedFont) return cachedFont;
+  if (!fs.existsSync(LES_FLOS_PATH)) {
+    throw new Error(`Les Flos Sans not found at ${LES_FLOS_PATH}`);
+  }
+  const file = fs.readFileSync(LES_FLOS_PATH);
+  cachedFont = opentype.parse(
+    file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength),
+  );
+  return cachedFont;
+}
+
+function lesFlosWidth(text, fontSize) {
+  return lesFlosText(text, 0, 0, fontSize, '#000').width;
+}
+
+function lesFlosText(text, x, y, fontSize, fill) {
+  const font = loadLesFlos();
+  const scale = fontSize / font.unitsPerEm;
+  const paths = [];
+  let cursor = x;
+  const glyphs = font.stringToGlyphs(text);
+  for (let index = 0; index < glyphs.length; index += 1) {
+    const glyph = glyphs[index];
+    const data = glyph.getPath(cursor, y, fontSize).toPathData(1);
+    if (data) paths.push(`<path d="${data}" fill="${fill}"/>`);
+    cursor += glyph.advanceWidth * scale;
+    const next = glyphs[index + 1];
+    if (next && typeof font.getKerningValue === 'function') {
+      cursor += font.getKerningValue(glyph, next) * scale;
+    }
+  }
+  return { svg: paths.join(''), width: Math.ceil(cursor - x) };
+}
+
+function cutPaperPath(width, height) {
+  const w = width;
+  const h = height;
+  return `M 0 ${h * 0.06} L ${w} ${h * 0.04} L ${w * 0.985} ${h * 0.94} L ${w * 0.02} ${h} Z`;
+}
+
+function scrapbookStrip({
+  text,
+  x,
+  y,
+  rotateDeg,
+  fill,
+  textFill,
+  fontSize,
+}) {
+  const padX = Math.round(fontSize * 0.28);
+  const padTop = Math.round(fontSize * 0.22);
+  const padBottom = Math.round(fontSize * 0.28);
+  const textWidth = Math.ceil(lesFlosWidth(text, fontSize));
+  const width = textWidth + padX * 2;
+  const height = fontSize + padTop + padBottom;
+  const baseline = padTop + fontSize * 0.78;
+  const originX = x + width / 2;
+  const originY = y + height / 2;
+  const glyphs = lesFlosText(text, x + padX, y + baseline, fontSize, textFill);
+  return {
+    width,
+    height,
+    svg:
+      `<g transform="rotate(${rotateDeg} ${originX} ${originY})">` +
+        `<path d="${cutPaperPath(width, height)}" transform="translate(${x} ${y})" ` +
+          `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="3" stroke-linejoin="miter"/>` +
+        glyphs.svg +
+      `</g>`,
+  };
+}
+
+function metaChip({ text, x, y, fill, textFill }) {
+  const fontSize = 22;
+  const padX = 16;
+  const height = 40;
+  const glyphs = lesFlosText(text, x + padX, y + 28, fontSize, textFill);
+  const width = glyphs.width + padX * 2;
+  return {
+    width,
+    height,
+    svg:
+      `<g>` +
+        `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" ` +
+          `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="2"/>` +
+        glyphs.svg +
+      `</g>`,
+  };
 }
 
 function buildShareOverlaySvg({
   titleLines,
-  dateLine,
-  timeLine,
-  venueLine,
-  organizerLine,
-  layout = 'full',
+  whenChip,
+  placeChip,
+  hasPhoto,
 }) {
-  const split = layout === 'split';
-  const x = split ? TEXT_LEFT : 72;
-  const titleY = split ? 176 : 228;
-  const titleSize = split ? 42 : 54;
-  const titleLineHeight = split ? 50 : 62;
-  const titleTspans = titleLines.map((line, index) => (
-    `<tspan x="${x}" dy="${index === 0 ? 0 : titleLineHeight}">${escapeSvgText(line)}</tspan>`
-  )).join('');
+  const fontSize = titleLines.length === 1 ? 72 : 58;
+  const measured = titleLines.map((line, index) => scrapbookStrip({
+    text: line,
+    x: 56 + (index === 1 ? 18 : 0),
+    y: 0,
+    rotateDeg: index === 0 ? -1.4 : 1.1,
+    fill: index === 0 ? TOKEN.cream : TOKEN.accent,
+    textFill: index === 0 ? TOKEN.ink : TOKEN.cream,
+    fontSize,
+  }));
+  const stripStackHeight = measured.reduce((sum, strip, index) => (
+    sum + strip.height + (index === 0 ? 0 : -6)
+  ), 0);
+  const chipY = SHARE_HEIGHT - 86;
+  let stripY = chipY - 28 - stripStackHeight;
+  const stripMarkup = titleLines.map((line, index) => {
+    const placed = scrapbookStrip({
+      text: line,
+      x: 56 + (index === 1 ? 18 : 0),
+      y: stripY,
+      rotateDeg: index === 0 ? -1.4 : 1.1,
+      fill: index === 0 ? TOKEN.cream : TOKEN.accent,
+      textFill: index === 0 ? TOKEN.ink : TOKEN.cream,
+      fontSize,
+    });
+    stripY += placed.height - 6;
+    return placed.svg;
+  }).join('');
 
-  const factsY = titleY + titleLines.length * titleLineHeight + (split ? 28 : 36);
-  const ruleEnd = split ? PHOTO_LEFT - 36 : SHARE_WIDTH - 72;
-  const divider = split
-    ? `<line x1="${PHOTO_LEFT - 24}" y1="${PHOTO_PAD}" x2="${PHOTO_LEFT - 24}" ` +
-      `y2="${SHARE_HEIGHT - PHOTO_PAD}" stroke="${SHARE_ACCENT}" stroke-width="3"/>`
+  const when = whenChip
+    ? metaChip({ text: whenChip, x: 56, y: chipY, fill: TOKEN.ticker, textFill: TOKEN.ink })
+    : null;
+  const place = placeChip
+    ? metaChip({
+      text: placeChip,
+      x: 56 + (when ? when.width + 12 : 0),
+      y: chipY,
+      fill: TOKEN.pop,
+      textFill: TOKEN.ink,
+    })
+    : null;
+
+  const wash = hasPhoto
+    ? `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="${TOKEN.warmCast}"/>` +
+      `<defs>` +
+        `<linearGradient id="topFade" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="0%" stop-color="${TOKEN.vignetteTop}"/>` +
+          `<stop offset="42%" stop-color="${TOKEN.vignetteMid}" stop-opacity="0.35"/>` +
+          `<stop offset="70%" stop-color="rgb(14,11,9)" stop-opacity="0"/>` +
+        `</linearGradient>` +
+        `<linearGradient id="bottomFade" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="45%" stop-color="rgb(14,11,9)" stop-opacity="0"/>` +
+          `<stop offset="78%" stop-color="${TOKEN.vignetteMid}"/>` +
+          `<stop offset="100%" stop-color="${TOKEN.vignetteBottom}"/>` +
+        `</linearGradient>` +
+      `</defs>` +
+      `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#topFade)"/>` +
+      `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="url(#bottomFade)"/>`
     : '';
 
   return Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}">` +
-      `<rect width="${SHARE_WIDTH}" height="${SHARE_HEIGHT}" fill="none"/>` +
-      divider +
-      `<text x="${x}" y="${titleY}" fill="${SHARE_INK}" font-family="Helvetica, Arial, sans-serif" ` +
-        `font-size="${titleSize}" font-weight="700" letter-spacing="-0.03em">${titleTspans}</text>` +
-      `<line x1="${x}" y1="${factsY - 18}" x2="${ruleEnd}" y2="${factsY - 18}" ` +
-        `stroke="${SHARE_INK_MUTED}" stroke-width="1"/>` +
-      `<text x="${x}" y="${factsY + 4}" fill="${SHARE_INK}" font-family="Helvetica, Arial, sans-serif" ` +
-        `font-size="${split ? 24 : 28}" font-weight="600">${escapeSvgText(dateLine)}</text>` +
-      `<text x="${x}" y="${factsY + 38}" fill="${SHARE_INK_MUTED}" font-family="monospace" ` +
-        `font-size="${split ? 18 : 22}">${escapeSvgText(timeLine)}</text>` +
-      `<text x="${x}" y="${factsY + 88}" fill="${SHARE_INK_MUTED}" font-family="monospace" ` +
-        `font-size="16" letter-spacing="0.04em">${escapeSvgText(VENUE_LABEL)}</text>` +
-      `<text x="${x}" y="${factsY + 118}" fill="${SHARE_INK}" font-family="Helvetica, Arial, sans-serif" ` +
-        `font-size="${split ? 22 : 26}" font-weight="600">${escapeSvgText(venueLine)}</text>` +
-      `<text x="${x}" y="${factsY + 168}" fill="${SHARE_INK_MUTED}" font-family="monospace" ` +
-        `font-size="16" letter-spacing="0.04em">${escapeSvgText(ORGANIZER_LABEL)}</text>` +
-      `<text x="${x}" y="${factsY + 198}" fill="${SHARE_INK}" font-family="Helvetica, Arial, sans-serif" ` +
-        `font-size="${split ? 22 : 26}" font-weight="600">${escapeSvgText(organizerLine)}</text>` +
-      `<rect x="${x}" y="${SHARE_HEIGHT - 56}" width="96" height="6" fill="${SHARE_ACCENT}"/>` +
+      wash +
+      stripMarkup +
+      (when ? when.svg : '') +
+      (place ? place.svg : '') +
     `</svg>`,
   );
 }
 
-async function loadWordmarkComposite(layout = 'full') {
+async function loadWordmarkComposite() {
   if (!fs.existsSync(WORDMARK_PATH)) {
     throw new Error(`Just Go wordmark not found at ${WORDMARK_PATH}`);
   }
-  const width = layout === 'split' ? WORDMARK_DISPLAY_WIDTH_SPLIT : WORDMARK_DISPLAY_WIDTH;
   const resized = await sharp(WORDMARK_PATH)
-    .resize({ width })
+    .resize({ width: WORDMARK_DISPLAY_WIDTH })
     .png()
     .toBuffer();
-  return { input: resized, left: layout === 'split' ? TEXT_LEFT : 72, top: 48 };
+  return { input: resized, left: 52, top: 40 };
 }
 
-function roundedRectMask() {
-  return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${PHOTO_WIDTH}" height="${PHOTO_HEIGHT}">` +
-      `<rect x="0" y="0" width="${PHOTO_WIDTH}" height="${PHOTO_HEIGHT}" ` +
-      `rx="${PHOTO_RADIUS}" ry="${PHOTO_RADIUS}" fill="#fff"/>` +
-    `</svg>`,
-  );
-}
-
-async function preparePhotoComposite(photoBuffer) {
-  const fitted = await sharp(photoBuffer)
+async function prepareFullBleedPhoto(photoBuffer) {
+  return sharp(photoBuffer)
     .rotate()
-    .resize(PHOTO_WIDTH, PHOTO_HEIGHT, { fit: 'cover', position: 'centre' })
+    .resize(SHARE_WIDTH, SHARE_HEIGHT, { fit: 'cover', position: 'centre' })
     .png()
     .toBuffer();
-  const masked = await sharp(fitted)
-    .composite([{ input: roundedRectMask(), blend: 'dest-in' }])
-    .png()
-    .toBuffer();
-  return { input: masked, left: PHOTO_LEFT, top: PHOTO_TOP };
 }
 
 async function fetchSharePhotoBuffer(photoUrl) {
@@ -350,8 +466,7 @@ async function loadEventPhotoBuffer(event, options = {}) {
 
 /**
  * Render a 1200×630 PNG share card for a public event v1 payload.
- * Always branded Just Go. When a photo is available it is cropped into the
- * right column; otherwise the card is full-bleed text.
+ * Photo-first Just Go flyer: wordmark, scrapbook headline, when/where chips.
  *
  * @returns {{ buffer?: Buffer, error?: string, status?: number }}
  */
@@ -359,61 +474,48 @@ async function renderJustGoPublicEventShareImage(event, options = {}) {
   const validated = validatePublicEventShareInput(event);
   if (validated.error) return validated;
 
-  const when = formatPublicEventDate(
+  const titleLines = shareHeadlineLines(validated.title);
+  if (!titleLines.length) {
+    return { error: 'title is required.', status: 400 };
+  }
+
+  const whenChip = formatShareWhenChip(
     {
       startsAt: validated.startsAt,
-      endsAt: validated.endsAt,
       timezone: validated.timezone,
     },
     options.locale || 'en-US',
   );
-  if (!when) {
-    return { error: 'Could not format event date/time.', status: 400 };
-  }
-
+  const placeChip = shortPlaceLabel(validated.venueText);
   const photoBuffer = await loadEventPhotoBuffer(event, options);
-  const layout = photoBuffer ? 'split' : 'full';
-  const titleLines = wrapTitleLines(validated.title, layout === 'split'
-    ? { maxLines: TITLE_MAX_LINES_SPLIT, charsPerLine: TITLE_CHARS_PER_LINE_SPLIT }
-    : undefined);
-  const dateLine = when.date;
-  const timeLine = `${when.startTime} ${DATE_SEPARATOR} ${when.endTime}`;
-  const venueLine = truncateText(
-    validated.venueText,
-    layout === 'split' ? VENUE_MAX_CHARS_SPLIT : VENUE_MAX_CHARS,
-  );
-  const organizerLine = truncateText(
-    validated.organizerName,
-    layout === 'split' ? ORGANIZER_MAX_CHARS_SPLIT : ORGANIZER_MAX_CHARS,
-  );
-
   const overlaySvg = buildShareOverlaySvg({
     titleLines,
-    dateLine,
-    timeLine,
-    venueLine,
-    organizerLine,
-    layout,
+    whenChip,
+    placeChip,
+    hasPhoto: Boolean(photoBuffer),
   });
 
-  const layers = [await loadWordmarkComposite(layout)];
+  const layers = [];
   if (photoBuffer) {
     try {
-      layers.push(await preparePhotoComposite(photoBuffer));
+      layers.push({ input: await prepareFullBleedPhoto(photoBuffer), left: 0, top: 0 });
     } catch (_) {
-      // Unreadable photo → branded text card without the image.
+      // Unreadable photo → immersive canvas.
     }
   }
   layers.push({ input: overlaySvg, left: 0, top: 0 });
+  layers.push(await loadWordmarkComposite());
 
-  const buffer = await sharp({
+  const canvas = sharp({
     create: {
       width: SHARE_WIDTH,
       height: SHARE_HEIGHT,
       channels: 4,
-      background: SHARE_BACKGROUND,
+      background: TOKEN.immersive,
     },
-  })
+  });
+
+  const buffer = await canvas
     .composite(layers)
     .png({ compressionLevel: 6 })
     .toBuffer();
@@ -424,18 +526,18 @@ async function renderJustGoPublicEventShareImage(event, options = {}) {
 module.exports = {
   SHARE_WIDTH,
   SHARE_HEIGHT,
-  SHARE_BACKGROUND,
+  SHARE_BACKGROUND: TOKEN.immersive,
   FIELD_LIMITS,
-  PHOTO_WIDTH,
-  PHOTO_HEIGHT,
-  PHOTO_LEFT,
-  PHOTO_TOP,
-  TITLE_MAX_LINES_SPLIT,
-  TITLE_CHARS_PER_LINE_SPLIT,
+  TOKEN,
+  HEADLINE_MAX_LINES,
+  HEADLINE_CHARS_PER_LINE,
   escapeSvgText,
   formatPublicEventDate,
+  formatShareWhenChip,
   validatePublicEventShareInput,
-  wrapTitleLines,
+  shareHeadlineLines,
+  shortPlaceLabel,
+  wrapHeadline,
   buildShareOverlaySvg,
   isSafePublicImageUrl,
   resolvePublicEventPhotoUrl,
