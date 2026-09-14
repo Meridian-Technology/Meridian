@@ -9,8 +9,7 @@ How **justgo.lol** serves rich link previews for the brand landing page and publ
 | Surface | `og:image` source | Dimensions |
 |--------|-------------------|------------|
 | Brand (`/`, city slugs, `/justgo/*`) | Static JPEG at `/justgo/og.jpg` | 1200×630 |
-| Public event **with photo** | `event.socialPreview.imageUrl` or `event.image.url` (remote URL) | From the hosted photo |
-| Public event **without photo** | Generated PNG at `/api/public/events/:eventId/opengraph.png` | 1200×630 |
+| Public event (with or without photo) | Generated PNG at `/api/public/events/:eventId/opengraph.png` | 1200×630 |
 
 Brand copy and image alt text align with `JUSTGO_TITLE`, `JUSTGO_DESCRIPTION`, and `JUSTGO_OG_IMAGE_ALT` in `utilities/justGoSpaHtml.js` (server) and `frontend/src/pages/JustGoLanding/justGoDocumentMeta.js` (in-app navigation).
 
@@ -20,25 +19,17 @@ Brand copy and image alt text align with `JUSTGO_TITLE`, `JUSTGO_DESCRIPTION`, a
 - Background `#1E1A16`, Just Go wordmark from `frontend/public/justgo/wordmark-1624.png`, ethos copy from the constants above.
 - Served as a static file from the production frontend build; meta tags point at the absolute URL on `https://justgo.lol` (or `JUSTGO_PUBLIC_ORIGIN` override).
 
-### Event photo (existing behavior)
+### Generated event card (`opengraph.png`)
 
-When the public event v1 payload includes a non-empty `socialPreview.imageUrl` or `image.url`, that URL is used for `og:image` and `twitter:image`. Width/height meta tags are **not** set (the remote asset dimensions are unknown). `og:image:alt` / `twitter:image:alt` use the event title.
-
-### Generated card fallback (`opengraph.png`)
-
-When there is no event photo, SSR and meta tags use:
+Eligible public events always use:
 
 ```text
 https://justgo.lol/api/public/events/{eventId}/opengraph.png
 ```
 
-The PNG is rendered server-side by `services/justGoPublicEventShareImageService.js` (Sharp + SVG overlay on `#1E1A16`): wordmark, truncated title, formatted date/time (`Intl`, same logic as `justGoPublicEventFormat.js`), venue, and organizer. `og:image:width` / `og:image:height` are set to 1200 and 630.
+Crawlers never receive the raw Luma/Partiful photo as `og:image`. The PNG is a Just Go flyer: blurred week-home nature hero (`canopy` / `coast`), larger wordmark, Les Flos scrapbook headline (short, lowercase, subtitle after `:` dropped), and two chips — when and place. When the event has a photo, that artwork sits on its own tilted square poster card with the native MotionGleam treatment (soft radial spotlight plus a 1pt lit rim — same stops as `MotionGleamModule.swift`, frozen at rest). Host names, street addresses, and time ranges stay off the card. `og:image:width` / `og:image:height` are always 1200 and 630. `og:image:alt` / `twitter:image:alt` use the event title.
 
----
-
-## Strategy B (no photo compositing)
-
-The share-image service **does not** fetch, resize, or composite event photos. Photo events use the remote image URL directly in meta tags; no-photo events use the generated PNG route only.
+When `socialPreview.imageUrl` or `image.url` is present, the service fetches that photo over HTTPS (timeout, size cap, no private hosts, no SVG) and cover-crops it into the poster card. If the fetch fails or the event has no photo, the canvas is still the blurred nature hero plus type — never an unbranded remote image, and never an empty card frame.
 
 Additional rules:
 
@@ -103,8 +94,9 @@ Structured data: JSON-LD `Event` schema is also injected in `<head>` for eligibl
 - Title: `{event.title} | just go`
 - Description: `socialPreview.description` → `description` → `title`
 - `og:url` / canonical: event `canonicalUrl`
+- `og:image` / `twitter:image`: `/api/public/events/{id}/opengraph.png` (branded card, photo composited when available)
 - `og:image:alt` / `twitter:image:alt`: event title
-- Generated card only: `og:image:width` / `og:image:height` = 1200 / 630
+- `og:image:width` / `og:image:height` = 1200 / 630
 
 ### Unavailable event
 
@@ -118,7 +110,7 @@ Structured data: JSON-LD `Event` schema is also injected in `<head>` for eligibl
 - **No JavaScript:** Previews depend on server HTML and absolute URLs. Relative `og:image` values break in many clients.
 - **Caching:** iMessage and other apps cache previews aggressively; changing meta tags or `og.jpg` may not refresh until cache expiry or URL change.
 - **Image size:** Brand `og.jpg` is kept reasonably small for slow mobile crawlers. Generated PNGs are 1200×630 PNG (lossless text; not optimized for minimal bytes).
-- **Remote photos:** Third-party image hosts must allow crawler fetches (no auth, reasonable TLS). Broken or blocked URLs yield empty or generic previews.
+- **Remote photos:** The card fetch uses HTTPS only, a short timeout, and a 5MB cap. Hosts that block the server still get a branded no-photo card rather than a raw unfurl.
 - **Timeouts:** Crawlers often abort slow responses; public routes use short cache TTLs (60s) but cold render of `opengraph.png` still adds latency on first hit.
 - **Privacy:** Non-canonical or unavailable event IDs return 404 with no-store — no event metadata or image in the response.
 
@@ -165,7 +157,7 @@ Printed tags: `og:title`, `og:description`, `og:image`, `og:url`, `twitter:card`
 | File | Role |
 |------|------|
 | `utilities/justGoSpaHtml.js` | SSR meta injection, share image resolution, crawler fallback block |
-| `services/justGoPublicEventShareImageService.js` | PNG card render (Strategy B) |
+| `services/justGoPublicEventShareImageService.js` | Photo-first Just Go flyer PNG (scrapbook headline, when/where chips) |
 | `routes/publicEventRoutes.js` | JSON + `opengraph.png` public API |
 | `utilities/justGoPublicUrl.js` | Canonical absolute URLs |
 | `app.js` | Production catch-all SSR; www allowlist includes `/api/public/events` |
@@ -208,4 +200,4 @@ og:url:         https://justgo.lol/events
 twitter:card:   summary_large_image
 ```
 
-**Notes (pre–MER-199 deploy):** Brand landing meta matches the documented contract. Unavailable events still inherit brand `og:image` on production; after this branch ships, expect **no** `og:image` on unavailable paths and `noindex, nofollow` robots. Re-run with `JUSTGO_SAMPLE_EVENT_ID=<eligible-id>` to confirm event-specific `og:image` (`opengraph.png` or photo URL) post-deploy.
+**Notes:** Brand landing meta matches the documented contract. Unavailable events still inherit brand `og:image` from the Just Go HTML rewrite. Eligible events should always show `/api/public/events/{id}/opengraph.png`, not the raw event photo. Re-run with `JUSTGO_SAMPLE_EVENT_ID=<eligible-id>` after deploy.
