@@ -11,7 +11,15 @@ import useOutsideClick from '../../hooks/useClickOutside';
  * @param {string} defaultValue - Initial value
  * @param {string} placeholder - Placeholder text
  */
-const Select = ({ options = [], optionItems, onChange = () => {}, defaultValue, placeholder = 'Select an option' }) => {
+const Select = ({
+    options = [],
+    optionItems,
+    onChange = () => {},
+    defaultValue,
+    placeholder = 'Select an option',
+    menuPlacement = 'bottom',
+    className = '',
+}) => {
     const items = optionItems || options.map(o => ({ value: o, label: o }));
     const [selectedValue, setSelectedValue] = useState(defaultValue);
     const [isOpen, setIsOpen] = useState(false);
@@ -38,7 +46,13 @@ const Select = ({ options = [], optionItems, onChange = () => {}, defaultValue, 
     const selectedItem = items.find(i => i.value === selectedValue);
 
     return (
-        <div className="select-container">
+        <div
+            className={[
+                'select-container',
+                menuPlacement === 'top' ? 'select-container--top' : '',
+                className,
+            ].filter(Boolean).join(' ')}
+        >
             <div className="select-header" onClick={() => setIsOpen(!isOpen)}>
                 <div className="select-header-text">
                     {selectedItem ? (

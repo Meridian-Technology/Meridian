@@ -28,7 +28,7 @@ const SCORE_PARTS = [
   { key: 'personal', label: 'personal' },
   { key: 'bleed', label: 'crew bleed' },
   { key: 'negative', label: 'negative tags', subtract: true },
-  { key: 'editorial', label: 'editorial influence', signed: true },
+  { key: 'editorial', label: 'editorial weight', signed: true },
 ];
 
 function useDebouncedValue(value, delayMs) {

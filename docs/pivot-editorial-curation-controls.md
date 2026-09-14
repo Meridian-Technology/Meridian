@@ -1,10 +1,10 @@
 # Pivot editorial curation controls
 
-The MER-201 controls let an operator influence unopened weekly Drop decks while preserving the existing personalization model. They are intended as a temporary human steering layer: the ranker still computes an organic score, then records the editorial treatment separately so later analysis can distinguish product judgment from learned relevance.
+The MER-201 controls let an operator weight unopened weekly Drop decks while preserving the existing personalization model. They are intended as a temporary human steering layer: the ranker still computes an organic score, then records the editorial treatment separately so later analysis can distinguish product judgment from learned relevance.
 
-## Event influence
+## Event weight
 
-Open an event in the platform-admin Curation catalog and use **Editorial influence**. Bulk influence is available after selecting multiple rows.
+Open an event in the platform-admin Curation catalog and use **Editorial weight**. Bulk weighting is available after selecting multiple rows.
 
 | Tier | Selection behavior | Score adjustment |
 | --- | --- | ---: |
@@ -17,7 +17,7 @@ Open an event in the platform-admin Curation catalog and use **Editorial influen
 
 Promote and Strong promote can target everyone or only people whose interest tags match at least one event tag. A matching event receives the adjustment once; matching more tags does not stack the boost. Demote, Hidden, and Must show always apply to everyone.
 
-The note is optional and internal. Each saved override also records the operator and time. Moving an event to another batch week clears its override, preventing an old editorial decision from silently carrying into a later Drop.
+Each saved override records the operator and time. Moving an event to another batch week clears its override, preventing an old editorial decision from silently carrying into a later Drop.
 
 ## Exact editorial set
 

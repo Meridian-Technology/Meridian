@@ -1265,7 +1265,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       setBusyKey(null);
       if (result.error) {
         addNotification({
-          title: 'Could not update influence',
+          title: 'Could not update weight',
           message: result.error,
           type: 'error',
         });
@@ -1273,7 +1273,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       }
       refreshAll();
       addNotification({
-        title: 'Editorial influence saved',
+        title: 'Editorial weight saved',
         message: 'This affects new decks only; opened decks remain unchanged.',
         type: 'success',
       });
@@ -1298,7 +1298,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       setBusyKey(null);
       refreshAll();
       addNotification({
-        title: failed ? 'Partial editorial update' : 'Editorial influence applied',
+        title: failed ? 'Partial editorial update' : 'Editorial weight applied',
         message: `${ok} updated${failed ? `, ${failed} failed` : ''}. Opened decks remain unchanged.`,
         type: failed ? 'warning' : 'success',
       });
@@ -1332,7 +1332,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         title: mode === 'editorial' ? 'Exact batch enabled' : 'Personalization restored',
         message: mode === 'editorial'
           ? `${count} events will make up every new deck; order remains personalized.`
-          : 'New decks will use the ranked catalog and event-level influence.',
+          : 'New decks will use the ranked catalog and event-level weights.',
         type: 'success',
       });
     },
