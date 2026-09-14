@@ -139,7 +139,7 @@ describe('justGoPublicEventShareImageService', () => {
     const photoBuffer = await sharp({
       create: {
         width: 800,
-        height: 1066,
+        height: 800,
         channels: 3,
         background: { r: 220, g: 16, b: 170 },
       },

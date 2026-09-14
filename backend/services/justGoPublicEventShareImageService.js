@@ -36,8 +36,8 @@ const HERO_FILES = Object.freeze([
 ]);
 const WORDMARK_DISPLAY_WIDTH = 336;
 
-const POSTER_WIDTH = 400;
-const POSTER_HEIGHT = 533;
+const POSTER_WIDTH = 512;
+const POSTER_HEIGHT = 512;
 const POSTER_RADIUS = 16;
 const POSTER_TILT_DEG = -5.4;
 
