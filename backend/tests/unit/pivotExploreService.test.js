@@ -441,6 +441,9 @@ describe('getPivotExplore', () => {
 
     const result = await getPivotExplore(req, { batchWeek: '2026-W22', now });
 
+    expect(Event.find).toHaveBeenCalledWith(expect.objectContaining({
+      'customFields.pivot.rankingOverride.tier': { $ne: 'hidden' },
+    }));
     expect(result.data.batchWeek).toBe('2026-W22');
     expect(result.data.cityDisplayName).toBe('Brooklyn');
     expect(result.data.total).toBe(1);

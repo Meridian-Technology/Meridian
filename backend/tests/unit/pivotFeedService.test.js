@@ -2074,7 +2074,11 @@ describe('getPivotFeed', () => {
         name: 'Earlier Generic',
         start_time: new Date('2026-05-28T19:00:00.000Z'),
         customFields: {
-          pivot: { host: { name: 'Venue A' }, tags: [] },
+          pivot: {
+            host: { name: 'Venue A' },
+            tags: [],
+            rankingOverride: { tier: 'hidden', audience: 'everyone' },
+          },
         },
       },
     ];
@@ -2101,6 +2105,7 @@ describe('getPivotFeed', () => {
       'Earlier Generic',
       'Later Match',
     ]);
+    expect(result.data.frozen).toBe(true);
     expect(recordPivotDeckSnapshot).not.toHaveBeenCalled();
   });
 

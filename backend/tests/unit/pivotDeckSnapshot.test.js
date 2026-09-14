@@ -115,6 +115,31 @@ describe('PivotDeckSnapshot (Task 6.1)', () => {
       ]);
     });
 
+    it('persists the selection mode and editorial ranking treatment', async () => {
+      const rankingEntries = [{
+        eventId: String(eventA),
+        organicScore: 0.7,
+        editorialAdjustment: 1.5,
+        finalScore: 2.2,
+        tier: 'strong_promote',
+        audience: 'matching_interests',
+        matched: true,
+        inclusionReason: 'ranked',
+      }];
+
+      const result = await upsertPivotDeckSnapshot(req, {
+        userId,
+        batchWeek: '2026-W22',
+        orderedEventIds: [eventA],
+        rankerVersion: 'rules_v2_editorial',
+        selectionMode: 'editorial',
+        rankingEntries,
+      });
+
+      expect(result.data.selectionMode).toBe('editorial');
+      expect(result.data.rankingEntries).toEqual(rankingEntries);
+    });
+
     it('recordPivotDeckSnapshot swallows write failures without throwing', async () => {
       getModels.mockImplementationOnce(() => {
         throw new Error('model unavailable');

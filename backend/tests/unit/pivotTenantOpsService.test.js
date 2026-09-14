@@ -176,6 +176,7 @@ describe('pivotTenantOpsService', () => {
         'overview',
         'performance',
         'journey',
+        'readiness',
         'catalog',
       ]);
     });
