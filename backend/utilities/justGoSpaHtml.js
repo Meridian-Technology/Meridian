@@ -30,10 +30,6 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;');
 }
 
-function injectBeforeBodyClose(html, block) {
-  return String(html || '').replace(/<\/body>/i, `    ${block}\n  </body>`);
-}
-
 function buildPublicEventShareFallbackBlock(event, language = null) {
   const venueLabel = resolveLanguageEntry(language, 'landing.web.event.venueLabel', 'where');
   const organizerLabel = resolveLanguageEntry(
