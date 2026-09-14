@@ -114,6 +114,7 @@ async function finalizeStoredComputeJobApply(req, {
       idempotencyKey,
       summary: applied.summary,
       outcome,
+      previewDrift: Boolean(applied.previewDrift),
       now,
     });
     return {
@@ -122,6 +123,7 @@ async function finalizeStoredComputeJobApply(req, {
       summary: applied.summary,
       outcome,
       skippedRows: applied.skippedRows || [],
+      previewDrift: Boolean(applied.previewDrift),
     };
   }
 
@@ -142,6 +144,8 @@ async function finalizeStoredComputeJobApply(req, {
     idempotencyKey: trimString(idempotencyKey) || `apply-failed:${externalJobId}`,
     summary: partialSummary,
     outcome,
+    errorCode: error?.code || null,
+    errorMessage: error?.message || null,
     now,
   });
   const rejected = {
@@ -150,10 +154,12 @@ async function finalizeStoredComputeJobApply(req, {
     summary: partialSummary,
     failedRow: error?.failedRow || null,
     validationIssues: error?.validationIssues || [],
+    code: error?.code || null,
+    message: error?.message || null,
   };
   if (error) {
     error.applyResult = rejected;
-    throw error;
+    return rejected;
   }
   return rejected;
 }
@@ -1319,11 +1325,23 @@ async function applyComputeResult(req, {
   }
 
   const freshPreview = await previewComputeResult(req, result, { now });
-  if (comparablePreview(freshPreview) !== comparablePreview(preview)) {
-    throw serviceError('Preview is stale relative to current production state.', 'PREVIEW_STALE', 409);
+  const previewDrift = comparablePreview(freshPreview) !== comparablePreview(preview);
+  if (previewDrift && !freshPreview.applyAllowed) {
+    throw serviceError(
+      'Preview is stale relative to current production state. Re-run Preview before applying.',
+      'PREVIEW_STALE',
+      409,
+    );
   }
   if (!freshPreview.applyAllowed) {
     throw serviceError('Fresh preview does not allow apply.', 'PREVIEW_APPLY_BLOCKED', 409);
+  }
+  if (previewDrift) {
+    logPivot('info', 'compute apply using refreshed preview after production drift', {
+      externalJobId: externalJobId || result.jobId || null,
+      cityKey: result.cityKey || null,
+      applicableRows: freshPreview.rows.filter(isApplyablePreviewRow).length,
+    });
   }
 
   const identities = await loadProductionIdentities(req, result);
@@ -1407,6 +1425,7 @@ async function applyComputeResult(req, {
     summary,
     preview: freshPreview,
     skippedRows: skippedRows.slice(0, 100),
+    previewDrift,
   };
 }
 

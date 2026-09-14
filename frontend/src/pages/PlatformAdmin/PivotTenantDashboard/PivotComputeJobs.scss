@@ -1342,6 +1342,13 @@
   > button { margin-top: 12px; }
 }
 
+.pivot-compute-review__apply-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .pivot-compute-review__apply-result-head {
   display: flex;
   align-items: flex-start;

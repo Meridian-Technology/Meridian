@@ -141,6 +141,9 @@ const applicationAuditSchema = new mongoose.Schema(
       default: null,
       enum: ['completed', 'partial', 'rejected'],
     },
+    errorCode: { type: String, default: null, trim: true, maxlength: 64 },
+    errorMessage: { type: String, default: null, trim: true, maxlength: 1000 },
+    previewDrift: { type: Boolean, default: false },
     summary: {
       creates: { type: Number, default: 0, min: 0 },
       updates: { type: Number, default: 0, min: 0 },
@@ -148,6 +151,7 @@ const applicationAuditSchema = new mongoose.Schema(
       conflicts: { type: Number, default: 0, min: 0 },
       stale: { type: Number, default: 0, min: 0 },
       rejected: { type: Number, default: 0, min: 0 },
+      skipped: { type: Number, default: 0, min: 0 },
     },
   },
   { _id: false },

@@ -525,7 +525,7 @@ describe('pivotComputeResultApplyService', () => {
       expect(publishIngestEvent).toHaveBeenCalled();
     });
 
-    it('rejects a browser-modified preview even when aggregate counts are unchanged', async () => {
+    it('applies from a refreshed server preview when the browser preview drifted but apply is still allowed', async () => {
       const result = loadFixture('result-discovery-valid-completed.json');
       const preview = await previewComputeResult(req, result, {
         currentContextVersion: result.basedOnContextVersion,
@@ -533,12 +533,15 @@ describe('pivotComputeResultApplyService', () => {
       const tampered = structuredClone(preview);
       tampered.rows[0].key = 'host:attacker.example';
 
-      await expect(applyComputeResult(req, {
+      const applied = await applyComputeResult(req, {
         result,
         preview: tampered,
         idempotencyKey: 'apply:tampered-preview',
         actor: 'admin@example.com',
-      })).rejects.toMatchObject({ code: 'PREVIEW_STALE' });
+      });
+
+      expect(applied.previewDrift).toBe(true);
+      expect(applied.summary.creates + applied.summary.updates).toBeGreaterThan(0);
     });
 
     it('routes large previews to background apply', async () => {
