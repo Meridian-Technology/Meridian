@@ -40,6 +40,15 @@ const pivotDeckSnapshotSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    selectionMode: {
+      type: String,
+      enum: ['personalized', 'editorial'],
+      default: 'personalized',
+    },
+    rankingEntries: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: undefined,
+    },
   },
   { timestamps: true },
 );

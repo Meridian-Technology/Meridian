@@ -12,6 +12,7 @@ const { serializePivotMovie } = require('../utilities/pivotMovieMetadata');
 const { serializePivotEnrichment } = require('../utilities/pivotEnrichment');
 const { projectEventRichLocation } = require('./justGoRichLocationProjectionService');
 const { isRichLocationCapabilityEnabled } = require('../utilities/justGoRichLocationControls');
+const { readRankingOverride } = require('../utilities/pivotEditorialPolicy');
 
 function labEventsQuery(batchWeek) {
   return {
@@ -72,6 +73,7 @@ function serializeLabEvent(event, intentStatsByEventId, options = {}) {
     sourceUrl: pivot.sourceUrl || null,
     ingestStatus: pivot.ingestStatus || null,
     featured: pivot.featured === true,
+    rankingOverride: readRankingOverride(event),
     source: pivot.source || null,
     batchWeek: pivot.batchWeek || null,
     outOfReviewRange:

@@ -83,6 +83,12 @@ function serializePivotBatch(doc) {
     targetEventCount: doc.targetEventCount ?? DEFAULT_TARGET_EVENT_COUNT,
     releasedAt: doc.releasedAt || null,
     releasedBy: doc.releasedBy || null,
+    selectionPolicy: {
+      mode: doc.selectionPolicy?.mode || 'personalized',
+      eventIds: (doc.selectionPolicy?.eventIds || []).map((id) => String(id)),
+      updatedBy: doc.selectionPolicy?.updatedBy || null,
+      updatedAt: doc.selectionPolicy?.updatedAt || null,
+    },
     createdAt: doc.createdAt || null,
     updatedAt: doc.updatedAt || null,
   };

@@ -36,6 +36,7 @@ const {
   unreleaseBatch,
 } = require('../services/pivotBatchReleaseService');
 const { getBatchReadiness } = require('../services/pivotBatchReadinessService');
+const { updateBatchSelectionPolicy } = require('../services/pivotEditorialPolicyService');
 const {
   listCurationJobs,
   createCurationJob,
@@ -1416,6 +1417,40 @@ router.post(
       return res.status(500).json({
         success: false,
         message: 'Unable to unrelease pivot batch.',
+      });
+    }
+  },
+);
+
+router.put(
+  '/tenants/:tenantKey/batches/:batchWeek/selection-policy',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateBatchSelectionPolicy(req, {
+        tenantKey: req.params.tenantKey,
+        batchWeek: req.params.batchWeek,
+        mode: req.body?.mode,
+        eventIds: req.body?.eventIds,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+      return res.status(200).json({ success: true, data: result.data });
+    } catch (err) {
+      logPivotRouteError(
+        'PUT /admin/pivot/tenants/:tenantKey/batches/:batchWeek/selection-policy',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to update batch selection policy.',
       });
     }
   },

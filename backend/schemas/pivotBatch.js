@@ -7,6 +7,24 @@ const { isValidIsoWeek } = require('../utilities/pivotIsoWeek');
  * feed keys only off event `customFields.pivot.ingestStatus === 'published'`.
  */
 const PIVOT_BATCH_STATUSES = Object.freeze(['curating', 'ready', 'released']);
+const PIVOT_BATCH_SELECTION_MODES = Object.freeze(['personalized', 'editorial']);
+
+const selectionPolicySchema = new mongoose.Schema(
+  {
+    mode: {
+      type: String,
+      enum: PIVOT_BATCH_SELECTION_MODES,
+      default: 'personalized',
+    },
+    eventIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Event' }],
+      default: undefined,
+    },
+    updatedBy: { type: String, default: null, trim: true },
+    updatedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
 
 const pivotBatchSchema = new mongoose.Schema(
   {
@@ -41,6 +59,10 @@ const pivotBatchSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    selectionPolicy: {
+      type: selectionPolicySchema,
+      default: undefined,
+    },
   },
   { timestamps: true },
 );
@@ -49,3 +71,4 @@ pivotBatchSchema.index({ batchWeek: 1 }, { unique: true });
 
 module.exports = pivotBatchSchema;
 module.exports.PIVOT_BATCH_STATUSES = PIVOT_BATCH_STATUSES;
+module.exports.PIVOT_BATCH_SELECTION_MODES = PIVOT_BATCH_SELECTION_MODES;
