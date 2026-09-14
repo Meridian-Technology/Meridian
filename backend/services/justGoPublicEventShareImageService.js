@@ -28,6 +28,7 @@ const WORDMARK_PATH = path.join(
   '../../frontend/public/justgo/wordmark-1624.png',
 );
 const LES_FLOS_PATH = path.join(__dirname, '../assets/justgo/LesFlosSans.otf');
+const SPACE_MONO_PATH = path.join(__dirname, '../assets/justgo/SpaceMono-Regular.ttf');
 const HERO_DIR = path.join(__dirname, '../assets/justgo');
 const HERO_FILES = Object.freeze([
   'hero-canopy.jpg',
@@ -381,6 +382,20 @@ function loadLesFlos() {
   return cachedFont;
 }
 
+let cachedSpaceMono = null;
+
+function loadSpaceMono() {
+  if (cachedSpaceMono) return cachedSpaceMono;
+  if (!fs.existsSync(SPACE_MONO_PATH)) {
+    throw new Error(`Space Mono not found at ${SPACE_MONO_PATH}`);
+  }
+  const file = fs.readFileSync(SPACE_MONO_PATH);
+  cachedSpaceMono = opentype.parse(
+    file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength),
+  );
+  return cachedSpaceMono;
+}
+
 function lesFlosWidth(text, fontSize) {
   const font = loadLesFlos();
   const scale = fontSize / font.unitsPerEm;
@@ -570,46 +585,38 @@ async function paintScrapbookStrip({
 }
 
 async function paintMetaChip({ text, x, y, fill, textFill }) {
-  const fontSize = 26;
-  const padX = 20;
-  const height = 52;
-  const type = await renderLesFlosPng(text, fontSize, textFill);
-  const width = type.width + padX * 2;
-  const textLeft = padX;
-  const textTop = Math.round(35 - type.baseline);
-  const extraTop = Math.max(0, -textTop);
-  const extraBottom = Math.max(0, textTop + type.height - height);
-  const extraRight = Math.max(0, textLeft + type.width - width);
-  const canvasWidth = width + extraRight;
-  const canvasHeight = height + extraTop + extraBottom;
+  const fontSize = 22;
+  const padX = 16;
+  const height = 44;
+  const font = loadSpaceMono();
+  const scale = fontSize / font.unitsPerEm;
+  const baseline = 30;
+  const paths = [];
+  let cursor = padX;
+  for (const character of String(text)) {
+    const glyph = font.charToGlyph(character);
+    const data = glyph.getPath(cursor, baseline, fontSize).toPathData(2);
+    if (data && glyph.name !== '.notdef' && glyph.name !== 'space') {
+      paths.push(`<path d="${data}" fill="${textFill}"/>`);
+    }
+    cursor += glyph.advanceWidth * scale;
+  }
+  const width = Math.ceil(cursor + padX);
   const chipSvg = Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
-      `<rect x="1.25" y="1.25" width="${width - 2.5}" height="${height - 2.5}" rx="14" ` +
-        `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="2.5"/>` +
+      `<rect x="0.75" y="0.75" width="${width - 1.5}" height="${height - 1.5}" ` +
+        `fill="${fill}" stroke="${TOKEN.ink}" stroke-width="1.5"/>` +
+      paths.join('') +
     `</svg>`,
   );
-  const stacked = await sharp({
-    create: {
-      width: canvasWidth,
-      height: canvasHeight,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite([
-      { input: await sharp(chipSvg).png().toBuffer(), left: 0, top: extraTop },
-      {
-        input: type.buffer,
-        left: textLeft,
-        top: extraTop + textTop,
-      },
-    ])
-    .png()
-    .toBuffer();
   return {
-    width: canvasWidth,
-    height: canvasHeight,
-    layer: { input: stacked, left: x, top: y - extraTop },
+    width,
+    height,
+    layer: {
+      input: await sharp(chipSvg).png().toBuffer(),
+      left: x,
+      top: y,
+    },
   };
 }
 
@@ -683,7 +690,7 @@ async function buildShareTypeLayers({
       x: 44,
       y: chipY,
       fill: TOKEN.ticker,
-      textFill: TOKEN.ink,
+      textFill: TOKEN.cream,
     })
     : null;
   const place = placeChip
