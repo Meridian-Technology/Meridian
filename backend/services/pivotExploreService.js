@@ -709,6 +709,7 @@ async function getPivotExplore(req, options = {}) {
     status: { $in: PIVOT_EVENT_STATUSES },
     isDeleted: { $ne: true },
     'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
+    'customFields.pivot.rankingOverride.tier': { $ne: 'hidden' },
     ...getFeedPilotWindowFilter(now),
   };
   if (filterTags.length) {

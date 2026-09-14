@@ -30,6 +30,10 @@ const {
   PIVOT_CREW_CONFIG_DEFAULTS,
 } = require('../utilities/pivotCrewConfig');
 const { mergePivotDeckConfig } = require('../utilities/pivotDeckConfig');
+const {
+  readRankingOverride,
+  editorialAdjustmentForEvent,
+} = require('../utilities/pivotEditorialPolicy');
 const { getPivotConfig } = require('./pivotConfigService');
 const { getHiddenUserIdSet } = require('./pivotSafetyService');
 const {
@@ -42,7 +46,7 @@ const FEED_CREW_CONFIG_CACHE_TTL_MS = 60_000;
 const PIVOT_EVENT_STATUSES = ['approved', 'not-applicable'];
 const LOW_FEEDBACK_RATING_THRESHOLD = 3;
 /** Ranker id stamped on feed payloads + deck impressions. */
-const PIVOT_FEED_RANKER_VERSION = 'rules_v1';
+const PIVOT_FEED_RANKER_VERSION = 'rules_v2_editorial';
 const PUBLIC_EVENT_FIELDS =
   'name description location richLocation start_time end_time externalLink type registrationCount image customFields.pivot';
 const CATALOG_PROBE_FIELDS = 'start_time end_time customFields.pivot';
@@ -274,7 +278,22 @@ function serializePivotFeedEvent(event, extras) {
     /** 0-based position in the ranked feed (exposure bias / training). */
     ...(typeof extras.rankInFeed === 'number' ? { rankInFeed: extras.rankInFeed } : {}),
     ...(extras.dropDeckScore ? { dropDeckScore: extras.dropDeckScore } : {}),
+    ...(extras.editorialRanking ? { editorialRanking: extras.editorialRanking } : {}),
   };
+}
+
+async function loadBatchSelectionPolicy(req, batchWeek) {
+  try {
+    const { PivotBatch } = getModels(req, 'PivotBatch');
+    if (!PivotBatch?.findOne) return { mode: 'personalized', eventIds: [] };
+    const row = await PivotBatch.findOne({ batchWeek }).select('selectionPolicy').lean();
+    return {
+      mode: row?.selectionPolicy?.mode === 'editorial' ? 'editorial' : 'personalized',
+      eventIds: (row?.selectionPolicy?.eventIds || []).map((id) => String(id)),
+    };
+  } catch {
+    return { mode: 'personalized', eventIds: [] };
+  }
 }
 
 async function getAcceptedFriendIds(Friendship, userId, hiddenIds = new Set()) {
@@ -830,22 +849,28 @@ function explainDropDeckScore(
     : 0;
   const negative =
     (Number(weights.negativeTag) || 0) * countNegativeTagOverlap(event, negativeFeedbackTags);
-  const total = friendGoing + friendInterested + crew + personal + bleed - negative;
+  const organicTotal = friendGoing + friendInterested + crew + personal + bleed - negative;
+  const editorial = editorialAdjustmentForEvent(event, userInterestTags).adjustment;
+  const total = organicTotal + editorial;
   return {
     total,
+    organicTotal,
     friendGoing,
     friendInterested,
     crew,
     personal,
     bleed,
     negative,
+    editorial,
   };
 }
 
 function roundDropDeckScoreParts(parts) {
   const rounded = {};
   for (const [key, value] of Object.entries(parts || {})) {
-    rounded[key] = Math.round((Number(value) || 0) * 1000) / 1000;
+    rounded[key] = typeof value === 'number'
+      ? Math.round(value * 1000) / 1000
+      : value;
   }
   return rounded;
 }
@@ -910,9 +935,17 @@ function selectDropDeckEvents(
   negativeFeedbackTags = new Set(),
   rankOptions = {},
   deckConfig,
+  selectionPolicy = { mode: 'personalized', eventIds: [] },
 ) {
   const config = deckConfig || mergePivotDeckConfig();
-  const ranked = [...events].sort(
+  const visible = events.filter(
+    (event) => readRankingOverride(event)?.tier !== 'hidden',
+  );
+  const editorialIds = new Set((selectionPolicy.eventIds || []).map(String));
+  const candidates = selectionPolicy.mode === 'editorial'
+    ? visible.filter((event) => editorialIds.has(String(event._id)))
+    : visible;
+  const ranked = [...candidates].sort(
     compareByDropDeckScore(
       socialByEvent,
       userInterestTags,
@@ -922,12 +955,32 @@ function selectDropDeckEvents(
     ),
   );
 
+  if (selectionPolicy.mode === 'editorial') {
+    return ranked.slice(0, config.hardMax);
+  }
+
   if (ranked.length <= config.softMax) {
     return ranked;
   }
 
-  const selected = ranked.slice(0, config.softMax);
-  const cutoffEvent = selected[selected.length - 1];
+  const selected = ranked
+    .filter((event) => readRankingOverride(event)?.tier === 'must_show')
+    .slice(0, config.hardMax);
+  const selectedIds = new Set(selected.map((event) => String(event._id)));
+  for (const event of ranked) {
+    if (selected.length >= config.softMax || selected.length >= config.hardMax) break;
+    if (!selectedIds.has(String(event._id))) {
+      selected.push(event);
+      selectedIds.add(String(event._id));
+    }
+  }
+
+  if (selected.length >= config.hardMax) {
+    return ranked.filter((event) => selectedIds.has(String(event._id)));
+  }
+
+  const selectedRanked = ranked.filter((event) => selectedIds.has(String(event._id)));
+  const cutoffEvent = selectedRanked[selectedRanked.length - 1];
   const cutoffScore = computeDropDeckScore(
     cutoffEvent,
     socialByEvent.get(String(cutoffEvent._id)) || {},
@@ -938,8 +991,9 @@ function selectDropDeckEvents(
   );
   const cutoff = Math.max(cutoffScore * config.leewayRatio, config.highScoreFloor);
 
-  for (let index = config.softMax; index < ranked.length && selected.length < config.hardMax; index += 1) {
-    const event = ranked[index];
+  for (const event of ranked) {
+    if (selected.length >= config.hardMax) break;
+    if (selectedIds.has(String(event._id))) continue;
     const score = computeDropDeckScore(
       event,
       socialByEvent.get(String(event._id)) || {},
@@ -952,9 +1006,68 @@ function selectDropDeckEvents(
       break;
     }
     selected.push(event);
+    selectedIds.add(String(event._id));
   }
 
-  return selected;
+  return ranked.filter((event) => selectedIds.has(String(event._id)));
+}
+
+function buildDeckRankingEntries(
+  candidateEvents,
+  selectedEvents,
+  socialByEvent,
+  userInterestTags,
+  negativeFeedbackTags,
+  rankOptions,
+  deckConfig,
+  selectionMode,
+) {
+  const visible = candidateEvents.filter(
+    (event) => readRankingOverride(event)?.tier !== 'hidden',
+  );
+  const organicRanked = [...visible].sort((a, b) => {
+    const organicScore = (event) => explainDropDeckScore(
+      event,
+      socialByEvent.get(String(event._id)) || {},
+      userInterestTags,
+      negativeFeedbackTags,
+      rankOptions,
+      deckConfig,
+    ).organicTotal;
+    return organicScore(b) - organicScore(a)
+      || (new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+  });
+  const organicRanks = new Map(
+    organicRanked.map((event, index) => [String(event._id), index]),
+  );
+
+  return selectedEvents.map((event, finalRank) => {
+    const id = String(event._id);
+    const parts = explainDropDeckScore(
+      event,
+      socialByEvent.get(id) || {},
+      userInterestTags,
+      negativeFeedbackTags,
+      rankOptions,
+      deckConfig,
+    );
+    const editorial = editorialAdjustmentForEvent(event, userInterestTags);
+    const tier = editorial.override?.tier || 'standard';
+    return {
+      eventId: id,
+      organicScore: parts.organicTotal,
+      editorialAdjustment: parts.editorial,
+      finalScore: parts.total,
+      organicRank: organicRanks.get(id) ?? null,
+      finalRank,
+      tier,
+      audience: editorial.override?.audience || 'everyone',
+      matched: editorial.matched,
+      inclusionReason: selectionMode === 'editorial'
+        ? 'editorial'
+        : tier === 'must_show' ? 'must_show' : 'ranked',
+    };
+  });
 }
 
 function applyFrozenDeckOrder(events, orderedEventIds) {
@@ -1191,12 +1304,14 @@ async function getPivotFeed(req, options = {}) {
     negativeFeedbackTags,
     crewRankConfig,
     richLocationViewerContext,
+    selectionPolicy,
   ] = await Promise.all([
     loadFriendSocial(req, userId, eventIds, FRIEND_CAP, batchWeek),
     loadUserInterestTags(req, userId),
     loadNegativeFeedbackTags(req, userId),
     getFeedRankCrewConfig(req),
     loadRichLocationViewerContext(req, eventIds, { tenant }),
+    loadBatchSelectionPolicy(req, batchWeek),
   ]);
 
   await applyCrewSocialCounts(req, userId, eventIds, batchWeek, socialByEvent);
@@ -1230,13 +1345,26 @@ async function getPivotFeed(req, options = {}) {
       negativeFeedbackTags,
       rankOptions,
       deckConfig,
+      selectionPolicy,
     );
     if (!isPreview) {
+      const rankingEntries = buildDeckRankingEntries(
+        catalogEvents,
+        deckEvents,
+        socialByEvent,
+        userInterestTags,
+        negativeFeedbackTags,
+        rankOptions,
+        deckConfig,
+        selectionPolicy.mode,
+      );
       await recordPivotDeckSnapshot(req, {
         userId,
         batchWeek,
         orderedEventIds: deckEvents.map((event) => event._id),
         rankerVersion: PIVOT_FEED_RANKER_VERSION,
+        selectionMode: selectionPolicy.mode,
+        rankingEntries,
         forceRefresh,
       });
     }
@@ -1277,13 +1405,19 @@ async function getPivotFeed(req, options = {}) {
     });
   }
 
+  const snapshotRankingByEventId = new Map(
+    (existingSnapshot?.rankingEntries || []).map((entry) => [String(entry.eventId), entry]),
+  );
+
   return {
     data: {
       batchWeek,
       cityDisplayName,
       rankerVersion: PIVOT_FEED_RANKER_VERSION,
+      selectionMode: existingSnapshot?.selectionMode || selectionPolicy.mode,
       events: deckEvents.map((event, rankInFeed) => {
         const id = String(event._id);
+        const savedRanking = snapshotRankingByEventId.get(id);
         const social = socialByEvent.get(id) || {
           friendsInterested: [],
           friendsGoing: [],
@@ -1328,7 +1462,18 @@ async function getPivotFeed(req, options = {}) {
                     rankOptions,
                     deckConfig,
                   ),
-                ),
+                  ),
+                editorialRanking: savedRanking || (() => {
+                  const editorial = editorialAdjustmentForEvent(event, userInterestTags);
+                  return {
+                    tier: editorial.override?.tier || 'standard',
+                    audience: editorial.override?.audience || 'everyone',
+                    matched: editorial.matched,
+                    inclusionReason: selectionPolicy.mode === 'editorial'
+                      ? 'editorial'
+                      : editorial.override?.tier === 'must_show' ? 'must_show' : 'ranked',
+                  };
+                })(),
               }
             : {}),
         });
@@ -1414,6 +1559,7 @@ module.exports = {
   explainDropDeckScore,
   compareByDropDeckScore,
   selectDropDeckEvents,
+  buildDeckRankingEntries,
   applyFrozenDeckOrder,
   subtractInterestTags,
   countNegativeTagOverlap,
