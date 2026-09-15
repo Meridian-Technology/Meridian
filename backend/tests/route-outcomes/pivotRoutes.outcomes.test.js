@@ -843,7 +843,7 @@ describe('pivotRoutes GET /pivot/explore', () => {
     });
 
     const response = await request(buildBaseApp())
-      .get('/pivot/explore?batchWeek=2026-W22&limit=40&offset=0')
+      .get('/pivot/explore?horizonDays=14&limit=40&offset=0')
       .set('Authorization', 'Bearer test-token');
 
     expect(response.statusCode).toBe(200);
@@ -855,7 +855,7 @@ describe('pivotRoutes GET /pivot/explore', () => {
     expect(getPivotExplore).toHaveBeenCalledWith(
       expect.objectContaining({ user: expect.any(Object) }),
       expect.objectContaining({
-        batchWeek: '2026-W22',
+        horizonDays: '14',
         limit: '40',
         offset: '0',
         tags: undefined,
@@ -863,24 +863,25 @@ describe('pivotRoutes GET /pivot/explore', () => {
         friendsOnly: undefined,
         excludePassed: undefined,
         q: undefined,
+        sort: undefined,
       }),
     );
   });
 
   it('returns service error status when explore rejects', async () => {
     getPivotExplore.mockResolvedValue({
-      error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
+      error: 'horizonDays must be a positive integer.',
       status: 400,
-      code: 'INVALID_BATCH_WEEK',
+      code: 'INVALID_HORIZON_DAYS',
     });
 
     const response = await request(buildBaseApp())
-      .get('/pivot/explore?batchWeek=bad-week')
+      .get('/pivot/explore?horizonDays=bad')
       .set('Authorization', 'Bearer test-token');
 
     expect(response.statusCode).toBe(400);
     expect(response.body.success).toBe(false);
-    expect(response.body.code).toBe('INVALID_BATCH_WEEK');
+    expect(response.body.code).toBe('INVALID_HORIZON_DAYS');
   });
 });
 
