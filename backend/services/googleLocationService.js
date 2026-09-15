@@ -1,5 +1,11 @@
 const axios = require('axios');
 const { logPivot, isPivotDetailLoggingEnabled } = require('../utilities/pivotLogger');
+const {
+  normalizeCountryCode,
+  normalizeGoogleGeometryBounds,
+  normalizePoint,
+  radiusKmFromBounds,
+} = require('../utilities/justGoLocationConstraints');
 
 const PLACES_API_BASE_URL = 'https://places.googleapis.com/v1';
 const GEOCODING_API_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
@@ -97,6 +103,102 @@ function componentValue(components, preferredTypes, short = false) {
     if (component) return short ? component.shortText || component.longText : component.longText;
   }
   return undefined;
+}
+
+const CITY_BOUNDARY_TYPE_SCORES = {
+  locality: 100,
+  postal_town: 95,
+  administrative_area_level_3: 80,
+  administrative_area_level_2: 75,
+  sublocality: 70,
+  sublocality_level_1: 70,
+  neighborhood: 55,
+  administrative_area_level_1: 40,
+  colloquial_area: 35,
+  political: 10,
+};
+
+function cityBoundaryScore(result) {
+  return normalizeTokens(result?.types).reduce(
+    (score, type) => Math.max(score, CITY_BOUNDARY_TYPE_SCORES[type] || 0),
+    0,
+  );
+}
+
+function pickCityBoundaryResult(results) {
+  return (Array.isArray(results) ? results : [])
+    .map((result) => ({ result, score: cityBoundaryScore(result) }))
+    .filter((entry) => entry.score > 0 && normalizeGoogleGeometryBounds(entry.result.geometry))
+    .sort((a, b) => b.score - a.score)[0] || null;
+}
+
+function publicCityBoundary(result, matchCount) {
+  const bounds = normalizeGoogleGeometryBounds(result.geometry);
+  const center = normalizePoint(result.geometry?.location) || {
+    latitude: (bounds.north + bounds.south) / 2,
+    longitude: (bounds.west + bounds.east) / 2,
+  };
+  const components = normalizeAddressComponents(
+    result.addressComponents || result.address_components,
+  );
+  return {
+    formattedAddress: trimString(result.formattedAddress || result.formatted_address),
+    countryCode: normalizeCountryCode(componentValue(components, ['country'], true)),
+    bounds,
+    center,
+    radiusKm: radiusKmFromBounds(bounds, center),
+    placeTypes: normalizeTokens(result.types),
+    matchCount,
+  };
+}
+
+function classifyGeocodeStatus(providerResponse, { requireMappedLocation = false } = {}) {
+  const providerStatus = trimString(providerResponse.data?.status);
+  if (providerStatus === 'OK') {
+    if (!requireMappedLocation) return null;
+    const firstResult = Array.isArray(providerResponse.data.results)
+      ? providerResponse.data.results[0]
+      : null;
+    return normalizedLocationFromGoogle(firstResult) ? null : {
+      code: 'GOOGLE_LOCATION_MALFORMED_RESPONSE',
+      status: 502,
+      retryable: false,
+    };
+  }
+  if (providerStatus === 'ZERO_RESULTS') {
+    return {
+      code: 'GOOGLE_GEOCODE_NOT_FOUND',
+      status: 404,
+      retryable: false,
+      providerStatus,
+    };
+  }
+  if (providerStatus === 'REQUEST_DENIED') {
+    return {
+      code: 'GOOGLE_LOCATION_AUTH_FAILED',
+      status: 503,
+      retryable: false,
+      providerStatus,
+    };
+  }
+  if (providerStatus === 'INVALID_REQUEST') {
+    return {
+      code: 'GOOGLE_LOCATION_INVALID_REQUEST',
+      status: 400,
+      retryable: false,
+      providerStatus,
+    };
+  }
+  return {
+    code: ['OVER_QUERY_LIMIT', 'UNKNOWN_ERROR'].includes(providerStatus)
+      ? 'GOOGLE_LOCATION_UNAVAILABLE'
+      : 'GOOGLE_GEOCODE_PROVIDER_ERROR',
+    status: 502,
+    retryable: ['OVER_QUERY_LIMIT', 'UNKNOWN_ERROR'].includes(providerStatus),
+    providerStatus: SAFE_GEOCODING_STATUSES.has(providerStatus)
+      ? providerStatus
+      : 'MISSING_STATUS',
+  };
 }
 
 function normalizeCoordinates(location) {
@@ -443,53 +545,9 @@ function createGoogleLocationAdapter(options = {}) {
             : {}),
         },
       }),
-      (providerResponse) => {
-        const providerStatus = trimString(providerResponse.data?.status);
-        if (providerStatus === 'OK') {
-          const firstResult = Array.isArray(providerResponse.data.results)
-            ? providerResponse.data.results[0]
-            : null;
-          return normalizedLocationFromGoogle(firstResult) ? null : {
-            code: 'GOOGLE_LOCATION_MALFORMED_RESPONSE',
-            status: 502,
-            retryable: false,
-          };
-        }
-        if (providerStatus === 'ZERO_RESULTS') {
-          return {
-            code: 'GOOGLE_GEOCODE_NOT_FOUND',
-            status: 404,
-            retryable: false,
-            providerStatus,
-          };
-        }
-        if (providerStatus === 'REQUEST_DENIED') {
-          return {
-            code: 'GOOGLE_LOCATION_AUTH_FAILED',
-            status: 503,
-            retryable: false,
-            providerStatus,
-          };
-        }
-        if (providerStatus === 'INVALID_REQUEST') {
-          return {
-            code: 'GOOGLE_LOCATION_INVALID_REQUEST',
-            status: 400,
-            retryable: false,
-            providerStatus,
-          };
-        }
-        return {
-          code: ['OVER_QUERY_LIMIT', 'UNKNOWN_ERROR'].includes(providerStatus)
-            ? 'GOOGLE_LOCATION_UNAVAILABLE'
-            : 'GOOGLE_GEOCODE_PROVIDER_ERROR',
-          status: 502,
-          retryable: ['OVER_QUERY_LIMIT', 'UNKNOWN_ERROR'].includes(providerStatus),
-          providerStatus: SAFE_GEOCODING_STATUSES.has(providerStatus)
-            ? providerStatus
-            : 'MISSING_STATUS',
-        };
-      },
+      (providerResponse) => classifyGeocodeStatus(providerResponse, {
+        requireMappedLocation: true,
+      }),
     );
 
     const providerResults = Array.isArray(response.data.results) ? response.data.results : [];
@@ -518,10 +576,69 @@ function createGoogleLocationAdapter(options = {}) {
     return location;
   }
 
+  async function lookupCityBoundary(query, requestOptions = {}) {
+    const normalizedQuery = trimString(query).replace(/\s+/g, ' ');
+    if (!normalizedQuery || normalizedQuery.length > 200) {
+      throw new GoogleLocationError('Enter a city name to look up a boundary.', {
+        code: 'GOOGLE_CITY_QUERY_INVALID',
+        status: 400,
+        retryable: false,
+      });
+    }
+
+    const countryCode = normalizeCountryCode(
+      requestOptions.countryCode || requestOptions.regionCode,
+    );
+    const response = await requestWithRetry(
+      'city_boundary',
+      (key) => ({
+        method: 'GET',
+        url: GEOCODING_API_URL,
+        timeout: timeoutMs,
+        params: {
+          address: normalizedQuery,
+          key,
+          ...(countryCode ? {
+            region: countryCode.toLowerCase(),
+            components: `country:${countryCode}`,
+          } : {}),
+        },
+      }),
+      classifyGeocodeStatus,
+    );
+
+    const providerResults = Array.isArray(response.data.results) ? response.data.results : [];
+    const picked = pickCityBoundaryResult(providerResults);
+    if (!picked) {
+      throw new GoogleLocationError(
+        'Google found a place, but no usable city boundary.',
+        {
+          code: 'GOOGLE_CITY_BOUNDARY_NOT_FOUND',
+          status: 404,
+          retryable: false,
+        },
+      );
+    }
+
+    const suggestion = publicCityBoundary(picked.result, providerResults.length);
+    if (!suggestion.countryCode || !suggestion.bounds || !suggestion.center || !suggestion.radiusKm) {
+      throw new GoogleLocationError(
+        'Google found a place, but no usable city boundary.',
+        {
+          code: 'GOOGLE_CITY_BOUNDARY_NOT_FOUND',
+          status: 404,
+          retryable: false,
+        },
+      );
+    }
+    return suggestion;
+  }
+
   return {
     autocompletePlaces,
     fetchPlaceDetails,
     geocodeAddress,
+    lookupCityBoundary,
     isConfigured: () => Boolean(resolveServerApiKey(env)),
   };
 }
@@ -534,10 +651,12 @@ module.exports = {
   autocompletePlaces: defaultAdapter.autocompletePlaces,
   fetchPlaceDetails: defaultAdapter.fetchPlaceDetails,
   geocodeAddress: defaultAdapter.geocodeAddress,
+  lookupCityBoundary: defaultAdapter.lookupCityBoundary,
   isGoogleLocationConfigured: defaultAdapter.isConfigured,
   normalizedLocationFromGoogle,
   normalizeAutocompleteSuggestions,
   normalizeAddressComponents,
+  pickCityBoundaryResult,
   resolveServerApiKey,
   classifyTransportError,
   constants: {

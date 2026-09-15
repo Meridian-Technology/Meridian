@@ -28,6 +28,7 @@ import PivotCatalogEventEditModal, {
 import PivotReadinessCard from './PivotReadinessCard';
 import PivotCurationMonitorPanel from './PivotCurationMonitorPanel';
 import PivotCurationQueue from './PivotCurationQueue';
+import PivotBatchTagRadar from './PivotBatchTagRadar';
 import PivotRichDataEnrichmentPopup from './PivotRichDataEnrichmentPopup';
 import PivotTenantSourcesPanel from './PivotTenantSourcesPanel';
 import PivotComputeJobRunStatus, { useTenantComputeJob } from './PivotComputeJobRunStatus';
@@ -2548,51 +2549,59 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       ) : null}
 
       {committedWeekValid ? (
-        <PivotCurationQueue
-          batchWeek={batchWeek}
-          events={filteredEvents}
-          eventsLoading={eventsLoading}
-          eventsError={eventsError}
-          selectedIds={selectedIds}
-          onSelectedIdsChange={setSelectedIds}
-          filter={filter}
-          onFilterChange={setFilter}
-          filterOptions={FILTER_OPTIONS}
-          sourceFilter={sourceFilter}
-          onSourceFilterChange={setSourceFilter}
-          hostCreatedCount={hostCreatedCount}
-          catalogTags={catalogTags}
-          bulkTags={bulkTags}
-          onBulkTagsChange={setBulkTags}
-          showPerformance={isMonitorStage}
-          performanceById={performanceById}
-          busyKey={busyKey}
-          releaseDisabled={releaseDisabled}
-          releaseBlockReason={releaseBlockReason}
-          onEdit={setEditingEvent}
-          onPublish={handleReleaseOne}
-          onUnpublish={handleUnpublishOne}
-          onDelete={handleDeleteEvent}
-          onBulkStage={handleBulkStage}
-          onBulkPublish={handleBulkRelease}
-          onBulkUnpublish={handleBulkUnpublish}
-          onBulkApplyTags={handleBulkApplyTags}
-          onBulkSuggestTags={handleBulkSuggestTags}
-          onBulkEnrichRichData={openRichDataEnrichment}
-          onBulkCollapseShowtimes={handleBulkCollapseShowtimes}
-          onBulkFeature={handleBulkFeature}
-          onBulkUnfeature={handleBulkUnfeature}
-          onToggleFeatured={handleToggleFeatured}
-          onEditorialChange={handleEditorialChange}
-          onBulkEditorial={handleBulkEditorial}
-          selectionPolicy={selectionPolicy}
-          onSelectionPolicyChange={handleSelectionPolicyChange}
-          emptyLabel={
-            events.length
-              ? 'No events match this filter.'
-              : 'No catalog events for this city and week yet. Run a job or add manually.'
-          }
-        />
+        <>
+          <PivotBatchTagRadar
+            batchWeek={batchWeek}
+            events={events}
+            catalogTags={catalogTags}
+            loading={eventsLoading}
+          />
+          <PivotCurationQueue
+            batchWeek={batchWeek}
+            events={filteredEvents}
+            eventsLoading={eventsLoading}
+            eventsError={eventsError}
+            selectedIds={selectedIds}
+            onSelectedIdsChange={setSelectedIds}
+            filter={filter}
+            onFilterChange={setFilter}
+            filterOptions={FILTER_OPTIONS}
+            sourceFilter={sourceFilter}
+            onSourceFilterChange={setSourceFilter}
+            hostCreatedCount={hostCreatedCount}
+            catalogTags={catalogTags}
+            bulkTags={bulkTags}
+            onBulkTagsChange={setBulkTags}
+            showPerformance={isMonitorStage}
+            performanceById={performanceById}
+            busyKey={busyKey}
+            releaseDisabled={releaseDisabled}
+            releaseBlockReason={releaseBlockReason}
+            onEdit={setEditingEvent}
+            onPublish={handleReleaseOne}
+            onUnpublish={handleUnpublishOne}
+            onDelete={handleDeleteEvent}
+            onBulkStage={handleBulkStage}
+            onBulkPublish={handleBulkRelease}
+            onBulkUnpublish={handleBulkUnpublish}
+            onBulkApplyTags={handleBulkApplyTags}
+            onBulkSuggestTags={handleBulkSuggestTags}
+            onBulkEnrichRichData={openRichDataEnrichment}
+            onBulkCollapseShowtimes={handleBulkCollapseShowtimes}
+            onBulkFeature={handleBulkFeature}
+            onBulkUnfeature={handleBulkUnfeature}
+            onToggleFeatured={handleToggleFeatured}
+            onEditorialChange={handleEditorialChange}
+            onBulkEditorial={handleBulkEditorial}
+            selectionPolicy={selectionPolicy}
+            onSelectionPolicyChange={handleSelectionPolicyChange}
+            emptyLabel={
+              events.length
+                ? 'No events match this filter.'
+                : 'No catalog events for this city and week yet. Run a job or add manually.'
+            }
+          />
+        </>
       ) : null}
 
 

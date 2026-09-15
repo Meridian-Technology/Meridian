@@ -32,6 +32,48 @@ function normalizeBounds(value) {
   return { south, west, north, east };
 }
 
+function normalizeGoogleGeometryBounds(geometry) {
+  const box = geometry?.bounds || geometry?.viewport;
+  if (!box) return null;
+  const northEast = normalizePoint(box.northeast);
+  const southWest = normalizePoint(box.southwest);
+  if (!northEast || !southWest) return null;
+  return normalizeBounds({
+    north: northEast.latitude,
+    east: northEast.longitude,
+    south: southWest.latitude,
+    west: southWest.longitude,
+  });
+}
+
+function distanceKm(first, second) {
+  const radians = (degrees) => degrees * (Math.PI / 180);
+  const earthRadiusKm = 6371.0088;
+  const latitudeDelta = radians(second.latitude - first.latitude);
+  const longitudeDelta = radians(second.longitude - first.longitude);
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(radians(first.latitude))
+      * Math.cos(radians(second.latitude))
+      * Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function radiusKmFromBounds(bounds, center) {
+  if (!bounds) return null;
+  const origin = center || {
+    latitude: (bounds.north + bounds.south) / 2,
+    longitude: (bounds.west + bounds.east) / 2,
+  };
+  if (!normalizePoint(origin)) return null;
+  const radius = Math.max(
+    distanceKm(origin, { latitude: bounds.north, longitude: bounds.east }),
+    distanceKm(origin, { latitude: bounds.north, longitude: bounds.west }),
+    distanceKm(origin, { latitude: bounds.south, longitude: bounds.east }),
+    distanceKm(origin, { latitude: bounds.south, longitude: bounds.west }),
+  );
+  return Math.min(500, Math.max(0.1, Math.round(radius * 10) / 10));
+}
+
 function normalizeJustGoLocationConstraints(value) {
   if (!value || typeof value !== 'object') return undefined;
   const countryCode = normalizeCountryCode(value.countryCode);
@@ -67,6 +109,8 @@ module.exports = {
   normalizeCountryCode,
   normalizePoint,
   normalizeBounds,
+  normalizeGoogleGeometryBounds,
+  radiusKmFromBounds,
   normalizeJustGoLocationConstraints,
   validateJustGoLocationConstraints,
 };

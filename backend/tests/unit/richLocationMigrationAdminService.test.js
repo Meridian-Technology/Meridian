@@ -7,15 +7,18 @@ jest.mock('../../services/pivotLocationBackfillService', () => ({
 }));
 jest.mock('../../services/googleLocationService', () => ({
   isGoogleLocationConfigured: jest.fn(() => true),
+  lookupCityBoundary: jest.fn(),
 }));
 
 const { connectToDatabase } = require('../../connectionsManager');
 const getModels = require('../../services/getModelService');
 const { runLocationBackfill } = require('../../services/pivotLocationBackfillService');
+const googleLocationService = require('../../services/googleLocationService');
 const {
   migrationUiEnabled,
   getRichLocationMigrationStatus,
   runRichLocationMigrationBatch,
+  suggestCityBoundary,
   acquireLease,
 } = require('../../services/richLocationMigrationAdminService');
 
@@ -148,6 +151,43 @@ describe('richLocationMigrationAdminService', () => {
       status: 400,
     });
     expect(connectToDatabase).not.toHaveBeenCalled();
+  });
+
+  test('suggests a city boundary from the tenant location without persisting it', async () => {
+    googleLocationService.lookupCityBoundary.mockResolvedValue({
+      formattedAddress: 'New York, NY, USA',
+      countryCode: 'US',
+      bounds: { north: 40.92, south: 40.48, east: -73.7, west: -74.26 },
+      center: { latitude: 40.71, longitude: -74.01 },
+      radiusKm: 28.4,
+      matchCount: 1,
+    });
+
+    const result = await suggestCityBoundary({
+      tenant: { ...TENANT, location: 'New York City', name: 'NYC' },
+    });
+
+    expect(result).toEqual({
+      query: 'New York City',
+      formattedAddress: 'New York, NY, USA',
+      countryCode: 'US',
+      bounds: { north: 40.92, south: 40.48, east: -73.7, west: -74.26 },
+      center: { latitude: 40.71, longitude: -74.01 },
+      radiusKm: 28.4,
+      matchCount: 1,
+      ambiguous: false,
+    });
+    expect(googleLocationService.lookupCityBoundary).toHaveBeenCalledWith('New York City', {
+      countryCode: 'US',
+    });
+  });
+
+  test('requires a city name when the tenant has no location label', async () => {
+    await expect(suggestCityBoundary({ tenant: { tenantKey: 'nyc' } })).rejects.toMatchObject({
+      code: 'GOOGLE_CITY_QUERY_INVALID',
+      status: 400,
+    });
+    expect(googleLocationService.lookupCityBoundary).not.toHaveBeenCalled();
   });
 
   test('reports a duplicate lease as a conflict', async () => {
