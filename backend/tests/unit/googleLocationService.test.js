@@ -107,6 +107,115 @@ describe('googleLocationService', () => {
     });
   });
 
+  it('looks up a city bounding box and prefers locality results with bounds', async () => {
+    const options = adapterOptions();
+    options.httpClient.request.mockResolvedValue({
+      data: {
+        status: 'OK',
+        results: [
+          {
+            formatted_address: '123 Main St, Brooklyn, NY 11201, USA',
+            geometry: { location: { lat: 40.7, lng: -73.9 } },
+            types: ['street_address'],
+            address_components: googlePlace().addressComponents.map((component) => ({
+              long_name: component.longText,
+              short_name: component.shortText,
+              types: component.types,
+            })),
+          },
+          {
+            formatted_address: 'New York, NY, USA',
+            geometry: {
+              location: { lat: 40.7128, lng: -74.006 },
+              bounds: {
+                northeast: { lat: 40.92, lng: -73.7 },
+                southwest: { lat: 40.48, lng: -74.26 },
+              },
+            },
+            types: ['locality', 'political'],
+            address_components: [
+              { long_name: 'New York', short_name: 'New York', types: ['locality'] },
+              { long_name: 'United States', short_name: 'US', types: ['country'] },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = await createGoogleLocationAdapter(options).lookupCityBoundary('New York', {
+      countryCode: 'US',
+    });
+
+    expect(result).toMatchObject({
+      formattedAddress: 'New York, NY, USA',
+      countryCode: 'US',
+      bounds: { north: 40.92, east: -73.7, south: 40.48, west: -74.26 },
+      center: { latitude: 40.7128, longitude: -74.006 },
+      matchCount: 2,
+    });
+    expect(result.radiusKm).toBeGreaterThan(20);
+    expect(result.radiusKm).toBeLessThanOrEqual(500);
+    expect(options.httpClient.request).toHaveBeenCalledWith(expect.objectContaining({
+      params: expect.objectContaining({
+        address: 'New York',
+        key: SERVER_KEY,
+        region: 'us',
+        components: 'country:US',
+      }),
+    }));
+  });
+
+  it('falls back to viewport when Google omits official bounds', async () => {
+    const options = adapterOptions();
+    options.httpClient.request.mockResolvedValue({
+      data: {
+        status: 'OK',
+        results: [{
+          formatted_address: 'Troy, NY, USA',
+          geometry: {
+            location: { lat: 42.73, lng: -73.69 },
+            viewport: {
+              northeast: { lat: 42.8, lng: -73.6 },
+              southwest: { lat: 42.7, lng: -73.8 },
+            },
+          },
+          types: ['locality', 'political'],
+          address_components: [
+            { long_name: 'Troy', short_name: 'Troy', types: ['locality'] },
+            { long_name: 'United States', short_name: 'US', types: ['country'] },
+          ],
+        }],
+      },
+    });
+
+    await expect(createGoogleLocationAdapter(options).lookupCityBoundary('Troy, NY'))
+      .resolves.toMatchObject({
+        formattedAddress: 'Troy, NY, USA',
+        bounds: { north: 42.8, east: -73.6, south: 42.7, west: -73.8 },
+      });
+  });
+
+  it('rejects a geocode result that is not a city boundary', async () => {
+    const options = adapterOptions();
+    options.httpClient.request.mockResolvedValue({
+      data: {
+        status: 'OK',
+        results: [{
+          formatted_address: '123 Main St',
+          geometry: { location: { lat: 40.7, lng: -73.9 } },
+          types: ['street_address'],
+        }],
+      },
+    });
+
+    await expect(createGoogleLocationAdapter(options).lookupCityBoundary('123 Main St'))
+      .rejects.toMatchObject({
+        code: 'GOOGLE_CITY_BOUNDARY_NOT_FOUND',
+        status: 404,
+        retryable: false,
+      });
+  });
+
   it('maps legacy Geocoding API field names and partial-match confidence', async () => {
     const options = adapterOptions();
     options.httpClient.request.mockResolvedValue({

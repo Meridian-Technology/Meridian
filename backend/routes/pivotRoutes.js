@@ -600,7 +600,7 @@ router.get(
 router.get('/explore', verifyToken, async (req, res) => {
   try {
     const result = await getPivotExplore(req, {
-      batchWeek: req.query.batchWeek,
+      horizonDays: req.query.horizonDays,
       limit: req.query.limit,
       offset: req.query.offset,
       tags: req.query.tags,

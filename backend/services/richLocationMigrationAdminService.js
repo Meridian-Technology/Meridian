@@ -3,7 +3,8 @@ const getModels = require('./getModelService');
 const { connectToDatabase } = require('../connectionsManager');
 const { runLocationBackfill } = require('./pivotLocationBackfillService');
 const { resolveRichLocationControls } = require('../utilities/justGoRichLocationControls');
-const { isGoogleLocationConfigured } = require('./googleLocationService');
+const googleLocationService = require('./googleLocationService');
+const { isGoogleLocationConfigured } = googleLocationService;
 
 const LEASE_MS = 10 * 60 * 1000;
 const MAX_UI_BATCH_SIZE = 50;
@@ -60,6 +61,57 @@ async function tenantModels(tenantKey) {
       'PivotLocationMigrationLease',
     ),
   };
+}
+
+const CITY_BOUNDARY_ERROR_MESSAGES = {
+  GOOGLE_LOCATION_NOT_CONFIGURED: 'Google location lookup is not configured.',
+  GOOGLE_GEOCODE_NOT_FOUND: 'Google could not find that city.',
+  GOOGLE_CITY_BOUNDARY_NOT_FOUND: 'Google found a place, but no usable city boundary.',
+  GOOGLE_CITY_QUERY_INVALID: 'Enter a city name to look up a boundary.',
+  GOOGLE_LOCATION_AUTH_FAILED: 'Google rejected the location lookup credential.',
+  GOOGLE_LOCATION_UNAVAILABLE: 'Google location lookup is temporarily unavailable.',
+};
+
+function defaultCityBoundaryQuery(tenant) {
+  return trimString(tenant?.location) || trimString(tenant?.name) || '';
+}
+
+function suggestCityBoundaryError(error) {
+  const code = error?.code || 'RICH_LOCATION_MIGRATION_CITY_BOUNDARY_FAILED';
+  const mapped = new Error(CITY_BOUNDARY_ERROR_MESSAGES[code] || error.message || 'Unable to look up a city boundary.');
+  mapped.code = code;
+  mapped.status = Number(error?.status) || 502;
+  return mapped;
+}
+
+async function suggestCityBoundary({ tenant, query, countryCode, googleAdapter }) {
+  const cityQuery = trimString(query) || defaultCityBoundaryQuery(tenant);
+  if (!cityQuery) {
+    throw suggestCityBoundaryError({
+      code: 'GOOGLE_CITY_QUERY_INVALID',
+      status: 400,
+      message: CITY_BOUNDARY_ERROR_MESSAGES.GOOGLE_CITY_QUERY_INVALID,
+    });
+  }
+
+  const adapter = googleAdapter || googleLocationService;
+  try {
+    const suggestion = await adapter.lookupCityBoundary(cityQuery, {
+      countryCode: trimString(countryCode) || tenant?.richLocationConstraints?.countryCode,
+    });
+    return {
+      query: cityQuery,
+      formattedAddress: suggestion.formattedAddress,
+      countryCode: suggestion.countryCode,
+      bounds: suggestion.bounds,
+      center: suggestion.center,
+      radiusKm: suggestion.radiusKm,
+      matchCount: suggestion.matchCount,
+      ambiguous: Number(suggestion.matchCount) > 1,
+    };
+  } catch (error) {
+    throw suggestCityBoundaryError(error);
+  }
 }
 
 function migrationBatchWeek(value, { required = false } = {}) {
@@ -293,6 +345,8 @@ module.exports = {
   weekCatalogQuery,
   getRichLocationMigrationStatus,
   runRichLocationMigrationBatch,
+  suggestCityBoundary,
+  defaultCityBoundaryQuery,
   acquireLease,
   publicRun,
   constants: { LEASE_MS, MAX_UI_BATCH_SIZE, MAX_UI_INTERVAL_MS },

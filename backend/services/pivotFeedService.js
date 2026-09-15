@@ -536,7 +536,7 @@ function subtractInterestTags(sourceTags, excludeTags) {
 }
 
 async function applyCrewSocialCounts(req, userId, eventIds, batchWeek, socialByEvent) {
-  if (!eventIds.length || !batchWeek) {
+  if (!eventIds.length) {
     return;
   }
 
@@ -547,12 +547,16 @@ async function applyCrewSocialCounts(req, userId, eventIds, batchWeek, socialByE
 
   const { PivotEventIntent } = getModels(req, 'PivotEventIntent');
 
-  const intentRows = await PivotEventIntent.find({
+  const intentQuery = {
     eventId: { $in: eventIds },
     userId: { $in: crewMemberIds },
-    batchWeek,
     status: { $in: ['interested', 'registered'] },
-  })
+  };
+  if (batchWeek) {
+    intentQuery.batchWeek = batchWeek;
+  }
+
+  const intentRows = await PivotEventIntent.find(intentQuery)
     .select('eventId userId status')
     .lean();
 

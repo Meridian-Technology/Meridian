@@ -81,6 +81,20 @@ function numberField(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function applySuggestedConstraints(fields, suggestion) {
+  return {
+    ...fields,
+    countryCode: suggestion?.countryCode || fields.countryCode,
+    north: suggestion?.bounds?.north ?? fields.north,
+    south: suggestion?.bounds?.south ?? fields.south,
+    east: suggestion?.bounds?.east ?? fields.east,
+    west: suggestion?.bounds?.west ?? fields.west,
+    latitude: suggestion?.center?.latitude ?? fields.latitude,
+    longitude: suggestion?.center?.longitude ?? fields.longitude,
+    radiusKm: suggestion?.radiusKm ?? fields.radiusKm,
+  };
+}
+
 function buildConstraints(fields) {
   const countryCode = fields.countryCode.trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(countryCode)) {
@@ -227,6 +241,9 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
   const [reviewConfidence, setReviewConfidence] = useState(0.6);
   const [confirmation, setConfirmation] = useState('');
   const [constraints, setConstraints] = useState(() => constraintFields(null));
+  const [boundaryQuery, setBoundaryQuery] = useState(cityDisplayName || tenantKey);
+  const [boundarySuggestion, setBoundarySuggestion] = useState(null);
+  const [lookingUpBoundary, setLookingUpBoundary] = useState(false);
   const [controls, setControls] = useState(EMPTY_CONTROLS);
   const [running, setRunning] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -278,6 +295,35 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
     statusQuery.refetch();
     reviewsQuery.refetch();
     onTenantUpdated?.();
+  };
+
+  const lookupCityBoundary = async () => {
+    const query = boundaryQuery.trim() || cityDisplayName || tenantKey;
+    if (!query) {
+      notifyError('City name required', 'Enter a city name to look up a boundary.');
+      return;
+    }
+    setLookingUpBoundary(true);
+    const countryCode = constraints.countryCode.trim().toUpperCase();
+    const { data, error } = await authenticatedRequest(`${baseUrl}/city-boundary`, {
+      params: {
+        q: query,
+        ...(/^[A-Z]{2}$/.test(countryCode) ? { country: countryCode } : {}),
+      },
+    });
+    setLookingUpBoundary(false);
+    if (error || !data?.success) {
+      notifyError('Could not look up city boundary', data?.message || error);
+      return;
+    }
+    const suggestion = data.data;
+    setBoundarySuggestion(suggestion);
+    setConstraints((value) => applySuggestedConstraints(value, suggestion));
+    addNotification({
+      title: suggestion.ambiguous ? 'Review this city match' : 'City boundary ready',
+      message: suggestion.formattedAddress || query,
+      type: suggestion.ambiguous ? 'warning' : 'success',
+    });
   };
 
   const saveConfiguration = async () => {
@@ -487,7 +533,33 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
         </main>
 
         <aside>
-          <PivotOpsSection title="City boundary" description="Google suggestions outside this area are sent to you for review.">
+          <PivotOpsSection title="City boundary" description="Look up a Google bounding box for this city, then review it before saving. Suggestions outside the box are sent to you for review.">
+            <div className="pivot-location-migration__lookup">
+              <label className="pivot-location-migration__field">
+                <span>City to look up</span>
+                <input
+                  className="linear-input"
+                  aria-label="City to look up"
+                  value={boundaryQuery}
+                  onChange={(event) => setBoundaryQuery(event.target.value)}
+                  placeholder={cityDisplayName || tenantKey}
+                />
+              </label>
+              <button type="button" className="linear-btn linear-btn--secondary" disabled={lookingUpBoundary || !status?.providerConfigured} onClick={lookupCityBoundary}>
+                {lookingUpBoundary ? 'Looking up…' : 'Look up boundary'}
+              </button>
+              {boundarySuggestion ? (
+                <p className="pivot-location-migration__lookup-match">
+                  Google matched <strong>{boundarySuggestion.formattedAddress}</strong>.
+                  {boundarySuggestion.ambiguous ? ' Multiple matches came back — refine the city name if this box looks wrong.' : ''}
+                  {' '}This does not save until you click Save location settings.
+                </p>
+              ) : (
+                <p className="pivot-location-migration__lookup-match">
+                  Uses the tenant city name by default. You can still type coordinates if the lookup is too tight or too wide.
+                </p>
+              )}
+            </div>
             <div className="pivot-location-migration__segmented" role="group" aria-label="Boundary type">
               {['bounds', 'radius'].map((mode) => (
                 <button key={mode} type="button" className={constraints.mode === mode ? 'is-active' : ''} onClick={() => setConstraints((value) => ({ ...value, mode }))}>{mode === 'bounds' ? 'Bounding box' : 'Center + radius'}</button>
@@ -519,4 +591,4 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
   );
 }
 
-export { EMPTY_CONTROLS, RICH_LOCATION_MIGRATION_UI_ENABLED, WeekCoverage, buildConstraints, constraintFields };
+export { EMPTY_CONTROLS, RICH_LOCATION_MIGRATION_UI_ENABLED, WeekCoverage, applySuggestedConstraints, buildConstraints, constraintFields };

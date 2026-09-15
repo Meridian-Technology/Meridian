@@ -138,6 +138,40 @@ describe('PivotTenantLocationMigrationPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save location settings' })).toBeEnabled());
   });
 
+  test('looks up a city boundary and fills the form without saving', async () => {
+    mockAuthenticatedRequest.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          query: 'New York',
+          formattedAddress: 'New York, NY, USA',
+          countryCode: 'US',
+          bounds: { north: 40.92, south: 40.48, east: -73.7, west: -74.26 },
+          center: { latitude: 40.71, longitude: -74.01 },
+          radiusKm: 28.4,
+          matchCount: 1,
+          ambiguous: false,
+        },
+      },
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Look up boundary' }));
+
+    await waitFor(() => expect(mockAuthenticatedRequest).toHaveBeenCalledWith(
+      '/admin/platform/tenants/nyc/rich-location-migration/city-boundary',
+      expect.objectContaining({
+        params: { q: 'New York', country: 'US' },
+      }),
+    ));
+    await waitFor(() => expect(screen.getByLabelText('North')).toHaveValue(40.92));
+    expect(screen.getByText('New York, NY, USA')).toBeInTheDocument();
+    expect(mockAuthenticatedRequest).not.toHaveBeenCalledWith(
+      '/admin/platform/tenants/nyc',
+      expect.anything(),
+    );
+  });
+
   test('emergency disable only sends disabled rollout controls', async () => {
     renderPage();
 

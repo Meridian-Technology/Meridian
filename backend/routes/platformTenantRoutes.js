@@ -57,6 +57,7 @@ const {
   migrationUiEnabled,
   getRichLocationMigrationStatus,
   runRichLocationMigrationBatch,
+  suggestCityBoundary,
 } = require('../services/richLocationMigrationAdminService');
 const {
   listLocationReviewCandidates,
@@ -160,6 +161,28 @@ router.get(
     } catch (error) {
       console.error('GET rich-location migration status failed:', error.message);
       return sendMigrationError(res, error, 'Unable to load rich-location migration status.');
+    }
+  },
+);
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/city-boundary',
+  verifyToken,
+  requirePlatformAdmin,
+  requireRichLocationMigrationUi,
+  async (req, res) => {
+    try {
+      const tenant = await migrationTenant(req, res);
+      if (!tenant) return undefined;
+      const data = await suggestCityBoundary({
+        tenant,
+        query: req.query?.q,
+        countryCode: req.query?.country,
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('GET rich-location city boundary failed:', error.code || error.message);
+      return sendMigrationError(res, error, 'Unable to look up a city boundary.');
     }
   },
 );

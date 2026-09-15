@@ -19,11 +19,12 @@ const {
   listPivotTags,
   validatePivotEventTags,
 } = require('../../services/pivotTagCatalogService');
-const { getFeedPilotWindowFilter } = require('../../services/pivotFeedService');
 const {
   getPivotExplore,
   normalizeExploreLimit,
   normalizeExploreOffset,
+  normalizeExploreHorizonDays,
+  buildExploreRollingCatalogQuery,
   normalizeExploreNight,
   normalizeExploreSort,
   compareByStartTime,
@@ -371,6 +372,13 @@ describe('pivotExploreService pagination helpers', () => {
   it('normalizeExploreOffset rejects negative values', () => {
     expect(normalizeExploreOffset('-1')).toBeNull();
   });
+
+  it('normalizeExploreHorizonDays defaults and caps', () => {
+    expect(normalizeExploreHorizonDays(undefined)).toBe(90);
+    expect(normalizeExploreHorizonDays('120')).toBe(120);
+    expect(normalizeExploreHorizonDays('999')).toBe(180);
+    expect(normalizeExploreHorizonDays('0')).toBeNull();
+  });
 });
 
 describe('getPivotExplore', () => {
@@ -439,12 +447,14 @@ describe('getPivotExplore', () => {
       User: mockUserModel([], ['board-games']),
     }));
 
-    const result = await getPivotExplore(req, { batchWeek: '2026-W22', now });
+    const result = await getPivotExplore(req, { now });
 
     expect(Event.find).toHaveBeenCalledWith(expect.objectContaining({
       'customFields.pivot.rankingOverride.tier': { $ne: 'hidden' },
     }));
-    expect(result.data.batchWeek).toBe('2026-W22');
+    expect(result.data.horizonDays).toBe(90);
+    expect(result.data.from).toBeDefined();
+    expect(result.data.to).toBeDefined();
     expect(result.data.cityDisplayName).toBe('Brooklyn');
     expect(result.data.total).toBe(1);
     expect(result.data.limit).toBe(DEFAULT_EXPLORE_LIMIT);
@@ -476,15 +486,14 @@ describe('getPivotExplore', () => {
     expect(result.data.rails.some((rail) => rail.id === 'crews')).toBe(false);
     expect(Event.find).toHaveBeenCalledWith(
       expect.objectContaining({
-        'customFields.pivot.batchWeek': '2026-W22',
         'customFields.pivot.ingestStatus': 'published',
         status: { $in: ['approved', 'not-applicable'] },
-        ...getFeedPilotWindowFilter(now),
+        ...buildExploreRollingCatalogQuery(now, 90, 'published'),
       }),
     );
   });
 
-  it('queries only published ingestStatus for the requested batchWeek', async () => {
+  it('queries published events across batch weeks within the horizon', async () => {
     const Event = { find: jest.fn(() => mockEventFind([])) };
     getModels.mockReturnValue(withExploreModels({
       Event,
@@ -498,14 +507,11 @@ describe('getPivotExplore', () => {
       User: mockUserModel([], ['board-games']),
     }));
 
-    await getPivotExplore(req, { batchWeek: '2026-W22', now });
+    await getPivotExplore(req, { now, horizonDays: 60 });
 
-    expect(Event.find).toHaveBeenCalledWith(
-      expect.objectContaining({
-        'customFields.pivot.batchWeek': '2026-W22',
-        'customFields.pivot.ingestStatus': 'published',
-      }),
-    );
+    const exploreQuery = Event.find.mock.calls[0][0];
+    expect(exploreQuery['customFields.pivot.ingestStatus']).toBe('published');
+    expect(exploreQuery['customFields.pivot.batchWeek']).toBeUndefined();
   });
 
   it('excludes events that have already ended', async () => {
@@ -1041,10 +1047,11 @@ describe('getPivotExplore', () => {
     expect(result.data.events[0].name).toBe('Friday Night Games');
   });
 
-  it('rejects invalid batchWeek', async () => {
-    const result = await getPivotExplore(req, { batchWeek: '2026-W999', now });
-    expect(result.error).toMatch(/batchWeek/i);
+  it('rejects invalid horizonDays', async () => {
+    const result = await getPivotExplore(req, { horizonDays: '0', now });
+    expect(result.error).toMatch(/horizonDays/i);
     expect(result.status).toBe(400);
+    expect(result.code).toBe('INVALID_HORIZON_DAYS');
   });
 
   it('rejects invalid limit', async () => {

@@ -14,12 +14,13 @@ const {
 const {
   resolvePivotDropInstant,
   describePivotBatchWeekResolution,
+  resolvePivotLiveBatchWeek,
 } = require('../utilities/pivotDropSchedule');
 const { collectPivotEnrichmentSearchText } = require('../utilities/pivotEnrichment');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
 const { PIVOT_FEED_INGEST_STATUS, PIVOT_INGEST_STATUSES } = require('../utilities/pivotIngestStatus');
 const {
-  getFeedPilotWindowFilter,
+  getUpcomingEventTimeFilter,
   isUpcomingPivotEvent,
   resolveDisplayHost,
   serializePivotFeedEvent,
@@ -32,7 +33,6 @@ const {
   applyCrewSocialCounts,
   loadCrewInterestBleedTags,
   subtractInterestTags,
-  resolvePivotFeedBatchWeek,
   PIVOT_EVENT_STATUSES,
   PIVOT_FEED_RANKER_VERSION,
   FRIEND_CAP,
@@ -52,6 +52,9 @@ const PUBLIC_EVENT_FIELDS =
   'name description location richLocation start_time end_time externalLink type registrationCount image customFields.pivot';
 const DEFAULT_EXPLORE_LIMIT = 40;
 const MAX_EXPLORE_LIMIT = 100;
+const DEFAULT_EXPLORE_HORIZON_DAYS = 90;
+const MAX_EXPLORE_HORIZON_DAYS = 180;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const EXPLORE_SORT_MODES = new Set(['for_you', 'soonest']);
 const DEFAULT_EXPLORE_SORT = 'for_you';
 const EXPLORE_NIGHT_SHORTDAYS = new Set(['thu', 'fri', 'sat', 'sun']);
@@ -106,6 +109,70 @@ function normalizeExploreOffset(rawOffset) {
   }
 
   return parsed;
+}
+
+function normalizeExploreHorizonDays(rawHorizonDays) {
+  if (rawHorizonDays == null || rawHorizonDays === '') {
+    return DEFAULT_EXPLORE_HORIZON_DAYS;
+  }
+
+  const parsed = Number.parseInt(String(rawHorizonDays), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return null;
+  }
+
+  return Math.min(parsed, MAX_EXPLORE_HORIZON_DAYS);
+}
+
+function resolveExploreHorizonBounds(now, horizonDays) {
+  const from = now instanceof Date ? now : new Date(now);
+  const to = new Date(from.getTime() + horizonDays * MS_PER_DAY);
+  return { from, to };
+}
+
+/** Rolling city catalog — all published upcoming events within the horizon. */
+function buildExploreRollingCatalogQuery(now, horizonDays, ingestStatus) {
+  const { to: horizonEnd } = resolveExploreHorizonBounds(now, horizonDays);
+
+  return {
+    'customFields.pivot.ingestStatus': ingestStatus,
+    status: { $in: PIVOT_EVENT_STATUSES },
+    isDeleted: { $ne: true },
+    'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
+    'customFields.pivot.rankingOverride.tier': { $ne: 'hidden' },
+    $and: [
+      getUpcomingEventTimeFilter(now),
+      {
+        $or: [
+          {
+            'customFields.pivot.timeSlots.0': { $exists: false },
+            start_time: { $lte: horizonEnd },
+          },
+          {
+            'customFields.pivot.timeSlots.0': { $exists: true },
+            'customFields.pivot.timeSlots': {
+              $elemMatch: {
+                start_time: { $gte: now, $lte: horizonEnd },
+              },
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** Admin preview — single batch week (legacy ops tooling). */
+function buildExplorePreviewCatalogQuery(batchWeek, now, ingestStatus) {
+  return {
+    'customFields.pivot.batchWeek': batchWeek,
+    'customFields.pivot.ingestStatus': ingestStatus,
+    status: { $in: PIVOT_EVENT_STATUSES },
+    isDeleted: { $ne: true },
+    'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
+    'customFields.pivot.rankingOverride.tier': { $ne: 'hidden' },
+    $and: [getUpcomingEventTimeFilter(now)],
+  };
 }
 
 function normalizeExploreBool(rawValue, defaultValue = false) {
@@ -371,7 +438,7 @@ async function userHasActiveCrews(req, userId) {
   return count > 0;
 }
 
-async function loadUserCrewLockedPickEventIds(req, userId, batchWeek) {
+async function loadUserCrewLockedPickEventIds(req, userId, batchWeek, eventIds = null) {
   const { PivotCrewMembership, PivotCrewWeekState } = getModels(
     req,
     'PivotCrewMembership',
@@ -390,12 +457,19 @@ async function loadUserCrewLockedPickEventIds(req, userId, batchWeek) {
   }
 
   const crewIds = memberships.map((row) => row.crewId);
-  const weekStates = await PivotCrewWeekState.find({
+  const weekStateQuery = {
     crewId: { $in: crewIds },
-    batchWeek,
     judgementStatus: { $in: ['confirmed', 'swapped'] },
     proposedEventId: { $ne: null },
-  })
+  };
+  if (batchWeek) {
+    weekStateQuery.batchWeek = batchWeek;
+  }
+  if (Array.isArray(eventIds) && eventIds.length) {
+    weekStateQuery.proposedEventId = { $in: eventIds };
+  }
+
+  const weekStates = await PivotCrewWeekState.find(weekStateQuery)
     .select('proposedEventId')
     .lean();
 
@@ -558,6 +632,9 @@ async function getPivotExplore(req, options = {}) {
   let batchWeek;
   let batchWeekPick;
   let batchWeekResolution;
+  let horizonDays = DEFAULT_EXPLORE_HORIZON_DAYS;
+  let horizonFrom;
+  let horizonTo;
 
   if (previewMode) {
     const requested = options.batchWeek?.trim();
@@ -583,27 +660,36 @@ async function getPivotExplore(req, options = {}) {
       resolvedBatchWeek: batchWeek,
       previewMode: true,
     };
-  } else {
-    if (options.batchWeek?.trim() && !isValidIsoWeek(options.batchWeek.trim())) {
+    const previewHorizon = normalizeExploreHorizonDays(options.horizonDays);
+    if (previewHorizon == null) {
       return {
-        error: 'batchWeek must be ISO format YYYY-Www (e.g. 2026-W21).',
+        error: 'horizonDays must be a positive integer.',
         status: 400,
-        code: 'INVALID_BATCH_WEEK',
+        code: 'INVALID_HORIZON_DAYS',
+      };
+    }
+    horizonDays = previewHorizon;
+  } else {
+    horizonDays = normalizeExploreHorizonDays(options.horizonDays);
+    if (horizonDays == null) {
+      return {
+        error: 'horizonDays must be a positive integer.',
+        status: 400,
+        code: 'INVALID_HORIZON_DAYS',
       };
     }
 
-    batchWeekPick = await resolvePivotFeedBatchWeek(req, {
-      tenant,
-      now,
-      requestedBatchWeek: options.batchWeek,
-    });
-    batchWeek = batchWeekPick.batchWeek;
+    batchWeek = resolvePivotLiveBatchWeek(tenant, now);
+    batchWeekPick = { batchWeek, batchWeekSource: 'consumer_week' };
     batchWeekResolution = {
-      ...describePivotBatchWeekResolution(tenant, now, options.batchWeek),
+      ...describePivotBatchWeekResolution(tenant, now, undefined),
       ...batchWeekPick,
-      resolvedBatchWeek: batchWeekPick.batchWeek,
+      resolvedBatchWeek: batchWeek,
+      catalogScope: 'rolling',
     };
   }
+
+  ({ from: horizonFrom, to: horizonTo } = resolveExploreHorizonBounds(now, horizonDays));
 
   logPivot('info', 'explore request', {
     ...pivotRequestContext(req),
@@ -701,17 +787,12 @@ async function getPivotExplore(req, options = {}) {
 
   const { Event } = getModels(req, 'Event');
 
-  const query = {
-    'customFields.pivot.batchWeek': batchWeek,
-    'customFields.pivot.ingestStatus': previewMode
-      ? { $in: [...PIVOT_INGEST_STATUSES] }
-      : PIVOT_FEED_INGEST_STATUS,
-    status: { $in: PIVOT_EVENT_STATUSES },
-    isDeleted: { $ne: true },
-    'customFields.pivot.host.name': { $exists: true, $nin: [null, ''] },
-    'customFields.pivot.rankingOverride.tier': { $ne: 'hidden' },
-    ...getFeedPilotWindowFilter(now),
-  };
+  const ingestStatus = previewMode
+    ? { $in: [...PIVOT_INGEST_STATUSES] }
+    : PIVOT_FEED_INGEST_STATUS;
+  const query = previewMode
+    ? buildExplorePreviewCatalogQuery(batchWeek, now, ingestStatus)
+    : buildExploreRollingCatalogQuery(now, horizonDays, ingestStatus);
   if (filterTags.length) {
     query['customFields.pivot.tags'] = { $in: filterTags };
   }
@@ -745,12 +826,17 @@ async function getPivotExplore(req, options = {}) {
   } else {
     hasCrews = await userHasActiveCrews(req, userId);
     if (hasCrews) {
-      lockedCrewPickEventIds = await loadUserCrewLockedPickEventIds(req, userId, batchWeek);
+      lockedCrewPickEventIds = await loadUserCrewLockedPickEventIds(
+        req,
+        userId,
+        previewMode ? batchWeek : null,
+        catalogEventIds,
+      );
     }
 
     [userInterestTags, friendSocial, negativeFeedbackTags, crewRankConfig] = await Promise.all([
       loadUserInterestTags(req, userId),
-      loadFriendSocial(req, userId, catalogEventIds, FRIEND_CAP, batchWeek),
+      loadFriendSocial(req, userId, catalogEventIds, FRIEND_CAP, null),
       sort === 'for_you'
         ? loadNegativeFeedbackTags(req, userId)
         : Promise.resolve(new Set()),
@@ -763,14 +849,14 @@ async function getPivotExplore(req, options = {}) {
         req,
         userId,
         catalogEventIds,
-        batchWeek,
+        null,
         friendSocial.socialByEvent,
       );
       if (sort === 'for_you' && crewRankConfig.interestBleed?.enabled) {
         const crewTagUnion = await loadCrewInterestBleedTags(
           req,
           userId,
-          batchWeek,
+          null,
           crewRankConfig.interestBleed,
         );
         crewBleedTags = subtractInterestTags(crewTagUnion, userInterestTags);
@@ -872,6 +958,9 @@ async function getPivotExplore(req, options = {}) {
     data: {
       batchWeek,
       cityDisplayName,
+      horizonDays,
+      from: horizonFrom.toISOString(),
+      to: horizonTo.toISOString(),
       catalogTotal: catalogEvents.length,
       hiddenPassedCount: filterRemovals.removedPassed,
       total,
@@ -911,6 +1000,7 @@ async function getPivotExplorePreview(req, options = {}) {
 
   return getPivotExplore(tenantReq, {
     batchWeek: options.batchWeek,
+    horizonDays: options.horizonDays,
     limit: options.limit,
     offset: options.offset,
     tags: options.tags,
@@ -929,6 +1019,10 @@ module.exports = {
   getPivotExplorePreview,
   normalizeExploreLimit,
   normalizeExploreOffset,
+  normalizeExploreHorizonDays,
+  buildExploreRollingCatalogQuery,
+  buildExplorePreviewCatalogQuery,
+  resolveExploreHorizonBounds,
   normalizeExploreBool,
   normalizeExploreTagsParam,
   normalizeExploreQuery,

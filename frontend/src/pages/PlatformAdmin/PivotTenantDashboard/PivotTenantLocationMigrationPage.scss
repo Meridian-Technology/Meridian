@@ -182,6 +182,8 @@
     button.is-active { color: var(--pivot-ops-ink); background: var(--pivot-ops-surface); box-shadow: 0 1px 3px rgba(26, 23, 20, 0.12); }
   }
 
+  &__lookup { display: grid; gap: 8px; margin-bottom: 14px; }
+  &__lookup-match { margin: 0; color: var(--pivot-ops-ink-soft); font-size: 10px; line-height: 1.4; strong { color: var(--pivot-ops-ink); font-weight: 600; } }
   &__boundary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 9px; }
 
   &__master-control, &__control {

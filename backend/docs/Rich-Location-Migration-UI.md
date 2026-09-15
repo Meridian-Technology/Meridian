@@ -48,7 +48,11 @@ debugging session; warnings, errors, and aggregate run summaries remain on.
    **Location migration** dashboard item.
 2. Choose an event batch with the week picker. The choice is bookmarkable as
    `?page=7&batchWeek=YYYY-Www`.
-3. Save valid city constraints while rich-location rollout remains off.
+3. Look up a city boundary from the tenant city name (or a more specific
+   query such as `Brooklyn, NY`). Google returns a bounding box and country
+   code. Review the coordinates, then save while rich-location rollout remains
+   off. Manual coordinates remain available if the lookup is too tight or too
+   wide.
 4. Preview the next event group. Previewing calls the same matching path but
    does not write events or advance the week's checkpoint.
 5. Type the tenant key, process one group, and repeat until the coverage bar

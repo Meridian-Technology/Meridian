@@ -1217,6 +1217,7 @@ router.get(
       const result = await getPivotExplorePreview(req, {
         tenantKey: req.params.tenantKey,
         batchWeek: req.query?.batchWeek,
+        horizonDays: req.query?.horizonDays,
         limit: req.query?.limit,
         offset: req.query?.offset,
         tags: req.query?.tags,
