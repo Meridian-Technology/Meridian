@@ -43,6 +43,22 @@ const STATUS = {
   },
 };
 
+const HEATMAP = {
+  success: true,
+  data: {
+    cols: 40,
+    rows: 32,
+    bounds: { north: 41, south: 40, east: -73, west: -75 },
+    cityBounds: { north: 41, south: 40, east: -73, west: -75 },
+    cells: [{ x: 20, y: 16, count: 4 }],
+    maxCount: 4,
+    pointCount: 4,
+    outsideCount: 0,
+    unresolvedCount: 2,
+    truncated: false,
+  },
+};
+
 function fetchResult(data) {
   return { data, loading: false, error: null, refetch: jest.fn() };
 }
@@ -58,11 +74,15 @@ function renderPage() {
 describe('PivotTenantLocationMigrationPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseFetch.mockImplementation((url) => (
-      url.endsWith('/reviews')
-        ? fetchResult({ success: true, data: { candidates: [] } })
-        : fetchResult(STATUS)
-    ));
+    mockUseFetch.mockImplementation((url) => {
+      if (String(url || '').endsWith('/reviews')) {
+        return fetchResult({ success: true, data: { candidates: [] } });
+      }
+      if (String(url || '').endsWith('/heatmap')) {
+        return fetchResult(HEATMAP);
+      }
+      return fetchResult(STATUS);
+    });
     mockAuthenticatedRequest.mockResolvedValue({
       data: {
         success: true,
@@ -95,6 +115,26 @@ describe('PivotTenantLocationMigrationPage', () => {
 
     fireEvent.change(screen.getByLabelText('Type nyc to process'), { target: { value: 'nyc' } });
     expect(screen.getByRole('button', { name: 'Process next 25' })).toBeEnabled();
+  });
+
+  test('loads a batch-blind historic heatmap without the selected week', async () => {
+    renderPage();
+
+    expect(mockUseFetch).toHaveBeenCalledWith(
+      '/admin/platform/tenants/nyc/rich-location-migration/heatmap',
+      expect.objectContaining({ cache: { enabled: false } }),
+    );
+    expect(screen.getByRole('img', {
+      name: /historic event location heatmap across every batch week/i,
+    })).toBeInTheDocument();
+    expect(screen.getByText(/resolved locations across every batch week/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }));
+    mockUseFetch.mock.calls
+      .filter(([url]) => String(url).endsWith('/heatmap'))
+      .forEach(([, options]) => {
+        expect(options?.params?.batchWeek).toBeUndefined();
+      });
   });
 
   test('loads status and reviews for the selected batch week', async () => {

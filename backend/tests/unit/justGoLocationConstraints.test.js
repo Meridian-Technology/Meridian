@@ -17,6 +17,15 @@ describe('justGoLocationConstraints geometry helpers', () => {
     })).toEqual({ north: 41, east: -73, south: 40, west: -75 });
   });
 
+  test('reads Places API viewport high/low corners', () => {
+    expect(normalizeGoogleGeometryBounds({
+      viewport: {
+        high: { latitude: 40.92, longitude: -73.7 },
+        low: { latitude: 40.48, longitude: -74.26 },
+      },
+    })).toEqual({ north: 40.92, east: -73.7, south: 40.48, west: -74.26 });
+  });
+
   test('falls back to viewport and computes a capped covering radius', () => {
     const bounds = normalizeGoogleGeometryBounds({
       viewport: {

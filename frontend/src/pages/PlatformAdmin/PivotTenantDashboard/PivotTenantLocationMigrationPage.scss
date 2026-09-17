@@ -31,6 +31,10 @@
     margin: 12px 0;
   }
 
+  .pivot-historic-heatmap {
+    margin-bottom: 12px;
+  }
+
   &__workspace {
     display: grid;
     grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.9fr);

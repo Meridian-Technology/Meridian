@@ -1,0 +1,97 @@
+.pivot-historic-heatmap {
+  &__map {
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: 10px;
+    background: var(--pivot-ops-canvas);
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  &__canvas {
+    fill: var(--pivot-ops-canvas);
+  }
+
+  &__cell {
+    fill: var(--pivot-ops-accent);
+  }
+
+  &__city {
+    fill: color-mix(in srgb, var(--pivot-ops-ink) 6%, transparent);
+    stroke: var(--pivot-ops-ink);
+    stroke-dasharray: 0.35 0.28;
+    stroke-width: 0.18;
+    pointer-events: none;
+  }
+
+  &__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px 16px;
+    margin-top: 10px;
+
+    p {
+      margin: 0;
+      color: var(--pivot-ops-ink-soft);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    strong {
+      color: var(--pivot-ops-ink);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--pivot-ops-ink-soft);
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  &__swatch {
+    width: 56px;
+    height: 8px;
+    border-radius: 99px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--pivot-ops-accent) 18%, var(--pivot-ops-canvas)),
+      var(--pivot-ops-accent)
+    );
+  }
+
+  &__boundary-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 6px;
+
+    &::before {
+      content: '';
+      width: 14px;
+      height: 9px;
+      border: 1px dashed var(--pivot-ops-ink);
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--pivot-ops-ink) 6%, transparent);
+    }
+  }
+
+  &__empty {
+    margin: 0;
+    color: var(--pivot-ops-ink-soft);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+}

@@ -29,6 +29,15 @@ const AUTOCOMPLETE_FIELD_MASK = [
   'suggestions.placePrediction.structuredFormat',
   'suggestions.placePrediction.types',
 ].join(',');
+const CITY_BOUNDARY_FIELD_MASK = [
+  'places.id',
+  'places.displayName',
+  'places.formattedAddress',
+  'places.addressComponents',
+  'places.location',
+  'places.viewport',
+  'places.types',
+].join(',');
 
 const RETRYABLE_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRYABLE_NETWORK_CODES = new Set([
@@ -123,6 +132,20 @@ function cityBoundaryScore(result) {
     (score, type) => Math.max(score, CITY_BOUNDARY_TYPE_SCORES[type] || 0),
     0,
   );
+}
+
+function placeAsBoundaryResult(place) {
+  if (!place || typeof place !== 'object') return null;
+  return {
+    formattedAddress: place.formattedAddress,
+    formatted_address: place.formattedAddress,
+    addressComponents: place.addressComponents,
+    types: place.types,
+    geometry: {
+      location: place.location,
+      viewport: place.viewport,
+    },
+  };
 }
 
 function pickCityBoundaryResult(results) {
@@ -592,22 +615,32 @@ function createGoogleLocationAdapter(options = {}) {
     const response = await requestWithRetry(
       'city_boundary',
       (key) => ({
-        method: 'GET',
-        url: GEOCODING_API_URL,
+        method: 'POST',
+        url: `${PLACES_API_BASE_URL}/places:searchText`,
         timeout: timeoutMs,
-        params: {
-          address: normalizedQuery,
-          key,
-          ...(countryCode ? {
-            region: countryCode.toLowerCase(),
-            components: `country:${countryCode}`,
-          } : {}),
+        headers: {
+          'X-Goog-Api-Key': key,
+          'X-Goog-FieldMask': CITY_BOUNDARY_FIELD_MASK,
+        },
+        data: {
+          textQuery: normalizedQuery,
+          ...(countryCode ? { regionCode: countryCode } : {}),
         },
       }),
-      classifyGeocodeStatus,
+      (providerResponse) => (
+        Array.isArray(providerResponse.data?.places) || providerResponse.data?.places == null
+          ? null
+          : {
+              code: 'GOOGLE_LOCATION_MALFORMED_RESPONSE',
+              status: 502,
+              retryable: false,
+            }
+      ),
     );
 
-    const providerResults = Array.isArray(response.data.results) ? response.data.results : [];
+    const providerResults = (Array.isArray(response.data.places) ? response.data.places : [])
+      .map(placeAsBoundaryResult)
+      .filter(Boolean);
     const picked = pickCityBoundaryResult(providerResults);
     if (!picked) {
       throw new GoogleLocationError(
@@ -664,6 +697,7 @@ module.exports = {
     DEFAULT_MAX_ATTEMPTS,
     PLACE_DETAILS_FIELD_MASK,
     AUTOCOMPLETE_FIELD_MASK,
+    CITY_BOUNDARY_FIELD_MASK,
     PLACES_API_BASE_URL,
     GEOCODING_API_URL,
   },

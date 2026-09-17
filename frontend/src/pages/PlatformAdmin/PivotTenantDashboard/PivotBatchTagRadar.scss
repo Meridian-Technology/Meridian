@@ -2,6 +2,47 @@
   .pivot-ops-section__head {
     align-items: flex-start;
   }
+
+  &--compact {
+    .pivot-tag-radar__legend {
+      margin-bottom: 6px;
+      font-size: 10px;
+      gap: 6px 10px;
+    }
+
+    .pivot-tag-radar__viewport {
+      overflow: hidden;
+    }
+
+    .pivot-tag-radar__chart {
+      width: 100%;
+      min-width: 0;
+      max-width: 360px;
+      margin: 0 auto;
+    }
+
+    .pivot-tag-radar__loading {
+      min-height: 140px;
+    }
+
+    .pivot-tag-radar__labels {
+      font-size: 9px;
+    }
+
+    .pivot-tag-radar__empty {
+      padding: 12px 0;
+      font-size: 11px;
+    }
+
+    .pivot-tag-radar__short-list {
+      gap: 6px;
+
+      > div {
+        font-size: 11px;
+        padding-bottom: 6px;
+      }
+    }
+  }
 }
 
 .pivot-tag-radar__legend {

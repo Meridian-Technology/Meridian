@@ -13,6 +13,7 @@ import {
 } from '../../../components/PivotOps';
 import { formatBatchWeekRange, isValidIsoWeek, toIsoWeek } from '../../../utils/pivotIsoWeek';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
+import PivotHistoricLocationHeatmap from './PivotHistoricLocationHeatmap';
 import PivotLocationReviewInspector from './PivotLocationReviewInspector';
 import PivotTenantPage from './PivotTenantPage';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
@@ -228,6 +229,10 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
     RICH_LOCATION_MIGRATION_UI_ENABLED && committedWeekValid ? `${baseUrl}/reviews` : null,
     { params: { status: 'needs_review', limit: 200, batchWeek: committedWeek }, cache: { enabled: false } },
   );
+  const heatmapQuery = useFetch(
+    RICH_LOCATION_MIGRATION_UI_ENABLED ? `${baseUrl}/heatmap` : null,
+    { cache: { enabled: false } },
+  );
   const status = statusQuery.data?.success ? statusQuery.data.data : null;
   const reviews = useMemo(
     () => (reviewsQuery.data?.success ? reviewsQuery.data.data?.candidates || [] : []),
@@ -283,6 +288,7 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
   }, [reviews, selectedReviewId]);
 
   const selectedReview = reviews.find((candidate) => candidate.eventId === selectedReviewId) || null;
+  const heatmap = heatmapQuery.data?.success ? heatmapQuery.data.data : null;
   const coverage = status?.coverage || null;
   const weekRun = status?.weekRun || null;
   const activeLease = status?.leases?.live || null;
@@ -294,6 +300,7 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
   const refresh = () => {
     statusQuery.refetch();
     reviewsQuery.refetch();
+    heatmapQuery.refetch();
     onTenantUpdated?.();
   };
 
@@ -460,6 +467,13 @@ export default function PivotTenantLocationMigrationPage({ tenantKey, cityDispla
         <PivotOpsMetric label="Not evaluated" value={Number(coverage?.remaining || 0).toLocaleString()} hint={committedWeek} />
         <PivotOpsMetric label="Rich locations" value={controls.rollout === 'on' ? 'On' : 'Off'} hint={`${CONTROL_OPTIONS.filter(({ key }) => controls[key]).length} of 4 capabilities enabled`} />
       </PivotOpsMetricGrid>
+
+      <PivotHistoricLocationHeatmap
+        data={heatmap}
+        loading={heatmapQuery.loading}
+        error={heatmapQuery.error}
+        draftConstraints={constraints}
+      />
 
       <div className="pivot-location-migration__workspace">
         <main>

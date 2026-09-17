@@ -17,6 +17,7 @@ import {
   formatRate,
   ratePointsDelta,
 } from './pivotOverviewFormat';
+import PivotBatchTagRadar from './PivotBatchTagRadar';
 
 export const CHART_COLOR = '#ff4f1f';
 export const CHART_COLOR_PREV = '#ff9a78';
@@ -60,6 +61,9 @@ function PivotOverviewPanels({
   insights = [],
   insightsError = null,
   insightsLoading = false,
+  catalogEvents = null,
+  catalogTags = [],
+  catalogLoading = false,
 }) {
   const [chartHoverSync, setChartHoverSync] = useState(null);
   const handleChartHoverSyncChange = useCallback((signal) => {
@@ -481,6 +485,7 @@ function PivotOverviewPanels({
       </div>
 
       <div className="pivot-tenant-overview__bottom">
+        <div className="pivot-tenant-overview__events-column">
         <PivotOpsSection
           title="Top events"
           titleId="pivot-tenant-top-events"
@@ -544,6 +549,23 @@ function PivotOverviewPanels({
             <p className="pivot-lab__empty">No catalog events for this week yet.</p>
           ) : null}
         </PivotOpsSection>
+        {catalogEvents ? (
+          <PivotOpsCard className="pivot-tenant-overview__panel pivot-tenant-overview__panel--radar">
+            <h2 className="pivot-ops-section__title">Tag strength</h2>
+            <p className="pivot-ops-section__description">
+              Live discovery vs catalog for {batchWeek}
+            </p>
+            <PivotBatchTagRadar
+              batchWeek={batchWeek}
+              events={catalogEvents}
+              catalogTags={catalogTags}
+              loading={catalogLoading}
+              compact
+              embedded
+            />
+          </PivotOpsCard>
+        ) : null}
+        </div>
 
         <PivotOpsSection
           title="Needs attention"

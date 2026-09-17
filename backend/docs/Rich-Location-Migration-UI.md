@@ -16,7 +16,9 @@ REACT_APP_GOOGLE_MAPS_EMBED_API_KEY=browser-restricted-key
 ```
 
 The backend also requires `GOOGLE_MAPS_SERVER_API_KEY`. Keep that credential
-server-only and restrict it by Google API and backend egress IP.
+server-only and restrict it by Google API and backend egress IP. City-boundary
+lookup uses Places Text Search (same Places API as venue resolution), not the
+legacy Geocoding API.
 
 The optional frontend key is a separate credential for the Maps Embed API.
 Restrict it to the deployed frontend origins with HTTP referrer restrictions;
@@ -79,3 +81,12 @@ the tenant UI uses the selected batch week instead.
 The emergency **Disable rollout** action only changes rich-location controls;
 it does not depend on the unsaved constraints editor and does not delete any
 migrated data.
+
+## Historic location heatmap
+
+The location migration page also shows a **batch-blind** density map of every
+resolved event coordinate in the tenant, including past batch weeks. It does
+not follow the week picker. Cells are aggregated server-side; the current city
+boundary (including an unsaved lookup or form edit) is overlaid so operators
+can see whether the box covers historic density. Events without
+`richLocation.coordinates` are counted in the caption but are not plotted.

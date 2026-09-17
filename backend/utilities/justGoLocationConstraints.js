@@ -35,8 +35,8 @@ function normalizeBounds(value) {
 function normalizeGoogleGeometryBounds(geometry) {
   const box = geometry?.bounds || geometry?.viewport;
   if (!box) return null;
-  const northEast = normalizePoint(box.northeast);
-  const southWest = normalizePoint(box.southwest);
+  const northEast = normalizePoint(box.northeast || box.high);
+  const southWest = normalizePoint(box.southwest || box.low);
   if (!northEast || !southWest) return null;
   return normalizeBounds({
     north: northEast.latitude,
