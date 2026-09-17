@@ -133,6 +133,16 @@
     }
   }
 
+  &__panel--radar {
+    .pivot-ops-section__description {
+      margin-bottom: 8px;
+    }
+
+    .pivot-tag-radar--compact {
+      margin-top: 2px;
+    }
+  }
+
   &__hero-side {
     display: flex;
     flex-direction: column;
@@ -318,6 +328,12 @@
     @media (max-width: 980px) {
       grid-template-columns: 1fr;
     }
+  }
+
+  &__events-column {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
   }
 
   &__events,

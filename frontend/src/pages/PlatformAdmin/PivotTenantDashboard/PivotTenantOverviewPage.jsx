@@ -39,7 +39,7 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
   const opsParams = useMemo(
     () => ({
       batchWeek: committedWeek,
-      include: 'overview',
+      include: 'overview,catalog',
       performanceLimit: TOP_EVENTS_LIMIT,
       retentionWeeks: RETENTION_WEEKS,
     }),
@@ -59,6 +59,7 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
     params: opsParams,
     cache: NO_FETCH_CACHE,
   });
+  const { data: tagsResponse } = useFetch('/admin/pivot/tags', { cache: NO_FETCH_CACHE });
 
   const ops = opsResponse?.success ? opsResponse.data : null;
 
@@ -116,6 +117,11 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
   const vsPrev = overview?.vsPrevWeek;
   const eventsByDay = overview?.eventsByDay || [];
   const displayCity = overview?.cityDisplayName || cityDisplayName || tenantKey;
+  const catalogEvents = ops?.catalog && !ops.catalog.error
+    ? (ops.catalog.events || [])
+    : [];
+  const catalogLoading = opsLoading && !ops?.catalog;
+  const catalogTags = tagsResponse?.success ? (tagsResponse.data?.tags || []) : [];
 
   const dayHeatCells = useMemo(
     () =>
@@ -293,6 +299,9 @@ function PivotTenantOverviewPage({ tenantKey, cityDisplayName }) {
           insights={insights}
           insightsError={insightsError}
           insightsLoading={insightsLoading}
+          catalogEvents={catalogEvents}
+          catalogTags={catalogTags}
+          catalogLoading={catalogLoading}
         />
       ) : null}
 

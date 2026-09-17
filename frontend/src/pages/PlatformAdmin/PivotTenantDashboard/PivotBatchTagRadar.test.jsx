@@ -46,4 +46,21 @@ describe('PivotBatchTagRadar', () => {
     expect(screen.getByText('Live music')).toBeInTheDocument();
     expect(screen.getByText(/published, non-hidden events/i)).toBeInTheDocument();
   });
+
+  it('renders a compact embedded chart without the long footnote', () => {
+    render(
+      <PivotBatchTagRadar
+        batchWeek="2026-W38"
+        events={EVENTS}
+        catalogTags={TAGS}
+        compact
+        embedded
+      />,
+    );
+
+    expect(screen.getByRole('img', { name: /tag strength for 2026-W38/i }))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/published, non-hidden events/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Live')).toBeInTheDocument();
+  });
 });

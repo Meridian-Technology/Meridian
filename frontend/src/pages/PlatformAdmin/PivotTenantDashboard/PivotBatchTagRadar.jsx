@@ -2,12 +2,24 @@ import React, { useId, useMemo } from 'react';
 import { PivotOpsSection } from '../../../components/PivotOps';
 import './PivotBatchTagRadar.scss';
 
-const VIEWBOX_WIDTH = 760;
-const VIEWBOX_HEIGHT = 500;
-const CENTER_X = VIEWBOX_WIDTH / 2;
-const CENTER_Y = VIEWBOX_HEIGHT / 2;
-const CHART_RADIUS = 166;
-const LABEL_RADIUS = 207;
+const LAYOUTS = {
+  full: {
+    width: 760,
+    height: 500,
+    cx: 380,
+    cy: 250,
+    radius: 166,
+    labelRadius: 207,
+  },
+  compact: {
+    width: 360,
+    height: 250,
+    cx: 180,
+    cy: 122,
+    radius: 78,
+    labelRadius: 102,
+  },
+};
 const GRID_LEVELS = [0.25, 0.5, 0.75, 1];
 
 function normalizeTag(value) {
@@ -60,18 +72,18 @@ function buildBatchTagStrength(events = [], catalogTags = []) {
   };
 }
 
-function polarPoint(index, count, radius) {
+function polarPoint(index, count, radius, layout) {
   const angle = -Math.PI / 2 + (index * Math.PI * 2) / count;
   return {
-    x: CENTER_X + Math.cos(angle) * radius,
-    y: CENTER_Y + Math.sin(angle) * radius,
+    x: layout.cx + Math.cos(angle) * radius,
+    y: layout.cy + Math.sin(angle) * radius,
     angle,
   };
 }
 
-function polygonPoints(count, radiusForIndex) {
+function polygonPoints(count, radiusForIndex, layout) {
   return Array.from({ length: count }, (_, index) => {
-    const point = polarPoint(index, count, radiusForIndex(index));
+    const point = polarPoint(index, count, radiusForIndex(index), layout);
     return `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
   }).join(' ');
 }
@@ -83,33 +95,146 @@ function labelAnchor(angle) {
   return 'middle';
 }
 
-function PivotBatchTagRadar({ batchWeek, events = [], catalogTags = [], loading = false }) {
+function TagRadarChart({ batchWeek, tags, maxCatalogCount, layout, compact }) {
   const titleId = useId();
   const descriptionId = useId();
+  return (
+    <div className="pivot-tag-radar__viewport">
+      <svg
+        className="pivot-tag-radar__chart"
+        viewBox={`0 0 ${layout.width} ${layout.height}`}
+        role="img"
+        aria-labelledby={`${titleId} ${descriptionId}`}
+      >
+        <title id={titleId}>Tag strength for {batchWeek}</title>
+        <desc id={descriptionId}>
+          A radar chart comparing live discovery events with all catalog events for every tag represented in the batch.
+        </desc>
+        <g className="pivot-tag-radar__grid">
+          {GRID_LEVELS.map((level) => (
+            <polygon
+              key={level}
+              points={polygonPoints(tags.length, () => layout.radius * level, layout)}
+            />
+          ))}
+          {tags.map((tag, index) => {
+            const endpoint = polarPoint(index, tags.length, layout.radius, layout);
+            return (
+              <line
+                key={tag.slug}
+                x1={layout.cx}
+                y1={layout.cy}
+                x2={endpoint.x}
+                y2={endpoint.y}
+              />
+            );
+          })}
+        </g>
+        <polygon
+          className="pivot-tag-radar__shape pivot-tag-radar__shape--catalog"
+          points={polygonPoints(
+            tags.length,
+            (index) => layout.radius * (tags[index].catalogCount / maxCatalogCount),
+            layout,
+          )}
+        />
+        <polygon
+          className="pivot-tag-radar__shape pivot-tag-radar__shape--live"
+          points={polygonPoints(
+            tags.length,
+            (index) => layout.radius * (tags[index].liveCount / maxCatalogCount),
+            layout,
+          )}
+        />
+        <g className="pivot-tag-radar__points">
+          {tags.map((tag, index) => {
+            const catalogPoint = polarPoint(
+              index,
+              tags.length,
+              layout.radius * (tag.catalogCount / maxCatalogCount),
+              layout,
+            );
+            const livePoint = polarPoint(
+              index,
+              tags.length,
+              layout.radius * (tag.liveCount / maxCatalogCount),
+              layout,
+            );
+            return (
+              <React.Fragment key={tag.slug}>
+                <circle
+                  className="pivot-tag-radar__point pivot-tag-radar__point--catalog"
+                  cx={catalogPoint.x}
+                  cy={catalogPoint.y}
+                  r={compact ? 2 : 3}
+                >
+                  <title>{tag.label}: {tag.catalogCount} catalog events</title>
+                </circle>
+                <circle
+                  className="pivot-tag-radar__point pivot-tag-radar__point--live"
+                  cx={livePoint.x}
+                  cy={livePoint.y}
+                  r={compact ? 3 : 4}
+                >
+                  <title>{tag.label}: {tag.liveCount} live discovery events</title>
+                </circle>
+              </React.Fragment>
+            );
+          })}
+        </g>
+        <g className="pivot-tag-radar__labels">
+          {tags.map((tag, index) => {
+            const labelPoint = polarPoint(index, tags.length, layout.labelRadius, layout);
+            const anchor = labelAnchor(labelPoint.angle);
+            return (
+              <text
+                key={tag.slug}
+                x={labelPoint.x}
+                y={labelPoint.y - (compact ? 2 : 5)}
+                textAnchor={anchor}
+              >
+                <tspan x={labelPoint.x}>{tag.label}</tspan>
+                {compact ? null : (
+                  <tspan x={labelPoint.x} dy="15" className="pivot-tag-radar__label-count">
+                    {tag.liveCount} / {tag.catalogCount}
+                  </tspan>
+                )}
+              </text>
+            );
+          })}
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function PivotBatchTagRadar({
+  batchWeek,
+  events = [],
+  catalogTags = [],
+  loading = false,
+  compact = false,
+  embedded = false,
+}) {
   const strength = useMemo(
     () => buildBatchTagStrength(events, catalogTags),
     [events, catalogTags],
   );
   const { tags, maxCatalogCount } = strength;
   const enoughForRadar = tags.length >= 3;
+  const layout = compact ? LAYOUTS.compact : LAYOUTS.full;
+  const chart = enoughForRadar && !loading ? (
+    <TagRadarChart
+      batchWeek={batchWeek}
+      tags={tags}
+      maxCatalogCount={maxCatalogCount}
+      layout={layout}
+      compact={compact}
+    />
+  ) : null;
 
-  return (
-    <PivotOpsSection
-      title={`Tag strength · ${batchWeek}`}
-      titleId={`tag-strength-${batchWeek}`}
-      description={
-        tags.length
-          ? `Live discovery coverage versus the full catalog. Outer ring = ${maxCatalogCount} event${maxCatalogCount === 1 ? '' : 's'}; multi-tag events count on every matching spoke.`
-          : 'Coverage across the tags assigned to events in this batch.'
-      }
-      actions={tags.length ? (
-        <div className="pivot-tag-radar__legend" aria-label="Chart legend">
-          <span><i className="pivot-tag-radar__swatch pivot-tag-radar__swatch--catalog" />Catalog</span>
-          <span><i className="pivot-tag-radar__swatch pivot-tag-radar__swatch--live" />Live discovery</span>
-        </div>
-      ) : null}
-      className="pivot-tag-radar"
-    >
+  const body = (
+    <>
       {loading ? (
         <div className="pivot-tag-radar__loading" role="status">
           <p className="pivot-tag-radar__empty">Loading tag coverage…</p>
@@ -126,116 +251,50 @@ function PivotBatchTagRadar({ batchWeek, events = [], catalogTags = [], loading 
               <strong>{tag.liveCount} live / {tag.catalogCount} catalog</strong>
             </div>
           ))}
-          <p>Add at least three represented tags to reveal the radial shape.</p>
+          {compact ? null : <p>Add at least three represented tags to reveal the radial shape.</p>}
         </div>
       ) : null}
-      {!loading && enoughForRadar ? (
-        <div className="pivot-tag-radar__viewport">
-          <svg
-            className="pivot-tag-radar__chart"
-            viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
-            role="img"
-            aria-labelledby={`${titleId} ${descriptionId}`}
-          >
-            <title id={titleId}>Tag strength for {batchWeek}</title>
-            <desc id={descriptionId}>
-              A radar chart comparing live discovery events with all catalog events for every tag represented in the batch.
-            </desc>
-            <g className="pivot-tag-radar__grid">
-              {GRID_LEVELS.map((level) => (
-                <polygon
-                  key={level}
-                  points={polygonPoints(tags.length, () => CHART_RADIUS * level)}
-                />
-              ))}
-              {tags.map((tag, index) => {
-                const endpoint = polarPoint(index, tags.length, CHART_RADIUS);
-                return (
-                  <line
-                    key={tag.slug}
-                    x1={CENTER_X}
-                    y1={CENTER_Y}
-                    x2={endpoint.x}
-                    y2={endpoint.y}
-                  />
-                );
-              })}
-            </g>
-            <polygon
-              className="pivot-tag-radar__shape pivot-tag-radar__shape--catalog"
-              points={polygonPoints(
-                tags.length,
-                (index) => CHART_RADIUS * (tags[index].catalogCount / maxCatalogCount),
-              )}
-            />
-            <polygon
-              className="pivot-tag-radar__shape pivot-tag-radar__shape--live"
-              points={polygonPoints(
-                tags.length,
-                (index) => CHART_RADIUS * (tags[index].liveCount / maxCatalogCount),
-              )}
-            />
-            <g className="pivot-tag-radar__points">
-              {tags.map((tag, index) => {
-                const catalogPoint = polarPoint(
-                  index,
-                  tags.length,
-                  CHART_RADIUS * (tag.catalogCount / maxCatalogCount),
-                );
-                const livePoint = polarPoint(
-                  index,
-                  tags.length,
-                  CHART_RADIUS * (tag.liveCount / maxCatalogCount),
-                );
-                return (
-                  <React.Fragment key={tag.slug}>
-                    <circle
-                      className="pivot-tag-radar__point pivot-tag-radar__point--catalog"
-                      cx={catalogPoint.x}
-                      cy={catalogPoint.y}
-                      r="3"
-                    >
-                      <title>{tag.label}: {tag.catalogCount} catalog events</title>
-                    </circle>
-                    <circle
-                      className="pivot-tag-radar__point pivot-tag-radar__point--live"
-                      cx={livePoint.x}
-                      cy={livePoint.y}
-                      r="4"
-                    >
-                      <title>{tag.label}: {tag.liveCount} live discovery events</title>
-                    </circle>
-                  </React.Fragment>
-                );
-              })}
-            </g>
-            <g className="pivot-tag-radar__labels">
-              {tags.map((tag, index) => {
-                const labelPoint = polarPoint(index, tags.length, LABEL_RADIUS);
-                const anchor = labelAnchor(labelPoint.angle);
-                return (
-                  <text
-                    key={tag.slug}
-                    x={labelPoint.x}
-                    y={labelPoint.y - 5}
-                    textAnchor={anchor}
-                  >
-                    <tspan x={labelPoint.x}>{tag.label}</tspan>
-                    <tspan x={labelPoint.x} dy="15" className="pivot-tag-radar__label-count">
-                      {tag.liveCount} / {tag.catalogCount}
-                    </tspan>
-                  </text>
-                );
-              })}
-            </g>
-          </svg>
-        </div>
-      ) : null}
-      {tags.length ? (
+      {chart}
+      {tags.length > 0 && !compact ? (
         <p className="pivot-tag-radar__note">
           Live discovery includes published, non-Hidden events. Values beside each tag are live / catalog.
         </p>
       ) : null}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className={`pivot-tag-radar${compact ? ' pivot-tag-radar--compact' : ''}`}>
+        {tags.length ? (
+          <div className="pivot-tag-radar__legend" aria-label="Chart legend">
+            <span><i className="pivot-tag-radar__swatch pivot-tag-radar__swatch--catalog" />Catalog</span>
+            <span><i className="pivot-tag-radar__swatch pivot-tag-radar__swatch--live" />Live</span>
+          </div>
+        ) : null}
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <PivotOpsSection
+      title={`Tag strength · ${batchWeek}`}
+      titleId={`tag-strength-${batchWeek}`}
+      description={
+        tags.length
+          ? `Live discovery coverage versus the full catalog. Outer ring = ${maxCatalogCount} event${maxCatalogCount === 1 ? '' : 's'}; multi-tag events count on every matching spoke.`
+          : 'Coverage across the tags assigned to events in this batch.'
+      }
+      actions={tags.length ? (
+        <div className="pivot-tag-radar__legend" aria-label="Chart legend">
+          <span><i className="pivot-tag-radar__swatch pivot-tag-radar__swatch--catalog" />Catalog</span>
+          <span><i className="pivot-tag-radar__swatch pivot-tag-radar__swatch--live" />Live discovery</span>
+        </div>
+      ) : null}
+      className={`pivot-tag-radar${compact ? ' pivot-tag-radar--compact' : ''}`}
+    >
+      {body}
     </PivotOpsSection>
   );
 }
