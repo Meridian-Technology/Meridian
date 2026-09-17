@@ -19,6 +19,7 @@ const { validatePivotDeckConfigPatch } = require('../utilities/pivotDeckConfig')
 const { validatePivotMobileConfigPatch } = require('../utilities/pivotMobileConfig');
 const { validateCreatorPublishConfigPatch } = require('../utilities/pivotCreatorPublishConfig');
 const { validatePivotDiscoveryConfigPatch } = require('../utilities/pivotDiscoveryConfig');
+const { validatePivotComputeApplyPolicyPatch } = require('../utilities/pivotComputeApplyPolicy');
 const {
   validateJustGoLocationConstraints,
 } = require('../utilities/justGoLocationConstraints');
@@ -111,6 +112,7 @@ function toStoredTenantRow(tenant) {
     pivotDropOverrides: tenant.pivotDropOverrides,
     creatorPublish: tenant.creatorPublish,
     pivotDiscovery: tenant.pivotDiscovery,
+    pivotComputeApply: tenant.pivotComputeApply,
     provisioningConfirmations: tenant.provisioningConfirmations,
   };
   if (tenant.richLocationConstraints) {
@@ -414,6 +416,13 @@ function validateTenantMetadataUpdate(body = {}) {
     const discoveryValidation = validatePivotDiscoveryConfigPatch(body.pivotDiscovery);
     if (discoveryValidation.error) {
       return { error: discoveryValidation.error };
+    }
+  }
+
+  if (body.pivotComputeApply !== undefined) {
+    const computeApplyValidation = validatePivotComputeApplyPolicyPatch(body.pivotComputeApply);
+    if (computeApplyValidation.error) {
+      return { error: computeApplyValidation.error, code: computeApplyValidation.code };
     }
   }
 
