@@ -124,7 +124,7 @@ describe('PivotTenantLocationMigrationPage', () => {
       '/admin/platform/tenants/nyc/rich-location-migration/heatmap',
       expect.objectContaining({ cache: { enabled: false } }),
     );
-    expect(screen.getByRole('img', {
+    expect(screen.getByRole('application', {
       name: /historic event location heatmap across every batch week/i,
     })).toBeInTheDocument();
     expect(screen.getByText(/resolved locations across every batch week/)).toBeInTheDocument();

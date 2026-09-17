@@ -1,32 +1,31 @@
 .pivot-historic-heatmap {
-  &__map {
+  &__frame {
+    position: relative;
     width: 100%;
     overflow: hidden;
+    aspect-ratio: 16 / 9;
     border: 1px solid var(--pivot-ops-border);
     border-radius: 10px;
-    background: var(--pivot-ops-canvas);
+    background: #e8e6e1;
   }
 
-  svg {
-    display: block;
+  &__map {
     width: 100%;
-    height: auto;
-    aspect-ratio: 16 / 9;
+    height: 100%;
   }
 
-  &__canvas {
-    fill: var(--pivot-ops-canvas);
-  }
-
-  &__cell {
-    fill: var(--pivot-ops-accent);
-  }
-
-  &__city {
-    fill: color-mix(in srgb, var(--pivot-ops-ink) 6%, transparent);
-    stroke: var(--pivot-ops-ink);
-    stroke-dasharray: 0.35 0.28;
-    stroke-width: 0.18;
+  &__map-status {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    padding: 16px;
+    background: color-mix(in srgb, var(--pivot-ops-canvas) 88%, transparent);
+    color: var(--pivot-ops-ink-soft);
+    font-size: 12px;
+    text-align: center;
     pointer-events: none;
   }
 
