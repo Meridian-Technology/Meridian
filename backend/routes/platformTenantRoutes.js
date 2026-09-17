@@ -56,6 +56,7 @@ const { upload } = require('../services/imageUploadService');
 const {
   migrationUiEnabled,
   getRichLocationMigrationStatus,
+  getHistoricLocationHeatmap,
   runRichLocationMigrationBatch,
   suggestCityBoundary,
 } = require('../services/richLocationMigrationAdminService');
@@ -161,6 +162,24 @@ router.get(
     } catch (error) {
       console.error('GET rich-location migration status failed:', error.message);
       return sendMigrationError(res, error, 'Unable to load rich-location migration status.');
+    }
+  },
+);
+
+router.get(
+  '/admin/platform/tenants/:tenantKey/rich-location-migration/heatmap',
+  verifyToken,
+  requirePlatformAdmin,
+  requireRichLocationMigrationUi,
+  async (req, res) => {
+    try {
+      const tenant = await migrationTenant(req, res);
+      if (!tenant) return undefined;
+      const data = await getHistoricLocationHeatmap({ tenant });
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('GET rich-location historic heatmap failed:', error.message);
+      return sendMigrationError(res, error, 'Unable to load the historic location heatmap.');
     }
   },
 );

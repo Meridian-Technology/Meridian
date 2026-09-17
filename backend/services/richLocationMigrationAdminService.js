@@ -9,6 +9,10 @@ const { isGoogleLocationConfigured } = googleLocationService;
 const LEASE_MS = 10 * 60 * 1000;
 const MAX_UI_BATCH_SIZE = 50;
 const MAX_UI_INTERVAL_MS = 5_000;
+const HEATMAP_COLS = 40;
+const HEATMAP_ROWS = 32;
+const HEATMAP_MAX_POINTS = 8_000;
+const HEATMAP_PAD_RATIO = 0.08;
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -132,6 +136,203 @@ function weekCatalogQuery(batchWeek) {
     'customFields.pivot.batchWeek': batchWeek,
     isDeleted: { $ne: true },
     location: { $type: 'string', $ne: '' },
+  };
+}
+
+function historicCatalogQuery() {
+  return {
+    'customFields.pivot': { $exists: true },
+    isDeleted: { $ne: true },
+  };
+}
+
+function coordinatesFromEvent(event) {
+  const pair = event?.richLocation?.coordinates?.coordinates;
+  if (!Array.isArray(pair) || pair.length < 2) return null;
+  const longitude = Number(pair[0]);
+  const latitude = Number(pair[1]);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)
+    || latitude < -90 || latitude > 90
+    || longitude < -180 || longitude > 180) {
+    return null;
+  }
+  return { latitude, longitude };
+}
+
+function distanceKm(first, second) {
+  const radians = (degrees) => degrees * (Math.PI / 180);
+  const earthRadiusKm = 6371.0088;
+  const latitudeDelta = radians(second.latitude - first.latitude);
+  const longitudeDelta = radians(second.longitude - first.longitude);
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(radians(first.latitude))
+      * Math.cos(radians(second.latitude))
+      * Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function longitudeWithinBounds(longitude, west, east) {
+  return west <= east
+    ? longitude >= west && longitude <= east
+    : longitude >= west || longitude <= east;
+}
+
+function pointInCityScope(point, constraints) {
+  if (!constraints) return true;
+  if (constraints.bounds) {
+    const { north, south, east, west } = constraints.bounds;
+    if (point.latitude < south || point.latitude > north
+      || !longitudeWithinBounds(point.longitude, west, east)) {
+      return false;
+    }
+  }
+  if (constraints.center && Number(constraints.radiusKm) > 0) {
+    return distanceKm(point, constraints.center) <= Number(constraints.radiusKm);
+  }
+  return true;
+}
+
+function boundsFromPoints(points) {
+  if (!points.length) return null;
+  return points.reduce((bounds, point) => ({
+    north: Math.max(bounds.north, point.latitude),
+    south: Math.min(bounds.south, point.latitude),
+    east: Math.max(bounds.east, point.longitude),
+    west: Math.min(bounds.west, point.longitude),
+  }), {
+    north: points[0].latitude,
+    south: points[0].latitude,
+    east: points[0].longitude,
+    west: points[0].longitude,
+  });
+}
+
+function boundsFromRadius(center, radiusKm) {
+  if (!center || !(Number(radiusKm) > 0)) return null;
+  const latDelta = Number(radiusKm) / 111.32;
+  const lngDelta = Number(radiusKm)
+    / (111.32 * Math.max(0.2, Math.cos((center.latitude * Math.PI) / 180)));
+  return {
+    north: Math.min(90, center.latitude + latDelta),
+    south: Math.max(-90, center.latitude - latDelta),
+    east: Math.min(180, center.longitude + lngDelta),
+    west: Math.max(-180, center.longitude - lngDelta),
+  };
+}
+
+function unionBounds(first, second) {
+  if (!first) return second || null;
+  if (!second) return first;
+  return {
+    north: Math.max(first.north, second.north),
+    south: Math.min(first.south, second.south),
+    east: Math.max(first.east, second.east),
+    west: Math.min(first.west, second.west),
+  };
+}
+
+function padBounds(bounds, ratio = HEATMAP_PAD_RATIO) {
+  if (!bounds) return null;
+  const latSpan = Math.max(bounds.north - bounds.south, 0.004);
+  const lngSpan = Math.max(Math.abs(bounds.east - bounds.west), 0.004);
+  const latPad = latSpan * ratio;
+  const lngPad = lngSpan * ratio;
+  return {
+    north: Math.min(90, bounds.north + latPad),
+    south: Math.max(-90, bounds.south - latPad),
+    east: Math.min(180, bounds.east + lngPad),
+    west: Math.max(-180, bounds.west - lngPad),
+  };
+}
+
+function cityViewBounds(constraints) {
+  if (!constraints) return null;
+  return constraints.bounds
+    || boundsFromRadius(constraints.center, constraints.radiusKm);
+}
+
+function binHistoricPoints(points, bounds, cols = HEATMAP_COLS, rows = HEATMAP_ROWS) {
+  const latSpan = bounds.north - bounds.south;
+  const lngSpan = bounds.east - bounds.west;
+  if (!(latSpan > 0) || !(lngSpan > 0)) {
+    return { cells: [], maxCount: 0 };
+  }
+
+  const counts = new Map();
+  points.forEach((point) => {
+    const x = Math.min(
+      cols - 1,
+      Math.max(0, Math.floor(((point.longitude - bounds.west) / lngSpan) * cols)),
+    );
+    const y = Math.min(
+      rows - 1,
+      Math.max(0, Math.floor(((bounds.north - point.latitude) / latSpan) * rows)),
+    );
+    const key = `${x},${y}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  let maxCount = 0;
+  const cells = Array.from(counts.entries()).map(([key, count]) => {
+    const [x, y] = key.split(',').map(Number);
+    maxCount = Math.max(maxCount, count);
+    return { x, y, count };
+  });
+
+  return { cells, maxCount };
+}
+
+async function getHistoricLocationHeatmap({ tenant }) {
+  const { Event } = await tenantModels(tenant.tenantKey);
+  const constraints = tenant.richLocationConstraints || null;
+  const resolvedQuery = {
+    ...historicCatalogQuery(),
+    'richLocation.coordinates.coordinates.0': { $type: 'number' },
+    'richLocation.coordinates.coordinates.1': { $type: 'number' },
+  };
+  const unresolvedQuery = {
+    ...historicCatalogQuery(),
+    location: { $type: 'string', $ne: '' },
+    $or: [
+      { richLocation: { $exists: false } },
+      { richLocation: null },
+      { 'richLocation.coordinates.coordinates.0': { $exists: false } },
+    ],
+  };
+
+  const [docs, unresolvedCount] = await Promise.all([
+    Event.find(resolvedQuery)
+      .select({ 'richLocation.coordinates.coordinates': 1 })
+      .limit(HEATMAP_MAX_POINTS)
+      .lean(),
+    Event.countDocuments(unresolvedQuery),
+  ]);
+
+  const points = docs.map(coordinatesFromEvent).filter(Boolean);
+  const viewBounds = padBounds(unionBounds(
+    boundsFromPoints(points),
+    cityViewBounds(constraints),
+  ));
+  const { cells, maxCount } = viewBounds
+    ? binHistoricPoints(points, viewBounds)
+    : { cells: [], maxCount: 0 };
+  const outsideCount = constraints
+    ? points.filter((point) => !pointInCityScope(point, constraints)).length
+    : 0;
+
+  return {
+    cols: HEATMAP_COLS,
+    rows: HEATMAP_ROWS,
+    bounds: viewBounds,
+    cityBounds: constraints?.bounds || null,
+    cityCenter: constraints?.center || null,
+    cityRadiusKm: Number(constraints?.radiusKm) > 0 ? Number(constraints.radiusKm) : null,
+    cells,
+    maxCount,
+    pointCount: points.length,
+    outsideCount,
+    unresolvedCount,
+    truncated: docs.length >= HEATMAP_MAX_POINTS,
   };
 }
 
@@ -343,11 +544,21 @@ module.exports = {
   migrationUiEnabled,
   migrationBatchWeek,
   weekCatalogQuery,
+  historicCatalogQuery,
   getRichLocationMigrationStatus,
+  getHistoricLocationHeatmap,
   runRichLocationMigrationBatch,
   suggestCityBoundary,
   defaultCityBoundaryQuery,
   acquireLease,
   publicRun,
-  constants: { LEASE_MS, MAX_UI_BATCH_SIZE, MAX_UI_INTERVAL_MS },
+  binHistoricPoints,
+  constants: {
+    LEASE_MS,
+    MAX_UI_BATCH_SIZE,
+    MAX_UI_INTERVAL_MS,
+    HEATMAP_COLS,
+    HEATMAP_ROWS,
+    HEATMAP_MAX_POINTS,
+  },
 };

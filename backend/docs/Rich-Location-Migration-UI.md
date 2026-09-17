@@ -81,3 +81,12 @@ the tenant UI uses the selected batch week instead.
 The emergency **Disable rollout** action only changes rich-location controls;
 it does not depend on the unsaved constraints editor and does not delete any
 migrated data.
+
+## Historic location heatmap
+
+The location migration page also shows a **batch-blind** density map of every
+resolved event coordinate in the tenant, including past batch weeks. It does
+not follow the week picker. Cells are aggregated server-side; the current city
+boundary (including an unsaved lookup or form edit) is overlaid so operators
+can see whether the box covers historic density. Events without
+`richLocation.coordinates` are counted in the caption but are not plotted.

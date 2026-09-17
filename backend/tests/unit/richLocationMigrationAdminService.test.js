@@ -17,9 +17,11 @@ const googleLocationService = require('../../services/googleLocationService');
 const {
   migrationUiEnabled,
   getRichLocationMigrationStatus,
+  getHistoricLocationHeatmap,
   runRichLocationMigrationBatch,
   suggestCityBoundary,
   acquireLease,
+  binHistoricPoints,
 } = require('../../services/richLocationMigrationAdminService');
 
 const TENANT = {
@@ -188,6 +190,51 @@ describe('richLocationMigrationAdminService', () => {
       status: 400,
     });
     expect(googleLocationService.lookupCityBoundary).not.toHaveBeenCalled();
+  });
+
+  test('bins historic coordinates without a batch week', async () => {
+    const Event = {
+      find: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([
+          { richLocation: { coordinates: { coordinates: [-74.0, 40.7] } } },
+          { richLocation: { coordinates: { coordinates: [-74.0, 40.7] } } },
+          { richLocation: { coordinates: { coordinates: [-73.0, 41.5] } } },
+        ]),
+      })),
+      countDocuments: jest.fn().mockResolvedValue(9),
+    };
+    getModels.mockReturnValue({ Event });
+
+    const result = await getHistoricLocationHeatmap({ tenant: TENANT });
+    const query = Event.find.mock.calls[0][0];
+
+    expect(JSON.stringify(query)).not.toMatch(/batchWeek/);
+    expect(query['customFields.pivot']).toEqual({ $exists: true });
+    expect(result).toMatchObject({
+      pointCount: 3,
+      outsideCount: 1,
+      unresolvedCount: 9,
+      truncated: false,
+      cityBounds: TENANT.richLocationConstraints.bounds,
+    });
+    expect(result.cells.some((cell) => cell.count >= 2)).toBe(true);
+  });
+
+  test('places denser points into the same heatmap cell', () => {
+    const { cells, maxCount } = binHistoricPoints(
+      [
+        { latitude: 40.75, longitude: -74.1 },
+        { latitude: 40.75, longitude: -74.1 },
+        { latitude: 40.2, longitude: -73.2 },
+      ],
+      { north: 41, south: 40, east: -73, west: -75 },
+      10,
+      10,
+    );
+    expect(maxCount).toBe(2);
+    expect(cells).toHaveLength(2);
   });
 
   test('reports a duplicate lease as a conflict', async () => {
