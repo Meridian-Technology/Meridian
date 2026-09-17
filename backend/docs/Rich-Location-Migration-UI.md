@@ -86,7 +86,10 @@ migrated data.
 
 The location migration page also shows a **batch-blind** density map of every
 resolved event coordinate in the tenant, including past batch weeks. It does
-not follow the week picker. Cells are aggregated server-side; the current city
+not follow the week picker. Cells are aggregated server-side and drawn on
+Google Maps. The same browser key as review-inspector embeds
+(`REACT_APP_GOOGLE_MAPS_EMBED_API_KEY`) must allow the Maps JavaScript API.
+Drag and scroll-zoom are Google’s native map controls. The current city
 boundary (including an unsaved lookup or form edit) is overlaid so operators
 can see whether the box covers historic density. Events without
 `richLocation.coordinates` are counted in the caption but are not plotted.

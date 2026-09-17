@@ -1,10 +1,6 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import PivotHistoricLocationHeatmap, {
-  overlayFromFields,
-  projectBoundsRect,
-  projectLngLat,
-} from './PivotHistoricLocationHeatmap';
+import { render, screen, waitFor } from '@testing-library/react';
+import PivotHistoricLocationHeatmap, { overlayFromFields } from './PivotHistoricLocationHeatmap';
 
 const HEATMAP = {
   cols: 40,
@@ -22,20 +18,26 @@ const HEATMAP = {
   truncated: false,
 };
 
+function installGoogleMapsMock() {
+  const maps = {
+    Map: jest.fn(function Map() {
+      this.fitBounds = jest.fn();
+    }),
+    Rectangle: jest.fn(function Rectangle() {
+      this.setMap = jest.fn();
+    }),
+    Circle: jest.fn(function Circle() {
+      this.setMap = jest.fn();
+    }),
+    LatLngBounds: jest.fn(function LatLngBounds() {}),
+  };
+  window.google = { maps };
+  return maps;
+}
+
 describe('PivotHistoricLocationHeatmap', () => {
-  it('projects longitude east and latitude south into SVG space', () => {
-    expect(projectLngLat(
-      { latitude: 41, longitude: -75 },
-      HEATMAP.bounds,
-      40,
-      32,
-    )).toEqual({ x: 0, y: 0 });
-    expect(projectLngLat(
-      { latitude: 40, longitude: -73 },
-      HEATMAP.bounds,
-      40,
-      32,
-    )).toEqual({ x: 40, y: 32 });
+  beforeEach(() => {
+    delete window.google;
   });
 
   it('reads a draft bounding box from the city-boundary form', () => {
@@ -52,16 +54,17 @@ describe('PivotHistoricLocationHeatmap', () => {
       .toBeNull();
   });
 
-  it('renders historic density without tying it to a batch week', () => {
+  it('draws historic density on a Google Map', async () => {
+    const maps = installGoogleMapsMock();
     render(<PivotHistoricLocationHeatmap data={HEATMAP} />);
 
-    expect(screen.getByRole('img', {
+    expect(screen.getByRole('application', {
       name: /historic event location heatmap across every batch week/i,
     })).toBeInTheDocument();
+    await waitFor(() => expect(maps.Map).toHaveBeenCalled());
+    expect(maps.Map.mock.instances[0].fitBounds).toHaveBeenCalled();
+    expect(maps.Rectangle).toHaveBeenCalled();
+    expect(document.querySelector('img[src*="basemaps.cartocdn.com"]')).toBeNull();
     expect(screen.getByText(/resolved locations across every batch week/)).toBeInTheDocument();
-    expect(screen.getByText(/outside the current city boundary/)).toBeInTheDocument();
-    expect(screen.getByText(/still without coordinates/)).toBeInTheDocument();
-    expect(projectBoundsRect(HEATMAP.cityBounds, HEATMAP.bounds, 40, 32).width)
-      .toBeGreaterThan(0);
   });
 });
