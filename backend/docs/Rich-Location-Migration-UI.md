@@ -16,7 +16,9 @@ REACT_APP_GOOGLE_MAPS_EMBED_API_KEY=browser-restricted-key
 ```
 
 The backend also requires `GOOGLE_MAPS_SERVER_API_KEY`. Keep that credential
-server-only and restrict it by Google API and backend egress IP.
+server-only and restrict it by Google API and backend egress IP. City-boundary
+lookup uses Places Text Search (same Places API as venue resolution), not the
+legacy Geocoding API.
 
 The optional frontend key is a separate credential for the Maps Embed API.
 Restrict it to the deployed frontend origins with HTTP referrer restrictions;
