@@ -76,6 +76,18 @@ describe('landingMode on tenant config (Task 2.1)', () => {
       expect(row.landingMode).toBe('waitlist');
     });
 
+    it('merges stored pivotMobileConfig onto pivot cities', () => {
+      const [row] = mergeTenantRows([], [
+        pivotCity({
+          status: 'active',
+          name: 'New York',
+          pivotMobileConfig: { minAppVersion: '1.2.0', forceUpdate: true },
+        }),
+      ]);
+      expect(row.pivotMobileConfig.minAppVersion).toBe('1.2.0');
+      expect(row.pivotMobileConfig.forceUpdate).toBe(true);
+    });
+
     it('does not derive landingMode from status', () => {
       const [comingSoonLaunched] = mergeTenantRows([], [
         pivotCity({ status: 'coming_soon', landingMode: 'launched' }),
@@ -173,6 +185,23 @@ describe('landingMode on tenant config (Task 2.1)', () => {
         landingMode: 'waitlist',
       });
       expect(stored).toBeNull();
+    });
+
+    it('persists pivotMobileConfig on pivot cities', () => {
+      const stored = toStoredTenantRow(
+        pivotCity({
+          pivotMobileConfig: {
+            minAppVersion: '1.2.0',
+            forceUpdate: true,
+            message: 'update now',
+          },
+        }),
+      );
+      expect(stored.pivotMobileConfig).toEqual({
+        minAppVersion: '1.2.0',
+        forceUpdate: true,
+        message: 'update now',
+      });
     });
   });
 });

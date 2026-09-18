@@ -26,6 +26,7 @@ const {
   validatePivotDeckConfigPatch,
 } = require('../utilities/pivotDeckConfig');
 const {
+  readEnvMobileOverrides,
   validatePivotMobileConfigPatch,
 } = require('../utilities/pivotMobileConfig');
 const {
@@ -123,7 +124,13 @@ async function listTenantsWithHealth(req) {
 router.get('/admin/platform/tenants', verifyToken, requirePlatformAdmin, async (req, res) => {
   try {
     const tenants = await listTenantsWithHealth(req);
-    res.json({ success: true, data: { tenants } });
+    res.json({
+      success: true,
+      data: {
+        tenants,
+        pivotMobileEnvOverrides: readEnvMobileOverrides(),
+      },
+    });
   } catch (err) {
     console.error('GET /admin/platform/tenants failed:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -433,7 +440,7 @@ router.put('/admin/platform/tenants/:tenantKey', verifyToken, requirePlatformAdm
     }
 
     if (req.body.pivotMobileConfig === null) {
-      delete updated.pivotMobileConfig;
+      updated.pivotMobileConfig = null;
     } else if (req.body.pivotMobileConfig !== undefined) {
       const mobileValidation = validatePivotMobileConfigPatch(req.body.pivotMobileConfig);
       if (mobileValidation.error) {
