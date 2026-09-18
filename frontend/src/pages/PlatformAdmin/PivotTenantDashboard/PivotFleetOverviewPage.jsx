@@ -288,13 +288,6 @@ function PivotFleetOverviewPage({
         </PivotOpsBanner>
       ) : null}
 
-      <PivotFleetMobileUpdatePanel
-        tenants={tenants}
-        loading={tenantsLoading}
-        envOverrides={mobileEnvOverrides}
-        onSaved={onTenantsSaved}
-      />
-
       {cityRows.length ? (
         <nav className="pivot-fleet-overview__city-rail" aria-label="Cities">
           {cityRows.map((city) => (
@@ -363,6 +356,13 @@ function PivotFleetOverviewPage({
       {!overviewLoading && overview && !kpis ? (
         <p className="pivot-lab__empty">No metrics for this week yet.</p>
       ) : null}
+
+      <PivotFleetMobileUpdatePanel
+        tenants={tenants}
+        loading={tenantsLoading}
+        envOverrides={mobileEnvOverrides}
+        onSaved={onTenantsSaved}
+      />
     </PivotTenantPage>
   );
 }
