@@ -30,6 +30,10 @@ const MAX_OPTIONS_BYTES = 16 * 1024;
 const MAX_APPLICATION_AUDIT_BUCKETS = 100;
 const MAX_APPLICATION_AUDIT_ROWS = 500;
 const MAX_APPLICATION_AUDIT_MANIFEST_BYTES = 512 * 1024;
+// Notification entries are a dedupe/audit marker for a job, not an email log.
+// Keep the bounded history small so repeated operational retries cannot grow a
+// compute-job document without limit.
+const MAX_NOTIFICATION_EMAILS = 20;
 
 const progressSchema = new mongoose.Schema(
   {
@@ -211,6 +215,26 @@ const autoApplySchema = new mongoose.Schema(
   { _id: false },
 );
 
+const notificationEmailSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      required: true,
+      enum: ['review-required', 'apply-complete', 'failed', 'carousel-complete'],
+    },
+    sentAt: { type: Date, required: true },
+    recipientCount: { type: Number, required: true, min: 0, max: 10000 },
+  },
+  { _id: false },
+);
+
+const notificationsSchema = new mongoose.Schema(
+  {
+    email: { type: [notificationEmailSchema], default: undefined },
+  },
+  { _id: false },
+);
+
 const jobFailureSchema = new mongoose.Schema(
   {
     code: { type: String, required: true, trim: true, maxlength: 64 },
@@ -310,6 +334,7 @@ const pivotComputeJobSchema = new mongoose.Schema(
     exportArtifacts: { type: exportArtifactsSchema, default: null },
     applicationAudit: { type: applicationAuditSchema, default: null },
     autoApply: { type: autoApplySchema, default: null },
+    notifications: { type: notificationsSchema, default: null },
     failure: { type: jobFailureSchema, default: null },
     requestedAt: { type: Date, required: true },
     leasedAt: { type: Date, default: null },
@@ -354,6 +379,9 @@ pivotComputeJobSchema.pre('validate', function normalizeComputeJobFields() {
     if (boundedByteLength(manifest, MAX_APPLICATION_AUDIT_MANIFEST_BYTES) > MAX_APPLICATION_AUDIT_MANIFEST_BYTES) {
       this.invalidate('applicationAudit', `application audit manifest exceeds ${MAX_APPLICATION_AUDIT_MANIFEST_BYTES} bytes`);
     }
+  }
+  if (Array.isArray(this.notifications?.email) && this.notifications.email.length > MAX_NOTIFICATION_EMAILS) {
+    this.invalidate('notifications.email', `notification emails exceed ${MAX_NOTIFICATION_EMAILS}`);
   }
 });
 
@@ -408,5 +436,6 @@ module.exports.PIVOT_COMPUTE_JOB_INDEX_NAMES = PIVOT_COMPUTE_JOB_INDEX_NAMES;
 module.exports.MAX_EMBEDDED_RESULT_BYTES = MAX_EMBEDDED_RESULT_BYTES;
 module.exports.MAX_OPTIONS_BYTES = MAX_OPTIONS_BYTES;
 module.exports.MAX_APPLICATION_AUDIT_BUCKETS = MAX_APPLICATION_AUDIT_BUCKETS;
+module.exports.MAX_NOTIFICATION_EMAILS = MAX_NOTIFICATION_EMAILS;
 module.exports.MAX_APPLICATION_AUDIT_ROWS = MAX_APPLICATION_AUDIT_ROWS;
 module.exports.MAX_APPLICATION_AUDIT_MANIFEST_BYTES = MAX_APPLICATION_AUDIT_MANIFEST_BYTES;

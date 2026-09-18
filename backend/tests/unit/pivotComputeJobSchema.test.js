@@ -5,6 +5,7 @@ const {
   MAX_APPLICATION_AUDIT_BUCKETS,
   MAX_APPLICATION_AUDIT_ROWS,
   MAX_APPLICATION_AUDIT_MANIFEST_BYTES,
+  MAX_NOTIFICATION_EMAILS,
 } = pivotComputeJobSchema;
 
 const PivotComputeJob = mongoose.models.PivotComputeJobSchemaTest
@@ -81,5 +82,34 @@ describe('PivotComputeJob schema applicationAudit', () => {
       applicationAudit: { rows: [{ entityType: 'event', disposition: 'created', message: 'x'.repeat(MAX_APPLICATION_AUDIT_MANIFEST_BYTES) }] },
     }));
     await expect(oversizedManifest.validate()).rejects.toThrow(/application audit manifest exceeds/);
+  });
+});
+
+describe('PivotComputeJob schema notifications', () => {
+  it('retains bounded admin-email notification audit entries', async () => {
+    const sentAt = new Date('2026-01-02T00:00:00.000Z');
+    const job = new PivotComputeJob(baseJob({
+      notifications: {
+        email: [{ type: 'apply-complete', sentAt, recipientCount: 3 }],
+      },
+    }));
+
+    await expect(job.validate()).resolves.toBeUndefined();
+    expect(job.notifications.email[0].toObject()).toMatchObject({
+      type: 'apply-complete', sentAt, recipientCount: 3,
+    });
+  });
+
+  it('rejects notification audit entries beyond the cap', async () => {
+    const job = new PivotComputeJob(baseJob({
+      notifications: {
+        email: Array.from(
+          { length: MAX_NOTIFICATION_EMAILS + 1 },
+          () => ({ type: 'review-required', sentAt: new Date(), recipientCount: 1 }),
+        ),
+      },
+    }));
+
+    await expect(job.validate()).rejects.toThrow(/notification emails exceed/);
   });
 });
