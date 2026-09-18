@@ -53,6 +53,48 @@ export function normalizeCarouselSlideNumbers(slideNumbers, slideCount) {
   return numbers;
 }
 
+const IDEMPOTENCY_KEY_PATTERN = /^[a-zA-Z0-9:_-]{8,128}$/;
+const IDEMPOTENCY_KEY_MAX = 128;
+
+function sanitizeIdempotencyToken(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function carouselExportIdempotencyKey({
+  tenantKey,
+  deckId,
+  slideNumbers,
+  now = Date.now(),
+  reuseKey,
+} = {}) {
+  if (typeof reuseKey === 'string' && IDEMPOTENCY_KEY_PATTERN.test(reuseKey)) {
+    return reuseKey;
+  }
+
+  const city = sanitizeIdempotencyToken(String(tenantKey || '').trim().toLowerCase()) || 'city';
+  const deck = sanitizeIdempotencyToken(deckId) || 'deck';
+  const selected = Array.isArray(slideNumbers) && slideNumbers.length
+    ? [...new Set(slideNumbers.map((entry) => Number(entry)))]
+      .filter((slide) => Number.isInteger(slide) && slide >= 1)
+      .sort((left, right) => left - right)
+    : [];
+  const selection = selected.length ? selected.join('-') : 'all';
+  const stamp = String(Number(now));
+  const prefix = `idem:carousel-${city}-${deck}-`;
+  const suffix = `-${stamp}`;
+  const budget = IDEMPOTENCY_KEY_MAX - prefix.length - suffix.length;
+  let middle = sanitizeIdempotencyToken(selection) || 'all';
+  if (budget < 1) {
+    return `idem:carousel-${city}-${stamp}`.slice(0, IDEMPOTENCY_KEY_MAX);
+  }
+  if (middle.length > budget) middle = 'sel';
+  return `${prefix}${middle}${suffix}`;
+}
+
 export function buildCarouselExportJobRequest({
   tenantKey,
   deckId,
