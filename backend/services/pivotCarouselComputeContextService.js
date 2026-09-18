@@ -1,7 +1,7 @@
 const { createHash, randomUUID } = require('crypto');
 const jwt = require('jsonwebtoken');
 const getGlobalModels = require('./getGlobalModelService');
-const { mintExportToken, deckRevision } = require('./pivotCarouselExportService');
+const { mintExportToken, deckRevision, sameDeckRevision } = require('./pivotCarouselExportService');
 const {
   CONTRACT_VERSION,
   CAROUSEL_EXPORT_LIMITS,
@@ -54,7 +54,7 @@ async function buildCarouselExportContextSnapshot(req, { job, now = new Date() }
   if (!deck) throw serviceError('Carousel deck not found', 'DECK_NOT_FOUND', 404);
 
   const revision = deckRevision(deck);
-  if (revision !== expectedRevision) {
+  if (!sameDeckRevision(revision, expectedRevision)) {
     throw serviceError('Carousel deck changed after the export was requested', 'DECK_REVISION_MISMATCH', 409);
   }
   const deckSlideCount = (deck.slides || []).length;

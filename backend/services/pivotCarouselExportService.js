@@ -26,6 +26,12 @@ function deckRevision(deck) {
   return Number.isNaN(value.getTime()) ? null : value.toISOString();
 }
 
+function sameDeckRevision(left, right) {
+  const leftMs = Date.parse(String(left || '').trim());
+  const rightMs = Date.parse(String(right || '').trim());
+  return Number.isFinite(leftMs) && leftMs === rightMs;
+}
+
 async function mintExportToken(req, tenantKey, deckId, scope = {}) {
   const key = String(tenantKey || '').trim().toLowerCase();
   const tenant = await getTenantByKey(req, key);
@@ -99,7 +105,7 @@ async function readDeckForExport(req, token, deckId) {
     PivotCarouselVoice.findOne({ tenantKey: claims.tenantKey }).lean(),
   ]);
   if (!deck) return { error: 'Deck not found.', status: 404, code: 'DECK_NOT_FOUND' };
-  if (claims.deckRevision && deckRevision(deck) !== claims.deckRevision) {
+  if (claims.deckRevision && !sameDeckRevision(deckRevision(deck), claims.deckRevision)) {
     return {
       error: 'That deck changed after this export was claimed.',
       status: 409,
@@ -116,4 +122,4 @@ async function readDeckForExport(req, token, deckId) {
   };
 }
 
-module.exports = { mintExportToken, readDeckForExport, deckRevision, PURPOSE, TOKEN_TTL };
+module.exports = { mintExportToken, readDeckForExport, deckRevision, sameDeckRevision, PURPOSE, TOKEN_TTL };

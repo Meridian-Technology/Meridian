@@ -15,6 +15,7 @@ const {
 const { ensurePivotComputeJobIndexes } = require('../../services/ensurePivotComputeJobIndexes');
 const { loadFixture } = require('../../utilities/pivotAdminComputeJobContract');
 const { createMongoMemoryConnection } = require('../helpers/mongoMemory');
+const getGlobalModels = require('../../services/getGlobalModelService');
 
 describe('pivotComputeAdminService', () => {
   let mongo;
@@ -151,5 +152,27 @@ describe('pivotComputeAdminService', () => {
     expect(retried.job.status).toBe('pending');
     expect(retried.job.contextVersion).toBe('ctx:iowacity.discovery.v9');
     expect(notifyWake).toHaveBeenCalledWith({ externalJobId: manual.jobId });
+  });
+
+  it('stamps carousel export jobs with the stored deck revision', async () => {
+    const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+    const deck = await PivotCarouselDeck.create({
+      tenantKey: 'iowacity',
+      title: 'issue',
+      slides: [{ type: 'cover' }, { type: 'back' }],
+      updatedAt: new Date('2026-09-11T19:58:00.123Z'),
+    });
+    const jobRequest = loadFixture('job-request-carousel-valid.json');
+    jobRequest.options.deckId = String(deck._id);
+    jobRequest.options.deckRevision = '2026-09-11T19:58:00Z';
+
+    const created = await createAdminComputeJob(req, {
+      request: jobRequest,
+      actor: 'admin@example.com',
+      notifyWake: jest.fn().mockResolvedValue({ status: 'accepted' }),
+    });
+
+    expect(created.created).toBe(true);
+    expect(created.job.options.deckRevision).toBe(new Date(deck.updatedAt).toISOString());
   });
 });

@@ -11,6 +11,7 @@ jest.mock('../../services/getGlobalModelService', () => jest.fn(() => ({
   },
 })));
 jest.mock('../../services/pivotCarouselExportService', () => ({
+  ...jest.requireActual('../../services/pivotCarouselExportService'),
   deckRevision: jest.fn((deck) => new Date(deck.updatedAt).toISOString()),
   mintExportToken: jest.fn(async () => ({
     data: {
@@ -76,6 +77,22 @@ describe('pivotCarouselComputeContextService', () => {
       jobId: job.externalJobId,
       attemptId,
     });
+  });
+
+  it('treats equivalent ISO revision strings as the same deck', async () => {
+    const result = await buildCarouselExportContextSnapshot({}, {
+      job: {
+        externalJobId: 'job:carousel-iowacity-001',
+        tenantKey: 'iowacity',
+        cityKey: 'iowacity',
+        implementationRevision: 'relay-worker@test',
+        options: { deckId, deckRevision: '2026-09-11T19:58:00Z' },
+        lease: { attemptId },
+      },
+      now: new Date('2026-09-11T20:05:00.000Z'),
+    });
+    expect(result.data.snapshot.deckRevision).toBe(revision);
+    expect(mintExportToken).toHaveBeenCalled();
   });
 
   it('rejects a deck changed after job creation before minting grants', async () => {
