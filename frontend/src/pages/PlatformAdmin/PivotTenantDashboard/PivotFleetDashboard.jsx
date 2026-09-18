@@ -26,19 +26,29 @@ function PivotFleetDashboard() {
   const navigate = useNavigate();
   const { isDark } = useAdminDashboardTheme();
 
-  const { data, loading } = useFetch('/admin/platform/tenants', {
+  const { data, loading, refetch } = useFetch('/admin/platform/tenants', {
     cache: NO_FETCH_CACHE,
   });
 
   const tenants = data?.success ? data.data?.tenants || [] : [];
   const pivotTenants = useMemo(() => tenants.filter(isPivotTenant), [tenants]);
+  const mobileEnvOverrides = data?.success
+    ? data.data?.pivotMobileEnvOverrides || {}
+    : {};
 
   const menuItems = useMemo(
     () => [
       {
         label: 'Overview',
         icon: 'ic:round-dashboard',
-        element: <PivotFleetOverviewPage />,
+        element: (
+          <PivotFleetOverviewPage
+            tenants={tenants}
+            tenantsLoading={loading}
+            mobileEnvOverrides={mobileEnvOverrides}
+            onTenantsSaved={refetch}
+          />
+        ),
       },
       {
         label: 'Voice',
@@ -63,7 +73,7 @@ function PivotFleetDashboard() {
         ),
       },
     ],
-    [pivotTenants],
+    [pivotTenants, tenants, loading, mobileEnvOverrides, refetch],
   );
 
   return (

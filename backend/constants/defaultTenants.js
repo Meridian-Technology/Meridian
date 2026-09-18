@@ -22,6 +22,10 @@ const {
   validateCreatorPublishConfigPatch,
 } = require('../utilities/pivotCreatorPublishConfig');
 const {
+  mergePivotMobileConfigOverrides,
+  validatePivotMobileConfigPatch,
+} = require('../utilities/pivotMobileConfig');
+const {
   validatePivotDiscoveryConfigPatch,
 } = require('../utilities/pivotDiscoveryConfig');
 const {
@@ -272,6 +276,16 @@ function normalizeTenantOverride(row = {}) {
     }
   }
 
+  if (row.pivotMobileConfig !== undefined && row.pivotMobileConfig !== null) {
+    const mobileValidation = validatePivotMobileConfigPatch(row.pivotMobileConfig);
+    if (mobileValidation.error) {
+      return null;
+    }
+    if (mobileValidation.patch && Object.keys(mobileValidation.patch).length > 0) {
+      out.pivotMobileConfig = mobileValidation.patch;
+    }
+  }
+
   if (row.creatorPublish !== undefined && row.creatorPublish !== null) {
     const creatorValidation = validateCreatorPublishConfigPatch(row.creatorPublish);
     if (creatorValidation.error) {
@@ -314,6 +328,16 @@ function mergeSparseTenantOverrides(existing = {}, delta = {}) {
       merged.pivotDeckConfig = delta.pivotDeckConfig;
     }
   }
+  if (Object.prototype.hasOwnProperty.call(delta, 'pivotMobileConfig')) {
+    if (delta.pivotMobileConfig === null) {
+      delete merged.pivotMobileConfig;
+    } else {
+      merged.pivotMobileConfig = mergePivotMobileConfigOverrides(
+        existing.pivotMobileConfig,
+        delta.pivotMobileConfig,
+      );
+    }
+  }
   if (existing.richLocationControls || delta.richLocationControls) {
     merged.richLocationControls = {
       ...(existing.richLocationControls || {}),
@@ -332,6 +356,7 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
       provisioningConfirmations: pcPatch,
       pivotCrewConfig: crewPatch,
       pivotDeckConfig: deckPatch,
+      pivotMobileConfig: mobilePatch,
       creatorPublish: creatorPublishPatch,
       richLocationControls: richLocationControlsPatch,
       ...rest
@@ -356,6 +381,12 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
       next.pivotDeckConfig = mergePivotDeckConfigOverrides(
         base.pivotDeckConfig,
         deckPatch,
+      );
+    }
+    if (mobilePatch) {
+      next.pivotMobileConfig = mergePivotMobileConfigOverrides(
+        base.pivotMobileConfig,
+        mobilePatch,
       );
     }
     if (creatorPublishPatch) {
