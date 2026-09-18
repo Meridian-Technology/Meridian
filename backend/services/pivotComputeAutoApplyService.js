@@ -66,7 +66,8 @@ async function updateAutoApply(req, externalJobId, values) {
 }
 
 function queueReviewRequiredEmail(req, externalJobId) {
-  setImmediate(() => {
+  if (process.env.NODE_ENV === 'test') return;
+  const handle = setImmediate(() => {
     try {
       // Phase 4 is optional while this service is rolled out independently.
       const notifier = require('./pivotComputeAdminNotifyService'); // eslint-disable-line global-require
@@ -76,6 +77,7 @@ function queueReviewRequiredEmail(req, externalJobId) {
       }
     } catch (_) { /* email must never affect auto-apply */ }
   });
+  if (typeof handle.unref === 'function') handle.unref();
 }
 
 async function claimAutoApply(req, externalJobId, now) {
