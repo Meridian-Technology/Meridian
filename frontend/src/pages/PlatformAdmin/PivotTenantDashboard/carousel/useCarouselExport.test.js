@@ -88,6 +88,7 @@ describe('useCarouselExport', () => {
 
     expect(created).toHaveLength(1);
     expect(created[0].idempotencyKey).toMatch(/^idem:carousel-iowacity-/);
+    expect(created[0].idempotencyKey).toMatch(/^[a-zA-Z0-9:_-]{8,128}$/);
     expect(created[0].options).toEqual({ deckId: DECK, deckRevision: REVISION });
     expect(result.current.uiState).toBe('relay-notified');
     unmount();
@@ -122,6 +123,37 @@ describe('useCarouselExport', () => {
       deckRevision: REVISION,
       slideNumbers: [2],
     });
+    expect(created[0].idempotencyKey).toMatch(new RegExp(`^idem:carousel-iowacity-${DECK}-2-`));
+    expect(created[0].idempotencyKey).toMatch(/^[a-zA-Z0-9:_-]{8,128}$/);
+    unmount();
+  });
+
+  it('does not put dots in the idempotency key for a multi-slide export', async () => {
+    const created = [];
+    mockAuthenticatedRequest.mockImplementation(async (url, options) => {
+      if (url === '/admin/pivot/compute-jobs' && options?.method === 'POST') {
+        created.push(options.data.request);
+        return { data: { job: pendingJob(), created: true, wake: { status: 'accepted' } } };
+      }
+      if (url === '/admin/pivot/compute-jobs') {
+        return { data: { jobs: [] } };
+      }
+      return { data: { job: pendingJob() } };
+    });
+
+    const { result, unmount } = renderHook(() => useCarouselExport({
+      tenantKey: 'iowacity',
+      deck: { _id: DECK, updatedAt: REVISION, slides: [{}, {}, {}] },
+      dirty: false,
+    }));
+
+    await waitFor(() => expect(mockAuthenticatedRequest).toHaveBeenCalled());
+    await act(async () => {
+      await result.current.startExport([1, 3]);
+    });
+
+    expect(created[0].idempotencyKey).toMatch(new RegExp(`^idem:carousel-iowacity-${DECK}-1-3-`));
+    expect(created[0].idempotencyKey).toMatch(/^[a-zA-Z0-9:_-]{8,128}$/);
     unmount();
   });
 

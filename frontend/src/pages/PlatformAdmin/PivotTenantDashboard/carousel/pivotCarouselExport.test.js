@@ -1,6 +1,7 @@
 import {
   ARTIFACTS_EXPIRED_COPY,
   buildCarouselExportJobRequest,
+  carouselExportIdempotencyKey,
   carouselComputeJobsHref,
   carouselEditorHref,
   deriveExportUiState,
@@ -51,6 +52,37 @@ describe('carousel export helpers', () => {
         deckRevision: '2026-09-11T19:58:00.000Z',
       },
     });
+  });
+
+  it('builds idempotency keys the compute contract accepts', () => {
+    const pattern = /^[a-zA-Z0-9:_-]{8,128}$/;
+    const multi = carouselExportIdempotencyKey({
+      tenantKey: 'iowacity',
+      deckId: DECK,
+      slideNumbers: [1, 2, 3],
+      now: 1758157730123,
+    });
+    expect(multi).toBe(`idem:carousel-iowacity-${DECK}-1-2-3-1758157730123`);
+    expect(multi).toMatch(pattern);
+
+    const dotted = carouselExportIdempotencyKey({
+      reuseKey: `idem:carousel-iowacity-${DECK}-1.2.3-1758157730123`,
+      tenantKey: 'iowacity',
+      deckId: DECK,
+      now: 1758157730999,
+    });
+    expect(dotted).toBe(`idem:carousel-iowacity-${DECK}-all-1758157730999`);
+    expect(dotted).toMatch(pattern);
+
+    const longSelection = carouselExportIdempotencyKey({
+      tenantKey: 'iowacity',
+      deckId: DECK,
+      slideNumbers: Array.from({ length: 40 }, (_, index) => index + 1),
+      now: 1758157730123,
+    });
+    expect(longSelection.length).toBeLessThanOrEqual(128);
+    expect(longSelection).toMatch(pattern);
+    expect(longSelection).toContain('-sel-');
   });
 
   it('names only the slides that are not the whole deck', () => {
