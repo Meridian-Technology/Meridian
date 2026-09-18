@@ -1,4 +1,9 @@
 const mongoose = require('mongoose');
+const {
+  mergeExtractionHints,
+  MAX_PROMPT_HINTS,
+  MAX_PROMPT_HINT_LENGTH,
+} = require('../utilities/pivotExtractionHints');
 
 /**
  * Registry of event sources discovered for a city.
@@ -114,6 +119,17 @@ const pivotCitySourceSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    /** Host-wide extraction guidance, shared by curation jobs for this source. */
+    promptHints: {
+      type: [String],
+      default: [],
+      validate: [
+        (values) => Array.isArray(values)
+          && values.length <= MAX_PROMPT_HINTS
+          && values.every((value) => String(value).length <= MAX_PROMPT_HINT_LENGTH),
+        'promptHints exceed safe bounds',
+      ],
+    },
     createdBy: {
       type: String,
       default: null,
@@ -134,6 +150,9 @@ pivotCitySourceSchema.pre('validate', function normalizeFields() {
     this.seedTags = [
       ...new Set(this.seedTags.map((tag) => String(tag || '').trim()).filter(Boolean)),
     ];
+  }
+  if (Array.isArray(this.promptHints)) {
+    this.promptHints = mergeExtractionHints([], this.promptHints);
   }
 });
 
