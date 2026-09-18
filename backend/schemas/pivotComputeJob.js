@@ -157,6 +157,23 @@ const applicationAuditSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// This is deliberately separate from applicationAudit: an auto-apply attempt
+// can decide that a job still needs human review without applying anything.
+const autoApplySchema = new mongoose.Schema(
+  {
+    lastAttemptAt: { type: Date, default: null },
+    outcome: {
+      type: String,
+      default: null,
+      enum: ['applying', 'applied', 'skipped', 'failed'],
+    },
+    skipCode: { type: String, default: null, trim: true, maxlength: 64 },
+    message: { type: String, default: null, trim: true, maxlength: 1000 },
+    attemptCount: { type: Number, default: 0, min: 0, max: 100 },
+  },
+  { _id: false },
+);
+
 const jobFailureSchema = new mongoose.Schema(
   {
     code: { type: String, required: true, trim: true, maxlength: 64 },
@@ -255,6 +272,7 @@ const pivotComputeJobSchema = new mongoose.Schema(
     result: { type: storedResultSchema, default: null },
     exportArtifacts: { type: exportArtifactsSchema, default: null },
     applicationAudit: { type: applicationAuditSchema, default: null },
+    autoApply: { type: autoApplySchema, default: null },
     failure: { type: jobFailureSchema, default: null },
     requestedAt: { type: Date, required: true },
     leasedAt: { type: Date, default: null },
