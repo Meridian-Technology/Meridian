@@ -59,6 +59,10 @@ jest.mock('./PivotOverviewPanels', () => ({
   formatRate: (rate) => (rate == null || Number.isNaN(rate) ? '—' : `${Math.round(rate * 100)}%`),
 }));
 
+jest.mock('./PivotFleetMobileUpdatePanel', () => () => (
+  <div>fleet-mobile-update-panel</div>
+));
+
 describe('PivotFleetOverviewPage', () => {
   afterEach(() => {
     jest.clearAllMocks();
@@ -185,6 +189,7 @@ describe('PivotFleetOverviewPage', () => {
     );
 
     expect(screen.getByTestId('fleet-city')).toHaveTextContent('All cities');
+    expect(screen.getByText('fleet-mobile-update-panel')).toBeInTheDocument();
     expect(
       screen.getAllByRole('link', { name: /New York/i })[0],
     ).toHaveAttribute('href', '/platform-admin/pivot/nyc');

@@ -6,6 +6,7 @@ import PivotTenantPage from './PivotTenantPage';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
 import PivotOverviewPanels, { formatRate } from './PivotOverviewPanels';
 import PivotFleetReadinessCard from './PivotFleetReadinessCard';
+import PivotFleetMobileUpdatePanel from './PivotFleetMobileUpdatePanel';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import useOverviewMetricsSoften from './useOverviewMetricsSoften';
@@ -31,7 +32,12 @@ function cityCaption(name) {
 /**
  * Fleet Overview — same panels as the city page, rolled up across pivot tenants.
  */
-function PivotFleetOverviewPage() {
+function PivotFleetOverviewPage({
+  tenants = [],
+  tenantsLoading = false,
+  mobileEnvOverrides = {},
+  onTenantsSaved,
+}) {
   const initializedWeekRef = useRef(false);
   const {
     batchWeek,
@@ -281,6 +287,13 @@ function PivotFleetOverviewPage() {
           </p>
         </PivotOpsBanner>
       ) : null}
+
+      <PivotFleetMobileUpdatePanel
+        tenants={tenants}
+        loading={tenantsLoading}
+        envOverrides={mobileEnvOverrides}
+        onSaved={onTenantsSaved}
+      />
 
       {cityRows.length ? (
         <nav className="pivot-fleet-overview__city-rail" aria-label="Cities">
