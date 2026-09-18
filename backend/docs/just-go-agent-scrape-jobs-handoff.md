@@ -297,6 +297,100 @@ npm run discover:pivot-city-sources -- --tenant=ic
 
 `--plan` is the recommended first step on any new city: it prints every query, the categories covered, and the run's `max outbound calls` ceiling before a single credit is spent.
 
+---
+
+## Compute-job apply, audit, and notification operations
+
+Compute jobs keep a human review gate by default. A city can explicitly opt into a narrowly scoped **trusted auto-apply** policy when its refresh or discovery results are safe to publish through the existing compute apply path.
+
+### Tenant policy
+
+Platform admins manage the sparse per-city override through:
+
+```text
+PATCH /admin/pivot/tenants/:tenantKey/compute-apply-config
+```
+
+The effective policy is included in the tenant operations/overview payloads. Omitted values resolve to these safe defaults:
+
+| Setting | Default | Meaning |
+|---|---:|---|
+| `trusted` | `false` | Master switch; no job can auto-apply until a city is trusted. |
+| `autoApplyRefresh` | `false` | Permit `city-curation-refresh` jobs. |
+| `autoApplyDiscovery` | `false` | Permit `city-source-discovery` jobs. |
+| `autoApplyOrigins` | `['admin', 'schedule']` | Origins eligible for auto-apply. |
+| `notifyAdminsEmail` | `true` | Send platform-admin compute job notifications. |
+| `maxNewSources` | `null` | Optional discovery-source creation ceiling. |
+| `maxEventCreates` | `null` | Optional event-creation ceiling. |
+
+`trusted` alone is not enough: the matching kind toggle and origin must also be allowed. `carousel-export` is always excluded. A `null` guardrail means no limit; `0` is a valid “do not create any” limit. Keep these overrides sparse so newly added defaults can remain safe.
+
+### Trusted auto-apply lifecycle
+
+```text
+worker stores completed result → review-required
+  → async auto-apply eligibility check
+      → fresh server-side preview
+          → guardrail check → apply (or leave for review)
+```
+
+The submit hook runs only for completed results that require review. Failed/retryable submissions and `requiresReview: false` paths (including carousel export) do not enter auto-apply. The service records every decision in `job.autoApply`:
+
+- `lastAttemptAt`, `attemptCount`
+- `outcome`: `applying`, `applied`, `skipped`, or `failed`
+- `skipCode` and a concise `message`
+
+The job is atomically claimed before applying, retries transient failures up to three times in-process, and uses the idempotency key `auto:apply:{externalJobId}` with actor `system:auto-apply`. Large applies continue through the existing background-apply threshold; auto-apply does not create a second apply implementation.
+
+A blocked preview, a guardrail breach, or a terminal auto-apply error leaves the job in review-required and records its reason. This is deliberate: an operator can inspect and manually apply a current preview after correcting the policy or data.
+
+On process boot, the trusted-auto-apply backlog sweep rechecks review-required jobs with stored results and no `applicationAudit.appliedAt`. It makes one normal auto-apply attempt per candidate. Set `DISABLE_PIVOT_COMPUTE_AUTO_APPLY_STARTUP_SWEEP=true` to skip this recovery pass. There is **no periodic cron reconciliation** for auto-apply: the submit hook is the primary trigger and the one-time startup sweep covers interruptions.
+
+### Apply manifest
+
+Every completed or partial apply persists an `applicationAudit` manifest on the compute job after publish outcomes are known. It is the durable answer to “what did this apply actually do?”, separate from the worker result and preview.
+
+- `buckets[]`: grouped `entityType`, `disposition`, `ingestStatus`, `batchWeek`, and `count`.
+- `rows[]`: per-row `entityType`, `disposition`, `eventId`, `name`, `sourceUrl`, `batchWeek`, `ingestStatus`, `curationJobId`, `curationJobLabel`, and `message`.
+- `rowOverflowCount` indicates rows omitted by the manifest cap; `manifestGeneratedAt` records when it was built.
+- Existing audit fields continue to identify the preview, idempotency key, actor (including `system:auto-apply`), outcome, apply timestamp, drift, error, and aggregate summary.
+
+The manifest is bounded to 100 buckets, 500 rows, and 512 KiB so a large result cannot make a job document unmanageable. Admin compute-job serialization includes the audit; the job-detail endpoint can request `includeApplyManifest=true` when a list payload is trimmed. The compute inspector renders the bucket summary and a filterable row table, and marks jobs that were auto-applied or left for manual review.
+
+### Scrape learning and field locks
+
+Generic-site calendars retain operator corrections so the next scrape can use the same local knowledge:
+
+- A curation job has `extractionProfile.promptHints[]`, with `updatedAt` and `updatedBy`; a source may also carry host-level `promptHints[]`.
+- Hint text is normalized, case-insensitively deduplicated, and bounded before storage (30 hints, 600 characters per hint, 12 KiB total). Job-specific hints are passed into the generic-site extraction prompt.
+- Editing an ingest event with `rememberForCalendar` (on by default for generic-site) derives concise hints from relevant before/after changes and associates them with the source/job.
+- The editable, lockable fields are `start_time`, `end_time`, `location`, `description`, `image`, `sourceUrl`, and `hostName`. Each `ingestFieldLocks` entry stores `lockedAt` and `lockedBy`; duplicate/publish merges preserve a locked value until the operator explicitly unlocks it.
+
+Use the curation-job scrape-learning panel to review, edit, or clear hints. Use “Remember for this calendar” only for stable source conventions, not one-off event exceptions; use the per-field unlock control when the source has genuinely changed.
+
+### Platform-admin email notifications
+
+Compute job email is best-effort and never changes job state. Notifications go to the current platform-admin recipients and are controlled per tenant by `pivotComputeApply.notifyAdminsEmail`; set `DISABLE_PIVOT_COMPUTE_ADMIN_EMAILS=true` for an environment-wide stop.
+
+The supported notification types are:
+
+| Event | Email type | Contents |
+|---|---|---|
+| Result remains reviewable after submit/auto-apply | `review-required` | Stored-result summary and inspector link. |
+| Apply completes (including background completion) | `apply-complete` | Bucket table and up to 15 manifest rows. |
+| Refresh or discovery job reaches terminal failure | `failed` | Failure code and message. |
+| Carousel export completes without review | `carousel-complete` | Completion notice and inspector link. |
+
+Before sending, the notifier reserves `{ type, sentAt, recipientCount }` in `notifications.email[]` on the job. That reservation is the dedupe record, so repeated hooks, retries, and restarts cannot send the same notification type twice. Failures to resolve recipients or deliver through email are logged and swallowed; they must not make a compute job fail.
+
+Every email links to the compute inspector at:
+
+```text
+/platform-admin/pivot/:tenantKey?page=10&computeJobId=:externalJobId
+```
+
+The URL is generated by `computeJobInspectorHref`, so tenant keys and job ids are encoded consistently. Use that inspector—not an email summary alone—for full manifests, skipped-auto-apply reasons, and manual review/apply actions.
+
 ### Still open
 
 - **`FIRECRAWL_API_KEY` is not set in `Meridian/backend/.env`.** Neither `generic-site` nor discovery can do anything until it is; the CLI fails fast with that message rather than queueing doomed work.
