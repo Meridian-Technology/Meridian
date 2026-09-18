@@ -579,6 +579,33 @@ describe('pivotComputeJobStore', () => {
       expect(released.lease).toBeNull();
     });
 
+    it('reclaims an expired running lease so the next worker can claim it', async () => {
+      await createComputeJob(req, buildCreateInput());
+      const first = await claimNextPendingJob(req, {
+        kind: 'city-source-discovery',
+        workerId: 'worker-mini-1',
+        leaseMs: 120_000,
+        now: new Date('2026-09-08T20:05:00.000Z'),
+      });
+      await startComputeJob(req, {
+        externalJobId: first.job.externalJobId,
+        leaseToken: first.job.lease.token,
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-08T20:05:01.000Z'),
+      });
+
+      const second = await claimNextPendingJob(req, {
+        kind: 'city-source-discovery',
+        workerId: 'worker-mini-2',
+        leaseMs: 1000,
+        now: new Date('2026-09-08T20:08:00.000Z'),
+      });
+      expect(second.job.externalJobId).toBe(first.job.externalJobId);
+      expect(second.job.status).toBe('leased');
+      expect(second.job.lease.workerId).toBe('worker-mini-2');
+      expect(second.job.attemptCount).toBe(2);
+    });
+
     it('automatically reclaims expired work before the next claim', async () => {
       await createComputeJob(req, buildCreateInput());
       const first = await claimNextPendingJob(req, {

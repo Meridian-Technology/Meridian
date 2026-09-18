@@ -848,7 +848,15 @@ async function expireComputeJobLease(req, {
   const nextStatus = job.cancelRequested
     ? 'cancelled'
     : releaseToPending ? 'pending' : 'expired';
-  assertComputeJobTransition(job.status, nextStatus);
+  if (nextStatus === 'pending' && job.status === 'running') {
+    // An expired running lease is an interrupted attempt. The public graph
+    // goes running → retryable → pending; reclaim collapses that into one write
+    // so a disappeared worker does not strand the job or fail the next claim.
+    assertComputeJobTransition(job.status, 'retryable');
+    assertComputeJobTransition('retryable', 'pending');
+  } else {
+    assertComputeJobTransition(job.status, nextStatus);
+  }
 
   const attemptId = job.lease?.attemptId ?? null;
   const attemptNumber = job.lease?.attemptNumber ?? null;
@@ -923,11 +931,15 @@ async function reclaimExpiredComputeJobLeases(req, {
   const expired = await listExpiredLeaseJobs(req, { now, limit });
   const reclaimed = [];
   for (const job of expired) {
-    reclaimed.push(await expireComputeJobLease(req, {
-      externalJobId: job.externalJobId,
-      releaseToPending: true,
-      now,
-    }));
+    try {
+      reclaimed.push(await expireComputeJobLease(req, {
+        externalJobId: job.externalJobId,
+        releaseToPending: true,
+        now,
+      }));
+    } catch {
+      // One stranded job must not block claiming other pending work.
+    }
   }
   try {
     const { cleanupExpiredCarouselExports } = require('./pivotCarouselArtifactTransportService');
