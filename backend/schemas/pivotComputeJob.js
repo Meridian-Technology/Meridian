@@ -24,6 +24,12 @@ const MAX_PROGRESS_COUNTER_KEYS = 20;
 const MAX_EMBEDDED_RESULT_BYTES = 8 * 1024 * 1024;
 const MAX_ARTIFACT_REF_KEY_LENGTH = 256;
 const MAX_OPTIONS_BYTES = 16 * 1024;
+// Apply manifests are intentionally bounded independently of the stored worker
+// result. They are an operator-facing audit trail, not a second copy of a
+// potentially very large compute result.
+const MAX_APPLICATION_AUDIT_BUCKETS = 100;
+const MAX_APPLICATION_AUDIT_ROWS = 500;
+const MAX_APPLICATION_AUDIT_MANIFEST_BYTES = 512 * 1024;
 
 const progressSchema = new mongoose.Schema(
   {
@@ -130,6 +136,33 @@ const storedResultSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const applicationAuditBucketSchema = new mongoose.Schema(
+  {
+    entityType: { type: String, required: true, trim: true, maxlength: 64 },
+    disposition: { type: String, required: true, trim: true, maxlength: 64 },
+    ingestStatus: { type: String, default: null, trim: true, maxlength: 64 },
+    batchWeek: { type: String, default: null, trim: true, maxlength: 32 },
+    count: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const applicationAuditRowSchema = new mongoose.Schema(
+  {
+    entityType: { type: String, required: true, trim: true, maxlength: 64 },
+    disposition: { type: String, required: true, trim: true, maxlength: 64 },
+    eventId: { type: String, default: null, trim: true, maxlength: 128 },
+    name: { type: String, default: null, trim: true, maxlength: 512 },
+    sourceUrl: { type: String, default: null, trim: true, maxlength: 2048 },
+    batchWeek: { type: String, default: null, trim: true, maxlength: 32 },
+    ingestStatus: { type: String, default: null, trim: true, maxlength: 64 },
+    curationJobId: { type: String, default: null, trim: true, maxlength: 128 },
+    curationJobLabel: { type: String, default: null, trim: true, maxlength: 256 },
+    message: { type: String, default: null, trim: true, maxlength: 1000 },
+  },
+  { _id: false },
+);
+
 const applicationAuditSchema = new mongoose.Schema(
   {
     previewId: { type: String, default: null, trim: true, maxlength: 128 },
@@ -144,6 +177,10 @@ const applicationAuditSchema = new mongoose.Schema(
     errorCode: { type: String, default: null, trim: true, maxlength: 64 },
     errorMessage: { type: String, default: null, trim: true, maxlength: 1000 },
     previewDrift: { type: Boolean, default: false },
+    buckets: { type: [applicationAuditBucketSchema], default: undefined },
+    rows: { type: [applicationAuditRowSchema], default: undefined },
+    rowOverflowCount: { type: Number, default: 0, min: 0 },
+    manifestGeneratedAt: { type: Date, default: null },
     summary: {
       creates: { type: Number, default: 0, min: 0 },
       updates: { type: Number, default: 0, min: 0 },
@@ -300,6 +337,24 @@ pivotComputeJobSchema.pre('validate', function normalizeComputeJobFields() {
       this.invalidate('result.embedded', `embedded result exceeds ${MAX_EMBEDDED_RESULT_BYTES} bytes`);
     }
   }
+  if (this.applicationAudit) {
+    const { buckets, rows } = this.applicationAudit;
+    if (Array.isArray(buckets) && buckets.length > MAX_APPLICATION_AUDIT_BUCKETS) {
+      this.invalidate('applicationAudit.buckets', `application audit buckets exceed ${MAX_APPLICATION_AUDIT_BUCKETS}`);
+    }
+    if (Array.isArray(rows) && rows.length > MAX_APPLICATION_AUDIT_ROWS) {
+      this.invalidate('applicationAudit.rows', `application audit rows exceed ${MAX_APPLICATION_AUDIT_ROWS}`);
+    }
+    const manifest = {
+      buckets: buckets || [],
+      rows: rows || [],
+      rowOverflowCount: this.applicationAudit.rowOverflowCount || 0,
+      manifestGeneratedAt: this.applicationAudit.manifestGeneratedAt || null,
+    };
+    if (boundedByteLength(manifest, MAX_APPLICATION_AUDIT_MANIFEST_BYTES) > MAX_APPLICATION_AUDIT_MANIFEST_BYTES) {
+      this.invalidate('applicationAudit', `application audit manifest exceeds ${MAX_APPLICATION_AUDIT_MANIFEST_BYTES} bytes`);
+    }
+  }
 });
 
 pivotComputeJobSchema.index(
@@ -352,3 +407,6 @@ module.exports = pivotComputeJobSchema;
 module.exports.PIVOT_COMPUTE_JOB_INDEX_NAMES = PIVOT_COMPUTE_JOB_INDEX_NAMES;
 module.exports.MAX_EMBEDDED_RESULT_BYTES = MAX_EMBEDDED_RESULT_BYTES;
 module.exports.MAX_OPTIONS_BYTES = MAX_OPTIONS_BYTES;
+module.exports.MAX_APPLICATION_AUDIT_BUCKETS = MAX_APPLICATION_AUDIT_BUCKETS;
+module.exports.MAX_APPLICATION_AUDIT_ROWS = MAX_APPLICATION_AUDIT_ROWS;
+module.exports.MAX_APPLICATION_AUDIT_MANIFEST_BYTES = MAX_APPLICATION_AUDIT_MANIFEST_BYTES;
