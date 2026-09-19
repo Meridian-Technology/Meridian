@@ -2148,6 +2148,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         tenantKey={tenantKey}
         cityDisplayName={displayCity}
         catalogTags={catalogTags}
+        computeApplyPolicy={overview?.computeApplyPolicy || overview?.pivotComputeApply}
         onJobsChanged={refetchOps}
       />
 

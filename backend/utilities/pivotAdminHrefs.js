@@ -19,7 +19,13 @@ function journeysHref(tenantKey, batchWeek) {
   return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
 }
 
+function computeJobInspectorHref(tenantKey, externalJobId) {
+  const params = new URLSearchParams({ page: '10', computeJobId: externalJobId });
+  return `/platform-admin/pivot/${encodeURIComponent(tenantKey)}?${params.toString()}`;
+}
+
 module.exports = {
   curationHref,
   journeysHref,
+  computeJobInspectorHref,
 };

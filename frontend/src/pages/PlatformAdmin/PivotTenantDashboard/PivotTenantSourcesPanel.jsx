@@ -9,6 +9,29 @@ import './PivotTenantSourcesPanel.scss';
 
 const NO_FETCH_CACHE = { enabled: false };
 const EMPTY_LIST = [];
+const DEFAULT_COMPUTE_APPLY_POLICY = {
+  trusted: false,
+  autoApplyRefresh: false,
+  autoApplyDiscovery: false,
+  autoApplyOrigins: ['admin', 'schedule'],
+  notifyAdminsEmail: true,
+  maxNewSources: null,
+  maxEventCreates: null,
+};
+
+// Overview endpoints return the policy directly, while the config endpoint
+// returns it under `policy`. Accept both so a refetch cannot briefly reset the
+// controls to defaults while the surrounding admin payload catches up.
+function normalizeComputeApplyPolicy(value) {
+  const policy = value?.policy || value?.computeApplyPolicy || value;
+  if (!policy || typeof policy !== 'object') return null;
+  return {
+    ...policy,
+    autoApplyOrigins: Array.isArray(policy.autoApplyOrigins)
+      ? policy.autoApplyOrigins
+      : DEFAULT_COMPUTE_APPLY_POLICY.autoApplyOrigins,
+  };
+}
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -80,7 +103,13 @@ function SourceStatusCell({ source }) {
  * they are the reason a second run is cheaper than the first, and hiding them
  * would make the registry look like it had simply missed things.
  */
-function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMPTY_LIST, onJobsChanged }) {
+function PivotTenantSourcesPanel({
+  tenantKey,
+  cityDisplayName,
+  catalogTags = EMPTY_LIST,
+  computeApplyPolicy,
+  onJobsChanged,
+}) {
   const { addNotification } = useNotification();
   const [statusFilter, setStatusFilter] = useState('all');
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -88,7 +117,18 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
   const [options, setOptions] = useState(defaultOptions);
   const [starting, setStarting] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [savingComputeApply, setSavingComputeApply] = useState(false);
+  const [computeApply, setComputeApply] = useState(DEFAULT_COMPUTE_APPLY_POLICY);
   const hydratedFlowRef = useRef(false);
+
+  useEffect(() => {
+    const policy = normalizeComputeApplyPolicy(computeApplyPolicy);
+    if (!policy) return;
+    setComputeApply((current) => ({
+      ...current,
+      ...policy,
+    }));
+  }, [computeApplyPolicy]);
 
   const sourcesUrl = tenantKey
     ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/sources`
@@ -278,6 +318,47 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
       type: 'success',
     });
   }, [addNotification, options.flow, options.lumaSlug, options.partifulSlug, tenantKey]);
+
+  const updateComputeApply = useCallback(async (key, value) => {
+    if (!tenantKey || savingComputeApply) return;
+    const previous = computeApply;
+    const next = { ...previous, [key]: value };
+    setComputeApply(next);
+    setSavingComputeApply(true);
+    let data;
+    let error;
+    try {
+      ({ data, error } = await authenticatedRequest(
+        `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/compute-apply-config`,
+        { method: 'PATCH', data: { [key]: value } },
+      ));
+    } catch (requestError) {
+      error = requestError?.message || 'Could not update the city policy.';
+    } finally {
+      setSavingComputeApply(false);
+    }
+
+    if (error || !data?.success) {
+      setComputeApply(previous);
+      addNotification({
+        title: 'Could not update auto-apply settings',
+        message: error || data?.message || 'The city policy was not updated.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const policy = data?.data?.policy || data?.policy || data?.data?.computeApplyPolicy;
+    if (policy) {
+      setComputeApply((current) => ({ ...current, ...policy }));
+    }
+    addNotification({
+      title: 'Auto-apply settings saved',
+      message: 'The trusted compute-job policy now applies to this city.',
+      type: 'success',
+    });
+    onJobsChanged?.();
+  }, [addNotification, computeApply, onJobsChanged, savingComputeApply, tenantKey]);
 
   const notConfigured = Boolean(plan) && plan.runFirecrawl !== false && plan.configured === false;
   const nativeWarning = Boolean(plan) && plan.nativeWarning;
@@ -511,6 +592,62 @@ function PivotTenantSourcesPanel({ tenantKey, cityDisplayName, catalogTags = EMP
             </div>
           </div>
         ) : null}
+
+        <div className="pivot-sources__compute-apply" aria-label="Trusted compute-job apply settings">
+          <div className="pivot-sources__compute-apply-heading">
+            <div>
+              <h3>Trusted compute jobs</h3>
+              <p>
+                Automatically apply Mini results only after this city is trusted. Jobs outside
+                these settings remain available for manual review.
+              </p>
+            </div>
+            {savingComputeApply ? <span className="pivot-sources__saving">Saving…</span> : null}
+          </div>
+          <div className="pivot-sources__compute-apply-controls">
+            <label className="pivot-sources__check">
+              <input
+                type="checkbox"
+                checked={computeApply.trusted}
+                disabled={savingComputeApply || !tenantKey}
+                onChange={(event) => updateComputeApply('trusted', event.target.checked)}
+              />
+              <span>Trusted city</span>
+            </label>
+            <label className="pivot-sources__check">
+              <input
+                type="checkbox"
+                checked={computeApply.autoApplyRefresh}
+                disabled={savingComputeApply || !tenantKey}
+                onChange={(event) => updateComputeApply('autoApplyRefresh', event.target.checked)}
+              />
+              <span>Auto-apply refresh</span>
+            </label>
+            <label className="pivot-sources__check">
+              <input
+                type="checkbox"
+                checked={computeApply.autoApplyDiscovery}
+                disabled={savingComputeApply || !tenantKey}
+                onChange={(event) => updateComputeApply('autoApplyDiscovery', event.target.checked)}
+              />
+              <span>Auto-apply discovery</span>
+            </label>
+            <label className="pivot-sources__check">
+              <input
+                type="checkbox"
+                checked={computeApply.notifyAdminsEmail}
+                disabled={savingComputeApply || !tenantKey}
+                onChange={(event) => updateComputeApply('notifyAdminsEmail', event.target.checked)}
+              />
+              <span>Email admins on compute job results</span>
+            </label>
+          </div>
+          <p className="pivot-sources__compute-apply-meta">
+            Effective origins: {(computeApply.autoApplyOrigins || EMPTY_LIST).join(', ') || 'none'}.
+            {' '}Discovery guardrails: {computeApply.maxNewSources ?? 'no new-source limit'} ·
+            {' '}{computeApply.maxEventCreates ?? 'no event-create limit'}.
+          </p>
+        </div>
 
         <PivotComputeJobRunStatus
           job={discoveryCompute.job}

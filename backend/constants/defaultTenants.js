@@ -29,6 +29,10 @@ const {
   validatePivotDiscoveryConfigPatch,
 } = require('../utilities/pivotDiscoveryConfig');
 const {
+  validatePivotComputeApplyPolicyPatch,
+  mergePivotComputeApplyOverrides,
+} = require('../utilities/pivotComputeApplyPolicy');
+const {
   normalizeJustGoLocationConstraints,
 } = require('../utilities/justGoLocationConstraints');
 const {
@@ -180,6 +184,13 @@ function normalizeTenantRow(row = {}) {
   );
   if (richLocationControls) normalized.richLocationControls = richLocationControls;
 
+  if (row.pivotComputeApply !== undefined && row.pivotComputeApply !== null) {
+    const computeApplyValidation = validatePivotComputeApplyPolicyPatch(row.pivotComputeApply);
+    if (computeApplyValidation.patch && Object.keys(computeApplyValidation.patch).length > 0) {
+      normalized.pivotComputeApply = computeApplyValidation.patch;
+    }
+  }
+
   return normalizePivotDropFields(row, normalized);
 }
 
@@ -306,6 +317,16 @@ function normalizeTenantOverride(row = {}) {
     }
   }
 
+  if (row.pivotComputeApply !== undefined) {
+    const computeApplyValidation = validatePivotComputeApplyPolicyPatch(row.pivotComputeApply);
+    if (computeApplyValidation.error) return null;
+    if (computeApplyValidation.patch === null) {
+      out.pivotComputeApply = null;
+    } else if (Object.keys(computeApplyValidation.patch).length > 0) {
+      out.pivotComputeApply = computeApplyValidation.patch;
+    }
+  }
+
   return Object.keys(out).length > 1 ? out : null;
 }
 
@@ -344,6 +365,14 @@ function mergeSparseTenantOverrides(existing = {}, delta = {}) {
       ...(delta.richLocationControls || {}),
     };
   }
+  if (Object.prototype.hasOwnProperty.call(delta, 'pivotComputeApply')) {
+    const computeApply = mergePivotComputeApplyOverrides(
+      existing.pivotComputeApply,
+      delta.pivotComputeApply,
+    );
+    if (computeApply) merged.pivotComputeApply = computeApply;
+    else delete merged.pivotComputeApply;
+  }
   return merged;
 }
 
@@ -359,6 +388,7 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
       pivotMobileConfig: mobilePatch,
       creatorPublish: creatorPublishPatch,
       richLocationControls: richLocationControlsPatch,
+      pivotComputeApply: computeApplyPatch,
       ...rest
     } = row;
     const next = { ...base, ...rest };
@@ -400,6 +430,11 @@ function mergeTenantRows(baseRows = [], overrideRows = []) {
         ...(base.richLocationControls || {}),
         ...richLocationControlsPatch,
       };
+    }
+    if (computeApplyPatch !== undefined) {
+      const computeApply = mergePivotComputeApplyOverrides(base.pivotComputeApply, computeApplyPatch);
+      if (computeApply) next.pivotComputeApply = computeApply;
+      else delete next.pivotComputeApply;
     }
     merged.set(row.tenantKey, next);
   });

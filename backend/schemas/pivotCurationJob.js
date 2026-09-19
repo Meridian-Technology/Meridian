@@ -3,6 +3,29 @@ const mongoose = require('mongoose');
 const CURATION_PROVIDERS = ['partiful', 'luma', 'manual-json', 'generic-site'];
 const BATCH_WEEK_STRATEGIES = ['explicit', 'next-drop', 'current-iso'];
 const RUN_STATUSES = ['queued', 'running', 'completed', 'failed'];
+const {
+  mergeExtractionHints,
+  MAX_PROMPT_HINTS,
+  MAX_PROMPT_HINT_LENGTH,
+} = require('../utilities/pivotExtractionHints');
+
+const extractionProfileSchema = new mongoose.Schema(
+  {
+    promptHints: {
+      type: [String],
+      default: [],
+      validate: [
+        (values) => Array.isArray(values)
+          && values.length <= MAX_PROMPT_HINTS
+          && values.every((value) => String(value).length <= MAX_PROMPT_HINT_LENGTH),
+        'promptHints exceed safe bounds',
+      ],
+    },
+    updatedAt: { type: Date, default: null },
+    updatedBy: { type: String, default: null, trim: true, maxlength: 320 },
+  },
+  { _id: false },
+);
 
 const lastRunStatsSchema = new mongoose.Schema(
   {
@@ -82,6 +105,11 @@ const pivotCurationJobSchema = new mongoose.Schema(
       type: [lastRunEventSchema],
       default: [],
     },
+    /** Operator corrections that improve future generic-site extraction. */
+    extractionProfile: {
+      type: extractionProfileSchema,
+      default: () => ({ promptHints: [] }),
+    },
     createdBy: {
       type: String,
       default: null,
@@ -107,6 +135,15 @@ pivotCurationJobSchema.pre('validate', function normalizeFields() {
       .map((tag) => String(tag || '').trim())
       .filter(Boolean);
   }
+  if (this.extractionProfile) {
+    this.extractionProfile.promptHints = mergeExtractionHints(
+      [],
+      this.extractionProfile.promptHints,
+    );
+    if (this.extractionProfile.updatedBy != null) {
+      this.extractionProfile.updatedBy = String(this.extractionProfile.updatedBy).trim() || null;
+    }
+  }
 });
 
 pivotCurationJobSchema.index({ tenantKey: 1, createdAt: -1 });
@@ -116,3 +153,4 @@ module.exports = pivotCurationJobSchema;
 module.exports.CURATION_PROVIDERS = CURATION_PROVIDERS;
 module.exports.BATCH_WEEK_STRATEGIES = BATCH_WEEK_STRATEGIES;
 module.exports.RUN_STATUSES = RUN_STATUSES;
+module.exports.extractionProfileSchema = extractionProfileSchema;

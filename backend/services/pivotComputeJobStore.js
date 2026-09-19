@@ -94,6 +94,7 @@ function serializeJob(doc) {
       }
       : null,
     applicationAudit: value.applicationAudit ?? null,
+    autoApply: value.autoApply ?? null,
     failure: value.failure ?? null,
     requestedAt: value.requestedAt,
     leasedAt: value.leasedAt ?? null,
