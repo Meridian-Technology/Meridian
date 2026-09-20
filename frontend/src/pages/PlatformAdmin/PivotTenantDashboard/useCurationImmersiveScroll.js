@@ -278,6 +278,14 @@ export function useCurationImmersiveScroll({ enabled = true, scrollerRef }) {
     [lockOpen, paint, releaseToPage, scheduleSnap],
   );
 
+  const expand = useCallback(() => {
+    if (progressRef.current >= 1) return;
+    if (progressRef.current <= 0) {
+      if (!beginMorph()) return;
+    }
+    snapTo(1);
+  }, [beginMorph, snapTo]);
+
   const collapse = useCallback(() => {
     if (!immersiveRef.current) return;
     snapTo(0);
@@ -381,7 +389,7 @@ export function useCurationImmersiveScroll({ enabled = true, scrollerRef }) {
     };
   }, [applyDelta, beginMorph, cancelSnap, enabled, paint, scrollerRef]);
 
-  return { frameRef, slotRef, slotHeight, immersive, expanded, collapse };
+  return { frameRef, slotRef, slotHeight, immersive, expanded, collapse, expand };
 }
 
 export default useCurationImmersiveScroll;

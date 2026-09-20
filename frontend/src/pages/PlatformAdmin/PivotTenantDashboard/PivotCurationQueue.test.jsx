@@ -1,12 +1,96 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { EditorialWeightControl } from './PivotCurationQueue';
+import PivotCurationQueue, { EditorialWeightControl } from './PivotCurationQueue';
 
 jest.mock('../PivotLab/PivotManualImportModal', () => ({
   __esModule: true,
   default: () => null,
   isTypingTarget: () => false,
 }));
+jest.mock('../PivotLab/PivotImportThumb', () => () => <span>thumb</span>);
+jest.mock('../PivotLab/PivotTagMultiSelect', () => () => null);
+jest.mock('../../../components/Select/Select', () => () => null);
+jest.mock('./useCurationImmersiveScroll', () => ({
+  __esModule: true,
+  default: () => ({
+    frameRef: { current: null },
+    slotRef: { current: null },
+    slotHeight: 0,
+    immersive: false,
+    expanded: false,
+    collapse: jest.fn(),
+    expand: jest.fn(),
+  }),
+}));
+
+const FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'unpublished', label: 'Unpublished' },
+];
+
+function catalogEvents() {
+  return [
+    {
+      _id: '1',
+      name: 'Oakland disco',
+      organizerName: 'Nicki',
+      location: 'Oakland',
+      ingestStatus: 'staged',
+      locationReview: { status: 'needs_review', reason: 'out_of_scope' },
+      tags: ['dance'],
+    },
+    {
+      _id: '2',
+      name: 'Mission brunch',
+      organizerName: 'Ada',
+      location: 'SF',
+      ingestStatus: 'published',
+      tags: ['food'],
+    },
+  ];
+}
+
+function renderQueue(overrides = {}) {
+  return render(
+    <PivotCurationQueue
+      tenantKey="sf"
+      batchWeek="2026-W38"
+      events={catalogEvents()}
+      selectedIds={new Set()}
+      onSelectedIdsChange={jest.fn()}
+      filter="all"
+      onFilterChange={jest.fn()}
+      filterOptions={FILTERS}
+      sourceFilter="all"
+      onSourceFilterChange={jest.fn()}
+      hostCreatedCount={0}
+      catalogTags={[]}
+      bulkTags={[]}
+      onBulkTagsChange={jest.fn()}
+      showPerformance={false}
+      performanceById={new Map()}
+      busyKey={null}
+      releaseDisabled={false}
+      onEdit={jest.fn()}
+      onPublish={jest.fn()}
+      onUnpublish={jest.fn()}
+      onDelete={jest.fn()}
+      onBulkStage={jest.fn()}
+      onBulkPublish={jest.fn()}
+      onBulkUnpublish={jest.fn()}
+      onBulkApplyTags={jest.fn()}
+      onBulkSuggestTags={jest.fn()}
+      onBulkEnrichRichData={jest.fn()}
+      onBulkCollapseShowtimes={jest.fn()}
+      onBulkFeature={jest.fn()}
+      onBulkUnfeature={jest.fn()}
+      onToggleFeatured={jest.fn()}
+      onEditorialChange={jest.fn()}
+      onBulkEditorial={jest.fn()}
+      {...overrides}
+    />,
+  );
+}
 
 describe('EditorialWeightControl', () => {
   const event = { _id: 'event-1', name: 'Night Market', rankingOverride: null };
@@ -60,5 +144,37 @@ describe('EditorialWeightControl', () => {
     expect(screen.queryByText(/internal note/i)).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue('Launch pick')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save weight' })).not.toBeInTheDocument();
+  });
+});
+
+describe('PivotCurationQueue catalog', () => {
+  beforeAll(() => {
+    global.IntersectionObserver = class {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    };
+  });
+
+  it('searches the catalog, flags location review, and opens a popup', () => {
+    renderQueue();
+
+    expect(screen.getByRole('button', { name: 'Unpublished' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fullscreen' })).toBeInTheDocument();
+    expect(screen.getByText('Location review')).toBeInTheDocument();
+    expect(screen.getByText('Mission brunch').closest('tr')).toHaveClass('is-published');
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search catalog' }), {
+      target: { value: 'oakland' },
+    });
+    expect(screen.getByText('Oakland disco')).toBeInTheDocument();
+    expect(screen.queryByText('Mission brunch')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('grid', { name: 'Curation catalog' }), { key: 'Enter' });
+    expect(screen.getByText(/outside the city boundary/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open location review' })).toHaveAttribute(
+      'href',
+      '/platform-admin/pivot/sf?page=7&batchWeek=2026-W38',
+    );
   });
 });

@@ -12,6 +12,9 @@ import { isTypingTarget } from '../PivotLab/PivotManualImportModal';
 import { curationPublicEventUrl } from './curationPublicEventUrl';
 import { dragRangeSelection, nextSelection } from './curationQueueSelection';
 import useCurationImmersiveScroll from './useCurationImmersiveScroll';
+import { eventMatchesCatalogSearch } from './curationCatalogFilters';
+import { locationReviewBlock, locationReviewHref } from './curationPublishFeedback';
+import Popup from '../../../components/Popup/Popup';
 import './PivotCurationQueue.scss';
 
 const HOST_CREATED_SOURCE = 'justgo';
@@ -242,6 +245,7 @@ const CatalogRow = React.memo(function CatalogRow({
         selected ? 'is-selected' : '',
         focused ? 'is-focused' : '',
         event.outOfReviewRange ? 'is-out-of-range' : '',
+        event.ingestStatus === 'published' ? 'is-published' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -281,6 +285,14 @@ const CatalogRow = React.memo(function CatalogRow({
             title="Featured — public landing deck"
           >
             Featured
+          </span>
+        ) : null}
+        {locationReviewBlock(event) ? (
+          <span
+            className="pivot-curation-sheet__review-flag"
+            title={locationReviewBlock(event).detail}
+          >
+            Location review
           </span>
         ) : null}
         {editorialTierLabel(event) ? (
@@ -350,6 +362,8 @@ function QueueInspector({
   busyKey,
   releaseDisabled,
   releaseBlockReason,
+  tenantKey,
+  batchWeek,
 }) {
   if (!event) return null;
   const sourceHref = event.externalLink || event.sourceUrl;
@@ -360,6 +374,12 @@ function QueueInspector({
   const deleting = busyKey === `delete-${event._id}`;
   const featuring = busyKey === `feature-${event._id}`;
   const editorialSaving = busyKey === `editorial-${event._id}`;
+  const reviewBlock = locationReviewBlock(event);
+  const reviewHref = locationReviewHref(tenantKey, batchWeek);
+  const publishBlocked = Boolean(reviewBlock);
+  const publishTitle = reviewBlock
+    ? `${reviewBlock.title}. Approve the location before publishing.`
+    : releaseBlockReason || 'Publish this staged event';
 
   return (
     <aside className="pivot-curation-sheet__inspect" aria-label={`${event.name} details`}>
@@ -391,6 +411,17 @@ function QueueInspector({
         </p>
         {event.location ? (
           <p className="pivot-curation-sheet__inspect-meta">{event.location}</p>
+        ) : null}
+        {reviewBlock ? (
+          <div className="pivot-curation-sheet__review-callout" role="status">
+            <strong>{reviewBlock.title}</strong>
+            <p>{reviewBlock.detail} Publishing stays blocked until location review is approved.</p>
+            {reviewHref ? (
+              <a className="pivot-curation-sheet__inspect-link" href={reviewHref}>
+                Open location review
+              </a>
+            ) : null}
+          </div>
         ) : null}
         <div className="pivot-curation-sheet__inspect-status">
           <PivotOpsStatus tone={ingestTone(event.ingestStatus)}>
@@ -490,8 +521,8 @@ function QueueInspector({
               type="button"
               className="linear-btn linear-btn--primary"
               onClick={() => onPublish(event)}
-              disabled={releaseDisabled || publishing}
-              title={releaseBlockReason || 'Publish this staged event'}
+              disabled={releaseDisabled || publishing || publishBlocked}
+              title={publishTitle}
             >
               {publishing ? 'Publishing…' : 'Publish'}
             </button>
@@ -541,8 +572,9 @@ function QueueInspector({
 }
 
 function PivotCurationQueue({
+  tenantKey,
   batchWeek,
-  events,
+  events: catalogEvents,
   eventsLoading,
   eventsError,
   selectedIds,
@@ -590,15 +622,20 @@ function PivotCurationQueue({
   const [inspectingId, setInspectingId] = useState(null);
   const [dragSelecting, setDragSelecting] = useState(false);
   const [visibleCount, setVisibleCount] = useState(LAZY_CHUNK);
-  const eventsIdentity = `${events.length}:${events[0]?._id ?? ''}:${events[events.length - 1]?._id ?? ''}`;
-  const { frameRef, slotRef, slotHeight, immersive, expanded, collapse } = useCurationImmersiveScroll({
-    enabled: events.length > 0,
+  const [query, setQuery] = useState('');
+  const events = useMemo(
+    () => catalogEvents.filter((event) => eventMatchesCatalogSearch(event, query)),
+    [catalogEvents, query],
+  );
+  const eventsIdentity = `${query}:${events.length}:${events[0]?._id ?? ''}:${events[events.length - 1]?._id ?? ''}`;
+  const { frameRef, slotRef, slotHeight, immersive, expanded, collapse, expand } = useCurationImmersiveScroll({
+    enabled: catalogEvents.length > 0,
     scrollerRef,
   });
 
   const inspectingEvent = useMemo(
-    () => events.find((event) => String(event._id) === String(inspectingId)) || null,
-    [events, inspectingId],
+    () => catalogEvents.find((event) => String(event._id) === String(inspectingId)) || null,
+    [catalogEvents, inspectingId],
   );
 
   useEffect(() => {
@@ -693,7 +730,6 @@ function PivotCurationQueue({
       lastIndexRef.current = index;
       setFocusIndex(index);
     }
-    if (event?._id != null) setInspectingId(event._id);
     if (nextIds) onSelectedIdsChange(nextIds);
   }, [onSelectedIdsChange]);
 
@@ -710,7 +746,6 @@ function PivotCurationQueue({
       });
       if (!range) lastIndexRef.current = index;
       setFocusIndex(index);
-      setInspectingId(event._id);
       onSelectedIdsChange(nextIds);
     },
     [events, onSelectedIdsChange, selectedIds],
@@ -763,7 +798,7 @@ function PivotCurationQueue({
 
   const handlePanePointerDown = useCallback(
     (nativeEvent) => {
-      if (nativeEvent.button !== 0) return;
+      if (nativeEvent.button != null && nativeEvent.button !== 0) return;
       if (isInteractiveTarget(nativeEvent.target)) return;
       const row = nativeEvent.target.closest?.('tr[data-index]');
       if (!row) return;
@@ -797,6 +832,7 @@ function PivotCurationQueue({
       dragRef.current = {
         pointerId: nativeEvent.pointerId,
         startIndex: index,
+        event,
         dragging: false,
         additive,
         startX: nativeEvent.clientX,
@@ -844,13 +880,13 @@ function PivotCurationQueue({
   const handlePanePointerUp = useCallback(
     (nativeEvent) => {
       const drag = dragRef.current;
-      if (
-        nativeEvent.type === 'pointerup'
-        && drag?.touch
-        && drag.pointerId === nativeEvent.pointerId
-        && !drag.cancelled
-      ) {
-        previewAt(drag.event, drag.index, new Set([drag.event._id]));
+      if (nativeEvent.type === 'pointerup' && drag?.pointerId === nativeEvent.pointerId) {
+        if (drag.touch && !drag.cancelled) {
+          previewAt(drag.event, drag.index, new Set([drag.event._id]));
+          setInspectingId(drag.event._id);
+        } else if (!drag.touch && !drag.dragging && !drag.additive && drag.event?._id) {
+          setInspectingId(drag.event._id);
+        }
       }
       endDrag(nativeEvent.pointerId);
     },
@@ -888,6 +924,7 @@ function PivotCurationQueue({
         if (!focused) return;
         nativeEvent.preventDefault();
         previewAt(focused, focusIndex, new Set([focused._id]));
+        setInspectingId(focused._id);
         return;
       }
 
@@ -971,10 +1008,10 @@ function PivotCurationQueue({
           titleId="curation-queue"
           description={
             immersive
-              ? 'Scroll the list. Scroll up past the top to return.'
+              ? 'Scroll the list. Use Exit fullscreen, or scroll up past the top, to return.'
               : showPerformance
-                ? 'Click a row to preview · click and drag to select several. Interest % updates as the live batch gets swipes.'
-                : 'Click a row to preview · click and drag to select several. Draft and staged rows are ready to publish; published rows can be pulled back.'
+                ? 'Click a row to open it. Click and drag to select several. Interest % updates as the live batch gets swipes.'
+                : 'Click a row to open it. Click and drag to select several. Unpublished rows still need staging or location review before they can go live.'
           }
           actions={filterActions}
           className={`pivot-curation-sheet${immersive ? ' is-immersive' : ''}`}
@@ -1015,10 +1052,30 @@ function PivotCurationQueue({
           ) : null}
         </div>
       </div>
+      <div className="pivot-curation-sheet__toolbar">
+        <label className="pivot-curation-sheet__search">
+          <span className="visually-hidden">Search catalog</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search events, hosts, locations…"
+            autoComplete="off"
+            spellCheck="false"
+          />
+        </label>
+        <button
+          type="button"
+          className="linear-btn linear-btn--secondary linear-btn--sm pivot-curation-sheet__fullscreen"
+          onClick={() => (expanded ? collapse() : expand())}
+          disabled={!catalogEvents.length}
+          title={expanded ? 'Exit fullscreen catalog' : 'Open the catalog fullscreen'}
+        >
+          {expanded ? 'Exit fullscreen' : 'Fullscreen'}
+        </button>
+      </div>
       <div
-        className={`pivot-curation-sheet__layout${
-          inspectingEvent ? ' pivot-curation-sheet__layout--split' : ''
-        }`}
+        className="pivot-curation-sheet__layout"
       >
         <div
           ref={sheetRef}
@@ -1088,7 +1145,9 @@ function PivotCurationQueue({
             </div>
           ) : (
             <p className="pivot-lab__empty">
-              {emptyLabel || 'No events match this filter.'}
+              {query.trim()
+                ? 'No events match this search.'
+                : emptyLabel || 'No events match this filter.'}
             </p>
           )}
 
@@ -1231,21 +1290,29 @@ function PivotCurationQueue({
         </div>
 
         {inspectingEvent ? (
-          <QueueInspector
-            event={inspectingEvent}
-            perf={eventPerf(inspectingEvent, performanceById)}
-            showPerformance={showPerformance}
+          <Popup
+            isOpen
             onClose={() => setInspectingId(null)}
-            onEdit={onEdit}
-            onPublish={onPublish}
-            onUnpublish={onUnpublish}
-            onDelete={onDelete}
-            onToggleFeatured={onToggleFeatured}
-            onEditorialChange={onEditorialChange}
-            busyKey={busyKey}
-            releaseDisabled={releaseDisabled}
-            releaseBlockReason={releaseBlockReason}
-          />
+            customClassName="pivot-curation-inspect-popup"
+          >
+            <QueueInspector
+              event={inspectingEvent}
+              perf={eventPerf(inspectingEvent, performanceById)}
+              showPerformance={showPerformance}
+              onClose={() => setInspectingId(null)}
+              onEdit={onEdit}
+              onPublish={onPublish}
+              onUnpublish={onUnpublish}
+              onDelete={onDelete}
+              onToggleFeatured={onToggleFeatured}
+              onEditorialChange={onEditorialChange}
+              busyKey={busyKey}
+              releaseDisabled={releaseDisabled}
+              releaseBlockReason={releaseBlockReason}
+              tenantKey={tenantKey}
+              batchWeek={batchWeek}
+            />
+          </Popup>
         ) : null}
       </div>
     </PivotOpsSection>
