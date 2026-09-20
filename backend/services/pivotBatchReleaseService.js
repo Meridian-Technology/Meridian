@@ -10,6 +10,7 @@ const {
 } = require('./pivotBatchService');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const { REVIEW_REASON_COPY } = require('./pivotLocationReviewService');
 
 const UNRELEASE_CONFIRM_TOKEN = 'UNRELEASE';
 const STAGED_STATUS = 'staged';
@@ -73,6 +74,104 @@ function catalogWeekBaseQuery(batchWeek) {
   };
 }
 
+const SKIP_SELECT = 'name isDeleted customFields.pivot';
+
+function tallySkipCodes(skipped) {
+  const skippedByCode = {};
+  for (const row of skipped) {
+    const code = row.code || 'UNKNOWN';
+    skippedByCode[code] = (skippedByCode[code] || 0) + 1;
+  }
+  return skippedByCode;
+}
+
+/**
+ * Why a catalog event would not flip staged → published.
+ * Returns null when the event matches the release query.
+ */
+function explainReleaseSkip(doc, batchWeek) {
+  if (!doc || doc.isDeleted) {
+    return {
+      code: 'NOT_FOUND',
+      title: 'Event was not found in this week’s catalog',
+      detail: 'It may have been deleted, or the id does not belong to this city week.',
+    };
+  }
+  const pivot = doc.customFields?.pivot || {};
+  if (pivot.batchWeek !== batchWeek) {
+    return {
+      code: 'WRONG_WEEK',
+      title: 'This event is in a different catalog week',
+      detail: pivot.batchWeek
+        ? `It is assigned to ${pivot.batchWeek}, not ${batchWeek}.`
+        : 'It has no catalog week assigned.',
+    };
+  }
+  if (pivot.ingestStatus === PIVOT_FEED_INGEST_STATUS) {
+    return {
+      code: 'ALREADY_PUBLISHED',
+      title: 'Already live',
+      detail: 'This event is already published in the live feed.',
+    };
+  }
+  if (pivot.ingestStatus !== STAGED_STATUS) {
+    return {
+      code: 'NOT_STAGED',
+      title: 'Not staged',
+      detail: pivot.ingestStatus
+        ? `Status is ${pivot.ingestStatus}. Stage it before publishing.`
+        : 'Stage this event before publishing it to the live feed.',
+    };
+  }
+  if (pivot.locationReview?.status === 'needs_review') {
+    const reason = String(pivot.locationReview.reason || '').trim() || 'manual_review';
+    const copy = REVIEW_REASON_COPY[reason] || {
+      title: 'Location needs a human decision',
+      detail: 'Approve or correct the location before this event can go live.',
+    };
+    return {
+      code: 'LOCATION_REVIEW',
+      reason,
+      title: copy.title,
+      detail: copy.detail,
+    };
+  }
+  return null;
+}
+
+function serializeReleaseSkip(eventId, doc, batchWeek) {
+  const skip = explainReleaseSkip(doc, batchWeek);
+  if (!skip) return null;
+  return {
+    eventId: String(eventId),
+    name: doc?.name || null,
+    ...skip,
+  };
+}
+
+async function listReleaseSkips(Event, { batchWeek, eventIds }) {
+  if (eventIds) {
+    const docs = await Event.find({ _id: { $in: eventIds } })
+      .select(SKIP_SELECT)
+      .lean();
+    const byId = new Map(docs.map((doc) => [String(doc._id), doc]));
+    return eventIds
+      .map((id) => serializeReleaseSkip(id, byId.get(String(id)), batchWeek))
+      .filter(Boolean);
+  }
+
+  const blocked = await Event.find({
+    ...catalogWeekBaseQuery(batchWeek),
+    'customFields.pivot.ingestStatus': STAGED_STATUS,
+    'customFields.pivot.locationReview.status': 'needs_review',
+  })
+    .select(SKIP_SELECT)
+    .lean();
+  return blocked
+    .map((doc) => serializeReleaseSkip(doc._id, doc, batchWeek))
+    .filter(Boolean);
+}
+
 async function openTenantDb(tenantKey) {
   const db = await connectToDatabase(tenantKey);
   return { db, school: tenantKey };
@@ -119,15 +218,17 @@ async function releaseBatch(req, options = {}) {
     match._id = { $in: idsResult.eventIds };
   }
 
+  const skipped = await listReleaseSkips(Event, {
+    batchWeek,
+    eventIds: idsResult.eventIds,
+  });
+  const skippedCount = skipped.length;
+  const skippedByCode = tallySkipCodes(skipped);
+
   const updateResult = await Event.updateMany(match, {
     $set: { 'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS },
   });
   const releasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
-
-  let skippedCount = 0;
-  if (idsResult.eventIds) {
-    skippedCount = Math.max(0, idsResult.eventIds.length - releasedCount);
-  }
 
   await ensurePivotBatch(tenantReq, {
     batchWeek,
@@ -181,6 +282,7 @@ async function releaseBatch(req, options = {}) {
     batchWeek,
     releasedCount,
     skippedCount,
+    skippedByCode,
     partial: Boolean(idsResult.eventIds),
     releasedBy,
   });
@@ -191,6 +293,8 @@ async function releaseBatch(req, options = {}) {
       batchWeek,
       releasedCount,
       skippedCount,
+      skippedByCode,
+      skipped,
       batchStatus: batchDoc?.status || 'released',
       batch: serializePivotBatch(batchDoc),
       partial: Boolean(idsResult.eventIds),
@@ -331,4 +435,5 @@ module.exports = {
   UNRELEASE_CONFIRM_TOKEN,
   normalizeEventIds,
   resolveReleasedBy,
+  explainReleaseSkip,
 };

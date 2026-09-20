@@ -90,6 +90,11 @@ describe('releaseBatch', () => {
     Event = {
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 3 }),
       countDocuments: jest.fn(),
+      find: jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue([]),
+        }),
+      })),
     };
     PivotBatch = {
       findOneAndUpdate: jest.fn(() => ({
@@ -140,6 +145,8 @@ describe('releaseBatch', () => {
     expect(result.error).toBeUndefined();
     expect(result.data.releasedCount).toBe(3);
     expect(result.data.skippedCount).toBe(0);
+    expect(result.data.skipped).toEqual([]);
+    expect(result.data.skippedByCode).toEqual({});
     expect(result.data.batchStatus).toBe('released');
     expect(result.data.partial).toBe(false);
     expect(result.data.batch.releasedBy).toBe('ops@meridian.app');
@@ -174,6 +181,28 @@ describe('releaseBatch', () => {
 
   it('supports partial release via eventIds and reports skippedCount', async () => {
     Event.updateMany.mockResolvedValue({ modifiedCount: 1 });
+    Event.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: EVENT_A,
+            name: 'Ready night',
+            customFields: { pivot: { batchWeek: BATCH_WEEK, ingestStatus: 'staged' } },
+          },
+          {
+            _id: EVENT_B,
+            name: 'Oakland disco',
+            customFields: {
+              pivot: {
+                batchWeek: BATCH_WEEK,
+                ingestStatus: 'staged',
+                locationReview: { status: 'needs_review', reason: 'out_of_scope' },
+              },
+            },
+          },
+        ]),
+      }),
+    });
 
     const result = await releaseBatch(mockReq(), {
       tenantKey: 'nyc',
@@ -185,6 +214,14 @@ describe('releaseBatch', () => {
 
     expect(result.data.releasedCount).toBe(1);
     expect(result.data.skippedCount).toBe(1);
+    expect(result.data.skippedByCode).toEqual({ LOCATION_REVIEW: 1 });
+    expect(result.data.skipped[0]).toMatchObject({
+      eventId: EVENT_B,
+      name: 'Oakland disco',
+      code: 'LOCATION_REVIEW',
+      reason: 'out_of_scope',
+      title: 'The suggested place is outside the city boundary',
+    });
     expect(result.data.partial).toBe(true);
     expect(result.data.snapshot).toBeNull();
     expect(Event.updateMany).toHaveBeenCalledWith(
@@ -195,6 +232,39 @@ describe('releaseBatch', () => {
       expect.any(Object),
     );
     expect(rebuildWeeklySnapshot).not.toHaveBeenCalled();
+  });
+
+  it('reports location-review skips when releasing the whole week', async () => {
+    Event.updateMany.mockResolvedValue({ modifiedCount: 0 });
+    Event.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: EVENT_A,
+            name: 'Rollin with the Homos',
+            customFields: {
+              pivot: {
+                batchWeek: BATCH_WEEK,
+                ingestStatus: 'staged',
+                locationReview: { status: 'needs_review', reason: 'out_of_scope' },
+              },
+            },
+          },
+        ]),
+      }),
+    });
+
+    const result = await releaseBatch(mockReq(), {
+      tenantKey: 'nyc',
+      batchWeek: BATCH_WEEK,
+      now: NOW,
+      rebuildSnapshot: false,
+    });
+
+    expect(result.data.releasedCount).toBe(0);
+    expect(result.data.skippedCount).toBe(1);
+    expect(result.data.skipped[0].code).toBe('LOCATION_REVIEW');
+    expect(result.data.partial).toBe(false);
   });
 });
 
