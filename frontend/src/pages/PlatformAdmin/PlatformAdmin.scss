@@ -298,3 +298,48 @@ html[data-admin-dashboard-theme='dark'] {
     color: #e8eaed;
   }
 }
+
+/*
+ * Platform Admin on a phone: drop the inherited Dashboard heading (logo +
+ * spacer bar) and keep a floating menu control so page headers can use the
+ * full width.
+ */
+@media (max-width: 768px) {
+  .general-dash.platform-admin {
+    .mobile-heading {
+      position: fixed;
+      top: max(8px, env(safe-area-inset-top, 0px));
+      right: max(8px, env(safe-area-inset-right, 0px));
+      left: auto;
+      z-index: 200;
+      width: auto;
+      padding: 0;
+      background: transparent;
+      border: 0;
+      gap: 0;
+      pointer-events: none;
+
+      > :not(.mobile-hamburger):not(.mobile-login-btn) {
+        display: none;
+      }
+
+      .mobile-hamburger,
+      .mobile-login-btn {
+        pointer-events: auto;
+      }
+
+      .mobile-hamburger {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: var(--background, #fff);
+        border: 1px solid var(--lighterborder, rgba(26, 23, 20, 0.12));
+        box-shadow: 0 6px 20px rgba(22, 28, 45, 0.16);
+      }
+    }
+  }
+
+  .platform-admin .pivot-tenant-page__header-inner {
+    padding-right: 64px;
+  }
+}
