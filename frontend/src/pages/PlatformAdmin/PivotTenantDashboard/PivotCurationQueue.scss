@@ -561,9 +561,22 @@
       background: var(--pivot-ops-hover);
     }
 
+    &.is-published td {
+      background: rgba(46, 160, 90, 0.14);
+    }
+
+    &.is-published:hover td {
+      background: rgba(46, 160, 90, 0.22);
+    }
+
     &.is-selected td,
     &.is-selected:hover td {
       background: var(--pivot-ops-accent-soft);
+    }
+
+    &.is-published.is-selected td,
+    &.is-published.is-selected:hover td {
+      background: rgba(46, 160, 90, 0.32);
     }
 
     &.is-focused {
@@ -649,6 +662,47 @@
   font-size: 11px;
   font-weight: 600;
   color: var(--pivot-ops-accent, #ff4f1f);
+}
+
+.pivot-curation-sheet__review-flag {
+  display: inline-flex;
+  margin: 4px 6px 0 0;
+  padding: 1px 7px;
+  border-radius: var(--pivot-ops-radius-chip);
+  background: rgba(196, 132, 12, 0.14);
+  border: 1px solid rgba(180, 110, 8, 0.45);
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a5a00;
+}
+
+.pivot-curation-sheet__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 12px;
+}
+
+.pivot-curation-sheet__search {
+  flex: 1 1 220px;
+  min-width: 0;
+
+  input {
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: 10px;
+    background: var(--pivot-ops-surface);
+    color: var(--pivot-ops-ink);
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+}
+
+.pivot-curation-sheet__fullscreen {
+  flex: 0 0 auto;
 }
 
 .pivot-curation-sheet__editorial-badge {
@@ -861,6 +915,27 @@
   }
 }
 
+.pivot-curation-sheet__review-callout {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(180, 110, 8, 0.35);
+  border-radius: 12px;
+  background: rgba(196, 132, 12, 0.1);
+
+  strong {
+    font-size: 13px;
+    color: #8a5a00;
+  }
+
+  p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--pivot-ops-ink-muted);
+  }
+}
+
 .pivot-curation-sheet__inspect-kpis {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1006,6 +1081,10 @@
     min-height: 36px;
   }
 
+  .pivot-curation-sheet__toolbar {
+    padding-inline: 12px;
+  }
+
   .pivot-curation-sheet__scroller,
   .pivot-curation-frame.is-immersive .pivot-curation-sheet__scroller {
     max-height: min(68dvh, 620px);
@@ -1051,45 +1130,6 @@
     overflow-wrap: anywhere;
   }
 
-  .pivot-curation-sheet__inspect {
-    position: fixed;
-    z-index: 140;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    height: 100dvh;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    max-height: none;
-    overflow: hidden;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .pivot-curation-sheet__inspect-media {
-    flex: 0 0 auto;
-    max-height: 34dvh;
-  }
-
-  .pivot-curation-sheet__inspect-body {
-    padding: 16px max(16px, env(safe-area-inset-right))
-      calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  }
-
-  .pivot-curation-sheet__inspect-head {
-    position: sticky;
-    z-index: 2;
-    top: 0;
-    margin: -16px calc(-1 * max(16px, env(safe-area-inset-right))) 0
-      calc(-1 * max(16px, env(safe-area-inset-left)));
-    padding: calc(14px + env(safe-area-inset-top))
-      max(16px, env(safe-area-inset-right)) 12px
-      max(16px, env(safe-area-inset-left));
-    border-bottom: 1px solid var(--pivot-ops-border);
-    background: var(--pivot-ops-surface);
-  }
-
   .pivot-curation-sheet__inspect-actions .linear-btn {
     min-height: 42px;
   }
@@ -1098,5 +1138,28 @@
     max-height: 46dvh;
     overflow-y: auto;
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+}
+
+.popup-overlay .popup-content.pivot-curation-inspect-popup {
+  width: min(560px, calc(100vw - 20px));
+  max-height: min(92dvh, 880px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.pivot-curation-inspect-popup .pivot-curation-sheet__inspect {
+  border: 0;
+  max-height: min(92dvh, 880px);
+  animation: none;
+}
+
+@media (max-width: 980px), (pointer: coarse) {
+  .pivot-curation-frame:not(.is-expanded) .pivot-curation-sheet__scroller {
+    max-height: min(68dvh, 620px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 }

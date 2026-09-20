@@ -43,6 +43,8 @@ import PivotHostLiveWeekAlert, {
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
+import { FILTER_OPTIONS, eventMatchesFilter } from './curationCatalogFilters';
+import { releaseOutcomeNotification } from './curationPublishFeedback';
 import '../PivotLab/PivotLabPage.scss';
 import './PivotTenantDashboard.scss';
 import './PivotTenantCurationPage.scss';
@@ -53,18 +55,6 @@ const NO_FETCH_CACHE = { enabled: false };
 const EMPTY_LIST = [];
 const MONITOR_EVENTS_LIMIT = 100;
 const MAX_RICH_ENRICH_EVENTS = 50;
-const FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'staged', label: 'Staged' },
-  { value: 'published', label: 'Published' },
-  { value: 'untagged', label: 'Untagged' },
-  { value: 'missing-host', label: 'Missing host' },
-  { value: 'missing-rich-data', label: 'Missing rich data' },
-  { value: 'film', label: 'Showtimes' },
-  { value: 'featured', label: 'Featured' },
-];
-
 const HOST_CREATED_SOURCE = 'justgo';
 
 const PROVIDER_OPTIONS = [
@@ -85,29 +75,6 @@ const UNRELEASE_CONFIRM_TOKEN = 'UNRELEASE';
 
 function isHostCreatedEvent(event) {
   return event?.source === HOST_CREATED_SOURCE;
-}
-
-function eventMatchesFilter(event, filter) {
-  if (!filter || filter === 'all') return true;
-  if (filter === 'draft') return event.ingestStatus === 'draft';
-  if (filter === 'staged') return event.ingestStatus === 'staged';
-  if (filter === 'published') return event.ingestStatus === 'published';
-  if (filter === 'untagged') {
-    return !Array.isArray(event.tags) || event.tags.length === 0;
-  }
-  if (filter === 'missing-host') {
-    return !event.organizerName?.trim();
-  }
-  if (filter === 'missing-rich-data') {
-    return event.needsRichData === true;
-  }
-  if (filter === 'film') {
-    return Boolean(event.movie) || (Array.isArray(event.timeSlots) && event.timeSlots.length > 0);
-  }
-  if (filter === 'featured') {
-    return event.featured === true;
-  }
-  return true;
 }
 
 function eventMatchesSourceFilter(event, sourceFilter) {
@@ -933,11 +900,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
 
       refreshAll();
       setSelectedIds(new Set());
-      addNotification({
-        title: 'Published',
-        message: `${data.data?.releasedCount ?? 0} event(s) are now live for ${committedWeek}.`,
-        type: 'success',
-      });
+      addNotification(releaseOutcomeNotification(data.data, committedWeek));
       return true;
     },
     [
@@ -2557,6 +2520,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             loading={eventsLoading}
           />
           <PivotCurationQueue
+            tenantKey={tenantKey}
             batchWeek={batchWeek}
             events={filteredEvents}
             eventsLoading={eventsLoading}
