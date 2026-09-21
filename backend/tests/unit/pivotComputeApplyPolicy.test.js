@@ -4,13 +4,15 @@ const {
   resolvePivotComputeApplyPolicy,
   validatePivotComputeApplyPolicyPatch,
   mergePivotComputeApplyOverrides,
+  updateCityComputeApplyConfig,
 } = require('../../utilities/pivotComputeApplyPolicy');
 const {
   normalizeTenantRow,
   normalizeTenantOverride,
   mergeTenantRows,
 } = require('../../constants/defaultTenants');
-const { validateTenantMetadataUpdate } = require('../../services/tenantConfigService');
+const tenantConfigService = require('../../services/tenantConfigService');
+const { validateTenantMetadataUpdate } = tenantConfigService;
 
 describe('pivotComputeApplyPolicy', () => {
   it('resolves safe defaults for sparse tenant rows', () => {
@@ -76,5 +78,64 @@ describe('pivotComputeApplyPolicy', () => {
       [{ tenantKey: 'rpi', name: 'RPI', subdomain: 'rpi', pivotComputeApply: { trusted: true } }],
       [{ tenantKey: 'rpi', pivotComputeApply: { autoApplyRefresh: true } }],
     )[0].pivotComputeApply).toEqual({ trusted: true, autoApplyRefresh: true });
+  });
+
+  describe('updateCityComputeApplyConfig', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('merges a sparse trusted patch and returns the effective policy', async () => {
+      const stored = {
+        tenantKey: 'nyc',
+        tenantType: 'pivot',
+        pivotComputeApply: { notifyAdminsEmail: false },
+      };
+      jest.spyOn(tenantConfigService, 'getMergedTenants').mockResolvedValue([stored]);
+      jest.spyOn(tenantConfigService, 'getTenantByKey').mockResolvedValue(stored);
+      jest.spyOn(tenantConfigService, 'upsertStoredTenantRow').mockImplementation(async (_req, row) => row);
+
+      const result = await updateCityComputeApplyConfig(
+        { user: { email: 'ops@meridian.app' } },
+        { tenantKey: 'nyc', patch: { trusted: true, autoApplyRefresh: true } },
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(result.data.tenantKey).toBe('nyc');
+      expect(result.data.policy).toEqual(expect.objectContaining({
+        trusted: true,
+        autoApplyRefresh: true,
+        autoApplyDiscovery: false,
+        notifyAdminsEmail: false,
+      }));
+      expect(tenantConfigService.upsertStoredTenantRow).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          tenantKey: 'nyc',
+          pivotComputeApply: {
+            notifyAdminsEmail: false,
+            trusted: true,
+            autoApplyRefresh: true,
+          },
+        }),
+        'ops@meridian.app',
+      );
+    });
+
+    it('rejects an invalid boolean patch without writing', async () => {
+      jest.spyOn(tenantConfigService, 'getMergedTenants').mockResolvedValue([
+        { tenantKey: 'nyc', tenantType: 'pivot' },
+      ]);
+      const upsert = jest.spyOn(tenantConfigService, 'upsertStoredTenantRow');
+
+      const result = await updateCityComputeApplyConfig(
+        {},
+        { tenantKey: 'nyc', patch: { trusted: 'yes' } },
+      );
+
+      expect(result.code).toBe('INVALID_COMPUTE_APPLY_POLICY');
+      expect(result.status).toBe(400);
+      expect(upsert).not.toHaveBeenCalled();
+    });
   });
 });

@@ -109,6 +109,64 @@ function mergePivotComputeApplyOverrides(existing, patch) {
   return { ...(isPlainObject(existing) ? existing : {}), ...(isPlainObject(patch) ? patch : {}) };
 }
 
+function isPivotCityTenant(tenant) {
+  return tenant?.pivotPilot === true || tenant?.tenantType === 'pivot';
+}
+
+async function persistPivotComputeApplyPolicy(req, tenant, patch) {
+  const { getTenantByKey, upsertStoredTenantRow } = require('../services/tenantConfigService');
+  const tenantKey = tenant?.tenantKey;
+  if (!tenantKey || !patch || !Object.keys(patch).length) return tenant;
+
+  const current = (await getTenantByKey(req, tenantKey)) || tenant;
+  const nextApply = mergePivotComputeApplyOverrides(current.pivotComputeApply, patch);
+  return upsertStoredTenantRow(
+    req,
+    { ...current, pivotComputeApply: nextApply },
+    req?.user?.email || null,
+  );
+}
+
+async function updateCityComputeApplyConfig(req, options = {}) {
+  const { getMergedTenants } = require('../services/tenantConfigService');
+  const normalizedKey = String(options.tenantKey || '').trim().toLowerCase();
+  if (!normalizedKey) {
+    return {
+      error: 'tenantKey is required.',
+      status: 400,
+      code: 'TENANT_KEY_REQUIRED',
+    };
+  }
+
+  const tenant = (await getMergedTenants(req)).filter(isPivotCityTenant)
+    .find((row) => row.tenantKey === normalizedKey);
+  if (!tenant) {
+    return {
+      error: 'Pivot tenant not found.',
+      status: 404,
+      code: 'TENANT_NOT_FOUND',
+    };
+  }
+
+  const validation = validatePivotComputeApplyPolicyPatch(options.patch);
+  if (validation.error) return validation;
+  if (!validation.patch || !Object.keys(validation.patch).length) {
+    return { error: 'No compute-apply config changes.', status: 400, code: 'NO_CHANGES' };
+  }
+
+  try {
+    const saved = await persistPivotComputeApplyPolicy(req, tenant, validation.patch);
+    return {
+      data: {
+        tenantKey: tenant.tenantKey,
+        policy: resolvePivotComputeApplyPolicy(saved || { pivotComputeApply: mergePivotComputeApplyOverrides(tenant.pivotComputeApply, validation.patch) }),
+      },
+    };
+  } catch (err) {
+    return { error: err.message, status: 500, code: 'COMPUTE_APPLY_CONFIG_SAVE_FAILED' };
+  }
+}
+
 module.exports = {
   COMPUTE_APPLY_ORIGINS,
   DEFAULT_AUTO_APPLY_ORIGINS,
@@ -117,4 +175,6 @@ module.exports = {
   resolvePivotComputeApplyPolicy,
   validatePivotComputeApplyPolicyPatch,
   mergePivotComputeApplyOverrides,
+  persistPivotComputeApplyPolicy,
+  updateCityComputeApplyConfig,
 };

@@ -2,13 +2,18 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('../../middlewares/verifyToken', () => ({
-  verifyToken: (req, res, next) => {
+  verifyToken: jest.fn((req, res, next) => {
     req.user = {
       globalUserId: '507f191e810c19729de860ea',
       platformRoles: ['platform_admin'],
     };
     next();
-  },
+  }),
+}));
+
+jest.mock('../../utilities/pivotComputeApplyPolicy', () => ({
+  ...jest.requireActual('../../utilities/pivotComputeApplyPolicy'),
+  updateCityComputeApplyConfig: jest.fn(),
 }));
 
 jest.mock('../../middlewares/requirePlatformAdmin', () => ({
@@ -169,7 +174,9 @@ jest.mock('../../services/pivotLandingQrService', () => ({
   wipeLandingQrScans: jest.fn(),
 }));
 
+const { verifyToken } = require('../../middlewares/verifyToken');
 const { requirePlatformAdmin } = require('../../middlewares/requirePlatformAdmin');
+const { updateCityComputeApplyConfig } = require('../../utilities/pivotComputeApplyPolicy');
 const {
   rebuildWeeklySnapshot,
   getWeeklySnapshot,
@@ -1717,6 +1724,104 @@ describe('pivotAdminRoutes drop deck preview', () => {
       expect.anything(),
       expect.objectContaining({ userId: USER_ID, rebuild: 'true' }),
     );
+  });
+});
+
+describe('pivotAdminRoutes compute-apply-config', () => {
+  const allowVerifyToken = () => {
+    verifyToken.mockImplementation((req, _res, next) => {
+      req.user = {
+        globalUserId: '507f191e810c19729de860ea',
+        platformRoles: ['platform_admin'],
+      };
+      next();
+    });
+  };
+
+  beforeEach(() => {
+    updateCityComputeApplyConfig.mockReset();
+    allowVerifyToken();
+    requirePlatformAdmin.mockImplementation((req, res, next) => next());
+  });
+
+  it('PATCH /tenants/:tenantKey/compute-apply-config saves a trusted merge', async () => {
+    updateCityComputeApplyConfig.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        policy: {
+          trusted: true,
+          autoApplyRefresh: true,
+          autoApplyDiscovery: false,
+          autoApplyOrigins: ['admin', 'schedule'],
+          notifyAdminsEmail: true,
+          maxNewSources: null,
+          maxEventCreates: null,
+        },
+      },
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/compute-apply-config')
+      .send({ trusted: true, autoApplyRefresh: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.policy.trusted).toBe(true);
+    expect(response.body.data.policy.autoApplyRefresh).toBe(true);
+    expect(updateCityComputeApplyConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ globalDb: {} }),
+      expect.objectContaining({
+        tenantKey: 'nyc',
+        patch: expect.objectContaining({ trusted: true, autoApplyRefresh: true }),
+      }),
+    );
+  });
+
+  it('PATCH /tenants/:tenantKey/compute-apply-config rejects an invalid patch', async () => {
+    updateCityComputeApplyConfig.mockResolvedValue({
+      error: 'pivotComputeApply.trusted must be a boolean.',
+      status: 400,
+      code: 'INVALID_COMPUTE_APPLY_POLICY',
+    });
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/compute-apply-config')
+      .send({ trusted: 'yes' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('INVALID_COMPUTE_APPLY_POLICY');
+  });
+
+  it('PATCH /tenants/:tenantKey/compute-apply-config returns 401 without a token', async () => {
+    verifyToken.mockImplementation((_req, res) =>
+      res.status(401).json({
+        success: false,
+        message: 'No access token provided',
+        code: 'NO_TOKEN',
+      }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/compute-apply-config')
+      .send({ trusted: true });
+
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe('NO_TOKEN');
+    expect(updateCityComputeApplyConfig).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /tenants/:tenantKey/compute-apply-config returns 403 for non-platform-admin', async () => {
+    requirePlatformAdmin.mockImplementation((_req, res) =>
+      res.status(403).json({ success: false, message: 'Platform admin required.' }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/admin/pivot/tenants/nyc/compute-apply-config')
+      .send({ trusted: true });
+
+    expect(response.status).toBe(403);
+    expect(updateCityComputeApplyConfig).not.toHaveBeenCalled();
   });
 });
 

@@ -121,6 +121,7 @@ const {
   logPivotServiceSuccess,
 } = require('../utilities/pivotLogger');
 const { getMergedTenants } = require('../services/tenantConfigService');
+const { updateCityComputeApplyConfig } = require('../utilities/pivotComputeApplyPolicy');
 const { isPivotTenant } = require('../services/pivotReferralCodeService');
 const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
 const {
@@ -1649,6 +1650,42 @@ router.post(
       return res.status(500).json({
         success: false,
         message: 'Unable to stop the discovery agent.',
+      });
+    }
+  },
+);
+
+router.patch(
+  '/tenants/:tenantKey/compute-apply-config',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await updateCityComputeApplyConfig(req, {
+        tenantKey: req.params.tenantKey,
+        patch: req.body,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'PATCH /admin/pivot/tenants/:tenantKey/compute-apply-config',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to save compute-apply policy.',
       });
     }
   },

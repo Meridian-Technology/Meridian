@@ -25,6 +25,7 @@ const {
 } = require('../utilities/pivotIsoWeek');
 const { PIVOT_EVENT_STATUSES } = require('./pivotFeedService');
 const { resolvePivotDropConfig } = require('../utilities/pivotDropSchedule');
+const { resolvePivotComputeApplyPolicy } = require('../utilities/pivotComputeApplyPolicy');
 
 const HOST_CREATED_SOURCE = 'justgo';
 
@@ -406,6 +407,7 @@ async function aggregateTenantOverview(req, tenant, batchWeek, options = {}) {
   const row = {
     tenantKey,
     cityDisplayName: tenant.location || tenant.name || tenantKey,
+    computeApplyPolicy: resolvePivotComputeApplyPolicy(tenant),
     eventCount,
     interestedCount,
     registeredCount,
@@ -511,6 +513,7 @@ async function getPivotOverview(req, options = {}) {
       tenants.push({
         tenantKey: tenant.tenantKey,
         cityDisplayName: tenant.location || tenant.name || tenant.tenantKey,
+        computeApplyPolicy: resolvePivotComputeApplyPolicy(tenant),
         eventCount: 0,
         interestedCount: 0,
         registeredCount: 0,
@@ -617,6 +620,7 @@ async function getTenantOverview(req, options = {}) {
     data: {
       tenantKey: current.tenantKey,
       cityDisplayName: current.cityDisplayName,
+      computeApplyPolicy: current.computeApplyPolicy || resolvePivotComputeApplyPolicy(tenant),
       batchWeek,
       previousBatchWeek,
       kpis: {
