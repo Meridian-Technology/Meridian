@@ -21,6 +21,40 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function scheduleMaybeAutoApplyComputeJob(req, externalJobId) {
+  const handle = setImmediate(() => {
+    // Jest still observes the timer; skip the engine so submit tests do not
+    // race apply or open a second connectionsManager stack.
+    if (process.env.NODE_ENV === 'test') return;
+    try {
+      const { maybeAutoApplyComputeJob } = require('./pivotComputeAutoApplyService'); // eslint-disable-line global-require
+      Promise.resolve(maybeAutoApplyComputeJob(req, externalJobId)).catch(() => undefined);
+    } catch (_) {
+      // Deferred auto-apply must never change the stored submit outcome.
+    }
+  });
+  if (handle && typeof handle.unref === 'function') handle.unref();
+}
+
+function notifyTypeForTerminalJob(job, nextStatus) {
+  if (job?.kind === 'carousel-export' && nextStatus === 'completed') return 'carousel-complete';
+  if (nextStatus === 'review-required') return 'review-required';
+  if (nextStatus === 'failed') return 'failed';
+  return null;
+}
+
+function notifyComputeJobAdminsBestEffort(req, { job, type, tenant, policy } = {}) {
+  if (!job || !type) return;
+  // Submit/apply unit tests must not open Resend or mutate notification audit.
+  if (process.env.NODE_ENV === 'test') return;
+  try {
+    const { notifyAdminsOnComputeJob } = require('./pivotComputeAdminNotifyService'); // eslint-disable-line global-require
+    Promise.resolve(notifyAdminsOnComputeJob(req, { job, type, tenant, policy })).catch(() => undefined);
+  } catch (_) {
+    // Email is best-effort and must never fail the job.
+  }
+}
+
 function boundedCounters(rawCounters = {}) {
   const counters = new Map();
   for (const [key, value] of Object.entries(rawCounters || {})) {
@@ -32,7 +66,22 @@ function boundedCounters(rawCounters = {}) {
   return counters;
 }
 
-function serializeJob(doc) {
+function cloneAuditList(value) {
+  if (!Array.isArray(value)) return undefined;
+  return value.map((item) => (
+    item && typeof item.toObject === 'function' ? item.toObject() : { ...item }
+  ));
+}
+
+function serializeApplicationAudit(audit, { includeApplyManifest = true } = {}) {
+  if (!audit) return null;
+  const value = typeof audit.toObject === 'function' ? audit.toObject() : { ...audit };
+  if (includeApplyManifest) return value;
+  const { rows, ...rest } = value;
+  return rest;
+}
+
+function serializeJob(doc, { includeApplyManifest = true } = {}) {
   if (!doc) return null;
   const value = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   return {
@@ -93,7 +142,7 @@ function serializeJob(doc) {
         })),
       }
       : null,
-    applicationAudit: value.applicationAudit ?? null,
+    applicationAudit: serializeApplicationAudit(value.applicationAudit, { includeApplyManifest }),
     autoApply: value.autoApply ?? null,
     failure: value.failure ?? null,
     requestedAt: value.requestedAt,
@@ -702,7 +751,15 @@ async function submitComputeJobResult(req, {
     });
   }
 
-  return serializeJob(await PivotComputeJob.findById(job._id));
+  const serialized = serializeJob(await PivotComputeJob.findById(job._id));
+  const notifyType = notifyTypeForTerminalJob(serialized, nextStatus);
+  if (notifyType) {
+    notifyComputeJobAdminsBestEffort(req, { job: serialized, type: notifyType });
+  }
+  if (nextStatus === 'review-required') {
+    scheduleMaybeAutoApplyComputeJob(req, serialized.externalJobId);
+  }
+  return serialized;
 }
 
 async function cancelComputeJob(req, {
@@ -1054,6 +1111,8 @@ async function completeComputeJobApply(req, {
   errorCode = null,
   errorMessage = null,
   previewDrift = false,
+  manifest = null,
+  recordAppliedAt = true,
   now = new Date(),
 } = {}) {
   const { PivotComputeJob } = await getModels(req);
@@ -1082,15 +1141,20 @@ async function completeComputeJobApply(req, {
   assertComputeJobTransition(job.status, nextStatus);
 
   job.status = nextStatus;
-  job.set('applicationAudit', {
-    previewId: job.applicationAudit?.previewId ?? null,
+  const existingAudit = job.applicationAudit || {};
+  const nextBuckets = cloneAuditList(manifest?.buckets ?? existingAudit.buckets);
+  const nextRows = cloneAuditList(manifest?.rows ?? existingAudit.rows);
+  const applicationAudit = {
+    previewId: existingAudit.previewId ?? null,
     idempotencyKey: normalizedKey,
-    appliedAt: now,
-    appliedBy: trimString(actor) || job.applicationAudit?.appliedBy || null,
+    appliedAt: recordAppliedAt ? now : null,
+    appliedBy: trimString(actor) || existingAudit.appliedBy || null,
     outcome,
     errorCode: trimString(errorCode) || null,
     errorMessage: trimString(errorMessage) || null,
     previewDrift: Boolean(previewDrift),
+    rowOverflowCount: Number(manifest?.rowOverflowCount ?? existingAudit.rowOverflowCount) || 0,
+    manifestGeneratedAt: manifest?.manifestGeneratedAt ?? existingAudit.manifestGeneratedAt ?? null,
     summary: {
       creates: Number(summary.creates) || 0,
       updates: Number(summary.updates) || 0,
@@ -1100,7 +1164,10 @@ async function completeComputeJobApply(req, {
       rejected: Number(summary.rejected) || 0,
       skipped: Number(summary.skipped) || 0,
     },
-  });
+  };
+  if (nextBuckets) applicationAudit.buckets = nextBuckets;
+  if (nextRows) applicationAudit.rows = nextRows;
+  job.set('applicationAudit', applicationAudit);
   if (nextStatus === 'completed') {
     job.completedAt = now;
   }
@@ -1239,7 +1306,9 @@ async function createManualUploadReviewJob(req, {
     completedAt: now,
   });
 
-  return { job: serializeJob(created), created: true, duplicate: false };
+  const serialized = serializeJob(created);
+  notifyComputeJobAdminsBestEffort(req, { job: serialized, type: 'review-required' });
+  return { job: serialized, created: true, duplicate: false };
 }
 
 module.exports = {

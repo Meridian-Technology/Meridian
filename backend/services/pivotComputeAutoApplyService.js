@@ -15,6 +15,11 @@ const {
 
 const AUTO_APPLY_ACTOR = 'system:auto-apply';
 const MAX_AUTO_APPLY_ATTEMPTS = 3;
+const STARTUP_SWEEP_DISABLE_ENV = 'DISABLE_PIVOT_COMPUTE_AUTO_APPLY_STARTUP_SWEEP';
+const DEFAULT_STARTUP_SWEEP_LIMIT = 50;
+const MAX_STARTUP_SWEEP_LIMIT = 200;
+const DEFAULT_STARTUP_SWEEP_CONCURRENCY = 3;
+const MAX_STARTUP_SWEEP_CONCURRENCY = 8;
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -65,19 +70,15 @@ async function updateAutoApply(req, externalJobId, values) {
   );
 }
 
-function queueReviewRequiredEmail(req, externalJobId) {
+function notifyComputeJobAdminsBestEffort(req, { job, type, tenant, policy } = {}) {
+  if (!job || !type) return;
   if (process.env.NODE_ENV === 'test') return;
-  const handle = setImmediate(() => {
-    try {
-      // Phase 4 is optional while this service is rolled out independently.
-      const notifier = require('./pivotComputeAdminNotifyService'); // eslint-disable-line global-require
-      const notify = notifier.notifyAdminsOnComputeJobReviewRequired || notifier.notifyAdminsOnComputeJob;
-      if (typeof notify === 'function') {
-        Promise.resolve(notify(req, { externalJobId })).catch(() => undefined);
-      }
-    } catch (_) { /* email must never affect auto-apply */ }
-  });
-  if (typeof handle.unref === 'function') handle.unref();
+  try {
+    const { notifyAdminsOnComputeJob } = require('./pivotComputeAdminNotifyService'); // eslint-disable-line global-require
+    Promise.resolve(notifyAdminsOnComputeJob(req, { job, type, tenant, policy })).catch(() => undefined);
+  } catch (_) {
+    // Email must never affect auto-apply outcome or job state.
+  }
 }
 
 async function claimAutoApply(req, externalJobId, now) {
@@ -130,6 +131,9 @@ async function maybeAutoApplyComputeJob(req, externalJobId, { now = new Date() }
         lastAttemptAt: now, outcome: 'skipped', skipCode: denied,
         message: 'Tenant auto-apply policy does not permit this job.',
       });
+      notifyComputeJobAdminsBestEffort(freshReq, {
+        job: initial, type: 'review-required', tenant, policy,
+      });
     }
     return { attempted: false, outcome: 'skipped', skipCode: denied, policy };
   }
@@ -148,7 +152,9 @@ async function maybeAutoApplyComputeJob(req, externalJobId, { now = new Date() }
             ? (preview.blockingReasons || []).map((reason) => reason.code).join(', ') || 'Preview is not applyable.'
             : 'Configured auto-apply guardrail would be exceeded.',
         });
-        queueReviewRequiredEmail(freshReq, normalizedExternalJobId);
+        notifyComputeJobAdminsBestEffort(freshReq, {
+          job: claimed, type: 'review-required', tenant, policy,
+        });
         return { attempted: true, outcome: 'skipped', skipCode: blocked, preview, policy };
       }
       const applied = await applyStoredComputeJob(freshReq, normalizedExternalJobId, {
@@ -158,6 +164,23 @@ async function maybeAutoApplyComputeJob(req, externalJobId, { now = new Date() }
         preview,
         now: new Date(),
       });
+      if (applied?.skipCode === 'NATIVE_TAGS_REQUIRED') {
+        await updateAutoApply(freshReq, normalizedExternalJobId, {
+          outcome: 'skipped',
+          skipCode: 'NATIVE_TAGS_REQUIRED',
+          message: 'Native Luma/Partiful rows still have no catalog tags. Left for review.',
+        });
+        notifyComputeJobAdminsBestEffort(freshReq, {
+          job: claimed, type: 'review-required', tenant, policy,
+        });
+        return {
+          attempted: true,
+          outcome: 'skipped',
+          skipCode: 'NATIVE_TAGS_REQUIRED',
+          result: applied,
+          policy,
+        };
+      }
       await updateAutoApply(freshReq, normalizedExternalJobId, {
         outcome: 'applied', skipCode: null,
         message: applied.async ? 'Apply accepted for background completion.' : 'Applied automatically.',
@@ -169,7 +192,9 @@ async function maybeAutoApplyComputeJob(req, externalJobId, { now = new Date() }
       await updateAutoApply(freshReq, normalizedExternalJobId, {
         outcome: 'failed', skipCode, message: trimString(error?.message) || 'Automatic apply failed.',
       });
-      queueReviewRequiredEmail(freshReq, normalizedExternalJobId);
+      notifyComputeJobAdminsBestEffort(freshReq, {
+        job: claimed, type: 'review-required', tenant, policy,
+      });
       logPivot('warn', 'pivot compute auto-apply failed', { externalJobId: normalizedExternalJobId, tenantKey, code: skipCode });
       return { attempted: true, outcome: 'failed', skipCode, error, policy };
     }
@@ -177,12 +202,112 @@ async function maybeAutoApplyComputeJob(req, externalJobId, { now = new Date() }
   return { attempted: true, outcome: 'failed', skipCode: 'AUTO_APPLY_FAILED', policy };
 }
 
+function isStartupSweepDisabled() {
+  return process.env[STARTUP_SWEEP_DISABLE_ENV] === 'true';
+}
+
+function boundedPositiveInt(value, fallback, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  if (!items.length) return [];
+  const poolSize = Math.min(Math.max(1, concurrency), items.length);
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: poolSize }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }));
+  return results;
+}
+
+function startupSweepCandidateFilter() {
+  return {
+    status: 'review-required',
+    'result.embedded': { $ne: null },
+    $or: [
+      { applicationAudit: null },
+      { 'applicationAudit.appliedAt': null },
+    ],
+  };
+}
+
+async function sweepPendingAutoApplyComputeJobs(req, {
+  limit,
+  now = new Date(),
+  concurrency,
+} = {}) {
+  if (isStartupSweepDisabled()) {
+    return {
+      skipped: true,
+      skipCode: 'DISABLED',
+      attempted: 0,
+      candidates: 0,
+      results: [],
+    };
+  }
+
+  const boundedLimit = boundedPositiveInt(limit, DEFAULT_STARTUP_SWEEP_LIMIT, MAX_STARTUP_SWEEP_LIMIT);
+  const boundedConcurrency = boundedPositiveInt(
+    concurrency,
+    DEFAULT_STARTUP_SWEEP_CONCURRENCY,
+    MAX_STARTUP_SWEEP_CONCURRENCY,
+  );
+  const seed = req && req.globalDb ? req : await buildFreshServerContext();
+  const { PivotComputeJob } = getGlobalModels(seed, 'PivotComputeJob');
+  const candidates = await PivotComputeJob.find(startupSweepCandidateFilter())
+    .select({ externalJobId: 1 })
+    .sort({ completedAt: 1, _id: 1 })
+    .limit(boundedLimit)
+    .lean();
+
+  const results = await mapWithConcurrency(candidates, boundedConcurrency, async (candidate) => {
+    const externalJobId = normalizeExternalJobId(candidate);
+    try {
+      return await maybeAutoApplyComputeJob(seed, externalJobId, { now });
+    } catch (error) {
+      logPivot('warn', 'pivot compute auto-apply sweep candidate failed', {
+        externalJobId,
+        code: error?.code || 'AUTO_APPLY_FAILED',
+      });
+      return {
+        attempted: true,
+        outcome: 'failed',
+        skipCode: error?.code || 'AUTO_APPLY_FAILED',
+        error,
+      };
+    }
+  });
+
+  logPivot('info', 'pivot compute auto-apply startup sweep', {
+    candidates: candidates.length,
+    attempted: results.filter((row) => row && row.attempted).length,
+  });
+
+  return {
+    skipped: false,
+    candidates: candidates.length,
+    attempted: results.filter((row) => row && row.attempted).length,
+    results,
+  };
+}
+
 module.exports = {
   AUTO_APPLY_ACTOR,
   MAX_AUTO_APPLY_ATTEMPTS,
+  STARTUP_SWEEP_DISABLE_ENV,
+  DEFAULT_STARTUP_SWEEP_LIMIT,
+  DEFAULT_STARTUP_SWEEP_CONCURRENCY,
   buildFreshServerContext,
   guardrailSkipCode,
   isTransientError,
   normalizeExternalJobId,
   maybeAutoApplyComputeJob,
+  sweepPendingAutoApplyComputeJobs,
 };

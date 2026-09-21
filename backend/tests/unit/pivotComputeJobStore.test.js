@@ -19,6 +19,7 @@ const {
   expireComputeJobLease,
   beginComputeJobApply,
   completeComputeJobApply,
+  serializeJob,
   listComputeJobAttempts,
   listExpiredLeaseJobs,
 } = require('../../services/pivotComputeJobStore');
@@ -406,6 +407,147 @@ describe('pivotComputeJobStore', () => {
       expect(retried.contextVersion).toBe('ctx:iowacity.discovery.v2');
       expect(retried.result).toBeNull();
     });
+
+    it('schedules deferred auto-apply after a review-required submit', async () => {
+      await createComputeJob(req, buildCreateInput());
+      const claim = await claimNextPendingJob(req, {
+        kind: 'city-source-discovery',
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-08T20:05:00.000Z'),
+      });
+      await startComputeJob(req, {
+        externalJobId: claim.job.externalJobId,
+        leaseToken: claim.job.lease.token,
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-08T20:05:01.000Z'),
+      });
+
+      const queued = [];
+      const unref = jest.fn();
+      const setImmediateSpy = jest.spyOn(global, 'setImmediate').mockImplementation((fn) => {
+        queued.push(fn);
+        return { unref };
+      });
+      try {
+        const submitted = await submitComputeJobResult(req, {
+          externalJobId: claim.job.externalJobId,
+          leaseToken: claim.job.lease.token,
+          workerId: 'worker-mini-1',
+          result: loadFixture('result-discovery-valid-completed.json'),
+          now: new Date('2026-09-08T20:06:00.000Z'),
+        });
+        expect(submitted.status).toBe('review-required');
+        expect(queued).toHaveLength(1);
+        expect(unref).toHaveBeenCalled();
+      } finally {
+        setImmediateSpy.mockRestore();
+      }
+    });
+
+    it('does not schedule auto-apply for carousel-complete or requiresReview false', async () => {
+      const fixture = loadFixture('result-carousel-valid-completed.json');
+      await createComputeJob(req, buildCreateInput({
+        externalJobId: fixture.jobId,
+        kind: 'carousel-export',
+        contextVersion: fixture.basedOnContextVersion,
+        createIdempotencyKey: 'idem:create-carousel-no-auto-apply-001',
+        options: {
+          deckId: fixture.deckId,
+          deckRevision: fixture.renderedDeckRevision,
+        },
+      }));
+      const carouselClaim = await claimNextPendingJob(req, {
+        kind: 'carousel-export',
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-11T20:05:00.000Z'),
+      });
+      await startComputeJob(req, {
+        externalJobId: carouselClaim.job.externalJobId,
+        leaseToken: carouselClaim.job.lease.token,
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-11T20:05:01.000Z'),
+      });
+      const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+      await PivotComputeJob.updateOne(
+        { externalJobId: carouselClaim.job.externalJobId },
+        {
+          $set: {
+            exportArtifacts: {
+              attemptId: carouselClaim.attempt.id,
+              attemptNumber: carouselClaim.job.lease.attemptNumber,
+              prefix: `pivot-exports/iowacity/${fixture.jobId}/1/`,
+              grantId: 'grant:carousel-no-auto-apply-001',
+              finalizedAt: new Date('2026-09-11T20:07:00.000Z'),
+              expiresAt: new Date('2026-09-25T20:07:00.000Z'),
+              expired: false,
+              artifacts: fixture.artifacts.map((artifact) => ({
+                ...artifact,
+                objectKey: `pivot-exports/iowacity/${fixture.jobId}/1/${artifact.logicalName}`,
+              })),
+            },
+          },
+        },
+      );
+
+      const queued = [];
+      const setImmediateSpy = jest.spyOn(global, 'setImmediate').mockImplementation((fn) => {
+        queued.push(fn);
+        return { unref: jest.fn() };
+      });
+      try {
+        const carouselSubmitted = await submitComputeJobResult(req, {
+          externalJobId: carouselClaim.job.externalJobId,
+          leaseToken: carouselClaim.job.lease.token,
+          workerId: 'worker-mini-1',
+          result: { ...fixture, attemptId: carouselClaim.attempt.id },
+          requiresReview: true,
+          now: new Date('2026-09-11T20:08:00.000Z'),
+        });
+        expect(carouselSubmitted.status).toBe('completed');
+        expect(queued).toHaveLength(0);
+      } finally {
+        setImmediateSpy.mockRestore();
+      }
+
+      await createComputeJob(req, buildCreateInput({
+        externalJobId: 'job:discovery-no-review-001',
+        createIdempotencyKey: 'idem:create-discovery-no-review-001',
+      }));
+      const discoveryClaim = await claimNextPendingJob(req, {
+        kind: 'city-source-discovery',
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-08T21:05:00.000Z'),
+      });
+      await startComputeJob(req, {
+        externalJobId: discoveryClaim.job.externalJobId,
+        leaseToken: discoveryClaim.job.lease.token,
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-08T21:05:01.000Z'),
+      });
+      const discoveryQueued = [];
+      const discoverySpy = jest.spyOn(global, 'setImmediate').mockImplementation((fn) => {
+        discoveryQueued.push(fn);
+        return { unref: jest.fn() };
+      });
+      try {
+        const completed = await submitComputeJobResult(req, {
+          externalJobId: discoveryClaim.job.externalJobId,
+          leaseToken: discoveryClaim.job.lease.token,
+          workerId: 'worker-mini-1',
+          result: {
+            ...loadFixture('result-discovery-valid-completed.json'),
+            jobId: discoveryClaim.job.externalJobId,
+            idempotencyKey: 'result:discovery-no-review-001',
+          },
+          requiresReview: false,
+          now: new Date('2026-09-08T21:06:00.000Z'),
+        });
+        expect(completed.status).toBe('completed');
+        expect(discoveryQueued).toHaveLength(0);
+      } finally {
+        discoverySpy.mockRestore();
+      }
+    });
   });
 
   describe('admin cancellation and apply audit', () => {
@@ -528,6 +670,86 @@ describe('pivotComputeJobStore', () => {
       });
       expect(partial.status).toBe('review-required');
       expect(partial.applicationAudit.outcome).toBe('partial');
+    });
+
+    it('persists apply-manifest rows through complete and omits them when includeApplyManifest is false', async () => {
+      await createComputeJob(req, buildCreateInput());
+      const claim = await claimNextPendingJob(req, {
+        kind: 'city-source-discovery',
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-08T20:05:00.000Z'),
+      });
+      await startComputeJob(req, {
+        externalJobId: claim.job.externalJobId,
+        leaseToken: claim.job.lease.token,
+        workerId: 'worker-mini-1',
+        now: new Date('2026-09-08T20:05:01.000Z'),
+      });
+      await submitComputeJobResult(req, {
+        externalJobId: claim.job.externalJobId,
+        leaseToken: claim.job.lease.token,
+        workerId: 'worker-mini-1',
+        result: loadFixture('result-discovery-valid-completed.json'),
+        now: new Date('2026-09-08T20:06:00.000Z'),
+      });
+      await beginComputeJobApply(req, {
+        externalJobId: claim.job.externalJobId,
+        actor: 'admin@example.com',
+        idempotencyKey: 'apply:manifest-001',
+      });
+
+      const generatedAt = new Date('2026-09-08T20:20:04.000Z');
+      const { PivotComputeJob } = getGlobalModels(req, 'PivotComputeJob');
+      await PivotComputeJob.updateOne(
+        { externalJobId: claim.job.externalJobId },
+        {
+          $set: {
+            'applicationAudit.buckets': [{
+              entityType: 'event',
+              disposition: 'created',
+              ingestStatus: 'draft',
+              batchWeek: '2026-W37',
+              count: 1,
+            }],
+            'applicationAudit.rows': [{
+              entityType: 'event',
+              disposition: 'created',
+              name: 'Jazz Night',
+              sourceUrl: 'https://example-theatre.org/events/show-1',
+            }],
+            'applicationAudit.rowOverflowCount': 0,
+            'applicationAudit.manifestGeneratedAt': generatedAt,
+          },
+        },
+      );
+
+      const completed = await completeComputeJobApply(req, {
+        externalJobId: claim.job.externalJobId,
+        actor: 'admin@example.com',
+        idempotencyKey: 'apply:manifest-001',
+        summary: { creates: 1 },
+        now: new Date('2026-09-08T20:20:05.000Z'),
+      });
+      expect(completed.applicationAudit.outcome).toBe('completed');
+      expect(completed.applicationAudit.summary.creates).toBe(1);
+      expect(completed.applicationAudit.buckets).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'event',
+          disposition: 'created',
+          ingestStatus: 'draft',
+          batchWeek: '2026-W37',
+          count: 1,
+        }),
+      ]));
+      expect(completed.applicationAudit.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ entityType: 'event', name: 'Jazz Night' }),
+      ]));
+      expect(completed.applicationAudit.manifestGeneratedAt).toEqual(generatedAt);
+
+      const trimmed = serializeJob(completed, { includeApplyManifest: false });
+      expect(trimmed.applicationAudit.rows).toBeUndefined();
+      expect(trimmed.applicationAudit.buckets).toHaveLength(1);
+      expect(trimmed.applicationAudit.manifestGeneratedAt).toEqual(generatedAt);
     });
   });
 
