@@ -64,6 +64,10 @@ jest.mock('../../services/pivotAcquisitionFunnelService', () => ({
   getAcquisitionFunnel: jest.fn(),
 }));
 
+jest.mock('../../services/pivotDeckReplayService', () => ({
+  getUserDeckReplay: jest.fn(),
+}));
+
 jest.mock('../../services/pivotTenantOpsService', () => ({
   getTenantOpsBundle: jest.fn(),
 }));
@@ -208,6 +212,7 @@ const {
   wipeUserWeekIntents,
 } = require('../../services/pivotTenantJourneyService');
 const { getAcquisitionFunnel } = require('../../services/pivotAcquisitionFunnelService');
+const { getUserDeckReplay } = require('../../services/pivotDeckReplayService');
 const { getTenantOpsBundle } = require('../../services/pivotTenantOpsService');
 const { getFleetOpsBundle } = require('../../services/pivotFleetOpsService');
 const { previewAdminDropDeck } = require('../../services/pivotAdminDropDeckService');
@@ -1497,6 +1502,7 @@ describe('pivotAdminRoutes journeys', () => {
     getJourneyPath.mockReset();
     searchJourneyUsers.mockReset();
     getUserJourneyHistory.mockReset();
+    getUserDeckReplay.mockReset();
     wipeUserWeekIntents.mockReset();
     requirePlatformAdmin.mockImplementation((req, res, next) => next());
   });
@@ -1607,6 +1613,29 @@ describe('pivotAdminRoutes journeys', () => {
     expect(response.status).toBe(200);
     expect(response.body.data.intents).toHaveLength(1);
     expect(getUserJourneyHistory).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: USER_ID, batchWeek: '2026-W28' }),
+    );
+  });
+
+  it('GET /tenants/:tenantKey/journeys/users/:userId/deck-replay returns sessions', async () => {
+    getUserDeckReplay.mockResolvedValue({
+      data: {
+        tenantKey: 'nyc',
+        batchWeek: '2026-W28',
+        user: { userId: USER_ID, name: 'Ada' },
+        sessions: [{ index: 0, cards: [] }],
+        cardCount: 0,
+      },
+    });
+
+    const response = await request(buildApp()).get(
+      `/admin/pivot/tenants/nyc/journeys/users/${USER_ID}/deck-replay?batchWeek=2026-W28`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.sessions).toHaveLength(1);
+    expect(getUserDeckReplay).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ userId: USER_ID, batchWeek: '2026-W28' }),
     );
