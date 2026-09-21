@@ -28,6 +28,7 @@ import PivotCatalogEventEditModal, {
 import PivotReadinessCard from './PivotReadinessCard';
 import PivotCurationMonitorPanel from './PivotCurationMonitorPanel';
 import PivotCurationQueue from './PivotCurationQueue';
+import useOptimisticIngestStatus from './useOptimisticIngestStatus';
 import PivotBatchTagRadar from './PivotBatchTagRadar';
 import PivotRichDataEnrichmentPopup from './PivotRichDataEnrichmentPopup';
 import PivotTenantSourcesPanel from './PivotTenantSourcesPanel';
@@ -43,6 +44,9 @@ import PivotHostLiveWeekAlert, {
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
+import { FILTER_OPTIONS, eventMatchesFilter } from './curationCatalogFilters';
+import { eventPublishBlock, releaseOutcomeNotification } from './curationPublishFeedback';
+import useBrokenCatalogImages from './useBrokenCatalogImages';
 import '../PivotLab/PivotLabPage.scss';
 import './PivotTenantDashboard.scss';
 import './PivotTenantCurationPage.scss';
@@ -53,18 +57,6 @@ const NO_FETCH_CACHE = { enabled: false };
 const EMPTY_LIST = [];
 const MONITOR_EVENTS_LIMIT = 100;
 const MAX_RICH_ENRICH_EVENTS = 50;
-const FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'staged', label: 'Staged' },
-  { value: 'published', label: 'Published' },
-  { value: 'untagged', label: 'Untagged' },
-  { value: 'missing-host', label: 'Missing host' },
-  { value: 'missing-rich-data', label: 'Missing rich data' },
-  { value: 'film', label: 'Showtimes' },
-  { value: 'featured', label: 'Featured' },
-];
-
 const HOST_CREATED_SOURCE = 'justgo';
 
 const PROVIDER_OPTIONS = [
@@ -85,29 +77,6 @@ const UNRELEASE_CONFIRM_TOKEN = 'UNRELEASE';
 
 function isHostCreatedEvent(event) {
   return event?.source === HOST_CREATED_SOURCE;
-}
-
-function eventMatchesFilter(event, filter) {
-  if (!filter || filter === 'all') return true;
-  if (filter === 'draft') return event.ingestStatus === 'draft';
-  if (filter === 'staged') return event.ingestStatus === 'staged';
-  if (filter === 'published') return event.ingestStatus === 'published';
-  if (filter === 'untagged') {
-    return !Array.isArray(event.tags) || event.tags.length === 0;
-  }
-  if (filter === 'missing-host') {
-    return !event.organizerName?.trim();
-  }
-  if (filter === 'missing-rich-data') {
-    return event.needsRichData === true;
-  }
-  if (filter === 'film') {
-    return Boolean(event.movie) || (Array.isArray(event.timeSlots) && event.timeSlots.length > 0);
-  }
-  if (filter === 'featured') {
-    return event.featured === true;
-  }
-  return true;
 }
 
 function eventMatchesSourceFilter(event, sourceFilter) {
@@ -419,13 +388,19 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     if (meta?.action === 'apply' && !meta?.optimistic) refetchOps();
   }, [refetchOps, refreshCompute]);
 
-  const events =
+  const catalogEvents =
     ops?.catalog && !ops.catalog.error
       ? (ops.catalog.events ?? EMPTY_LIST)
       : EMPTY_LIST;
+  const {
+    events,
+    apply: applyIngestStatus,
+    revert: revertIngestStatus,
+  } = useOptimisticIngestStatus(catalogEvents);
   const eventsLoading = opsLoading && committedWeekValid && !ops?.catalog;
   const eventsError = ops?.catalog?.error || null;
   const outOfWeekCount = ops?.catalog?.outOfWeekCount ?? 0;
+  const { brokenIds, scanning: scanningBrokenImages } = useBrokenCatalogImages(events);
 
   const {
     data: tagsResponse,
@@ -462,11 +437,12 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     return events
       .filter(
         (event) =>
-          eventMatchesFilter(event, filter) && eventMatchesSourceFilter(event, sourceFilter),
+          eventMatchesFilter(event, filter, { brokenImageIds: brokenIds })
+          && eventMatchesSourceFilter(event, sourceFilter),
       )
       .slice()
       .sort((a, b) => compareCurationEvents(a, b, { hostCreatedOnly }));
-  }, [events, filter, sourceFilter]);
+  }, [events, filter, sourceFilter, brokenIds]);
 
   const performanceById = useMemo(() => {
     const map = new Map();
@@ -484,6 +460,13 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     () => events.filter((e) => e.ingestStatus === 'staged').length,
     [events],
   );
+  const publishableStagedEvents = useMemo(
+    () => events.filter(
+      (event) => event.ingestStatus === 'staged'
+        && !eventPublishBlock(event, { brokenImageIds: brokenIds }),
+    ),
+    [brokenIds, events],
+  );
   const draftCount = useMemo(
     () => events.filter((e) => e.ingestStatus === 'draft').length,
     [events],
@@ -499,10 +482,10 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     setEditingEvent(match);
   }, [urlEventId, events, eventsLoading]);
 
-  // Clear selection when week/filter changes.
+  // Clear selection when switching week or tenant.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [batchWeek, filter, sourceFilter, tenantKey]);
+  }, [batchWeek, tenantKey]);
 
   const stepBatchWeek = useCallback(
     (delta) => {
@@ -515,7 +498,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   );
 
   const refreshAll = useCallback(() => {
-    refetchOps();
+    refetchOps({ silent: true });
   }, [refetchOps]);
 
   const handleJsonStaged = useCallback(
@@ -883,7 +866,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   ]);
 
   const releaseStagedEvents = useCallback(
-    async ({ eventIds = null, count, confirmMessage, busy = 'release' } = {}) => {
+    async ({ eventIds = null, count, confirmMessage, busy = 'release', skipConfirm = false } = {}) => {
       if (!tenantKey || !batchWeekValid || !weekSettled) {
         addNotification({
           title: 'Not ready to publish',
@@ -904,6 +887,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         return false;
       }
       if (
+        !skipConfirm &&
         !window.confirm(
           confirmMessage ||
             `Release ${releaseCount} staged event(s) for ${committedWeek} to the live feed?`,
@@ -912,39 +896,45 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         return false;
       }
 
-      setBusyKey(busy);
-      const { data, error } = await authenticatedRequest(
-        `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(committedWeek)}/release`,
-        {
-          method: 'POST',
-          data: eventIds?.length ? { eventIds } : {},
-        },
-      );
-      setBusyKey(null);
-
-      if (error || !data?.success) {
-        addNotification({
-          title: 'Release failed',
-          message: error || data?.message || 'Could not release batch.',
-          type: 'error',
-        });
-        return false;
-      }
-
-      refreshAll();
-      setSelectedIds(new Set());
-      addNotification({
-        title: 'Published',
-        message: `${data.data?.releasedCount ?? 0} event(s) are now live for ${committedWeek}.`,
-        type: 'success',
-      });
+      const ids = eventIds?.length
+        ? eventIds
+        : publishableStagedEvents.map((event) => event._id);
+      const previous = applyIngestStatus(ids, 'published');
+      void (async () => {
+        const { data, error } = await authenticatedRequest(
+          `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(committedWeek)}/release`,
+          {
+            method: 'POST',
+            data: eventIds?.length ? { eventIds } : {},
+          },
+        );
+        if (error || !data?.success) {
+          revertIngestStatus(previous);
+          addNotification({
+            title: 'Release failed',
+            message: error || data?.message || 'Could not release batch.',
+            type: 'error',
+          });
+        } else {
+          const skippedPrevious = new Map();
+          (data.data?.skipped || []).forEach((row) => {
+            const id = String(row.eventId || '');
+            if (!id || !previous.has(id)) return;
+            skippedPrevious.set(id, previous.get(id));
+          });
+          if (skippedPrevious.size) revertIngestStatus(skippedPrevious);
+          addNotification(releaseOutcomeNotification(data.data, committedWeek));
+        }
+      })();
       return true;
     },
     [
       addNotification,
+      applyIngestStatus,
       batchWeekValid,
       committedWeek,
-      refreshAll,
+      publishableStagedEvents,
+      revertIngestStatus,
       stagedCount,
       tenantKey,
       weekSettled,
@@ -952,12 +942,29 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
   );
 
   const handleRelease = useCallback(
-    () => releaseStagedEvents({ count: stagedCount }),
-    [releaseStagedEvents, stagedCount],
+    () => {
+      const skippedCount = stagedCount - publishableStagedEvents.length;
+      if (!publishableStagedEvents.length) {
+        addNotification({
+          title: 'Nothing published',
+          message: 'Staged events need a working cover image (and a clear location review) before they can go live.',
+          type: 'warning',
+        });
+        return;
+      }
+      return releaseStagedEvents({
+        eventIds: publishableStagedEvents.map((event) => event._id),
+        count: publishableStagedEvents.length,
+        confirmMessage: skippedCount
+          ? `Publish ${publishableStagedEvents.length} staged event(s) for ${committedWeek}? ${skippedCount} stay unpublished because of a missing/broken cover or location review.`
+          : `Release ${publishableStagedEvents.length} staged event(s) for ${committedWeek} to the live feed?`,
+      });
+    },
+    [addNotification, committedWeek, publishableStagedEvents, releaseStagedEvents, stagedCount],
   );
 
-  const handleBulkRelease = useCallback(async () => {
-    const staged = selectedEvents.filter((event) => event.ingestStatus === 'staged');
+  const handleBulkRelease = useCallback(async ({ skipConfirm = false, events: explicitEvents } = {}) => {
+    const staged = (explicitEvents || selectedEvents).filter((event) => event.ingestStatus === 'staged');
     if (!staged.length) {
       addNotification({
         title: 'No staged events selected',
@@ -966,25 +973,50 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
       });
       return;
     }
-    await releaseStagedEvents({
-      eventIds: staged.map((event) => event._id),
-      count: staged.length,
-      confirmMessage: `Publish ${staged.length} selected staged event(s) for ${committedWeek} to the live feed?`,
+    const eligible = staged.filter(
+      (event) => !eventPublishBlock(event, { brokenImageIds: brokenIds }),
+    );
+    const skippedCount = staged.length - eligible.length;
+    if (!eligible.length) {
+      addNotification({
+        title: 'Nothing published',
+        message: 'Selected staged events need a working cover image (and a clear location review) before they can go live.',
+        type: 'warning',
+      });
+      return;
+    }
+    return releaseStagedEvents({
+      eventIds: eligible.map((event) => event._id),
+      count: eligible.length,
+      confirmMessage: skippedCount
+        ? `Publish ${eligible.length} selected staged event(s) for ${committedWeek}? ${skippedCount} stay unpublished because of a missing/broken cover or location review.`
+        : `Publish ${eligible.length} selected staged event(s) for ${committedWeek} to the live feed?`,
       busy: 'bulk-release',
+      skipConfirm,
     });
-  }, [addNotification, committedWeek, releaseStagedEvents, selectedEvents]);
+  }, [addNotification, brokenIds, committedWeek, releaseStagedEvents, selectedEvents]);
 
   const handleReleaseOne = useCallback(
-    async (event) => {
-      if (!event || event.ingestStatus !== 'staged') return;
-      await releaseStagedEvents({
+    async (event, { skipConfirm = false } = {}) => {
+      if (!event || event.ingestStatus !== 'staged') return false;
+      const block = eventPublishBlock(event, { brokenImageIds: brokenIds });
+      if (block) {
+        addNotification({
+          title: 'Cannot publish',
+          message: `${block.title}. ${block.detail}`,
+          type: 'warning',
+        });
+        return false;
+      }
+      return releaseStagedEvents({
         eventIds: [event._id],
         count: 1,
         confirmMessage: `Publish “${event.name}” to the live feed?`,
         busy: `release-${event._id}`,
+        skipConfirm,
       });
     },
-    [releaseStagedEvents],
+    [addNotification, brokenIds, releaseStagedEvents],
   );
 
   const unreleaseEvents = useCallback(
@@ -1019,75 +1051,76 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
         return false;
       }
 
-      setBusyKey(busy);
-      const { data, error } = await authenticatedRequest(
-        `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(committedWeek)}/unrelease`,
-        {
-          method: 'POST',
-          data: {
-            confirm: UNRELEASE_CONFIRM_TOKEN,
-            eventIds: ids,
+      const previous = applyIngestStatus(ids, 'staged');
+      void (async () => {
+        const { data, error } = await authenticatedRequest(
+          `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/batches/${encodeURIComponent(committedWeek)}/unrelease`,
+          {
+            method: 'POST',
+            data: {
+              confirm: UNRELEASE_CONFIRM_TOKEN,
+              eventIds: ids,
+            },
           },
-        },
-      );
-      setBusyKey(null);
-
-      if (error || !data?.success) {
-        addNotification({
-          title: 'Unpublish failed',
-          message: error || data?.message || 'Could not unpublish events.',
-          type: 'error',
-        });
-        return false;
-      }
-
-      refreshAll();
-      setSelectedIds(new Set());
-      addNotification({
-        title: 'Unpublished',
-        message: `${data.data?.unreleasedCount ?? releaseCount} event(s) are staged again for ${committedWeek}.`,
-        type: 'success',
-      });
+        );
+        if (error || !data?.success) {
+          revertIngestStatus(previous);
+          addNotification({
+            title: 'Unpublish failed',
+            message: error || data?.message || 'Could not unpublish events.',
+            type: 'error',
+          });
+        } else {
+          addNotification({
+            title: 'Unpublished',
+            message: `${data.data?.unreleasedCount ?? releaseCount} event(s) are staged again for ${committedWeek}.`,
+            type: 'success',
+          });
+        }
+      })();
       return true;
     },
     [
       addNotification,
+      applyIngestStatus,
       batchWeekValid,
       committedWeek,
-      refreshAll,
+      revertIngestStatus,
       tenantKey,
       weekSettled,
     ],
   );
 
   const handleUnpublishOne = useCallback(
-    async (event) => {
-      if (!event || event.ingestStatus !== 'published') return;
-      await unreleaseEvents({
+    async (event, { skipConfirm = false } = {}) => {
+      if (!event || event.ingestStatus !== 'published') return false;
+      return unreleaseEvents({
         eventIds: [event._id],
         count: 1,
         confirmMessage: `Unpublish “${event.name}” from the live feed? People who already swiped may keep their intent.`,
         busy: `unrelease-${event._id}`,
+        skipConfirm,
       });
     },
     [unreleaseEvents],
   );
 
-  const handleBulkUnpublish = useCallback(async () => {
-    const published = selectedEvents.filter((event) => event.ingestStatus === 'published');
+  const handleBulkUnpublish = useCallback(async ({ skipConfirm = false, events: explicitEvents } = {}) => {
+    const published = (explicitEvents || selectedEvents).filter((event) => event.ingestStatus === 'published');
     if (!published.length) {
       addNotification({
         title: 'No published events selected',
         message: 'Select published events to pull out of the live feed.',
         type: 'warning',
       });
-      return;
+      return false;
     }
-    await unreleaseEvents({
+    return unreleaseEvents({
       eventIds: published.map((event) => event._id),
       count: published.length,
       confirmMessage: `Unpublish ${published.length} selected event(s) for ${committedWeek}? People who already swiped may keep their intent.`,
       busy: 'bulk-unrelease',
+      skipConfirm,
     });
   }, [addNotification, committedWeek, selectedEvents, unreleaseEvents]);
 
@@ -1108,34 +1141,95 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
     [tenantKey],
   );
 
-  const handleBulkStage = useCallback(async () => {
-    const drafts = selectedEvents.filter((e) => e.ingestStatus === 'draft');
+  const handleBulkStage = useCallback(async ({ events: explicitEvents } = {}) => {
+    const drafts = (explicitEvents || selectedEvents).filter((e) => e.ingestStatus === 'draft');
     if (!drafts.length) {
       addNotification({
         title: 'No drafts selected',
         message: 'Select draft events to stage.',
         type: 'warning',
       });
-      return;
+      return false;
     }
 
-    setBusyKey('bulk-stage');
-    let ok = 0;
-    let failed = 0;
-    for (const event of drafts) {
-      const result = await patchEventOverrides(event._id, { ingestStatus: 'staged' });
-      if (result.error) failed += 1;
-      else ok += 1;
+    const previous = applyIngestStatus(drafts.map((event) => event._id), 'staged');
+    void (async () => {
+      const results = await Promise.all(
+        drafts.map((event) => patchEventOverrides(event._id, { ingestStatus: 'staged' })),
+      );
+      const failedPrevious = new Map();
+      let failed = 0;
+      results.forEach((result, index) => {
+        if (!result.error) return;
+        failed += 1;
+        const event = drafts[index];
+        failedPrevious.set(String(event._id), previous.get(String(event._id)));
+      });
+      if (failed) {
+        revertIngestStatus(failedPrevious);
+        addNotification({
+          title: failed === drafts.length ? 'Could not stage' : 'Partial stage',
+          message: `${drafts.length - failed} staged, ${failed} failed.`,
+          type: 'warning',
+        });
+      }
+    })();
+    return true;
+  }, [addNotification, applyIngestStatus, patchEventOverrides, revertIngestStatus, selectedEvents]);
+
+  const handleStageOne = useCallback(
+    async (event) => {
+      if (!event || event.ingestStatus !== 'draft') return false;
+      return handleBulkStage({ events: [event] });
+    },
+    [handleBulkStage],
+  );
+
+  const handleBulkDraft = useCallback(async ({ events: explicitEvents } = {}) => {
+    const pool = (explicitEvents || selectedEvents).filter(
+      (event) => event.ingestStatus && event.ingestStatus !== 'draft',
+    );
+    if (!pool.length) {
+      addNotification({
+        title: 'Nothing to draft',
+        message: 'Select staged or published events to move back to draft.',
+        type: 'warning',
+      });
+      return false;
     }
-    setBusyKey(null);
-    refreshAll();
-    setSelectedIds(new Set());
-    addNotification({
-      title: failed ? 'Partial stage' : 'Staged',
-      message: `${ok} staged${failed ? `, ${failed} failed` : ''}.`,
-      type: failed ? 'warning' : 'success',
-    });
-  }, [addNotification, patchEventOverrides, refreshAll, selectedEvents]);
+
+    const previous = applyIngestStatus(pool.map((event) => event._id), 'draft');
+    void (async () => {
+      const results = await Promise.all(
+        pool.map((event) => patchEventOverrides(event._id, { ingestStatus: 'draft' })),
+      );
+      const failedPrevious = new Map();
+      let failed = 0;
+      results.forEach((result, index) => {
+        if (!result.error) return;
+        failed += 1;
+        const event = pool[index];
+        failedPrevious.set(String(event._id), previous.get(String(event._id)));
+      });
+      if (failed) {
+        revertIngestStatus(failedPrevious);
+        addNotification({
+          title: failed === pool.length ? 'Could not draft' : 'Partial draft',
+          message: `${pool.length - failed} drafted, ${failed} failed.`,
+          type: 'warning',
+        });
+      }
+    })();
+    return true;
+  }, [addNotification, applyIngestStatus, patchEventOverrides, revertIngestStatus, selectedEvents]);
+
+  const handleDraftOne = useCallback(
+    async (event) => {
+      if (!event || event.ingestStatus === 'draft') return false;
+      return handleBulkDraft({ events: [event] });
+    },
+    [handleBulkDraft],
+  );
 
   const handleBulkCollapseShowtimes = useCallback(async () => {
     if (selectedEvents.length < 2) {
@@ -2026,10 +2120,14 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
               title={
                 stagedCount === 0
                   ? 'Stage events before publishing'
-                  : `Publish all ${stagedCount} staged event(s)`
+                  : publishableStagedEvents.length === 0
+                    ? 'Staged events need a working cover image before they can go live'
+                    : `Publish ${publishableStagedEvents.length} staged event(s) with a working cover`
               }
             >
-              {releaseBusy ? 'Publishing…' : `Publish week (${stagedCount})`}
+              {releaseBusy
+                ? 'Publishing…'
+                : `Publish week (${publishableStagedEvents.length})`}
             </button>
           ) : null}
         </>
@@ -2558,6 +2656,7 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             loading={eventsLoading}
           />
           <PivotCurationQueue
+            tenantKey={tenantKey}
             batchWeek={batchWeek}
             events={filteredEvents}
             eventsLoading={eventsLoading}
@@ -2570,6 +2669,8 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             sourceFilter={sourceFilter}
             onSourceFilterChange={setSourceFilter}
             hostCreatedCount={hostCreatedCount}
+            brokenImageIds={brokenIds}
+            scanningBrokenImages={scanningBrokenImages}
             catalogTags={catalogTags}
             bulkTags={bulkTags}
             onBulkTagsChange={setBulkTags}
@@ -2581,8 +2682,11 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             onEdit={setEditingEvent}
             onPublish={handleReleaseOne}
             onUnpublish={handleUnpublishOne}
+            onStage={handleStageOne}
+            onDraft={handleDraftOne}
             onDelete={handleDeleteEvent}
             onBulkStage={handleBulkStage}
+            onBulkDraft={handleBulkDraft}
             onBulkPublish={handleBulkRelease}
             onBulkUnpublish={handleBulkUnpublish}
             onBulkApplyTags={handleBulkApplyTags}
@@ -2597,7 +2701,11 @@ function PivotTenantCurationPage({ tenantKey, cityDisplayName }) {
             selectionPolicy={selectionPolicy}
             onSelectionPolicyChange={handleSelectionPolicyChange}
             emptyLabel={
-              events.length
+              filter === 'broken-image'
+                ? scanningBrokenImages
+                  ? 'Checking cover URLs…'
+                  : 'No cover URLs failed to load.'
+                : events.length
                 ? 'No events match this filter.'
                 : 'No catalog events for this city and week yet. Run a job or add manually.'
             }

@@ -193,13 +193,40 @@ async function wakePendingComputeJob(job, notifyWake) {
   }
 }
 
+async function bindCarouselExportRevision(req, request) {
+  if (request.kind !== 'carousel-export') return request;
+  const { deckRevision } = require('./pivotCarouselExportService');
+  const getGlobalModels = require('./getGlobalModelService');
+  const deckId = trimString(request.options?.deckId).toLowerCase();
+  const tenantKey = trimString(request.cityKey).toLowerCase();
+  const { PivotCarouselDeck } = getGlobalModels(req, 'PivotCarouselDeck');
+  const deck = await PivotCarouselDeck.findOne({ _id: deckId, tenantKey })
+    .select('updatedAt')
+    .lean();
+  if (!deck) {
+    throw serviceError('Carousel deck not found', 'DECK_NOT_FOUND', 404);
+  }
+  const revision = deckRevision(deck);
+  if (!revision) {
+    throw serviceError('Carousel deck is missing a revision', 'DECK_REVISION_INVALID');
+  }
+  return {
+    ...request,
+    options: {
+      ...request.options,
+      deckId,
+      deckRevision: revision,
+    },
+  };
+}
+
 async function createAdminComputeJob(req, {
   request: requestInput,
   actor = null,
   now = new Date(),
   notifyWake = notifyComputeWorkerWake,
 } = {}) {
-  const request = validateAdminJobRequest(requestInput);
+  const request = await bindCarouselExportRevision(req, validateAdminJobRequest(requestInput));
   const payload = jobRequestToCreateInput(request, actor);
   const { job, created } = await createComputeJob(req, {
     ...payload,

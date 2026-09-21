@@ -294,6 +294,45 @@
   min-height: 30px;
 }
 
+.pivot-curation-editorial--hotkeys {
+  padding-top: 4px;
+  border-top: 0;
+}
+
+.pivot-curation-editorial__audience {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--pivot-ops-ink-muted);
+  font-size: 12px;
+}
+
+.pivot-curation-editorial__audience-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--pivot-ops-border);
+  border-radius: 999px;
+  background: var(--pivot-ops-surface-subtle, #f4f2ee);
+
+  button {
+    margin: 0;
+    padding: 5px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--pivot-ops-ink-muted);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  button[aria-pressed='true'] {
+    background: #fff;
+    color: var(--pivot-ops-ink);
+    box-shadow: 0 1px 3px rgba(22, 28, 45, 0.12);
+  }
+}
+
 .pivot-curation-editorial__field {
   display: grid;
   gap: 5px;
@@ -391,6 +430,84 @@
 
   .pivot-curation-sheet__scroller::after {
     display: none;
+  }
+}
+
+html.is-curation-chrome-fullscreen {
+  overflow: hidden;
+
+  .dash-left,
+  .dashboard-sidebar-toggle,
+  .mobile-hamburger,
+  .pivot-tenant-page__header,
+  .pivot-dash-burst {
+    display: none !important;
+  }
+}
+
+.pivot-curation-frame.is-chrome-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  margin: 0 !important;
+  z-index: 400 !important;
+  overflow: hidden !important;
+  border-radius: 0 !important;
+  box-sizing: border-box !important;
+  background: var(--pivot-ops-surface, #fff);
+  display: flex;
+  flex-direction: column;
+
+  .pivot-curation-sheet {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    margin: 0;
+    border-radius: 0;
+    background: var(--pivot-ops-surface, #fff);
+  }
+
+  .pivot-ops-section__head {
+    flex-shrink: 0;
+  }
+
+  .pivot-curation-sheet__body,
+  .pivot-curation-sheet__layout,
+  .pivot-curation-sheet__pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pivot-curation-sheet__layout--split {
+    display: grid;
+    flex-direction: unset;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  }
+
+  .pivot-curation-sheet__scroller {
+    flex: 1 1 auto;
+    max-height: none;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .pivot-curation-sheet__scroller::after {
+    display: none;
+  }
+
+  .pivot-curation-sheet__inspect {
+    min-height: 0;
+    height: 100%;
+    max-height: none;
   }
 }
 
@@ -561,9 +678,22 @@
       background: var(--pivot-ops-hover);
     }
 
+    &.is-published td {
+      background: rgba(46, 160, 90, 0.14);
+    }
+
+    &.is-published:hover td {
+      background: rgba(46, 160, 90, 0.22);
+    }
+
     &.is-selected td,
     &.is-selected:hover td {
       background: var(--pivot-ops-accent-soft);
+    }
+
+    &.is-published.is-selected td,
+    &.is-published.is-selected:hover td {
+      background: rgba(46, 160, 90, 0.32);
     }
 
     &.is-focused {
@@ -649,6 +779,93 @@
   font-size: 11px;
   font-weight: 600;
   color: var(--pivot-ops-accent, #ff4f1f);
+}
+
+.pivot-curation-sheet__review-flag {
+  display: inline-flex;
+  margin: 4px 6px 0 0;
+  padding: 1px 7px;
+  border-radius: var(--pivot-ops-radius-chip);
+  background: rgba(196, 132, 12, 0.14);
+  border: 1px solid rgba(180, 110, 8, 0.45);
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a5a00;
+}
+
+.pivot-curation-sheet__broken-flag {
+  display: inline-flex;
+  margin: 4px 6px 0 0;
+  padding: 1px 7px;
+  border-radius: var(--pivot-ops-radius-chip);
+  background: rgba(180, 35, 24, 0.1);
+  border: 1px solid rgba(180, 35, 24, 0.4);
+  font-size: 11px;
+  font-weight: 600;
+  color: #b42318;
+}
+
+.pivot-curation-sheet__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 12px;
+}
+
+.pivot-curation-sheet__keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0;
+  width: 100%;
+  font-size: 11px;
+  color: var(--pivot-ops-ink-muted);
+  letter-spacing: 0.01em;
+
+  kbd {
+    display: inline-block;
+    margin-right: 3px;
+    padding: 1px 5px;
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: inherit;
+    line-height: 1.4;
+    color: var(--pivot-ops-ink-soft);
+  }
+}
+
+.pivot-curation-sheet__key-btn {
+  position: relative;
+
+  &:hover .keybind-tooltip,
+  &:focus-visible .keybind-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.pivot-curation-sheet__search {
+  flex: 1 1 220px;
+  min-width: 0;
+
+  input {
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid var(--pivot-ops-border);
+    border-radius: 10px;
+    background: var(--pivot-ops-surface);
+    color: var(--pivot-ops-ink);
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+}
+
+.pivot-curation-sheet__fullscreen {
+  flex: 0 0 auto;
 }
 
 .pivot-curation-sheet__editorial-badge {
@@ -780,6 +997,23 @@
   }
 }
 
+.pivot-curation-sheet__inspect--dossier {
+  max-height: min(92dvh, 880px);
+
+  .pivot-curation-sheet__inspect-media {
+    height: clamp(180px, 32vh, 320px);
+  }
+
+  .pivot-curation-sheet__inspect-title {
+    font-size: 22px;
+  }
+
+  .pivot-curation-sheet__inspect-body {
+    gap: 14px;
+    padding: 18px 20px 20px;
+  }
+}
+
 .pivot-curation-sheet__inspect-media {
   flex: 0 0 auto;
   height: clamp(120px, 24vh, 200px);
@@ -861,6 +1095,27 @@
   }
 }
 
+.pivot-curation-sheet__review-callout {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(180, 110, 8, 0.35);
+  border-radius: 12px;
+  background: rgba(196, 132, 12, 0.1);
+
+  strong {
+    font-size: 13px;
+    color: #8a5a00;
+  }
+
+  p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--pivot-ops-ink-muted);
+  }
+}
+
 .pivot-curation-sheet__inspect-kpis {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -905,6 +1160,12 @@
   -webkit-line-clamp: 8;
   -webkit-box-orient: vertical;
   overflow: hidden;
+
+  &.is-full {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+  }
 }
 
 .pivot-curation-sheet__inspect-links {
@@ -1006,6 +1267,10 @@
     min-height: 36px;
   }
 
+  .pivot-curation-sheet__toolbar {
+    padding-inline: 12px;
+  }
+
   .pivot-curation-sheet__scroller,
   .pivot-curation-frame.is-immersive .pivot-curation-sheet__scroller {
     max-height: min(68dvh, 620px);
@@ -1051,45 +1316,6 @@
     overflow-wrap: anywhere;
   }
 
-  .pivot-curation-sheet__inspect {
-    position: fixed;
-    z-index: 140;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    height: 100dvh;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    max-height: none;
-    overflow: hidden;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .pivot-curation-sheet__inspect-media {
-    flex: 0 0 auto;
-    max-height: 34dvh;
-  }
-
-  .pivot-curation-sheet__inspect-body {
-    padding: 16px max(16px, env(safe-area-inset-right))
-      calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  }
-
-  .pivot-curation-sheet__inspect-head {
-    position: sticky;
-    z-index: 2;
-    top: 0;
-    margin: -16px calc(-1 * max(16px, env(safe-area-inset-right))) 0
-      calc(-1 * max(16px, env(safe-area-inset-left)));
-    padding: calc(14px + env(safe-area-inset-top))
-      max(16px, env(safe-area-inset-right)) 12px
-      max(16px, env(safe-area-inset-left));
-    border-bottom: 1px solid var(--pivot-ops-border);
-    background: var(--pivot-ops-surface);
-  }
-
   .pivot-curation-sheet__inspect-actions .linear-btn {
     min-height: 42px;
   }
@@ -1098,5 +1324,15 @@
     max-height: 46dvh;
     overflow-y: auto;
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 980px), (pointer: coarse) {
+  .pivot-curation-frame:not(.is-expanded) .pivot-curation-sheet__scroller {
+    max-height: min(68dvh, 620px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 }

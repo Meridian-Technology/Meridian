@@ -5,6 +5,7 @@ import { canCancelComputeJob, canRetryComputeJob } from '../pivotComputeJobActio
 import {
   artifactsExpired,
   buildCarouselExportJobRequest,
+  carouselExportIdempotencyKey,
   CAROUSEL_EXPORT_KIND,
   deckRevisionIso,
   deriveExportUiState,
@@ -140,10 +141,12 @@ export default function useCarouselExport({ tenantKey, deck, dirty }) {
     setCreating(true);
     setPanelOpen(true);
     const reuseKey = !currentJob || isExportActive(currentJob) ? createKeyRef.current : null;
-    const selection = Array.isArray(slideNumbers) && slideNumbers.length
-      ? [...slideNumbers].sort((left, right) => left - right).join('.')
-      : 'all';
-    const idempotencyKey = reuseKey || `idem:carousel-${tenantKey}-${deckId}-${selection}-${Date.now()}`;
+    const idempotencyKey = carouselExportIdempotencyKey({
+      tenantKey,
+      deckId,
+      slideNumbers,
+      reuseKey,
+    });
     createKeyRef.current = idempotencyKey;
     writeExportSession(tenantKey, deckId, {
       jobId: currentJob?.externalJobId || null,

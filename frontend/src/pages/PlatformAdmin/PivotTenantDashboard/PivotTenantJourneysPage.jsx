@@ -18,6 +18,7 @@ import {
 } from '../../../utils/pivotIsoWeek';
 import PivotTenantPage from './PivotTenantPage';
 import PivotBatchWeekPicker from './PivotBatchWeekPicker';
+import PivotDeckReplay from './PivotDeckReplay';
 import usePivotBatchWeekState from './usePivotBatchWeekState';
 import usePivotTenantWeekKeybinds from './usePivotTenantWeekKeybinds';
 import KeybindTooltip from '../../../components/Interface/KeybindTooltip/KeybindTooltip';
@@ -214,6 +215,19 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
     cache: NO_FETCH_CACHE,
   });
 
+  const replayUrl =
+    tenantKey && selectedUserId && committedWeekValid
+      ? `/admin/pivot/tenants/${encodeURIComponent(tenantKey)}/journeys/users/${encodeURIComponent(selectedUserId)}/deck-replay`
+      : null;
+  const {
+    data: replayResponse,
+    loading: replayLoading,
+    error: replayError,
+  } = useFetch(replayUrl, {
+    params: historyParams,
+    cache: NO_FETCH_CACHE,
+  });
+
   const ops = opsResponse?.success ? opsResponse.data : null;
   const dropDayOfWeek = ops?.weekRange?.dropDayOfWeek ?? ops?.dropSchedule?.dayOfWeek ?? 4;
   const dropTimeZone = ops?.weekRange?.timeZone ?? ops?.dropSchedule?.timezone ?? 'UTC';
@@ -238,6 +252,7 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
         ? 'search'
         : 'active';
   const history = historyResponse?.success ? historyResponse.data : null;
+  const replay = replayResponse?.success ? replayResponse.data : null;
 
   const overviewLoading = opsLoading;
   const funnelLoading = opsLoading && !funnel;
@@ -261,6 +276,11 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
     historyError ||
     (historyResponse && !historyResponse.success
       ? historyResponse.message || 'Unable to load history.'
+      : null);
+  const replayMessage =
+    replayError ||
+    (replayResponse && !replayResponse.success
+      ? replayResponse.message || 'Unable to load deck replay.'
       : null);
 
   const displayCity = overview?.cityDisplayName || cityDisplayName || tenantKey;
@@ -654,6 +674,12 @@ function PivotTenantJourneysPage({ tenantKey, cityDisplayName }) {
 
                 {!historyLoading && history ? (
                   <>
+                    <PivotDeckReplay
+                      data={replay}
+                      loading={replayLoading}
+                      error={replayMessage}
+                    />
+
                     <h3 className="pivot-ops-section__title">
                       Intents
                       {batchWeekValid ? ` · ${batchWeek}` : ''}

@@ -160,6 +160,21 @@ describe('PivotTenantDropdown switcher remap', () => {
     );
   });
 
+  it('maps Analytics between the fleet and city shells', () => {
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=4'), {
+        from: 'fleet',
+        to: 'city',
+      }),
+    ).toBe('?page=11');
+    expect(
+      remapPivotOpsSearch(new URLSearchParams('page=11'), {
+        from: 'city',
+        to: 'fleet',
+      }),
+    ).toBe('?page=4');
+  });
+
   it('keeps NYC Catalog → Brooklyn Catalog at page=4', () => {
     renderSwitcher('/platform-admin/pivot/nyc?page=4');
     switchTo(/Brooklyn/i);

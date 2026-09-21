@@ -284,4 +284,5 @@ module.exports = {
   serializeCandidate,
   reviewerFrom,
   reviewExplanation,
+  REVIEW_REASON_COPY,
 };

@@ -32,7 +32,20 @@ const TENANT = { tenantKey: 'nyc', location: 'New York City', name: 'NYC' };
 const BATCH_WEEK = '2026-W28';
 const EVENT_A = '665a1b2c3d4e5f6789012345';
 const EVENT_B = '665a1b2c3d4e5f6789012346';
+const EVENT_C = '665a1b2c3d4e5f6789012347';
 const NOW = new Date('2026-07-09T18:00:00.000Z');
+const COVER = 'https://cdn.example/ok.jpg';
+
+function stagedEvent(id, extraPivot = {}, extraDoc = {}) {
+  return {
+    _id: id,
+    name: extraDoc.name || 'Ready night',
+    image: extraDoc.image === undefined ? COVER : extraDoc.image,
+    customFields: {
+      pivot: { batchWeek: BATCH_WEEK, ingestStatus: 'staged', ...extraPivot },
+    },
+  };
+}
 
 function mockReq(overrides = {}) {
   return {
@@ -90,6 +103,15 @@ describe('releaseBatch', () => {
     Event = {
       updateMany: jest.fn().mockResolvedValue({ modifiedCount: 3 }),
       countDocuments: jest.fn(),
+      find: jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue([
+            stagedEvent(EVENT_A),
+            stagedEvent(EVENT_B),
+            stagedEvent(EVENT_C),
+          ]),
+        }),
+      })),
     };
     PivotBatch = {
       findOneAndUpdate: jest.fn(() => ({
@@ -104,6 +126,11 @@ describe('releaseBatch', () => {
       })),
     };
     getModels.mockReturnValue({ Event, PivotBatch });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'image/jpeg' },
+    });
   });
 
   it('returns 404 when tenant is not a pivot city', async () => {
@@ -140,20 +167,18 @@ describe('releaseBatch', () => {
     expect(result.error).toBeUndefined();
     expect(result.data.releasedCount).toBe(3);
     expect(result.data.skippedCount).toBe(0);
+    expect(result.data.skipped).toEqual([]);
+    expect(result.data.skippedByCode).toEqual({});
     expect(result.data.batchStatus).toBe('released');
     expect(result.data.partial).toBe(false);
     expect(result.data.batch.releasedBy).toBe('ops@meridian.app');
     expect(result.data.snapshot).toEqual({ rebuilt: true, batchWeek: BATCH_WEEK });
 
-    expect(Event.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        'customFields.pivot.batchWeek': BATCH_WEEK,
-        'customFields.pivot.ingestStatus': 'staged',
-        'customFields.pivot.locationReview.status': { $ne: 'needs_review' },
-      }),
-      { $set: { 'customFields.pivot.ingestStatus': 'published' } },
-    );
-    expect(Event.updateMany.mock.calls[0][0]._id).toBeUndefined();
+    const publishedIds = Event.updateMany.mock.calls[0][0]._id.$in.map(String).sort();
+    expect(publishedIds).toEqual([EVENT_A, EVENT_B, EVENT_C].sort());
+    expect(Event.updateMany.mock.calls[0][1]).toEqual({
+      $set: { 'customFields.pivot.ingestStatus': 'published' },
+    });
 
     expect(PivotBatch.findOneAndUpdate).toHaveBeenCalledWith(
       { batchWeek: BATCH_WEEK },
@@ -174,6 +199,16 @@ describe('releaseBatch', () => {
 
   it('supports partial release via eventIds and reports skippedCount', async () => {
     Event.updateMany.mockResolvedValue({ modifiedCount: 1 });
+    Event.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          stagedEvent(EVENT_A),
+          stagedEvent(EVENT_B, {
+            locationReview: { status: 'needs_review', reason: 'out_of_scope' },
+          }, { name: 'Oakland disco' }),
+        ]),
+      }),
+    });
 
     const result = await releaseBatch(mockReq(), {
       tenantKey: 'nyc',
@@ -185,16 +220,83 @@ describe('releaseBatch', () => {
 
     expect(result.data.releasedCount).toBe(1);
     expect(result.data.skippedCount).toBe(1);
+    expect(result.data.skippedByCode).toEqual({ LOCATION_REVIEW: 1 });
+    expect(result.data.skipped[0]).toMatchObject({
+      eventId: EVENT_B,
+      name: 'Oakland disco',
+      code: 'LOCATION_REVIEW',
+      reason: 'out_of_scope',
+      title: 'The suggested place is outside the city boundary',
+    });
     expect(result.data.partial).toBe(true);
     expect(result.data.snapshot).toBeNull();
     expect(Event.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        _id: { $in: expect.any(Array) },
-        'customFields.pivot.ingestStatus': 'staged',
-      }),
+      { _id: { $in: [EVENT_A] } },
       expect.any(Object),
     );
     expect(rebuildWeeklySnapshot).not.toHaveBeenCalled();
+  });
+
+  it('reports location-review skips when releasing the whole week', async () => {
+    Event.updateMany.mockResolvedValue({ modifiedCount: 0 });
+    Event.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          stagedEvent(EVENT_A, {
+            locationReview: { status: 'needs_review', reason: 'out_of_scope' },
+          }, { name: 'Rollin with the Homos' }),
+        ]),
+      }),
+    });
+
+    const result = await releaseBatch(mockReq(), {
+      tenantKey: 'nyc',
+      batchWeek: BATCH_WEEK,
+      now: NOW,
+      rebuildSnapshot: false,
+    });
+
+    expect(result.data.releasedCount).toBe(0);
+    expect(result.data.skippedCount).toBe(1);
+    expect(result.data.skipped[0].code).toBe('LOCATION_REVIEW');
+    expect(result.data.partial).toBe(false);
+    expect(Event.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('skips staged events with no cover or a dead cover URL', async () => {
+    Event.updateMany.mockResolvedValue({ modifiedCount: 1 });
+    Event.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          stagedEvent(EVENT_A),
+          stagedEvent(EVENT_B, {}, { name: 'No cover', image: '' }),
+          stagedEvent(EVENT_C, {}, { name: 'Dead cover', image: 'https://cdn.example/missing.jpg' }),
+        ]),
+      }),
+    });
+    global.fetch = jest.fn().mockImplementation(async (url) => {
+      if (String(url).includes('missing.jpg')) {
+        return { ok: false, status: 404, headers: { get: () => 'text/html' } };
+      }
+      return { ok: true, status: 200, headers: { get: () => 'image/jpeg' } };
+    });
+
+    const result = await releaseBatch(mockReq(), {
+      tenantKey: 'nyc',
+      batchWeek: BATCH_WEEK,
+      now: NOW,
+      rebuildSnapshot: false,
+    });
+
+    expect(result.data.releasedCount).toBe(1);
+    expect(result.data.skippedByCode).toEqual({
+      MISSING_IMAGE: 1,
+      BROKEN_IMAGE: 1,
+    });
+    expect(Event.updateMany).toHaveBeenCalledWith(
+      { _id: { $in: [EVENT_A] } },
+      expect.any(Object),
+    );
   });
 });
 

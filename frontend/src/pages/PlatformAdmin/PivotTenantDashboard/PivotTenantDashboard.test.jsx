@@ -63,6 +63,9 @@ jest.mock('../PivotWeeklyDrop/PivotWeeklyDropPage', () => ({ tenantKey }) => (
 jest.mock('./PivotComputeJobs', () => ({ tenantKey }) => (
   <div>city-compute-jobs-page:{tenantKey}</div>
 ));
+jest.mock('./PivotTenantAnalyticsPage', () => ({ tenantKey }) => (
+  <div>city-analytics-page:{tenantKey}</div>
+));
 jest.mock('./PivotTenantLocationMigrationPage', () => ({
   __esModule: true,
   default: ({ tenantKey }) => <div>city-location-migration-page:{tenantKey}</div>,
@@ -196,6 +199,17 @@ describe('PivotTenantDashboard city operations shell', () => {
     expect(screen.getByTestId('menu-10')).toHaveAttribute(
       'data-icon',
       'mdi:server-network-outline',
+    );
+  });
+
+  it('appends Analytics as page 11 without renumbering existing pages', () => {
+    renderDashboard('/platform-admin/pivot/nyc?page=11');
+
+    expect(screen.getByText('city-analytics-page:nyc')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-11')).toHaveTextContent('Analytics');
+    expect(screen.getByTestId('menu-11')).toHaveAttribute(
+      'data-icon',
+      'mdi:chart-funnel',
     );
   });
 });

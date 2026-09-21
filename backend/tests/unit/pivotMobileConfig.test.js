@@ -3,6 +3,7 @@ const {
   PIVOT_MOBILE_STORE_URLS,
   JUSTGO_MOBILE_STORE_URLS,
   mergePivotMobileConfig,
+  mergePivotMobileConfigOverrides,
   validatePivotMobileConfigPatch,
   readEnvMobileOverrides,
 } = require('../../utilities/pivotMobileConfig');
@@ -100,5 +101,16 @@ describe('pivotMobileConfig', () => {
       minAppVersion: '1.9.0',
       message: 'update now',
     });
+  });
+
+  it('merges sparse mobile overrides including store URLs', () => {
+    const merged = mergePivotMobileConfigOverrides(
+      { minAppVersion: '1.0.0', storeUrls: { ios: 'https://apps.apple.com/us/app/a/id1' } },
+      { forceUpdate: true, storeUrls: { android: 'market://details?id=app.justgo' } },
+    );
+    expect(merged.minAppVersion).toBe('1.0.0');
+    expect(merged.forceUpdate).toBe(true);
+    expect(merged.storeUrls.ios).toContain('id1');
+    expect(merged.storeUrls.android).toContain('app.justgo');
   });
 });

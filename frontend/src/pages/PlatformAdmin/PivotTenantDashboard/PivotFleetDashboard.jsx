@@ -8,6 +8,7 @@ import PivotFleetOverviewPage from './PivotFleetOverviewPage';
 import PivotVoicePage from './PivotVoicePage';
 import PivotFleetLaunchPage from './PivotFleetLaunchPage';
 import PivotComputeJobs, { PIVOT_FLEET_COMPUTE_JOBS_PAGE } from './PivotComputeJobs';
+import PivotTenantAnalyticsPage from './PivotTenantAnalyticsPage';
 import PivotTenantDropdown from './PivotTenantDropdown';
 import PivotJustGoLogo from './PivotJustGoLogo';
 import '../../Admin/Admin.scss';
@@ -19,26 +20,36 @@ const NO_FETCH_CACHE = { enabled: false };
 
 /**
  * Fleet Just Go ops shell.
- * Route: /platform-admin/pivot?page=0|1|2
- * Voice is page=1; Launch is page=2 (appended — do not insert).
+ * Route: /platform-admin/pivot?page=0|1|2|3|4
+ * Voice is page=1; Launch is page=2; Compute jobs is page=3; Analytics is page=4 (appended).
  */
 function PivotFleetDashboard() {
   const navigate = useNavigate();
   const { isDark } = useAdminDashboardTheme();
 
-  const { data, loading } = useFetch('/admin/platform/tenants', {
+  const { data, loading, refetch } = useFetch('/admin/platform/tenants', {
     cache: NO_FETCH_CACHE,
   });
 
   const tenants = data?.success ? data.data?.tenants || [] : [];
   const pivotTenants = useMemo(() => tenants.filter(isPivotTenant), [tenants]);
+  const mobileEnvOverrides = data?.success
+    ? data.data?.pivotMobileEnvOverrides || {}
+    : {};
 
   const menuItems = useMemo(
     () => [
       {
         label: 'Overview',
         icon: 'ic:round-dashboard',
-        element: <PivotFleetOverviewPage />,
+        element: (
+          <PivotFleetOverviewPage
+            tenants={tenants}
+            tenantsLoading={loading}
+            mobileEnvOverrides={mobileEnvOverrides}
+            onTenantsSaved={refetch}
+          />
+        ),
       },
       {
         label: 'Voice',
@@ -62,8 +73,13 @@ function PivotFleetDashboard() {
           />
         ),
       },
+      {
+        label: 'Analytics',
+        icon: 'mdi:chart-funnel',
+        element: <PivotTenantAnalyticsPage scope="fleet" cityDisplayName="All cities" />,
+      },
     ],
-    [pivotTenants],
+    [pivotTenants, tenants, loading, mobileEnvOverrides, refetch],
   );
 
   return (

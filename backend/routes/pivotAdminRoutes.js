@@ -73,6 +73,8 @@ const {
   getUserJourneyHistory,
   wipeUserWeekIntents,
 } = require('../services/pivotTenantJourneyService');
+const { getAcquisitionFunnel } = require('../services/pivotAcquisitionFunnelService');
+const { getUserDeckReplay } = require('../services/pivotDeckReplayService');
 const { getTenantOpsBundle } = require('../services/pivotTenantOpsService');
 const { getFleetOpsBundle } = require('../services/pivotFleetOpsService');
 const { previewAdminDropDeck } = require('../services/pivotAdminDropDeckService');
@@ -805,6 +807,33 @@ router.get('/launch', verifyToken, requirePlatformAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Unable to load fleet launch stats.',
+    });
+  }
+});
+
+router.get('/analytics/acquisition', verifyToken, requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await getAcquisitionFunnel(req, {
+      scope: 'fleet',
+      month: req.query?.month,
+    });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.error,
+        code: result.code,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (err) {
+    logPivotRouteError('GET /admin/pivot/analytics/acquisition', err, req);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load acquisition funnel.',
     });
   }
 });
@@ -2234,6 +2263,42 @@ router.get(
 );
 
 router.get(
+  '/tenants/:tenantKey/analytics/acquisition',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getAcquisitionFunnel(req, {
+        tenantKey: req.params.tenantKey,
+        month: req.query?.month,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/analytics/acquisition',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load acquisition funnel.',
+      });
+    }
+  },
+);
+
+router.get(
   '/tenants/:tenantKey/journeys/path',
   verifyToken,
   requirePlatformAdmin,
@@ -2393,6 +2458,43 @@ router.get(
       return res.status(500).json({
         success: false,
         message: 'Unable to load user journey history.',
+      });
+    }
+  },
+);
+
+router.get(
+  '/tenants/:tenantKey/journeys/users/:userId/deck-replay',
+  verifyToken,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const result = await getUserDeckReplay(req, {
+        tenantKey: req.params.tenantKey,
+        userId: req.params.userId,
+        batchWeek: req.query?.batchWeek,
+      });
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.error,
+          code: result.code,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+      });
+    } catch (err) {
+      logPivotRouteError(
+        'GET /admin/pivot/tenants/:tenantKey/journeys/users/:userId/deck-replay',
+        err,
+        req,
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to load deck replay.',
       });
     }
   },

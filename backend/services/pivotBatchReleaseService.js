@@ -10,6 +10,8 @@ const {
 } = require('./pivotBatchService');
 const { PIVOT_FEED_INGEST_STATUS } = require('../utilities/pivotIngestStatus');
 const { logPivot, pivotRequestContext } = require('../utilities/pivotLogger');
+const { REVIEW_REASON_COPY } = require('./pivotLocationReviewService');
+const { explainCoverImageSkip, partitionDocsByCoverProbe } = require('../utilities/pivotCoverImage');
 
 const UNRELEASE_CONFIRM_TOKEN = 'UNRELEASE';
 const STAGED_STATUS = 'staged';
@@ -73,6 +75,117 @@ function catalogWeekBaseQuery(batchWeek) {
   };
 }
 
+const SKIP_SELECT = 'name isDeleted image customFields.pivot';
+
+function tallySkipCodes(skipped) {
+  const skippedByCode = {};
+  for (const row of skipped) {
+    const code = row.code || 'UNKNOWN';
+    skippedByCode[code] = (skippedByCode[code] || 0) + 1;
+  }
+  return skippedByCode;
+}
+
+function explainReleaseSkip(doc, batchWeek) {
+  if (!doc || doc.isDeleted) {
+    return {
+      code: 'NOT_FOUND',
+      title: 'Event was not found in this week’s catalog',
+      detail: 'It may have been deleted, or the id does not belong to this city week.',
+    };
+  }
+  const pivot = doc.customFields?.pivot || {};
+  if (pivot.batchWeek !== batchWeek) {
+    return {
+      code: 'WRONG_WEEK',
+      title: 'This event is in a different catalog week',
+      detail: pivot.batchWeek
+        ? `It is assigned to ${pivot.batchWeek}, not ${batchWeek}.`
+        : 'It has no catalog week assigned.',
+    };
+  }
+  if (pivot.ingestStatus === PIVOT_FEED_INGEST_STATUS) {
+    return {
+      code: 'ALREADY_PUBLISHED',
+      title: 'Already live',
+      detail: 'This event is already published in the live feed.',
+    };
+  }
+  if (pivot.ingestStatus !== STAGED_STATUS) {
+    return {
+      code: 'NOT_STAGED',
+      title: 'Not staged',
+      detail: pivot.ingestStatus
+        ? `Status is ${pivot.ingestStatus}. Stage it before publishing.`
+        : 'Stage this event before publishing it to the live feed.',
+    };
+  }
+  if (pivot.locationReview?.status === 'needs_review') {
+    const reason = String(pivot.locationReview.reason || '').trim() || 'manual_review';
+    const copy = REVIEW_REASON_COPY[reason] || {
+      title: 'Location needs a human decision',
+      detail: 'Approve or correct the location before this event can go live.',
+    };
+    return {
+      code: 'LOCATION_REVIEW',
+      reason,
+      title: copy.title,
+      detail: copy.detail,
+    };
+  }
+  const imageSkip = explainCoverImageSkip(doc.image);
+  if (imageSkip) return imageSkip;
+  return null;
+}
+
+async function collectReleasePlan(Event, { batchWeek, eventIds, fetchImpl }) {
+  let rows;
+  if (eventIds) {
+    const docs = await Event.find({ _id: { $in: eventIds } })
+      .select(SKIP_SELECT)
+      .lean();
+    const byId = new Map(docs.map((doc) => [String(doc._id), doc]));
+    rows = eventIds.map((id) => ({ eventId: id, doc: byId.get(String(id)) }));
+  } else {
+    const docs = await Event.find({
+      ...catalogWeekBaseQuery(batchWeek),
+      'customFields.pivot.ingestStatus': STAGED_STATUS,
+    })
+      .select(SKIP_SELECT)
+      .lean();
+    rows = docs.map((doc) => ({ eventId: doc._id, doc }));
+  }
+
+  const skipped = [];
+  const probeCandidates = [];
+  for (const { eventId, doc } of rows) {
+    const skip = explainReleaseSkip(doc, batchWeek);
+    if (skip) {
+      skipped.push({
+        eventId: String(eventId),
+        name: doc?.name || null,
+        ...skip,
+      });
+    } else {
+      probeCandidates.push(doc);
+    }
+  }
+
+  const probed = await partitionDocsByCoverProbe(probeCandidates, { fetchImpl });
+  for (const { doc, skip } of probed.skipped) {
+    skipped.push({
+      eventId: String(doc._id),
+      name: doc?.name || null,
+      ...skip,
+    });
+  }
+
+  return {
+    skipped,
+    eligibleIds: probed.eligible.map((doc) => doc._id),
+  };
+}
+
 async function openTenantDb(tenantKey) {
   const db = await connectToDatabase(tenantKey);
   return { db, school: tenantKey };
@@ -110,23 +223,22 @@ async function releaseBatch(req, options = {}) {
   const tenantReq = await openTenantDb(tenantKey);
   const { Event, PivotBatch } = getModels(tenantReq, 'Event', 'PivotBatch');
 
-  const match = {
-    ...catalogWeekBaseQuery(batchWeek),
-    'customFields.pivot.ingestStatus': STAGED_STATUS,
-    'customFields.pivot.locationReview.status': { $ne: 'needs_review' },
-  };
-  if (idsResult.eventIds) {
-    match._id = { $in: idsResult.eventIds };
-  }
-
-  const updateResult = await Event.updateMany(match, {
-    $set: { 'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS },
+  const plan = await collectReleasePlan(Event, {
+    batchWeek,
+    eventIds: idsResult.eventIds,
+    fetchImpl: options.fetchImpl,
   });
-  const releasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
+  const skipped = plan.skipped;
+  const skippedCount = skipped.length;
+  const skippedByCode = tallySkipCodes(skipped);
 
-  let skippedCount = 0;
-  if (idsResult.eventIds) {
-    skippedCount = Math.max(0, idsResult.eventIds.length - releasedCount);
+  let releasedCount = 0;
+  if (plan.eligibleIds.length) {
+    const updateResult = await Event.updateMany(
+      { _id: { $in: plan.eligibleIds } },
+      { $set: { 'customFields.pivot.ingestStatus': PIVOT_FEED_INGEST_STATUS } },
+    );
+    releasedCount = updateResult.modifiedCount ?? updateResult.nModified ?? 0;
   }
 
   await ensurePivotBatch(tenantReq, {
@@ -181,6 +293,7 @@ async function releaseBatch(req, options = {}) {
     batchWeek,
     releasedCount,
     skippedCount,
+    skippedByCode,
     partial: Boolean(idsResult.eventIds),
     releasedBy,
   });
@@ -191,6 +304,8 @@ async function releaseBatch(req, options = {}) {
       batchWeek,
       releasedCount,
       skippedCount,
+      skippedByCode,
+      skipped,
       batchStatus: batchDoc?.status || 'released',
       batch: serializePivotBatch(batchDoc),
       partial: Boolean(idsResult.eventIds),
@@ -331,4 +446,5 @@ module.exports = {
   UNRELEASE_CONFIRM_TOKEN,
   normalizeEventIds,
   resolveReleasedBy,
+  explainReleaseSkip,
 };

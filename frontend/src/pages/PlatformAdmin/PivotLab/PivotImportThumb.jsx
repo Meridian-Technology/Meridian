@@ -2,20 +2,23 @@ import React, { useEffect, useState } from 'react';
 
 /**
  * Small cover thumbnail for import / catalog / curation tables.
- * Shows a dashed placeholder when src is missing or fails to load.
+ * Distinguishes a missing URL from a URL that failed to load.
  */
-function PivotImportThumb({ src, alt }) {
+function PivotImportThumb({ src, alt, broken = false }) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setFailed(false);
   }, [src]);
 
-  if (!src || failed) {
+  const isBroken = Boolean(broken || failed);
+  if (!src || isBroken) {
     return (
       <span
-        className="pivot-lab__thumb pivot-lab__thumb--empty"
-        title={failed ? 'Image failed to load' : 'No cover image'}
+        className={`pivot-lab__thumb pivot-lab__thumb--empty${
+          isBroken ? ' pivot-lab__thumb--broken' : ''
+        }`}
+        title={isBroken ? 'Image URL failed to load' : 'No cover image'}
         aria-hidden="true"
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">

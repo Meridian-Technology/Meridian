@@ -187,12 +187,28 @@ function isAppVersionAllowed(appVersion, mobileConfig) {
   return isAppVersionAtLeast(appVersion, mobileConfig.minAppVersion);
 }
 
+function mergePivotMobileConfigOverrides(existing = {}, delta = {}) {
+  if (!isPlainObject(delta) || Object.keys(delta).length === 0) {
+    return isPlainObject(existing) ? { ...existing } : {};
+  }
+  const base = isPlainObject(existing) ? existing : {};
+  const merged = deepMerge(base, delta);
+  if (isPlainObject(delta.storeUrls) || isPlainObject(base.storeUrls)) {
+    merged.storeUrls = {
+      ...(isPlainObject(base.storeUrls) ? base.storeUrls : {}),
+      ...(isPlainObject(delta.storeUrls) ? delta.storeUrls : {}),
+    };
+  }
+  return merged;
+}
+
 module.exports = {
   PIVOT_MOBILE_CONFIG_DEFAULTS,
   PIVOT_MOBILE_DEFAULT_MESSAGE,
   PIVOT_MOBILE_STORE_URLS,
   JUSTGO_MOBILE_STORE_URLS,
   mergePivotMobileConfig,
+  mergePivotMobileConfigOverrides,
   validatePivotMobileConfigPatch,
   isAppVersionAllowed,
   readEnvMobileOverrides,

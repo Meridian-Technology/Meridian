@@ -1,0 +1,90 @@
+.pivot-fleet-mobile {
+  margin: 12px 0 0;
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: minmax(140px, 180px) minmax(160px, 220px) minmax(0, 1fr);
+    gap: 12px 14px;
+
+    @media (max-width: 800px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__hint {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink, #1a1714);
+  }
+
+  &__cities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &__city {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 1px solid var(--pivot-ops-border, rgba(26, 23, 20, 0.12));
+    border-radius: var(--pivot-ops-radius-control, 14px);
+    background: var(--pivot-ops-surface, #fff);
+    min-width: 120px;
+  }
+
+  &__city-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pivot-ops-ink, #1a1714);
+  }
+
+  &__city-meta {
+    font-size: 11px;
+    color: var(--pivot-ops-ink-soft, rgba(26, 23, 20, 0.5));
+  }
+
+  &__error {
+    margin: 0;
+    font-size: 13px;
+    color: #b42318;
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
