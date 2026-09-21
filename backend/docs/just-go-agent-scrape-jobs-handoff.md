@@ -71,7 +71,10 @@ Providers today (`CURATION_PROVIDERS`): `partiful` | `luma` | `manual-json` | `g
 | `services/pivotBatchService.js` | `PivotBatch` ensure/get for week lifecycle |
 | `services/pivotBatchReleaseService.js` | Release / unrelease (`staged` → `published`) |
 | `services/pivotBatchReadinessService.js` | Readiness scoring |
-| `services/pivotTagSuggestService.js` | Claude tag suggest (`/ingest/suggest-tags`) — not scraping |
+| `services/pivotTagSuggestService.js` | Claude tag suggest (`/ingest/suggest-tags`) — Lab path; Claude adapter for apply |
+| `utilities/pivotTagAssigner.js` | Compute-apply tag seam (`assignTags`). Claude default; `jev` is a reserved fail-closed stub |
+| `services/pivotComputeAutoApplyService.js` | Trusted auto-apply + boot sweep (`DISABLE_PIVOT_COMPUTE_AUTO_APPLY_STARTUP_SWEEP`) |
+| `services/pivotComputeResultApplyService.js` | Preview/apply; native auto-tag in `applyEventRow`; `NATIVE_TAGS_REQUIRED` skip |
 | `services/pivotTagCatalogService.js` | Tag catalog CRUD/seed |
 | `services/pivotCatalogPurgeService.js` | Catalog purge / cleanup |
 | `services/getGlobalModelService.js` | Registers global `PivotCurationJob` / `PivotCurationRun` |
@@ -99,6 +102,7 @@ All under `/admin/pivot` (see `pivotAdminRoutes.js`):
 - `POST /tenants/:tenantKey/batches/:batchWeek/release|unrelease`
 - `GET /tenants/:tenantKey/batches/:batchWeek/readiness`
 - `PATCH /tenants/:tenantKey/sources/discovery-config` — save flow + city slugs as tenant default
+- `PATCH /tenants/:tenantKey/compute-apply-config` — sparse trusted auto-apply policy (`trusted`, `autoApplyRefresh`, …)
 
 ---
 
@@ -311,7 +315,7 @@ Platform admins manage the sparse per-city override through:
 PATCH /admin/pivot/tenants/:tenantKey/compute-apply-config
 ```
 
-The effective policy is included in the tenant operations/overview payloads. Omitted values resolve to these safe defaults:
+The effective policy is included on tenant overview as `computeApplyPolicy` (merged defaults; omitted tenant fields are not written back). Omitted values resolve to these safe defaults:
 
 | Setting | Default | Meaning |
 |---|---:|---|
@@ -329,12 +333,15 @@ The effective policy is included in the tenant operations/overview payloads. Omi
 
 ```text
 worker stores completed result → review-required
-  → async auto-apply eligibility check
+  → setImmediate(maybeAutoApplyComputeJob)
       → fresh server-side preview
-          → guardrail check → apply (or leave for review)
+          → guardrail check
+              → applyStoredComputeJob
+                  → for each luma/partiful row with no tags: assignTags
+                  → publish (or NATIVE_TAGS_REQUIRED skip)
 ```
 
-The submit hook runs only for completed results that require review. Failed/retryable submissions and `requiresReview: false` paths (including carousel export) do not enter auto-apply. The service records every decision in `job.autoApply`:
+The submit hook (`setImmediate` after `submitComputeJobResult`) runs only for completed results that require review. Failed/retryable submissions and `requiresReview: false` paths (including carousel export) do not enter auto-apply. The service records every decision in `job.autoApply`:
 
 - `lastAttemptAt`, `attemptCount`
 - `outcome`: `applying`, `applied`, `skipped`, or `failed`
@@ -342,9 +349,22 @@ The submit hook runs only for completed results that require review. Failed/retr
 
 The job is atomically claimed before applying, retries transient failures up to three times in-process, and uses the idempotency key `auto:apply:{externalJobId}` with actor `system:auto-apply`. Large applies continue through the existing background-apply threshold; auto-apply does not create a second apply implementation.
 
-A blocked preview, a guardrail breach, or a terminal auto-apply error leaves the job in review-required and records its reason. This is deliberate: an operator can inspect and manually apply a current preview after correcting the policy or data.
+A blocked preview, a guardrail breach, `NATIVE_TAGS_REQUIRED`, or a terminal auto-apply error leaves the job in review-required and records its reason. This is deliberate: an operator can inspect and manually apply a current preview after correcting the policy, catalog, or Anthropic key.
 
-On process boot, the trusted-auto-apply backlog sweep rechecks review-required jobs with stored results and no `applicationAudit.appliedAt`. It makes one normal auto-apply attempt per candidate. Set `DISABLE_PIVOT_COMPUTE_AUTO_APPLY_STARTUP_SWEEP=true` to skip this recovery pass. There is **no periodic cron reconciliation** for auto-apply: the submit hook is the primary trigger and the one-time startup sweep covers interruptions.
+On process boot, `sweepPendingAutoApplyComputeJobs` rechecks review-required jobs with stored results and no `applicationAudit.appliedAt`. It makes one normal auto-apply attempt per candidate (bounded count and concurrency). Set `DISABLE_PIVOT_COMPUTE_AUTO_APPLY_STARTUP_SWEEP=true` to skip this recovery pass. There is **no periodic cron reconciliation** for auto-apply: the submit hook is the primary trigger and the one-time startup sweep covers interruptions.
+
+### Native catalog tags during apply
+
+Compute apply always goes through `applyEventRow` (auto-apply does not fork a second publish path). For **Partiful** and **Luma** rows whose draft tags, job `defaultTags`, and stored event tags are all empty, apply calls `assignTags` in `utilities/pivotTagAssigner.js` **before** `publishIngestEvent`.
+
+- Default provider is Claude (`PIVOT_TAG_ASSIGNER` unset or `claude`), which delegates to `suggestPivotEventTags` and validates 1–3 catalog slugs. Apply and auto-apply never call Anthropic themselves.
+- Assigned slugs are written on the publish overrides. Existing operator/draft/job tags are never overwritten. `generic-site` is not auto-tagged.
+- Ingest status is recomputed from the tags that will publish (`pickIngestStatus`), so a rich newly tagged native event can land `staged` instead of remaining `draft` only for missing tags.
+- Assigner `provider`/`model` is recorded on the apply-manifest row `message` (`tagAssigner:claude:…`), not as a second source of truth on the Event document.
+
+**Jev** is a **future provider** behind this seam (`PIVOT_TAG_ASSIGNER=jev`). It is reserved for Choice/Noul over catalog slugs; it does not scrape, invent tags, or replace Firecrawl. The current adapter fails closed with `TAG_ASSIGNER_UNAVAILABLE`. A real Jev adapter must return validated catalog slugs and shortlist first if the catalog has more than 255 options.
+
+Native Luma/Partiful rows **must not publish untagged**. If the assigner returns `LLM_NOT_CONFIGURED`, an empty catalog, a timeout, `TAG_ASSIGNER_UNAVAILABLE`, or otherwise leaves the row with no tags, that row is skipped with `NATIVE_TAGS_REQUIRED`. If every native create/update in the job is blocked this way and nothing else was written, the job stays `review-required` without `applicationAudit.appliedAt` (so a later apply can retry). Auto-apply records `autoApply.skipCode: NATIVE_TAGS_REQUIRED` instead of `applied`. Tagged native rows still apply. Manual apply of the same stored job retries the assigner once the key/catalog exists; it still will not publish those providers untagged.
 
 ### Apply manifest
 
